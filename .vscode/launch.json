@@ -1,0 +1,51 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Extension (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "https://labs.google/fx/tools/flow",
+      "webRoot": "${workspaceFolder}",
+      "sourceMaps": true,
+      "sourceMapPathOverrides": {
+        "webpack:///./src/*": "${workspaceFolder}/src/*"
+      },
+      "runtimeArgs": [
+        "--load-extension=${workspaceFolder}/dist",
+        "--auto-open-devtools-for-tabs",
+        "--disable-extensions-except=${workspaceFolder}/dist"
+      ],
+      "userDataDir": "${workspaceFolder}/.chrome-debug-profile",
+      "preLaunchTask": "webpack-dev"
+    },
+    {
+      "name": "Debug Extension (no build)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "https://labs.google/fx/tools/flow",
+      "webRoot": "${workspaceFolder}",
+      "sourceMaps": true,
+      "sourceMapPathOverrides": {
+        "webpack:///./src/*": "${workspaceFolder}/src/*"
+      },
+      "runtimeArgs": [
+        "--load-extension=${workspaceFolder}/dist",
+        "--auto-open-devtools-for-tabs",
+        "--disable-extensions-except=${workspaceFolder}/dist"
+      ],
+      "userDataDir": "${workspaceFolder}/.chrome-debug-profile"
+    },
+    {
+      "name": "Attach to Chrome",
+      "type": "chrome",
+      "request": "attach",
+      "port": 9222,
+      "webRoot": "${workspaceFolder}",
+      "sourceMaps": true,
+      "sourceMapPathOverrides": {
+        "webpack:///./src/*": "${workspaceFolder}/src/*"
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.chrome-debug-profile/
+*.js.map
+dist.crx
+dist.pem
+dom-after-images.html
+flow-dom.html
+flow_page_with_all_media.html
+page_with_videos.html
+whenimageisaddtotheprompt.html
