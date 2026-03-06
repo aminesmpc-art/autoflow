@@ -1154,13 +1154,26 @@ function initLibraryTab() {
       showToast('Pause the running queue before scanning.');
       return;
     }
+
+    // Pre-check: verify extension can talk to the Flow tab
+    const pingResult = await sendToBackground({ type: 'PING' });
+    if (pingResult?.error) {
+      showToast(`Cannot reach Flow tab: ${pingResult.error}`);
+      return;
+    }
+
     showToast('Scanning project...');
     const response = await sendToBackground({ type: 'SCAN_LIBRARY' });
     if (response?.error) {
       showToast(`Scan error: ${response.error}`);
       return;
     }
-    state.scannedAssets = response.assets || [];
+    state.scannedAssets = response?.assets || [];
+    if (state.scannedAssets.length === 0) {
+      showToast('No assets found. Make sure you\'re on a Flow project page with generated content.');
+    } else {
+      showToast(`Found ${state.scannedAssets.length} asset(s).`);
+    }
     renderLibrary();
   });
 
@@ -1698,9 +1711,23 @@ function escapeHtml(text: string): string {
 }
 
 async function sendToBackground(msg: Message): Promise<any> {
-  return new Promise(resolve => {
-    chrome.runtime.sendMessage(msg, response => {
-      resolve(response);
-    });
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(msg, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('[AutoFlow] sendToBackground error:', chrome.runtime.lastError.message);
+          resolve({ error: chrome.runtime.lastError.message || 'Extension communication error. Try reloading the page.' });
+          return;
+        }
+        if (response === undefined || response === null) {
+          resolve({ error: 'No response from extension. Try refreshing the Flow tab and reopening the side panel.' });
+          return;
+        }
+        resolve(response);
+      });
+    } catch (err: any) {
+      console.error('[AutoFlow] sendToBackground exception:', err);
+      resolve({ error: err.message || 'Extension communication failed.' });
+    }
   });
 }

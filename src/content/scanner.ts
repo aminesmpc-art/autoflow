@@ -48,31 +48,42 @@ function isUploadedImage(card: Element): boolean {
  * For images: looks for text in div near the `image` icon.
  */
 function extractPromptLabelFromTile(card: Element): string {
-  // Video label: inside a div that is a sibling/descendant near the videocam icon
-  // CSS class pattern: sc-365a7498-3 (fKjJRu) for video prompt text
-  const videoLabelDivs = card.querySelectorAll('div[class*="sc-365a7498-3"]');
-  for (const div of videoLabelDivs) {
-    const text = div.textContent?.trim();
-    if (text) return text;
+  // Strategy 1: Find the text div adjacent to a google-symbols icon.
+  // The tile info overlay typically has: <icon> <label-div>.
+  // We look for the first non-icon, non-empty sibling text near the icon.
+  const icons = card.querySelectorAll('i.google-symbols, i[class*="google-symbols"]');
+  for (const icon of icons) {
+    const iconText = icon.textContent?.trim() || '';
+    if (iconText !== 'videocam' && iconText !== 'image') continue;
+    // Walk siblings of the icon's parent to find a text label div
+    const iconParent = icon.parentElement;
+    if (!iconParent) continue;
+    const siblings = iconParent.parentElement?.children;
+    if (siblings) {
+      for (const sib of Array.from(siblings)) {
+        if (sib === iconParent) continue;
+        const text = sib.textContent?.trim();
+        if (text && text.length > 2 && text.length < 200 &&
+            !['play_circle', 'videocam', 'image', 'warning', 'refresh', 'undo',
+              'delete_forever', 'Failed', 'Retry', 'Reuse Prompt', 'Delete',
+              'more_vert', 'download'].includes(text)) {
+          return text;
+        }
+      }
+    }
   }
 
-  // Image label: inside a div near the image icon
-  // CSS class pattern: sc-6e2527b8-2 (iwtwjL) for image file/label text
-  const imageLabelDivs = card.querySelectorAll('div[class*="sc-6e2527b8-2"]');
-  for (const div of imageLabelDivs) {
-    const text = div.textContent?.trim();
-    if (text) return text;
-  }
-
-  // Generic fallback: walk all leaf text nodes looking for a meaningful label
+  // Strategy 2: Walk all leaf divs (no child divs) looking for a meaningful label
   const allDivs = card.querySelectorAll('div');
   for (const div of allDivs) {
-    // Only consider leaf divs (no child divs)
     if (div.querySelector('div')) continue;
+    // Skip divs that only contain icons
+    if (div.querySelector('i')) continue;
     const text = div.textContent?.trim();
     if (text && text.length > 3 && text.length < 200 &&
         !['play_circle', 'videocam', 'image', 'warning', 'refresh', 'undo',
-          'delete_forever', 'Failed', 'Retry', 'Reuse Prompt', 'Delete'].includes(text)) {
+          'delete_forever', 'Failed', 'Retry', 'Reuse Prompt', 'Delete',
+          'more_vert', 'download'].includes(text)) {
       return text;
     }
   }
@@ -109,6 +120,7 @@ function getGroupIndex(card: Element): number {
  * Filters out user-uploaded images — only returns AI-generated content.
  */
 export async function scanProjectForVideos(): Promise<ScannedAsset[]> {
+  console.log('[AutoFlow] scanProjectForVideos: starting scan on', window.location.href);
   const scroller = findOutputScroller();
   const collected = new Map<string, ScannedAsset>();
   let assetCounter = 0;
@@ -163,10 +175,14 @@ export async function scanProjectForVideos(): Promise<ScannedAsset[]> {
 
   if (!scroller) {
     // No scrollable area — just collect visible tiles
+    console.log('[AutoFlow] scanProjectForVideos: no scroller found, collecting visible tiles only');
     collectVisibleTiles();
+    const allTileEls = document.querySelectorAll('div[data-tile-id]');
+    console.log(`[AutoFlow] scanProjectForVideos: ${allTileEls.length} tile DOM elements, ${collected.size} collected assets`);
     return Array.from(collected.values()).sort((a, b) => a.groupIndex - b.groupIndex);
   }
 
+  console.log('[AutoFlow] scanProjectForVideos: scroller found, scrolling to discover all tiles');
   // Scroll to top
   scroller.scrollTop = 0;
   await sleep(600);
@@ -201,6 +217,7 @@ export async function scanProjectForVideos(): Promise<ScannedAsset[]> {
   // Re-assign sequential indices
   assets.forEach((a, i) => a.index = i);
 
+  console.log(`[AutoFlow] scanProjectForVideos: scan complete — ${assets.length} assets found (${assets.filter(a => a.mediaType === 'video').length} videos, ${assets.filter(a => a.mediaType === 'image').length} images)`);
   return assets;
 }
 

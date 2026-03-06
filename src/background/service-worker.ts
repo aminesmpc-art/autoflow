@@ -245,11 +245,26 @@ async function handleImageBlobRequest(payload: { imageIds: string[] }): Promise<
 
 // ── Forward message to the active Flow content script tab ──
 async function forwardToContentScript(msg: Message): Promise<any> {
-  const tabs = await chrome.tabs.query({ url: ['https://labs.google/flow*', 'https://labs.google/fx*'] });
-  if (tabs.length === 0 || !tabs[0].id) {
-    return { error: 'No Flow tab found. Please open labs.google/flow first.' };
+  // Prefer the active Flow tab in the current window — this is likely the one the user sees
+  const activeTabs = await chrome.tabs.query({
+    url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
+    active: true,
+    currentWindow: true,
+  });
+  let tabId: number | undefined;
+
+  if (activeTabs.length > 0 && activeTabs[0].id) {
+    tabId = activeTabs[0].id;
+  } else {
+    // Fallback: any Flow tab
+    const allTabs = await chrome.tabs.query({
+      url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
+    });
+    if (allTabs.length === 0 || !allTabs[0].id) {
+      return { error: 'No Flow tab found. Please open labs.google/flow first.' };
+    }
+    tabId = allTabs[0].id;
   }
-  const tabId = tabs[0].id!;
 
   // First attempt: try sending the message directly
   try {

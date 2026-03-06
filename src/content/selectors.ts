@@ -685,11 +685,14 @@ export function getTileState(tile: Element): TileState {
   }
 
   // ── Signal 10: opacity on descendant divs that suggest loading ──
-  // Some tiles have a loading state with opacity < 1 but no blur
-  const contentDiv = tile.querySelector('[class*="dEOwMG"]') as HTMLElement | null;
-  if (contentDiv) {
-    const op = window.getComputedStyle(contentDiv).opacity;
-    if (op && parseFloat(op) < 0.5) return 'generating';
+  // Some tiles have a loading state with opacity < 1 but no blur.
+  // Walk the first few child divs and check computed opacity.
+  const childDivs = tile.querySelectorAll(':scope > span > div > div, :scope > div > div');
+  for (const cd of childDivs) {
+    const op = window.getComputedStyle(cd).opacity;
+    if (op && parseFloat(op) < 0.5 && parseFloat(op) > 0) {
+      return 'generating';
+    }
   }
 
   // Tile exists in DOM (data-tile-id present) but no content signals → empty
