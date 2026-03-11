@@ -18,6 +18,7 @@ import {
   BACKOFF_BASE_MS,
   GENERATION_TIMEOUT_MS,
   POLL_INTERVAL_MS,
+  IMAGE_UPLOAD_BATCH_SIZE,
 } from '../shared/constants';
 import {
   sleep,
@@ -50,6 +51,8 @@ import {
   findMoreMenuOnAsset,
   findSettingsPanelTrigger,
   isSettingsPanelOpen,
+  findViewSettingsTrigger,
+  isViewSettingsOpen,
   findModeButton,
   getTileState,
   findAllFailedTiles,
@@ -114,6 +117,12 @@ export class AutomationEngine {
     await this.ensurePageReady();
     await humanDelay(500, 1000);
     const settingsOk = await this.applyAllSettings(this.queue.settings);
+    if (this.stopped) {
+      this.sendQueueStatus('stopped');
+      globalRunLock = false;
+      this.sendRunLockChanged(false);
+      return;
+    }
     if (!settingsOk) {
       this.log('warn', 'Settings may not have been applied. Continuing with Flow defaults.');
     }
@@ -192,8 +201,7 @@ export class AutomationEngine {
         this.log('info', `Processing prompt #${idx + 1} (attempt ${attempts + 1}/${MAX_RETRIES + 1})`);
 
         // Quick verification: is the settings chip still correct?
-        // Only check on the first prompt — settings are applied once at queue start.
-        // For prompt #2+ just go straight to attaching images and filling prompt.
+        // Only full re-check on the first prompt — settings are applied once at queue start.
         if (idx === 0) {
           this.state = 'VERIFY_SETTINGS';
           await this.verifyOrReapplySettings(this.queue!.settings);
@@ -225,7 +233,7 @@ export class AutomationEngine {
           if (this.stopped) return;
         }
 
-                // State: FILL_PROMPT
+        // State: FILL_PROMPT
         this.state = 'FILL_PROMPT';
         await this.fillPrompt(prompt.text, this.queue!.settings);
         if (this.stopped) return;
@@ -258,15 +266,21 @@ export class AutomationEngine {
         const totalWaitMs = Math.max(0, waitSec * 1000 - 2000); // subtract tile snapshot delay
         this.log('info', `Generation started. Waiting ${waitSec.toFixed(1)}s before next prompt (range: ${minSec}-${maxSec}s)...`);
 
-        // Poll during the wait to detect early failures
+        // Poll during the wait to detect early failures.
+        // IMPORTANT: Don't check too early — tiles can briefly show as "failed"
+        // during initialization (3-6s after Generate). We enforce a 15s grace
+        // period so Flow has time to fully start the generation.
+        const FAILURE_GRACE_MS = 15_000;
         const waitStart = Date.now();
         let earlyFailure = false;
         while (Date.now() - waitStart < totalWaitMs) {
           if (this.stopped) return;
           await sleep(2000); // check every 2 seconds
 
-          // Check if the tiles created by this prompt have failed
-          if (newTileIds.length > 0) {
+          // Check if the tiles created by this prompt have failed,
+          // but only after the grace period has elapsed.
+          const elapsed = Date.now() - waitStart;
+          if (newTileIds.length > 0 && elapsed >= FAILURE_GRACE_MS) {
             const tileStates = checkTileStates(newTileIds);
             if (tileStates.failed > 0 && tileStates.generating === 0) {
               // All tiles have settled and at least one failed
@@ -349,6 +363,8 @@ export class AutomationEngine {
         this.log('info', 'Detected Flow homepage. Clicking "+ New project" to continue...');
         simulateClick(newProjectBtn);
         await sleep(3000); // wait for new project to load
+        // New projects reset toggles — ensure they're ON
+        await this.ensureToggles();
         continue;
       }
 
@@ -375,16 +391,19 @@ export class AutomationEngine {
       return false;
     }
 
-    const strategies: Array<{ name: string; fn: () => void }> = [
+    // Each strategy returns true if it actually fired an action,
+    // false if it immediately knows it can't work (skip the wait).
+    const strategies: Array<{ name: string; fn: () => boolean }> = [
       {
         name: 'native .click()',
-        fn: () => nativeClick(trigger),
+        fn: () => { nativeClick(trigger); return true; },
       },
       {
         name: 'React onPointerDown',
         fn: () => {
           const ok = reactTrigger(trigger, 'onPointerDown');
           if (!ok) this.log('info', 'No React onPointerDown handler found');
+          return ok;
         },
       },
       {
@@ -392,11 +411,12 @@ export class AutomationEngine {
         fn: () => {
           const ok = reactTrigger(trigger, 'onClick');
           if (!ok) this.log('info', 'No React onClick handler found');
+          return ok;
         },
       },
       {
         name: 'dispatched pointer+mouse+click',
-        fn: () => simulateClick(trigger),
+        fn: () => { simulateClick(trigger); return true; },
       },
       {
         name: 'keyboard Space',
@@ -408,30 +428,43 @@ export class AutomationEngine {
           trigger.dispatchEvent(new KeyboardEvent('keyup', {
             key: ' ', code: 'Space', bubbles: true, cancelable: true,
           }));
+          return true;
         },
       },
     ];
 
     for (const strategy of strategies) {
-      // Check before each attempt â€” a previous strategy may have worked
+      // Check before each attempt — a previous strategy may have worked
       if (isSettingsPanelOpen()) {
         this.log('info', 'Settings panel is now open');
         return true;
       }
 
       this.log('info', `Opening settings panel via: ${strategy.name}`);
-      strategy.fn();
+      const fired = strategy.fn();
+
+      if (!fired) {
+        // Strategy immediately knew it can't work — skip waiting
+        continue;
+      }
+
+      // Quick sync check before polling
+      if (isSettingsPanelOpen()) {
+        this.log('info', `Settings panel opened via ${strategy.name}`);
+        return true;
+      }
 
       // Poll for the panel to appear (Radix lazy-mounts content)
-      const opened = await this.waitForSettingsPanel(2500);
+      const opened = await this.waitForSettingsPanel(1500);
       if (opened) {
         this.log('info', `Settings panel opened via ${strategy.name}`);
         return true;
       }
 
       // Brief pause before next strategy
-      await humanDelay(200, 400);
+      await humanDelay(100, 200);
     }
+
 
     this.log('error', 'All 5 click strategies failed to open settings panel');
     return false;
@@ -441,6 +474,7 @@ export class AutomationEngine {
   private async waitForSettingsPanel(timeoutMs: number): Promise<boolean> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
+      if (this.stopped) return false;
       // Check 1: trigger has aria-expanded="true" or data-state="open"
       if (isSettingsPanelOpen()) return true;
       // Check 2: Radix menu content appeared (settings is a dropdown menu, not tabs)
@@ -466,7 +500,7 @@ export class AutomationEngine {
 
   /** Close the settings panel (Escape or click outside) */
   private async closeSettingsPanel(): Promise<void> {
-    if (!isSettingsPanelOpen()) return;
+    if (!isSettingsPanelOpen() || this.stopped) return;
     // Escape key to close Radix popover
     document.body.dispatchEvent(new KeyboardEvent('keydown', {
       key: 'Escape', code: 'Escape', bubbles: true, cancelable: true,
@@ -492,6 +526,7 @@ export class AutomationEngine {
     // Radix TabsTrigger activates on mousedown, NOT click, so we use
     // simulateClick (which dispatches pointerdown→mousedown→click).
     const applyMenuItem = async (label: string, description: string): Promise<boolean> => {
+      if (this.stopped) return false;
       // Open settings panel if closed
       if (!isSettingsPanelOpen()) {
         const opened = await this.openSettingsPanel();
@@ -544,33 +579,41 @@ export class AutomationEngine {
     // 1. Select media type (Video / Image)
     const mediaLabel = settings.mediaType === 'image' ? 'Image' : 'Video';
     await applyMenuItem(mediaLabel, `Media: ${mediaLabel}`);
+    if (this.stopped) return false;
 
     // 2. Select creation type (Ingredients / Frames)
     const creationLabel = settings.creationType === 'frames' ? 'Frames' : 'Ingredients';
     await applyMenuItem(creationLabel, `Creation: ${creationLabel}`);
+    if (this.stopped) return false;
 
     if (settings.mediaType === 'image') {
-      // 3a. Set image model (e.g. "Nano Banana Pro")
-      await applyMenuItem(settings.imageModel, `Image Model: ${settings.imageModel}`);
+      // 3a. Set image model via nested dropdown (e.g. "Nano Banana 2", "Imagen 4")
+      // The model selector is a sub-dropdown inside the settings menu — use setModel()
+      // instead of applyMenuItem() to handle the nested menu correctly.
+      await this.setModel(settings.imageModel);
+      if (this.stopped) return false;
 
       // 3b. Set image ratio (e.g. "Landscape (16:9)")
       await applyMenuItem(settings.imageRatio, `Image Ratio: ${settings.imageRatio}`);
+      if (this.stopped) return false;
     } else {
       // 3. Set orientation (Landscape / Portrait)
       const orientationLabel = settings.orientation === 'portrait' ? 'Portrait' : 'Landscape';
       await applyMenuItem(orientationLabel, `Orientation: ${orientationLabel}`);
+      if (this.stopped) return false;
 
       // 5. Set model (video models)
       await this.setModel(settings.model);
+      if (this.stopped) return false;
       await humanDelay(200, 400);
     }
 
     // 4. Set generations count
     await applyMenuItem(`x${settings.generations}`, `Generations: x${settings.generations}`);
+    if (this.stopped) return false;
 
-    // 6. Ensure "Clear prompt on submit" is ON
-    //    This makes Flow automatically clear chips + text after each generation.
-    await this.ensureClearPromptOnSubmit();
+    // 6. Ensure critical toggles are ON
+    await this.ensureToggles();
 
     // Close the settings panel
     await this.closeSettingsPanel();
@@ -580,47 +623,167 @@ export class AutomationEngine {
   }
 
   /**
-   * Ensure the "Clear prompt on submit" toggle is set to ON in Flow's settings.
-   * The toggle uses two Radix-style tab buttons with aria-label="Off" and aria-label="On"
-   * inside a section labeled "Clear prompt on submit".
+   * Ensure both critical toggles are ON:
+   * - "Clear prompt on submit" (prevents old chips/text from lingering)
+   * - "Show tile details" (shows generation progress and labels)
+   * Opens the VIEW settings panel (gear icon), checks both, then closes.
    */
-  private async ensureClearPromptOnSubmit(): Promise<void> {
-    // Open settings panel if not open
-    if (!isSettingsPanelOpen()) {
-      const opened = await this.openSettingsPanel();
-      if (!opened) return;
-      await humanDelay(300, 600);
+  private async ensureToggles(): Promise<void> {
+    if (this.stopped) return;
+
+    // Open the VIEW settings panel (gear icon) — NOT the model settings panel
+    const opened = await this.openViewSettingsPanel();
+    if (!opened || this.stopped) return;
+
+    // Check both toggles while the panel is open
+    await this.ensureToggleOn('clear prompt on submit');
+    await this.ensureToggleOn('show tile details');
+
+    // Close the view settings panel
+    await this.closeViewSettingsPanel();
+  }
+
+  /**
+   * Open the VIEW settings panel (gear icon with settings_2).
+   * Uses multiple click strategies similar to openSettingsPanel.
+   */
+  private async openViewSettingsPanel(): Promise<boolean> {
+    if (isViewSettingsOpen()) return true;
+
+    const trigger = findViewSettingsTrigger();
+    if (!trigger) {
+      this.log('warn', 'View settings trigger (gear icon) not found in DOM');
+      return false;
     }
 
-    // Find all tab-like slider triggers (class contains flow_tab_slider_trigger)
+    // Try clicking the gear button
+    const strategies: Array<{ name: string; fn: () => boolean }> = [
+      { name: 'simulateClick', fn: () => { simulateClick(trigger); return true; } },
+      { name: 'native .click()', fn: () => { nativeClick(trigger); return true; } },
+      {
+        name: 'React onPointerDown',
+        fn: () => {
+          const ok = reactTrigger(trigger, 'onPointerDown');
+          return ok;
+        },
+      },
+    ];
+
+    for (const strategy of strategies) {
+      if (isViewSettingsOpen()) return true;
+
+      this.log('info', `Opening view settings via: ${strategy.name}`);
+      const fired = strategy.fn();
+      if (!fired) continue;
+
+      // Wait for panel to appear
+      await sleep(500);
+      if (isViewSettingsOpen()) {
+        this.log('info', `View settings panel opened via ${strategy.name}`);
+        return true;
+      }
+
+      // Check if any menu content appeared (Radix lazy-mounts)
+      const start = Date.now();
+      while (Date.now() - start < 1500) {
+        if (this.stopped) return false;
+
+        // Check for the toggle buttons that indicate the view panel is visible
+        const allBtns = document.querySelectorAll('button[role="tab"]');
+        for (const btn of allBtns) {
+          let container: Element | null = btn;
+          for (let i = 0; i < 5 && container; i++) container = container.parentElement;
+          if (container?.textContent?.toLowerCase().includes('clear prompt on submit')) {
+            this.log('info', 'View settings panel content detected');
+            return true;
+          }
+        }
+
+        if (isViewSettingsOpen()) return true;
+        await sleep(100);
+      }
+
+      await humanDelay(100, 200);
+    }
+
+    this.log('warn', 'Could not open view settings panel');
+    return false;
+  }
+
+  /**
+   * Close the VIEW settings panel.
+   */
+  private async closeViewSettingsPanel(): Promise<void> {
+    if (!isViewSettingsOpen() || this.stopped) return;
+    document.body.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Escape', code: 'Escape', bubbles: true, cancelable: true,
+    }));
+    await humanDelay(200, 400);
+    if (isViewSettingsOpen()) {
+      document.body.click();
+      await humanDelay(200, 400);
+    }
+  }
+
+  /**
+   * Generic toggle enabler: finds a toggle by its nearby label text
+   * and clicks the "On" button if not already active.
+   * The toggle uses two Radix-style tab buttons with aria-label="Off" and aria-label="On"
+   * inside a section that contains the given label text.
+   */
+  private async ensureToggleOn(toggleLabel: string): Promise<void> {
+    if (this.stopped) return;
+
+    // The view settings panel should already be open (called from ensureToggles)
+    // But verify — if it closed between toggles, reopen
+    if (!isViewSettingsOpen()) {
+      const opened = await this.openViewSettingsPanel();
+      if (!opened || this.stopped) return;
+    }
+
     const allBtns = document.querySelectorAll('button[role="tab"]');
     for (const btn of allBtns) {
       const label = btn.getAttribute('aria-label');
       if (label !== 'On') continue;
 
-      // Check if this "On" button is near the "Clear prompt on submit" label
-      // Walk up to its container and check for neighboring text
-      let container: Element | null = btn;
-      for (let i = 0; i < 5 && container; i++) container = container.parentElement;
-      if (!container) continue;
-      const text = container.textContent || '';
-      if (!text.toLowerCase().includes('clear prompt on submit')) continue;
+      // Walk up level by level to find the NEAREST ancestor that contains
+      // the toggle label. This avoids matching a shared parent that holds
+      // ALL toggles (which caused "Sound On hover" to match everything).
+      let matched = false;
+      let ancestor: Element | null = btn.parentElement;
+      for (let i = 0; i < 5 && ancestor; i++) {
+        const ancestorText = ancestor.textContent?.toLowerCase() || '';
+        if (ancestorText.includes(toggleLabel.toLowerCase())) {
+          // Make sure this ancestor does NOT also contain other toggle labels —
+          // if it does, we're too high up. Keep walking to find a tighter match.
+          // But if it contains only our target, we found the right row.
+          const otherToggles = ['sound on hover', 'show tile details', 'clear prompt on submit']
+            .filter(t => t !== toggleLabel.toLowerCase());
+          const containsOthers = otherToggles.some(t => ancestorText.includes(t));
+          if (!containsOthers) {
+            matched = true;
+            break;
+          }
+        }
+        ancestor = ancestor.parentElement;
+      }
+      if (!matched) continue;
 
       // Check if already active
       const state = btn.getAttribute('data-state');
       if (state === 'active') {
-        this.log('info', 'Clear prompt on submit: already ON');
+        this.log('info', `${toggleLabel}: already ON`);
         return;
       }
 
       // Click it ON
       simulateClick(btn);
-      this.log('info', 'Enabled "Clear prompt on submit"');
+      this.log('info', `Enabled "${toggleLabel}"`);
       await humanDelay(300, 500);
       return;
     }
 
-    this.log('info', 'Clear prompt on submit toggle not found (may already be ON)');
+    this.log('info', `${toggleLabel} toggle not found (may already be ON)`);
   }
 
   /**
@@ -628,6 +791,7 @@ export class AutomationEngine {
    * and re-applies settings if they look wrong.
    */
   private async verifyOrReapplySettings(settings: QueueSettings): Promise<void> {
+    if (this.stopped) return;
     const trigger = findSettingsPanelTrigger();
     if (!trigger) {
       // No settings chip found â€” page may have navigated. Try recovery.
@@ -648,15 +812,17 @@ export class AutomationEngine {
   }
 
   private async setModel(modelName: string): Promise<void> {
+    if (this.stopped) return;
     // The model dropdown is INSIDE the settings panel — make sure it's open
     if (!isSettingsPanelOpen()) {
       const opened = await this.openSettingsPanel();
-      if (!opened) {
+      if (!opened || this.stopped) {
         this.log('warn', 'Could not open settings panel to set model');
         return;
       }
       await humanDelay(300, 600);
     }
+    if (this.stopped) return;
 
     // Model dropdown is a separate Radix menu button inside the panel
     const trigger = findModelSelectorTrigger();
@@ -676,39 +842,65 @@ export class AutomationEngine {
     // Open the model dropdown — try multiple strategies
     simulateClick(trigger);
     await humanDelay(600, 1000);
+    if (this.stopped) return;
 
-    let menuItems = document.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-collection-item]');
-    if (menuItems.length === 0) {
+    // Helper: find model options inside the model sub-menu.
+    // When the model dropdown opens it creates a NEW [role="menu"] portal.
+    // We scope our search to the LAST menu in the DOM to avoid matching
+    // items from the parent settings menu.
+    const findModelOptions = (): NodeListOf<Element> | null => {
+      const allMenus = document.querySelectorAll('[role="menu"], [data-radix-menu-content]');
+      if (allMenus.length > 1) {
+        // Multiple menus open — the model sub-menu is the last (newest) portal
+        const subMenu = allMenus[allMenus.length - 1];
+        const items = subMenu.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"], [data-radix-collection-item]');
+        if (items.length > 0) return items;
+      }
+      // Fallback: global search, but skip items that contain a nested dropdown trigger
+      return document.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"], [data-radix-collection-item]');
+    };
+
+    let menuItems = findModelOptions();
+    if (!menuItems || menuItems.length === 0) {
       nativeClick(trigger);
       await humanDelay(600, 1000);
-      menuItems = document.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-collection-item]');
+      if (this.stopped) return;
+      menuItems = findModelOptions();
     }
-    if (menuItems.length === 0) {
+    if (!menuItems || menuItems.length === 0) {
       reactTrigger(trigger, 'onPointerDown');
       await humanDelay(600, 1000);
-      menuItems = document.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-collection-item]');
+      if (this.stopped) return;
+      menuItems = findModelOptions();
     }
 
-    this.log('info', `Found ${menuItems.length} model menu items`);
+    this.log('info', `Found ${menuItems?.length ?? 0} model menu items`);
 
-    for (const item of menuItems) {
-      const itemText = item.textContent || '';
-      const itemNorm = normalizeForModelMatch(itemText);
+    if (menuItems) {
+      for (const item of menuItems) {
+        const itemText = item.textContent || '';
+        const itemNorm = normalizeForModelMatch(itemText);
 
-      // Skip disabled items
-      if (item.getAttribute('aria-disabled') === 'true' ||
+        // Skip disabled items
+        if (item.getAttribute('aria-disabled') === 'true' ||
           item.getAttribute('data-disabled') === 'true') {
-        continue;
-      }
+          continue;
+        }
 
-      if (itemNorm.includes(targetNorm) && isVisible(item)) {
-        // The clickable element may be a button inside the menuitem div
-        const innerBtn = item.querySelector('button');
-        const clickTarget = innerBtn || item;
-        simulateClick(clickTarget);
-        this.log('info', `Selected model: ${itemText.trim()}`);
-        await humanDelay(300, 600);
-        return;
+        // Skip items that are themselves dropdown triggers (parent menu containers)
+        if (item.querySelector('button[aria-haspopup="menu"]')) {
+          continue;
+        }
+
+        if (itemNorm.includes(targetNorm) && isVisible(item)) {
+          // The clickable element may be a button inside the menuitem div
+          const innerBtn = item.querySelector('button');
+          const clickTarget = innerBtn || item;
+          simulateClick(clickTarget);
+          this.log('info', `Selected model: ${itemText.trim()}`);
+          await humanDelay(300, 600);
+          return;
+        }
       }
     }
 
@@ -723,35 +915,22 @@ export class AutomationEngine {
   // ================================================================
 
   /**
-   * Attach reference images to the prompt as ingredients.
-   * Phase 1: Upload images to Flow's library via the hidden file input.
-   * Phase 2: For each image, open "Search for Assets" dialog, search
-   *          by filename, and click the matching result to add as ingredient.
-   */
-  /**
    * Attach reference images to the current prompt as ingredients.
    *
-   * Simple flow: open dialog → upload all images at once → done.
+   * Supports up to 10 images. Uploads in batches of IMAGE_UPLOAD_BATCH_SIZE
+   * (default 5) to avoid overwhelming Flow's upload handler.
+   * Each batch: open dialog → upload → wait for chips → close dialog.
+   * Dynamic timeout scales with the number of images.
    */
   private async attachIngredientImages(images: ImageMeta[], promptIdx: number): Promise<boolean> {
     if (images.length === 0) return true;
 
     this.log('info', `Attaching ${images.length} reference image(s) for prompt #${promptIdx + 1}`);
 
-    // Wait for Flow's "Clear prompt on submit" to finish clearing old chips.
-    // For prompt #1 there are no old chips, so this returns immediately.
-    const clearWaitMs = 10000;
-    const clearStart = Date.now();
-    while (findIngredientChips().length > 0 && Date.now() - clearStart < clearWaitMs) {
-      if (this.stopped) return false;
-      await sleep(500);
-    }
-    const remaining = findIngredientChips().length;
-    if (remaining > 0) {
-      this.log('warn', `${remaining} old chip(s) still present after waiting — proceeding anyway`);
-    }
+    // "Clear prompt on submit" toggle handles clearing old chips automatically.
+    // Just proceed to upload the new images for this prompt.
 
-    // Get all image blobs from sidepanel
+    // Get all image blobs from sidepanel upfront
     let imageBlobs: any;
     try {
       imageBlobs = await this.requestImageBlobs(images);
@@ -764,6 +943,60 @@ export class AutomationEngine {
       return false;
     }
 
+    // Split files into batches
+    const allFiles: any[] = imageBlobs.files;
+    const batches: any[][] = [];
+    for (let i = 0; i < allFiles.length; i += IMAGE_UPLOAD_BATCH_SIZE) {
+      batches.push(allFiles.slice(i, i + IMAGE_UPLOAD_BATCH_SIZE));
+    }
+
+    this.log('info', `Uploading ${allFiles.length} image(s) in ${batches.length} batch(es) (batch size: ${IMAGE_UPLOAD_BATCH_SIZE})`);
+
+    let totalExpected = 0;
+
+    for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+      const batch = batches[batchIdx];
+      totalExpected += batch.length;
+
+      if (this.stopped) return false;
+
+      this.log('info', `Batch ${batchIdx + 1}/${batches.length}: uploading ${batch.length} image(s)...`);
+
+      // Open dialog
+      const success = await this.uploadImageBatch(batch, totalExpected, batchIdx, batches.length);
+      if (!success) {
+        // If a batch fails, check if we got at least some chips
+        const chipsNow = findIngredientChips().length;
+        if (chipsNow >= images.length) {
+          this.log('info', `Despite batch error, all ${images.length} chips are present`);
+          return true;
+        }
+        this.log('warn', `Batch ${batchIdx + 1} failed. ${chipsNow}/${images.length} chips present`);
+        return false;
+      }
+    }
+
+    // Final verification
+    await this.dismissDialogs();
+    const chipsAfter = findIngredientChips().length;
+    if (chipsAfter >= images.length) {
+      this.log('info', `All ${images.length} image(s) attached successfully (${chipsAfter} chips present)`);
+      return true;
+    }
+    this.log('warn', `Only ${chipsAfter}/${images.length} chips after all batches`);
+    return false;
+  }
+
+  /**
+   * Upload a single batch of images via the asset dialog.
+   * Returns true if the expected number of chips appeared.
+   */
+  private async uploadImageBatch(
+    batch: any[],
+    expectedTotalChips: number,
+    batchIdx: number,
+    totalBatches: number
+  ): Promise<boolean> {
     // 1. Click "+" to open dialog
     const addBtn = findIngredientAttachButton();
     if (!addBtn) {
@@ -772,12 +1005,12 @@ export class AutomationEngine {
     }
 
     nativeClick(addBtn);
-    await sleep(500);
+    await sleep(600);
 
     let dialog = findAssetSearchDialog();
     if (!dialog) {
       simulateClick(addBtn);
-      await sleep(500);
+      await sleep(600);
       dialog = findAssetSearchDialog();
     }
     if (!dialog) {
@@ -795,9 +1028,9 @@ export class AutomationEngine {
         break;
       }
     }
-    await sleep(300);
+    await sleep(400);
 
-    // 3. Upload ALL images at once via file input
+    // 3. Upload batch via file input
     const fileInput = findFileInput();
     if (!fileInput) {
       this.log('warn', 'No file input found');
@@ -806,19 +1039,17 @@ export class AutomationEngine {
     }
 
     const dt = new DataTransfer();
-    for (const fileData of imageBlobs.files) {
+    for (const fileData of batch) {
       const blob = this.base64ToBlob(fileData.data, fileData.mime);
       const file = new File([blob], fileData.filename, { type: fileData.mime });
       dt.items.add(file);
     }
     fileInput.files = dt.files;
     triggerFileInputChange(fileInput);
-    this.log('info', `Uploaded ${dt.files.length} file(s) at once`);
+    this.log('info', `Uploaded ${batch.length} file(s) in batch ${batchIdx + 1}/${totalBatches}`);
 
-    // 4. Wait for chips to appear — just check absolute count.
-    //    Flow auto-replaces old chips with new ones on upload,
-    //    so we only care that we end up with >= images.length chips.
-    const maxWaitMs = 60000;
+    // 4. Wait for chips — dynamic timeout: base 30s + 10s per image in batch
+    const maxWaitMs = Math.max(30000, batch.length * 15000);
     const pollMs = 1000;
     const startWait = Date.now();
     let chipsNow = findIngredientChips().length;
@@ -828,27 +1059,37 @@ export class AutomationEngine {
       await sleep(pollMs);
       chipsNow = findIngredientChips().length;
 
-      if (chipsNow >= images.length) {
-        this.log('info', `All ${images.length} image(s) attached (${chipsNow} chips present)`);
+      if (chipsNow >= expectedTotalChips) {
+        this.log('info', `Batch ${batchIdx + 1}: ${chipsNow} chips present (needed ${expectedTotalChips})`);
         break;
       }
 
       const elapsed = Date.now() - startWait;
       if (elapsed % 5000 < pollMs) {
-        this.log('info', `Waiting for images... ${chipsNow}/${images.length} chips (${Math.round(elapsed / 1000)}s)`);
+        this.log('info', `Waiting for batch ${batchIdx + 1}... ${chipsNow}/${expectedTotalChips} chips (${Math.round(elapsed / 1000)}s)`);
       }
     }
 
-    // Dismiss any open dialogs
+    // Dismiss dialog before next batch
     await this.dismissDialogs();
+    await sleep(500);
 
-    // 5. Verify
+    // Verify this batch
     const chipsAfter = findIngredientChips().length;
-    if (chipsAfter >= images.length) {
-      this.log('info', `Done: ${chipsAfter} chip(s) present (needed ${images.length})`);
+    if (chipsAfter >= expectedTotalChips) {
+      this.log('info', `Batch ${batchIdx + 1} complete: ${chipsAfter} chips present`);
       return true;
     }
-    this.log('warn', `Only ${chipsAfter}/${images.length} chips after ${Math.round((Date.now() - startWait) / 1000)}s`);
+
+    this.log('warn', `Batch ${batchIdx + 1}: only ${chipsAfter}/${expectedTotalChips} chips after ${Math.round((Date.now() - startWait) / 1000)}s`);
+
+    // Partial success: if we got at least the batch's images, continue
+    const prevExpected = expectedTotalChips - batch.length;
+    if (chipsAfter > prevExpected) {
+      this.log('info', `Batch ${batchIdx + 1}: partial success (${chipsAfter - prevExpected}/${batch.length} new chips). Continuing...`);
+      return true;
+    }
+
     return false;
   }
 
@@ -1040,7 +1281,8 @@ export class AutomationEngine {
       const multiplier = settings.typingSpeedMultiplier ?? 1.0;
       const cps = Math.round((settings.typingCharsPerSecond ?? 25) * multiplier);
       const variable = settings.variableTypingDelay ?? settings.humanizedMode ?? true;
-      this.log('info', `Typing prompt (${text.length} chars at ~${cps} cps, speed=${multiplier.toFixed(2)}x, variable=${variable})`);
+      const chunked = text.length > 100 ? ' [chunked]' : '';
+      this.log('info', `Typing prompt (${text.length} chars at ~${cps} cps, speed=${multiplier.toFixed(2)}x, variable=${variable}${chunked})`);
       await simulateTyping(input as HTMLElement, text, cps, variable);
     } else {
       setInputValue(input as HTMLElement, text);
@@ -1281,7 +1523,7 @@ export class AutomationEngine {
 
       // ── Completion condition 2: All tiles settled (mix of completed + failed, none generating) ──
       if (generatingSeenCount > 0 && snap.generating === 0 &&
-          (snap.completed > completedBefore || snap.failed > failedBefore) && elapsed > 5000) {
+        (snap.completed > completedBefore || snap.failed > failedBefore) && elapsed > 5000) {
         await sleep(2000);
         const final = snapshotTiles();
         if (final.generating === 0) {
@@ -1365,24 +1607,24 @@ export class AutomationEngine {
 
       // Rate limiting
       if (lower.includes('too quickly') || lower.includes('queue full') ||
-          lower.includes('limit reached') || lower.includes('exhausted') ||
-          lower.includes('quota')) {
+        lower.includes('limit reached') || lower.includes('exhausted') ||
+        lower.includes('quota')) {
         return `Rate limited: ${errorText}`;
       }
 
       // Policy / content violations
       if (lower.includes('violate') || lower.includes('policies') ||
-          lower.includes('blocked') || lower.includes('rejected') ||
-          lower.includes('prominent people') || lower.includes('minors') ||
-          lower.includes('harmful content')) {
+        lower.includes('blocked') || lower.includes('rejected') ||
+        lower.includes('prominent people') || lower.includes('minors') ||
+        lower.includes('harmful content')) {
         return `Policy violation: ${errorText}`;
       }
 
       // Generic errors
       if (lower.includes('error') || lower.includes('failed') || lower.includes('unable') ||
-          lower.includes('cannot') || lower.includes('capacity') ||
-          lower.includes('unavailable') || lower.includes('oops') ||
-          lower.includes('try again') || lower.includes('something went wrong')) {
+        lower.includes('cannot') || lower.includes('capacity') ||
+        lower.includes('unavailable') || lower.includes('oops') ||
+        lower.includes('try again') || lower.includes('something went wrong')) {
         return errorText;
       }
     }
@@ -1541,7 +1783,7 @@ export class AutomationEngine {
     for (const item of items) {
       if (!isVisible(item)) continue;
       if ((item as HTMLButtonElement).disabled ||
-          item.getAttribute('aria-disabled') === 'true') continue;
+        item.getAttribute('aria-disabled') === 'true') continue;
       const text = item.textContent?.toLowerCase() || '';
 
       // Match preferred resolution
@@ -1556,8 +1798,8 @@ export class AutomationEngine {
       else if (text.includes('1080p') && !target1080p) target1080p = item;
       else if (text.includes('4k') && !target4k) target4k = item;
       else if (/\bdownload\b/.test(text) &&
-               !text.includes('270p') && !text.includes('720p') &&
-               !text.includes('1080p') && !text.includes('4k')) {
+        !text.includes('270p') && !text.includes('720p') &&
+        !text.includes('1080p') && !text.includes('4k')) {
         targetDownload = item;
       }
     }
@@ -1587,8 +1829,8 @@ export class AutomationEngine {
         const subItems = document.querySelectorAll('[role="menuitem"]');
         const resKeyword = preferredRes === 'Original (720p)' ? '720p'
           : preferredRes === '1080p Upscaled' ? '1080p'
-          : preferredRes === '4K' ? '4k'
-          : preferredRes.toLowerCase();
+            : preferredRes === '4K' ? '4k'
+              : preferredRes.toLowerCase();
 
         // First pass: look for preferred resolution
         for (const item of subItems) {
@@ -2038,7 +2280,7 @@ export class AutomationEngine {
     chrome.runtime.sendMessage({
       type: 'FAILED_TILES_RESULT',
       payload: { failedPrompts, failedCount: failedPrompts.length },
-    }).catch(() => {});
+    }).catch(() => { });
   }
   async retryFailed(): Promise<void> {
     if (!this.queue) return;
@@ -2071,7 +2313,7 @@ export class AutomationEngine {
       promptIndex: this.currentPromptIdx,
     };
     console.log(`[AutoFlow] [${level.toUpperCase()}] ${message}`);
-    chrome.runtime.sendMessage({ type: 'LOG', payload: entry }).catch(() => {});
+    chrome.runtime.sendMessage({ type: 'LOG', payload: entry }).catch(() => { });
   }
 
   private sendQueueStatus(status: string, promptIndex?: number): void {
@@ -2082,7 +2324,7 @@ export class AutomationEngine {
         status,
         currentPromptIndex: promptIndex ?? this.currentPromptIdx,
       },
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   private updatePromptStatus(idx: number, status: string, error?: string, outputFiles?: string[]): void {
@@ -2101,14 +2343,14 @@ export class AutomationEngine {
         outputFiles,
         attempts: this.queue?.prompts[idx]?.attempts,
       },
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   private sendRunLockChanged(locked: boolean): void {
     chrome.runtime.sendMessage({
       type: 'RUN_LOCK_CHANGED',
       payload: { locked },
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   private sendQueueSummary(done: number, failed: number, skipped: number): void {
@@ -2122,6 +2364,6 @@ export class AutomationEngine {
         failed,
         skipped,
       },
-    }).catch(() => {});
+    }).catch(() => { });
   }
 }

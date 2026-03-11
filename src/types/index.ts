@@ -20,7 +20,7 @@ export interface PromptEntry {
   id: string;
   index: number;        // 0-based position in the queue
   text: string;
-  images: ImageMeta[];  // 0..3
+  images: ImageMeta[];  // 0..10
   status: PromptStatus;
   attempts: number;
   error?: string;
@@ -99,17 +99,27 @@ export interface QueueObject {
   updatedAt: number;
 }
 
+// ── Tile state as detected by the scanner ──
+export type ScannedTileState = 'completed' | 'failed' | 'generating' | 'unknown';
+
 // ── Scanned asset for Library ──
 export interface ScannedAsset {
-  index: number;
-  label: string;
+  index: number;            // sequential index across all assets
+  tileId: string;           // Flow's data-tile-id (unique per tile)
+  label: string;            // display label
   thumbnailUrl: string;
-  videoSrc: string;     // video src URL (empty for images)
-  locator: string;      // selector or aria-label string to re-find
+  videoSrc: string;         // video src URL (empty for images)
+  locator: string;          // CSS selector to re-find this tile
   selected: boolean;
-  mediaType: 'video' | 'image';  // detected type of the asset
-  promptLabel: string;  // prompt text (for grouping by prompt)
-  groupIndex: number;   // virtuoso row data-index (for ordering)
+  mediaType: 'video' | 'image';    // detected media type
+  tileState: ScannedTileState;     // tile state at scan time
+  promptLabel: string;             // prompt text (for display & search)
+  groupIndex: number;              // virtuoso row data-index (for ordering)
+  groupId: string;                 // unique group identifier (row-based)
+  generationNum: number;           // which generation within the prompt (1, 2, 3…)
+  totalInGroup: number;            // total generations for this prompt
+  promptNumber: number;            // sequential prompt number (oldest = 1)
+  isRetry: boolean;                // true if this tile came from a retry (merged group)
 }
 
 // ── Log entry ──
@@ -169,7 +179,9 @@ export type MessageType =
   | 'QUEUE_SUMMARY'
   | 'SCAN_FAILED_TILES'
   | 'FAILED_TILES_RESULT'
-  | 'RETRY_FAILED_TILES';
+  | 'RETRY_FAILED_TILES'
+  | 'RETRY_SINGLE_TILE'
+  | 'SET_DOWNLOAD_RENAME';
 
 export interface Message {
   type: MessageType;

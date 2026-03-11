@@ -1,6 +1,7 @@
 /* ============================================================
    AutoFlow – Background Service Worker (MV3)
-   Handles: downloads, storage messaging, queue orchestration
+   Handles: downloads, storage messaging, queue orchestration,
+   keepalive & anti-throttle for background execution.
    ============================================================ */
 
 import { Message, QueueObject, LogEntry } from '../types';
@@ -12,6 +13,181 @@ import {
   appendLog,
   getQueueById,
 } from '../shared/storage';
+
+// ================================================================
+// KEEPALIVE SYSTEM — Prevents SW death & tab throttling
+// ================================================================
+// Chrome MV3 kills the service worker after ~30s of inactivity.
+// Background tabs get timer-throttled (setTimeout min 1s, then frozen).
+// This system uses alarms + ports + periodic pings to keep everything alive.
+
+const KEEPALIVE_ALARM = 'af-keepalive';
+const TAB_PING_ALARM = 'af-tab-ping';
+
+/** Track the Flow tab running the queue (persisted in session storage) */
+let _activeTabId: number | null = null;
+
+async function getActiveTabId(): Promise<number | null> {
+  if (_activeTabId) return _activeTabId;
+  try {
+    const data = await chrome.storage.session.get('activeQueueTabId');
+    _activeTabId = data.activeQueueTabId ?? null;
+  } catch {
+    // session storage not available
+  }
+  return _activeTabId;
+}
+
+async function setActiveTabIdStore(tabId: number | null) {
+  _activeTabId = tabId;
+  try {
+    if (tabId) {
+      await chrome.storage.session.set({ activeQueueTabId: tabId });
+    } else {
+      await chrome.storage.session.remove('activeQueueTabId');
+    }
+  } catch { /* session storage may not be available */ }
+}
+
+/** Start keepalive alarms when a queue begins */
+async function startKeepalive(tabId: number) {
+  await setActiveTabIdStore(tabId);
+
+  // Alarm to keep SW alive — fires every 24s (minimum for unpacked extensions)
+  chrome.alarms.create(KEEPALIVE_ALARM, {
+    delayInMinutes: 0.4,
+    periodInMinutes: 0.4,
+  });
+
+  // Alarm to ping the content script tab — fires every 20s
+  // This wakes up throttled tabs via chrome.tabs.sendMessage
+  chrome.alarms.create(TAB_PING_ALARM, {
+    delayInMinutes: 0.3,
+    periodInMinutes: 0.3,
+  });
+
+  console.log(`[AutoFlow] Keepalive started for tab ${tabId}`);
+}
+
+/** Stop keepalive when queue ends */
+async function stopKeepalive() {
+  await setActiveTabIdStore(null);
+  chrome.alarms.clear(KEEPALIVE_ALARM);
+  chrome.alarms.clear(TAB_PING_ALARM);
+  console.log('[AutoFlow] Keepalive stopped');
+}
+
+/** Alarm handler — keep SW alive + ping content script + anti-freeze tab */
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === KEEPALIVE_ALARM) {
+    // Just waking up the SW is enough — check if queue is still active
+    const queueId = await getActiveQueueId();
+    if (!queueId) {
+      await stopKeepalive();
+    }
+    return;
+  }
+
+  if (alarm.name === TAB_PING_ALARM) {
+    await tabPingRoutine();
+    return;
+  }
+});
+
+/** Periodic routine: ping content script + ensure tab is active (not throttled) */
+async function tabPingRoutine() {
+  const tabId = await getActiveTabId();
+  if (!tabId) {
+    await stopKeepalive();
+    return;
+  }
+
+  // 1. Ensure the tab still exists and is the active tab in its window
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab) {
+      await logEntry('error', 'Queue tab no longer exists');
+      await stopKeepalive();
+      return;
+    }
+
+    // Make it the active tab in its window to reduce throttling
+    if (!tab.active) {
+      await chrome.tabs.update(tabId, { active: true });
+    }
+  } catch {
+    // Tab is gone
+    await logEntry('error', 'Lost connection to Flow tab');
+    await stopKeepalive();
+    return;
+  }
+
+  // 2. Ping the content script — this wakes it up from throttled state
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+  } catch {
+    // Content script not reachable — try re-injecting
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['content.js'],
+      });
+      console.log('[AutoFlow] Re-injected content script via keepalive');
+    } catch (err: any) {
+      await logEntry('error', `Keepalive: cannot reach Flow tab — ${err.message}`);
+    }
+  }
+}
+
+// ── Port-based keepalive from side panel ──
+// A connected port prevents the SW from being terminated.
+// The side panel maintains this port while a queue is running.
+const keepalivePorts = new Set<chrome.runtime.Port>();
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === 'af-keepalive') {
+    keepalivePorts.add(port);
+    console.log('[AutoFlow] Keepalive port connected');
+
+    port.onMessage.addListener((_msg) => {
+      // Just receiving messages keeps the SW alive — no action needed
+    });
+
+    port.onDisconnect.addListener(() => {
+      keepalivePorts.delete(port);
+      console.log('[AutoFlow] Keepalive port disconnected');
+    });
+  }
+});
+
+// ── Restore keepalive on SW restart ──
+// When the SW wakes up (e.g., from an alarm), check if a queue is active
+// and restart keepalive if needed.
+(async () => {
+  try {
+    const queueId = await getActiveQueueId();
+    if (queueId) {
+      const tabId = await getActiveTabId();
+      if (tabId) {
+        console.log(`[AutoFlow] SW restarted — restoring keepalive for tab ${tabId}`);
+        await startKeepalive(tabId);
+      }
+    }
+  } catch { /* first run, no active queue */ }
+})();
+
+// ── Tab removal listener — stop keepalive if queue tab is closed ──
+chrome.tabs.onRemoved.addListener(async (closedTabId) => {
+  const activeTab = await getActiveTabId();
+  if (activeTab === closedTabId) {
+    await logEntry('warn', 'Flow tab was closed while queue was running');
+    await stopKeepalive();
+  }
+});
+
+// ================================================================
+// CORE EXTENSION SETUP
+// ================================================================
 
 // ── Open side panel on action click ──
 chrome.action.onClicked.addListener(async (tab) => {
@@ -65,6 +241,7 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
     case 'REFRESH_MODELS':
     case 'SCAN_FAILED_TILES':
     case 'RETRY_FAILED_TILES':
+    case 'RETRY_SINGLE_TILE':
       return forwardToContentScript(msg);
 
     case 'GET_IMAGE_BLOBS':
@@ -83,6 +260,10 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
     case 'QUEUE_SUMMARY':
       broadcastToExtension(msg);
       return {};
+
+    case 'SET_DOWNLOAD_RENAME':
+      queueDownloadRename(msg.payload.filename);
+      return { success: true };
 
     default:
       return { error: 'Unknown message type' };
@@ -132,6 +313,11 @@ async function handleQueueStatusUpdate(payload: {
   queue.updatedAt = Date.now();
   await updateQueue(queue);
   broadcastToExtension({ type: 'QUEUE_STATUS_UPDATE', payload: queue });
+
+  // Stop keepalive when queue finishes
+  if (payload.status === 'completed' || payload.status === 'stopped') {
+    await stopKeepalive();
+  }
 }
 
 // ── Prompt status update ──
@@ -203,6 +389,9 @@ async function startQueueInTab(payload: { queueId: string; tabId?: number }): Pr
   } catch (e) {
     // Side panel may already be open
   }
+
+  // Start keepalive system to prevent SW death and tab throttling
+  await startKeepalive(tabId);
 
   // Forward start command to content script
   try {
@@ -303,6 +492,64 @@ function sleep(ms: number): Promise<void> {
 async function logEntry(level: 'info' | 'warn' | 'error', message: string) {
   await appendLog({ timestamp: Date.now(), level, message });
 }
+
+// ================================================================
+// DOWNLOAD RENAME INTERCEPTION
+// ================================================================
+// When downloading at 1080p/4K via Flow's native menu, Flow names
+// files itself. We intercept via onDeterminingFilename and rename
+// them to the user's prompt-based naming scheme.
+// ================================================================
+
+interface PendingRename {
+  filename: string;   // desired path like "LIBRARY/project/001_cat.mp4"
+  createdAt: number;  // timestamp for expiry
+}
+
+const pendingRenames: PendingRename[] = [];
+
+/**
+ * Queue a filename rename — the next download from labs.google
+ * will be renamed to this filename.
+ */
+function queueDownloadRename(filename: string) {
+  pendingRenames.push({ filename, createdAt: Date.now() });
+  console.log(`[AutoFlow] Queued rename: ${filename} (${pendingRenames.length} pending)`);
+}
+
+/**
+ * Intercept downloads and rename them if a pending rename exists.
+ * chrome.downloads.onDeterminingFilename fires when Chrome is about
+ * to save a file — we can suggest a different filename.
+ */
+chrome.downloads.onDeterminingFilename.addListener(
+  (downloadItem: chrome.downloads.DownloadItem, suggest: (suggestion?: { filename: string; conflictAction?: string }) => void) => {
+    // Clean expired entries (older than 30 seconds)
+    const now = Date.now();
+    while (pendingRenames.length > 0 && now - pendingRenames[0].createdAt > 30000) {
+      const expired = pendingRenames.shift()!;
+      console.log(`[AutoFlow] Rename expired: ${expired.filename}`);
+    }
+
+    // Only rename if we have a pending rename queued
+    if (pendingRenames.length > 0) {
+      // Check the download is from a Google/Flow domain
+      const url = downloadItem.url || '';
+      if (url.includes('labs.google') || url.includes('googleapis.com') || url.includes('googleusercontent.com')) {
+        const rename = pendingRenames.shift()!;
+        console.log(`[AutoFlow] Renaming download to: ${rename.filename}`);
+        suggest({ filename: rename.filename, conflictAction: 'uniquify' });
+        return;
+      }
+    }
+
+    // No rename needed — pass through the existing filename unchanged.
+    // IMPORTANT: suggest() with no args resets to URL-derived name (UUID).
+    // We must pass downloadItem.filename to preserve names set by
+    // chrome.downloads.download({ filename: ... }).
+    suggest({ filename: downloadItem.filename, conflictAction: 'uniquify' });
+  }
+);
 
 // ── Listen for download completion to detect "Ask where to save" issues ──
 chrome.downloads.onChanged.addListener((delta) => {

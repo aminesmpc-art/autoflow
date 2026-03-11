@@ -55,6 +55,15 @@
   /* Transitions */
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --duration: 0.2s;
+
+  /* Enhanced effects */
+  --spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --glow-accent: 0 0 20px rgba(99, 102, 241, 0.15);
+  --glow-accent-strong: 0 0 40px rgba(99, 102, 241, 0.25);
+  --gradient-text: linear-gradient(135deg, #818cf8 0%, #c084fc 50%, #818cf8 100%);
+  --bg-card-hover: rgba(22, 28, 48, 0.85);
+  --border-glow: rgba(129, 140, 248, 0.25);
 }
 
 /* ── Reset & Base ── */
@@ -67,10 +76,12 @@ body {
   color: var(--text-primary);
   background: var(--bg-body);
   background-image:
-    radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.08) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 100%, rgba(167, 139, 250, 0.06) 0%, transparent 60%);
+    radial-gradient(ellipse 800px 500px at 15% 0%, rgba(99, 102, 241, 0.14) 0%, transparent 70%),
+    radial-gradient(ellipse 600px 700px at 85% 100%, rgba(167, 139, 250, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 500px 500px at 50% 50%, rgba(99, 102, 241, 0.04) 0%, transparent 80%);
   min-height: 100vh;
   overflow-x: hidden;
+  scroll-behavior: smooth;
 }
 
 /* ── Header ── */
@@ -79,9 +90,9 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
-  background: rgba(15, 19, 32, 0.8);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(15, 19, 32, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -171,9 +182,9 @@ body {
 
 .af-tab.active {
   color: var(--accent);
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(99, 102, 241, 0.12);
   font-weight: 600;
-  box-shadow: inset 0 0 0 1px var(--border-accent);
+  box-shadow: inset 0 0 0 1px var(--border-accent), var(--glow-accent);
 }
 
 .af-tab-icon {
@@ -202,16 +213,18 @@ body {
 
 /* ── Cards (glassmorphism) ── */
 .af-card {
+  position: relative;
   background: var(--bg-card);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px;
-  transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
+  transition: border-color 0.3s var(--ease), box-shadow 0.4s var(--ease), transform 0.2s var(--ease);
 }
 .af-card:hover {
-  border-color: var(--border-hover);
+  border-color: var(--border-glow);
+  box-shadow: var(--shadow-sm), 0 0 24px rgba(99, 102, 241, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 /* ── Sections ── */
@@ -318,10 +331,12 @@ body {
   color: #fff;
   border-color: transparent;
   font-weight: 600;
+  position: relative;
+  overflow: hidden;
 }
 .af-btn-primary:hover {
   opacity: 0.9;
-  box-shadow: var(--gradient-glow);
+  box-shadow: var(--gradient-glow), 0 4px 16px rgba(99, 102, 241, 0.3);
   color: #fff;
 }
 
@@ -373,9 +388,11 @@ body {
 
 .af-btn-glow {
   box-shadow: var(--gradient-glow);
+  animation: glowPulse 3s ease-in-out infinite;
 }
 .af-btn-glow:hover {
   box-shadow: 0 0 28px rgba(99, 102, 241, 0.3);
+  animation: none;
 }
 
 /* ── Row layout ── */
@@ -527,12 +544,13 @@ body {
   border-radius: var(--radius);
   padding: 10px 12px;
   cursor: pointer;
-  transition: all var(--duration) var(--ease);
+  transition: all 0.3s var(--ease), transform 0.2s var(--ease);
   position: relative;
 }
 .af-prompt-row:hover {
   border-color: var(--border-hover);
-  background: rgba(22, 28, 48, 0.8);
+  background: var(--bg-card-hover);
+  transform: translateX(2px);
 }
 .af-prompt-row.expanded {
   border-color: var(--border-accent);
@@ -547,11 +565,12 @@ body {
 .af-prompt-num {
   font-size: 10px;
   font-weight: 700;
-  color: var(--accent);
-  background: rgba(99, 102, 241, 0.12);
+  color: #fff;
+  background: var(--gradient);
   padding: 2px 7px;
   border-radius: var(--radius-pill);
   flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
 }
 .af-prompt-preview {
   flex: 1;
@@ -635,6 +654,76 @@ body {
   transition: transform var(--duration) var(--ease);
 }
 .af-img-remove:hover { transform: scale(1.15); }
+
+/* ── Frame Slots (Start / End) ── */
+.af-frame-slot {
+  position: relative;
+  width: 54px;
+  height: 64px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.af-frame-slot-label {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+.af-frame-slot-filled {
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  padding: 3px;
+  transition: border-color var(--duration) var(--ease);
+}
+.af-frame-slot-filled:hover {
+  border-color: var(--accent);
+}
+.af-frame-slot-filled .af-img-thumb {
+  width: 100%;
+  flex: 1;
+  object-fit: cover;
+  border-radius: 3px;
+}
+.af-frame-slot-empty {
+  border: 2px dashed var(--border);
+  background: transparent;
+  padding: 3px;
+  transition: all var(--duration) var(--ease);
+  cursor: pointer;
+}
+.af-frame-slot-empty:hover {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb, 124, 92, 252), 0.06);
+}
+.af-frame-slot-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: color var(--duration) var(--ease);
+  cursor: pointer;
+  width: 100%;
+  border-radius: 3px;
+}
+.af-frame-slot-empty:hover .af-frame-slot-placeholder {
+  color: var(--accent);
+}
+.af-frame-slot-arrow {
+  display: flex;
+  align-items: center;
+  font-size: 16px;
+  color: var(--text-muted);
+  margin: 0 4px;
+  padding-top: 12px;
+}
+
 .af-img-counter {
   font-size: 11px;
   color: var(--text-muted);
@@ -667,36 +756,93 @@ body {
 
 /* ── Character Images ── */
 .af-character-images,
-.af-automap {
+.af-automap,
+.af-framechain {
   border-color: var(--border) !important;
 }
 .af-character-header,
-.af-automap-header {
+.af-automap-header,
+.af-framechain-header {
   margin-bottom: 8px;
 }
 .af-character-title-row,
-.af-automap-title-row {
+.af-automap-title-row,
+.af-framechain-title-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 .af-character-title-row .af-subtitle,
-.af-automap-title-row .af-subtitle {
+.af-automap-title-row .af-subtitle,
+.af-framechain-title-row .af-subtitle {
   flex: 1;
   margin-bottom: 0;
 }
 .af-character-icon,
-.af-automap-icon {
+.af-automap-icon,
+.af-framechain-icon {
   display: flex;
   align-items: center;
   color: var(--accent);
 }
 .af-character-images-row,
-.af-automap-row {
+.af-automap-row,
+.af-framechain-row {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* ── Frame Chain Preview ── */
+.af-framechain-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.af-framechain-preview::-webkit-scrollbar {
+  width: 4px;
+}
+.af-framechain-preview::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+  border-radius: var(--radius-pill);
+}
+.af-framechain-pair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.af-framechain-pair-num {
+  font-weight: 600;
+  color: var(--accent);
+  min-width: 18px;
+}
+.af-framechain-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+.af-framechain-arrow {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.af-framechain-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 /* ── Toggle Switch ── */
@@ -735,6 +881,7 @@ body {
 .af-toggle input:checked + .af-toggle-slider {
   background: var(--gradient);
   border-color: var(--accent-dim);
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
 }
 .af-toggle input:checked + .af-toggle-slider::before {
   transform: translateX(18px);
@@ -799,9 +946,11 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  height: 2px;
-  background: var(--gradient);
-  opacity: 0.6;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent-dim), var(--accent-bright), var(--accent-dim));
+  background-size: 200% 100%;
+  animation: monitorGradient 2s linear infinite;
+  opacity: 0.9;
 }
 .af-monitor-title {
   display: flex;
@@ -930,36 +1079,350 @@ body {
 .af-queue-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
-.af-queue-card {
+
+/* ── Queue Card (Redesigned) ── */
+.af-q-card {
+  position: relative;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 12px;
-  transition: border-color var(--duration) var(--ease);
+  overflow: hidden;
+  transition: border-color var(--duration) var(--ease),
+              box-shadow var(--duration) var(--ease),
+              transform 0.15s var(--ease);
 }
-.af-queue-card:hover { border-color: var(--border-hover); }
-.af-queue-card-header {
+.af-q-card:hover {
+  border-color: var(--border-accent);
+  box-shadow: var(--shadow-md), 0 0 16px rgba(99, 102, 241, 0.06);
+}
+
+/* Status bar — thin top accent strip */
+.af-q-status-bar {
+  height: 3px;
+  width: 100%;
+  background: var(--border);
+  transition: background var(--duration) var(--ease);
+}
+.af-q-status-bar.af-q-status-running   { background: var(--warning); box-shadow: 0 0 8px rgba(251, 191, 36, 0.3); }
+.af-q-status-bar.af-q-status-paused    { background: var(--accent); }
+.af-q-status-bar.af-q-status-completed { background: var(--success); }
+.af-q-status-bar.af-q-status-stopped   { background: var(--danger); }
+.af-q-status-bar.af-q-status-pending   { background: var(--text-muted); }
+
+.af-q-body {
+  padding: 14px 16px 12px;
+}
+
+/* Top row: name + badge + time */
+.af-q-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+.af-q-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.af-q-name {
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.af-q-time {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 8px;
+  margin-top: 2px;
+}
+
+/* Status badge */
+.af-q-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.af-q-badge svg { flex-shrink: 0; }
+.af-q-badge-running   { background: rgba(251,191,36,0.12); color: var(--warning); }
+.af-q-badge-paused    { background: rgba(129,140,248,0.12); color: var(--accent); }
+.af-q-badge-completed { background: rgba(52,211,153,0.12);  color: var(--success); }
+.af-q-badge-stopped   { background: rgba(248,113,113,0.12); color: var(--danger); }
+.af-q-badge-pending   { background: rgba(71,85,105,0.2);    color: var(--text-secondary); }
+
+/* Running badge pulse animation */
+.af-q-badge-running {
+  animation: qBadgePulse 2s ease-in-out infinite;
+}
+@keyframes qBadgePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.3); }
+  50% { box-shadow: 0 0 0 4px rgba(251,191,36,0); }
+}
+
+/* Tags row */
+.af-q-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.af-q-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.af-q-tag svg { opacity: 0.6; }
+.af-q-tag-target {
+  border-color: rgba(129, 140, 248, 0.2);
+  color: var(--accent);
+}
+
+/* Settings grid in queue card */
+.af-q-settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.af-q-settings-group {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px 6px;
+}
+.af-q-settings-title {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--accent);
+  margin-bottom: 5px;
+  opacity: 0.85;
+}
+.af-q-setting-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
+  padding: 2px 0;
+  gap: 6px;
 }
-.af-queue-name {
-  font-weight: 700;
-  font-size: 13px;
+.af-q-setting-key {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.af-q-setting-val {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 110px;
+}
+.af-q-setting-highlight {
+  color: var(--text-primary);
+}
+.af-q-setting-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   color: var(--accent);
 }
-.af-queue-meta {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-bottom: 8px;
+.af-q-setting-target svg { opacity: 0.7; }
+
+/* ON / OFF pills */
+.af-q-on {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--success);
+  letter-spacing: 0.3px;
 }
-.af-queue-actions {
+.af-q-off {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+  background: rgba(71, 85, 105, 0.2);
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+
+/* Progress bar */
+.af-q-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.af-q-progress-track {
+  flex: 1;
+  height: 4px;
+  background: var(--bg-input);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+.af-q-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s var(--ease);
+  position: absolute;
+  top: 0;
+}
+.af-q-progress-completed { background: var(--success); }
+.af-q-progress-running   { background: var(--warning); }
+.af-q-progress-paused    { background: var(--accent); }
+.af-q-progress-stopped   { background: var(--danger); }
+.af-q-progress-pending   { background: var(--text-muted); }
+.af-q-progress-fail      { background: var(--danger); opacity: 0.6; }
+.af-q-progress-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  min-width: 28px;
+  text-align: right;
+}
+
+/* Stats grid */
+.af-q-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.af-q-stat {
+  text-align: center;
+  padding: 6px 4px;
+  background: var(--bg-input);
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  transition: border-color var(--duration) var(--ease);
+}
+.af-q-stat:hover { border-color: var(--border-hover); }
+.af-q-stat-num {
+  display: block;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+.af-q-stat-label {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+.af-q-stat-done .af-q-stat-num { color: var(--success); }
+.af-q-stat-fail .af-q-stat-num { color: var(--danger); }
+
+/* Actions row */
+.af-q-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.af-q-actions-left,
+.af-q-actions-right {
   display: flex;
   gap: 4px;
-  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Small icon buttons (up/down/delete) */
+.af-q-act-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--duration) var(--ease);
+}
+.af-q-act-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+.af-q-act-btn:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+.af-q-act-delete:hover:not(:disabled) {
+  background: var(--danger-bg);
+  border-color: rgba(248, 113, 113, 0.3);
+  color: var(--danger);
+}
+
+/* Run button */
+.af-q-run-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 16px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--gradient);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--duration) var(--ease);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+.af-q-run-btn:hover:not(:disabled) {
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.45);
+  transform: translateY(-1px);
+}
+.af-q-run-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+.af-q-run-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.af-q-run-btn svg {
+  fill: currentColor;
+  stroke: none;
 }
 .af-empty {
   display: flex;
@@ -1090,6 +1553,46 @@ body {
   pointer-events: none;
 }
 
+/* Retry button on each library card */
+.af-lib-retry-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(99, 102, 241, 0.85);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  backdrop-filter: blur(4px);
+  padding: 0;
+}
+.af-lib-card:hover .af-lib-retry-btn {
+  opacity: 1;
+}
+.af-lib-retry-btn:hover {
+  background: rgba(99, 102, 241, 1);
+  transform: scale(1.1);
+}
+.af-lib-retry-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5 !important;
+}
+.af-lib-retry-btn.spinning svg {
+  animation: af-spin 0.8s linear infinite;
+}
+@keyframes af-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .af-lib-type {
   position: absolute;
   top: 7px;
@@ -1118,6 +1621,113 @@ body {
 }
 .af-lib-check {
   accent-color: var(--success);
+}
+
+/* ── Search input in library toolbar ── */
+.af-search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--duration) var(--ease);
+}
+.af-search-input::placeholder {
+  color: var(--text-muted);
+}
+.af-search-input:focus {
+  border-color: var(--accent);
+}
+
+/* ── Group-level badges (failed / generating counts) ── */
+.af-lib-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+.af-lib-badge-failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+.af-lib-badge-gen {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+}
+.af-lib-badge-retry {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+}
+
+/* ── Group highlight when it contains failures ── */
+.af-lib-group.has-failed {
+  border-color: rgba(239, 68, 68, 0.35);
+}
+.af-lib-group.has-failed .af-lib-group-header {
+  background: rgba(239, 68, 68, 0.06);
+}
+
+/* ── Per-card generation badge (e.g. "1/3") ── */
+.af-lib-gen-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  z-index: 2;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  background: rgba(0, 0, 0, 0.7);
+  color: #e2e8f0;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+/* ── Per-card state badge overlay ── */
+.af-lib-state-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+.af-lib-state-failed {
+  background: rgba(239, 68, 68, 0.8);
+  color: #fff;
+}
+.af-lib-state-gen {
+  background: rgba(251, 191, 36, 0.75);
+  color: #1a1a2e;
+}
+
+/* ── Card states (border + opacity) ── */
+.af-lib-card-failed {
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  opacity: 0.75;
+}
+.af-lib-card-failed:hover {
+  opacity: 1;
+}
+.af-lib-card-generating {
+  border-color: rgba(251, 191, 36, 0.4) !important;
+  opacity: 0.8;
+}
+.af-lib-card-generating:hover {
+  opacity: 1;
 }
 
 .af-lib-toolbar {
@@ -1391,4 +2001,536 @@ body {
   font-size: 11px;
   color: var(--text-secondary);
   margin-right: 6px;
+}
+
+
+/* ============================================================
+   UI UPGRADE – Premium Polish & Micro-interactions
+   ============================================================ */
+
+/* ── Header Shimmer Line ── */
+.af-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(99, 102, 241, 0.2) 15%,
+    rgba(167, 139, 250, 0.5) 50%,
+    rgba(99, 102, 241, 0.2) 85%,
+    transparent 100%);
+  animation: headerShimmer 4s ease-in-out infinite;
+}
+
+/* ── Status Dot ── */
+.af-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+  transition: all 0.4s ease;
+  box-shadow: 0 0 0 2px rgba(71, 85, 105, 0.2);
+}
+.af-status-dot.connected {
+  background: var(--success);
+  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.2), 0 0 8px rgba(52, 211, 153, 0.4);
+  animation: statusPulse 2s ease-in-out infinite;
+}
+.af-status-dot.running {
+  background: var(--warning);
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.2), 0 0 8px rgba(251, 191, 36, 0.4);
+  animation: statusPulse 1.5s ease-in-out infinite;
+}
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ── Tab Badge ── */
+.af-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--gradient);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
+  line-height: 1;
+}
+
+/* ── Monitor Button Enhancement ── */
+.af-monitor-btn {
+  gap: 4px;
+}
+.af-monitor-btn svg {
+  flex-shrink: 0;
+}
+
+/* ── Logo Glow ── */
+.af-logo-icon {
+  position: relative;
+}
+.af-logo-icon::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  background: var(--gradient);
+  border-radius: 12px;
+  opacity: 0.2;
+  filter: blur(8px);
+  z-index: -1;
+  transition: opacity 0.4s ease;
+}
+.af-header:hover .af-logo-icon::after {
+  opacity: 0.35;
+}
+
+/* ── Logo Text Shimmer ── */
+.af-logo-text {
+  background-size: 200% auto;
+  animation: textShimmer 3s ease-in-out infinite;
+}
+
+/* ── Version Badge Premium ── */
+.af-version {
+  background: linear-gradient(135deg, var(--bg-secondary), rgba(99, 102, 241, 0.08));
+  border: 1px solid var(--border);
+  transition: all 0.3s ease;
+}
+.af-header:hover .af-version {
+  border-color: var(--border-accent);
+  color: var(--accent);
+}
+
+/* ── Tab Active Underline ── */
+.af-tab::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  right: 50%;
+  height: 2px;
+  background: var(--gradient);
+  border-radius: 2px 2px 0 0;
+  transition: all 0.35s var(--spring);
+  opacity: 0;
+}
+.af-tab.active::after {
+  left: 20%;
+  right: 20%;
+  opacity: 1;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+}
+
+/* ── Tab Hover Glow Background ── */
+.af-tab::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(99, 102, 241, 0.06) 0%, transparent 70%);
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.af-tab:hover::before {
+  opacity: 1;
+}
+.af-tab.active::before {
+  opacity: 0;
+}
+
+/* ── Tab Icon Lift ── */
+.af-tab:hover .af-tab-icon {
+  transform: translateY(-1px);
+  transition: transform 0.25s var(--spring);
+}
+
+/* ── Primary Button Shine Sweep ── */
+.af-btn-primary::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -75%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+  pointer-events: none;
+  transition: none;
+}
+.af-btn-primary:hover::after {
+  animation: btnShine 0.7s ease forwards;
+}
+
+/* ── Secondary Button Hover Glow ── */
+.af-btn-secondary {
+  transition: all 0.3s var(--ease);
+}
+.af-btn-secondary:hover {
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.12);
+}
+
+/* ── Button Active Micro-bounce ── */
+.af-btn:active:not(:disabled) {
+  transform: scale(0.96);
+  transition: transform 0.1s ease;
+}
+
+/* ── Radio Pill Checked Glow ── */
+.af-radio input[type="radio"]:checked + span,
+.af-radio-pills .af-radio:has(input:checked) {
+  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.3);
+}
+
+/* ── Prompt Row Expand Animation ── */
+.af-prompt-full {
+  animation: expandSlide 0.3s var(--ease);
+}
+
+/* ── Prompt Row Expanded Glow ── */
+.af-prompt-row.expanded {
+  box-shadow: var(--shadow-glow), 0 4px 20px rgba(99, 102, 241, 0.08);
+}
+
+/* ── Image Thumbnail Hover ── */
+.af-img-thumb-wrap {
+  transition: all 0.25s var(--ease);
+}
+.af-img-thumb-wrap:hover {
+  transform: scale(1.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 2;
+}
+
+/* ── Monitor Gradient Bar Animation ── */
+@keyframes monitorGradient {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+/* ── Monitor Pulse Dot Enhancement ── */
+.af-pulse-dot {
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.5);
+}
+
+/* ── Queue Card Hover Lift ── */
+.af-q-card {
+  transition: border-color 0.3s var(--ease),
+              box-shadow 0.4s var(--ease),
+              transform 0.25s var(--ease);
+}
+.af-q-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md), 0 0 20px rgba(99, 102, 241, 0.08);
+}
+
+/* ── Queue Run Button Enhancement ── */
+.af-q-run-btn {
+  position: relative;
+  overflow: hidden;
+}
+.af-q-run-btn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -75%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+  pointer-events: none;
+}
+.af-q-run-btn:hover::after {
+  animation: btnShine 0.7s ease forwards;
+}
+
+/* ── Queue Status Bar Glow ── */
+.af-q-status-bar.af-q-status-running {
+  animation: statusBarPulse 2s ease-in-out infinite;
+}
+
+/* ── Queue Stats Hover ── */
+.af-q-stat {
+  transition: all 0.25s var(--ease);
+}
+.af-q-stat:hover {
+  border-color: var(--border-accent);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* ── Settings Group Hover ── */
+.af-settings-group.af-card:hover {
+  border-color: rgba(129, 140, 248, 0.15);
+  box-shadow: var(--shadow-sm), 0 0 28px rgba(99, 102, 241, 0.05);
+}
+
+/* ── Settings Heading Icon Glow ── */
+.af-section-heading svg {
+  filter: drop-shadow(0 0 4px rgba(129, 140, 248, 0.4));
+  transition: filter 0.3s ease;
+}
+.af-settings-group:hover .af-section-heading svg {
+  filter: drop-shadow(0 0 6px rgba(129, 140, 248, 0.6));
+}
+
+/* ── Select Hover Enhancement ── */
+.af-select {
+  transition: border-color 0.3s var(--ease), box-shadow 0.3s var(--ease), background 0.3s var(--ease);
+}
+.af-select:hover {
+  border-color: var(--border-accent);
+  background: rgba(15, 19, 32, 0.95);
+}
+
+/* ── Enhanced Input Focus Rings ── */
+.af-input:focus,
+.af-select:focus,
+.af-textarea:focus {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12), 0 0 20px rgba(99, 102, 241, 0.06);
+}
+
+/* ── Toast Enhancement ── */
+.af-toast {
+  border-left: 3px solid var(--accent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-lg), 0 0 30px rgba(99, 102, 241, 0.1);
+}
+
+/* ── Empty State Float ── */
+.af-empty svg {
+  animation: emptyFloat 3s ease-in-out infinite;
+}
+
+/* ── Library Card Hover Enhancement ── */
+.af-lib-card {
+  transition: all 0.3s var(--ease), transform 0.2s var(--ease);
+}
+.af-lib-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 12px rgba(99, 102, 241, 0.1);
+}
+
+/* ── Library Group Header Glow ── */
+.af-lib-group-header {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(167, 139, 250, 0.04));
+  transition: background 0.3s ease;
+}
+.af-lib-group:hover .af-lib-group-header {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(167, 139, 250, 0.06));
+}
+
+/* ── Library Group Num Badge ── */
+.af-lib-group-num {
+  background: var(--gradient);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+/* ── Info Tooltip Hover ── */
+.af-disclaimer-mini:hover svg {
+  filter: drop-shadow(0 0 4px rgba(148, 163, 184, 0.5));
+  transition: filter 0.3s ease;
+}
+
+/* ── Scrollbar Premium ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: rgba(15, 19, 32, 0.3); }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--border), rgba(99, 102, 241, 0.2));
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--text-muted), rgba(99, 102, 241, 0.3));
+}
+
+/* ── Focus Visible Ring (a11y) ── */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Separator Enhancement ── */
+.af-separator {
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+}
+
+/* ── Badge Hover ── */
+.af-badge {
+  transition: all 0.25s var(--ease);
+}
+.af-badge:hover {
+  background: rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.1);
+}
+
+/* ── Hint Tag Glow ── */
+.af-hint-tag {
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.1);
+}
+
+/* ── Banner Enhancement ── */
+.af-banner-warn {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: bannerSlide 0.4s var(--ease);
+}
+
+/* ── Failed Section Glow ── */
+.af-failed-section {
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.af-failed-section:hover {
+  border-color: rgba(239, 68, 68, 0.35);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.06);
+}
+
+/* ── Frame Chain Preview Pairs ── */
+.af-framechain-pair {
+  transition: all 0.25s var(--ease);
+}
+.af-framechain-pair:hover {
+  border-color: var(--border-accent);
+  background: rgba(15, 19, 32, 0.95);
+  transform: translateX(2px);
+}
+
+/* ── Character & Shared Section Borders ── */
+.af-shared-images,
+.af-character-images,
+.af-automap,
+.af-framechain {
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.af-shared-images:hover,
+.af-character-images:hover,
+.af-automap:hover,
+.af-framechain:hover {
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.05);
+}
+
+/* ── Help Icon Enhancement ── */
+.af-help-icon {
+  transition: all 0.3s var(--ease);
+}
+.af-help-icon:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.2);
+}
+
+/* ── Slider Thumb Enhancement ── */
+.af-slider::-webkit-slider-thumb {
+  transition: box-shadow 0.2s ease;
+}
+.af-slider::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.5);
+}
+
+/* ── Manage Subscription Button ── */
+.af-btn-outline:hover {
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.06);
+}
+
+/* ── Danger Button Enhancement ── */
+.af-btn-danger:hover {
+  box-shadow: 0 0 12px rgba(248, 113, 113, 0.15);
+}
+
+/* ── Queue Action Buttons Enhancement ── */
+.af-q-act-btn {
+  transition: all 0.2s var(--ease), transform 0.15s var(--spring);
+}
+.af-q-act-btn:hover:not(:disabled) {
+  transform: scale(1.08);
+}
+.af-q-act-delete:hover:not(:disabled) {
+  transform: scale(1.08);
+  box-shadow: 0 0 10px rgba(248, 113, 113, 0.15);
+}
+
+/* ── Settings ON/OFF Pill Enhancement ── */
+.af-q-on {
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.2);
+}
+
+/* ── Tip Box Enhancement ── */
+.af-tip {
+  transition: all 0.3s ease;
+}
+.af-tip:hover {
+  border-color: var(--border-accent);
+  background: rgba(15, 19, 32, 0.9);
+}
+
+/* ── Link Hover Enhancement ── */
+.af-link {
+  position: relative;
+}
+.af-link::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 100%;
+  height: 1px;
+  background: var(--accent-bright);
+  transition: right 0.3s var(--ease);
+}
+.af-link:hover::after {
+  right: 0;
+}
+.af-link:hover {
+  text-decoration: none;
+}
+
+/* ============================================================
+   KEYFRAMES
+   ============================================================ */
+
+@keyframes headerShimmer {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes textShimmer {
+  0% { background-position: 0% center; }
+  50% { background-position: 100% center; }
+  100% { background-position: 0% center; }
+}
+
+@keyframes btnShine {
+  0% { left: -75%; }
+  100% { left: 150%; }
+}
+
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.15); }
+  50% { box-shadow: 0 0 32px rgba(99, 102, 241, 0.3), 0 0 64px rgba(99, 102, 241, 0.1); }
+}
+
+@keyframes expandSlide {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes emptyFloat {
+  0%, 100% { transform: translateY(0); opacity: 0.3; }
+  50% { transform: translateY(-6px); opacity: 0.45; }
+}
+
+@keyframes statusBarPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(251, 191, 36, 0.3); opacity: 1; }
+  50% { box-shadow: 0 0 16px rgba(251, 191, 36, 0.5); opacity: 0.8; }
+}
+
+@keyframes bannerSlide {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
 }

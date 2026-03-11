@@ -23,6 +23,7 @@
       </span>
       <span class="af-logo-text">AutoFlow</span>
       <span class="af-version">v1.0</span>
+      <span id="af-status-dot" class="af-status-dot" title="Disconnected"></span>
     </div>
     <div class="af-disclaimer-mini" title="Third-party tool. Not affiliated with Google.">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -48,6 +49,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
       </span>
       <span class="af-tab-label">Queues</span>
+      <span id="queue-tab-badge" class="af-tab-badge" style="display:none;"></span>
     </button>
     <button class="af-tab" role="tab" data-tab="library" aria-selected="false">
       <span class="af-tab-icon">
@@ -140,6 +142,27 @@
       </div>
     </div>
 
+    <!-- Frame Chain: overlapping Start/End frames -->
+    <div id="framechain-section" class="af-section af-framechain af-card" style="display:none;">
+      <div class="af-framechain-header">
+        <div class="af-framechain-title-row">
+          <span class="af-framechain-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+          </span>
+          <h3 class="af-subtitle">Frame Chain</h3>
+        </div>
+        <span class="af-hint">Select N images → creates N−1 prompts. Each prompt's end frame becomes the next prompt's start frame.</span>
+      </div>
+      <div id="framechain-preview" class="af-framechain-preview" style="display:none;"></div>
+      <div class="af-framechain-row">
+        <button id="btn-framechain" class="af-btn af-btn-secondary af-btn-sm">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="20" rx="2" ry="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/></svg>
+          Upload &amp; Chain Frames
+        </button>
+        <input type="file" id="framechain-file-input" class="af-file-input" accept="image/*" multiple />
+      </div>
+    </div>
+
     <!-- Parsed prompt rows -->
     <div id="prompt-list" class="af-prompt-list"></div>
 
@@ -166,11 +189,26 @@
         <span id="monitor-progress">0 / 0</span>
       </div>
       <div class="af-monitor-controls">
-        <button id="btn-pause" class="af-btn af-btn-sm">⏸ Pause</button>
-        <button id="btn-resume" class="af-btn af-btn-sm" disabled>▶ Resume</button>
-        <button id="btn-stop" class="af-btn af-btn-sm af-btn-danger">⏹ Stop</button>
-        <button id="btn-skip" class="af-btn af-btn-sm">⏭ Skip</button>
-        <button id="btn-retry" class="af-btn af-btn-sm">🔄 Retry</button>
+        <button id="btn-pause" class="af-btn af-btn-sm af-monitor-btn">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          Pause
+        </button>
+        <button id="btn-resume" class="af-btn af-btn-sm af-monitor-btn" disabled>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Resume
+        </button>
+        <button id="btn-stop" class="af-btn af-btn-sm af-btn-danger af-monitor-btn">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          Stop
+        </button>
+        <button id="btn-skip" class="af-btn af-btn-sm af-monitor-btn">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+          Skip
+        </button>
+        <button id="btn-retry" class="af-btn af-btn-sm af-monitor-btn">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Retry
+        </button>
       </div>
       <div id="monitor-logs" class="af-logs"></div>
     </div>
@@ -227,7 +265,7 @@
         </div>
       </div>
 
-      <div class="af-section">
+      <div id="creation-type-section" class="af-section">
         <h3 class="af-subtitle">Creation Type</h3>
         <div class="af-radio-group af-radio-pills">
           <label class="af-radio"><input type="radio" name="creationType" value="ingredients" checked /><span>Ingredients</span></label>
@@ -486,10 +524,14 @@
         <button class="af-btn af-btn-sm" data-lib-filter="image">Photos</button>
         <button class="af-btn af-btn-sm" data-lib-filter="video">Videos</button>
       </div>
+      <input id="library-search" class="af-input af-search-input" type="text" placeholder="Search prompts…" />
       <select id="library-sort" class="af-select af-select-sm">
-        <option value="newest">Newest</option>
-        <option value="oldest">Oldest</option>
-        <option value="type">By type</option>
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="status">By status</option>
+        <option value="type">Videos first</option>
+        <option value="most-gens">Most generations</option>
+        <option value="prompt-num">By prompt #</option>
       </select>
     </div>
 
@@ -499,6 +541,10 @@
       <button id="btn-download-selected" class="af-btn af-btn-primary af-btn-sm">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Download
+      </button>
+      <button id="btn-retry-selected" class="af-btn af-btn-sm" title="Reuse Prompt & Generate for selected assets">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+        Retry
       </button>
     </div>
 

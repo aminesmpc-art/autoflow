@@ -196,12 +196,25 @@ export function findGenerateButton(): Element | null {
  * NOT the settings panel trigger (that one also has "Video"/"x1").
  */
 export function findModelSelectorTrigger(): Element | null {
+  // Primary: find a button[aria-haspopup="menu"] INSIDE the open settings menu.
+  // The settings trigger opens a [role="menu"] dropdown. Inside it, the model
+  // selector is a nested button[aria-haspopup="menu"] (e.g. "Nano Banana 2 ▼").
+  const menuContainer = document.querySelector(
+    '[role="menu"], [data-radix-menu-content]'
+  );
+  if (menuContainer) {
+    const innerBtns = menuContainer.querySelectorAll('button[aria-haspopup="menu"]');
+    for (const btn of innerBtns) {
+      if (isVisible(btn)) return btn;
+    }
+  }
+
+  // Fallback: match by known model name keywords in button text
   const btns = document.querySelectorAll('button[aria-haspopup="menu"]');
   for (const btn of btns) {
     const text = (btn.textContent || '').toLowerCase();
-    // Match buttons mentioning model names, exclude the settings trigger
-    if ((text.includes('veo') || text.includes('imagen')) && isVisible(btn)) {
-      // The settings trigger contains "video" + "x\d" — skip it
+    if ((text.includes('veo') || text.includes('imagen') || text.includes('banana')) && isVisible(btn)) {
+      // Skip the settings trigger chip (contains media type + generation count like "Video x1")
       if (/x\d/.test(text) && (text.includes('video') || text.includes('image'))) continue;
       return btn;
     }
@@ -486,7 +499,7 @@ export function findAssetResults(dialog: Element): Element[] {
     if (el.tagName === 'INPUT') continue;
     const text = (el.textContent || '').trim();
     if (text === 'Recently Used' || text === 'Close' || text === '' ||
-        text === 'Upload image') continue;
+      text === 'Upload image') continue;
     if (el.querySelector('img') || text.length > 2) {
       results.push(el);
     }
@@ -534,11 +547,11 @@ export function triggerFileInputChange(fileInput: HTMLInputElement): void {
           currentTarget: fileInput,
           type: 'change',
           bubbles: true,
-          preventDefault: () => {},
-          stopPropagation: () => {},
+          preventDefault: () => { },
+          stopPropagation: () => { },
           isPropagationStopped: () => false,
           isDefaultPrevented: () => false,
-          persist: () => {},
+          persist: () => { },
           nativeEvent: new Event('change', { bubbles: true }),
         });
       } catch { /* swallow */ }
@@ -557,9 +570,9 @@ export function triggerFileInputChange(fileInput: HTMLInputElement): void {
             currentTarget: fileInput,
             type: 'change',
             bubbles: true,
-            preventDefault: () => {},
-            stopPropagation: () => {},
-            persist: () => {},
+            preventDefault: () => { },
+            stopPropagation: () => { },
+            persist: () => { },
           });
         } catch { /* swallow */ }
         break;
@@ -630,8 +643,8 @@ export function getTileState(tile: Element): TileState {
   for (const icon of icons) {
     const txt = icon.textContent?.trim() || '';
     if (txt === 'error' || txt === 'error_outline' || txt === 'warning' ||
-        txt === 'report' || txt === 'report_problem' || txt === 'cancel' ||
-        txt === 'block' || txt === 'dangerous') {
+      txt === 'report' || txt === 'report_problem' || txt === 'cancel' ||
+      txt === 'block' || txt === 'dangerous') {
       // Make sure this isn't the ingredient chip cancel icon
       const parent = icon.closest('[data-card-open]');
       if (!parent) return 'failed';
@@ -641,8 +654,8 @@ export function getTileState(tile: Element): TileState {
   // ── Signal 5: error text overlay ("failed", "error", "violated") ──
   const tileText = tile.textContent?.toLowerCase() || '';
   if (tileText.includes('generation failed') || tileText.includes('violate') ||
-      tileText.includes('try again') || tileText.includes('unable to generate') ||
-      tileText.includes('blocked')) {
+    tileText.includes('try again') || tileText.includes('unable to generate') ||
+    tileText.includes('blocked')) {
     return 'failed';
   }
 
@@ -650,7 +663,7 @@ export function getTileState(tile: Element): TileState {
   for (const icon of icons) {
     const txt = icon.textContent?.trim() || '';
     if (txt === 'play_arrow' || txt === 'play_circle' || txt === 'play_circle_filled' ||
-        txt === 'play_circle_outline') {
+      txt === 'play_circle_outline') {
       return 'completed';
     }
   }
@@ -886,9 +899,9 @@ export function reactTrigger(el: Element, handlerName: string): boolean {
     isPrimary: true, pointerId: 1, pointerType: 'mouse',
     bubbles: true, cancelable: true,
     nativeEvent: { button: 0, ctrlKey: false },
-    preventDefault: () => {}, stopPropagation: () => {},
+    preventDefault: () => { }, stopPropagation: () => { },
     isPropagationStopped: () => false, isDefaultPrevented: () => false,
-    persist: () => {},
+    persist: () => { },
   };
   try {
     props[handlerName](fakeEvent);
@@ -904,10 +917,40 @@ export function humanDelay(min: number, max: number): Promise<void> {
   return sleep(ms);
 }
 
+/**
+ * Insert text into a Slate.js editor via simulated clipboard paste.
+ * This is the ONLY safe way to programmatically insert text into Slate —
+ * document.execCommand('insertText') mutates the DOM directly and
+ * desynchronises Slate's virtual model, causing crashes.
+ * Slate handles paste events natively through its own onPaste handler,
+ * keeping the model and DOM in sync.
+ */
+function slatePaste(el: HTMLElement, text: string): void {
+  const dt = new DataTransfer();
+  dt.setData('text/plain', text);
+
+  // Dispatch beforeinput with insertFromPaste type — Slate processes this
+  const beforeInput = new InputEvent('beforeinput', {
+    bubbles: true,
+    cancelable: true,
+    inputType: 'insertFromPaste',
+    dataTransfer: dt,
+  } as InputEventInit);
+  el.dispatchEvent(beforeInput);
+
+  // Also fire a ClipboardEvent paste as backup — this is what Slate's
+  // onPaste handler directly listens for
+  const pasteEvent = new ClipboardEvent('paste', {
+    bubbles: true,
+    cancelable: true,
+    clipboardData: dt,
+  });
+  el.dispatchEvent(pasteEvent);
+}
+
 /** Set text in an input/textarea/contenteditable.
- *  For Slate.js editors, we must NOT set textContent directly —
- *  that would break Slate's internal model. Instead we select all
- *  existing content first, then use insertText to replace it.
+ *  For Slate.js editors we use clipboard paste events to avoid
+ *  breaking Slate's internal DOM model.
  */
 export function setInputValue(el: HTMLElement, text: string): void {
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
@@ -933,21 +976,14 @@ export function setInputValue(el: HTMLElement, text: string): void {
     selection?.removeAllRanges();
     selection?.addRange(range);
 
-    // For Slate.js: fire a beforeinput event that Slate listens to,
-    // then use insertText to replace. Slate handles its own state update.
+    // For Slate.js we MUST NOT use document.execCommand('insertText') — it
+    // mutates the DOM directly and desynchronises Slate's virtual model,
+    // causing "Cannot resolve a Slate node from DOM" crashes.
+    // Instead, simulate a clipboard paste that Slate handles natively.
     if (el.hasAttribute('data-slate-editor')) {
-      // Dispatch a synthetic InputEvent that Slate processes
-      const beforeInput = new InputEvent('beforeinput', {
-        bubbles: true,
-        cancelable: true,
-        inputType: 'insertText',
-        data: text,
-      });
-      el.dispatchEvent(beforeInput);
-      // Also try execCommand as fallback
-      document.execCommand('insertText', false, text);
+      slatePaste(el, text);
     } else {
-      // Non-Slate contenteditable: use execCommand
+      // Non-Slate contenteditable: execCommand is fine
       document.execCommand('insertText', false, text);
     }
     el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -958,15 +994,15 @@ export function setInputValue(el: HTMLElement, text: string): void {
 export function findRatioOption(ratio: 'landscape' | '9:16'): Element | null {
   const ratioText = ratio === 'landscape' ? 'landscape' : '9:16';
   const altText = ratio === 'landscape' ? '16:9' : 'vertical';
-  
+
   // Try buttons/options
   let el = queryButtonByText(ratioText) || queryButtonByText(altText);
   if (el) return el;
-  
+
   // Try aria-labels
   el = queryByAriaLabel(ratioText) || queryByAriaLabel(altText);
   if (el) return el;
-  
+
   // Try menu items
   el = findMenuItem(ratioText) || findMenuItem(altText);
   return el;
@@ -1009,8 +1045,76 @@ export function isSettingsPanelOpen(): boolean {
   const trigger = findSettingsPanelTrigger();
   if (!trigger) return false;
   return trigger.getAttribute('aria-expanded') === 'true' ||
-         trigger.getAttribute('data-state') === 'open';
+    trigger.getAttribute('data-state') === 'open';
 }
+
+/**
+ * Find the VIEW settings panel trigger button (gear/tune icon).
+ * This is a SEPARATE button from the model settings chip.
+ * The view settings panel contains toggles like:
+ * - "Show tile details"
+ * - "Clear prompt on submit"
+ * - "Sound On hover"
+ * - View mode (Grid/Batch)
+ * - Grid size (S/M/L)
+ *
+ * The button is an icon-only button with aria-haspopup="menu" that
+ * contains a Google Symbols icon (settings/tune) in the top toolbar.
+ * It does NOT contain generation count text like "x1".
+ */
+export function findViewSettingsTrigger(): Element | null {
+  const btns = document.querySelectorAll('button[aria-haspopup="menu"]');
+  for (const btn of btns) {
+    if (!isVisible(btn)) continue;
+    const text = btn.textContent?.trim().toLowerCase() || '';
+
+    // Skip the model settings chip (contains "x1", "x2", etc.)
+    if (/x\d/.test(text)) continue;
+
+    // Method 1: Look for the hidden span with "View Tile Grid Settings"
+    const spans = btn.querySelectorAll('span');
+    for (const span of spans) {
+      if (span.textContent?.trim().toLowerCase().includes('view tile grid settings')) {
+        return btn;
+      }
+    }
+
+    // Method 2: Look for settings_2 icon (Google Symbols)
+    const icons = btn.querySelectorAll('i.google-symbols, i[class*="google-symbols"], span.google-symbols, span[class*="google-symbols"]');
+    for (const icon of icons) {
+      const iconText = icon.textContent?.trim().toLowerCase() || '';
+      if (iconText === 'settings_2' || iconText === 'settings' || iconText === 'tune' ||
+        iconText === 'display_settings') {
+        return btn;
+      }
+    }
+
+    // Fallback: small icon-only button with no meaningful text (just icon text)
+    // The gear button is typically 32x32 or similar small size
+    const rect = btn.getBoundingClientRect();
+    if (rect.width <= 48 && rect.height <= 48 && text.length <= 20) {
+      // Check if this button contains a single icon and no other content
+      const hasIcon = btn.querySelector('i, span[class*="symbol"]');
+      if (hasIcon && !text.includes('video') && !text.includes('image') &&
+        !text.includes('veo') && !text.includes('nano') &&
+        !text.includes('add') && !text.includes('create')) {
+        return btn;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Check if the VIEW settings panel is open.
+ */
+export function isViewSettingsOpen(): boolean {
+  const trigger = findViewSettingsTrigger();
+  if (!trigger) return false;
+  return trigger.getAttribute('aria-expanded') === 'true' ||
+    trigger.getAttribute('data-state') === 'open';
+}
+
 
 /**
  * Find a settings option inside the opened Radix dropdown menu.
@@ -1120,29 +1224,56 @@ export async function simulateTyping(
     range.selectNodeContents(el);
     selection?.removeAllRanges();
     selection?.addRange(range);
-    // Delete existing selection
-    document.execCommand('delete', false);
 
-    for (let i = 0; i < text.length; i++) {
-      if (el.hasAttribute('data-slate-editor')) {
-        // Slate: use beforeinput event per character
-        const beforeInput = new InputEvent('beforeinput', {
-          bubbles: true,
-          cancelable: true,
-          inputType: 'insertText',
-          data: text[i],
-        });
-        el.dispatchEvent(beforeInput);
-      }
-      document.execCommand('insertText', false, text[i]);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
+    const isSlate = el.hasAttribute('data-slate-editor');
 
-      let delay = baseDelayMs;
-      if (variableDelay) {
-        const jitter = 1 + (Math.random() * 0.6 - 0.3);
-        delay = baseDelayMs * jitter;
+    if (isSlate) {
+      // ── Slate.js: NEVER use document.execCommand('insertText') ──
+      // execCommand mutates the DOM directly, desyncing Slate's virtual
+      // model and causing "Cannot resolve a Slate node from DOM" crashes.
+      // Instead use clipboard paste events which Slate handles natively
+      // through its own paste handler, keeping the model in sync.
+
+      // Delete existing selection via Slate-safe paste of empty string
+      // then paste the new text in chunks for realism.
+      slatePaste(el, ''); // clears selection
+      await sleep(50);
+
+      // Paste in chunks of 15-25 chars with realistic delays
+      const CHUNK_MIN = 15;
+      const CHUNK_MAX = 25;
+      let offset = 0;
+      while (offset < text.length) {
+        const chunkSize = text.length <= 100
+          ? 1  // char-by-char for short prompts
+          : CHUNK_MIN + Math.floor(Math.random() * (CHUNK_MAX - CHUNK_MIN + 1));
+        const chunk = text.slice(offset, offset + chunkSize);
+        offset += chunk.length;
+
+        slatePaste(el, chunk);
+
+        // Delay proportional to chunk length
+        let delay = baseDelayMs * chunk.length;
+        if (variableDelay) {
+          const jitter = 1 + (Math.random() * 0.4 - 0.2); // ±20%
+          delay *= jitter;
+        }
+        await sleep(delay);
       }
-      await sleep(delay);
+    } else {
+      // Non-Slate contenteditable: execCommand is safe
+      document.execCommand('delete', false);
+      for (let i = 0; i < text.length; i++) {
+        document.execCommand('insertText', false, text[i]);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+
+        let delay = baseDelayMs;
+        if (variableDelay) {
+          const jitter = 1 + (Math.random() * 0.6 - 0.3);
+          delay = baseDelayMs * jitter;
+        }
+        await sleep(delay);
+      }
     }
   }
 }
@@ -1263,10 +1394,10 @@ export function findAllFailedTiles(): FailedTileInfo[] {
     for (const div of allDivs) {
       const text = div.textContent?.trim() || '';
       if (text.length > 20 && (text.toLowerCase().includes('failed') ||
-          text.toLowerCase().includes('try again') ||
-          text.toLowerCase().includes('violate') ||
-          text.toLowerCase().includes('unable') ||
-          text.toLowerCase().includes('not been charged'))) {
+        text.toLowerCase().includes('try again') ||
+        text.toLowerCase().includes('violate') ||
+        text.toLowerCase().includes('unable') ||
+        text.toLowerCase().includes('not been charged'))) {
         errorText = text;
         break;
       }
@@ -1317,6 +1448,73 @@ export function findReusePromptButtonOnTile(tile: Element): Element | null {
     }
   }
   return null;
+}
+
+/**
+ * Find the middle toolbar button that appears on hover over a completed tile.
+ * Flow renders the toolbar as an overlay ABOVE the tile content, not inside
+ * the data-tile-id element. DOM structure:
+ *   card-wrapper (sc-312888f-0)
+ *     ├── overlay (sc-312888f-2)   ← toolbar lives here
+ *     │    └── div[role="toolbar"]
+ *     │         ├── button ♡ (heart)
+ *     │         ├── button ↻ (reuse prompt) ← THE ONE WE WANT
+ *     │         └── button ⋮ (more menu, aria-haspopup="menu")
+ *     └── tile content (may contain data-tile-id deeper inside)
+ *
+ * The middle button loads the full prompt + image references into the editor.
+ * We must search from the card wrapper, not the inner tile.
+ *
+ * @param searchRoot  The element to start searching from. Should be the
+ *                    card wrapper, NOT the inner data-tile-id element.
+ */
+export function findToolbarReuseButton(searchRoot: Element): Element | null {
+  return _pickMiddleToolbarBtn(searchRoot);
+}
+
+/**
+ * Given a starting element, walk UP (up to 8 levels) to find a role="toolbar"
+ * in any ancestor or its children, then return the middle radix button.
+ */
+export function findToolbarReuseButtonFromTile(tile: Element): Element | null {
+  // Strategy 1: Search inside the tile itself (unlikely but cheap)
+  const direct = _pickMiddleToolbarBtn(tile);
+  if (direct) return direct;
+
+  // Strategy 2: Walk up from tile to card wrapper, search each level
+  let ancestor: Element | null = tile.parentElement;
+  for (let i = 0; i < 8 && ancestor; i++) {
+    const found = _pickMiddleToolbarBtn(ancestor);
+    if (found) return found;
+    ancestor = ancestor.parentElement;
+  }
+
+  return null;
+}
+
+/** Internal: find role="toolbar" inside root and pick the Reuse Prompt button */
+function _pickMiddleToolbarBtn(root: Element): Element | null {
+  const toolbar = root.querySelector('[role="toolbar"]');
+  if (!toolbar) return null;
+
+  // Get all radix collection buttons inside the toolbar
+  let btns = Array.from(toolbar.querySelectorAll('button[data-radix-collection-item]'));
+  if (btns.length === 0) {
+    // Fallback: any direct button children
+    btns = Array.from(toolbar.querySelectorAll('button'));
+  }
+  if (btns.length < 2) return null;
+
+  // The middle button is: NOT the first (heart), NOT aria-haspopup (more menu)
+  // It often has aria-describedby (tooltip) or data-state="delayed-open"
+  for (let i = 1; i < btns.length; i++) {
+    const b = btns[i];
+    if (b.getAttribute('aria-haspopup')) continue; // skip 3-dot menu
+    return b; // first non-heart, non-menu button = reuse prompt
+  }
+
+  // Last resort: second button regardless
+  return btns[1];
 }
 
 /**

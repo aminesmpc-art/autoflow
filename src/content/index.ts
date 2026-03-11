@@ -6,12 +6,34 @@
 
 import { Message, QueueObject } from '../types';
 import { AutomationEngine, isRunLocked } from './automation';
-import { scanProjectForVideos, previewAsset } from './scanner';
+import { scanProjectForVideos, previewAsset, retrySingleTile, downloadAssetByMenu, waitForUpscalingDone } from './scanner';
 import { sleep, findModelSelectorTrigger, findMenuItem, simulateClick } from './selectors';
 import { DOM_SETTLE_MS } from '../shared/constants';
 
 // ── Singleton engine ──
 let engine: AutomationEngine | null = null;
+
+// ── Anti-throttle: periodic self-ping via service worker roundtrip ──
+// When Chrome throttles background tabs, setTimeout delays balloon.
+// A message roundtrip to the service worker wakes up the main thread.
+let antiThrottleInterval: ReturnType<typeof setInterval> | null = null;
+
+function startAntiThrottle() {
+  if (antiThrottleInterval) return;
+  antiThrottleInterval = setInterval(() => {
+    // Round-trip to SW — the act of receiving the response wakes the thread
+    chrome.runtime.sendMessage({ type: 'PING' }).catch(() => {});
+  }, 15_000); // every 15 seconds
+  console.log('[AutoFlow] Anti-throttle started');
+}
+
+function stopAntiThrottle() {
+  if (antiThrottleInterval) {
+    clearInterval(antiThrottleInterval);
+    antiThrottleInterval = null;
+    console.log('[AutoFlow] Anti-throttle stopped');
+  }
+}
 
 // ── Handle (re-)injection: always register a fresh listener ──
 // When the extension context is invalidated (e.g. extension closed & reopened,
@@ -60,6 +82,7 @@ async function handleMessage(msg: Message): Promise<any> {
 
     case 'STOP_QUEUE':
       engine?.stop();
+      stopAntiThrottle();
       return { success: true };
 
     case 'SKIP_CURRENT':
@@ -86,6 +109,9 @@ async function handleMessage(msg: Message): Promise<any> {
 
     case 'SCAN_LIBRARY':
       return scanLibrary();
+
+    case 'RETRY_SINGLE_TILE':
+      return retrySingleTileHandler(msg.payload);
 
     case 'PREVIEW_ASSET':
       return previewAssetHandler(msg.payload);
@@ -116,9 +142,13 @@ async function handleMessage(msg: Message): Promise<any> {
 
 async function startQueue(queue: QueueObject): Promise<any> {
   engine = new AutomationEngine();
+  startAntiThrottle();  // Fight tab throttling during automation
   // Don't await — run in background so the message can respond
-  engine.start(queue).catch(err => {
+  engine.start(queue).then(() => {
+    stopAntiThrottle();  // Queue finished — stop self-ping
+  }).catch(err => {
     console.error('[AutoFlow] Queue error:', err);
+    stopAntiThrottle();
   });
   return { success: true };
 }
@@ -135,6 +165,15 @@ async function scanLibrary(): Promise<any> {
 async function previewAssetHandler(payload: { locator: string }): Promise<any> {
   const success = await previewAsset(payload.locator);
   return { success };
+}
+
+async function retrySingleTileHandler(payload: { locator: string; promptLabel: string }): Promise<any> {
+  try {
+    const result = await retrySingleTile(payload.locator, payload.promptLabel);
+    return result;
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
 }
 
 /**
@@ -173,6 +212,7 @@ async function downloadSelected(payload: {
     groupIndex?: number;
   }>;
   queueName: string;
+  resolution?: string;
 }): Promise<any> {
   const results: string[] = [];
 
@@ -194,51 +234,123 @@ async function downloadSelected(payload: {
   // ── Count generations per prompt for sequential naming ──
   const genCounter = new Map<number, number>();
 
-  for (const asset of payload.assets) {
-    try {
-      // ── Resolve the media URL ──
-      let rawUrl: string | null = null;
-      if (asset.mediaType === 'video' && asset.videoSrc) {
-        rawUrl = asset.videoSrc;
-      } else if (asset.thumbnailUrl) {
-        rawUrl = asset.thumbnailUrl;
+  // Determine if we need menu-based download (for upscaled resolutions)
+  const resolutionLabel = payload.resolution || 'Original (720p)';
+  const needsMenuDownload = !resolutionLabel.toLowerCase().includes('720p');
+
+  if (needsMenuDownload) {
+    // ══════════════════════════════════════════════════════════
+    // 3-PHASE BATCH DOWNLOAD for 1080p / 4K
+    // Phase 1: Trigger upscaling for ALL videos
+    // Phase 2: Wait for ALL upscaling to complete
+    // Phase 3: Download upscaled videos one by one
+    // ══════════════════════════════════════════════════════════
+
+    // ── Phase 1: Trigger upscaling for all selected assets ──
+    console.log(`[AutoFlow] Phase 1: Triggering ${resolutionLabel} upscaling for ${payload.assets.length} asset(s)...`);
+    for (const asset of payload.assets) {
+      try {
+        const ok = await downloadAssetByMenu(asset.locator, resolutionLabel);
+        if (ok) {
+          console.log(`[AutoFlow] Upscaling triggered for: ${asset.promptLabel || 'asset'}`);
+        } else {
+          console.warn(`[AutoFlow] Could not trigger upscaling for: ${asset.promptLabel || 'asset'}`);
+        }
+      } catch (e: any) {
+        console.error(`[AutoFlow] Upscaling trigger error:`, e);
       }
-      if (!rawUrl) continue;
-
-      const absoluteUrl = toAbsoluteUrl(rawUrl);
-
-      // ── Build prompt-based filename ──
-      const ext = asset.mediaType === 'image' ? 'png' : 'mp4';
-      const promptNum = labelToPromptNum.get(asset.promptLabel || '') ?? (asset.index + 1);
-      const genNum = (genCounter.get(promptNum) ?? 0) + 1;
-      genCounter.set(promptNum, genNum);
-
-      const promptSlug = slugify(asset.promptLabel || '');
-      const numTag = String(promptNum).padStart(3, '0');
-      // First asset gets no suffix; subsequent ones get " (1)", " (2)", etc.
-      const genSuffix = genNum > 1 ? ` (${genNum - 1})` : '';
-      const baseName = promptSlug
-        ? `${numTag}_${promptSlug}${genSuffix}`
-        : `prompt_${numTag}${genSuffix}`;
-      const filename = `LIBRARY/${payload.queueName || 'project'}/${baseName}.${ext}`;
-
-      // ── Send to background for download via chrome.downloads API ──
-      // chrome.downloads.download natively sends cookies for host_permissions
-      // domains, follows redirects, and the filename parameter forces the path.
-      const response = await chrome.runtime.sendMessage({
-        type: 'DOWNLOAD_FILE',
-        payload: { url: absoluteUrl, filename },
-      });
-
-      if (response?.downloadId) {
-        results.push(filename);
-      } else {
-        console.warn('[AutoFlow] Download failed:', response?.error || 'unknown');
-      }
-    } catch (e: any) {
-      console.error('[AutoFlow] Download error:', e);
+      await sleep(2000); // 2s between each to avoid overloading Flow
     }
-    await sleep(800);
+
+    // ── Phase 2: Wait for all upscaling to complete ──
+    console.log('[AutoFlow] Phase 2: Waiting for all upscaling to finish...');
+    await sleep(3000); // give toasts time to appear
+    const upscaleDone = await waitForUpscalingDone(15 * 60 * 1000); // 15 min max
+    if (!upscaleDone) {
+      console.warn('[AutoFlow] Some upscaling may not have completed (timed out)');
+    }
+    await sleep(2000); // UI settle time
+
+    // ── Phase 3: Download upscaled videos one by one ──
+    console.log(`[AutoFlow] Phase 3: Downloading ${payload.assets.length} upscaled asset(s)...`);
+    for (const asset of payload.assets) {
+      try {
+        // Build prompt-based filename
+        const ext = asset.mediaType === 'image' ? 'png' : 'mp4';
+        const promptNum = labelToPromptNum.get(asset.promptLabel || '') ?? (asset.index + 1);
+        const genNum = (genCounter.get(promptNum) ?? 0) + 1;
+        genCounter.set(promptNum, genNum);
+
+        const promptSlug = slugify(asset.promptLabel || '');
+        const numTag = String(promptNum).padStart(3, '0');
+        const genSuffix = genNum > 1 ? ` (${genNum - 1})` : '';
+        const baseName = promptSlug
+          ? `${numTag}_${promptSlug}${genSuffix}`
+          : `prompt_${numTag}${genSuffix}`;
+        const filename = `LIBRARY/${payload.queueName || 'project'}/${baseName}.${ext}`;
+
+        // Queue the rename
+        await chrome.runtime.sendMessage({
+          type: 'SET_DOWNLOAD_RENAME',
+          payload: { filename },
+        });
+
+        // Download (now the upscaled version should download directly)
+        const ok = await downloadAssetByMenu(asset.locator, resolutionLabel);
+        if (ok) {
+          results.push(filename);
+        } else {
+          console.warn(`[AutoFlow] Re-download failed for: ${asset.promptLabel || 'asset'}`);
+        }
+      } catch (e: any) {
+        console.error('[AutoFlow] Download error:', e);
+      }
+      await sleep(1500);
+    }
+  } else {
+    // ══════════════════════════════════════════════════════════
+    // DIRECT URL DOWNLOAD for 720p (Original)
+    // ══════════════════════════════════════════════════════════
+    for (const asset of payload.assets) {
+      try {
+        let rawUrl: string | null = null;
+        if (asset.mediaType === 'video' && asset.videoSrc) {
+          rawUrl = asset.videoSrc;
+        } else if (asset.thumbnailUrl) {
+          rawUrl = asset.thumbnailUrl;
+        }
+        if (!rawUrl) continue;
+
+        const absoluteUrl = toAbsoluteUrl(rawUrl);
+
+        const ext = asset.mediaType === 'image' ? 'png' : 'mp4';
+        const promptNum = labelToPromptNum.get(asset.promptLabel || '') ?? (asset.index + 1);
+        const genNum = (genCounter.get(promptNum) ?? 0) + 1;
+        genCounter.set(promptNum, genNum);
+
+        const promptSlug = slugify(asset.promptLabel || '');
+        const numTag = String(promptNum).padStart(3, '0');
+        const genSuffix = genNum > 1 ? ` (${genNum - 1})` : '';
+        const baseName = promptSlug
+          ? `${numTag}_${promptSlug}${genSuffix}`
+          : `prompt_${numTag}${genSuffix}`;
+        const filename = `LIBRARY/${payload.queueName || 'project'}/${baseName}.${ext}`;
+
+        const response = await chrome.runtime.sendMessage({
+          type: 'DOWNLOAD_FILE',
+          payload: { url: absoluteUrl, filename },
+        });
+
+        if (response?.downloadId) {
+          results.push(filename);
+        } else {
+          console.warn('[AutoFlow] Download failed:', response?.error || 'unknown');
+        }
+      } catch (e: any) {
+        console.error('[AutoFlow] Download error:', e);
+      }
+      await sleep(800);
+    }
   }
   return { downloaded: results };
 }

@@ -23,7 +23,7 @@ import {
   ImageModel,
   ImageRatio,
 } from '../types';
-import { MAX_IMAGES_PER_PROMPT } from '../shared/constants';
+import { MAX_IMAGES_PER_PROMPT, MAX_SHARED_IMAGES, MAX_FRAMES_PER_PROMPT } from '../shared/constants';
 import { parsePrompts, validatePrompts } from '../shared/parser';
 import { sha256 } from '../shared/crypto';
 import {
@@ -49,7 +49,7 @@ import {
 
 interface AppState {
   parsedPrompts: string[];
-  promptImages: Map<number, { meta: ImageMeta; objectUrl: string }[]>; // promptIndex → images
+  promptImages: Map<number, ({ meta: ImageMeta; objectUrl: string } | null)[]>; // promptIndex → images (null = empty slot)
   sharedImages: { meta: ImageMeta; objectUrl: string }[];               // shared across ALL prompts
   characterImages: { meta: ImageMeta; objectUrl: string }[];            // character library for auto-matching
   autoAddCharacters: boolean;                                            // toggle for auto-add
@@ -79,6 +79,78 @@ const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 const $$ = (sel: string) => document.querySelectorAll(sel);
 
 // ================================================================
+// KEEPALIVE PORT — Prevents service worker from dying
+// ================================================================
+// A connected port keeps the MV3 service worker alive.
+// We maintain this while a queue is running.
+
+let keepalivePort: chrome.runtime.Port | null = null;
+let keepaliveInterval: ReturnType<typeof setInterval> | null = null;
+
+function updateStatusDot(status: 'disconnected' | 'connected' | 'running') {
+  const dot = document.getElementById('af-status-dot');
+  if (!dot) return;
+  dot.classList.remove('connected', 'running');
+  if (status === 'connected') {
+    dot.classList.add('connected');
+    dot.title = 'Connected';
+  } else if (status === 'running') {
+    dot.classList.add('running');
+    dot.title = 'Queue Running';
+  } else {
+    dot.title = 'Disconnected';
+  }
+}
+
+function startKeepalivePort() {
+  if (keepalivePort) return; // already connected
+
+  try {
+    keepalivePort = chrome.runtime.connect({ name: 'af-keepalive' });
+
+    // Ping every 20s to keep the port active (Chrome closes idle ports after ~5min)
+    keepaliveInterval = setInterval(() => {
+      try {
+        keepalivePort?.postMessage({ type: 'keepalive' });
+      } catch {
+        // Port died — will reconnect via onDisconnect
+        if (keepaliveInterval) clearInterval(keepaliveInterval);
+      }
+    }, 20_000);
+
+    keepalivePort.onDisconnect.addListener(() => {
+      if (keepaliveInterval) clearInterval(keepaliveInterval);
+      keepaliveInterval = null;
+      keepalivePort = null;
+
+      // Reconnect if queue is still running
+      if (state.isRunning) {
+        setTimeout(startKeepalivePort, 1000);
+      }
+    });
+
+    console.log('[AutoFlow] Keepalive port connected');
+    updateStatusDot(state.isRunning ? 'running' : 'connected');
+  } catch (err) {
+    console.warn('[AutoFlow] Could not open keepalive port:', err);
+    updateStatusDot('disconnected');
+  }
+}
+
+function stopKeepalivePort() {
+  if (keepaliveInterval) {
+    clearInterval(keepaliveInterval);
+    keepaliveInterval = null;
+  }
+  if (keepalivePort) {
+    try { keepalivePort.disconnect(); } catch { /* already dead */ }
+    keepalivePort = null;
+  }
+  console.log('[AutoFlow] Keepalive port disconnected');
+  updateStatusDot('disconnected');
+}
+
+// ================================================================
 // INIT
 // ================================================================
 
@@ -92,6 +164,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
   await refreshQueuesList();
   await loadActiveQueueState();
+
+  // Set initial status dot — ping background to verify connection
+  const ping = await sendToBackground({ type: 'PING' });
+  if (!ping?.error) {
+    updateStatusDot(state.isRunning ? 'running' : 'connected');
+  }
 });
 
 // ================================================================
@@ -203,8 +281,8 @@ function initVideoTab() {
   const sharedFileInput = $('#shared-file-input') as HTMLInputElement;
 
   sharedAddBtn.addEventListener('click', () => {
-    if (state.sharedImages.length >= MAX_IMAGES_PER_PROMPT) {
-      showToast(`Maximum ${MAX_IMAGES_PER_PROMPT} shared reference images.`);
+    if (state.sharedImages.length >= MAX_SHARED_IMAGES) {
+      showToast(`Maximum ${MAX_SHARED_IMAGES} shared reference images.`);
       return;
     }
     sharedFileInput.click();
@@ -262,27 +340,39 @@ function initVideoTab() {
     automapFileInput.value = '';
     renderPromptList();
   });
+
+  // Frame Chain: overlapping Start/End frames
+  const framechainBtn = $('#btn-framechain') as HTMLButtonElement;
+  const framechainFileInput = $('#framechain-file-input') as HTMLInputElement;
+
+  framechainBtn.addEventListener('click', () => {
+    if (state.parsedPrompts.length === 0) {
+      showToast('Parse prompts first before chaining frames.');
+      return;
+    }
+    framechainFileInput.click();
+  });
+
+  framechainFileInput.addEventListener('change', async () => {
+    const files = framechainFileInput.files;
+    if (!files || files.length === 0) return;
+    await frameChainImagesToPrompts(Array.from(files));
+    framechainFileInput.value = '';
+    renderPromptList();
+  });
 }
 
 function renderPromptList() {
   const container = $('#prompt-list');
   container.innerHTML = '';
 
-  // Show shared images section once prompts are parsed
-  const sharedSection = $('#shared-images-section');
-  const charSection = $('#character-images-section');
-  const automapSection = $('#automap-section');
-  if (state.parsedPrompts.length > 0) {
-    sharedSection.style.display = 'block';
-    charSection.style.display = 'block';
-    automapSection.style.display = 'block';
-    renderSharedImages();
-    renderCharacterImages();
-  } else {
-    sharedSection.style.display = 'none';
-    charSection.style.display = 'none';
-    automapSection.style.display = 'none';
-  }
+  // Show/hide image sections based on prompts & creation type
+  const creationTypeRadio = document.querySelector('input[name="creationType"]:checked') as HTMLInputElement;
+  const creationType = (creationTypeRadio?.value || 'ingredients') as CreationType;
+  updateCreationTypeVisibility(creationType);
+
+  const isFrames = creationType === 'frames';
+  const maxImg = isFrames ? MAX_FRAMES_PER_PROMPT : MAX_IMAGES_PER_PROMPT;
 
   state.parsedPrompts.forEach((text, idx) => {
     const row = document.createElement('div');
@@ -291,11 +381,12 @@ function renderPromptList() {
 
     const preview = text.length > 80 ? text.substring(0, 80) + '…' : text;
     const images = state.promptImages.get(idx) || [];
-    const imgCount = images.length;
-    // Effective images: per-prompt + auto-matched characters + shared (up to max)
-    const sharedCount = state.sharedImages.length;
-    const autoMatchedCount = state.autoAddCharacters ? getAutoMatchedImages(text).length : 0;
-    const effectiveCount = Math.min(imgCount + autoMatchedCount + sharedCount, MAX_IMAGES_PER_PROMPT);
+    const imgCount = images.filter(Boolean).length; // count only non-null entries
+
+    // In frames mode: no shared/character images — only Start + End frames
+    const sharedCount = isFrames ? 0 : state.sharedImages.length;
+    const autoMatchedCount = isFrames ? 0 : (state.autoAddCharacters ? getAutoMatchedImages(text).length : 0);
+    const effectiveCount = Math.min(imgCount + autoMatchedCount + sharedCount, maxImg);
 
     // Build extra info tags
     const extras: string[] = [];
@@ -312,10 +403,10 @@ function renderPromptList() {
       <div class="af-prompt-full">${escapeHtml(text)}</div>
       <div class="af-images-section">
         <div class="af-img-thumbnails" data-prompt-idx="${idx}"></div>
-        <span class="af-img-counter">${effectiveCount}/${MAX_IMAGES_PER_PROMPT}${extrasStr}</span>
-        <button class="af-btn af-btn-add-img af-btn-sm" data-prompt-idx="${idx}">+ Add images</button>
-        ${imgCount > 0 ? `<button class="af-btn-copy-all" data-copy-from="${idx}" title="Copy these images to all other prompts">Copy to all</button>` : ''}
-        <input type="file" class="af-file-input" data-prompt-idx="${idx}" accept="image/*" multiple />
+        ${isFrames ? '' : `<span class="af-img-counter">${effectiveCount}/${maxImg}${extrasStr}</span>`}
+        ${isFrames ? '' : `<button class="af-btn af-btn-add-img af-btn-sm" data-prompt-idx="${idx}">+ Add images</button>`}
+        ${!isFrames && imgCount > 0 ? `<button class="af-btn-copy-all" data-copy-from="${idx}" title="Copy these images to all other prompts">Copy to all</button>` : ''}
+        ${isFrames ? '' : `<input type="file" class="af-file-input" data-prompt-idx="${idx}" accept="image/*" multiple />`}
       </div>
     `;
 
@@ -324,26 +415,28 @@ function renderPromptList() {
       row.classList.toggle('expanded');
     });
 
-    // Add images button
-    const addBtn = row.querySelector('.af-btn-add-img') as HTMLButtonElement;
-    const fileInput = row.querySelector('.af-file-input') as HTMLInputElement;
+    // Add images button (ingredients mode only — frames mode uses slot placeholders)
+    const addBtn = row.querySelector('.af-btn-add-img') as HTMLButtonElement | null;
+    const fileInput = row.querySelector('.af-file-input') as HTMLInputElement | null;
 
-    addBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (imgCount >= MAX_IMAGES_PER_PROMPT) {
-        showToast(`Maximum ${MAX_IMAGES_PER_PROMPT} reference images per prompt.`);
-        return;
-      }
-      fileInput.click();
-    });
+    if (addBtn && fileInput) {
+      addBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (imgCount >= maxImg) {
+          showToast(`Maximum ${MAX_IMAGES_PER_PROMPT} reference images per prompt.`);
+          return;
+        }
+        fileInput.click();
+      });
 
-    fileInput.addEventListener('change', async () => {
-      const files = fileInput.files;
-      if (!files) return;
-      await addImagesToPrompt(idx, Array.from(files));
-      fileInput.value = '';
-      renderPromptList(); // re-render
-    });
+      fileInput.addEventListener('change', async () => {
+        const files = fileInput.files;
+        if (!files) return;
+        await addImagesToPrompt(idx, Array.from(files));
+        fileInput.value = '';
+        renderPromptList(); // re-render
+      });
+    }
 
     // Copy to all prompts button
     const copyAllBtn = row.querySelector('.af-btn-copy-all') as HTMLButtonElement | null;
@@ -355,18 +448,25 @@ function renderPromptList() {
       });
     }
 
-    // Render existing thumbnails (manual per-prompt)
-    renderImageThumbnails(row, idx, images);
-
-    // Render auto-matched character images (read-only, with badge)
-    if (state.autoAddCharacters) {
-      const autoMatched = getAutoMatchedImages(text);
-      renderAutoMatchedThumbnails(row, autoMatched);
+    // Render existing thumbnails — frames mode uses fixed Start/End slots
+    if (isFrames) {
+      renderFrameSlots(row, idx);
+    } else {
+      renderImageThumbnails(row, idx, images.filter(Boolean) as { meta: ImageMeta; objectUrl: string }[]);
     }
 
-    // Render shared image indicators (read-only, with badge)
-    if (state.sharedImages.length > 0) {
-      renderSharedThumbnailsInRow(row);
+    // In frames mode, skip auto-matched & shared image indicators
+    if (!isFrames) {
+      // Render auto-matched character images (read-only, with badge)
+      if (state.autoAddCharacters) {
+        const autoMatched = getAutoMatchedImages(text);
+        renderAutoMatchedThumbnails(row, autoMatched);
+      }
+
+      // Render shared image indicators (read-only, with badge)
+      if (state.sharedImages.length > 0) {
+        renderSharedThumbnailsInRow(row);
+      }
     }
 
     container.appendChild(row);
@@ -393,9 +493,175 @@ function renderImageThumbnails(row: HTMLElement, promptIdx: number, images: { me
   });
 }
 
+/**
+ * Render fixed Start/End frame slots for frames mode.
+ * Always shows exactly 2 slots. Filled slots show the image + delete button.
+ * Empty slots show a clickable placeholder to upload a replacement.
+ */
+function renderFrameSlots(row: HTMLElement, promptIdx: number) {
+  const container = row.querySelector('.af-img-thumbnails') as HTMLElement;
+  container.innerHTML = '';
+
+  const images = state.promptImages.get(promptIdx) || [];
+  // Ensure we always have 2 slots
+  const slots: ({ meta: ImageMeta; objectUrl: string } | null)[] = [
+    images[0] || null,
+    images[1] || null,
+  ];
+
+  const labels = ['Start', 'End'];
+
+  slots.forEach((slot, slotIdx) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'af-frame-slot';
+
+    if (slot) {
+      // Filled slot: show image + label + delete button
+      wrap.classList.add('af-frame-slot-filled');
+      wrap.innerHTML = `
+        <span class="af-frame-slot-label">${labels[slotIdx]}</span>
+        <img class="af-img-thumb" src="${slot.objectUrl}" alt="${escapeHtml(slot.meta.filename)}" />
+        <button class="af-img-remove" data-prompt-idx="${promptIdx}" data-slot-idx="${slotIdx}" title="Remove ${labels[slotIdx]} frame">×</button>
+      `;
+      wrap.querySelector('.af-img-remove')!.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearFrameSlot(promptIdx, slotIdx);
+        renderPromptList();
+      });
+    } else {
+      // Empty slot: clickable placeholder
+      wrap.classList.add('af-frame-slot-empty');
+      wrap.innerHTML = `
+        <span class="af-frame-slot-label">${labels[slotIdx]}</span>
+        <div class="af-frame-slot-placeholder" title="Click to add ${labels[slotIdx]} frame">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </div>
+        <input type="file" class="af-frame-slot-input" accept="image/*" style="display:none" />
+      `;
+      const placeholder = wrap.querySelector('.af-frame-slot-placeholder') as HTMLElement;
+      const fileInput = wrap.querySelector('.af-frame-slot-input') as HTMLInputElement;
+      placeholder.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fileInput.click();
+      });
+      fileInput.addEventListener('change', async () => {
+        const files = fileInput.files;
+        if (!files || files.length === 0) return;
+        await replaceFrameSlot(promptIdx, slotIdx, files[0]);
+        fileInput.value = '';
+        renderPromptList();
+      });
+    }
+
+    container.appendChild(wrap);
+
+    // Add arrow between Start and End
+    if (slotIdx === 0) {
+      const arrow = document.createElement('span');
+      arrow.className = 'af-frame-slot-arrow';
+      arrow.textContent = '→';
+      container.appendChild(arrow);
+    }
+  });
+}
+
+/**
+ * Clear a specific frame slot (set to null) without removing the other slot.
+ */
+function clearFrameSlot(promptIdx: number, slotIdx: number) {
+  const images = state.promptImages.get(promptIdx) || [];
+  // Ensure array has 2 entries
+  while (images.length < 2) images.push(null);
+
+  const old = images[slotIdx];
+  if (old) {
+    URL.revokeObjectURL(old.objectUrl);
+    deleteImageBlob(old.meta.id).catch(() => { });
+  }
+  images[slotIdx] = null;
+  state.promptImages.set(promptIdx, images);
+}
+
+/**
+ * Replace a specific frame slot with a new image file.
+ */
+async function replaceFrameSlot(promptIdx: number, slotIdx: number, file: File) {
+  const images = state.promptImages.get(promptIdx) || [];
+  // Ensure array has 2 entries
+  while (images.length < 2) images.push(null);
+
+  // Clean up old image in this slot
+  const old = images[slotIdx];
+  if (old) {
+    URL.revokeObjectURL(old.objectUrl);
+    deleteImageBlob(old.meta.id).catch(() => { });
+  }
+
+  const id = crypto.randomUUID();
+  const buffer = await file.arrayBuffer();
+  const hash = await sha256(buffer);
+  const blob = new Blob([buffer], { type: file.type });
+
+  const meta: ImageMeta = {
+    id,
+    filename: file.name,
+    mime: file.type,
+    size: file.size,
+    sha256: hash,
+    lastModified: file.lastModified,
+  };
+
+  await saveImageBlob(id, blob);
+  const objectUrl = URL.createObjectURL(blob);
+  images[slotIdx] = { meta, objectUrl };
+  state.promptImages.set(promptIdx, images);
+}
+
 async function addImagesToPrompt(promptIdx: number, files: File[]) {
   const current = state.promptImages.get(promptIdx) || [];
-  const remaining = MAX_IMAGES_PER_PROMPT - current.length;
+
+  // Determine limit based on creation type
+  const creationTypeRadio = document.querySelector('input[name="creationType"]:checked') as HTMLInputElement;
+  const isFrames = creationTypeRadio?.value === 'frames';
+  const maxImg = isFrames ? MAX_FRAMES_PER_PROMPT : MAX_IMAGES_PER_PROMPT;
+
+  if (isFrames) {
+    // In frames mode, fill empty slots (null entries) first
+    while (current.length < 2) current.push(null);
+
+    let fileIdx = 0;
+    for (let slotIdx = 0; slotIdx < 2 && fileIdx < files.length; slotIdx++) {
+      if (current[slotIdx] === null) {
+        const file = files[fileIdx++];
+        const id = crypto.randomUUID();
+        const buffer = await file.arrayBuffer();
+        const hash = await sha256(buffer);
+        const blob = new Blob([buffer], { type: file.type });
+        const meta: ImageMeta = {
+          id, filename: file.name, mime: file.type,
+          size: file.size, sha256: hash, lastModified: file.lastModified,
+        };
+        await saveImageBlob(id, blob);
+        current[slotIdx] = { meta, objectUrl: URL.createObjectURL(blob) };
+      }
+    }
+
+    const filledCount = current.filter(Boolean).length;
+    if (fileIdx === 0) {
+      showToast('Both frame slots are already filled. Remove one first.');
+    } else if (fileIdx < files.length) {
+      showToast(`Only ${fileIdx} empty slot(s) available. ${files.length - fileIdx} image(s) skipped.`);
+    }
+
+    state.promptImages.set(promptIdx, current);
+    return;
+  }
+
+  // Ingredients mode: append up to max
+  const filled = current.filter(Boolean) as { meta: ImageMeta; objectUrl: string }[];
+  const remaining = maxImg - filled.length;
 
   if (remaining <= 0) {
     showToast(`Maximum ${MAX_IMAGES_PER_PROMPT} reference images per prompt.`);
@@ -436,8 +702,10 @@ function removeImageFromPrompt(promptIdx: number, imgIdx: number) {
   const images = state.promptImages.get(promptIdx) || [];
   if (imgIdx >= 0 && imgIdx < images.length) {
     const removed = images.splice(imgIdx, 1)[0];
-    URL.revokeObjectURL(removed.objectUrl);
-    deleteImageBlob(removed.meta.id).catch(() => {});
+    if (removed) {
+      URL.revokeObjectURL(removed.objectUrl);
+      deleteImageBlob(removed.meta.id).catch(() => { });
+    }
     state.promptImages.set(promptIdx, images);
   }
 }
@@ -446,9 +714,9 @@ function removeImageFromPrompt(promptIdx: number, imgIdx: number) {
  * Add shared images that apply to ALL prompts.
  */
 async function addSharedImages(files: File[]) {
-  const remaining = MAX_IMAGES_PER_PROMPT - state.sharedImages.length;
+  const remaining = MAX_SHARED_IMAGES - state.sharedImages.length;
   if (remaining <= 0) {
-    showToast(`Maximum ${MAX_IMAGES_PER_PROMPT} shared reference images.`);
+    showToast(`Maximum ${MAX_SHARED_IMAGES} shared reference images.`);
     return;
   }
 
@@ -501,14 +769,14 @@ function renderSharedImages() {
     container.appendChild(wrap);
   });
 
-  $('#shared-img-counter').textContent = `${state.sharedImages.length}/${MAX_IMAGES_PER_PROMPT}`;
+  $('#shared-img-counter').textContent = `${state.sharedImages.length}/${MAX_SHARED_IMAGES}`;
 }
 
 function removeSharedImage(imgIdx: number) {
   if (imgIdx >= 0 && imgIdx < state.sharedImages.length) {
     const removed = state.sharedImages.splice(imgIdx, 1)[0];
     URL.revokeObjectURL(removed.objectUrl);
-    deleteImageBlob(removed.meta.id).catch(() => {});
+    deleteImageBlob(removed.meta.id).catch(() => { });
   }
 }
 
@@ -527,7 +795,8 @@ function copyImagesToAllPrompts(fromIdx: number) {
   const existingHashes = new Set(state.sharedImages.map(i => i.meta.sha256));
   let added = 0;
   for (const img of source) {
-    if (state.sharedImages.length >= MAX_IMAGES_PER_PROMPT) break;
+    if (state.sharedImages.length >= MAX_SHARED_IMAGES) break;
+    if (!img) continue;
     if (existingHashes.has(img.meta.sha256)) continue;
     state.sharedImages.push(img);
     existingHashes.add(img.meta.sha256);
@@ -571,7 +840,7 @@ async function autoMapImagesToPrompts(files: File[]) {
     const hash = await sha256(buffer);
 
     // Check for duplicate in this prompt's existing images
-    if (current.some(img => img.meta.sha256 === hash)) continue;
+    if (current.some(img => img && img.meta.sha256 === hash)) continue;
 
     const blob = new Blob([buffer], { type: file.type });
     const meta: ImageMeta = {
@@ -594,6 +863,133 @@ async function autoMapImagesToPrompts(files: File[]) {
   let msg = `Mapped ${mapped} image(s) to ${mapped} prompt(s).`;
   if (skipped > 0) msg += ` ${skipped} extra image(s) ignored (only ${promptCount} prompts).`;
   showToast(msg);
+}
+
+/**
+ * Frame Chain: select N images and create overlapping Start/End frame pairs.
+ * Image 1 → Prompt 1 Start, Image 2 → Prompt 1 End
+ * Image 2 → Prompt 2 Start, Image 3 → Prompt 2 End
+ * Image 3 → Prompt 3 Start, Image 4 → Prompt 3 End
+ * ...and so on. N images → N-1 prompt pairs.
+ *
+ * Each prompt gets exactly 2 images: images[0]=Start frame, images[1]=End frame.
+ * The End frame of prompt i is reused as the Start frame of prompt i+1.
+ */
+async function frameChainImagesToPrompts(files: File[]) {
+  if (files.length < 2) {
+    showToast('Select at least 2 images to create a frame chain.');
+    return;
+  }
+
+  const promptCount = state.parsedPrompts.length;
+  if (promptCount === 0) {
+    showToast('No prompts to map frames to. Parse prompts first.');
+    return;
+  }
+
+  const chainLength = files.length - 1; // N images → N-1 pairs
+  const pairsToMap = Math.min(chainLength, promptCount);
+
+  if (chainLength > promptCount) {
+    showToast(`You have ${files.length} images (${chainLength} pairs) but only ${promptCount} prompt(s). Only the first ${promptCount + 1} images will be used.`);
+  } else if (chainLength < promptCount) {
+    showToast(`You have ${files.length} images (${chainLength} pairs) but ${promptCount} prompt(s). Prompts ${chainLength + 1}–${promptCount} won't get frame images.`);
+  }
+
+  // Pre-process all needed files (up to pairsToMap + 1 images)
+  const neededCount = pairsToMap + 1;
+  interface ProcessedImage {
+    meta: ImageMeta;
+    objectUrl: string;
+    blob: Blob;
+    hash: string;
+  }
+  const processed: ProcessedImage[] = [];
+
+  for (let i = 0; i < neededCount; i++) {
+    const file = files[i];
+    const id = crypto.randomUUID();
+    const buffer = await file.arrayBuffer();
+    const hash = await sha256(buffer);
+    const blob = new Blob([buffer], { type: file.type });
+
+    const meta: ImageMeta = {
+      id,
+      filename: file.name,
+      mime: file.type,
+      size: file.size,
+      sha256: hash,
+      lastModified: file.lastModified,
+    };
+
+    await saveImageBlob(id, blob);
+    const objectUrl = URL.createObjectURL(blob);
+    processed.push({ meta, objectUrl, blob, hash });
+  }
+
+  // Assign overlapping pairs to prompts
+  let mapped = 0;
+  for (let i = 0; i < pairsToMap; i++) {
+    const startImg = processed[i];     // Start frame (first frame)
+    const endImg = processed[i + 1];   // End frame (last frame)
+
+    // Replace any existing images on this prompt with the chain pair
+    const existing = state.promptImages.get(i) || [];
+    // Revoke old object URLs and clean up
+    for (const old of existing) {
+      if (old) {
+        URL.revokeObjectURL(old.objectUrl);
+        deleteImageBlob(old.meta.id).catch(() => { });
+      }
+    }
+
+    // Set exactly 2 images: [Start, End]
+    state.promptImages.set(i, [
+      { meta: startImg.meta, objectUrl: startImg.objectUrl },
+      { meta: endImg.meta, objectUrl: endImg.objectUrl },
+    ]);
+    mapped++;
+  }
+
+  // Render chain preview
+  renderFrameChainPreview(processed, pairsToMap);
+
+  showToast(`Frame chain: ${mapped} prompt(s) mapped with overlapping Start/End frames from ${neededCount} images.`);
+}
+
+/**
+ * Render a visual preview of the frame chain mapping.
+ */
+function renderFrameChainPreview(
+  images: { meta: ImageMeta; objectUrl: string }[],
+  pairCount: number
+) {
+  const container = $('#framechain-preview') as HTMLElement;
+  container.innerHTML = '';
+
+  if (pairCount === 0) {
+    container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = 'flex';
+
+  for (let i = 0; i < pairCount; i++) {
+    const startImg = images[i];
+    const endImg = images[i + 1];
+
+    const pair = document.createElement('div');
+    pair.className = 'af-framechain-pair';
+    pair.innerHTML = `
+      <span class="af-framechain-pair-num">#${i + 1}</span>
+      <span class="af-framechain-label">Start</span>
+      <img class="af-framechain-thumb" src="${startImg.objectUrl}" alt="${escapeHtml(startImg.meta.filename)}" />
+      <span class="af-framechain-arrow">→</span>
+      <span class="af-framechain-label">End</span>
+      <img class="af-framechain-thumb" src="${endImg.objectUrl}" alt="${escapeHtml(endImg.meta.filename)}" />
+    `;
+    container.appendChild(pair);
+  }
 }
 
 // ================================================================
@@ -663,7 +1059,7 @@ function removeCharacterImage(imgIdx: number) {
   if (imgIdx >= 0 && imgIdx < state.characterImages.length) {
     const removed = state.characterImages.splice(imgIdx, 1)[0];
     URL.revokeObjectURL(removed.objectUrl);
-    deleteImageBlob(removed.meta.id).catch(() => {});
+    deleteImageBlob(removed.meta.id).catch(() => { });
   }
 }
 
@@ -760,18 +1156,23 @@ async function addToQueue() {
 
   const prompts: PromptEntry[] = state.parsedPrompts.map((text, idx) => {
     // Merge all image sources: per-prompt (manual) > auto-matched characters > shared
-    const perPrompt = (state.promptImages.get(idx) || []).map(i => i.meta);
-    const autoMatched = state.autoAddCharacters
+    const perPrompt = (state.promptImages.get(idx) || []).filter(Boolean).map(i => i!.meta);
+
+    const isFrames = settings.creationType === 'frames';
+    const maxImg = isFrames ? MAX_FRAMES_PER_PROMPT : MAX_IMAGES_PER_PROMPT;
+
+    // In frames mode, only per-prompt images (Start + End), no shared/character
+    const autoMatched = (!isFrames && state.autoAddCharacters)
       ? getAutoMatchedImages(text).map(i => i.meta)
       : [];
-    const shared = state.sharedImages.map(i => i.meta);
+    const shared = isFrames ? [] : state.sharedImages.map(i => i.meta);
 
     // Deduplicate by sha256, priority order: per-prompt → character → shared
-    // Cap at MAX_IMAGES_PER_PROMPT
+    // Cap at maxImg
     const seen = new Set<string>();
     const merged: ImageMeta[] = [];
     for (const img of [...perPrompt, ...autoMatched, ...shared]) {
-      if (merged.length >= MAX_IMAGES_PER_PROMPT) break;
+      if (merged.length >= maxImg) break;
       if (seen.has(img.sha256)) continue;
       seen.add(img.sha256);
       merged.push(img);
@@ -908,6 +1309,34 @@ function initSettingsTab() {
       updateMediaTypeVisibility(r.value as MediaType);
     });
   });
+
+  // Creation type radio → show/hide frame chain vs ingredient sections
+  const creationRadios = $$('input[name="creationType"]') as NodeListOf<HTMLInputElement>;
+  creationRadios.forEach(r => {
+    r.addEventListener('change', () => {
+      const newType = r.value as CreationType;
+      const oldType = newType === 'frames' ? 'ingredients' : 'frames';
+
+      // Switching away from frames → clear per-prompt frame images
+      if (oldType === 'frames' && state.promptImages.size > 0) {
+        for (const [idx, imgs] of state.promptImages) {
+          for (const img of imgs) {
+            if (img) {
+              URL.revokeObjectURL(img.objectUrl);
+              deleteImageBlob(img.meta.id).catch(() => { });
+            }
+          }
+        }
+        state.promptImages.clear();
+        // Clear frame chain preview
+        const preview = document.getElementById('framechain-preview');
+        if (preview) { preview.innerHTML = ''; preview.style.display = 'none'; }
+      }
+
+      updateCreationTypeVisibility(newType);
+      renderPromptList();
+    });
+  });
 }
 
 async function loadSettings() {
@@ -933,6 +1362,9 @@ async function loadSettings() {
 
   // Show/hide video vs image settings based on media type
   updateMediaTypeVisibility(settings.mediaType ?? 'video');
+
+  // Show/hide frame chain vs ingredient sections based on creation type
+  updateCreationTypeVisibility(settings.creationType ?? 'ingredients');
 
   // Timing
   ($('#setting-wait-min') as HTMLInputElement).value = String(settings.waitMinSec ?? 10);
@@ -1010,12 +1442,53 @@ function initQueuesTab() {
   // Rendered dynamically
 }
 
+function formatTimeAgo(ts: number): string {
+  const diff = Date.now() - ts;
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const d = Math.floor(hr / 24);
+  return `${d}d ago`;
+}
+
+function queueStatusConfig(status: string) {
+  switch (status) {
+    case 'running': return { label: 'Running', cls: 'running', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>` };
+    case 'paused': return { label: 'Paused', cls: 'paused', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>` };
+    case 'completed': return { label: 'Completed', cls: 'completed', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` };
+    case 'stopped': return { label: 'Stopped', cls: 'stopped', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>` };
+    default: return { label: 'Pending', cls: 'pending', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>` };
+  }
+}
+
 async function refreshQueuesList() {
   const queues = await getAllQueues();
   const container = $('#queue-list');
 
+  // Update tab badge
+  const tabBadge = document.getElementById('queue-tab-badge');
+  if (tabBadge) {
+    if (queues.length > 0) {
+      tabBadge.textContent = String(queues.length);
+      tabBadge.style.display = '';
+    } else {
+      tabBadge.style.display = 'none';
+    }
+  }
+
   if (queues.length === 0) {
-    container.innerHTML = '<p class="af-empty">No queues yet. Add prompts in the Video tab.</p>';
+    container.innerHTML = `
+      <div class="af-empty">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.25">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <line x1="3" y1="9" x2="21" y2="9"/>
+          <line x1="9" y1="21" x2="9" y2="9"/>
+        </svg>
+        <p>No queues yet.<br/>Add prompts in the Create tab.</p>
+      </div>`;
     return;
   }
 
@@ -1023,30 +1496,156 @@ async function refreshQueuesList() {
 
   queues.forEach((queue, idx) => {
     const card = document.createElement('div');
-    card.className = 'af-queue-card';
+    card.className = 'af-q-card';
     card.dataset.queueId = queue.id;
 
+    const total = queue.prompts.length;
     const doneCount = queue.prompts.filter(p => p.status === 'done').length;
     const failedCount = queue.prompts.filter(p => p.status === 'failed').length;
-    const statusColor = queue.status === 'running' ? 'var(--warning)' :
-                        queue.status === 'completed' ? 'var(--success)' :
-                        queue.status === 'stopped' ? 'var(--danger)' : 'var(--text-muted)';
+    const pendingCount = total - doneCount - failedCount;
+    const progressPct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+    const st = queueStatusConfig(queue.status);
+
+    const targetLabel = queue.runTarget === 'newProject' ? 'New Project' :
+      queue.runTarget === 'currentProject' ? 'Current Project' : 'Not set';
+    const targetIcon = queue.runTarget === 'newProject'
+      ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
+      : queue.runTarget === 'currentProject'
+        ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`
+        : `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" opacity="0.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg>`;
+
+    const timeAgo = formatTimeAgo(queue.updatedAt || queue.createdAt);
+
+    const s = queue.settings;
+    const isVideo = s.mediaType === 'video';
+    const autoDownload = isVideo ? s.autoDownloadVideos : s.autoDownloadImages;
+    const downloadRes = isVideo ? s.videoResolution : s.imageResolution;
+    const modelDisplay = isVideo ? s.model : s.imageModel;
 
     card.innerHTML = `
-      <div class="af-queue-card-header">
-        <span class="af-queue-name">${escapeHtml(queue.name)}</span>
-        <span class="af-status" style="background:${statusColor}22;color:${statusColor}">${queue.status}</span>
-      </div>
-      <div class="af-queue-meta">
-        ${queue.prompts.length} prompts | ${queue.settings.mediaType ?? 'video'} | ${queue.settings.model} | ${queue.settings.orientation ?? 'landscape'} | ×${queue.settings.generations}
-        | Done: ${doneCount} | Failed: ${failedCount}
-        ${queue.runTarget ? `| Target: ${queue.runTarget === 'newProject' ? 'New Project' : 'Current Project'}` : '| Target: not set'}
-      </div>
-      <div class="af-queue-actions">
-        <button class="af-btn af-btn-sm" data-action="up" ${idx === 0 ? 'disabled' : ''}>↑ Up</button>
-        <button class="af-btn af-btn-sm" data-action="down" ${idx === queues.length - 1 ? 'disabled' : ''}>↓ Down</button>
-        <button class="af-btn af-btn-sm af-btn-danger" data-action="delete">🗑 Delete</button>
-        <button class="af-btn af-btn-sm af-btn-primary" data-action="run" ${!queue.runTarget ? 'disabled title="Set run target first"' : ''}>▶ Run</button>
+      <div class="af-q-status-bar af-q-status-${st.cls}"></div>
+      <div class="af-q-body">
+        <div class="af-q-top">
+          <div class="af-q-title-row">
+            <span class="af-q-name">${escapeHtml(queue.name)}</span>
+            <span class="af-q-badge af-q-badge-${st.cls}">${st.icon} ${st.label}</span>
+          </div>
+          <div class="af-q-time">${timeAgo}</div>
+        </div>
+
+        <!-- Settings Grid -->
+        <div class="af-q-settings">
+          <div class="af-q-settings-group">
+            <div class="af-q-settings-title">Generation</div>
+            <div class="af-q-setting-row">
+              <span class="af-q-setting-key">Media</span>
+              <span class="af-q-setting-val">${escapeHtml(s.mediaType ?? 'video')}</span>
+            </div>
+            <div class="af-q-setting-row">
+              <span class="af-q-setting-key">Type</span>
+              <span class="af-q-setting-val">${escapeHtml(s.creationType ?? 'ingredients')}</span>
+            </div>
+            <div class="af-q-setting-row">
+              <span class="af-q-setting-key">Model</span>
+              <span class="af-q-setting-val af-q-setting-highlight">${escapeHtml(modelDisplay)}</span>
+            </div>
+            <div class="af-q-setting-row">
+              <span class="af-q-setting-key">${isVideo ? 'Orientation' : 'Ratio'}</span>
+              <span class="af-q-setting-val">${escapeHtml(isVideo ? (s.orientation ?? 'landscape') : s.imageRatio)}</span>
+            </div>
+            <div class="af-q-setting-row">
+              <span class="af-q-setting-key">Generations</span>
+              <span class="af-q-setting-val">&times;${s.generations}</span>
+            </div>
+          </div>
+
+          <div class="af-q-settings-group">
+            <div class="af-q-settings-title">Timing</div>
+            <div class="af-q-setting-row">
+              <span class="af-q-setting-key">Wait</span>
+              <span class="af-q-setting-val">${s.waitMinSec}s – ${s.waitMaxSec}s</span>
+            </div>
+            <div class="af-q-setting-row">
+              <span class="af-q-setting-key">Humanized</span>
+              <span class="af-q-setting-val">${s.humanizedMode ? `<span class="af-q-on">ON</span> &times;${s.typingSpeedMultiplier}` : '<span class="af-q-off">OFF</span>'}</span>
+            </div>
+          </div>
+
+          <div class="af-q-settings-group">
+            <div class="af-q-settings-title">Download</div>
+            <div class="af-q-setting-row">
+              <span class="af-q-setting-key">Auto-DL</span>
+              <span class="af-q-setting-val">${autoDownload ? '<span class="af-q-on">ON</span>' : '<span class="af-q-off">OFF</span>'}</span>
+            </div>
+            <div class="af-q-setting-row">
+              <span class="af-q-setting-key">Quality</span>
+              <span class="af-q-setting-val">${escapeHtml(downloadRes)}</span>
+            </div>
+          </div>
+
+          <div class="af-q-settings-group">
+            <div class="af-q-settings-title">Behavior</div>
+            <div class="af-q-setting-row">
+              <span class="af-q-setting-key">Stop on error</span>
+              <span class="af-q-setting-val">${s.stopOnError ? '<span class="af-q-on">ON</span>' : '<span class="af-q-off">OFF</span>'}</span>
+            </div>
+            <div class="af-q-setting-row">
+              <span class="af-q-setting-key">Language</span>
+              <span class="af-q-setting-val">${escapeHtml(s.language ?? 'English')}</span>
+            </div>
+            <div class="af-q-setting-row">
+              <span class="af-q-setting-key">Target</span>
+              <span class="af-q-setting-val af-q-setting-target">${targetIcon} ${targetLabel}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="af-q-progress-row">
+          <div class="af-q-progress-track">
+            <div class="af-q-progress-fill af-q-progress-${st.cls}" style="width:${progressPct}%"></div>
+            ${failedCount > 0 ? `<div class="af-q-progress-fill af-q-progress-fail" style="width:${Math.round((failedCount / total) * 100)}%;left:${progressPct}%"></div>` : ''}
+          </div>
+          <span class="af-q-progress-label">${progressPct}%</span>
+        </div>
+
+        <div class="af-q-stats">
+          <div class="af-q-stat">
+            <span class="af-q-stat-num">${total}</span>
+            <span class="af-q-stat-label">Prompts</span>
+          </div>
+          <div class="af-q-stat af-q-stat-done">
+            <span class="af-q-stat-num">${doneCount}</span>
+            <span class="af-q-stat-label">Done</span>
+          </div>
+          <div class="af-q-stat af-q-stat-fail">
+            <span class="af-q-stat-num">${failedCount}</span>
+            <span class="af-q-stat-label">Failed</span>
+          </div>
+          <div class="af-q-stat">
+            <span class="af-q-stat-num">${pendingCount}</span>
+            <span class="af-q-stat-label">Pending</span>
+          </div>
+        </div>
+
+        <div class="af-q-actions">
+          <div class="af-q-actions-left">
+            <button class="af-q-act-btn" data-action="up" ${idx === 0 ? 'disabled' : ''} title="Move up">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+            </button>
+            <button class="af-q-act-btn" data-action="down" ${idx === queues.length - 1 ? 'disabled' : ''} title="Move down">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          </div>
+          <div class="af-q-actions-right">
+            <button class="af-q-act-btn af-q-act-delete" data-action="delete" title="Delete queue">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            </button>
+            <button class="af-q-run-btn" data-action="run" ${!queue.runTarget ? 'disabled title="Set run target first"' : ''}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Run
+            </button>
+          </div>
+        </div>
       </div>
     `;
 
@@ -1058,6 +1657,7 @@ async function refreshQueuesList() {
       await moveQueue(idx, idx + 1);
     });
     card.querySelector('[data-action="delete"]')?.addEventListener('click', async () => {
+      if (!confirm(`Delete queue "${queue.name}"?`)) return;
       await deleteQueue(queue.id);
       showToast(`Queue "${queue.name}" deleted.`);
       await refreshQueuesList();
@@ -1104,6 +1704,7 @@ async function runQueue(queueId: string) {
   state.isRunning = true;
   state.activeQueueId = queueId;
   updateRunLockUI(true);
+  startKeepalivePort();  // Keep service worker alive during queue execution
 
   // Switch to Video tab and show monitor
   (document.querySelector('[data-tab="video"]') as HTMLElement)?.click();
@@ -1137,6 +1738,7 @@ async function loadActiveQueueState() {
     if (queue && (queue.status === 'running' || queue.status === 'paused')) {
       state.isRunning = true;
       state.activeQueueId = activeId;
+      startKeepalivePort();  // Restore keepalive if queue was already running
       showRunMonitor(activeId);
     }
   }
@@ -1147,6 +1749,7 @@ async function loadActiveQueueState() {
 // ================================================================
 
 let libraryFilter: 'all' | 'image' | 'video' = 'all';
+let librarySearch = '';
 
 function initLibraryTab() {
   $('#btn-scan').addEventListener('click', async () => {
@@ -1172,7 +1775,8 @@ function initLibraryTab() {
     if (state.scannedAssets.length === 0) {
       showToast('No assets found. Make sure you\'re on a Flow project page with generated content.');
     } else {
-      showToast(`Found ${state.scannedAssets.length} asset(s).`);
+      const prompts = new Set(state.scannedAssets.map(a => a.groupId)).size;
+      showToast(`Found ${state.scannedAssets.length} asset(s) across ${prompts} prompt(s).`);
     }
     renderLibrary();
   });
@@ -1181,7 +1785,6 @@ function initLibraryTab() {
   document.querySelectorAll('[data-lib-filter]').forEach(btn => {
     btn.addEventListener('click', () => {
       libraryFilter = (btn.getAttribute('data-lib-filter') || 'all') as any;
-      // Update active style
       document.querySelectorAll('[data-lib-filter]').forEach(b => {
         b.classList.toggle('af-btn-primary', b.getAttribute('data-lib-filter') === libraryFilter);
       });
@@ -1190,9 +1793,20 @@ function initLibraryTab() {
   });
 
   // Sort dropdown
-  $('#library-sort').addEventListener('change', () => {
-    renderLibrary();
-  });
+  $('#library-sort').addEventListener('change', () => renderLibrary());
+
+  // Search input
+  const searchInput = $('#library-search') as HTMLInputElement;
+  if (searchInput) {
+    let searchTimeout: ReturnType<typeof setTimeout>;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        librarySearch = searchInput.value.trim().toLowerCase();
+        renderLibrary();
+      }, 200);
+    });
+  }
 
   $('#btn-select-all').addEventListener('click', () => {
     getFilteredAssets().forEach(a => a.selected = true);
@@ -1211,6 +1825,11 @@ function initLibraryTab() {
       return;
     }
     showToast(`Downloading ${selected.length} file(s)...`);
+    // Get the current resolution setting based on media type
+    const hasVideo = selected.some(a => a.mediaType === 'video');
+    const resolution = hasVideo
+      ? ($('#setting-video-resolution') as HTMLSelectElement).value
+      : ($('#setting-image-resolution') as HTMLSelectElement).value;
     const response = await sendToBackground({
       type: 'DOWNLOAD_SELECTED',
       payload: {
@@ -1224,39 +1843,142 @@ function initLibraryTab() {
           groupIndex: a.groupIndex,
         })),
         queueName: state.activeQueueId || 'download',
+        resolution,
       },
     });
     if (response?.downloaded) {
       showToast(`Downloaded ${response.downloaded.length} file(s).`);
     }
   });
+
+  // ── Retry selected assets ──
+  $('#btn-retry-selected').addEventListener('click', async () => {
+    const selected = state.scannedAssets.filter(a => a.selected);
+    if (selected.length === 0) {
+      showToast('No assets selected.');
+      return;
+    }
+    showToast(`Retrying ${selected.length} asset(s)...`);
+
+    let succeeded = 0;
+    let failed = 0;
+    for (const asset of selected) {
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: 'RETRY_SINGLE_TILE',
+          payload: {
+            locator: asset.locator,
+            promptLabel: asset.promptLabel || '',
+          },
+        });
+        if (response?.success) {
+          succeeded++;
+          console.log(`[AutoFlow] Retry succeeded: ${asset.promptLabel} (${response.method})`);
+        } else {
+          failed++;
+          console.warn(`[AutoFlow] Retry failed: ${asset.promptLabel}`, response?.error);
+        }
+      } catch (e: any) {
+        failed++;
+        console.error(`[AutoFlow] Retry error:`, e);
+      }
+      // Wait between retries to let Flow process
+      if (selected.indexOf(asset) < selected.length - 1) {
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
+    showToast(`Retry complete: ${succeeded} succeeded, ${failed} failed.`);
+  });
 }
 
-/** Return assets matching the current filter */
+/** Return assets matching the current type filter AND text search */
 function getFilteredAssets(): ScannedAsset[] {
-  if (libraryFilter === 'all') return state.scannedAssets;
-  return state.scannedAssets.filter(a => a.mediaType === libraryFilter);
+  let assets = state.scannedAssets;
+  if (libraryFilter !== 'all') {
+    assets = assets.filter(a => a.mediaType === libraryFilter);
+  }
+  if (librarySearch) {
+    assets = assets.filter(a =>
+      a.promptLabel.toLowerCase().includes(librarySearch) ||
+      a.label.toLowerCase().includes(librarySearch) ||
+      String(a.promptNumber) === librarySearch
+    );
+  }
+  return assets;
 }
 
-/** Sort assets based on the sort dropdown */
-function getSortedAssets(assets: ScannedAsset[]): ScannedAsset[] {
+/**
+ * Sort prompt groups based on the sort dropdown.
+ * Returns an array of [groupId, assets[]] pairs in the desired order.
+ */
+function getSortedGroups(assets: ScannedAsset[]): [string, ScannedAsset[]][] {
+  // First, group by groupId (row-based, NOT by prompt text)
+  const groups = new Map<string, ScannedAsset[]>();
+  for (const asset of assets) {
+    if (!groups.has(asset.groupId)) groups.set(asset.groupId, []);
+    groups.get(asset.groupId)!.push(asset);
+  }
+
+  // Sort within each group by generationNum
+  for (const [, groupAssets] of groups) {
+    groupAssets.sort((a, b) => a.generationNum - b.generationNum);
+  }
+
+  // Convert to array for sorting
+  let groupArr = Array.from(groups.entries());
+
   const sortValue = ($('#library-sort') as HTMLSelectElement).value;
-  const sorted = [...assets];
   switch (sortValue) {
     case 'oldest':
-      sorted.sort((a, b) => a.index - b.index);
+      // Oldest prompt first (lowest promptNumber first = highest groupIndex)
+      groupArr.sort((a, b) => a[1][0].promptNumber - b[1][0].promptNumber);
       break;
     case 'newest':
-      sorted.sort((a, b) => b.index - a.index);
+      // Newest prompt first (highest promptNumber first = lowest groupIndex)
+      groupArr.sort((a, b) => b[1][0].promptNumber - a[1][0].promptNumber);
       break;
     case 'type':
-      sorted.sort((a, b) => {
-        if (a.mediaType === b.mediaType) return a.index - b.index;
-        return a.mediaType === 'video' ? -1 : 1;
+      // Videos first, then images; within type, by promptNumber descending
+      groupArr.sort((a, b) => {
+        const aType = a[1][0].mediaType;
+        const bType = b[1][0].mediaType;
+        if (aType !== bType) return aType === 'video' ? -1 : 1;
+        return b[1][0].promptNumber - a[1][0].promptNumber;
       });
       break;
+    case 'most-gens':
+      // Most generations first, then by promptNumber descending
+      groupArr.sort((a, b) => {
+        if (b[1].length !== a[1].length) return b[1].length - a[1].length;
+        return b[1][0].promptNumber - a[1][0].promptNumber;
+      });
+      break;
+    case 'prompt-num':
+      // Ascending prompt number (prompt 1, 2, 3, …)
+      groupArr.sort((a, b) => a[1][0].promptNumber - b[1][0].promptNumber);
+      break;
+    case 'status': {
+      // Failed groups first, then generating, then completed
+      const stateOrder = (assets: ScannedAsset[]) => {
+        const hasFailed = assets.some(a => a.tileState === 'failed');
+        const hasGenerating = assets.some(a => a.tileState === 'generating');
+        if (hasFailed) return 0;
+        if (hasGenerating) return 1;
+        return 2;
+      };
+      groupArr.sort((a, b) => {
+        const oa = stateOrder(a[1]);
+        const ob = stateOrder(b[1]);
+        if (oa !== ob) return oa - ob;
+        return b[1][0].promptNumber - a[1][0].promptNumber;
+      });
+      break;
+    }
+    default:
+      groupArr.sort((a, b) => b[1][0].promptNumber - a[1][0].promptNumber);
   }
-  return sorted;
+
+  return groupArr;
 }
 
 function renderLibrary() {
@@ -1277,42 +1999,61 @@ function renderLibrary() {
   updateLibraryCounters();
 
   const filtered = getFilteredAssets();
-  const sorted = getSortedAssets(filtered);
+  const sortedGroups = getSortedGroups(filtered);
 
-  if (sorted.length === 0) {
-    grid.innerHTML = `<p class="af-empty">No ${libraryFilter === 'image' ? 'photos' : 'videos'} found.</p>`;
+  if (sortedGroups.length === 0) {
+    grid.innerHTML = `<p class="af-empty">No ${librarySearch ? 'matching' : libraryFilter === 'image' ? 'photos' : 'videos'} found.</p>`;
     return;
   }
 
-  // Group assets by promptLabel to display one row per prompt
-  const groups = new Map<string, ScannedAsset[]>();
-  for (const asset of sorted) {
-    const key = asset.promptLabel || `Group ${asset.groupIndex}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(asset);
-  }
+  for (const [, assets] of sortedGroups) {
+    const firstAsset = assets[0];
+    const promptNum = firstAsset.promptNumber;
+    const promptLabel = firstAsset.promptLabel;
+    const totalInGroup = firstAsset.totalInGroup;
 
-  // Assign prompt numbers so that oldest prompt = 1 (matching download filenames).
-  // Groups are in scan order (newest first), so reverse to number from oldest.
-  const groupKeys = Array.from(groups.keys());
-  const totalGroups = groupKeys.length;
+    // Build media type summary for the group
+    const vCount = assets.filter(a => a.mediaType === 'video').length;
+    const iCount = assets.filter(a => a.mediaType === 'image').length;
+    const failedCount = assets.filter(a => a.tileState === 'failed').length;
+    const genCount = assets.filter(a => a.tileState === 'generating').length;
+    let mediaLabel = '';
+    if (vCount > 0) mediaLabel += `${vCount} video${vCount > 1 ? 's' : ''}`;
+    if (iCount > 0) mediaLabel += `${mediaLabel ? ', ' : ''}${iCount} image${iCount > 1 ? 's' : ''}`;
 
-  let groupIdx = 0;
-  for (const [promptLabel, assets] of groups) {
-    groupIdx++;
-    // Reverse the numbering: first group shown (newest) gets highest number
-    const promptNum = totalGroups - groupIdx + 1;
+    // State badges
+    let stateBadges = '';
+    if (failedCount > 0) stateBadges += `<span class="af-lib-badge af-lib-badge-failed">${failedCount} failed</span>`;
+    if (genCount > 0) stateBadges += `<span class="af-lib-badge af-lib-badge-gen">generating</span>`;
+
     const groupEl = document.createElement('div');
     groupEl.className = 'af-lib-group';
+    if (failedCount > 0) groupEl.classList.add('has-failed');
 
-    // Group header
+    // Retry indicator
+    const retryCount = assets.filter(a => a.isRetry).length;
+    const retryBadge = retryCount > 0 ? `<span class="af-lib-badge af-lib-badge-retry">${retryCount} retr${retryCount > 1 ? 'ies' : 'y'}</span>` : '';
+
+    // Group header with prompt number, label, and media summary
     const header = document.createElement('div');
     header.className = 'af-lib-group-header';
+    header.style.cursor = 'pointer';
+    header.title = 'Click to select/deselect all in this group';
     header.innerHTML = `
       <span class="af-lib-group-num">${promptNum}</span>
       <span class="af-lib-group-label" title="${escapeHtml(promptLabel)}">${escapeHtml(promptLabel)}</span>
-      <span class="af-lib-group-count">${assets.length} ${assets[0].mediaType === 'video' ? 'video' : 'image'}${assets.length > 1 ? 's' : ''}</span>
+      ${stateBadges}
+      ${retryBadge}
+      <span class="af-lib-group-count">${mediaLabel}</span>
     `;
+
+    // Click header → toggle select all assets in this group
+    header.addEventListener('click', () => {
+      const allSelected = assets.every(a => a.selected);
+      assets.forEach(a => a.selected = !allSelected);
+      renderLibrary();
+    });
+
     groupEl.appendChild(header);
 
     // Assets row
@@ -1322,11 +2063,30 @@ function renderLibrary() {
     for (const asset of assets) {
       const card = document.createElement('div');
       card.className = `af-lib-card ${asset.selected ? 'selected' : ''}`;
+      if (asset.tileState === 'failed') card.classList.add('af-lib-card-failed');
+      if (asset.tileState === 'generating') card.classList.add('af-lib-card-generating');
+
+      // Generation badge (e.g., "1/3")
+      const genBadge = totalInGroup > 1
+        ? `<span class="af-lib-gen-badge">${asset.generationNum}/${totalInGroup}</span>`
+        : '';
+
+      // Tile state badge on the card
+      let stateBadge = '';
+      if (asset.tileState === 'failed') {
+        stateBadge = '<span class="af-lib-state-badge af-lib-state-failed">Failed</span>';
+      } else if (asset.tileState === 'generating') {
+        stateBadge = '<span class="af-lib-state-badge af-lib-state-gen">Generating…</span>';
+      }
 
       if (asset.mediaType === 'video') {
-        // Video card with playable video
         card.innerHTML = `
           <input type="checkbox" class="af-lib-check" ${asset.selected ? 'checked' : ''} />
+          <button class="af-lib-retry-btn" title="Retry — regenerate this video">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+          </button>
+          ${genBadge}
+          ${stateBadge}
           <div class="af-lib-preview">
             <video
               class="af-lib-video"
@@ -1343,7 +2103,6 @@ function renderLibrary() {
           </div>
         `;
 
-        // Click to play/pause video
         const preview = card.querySelector('.af-lib-preview') as HTMLElement;
         const videoEl = card.querySelector('.af-lib-video') as HTMLVideoElement;
         const playOverlay = card.querySelector('.af-lib-play-overlay') as HTMLElement;
@@ -1352,7 +2111,7 @@ function renderLibrary() {
           e.stopPropagation();
           if (videoEl.paused) {
             videoEl.muted = false;
-            videoEl.play().catch(() => {});
+            videoEl.play().catch(() => { });
             playOverlay.style.opacity = '0';
           } else {
             videoEl.pause();
@@ -1364,21 +2123,25 @@ function renderLibrary() {
           playOverlay.style.opacity = '1';
         });
       } else {
-        // Image card with full preview
         card.innerHTML = `
           <input type="checkbox" class="af-lib-check" ${asset.selected ? 'checked' : ''} />
+          <button class="af-lib-retry-btn" title="Retry — regenerate this image">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+          </button>
+          ${genBadge}
+          ${stateBadge}
           <div class="af-lib-preview">
             <img class="af-lib-img" src="${escapeHtml(asset.thumbnailUrl)}" alt="${escapeHtml(asset.label)}" />
           </div>
         `;
       }
 
-      // Selection logic via checkbox or clicking the card border
+      // Selection logic
       const checkbox = card.querySelector('.af-lib-check') as HTMLInputElement;
       card.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
-        // Don't toggle selection when clicking the video/image preview area
         if (target.closest('.af-lib-preview')) return;
+        if (target.closest('.af-lib-retry-btn')) return;
         asset.selected = !asset.selected;
         checkbox.checked = asset.selected;
         card.classList.toggle('selected', asset.selected);
@@ -1390,6 +2153,39 @@ function renderLibrary() {
         card.classList.toggle('selected', asset.selected);
         updateLibraryCounters();
       });
+
+      // Retry button
+      const retryBtn = card.querySelector('.af-lib-retry-btn') as HTMLButtonElement;
+      if (retryBtn) {
+        retryBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          retryBtn.disabled = true;
+          retryBtn.classList.add('spinning');
+          showToast(`Retrying prompt #${promptNum}…`);
+
+          const response = await sendToBackground({
+            type: 'RETRY_SINGLE_TILE',
+            payload: {
+              locator: asset.locator,
+              promptLabel: asset.promptLabel,
+            },
+          });
+
+          retryBtn.disabled = false;
+          retryBtn.classList.remove('spinning');
+
+          if (response?.success) {
+            const method = response.method || '';
+            if (method.includes('failed')) {
+              showToast('Retry started! The tile will regenerate in place.');
+            } else {
+              showToast('Regeneration started! Re-scan after it completes.');
+            }
+          } else {
+            showToast(response?.error || 'Retry failed. Make sure you are on a Flow project page.');
+          }
+        });
+      }
 
       row.appendChild(card);
     }
@@ -1405,8 +2201,12 @@ function updateLibraryCounters() {
   const images = total - videos;
   const selected = state.scannedAssets.filter(a => a.selected).length;
   const filtered = getFilteredAssets().length;
+  const prompts = new Set(state.scannedAssets.map(a => a.groupId)).size;
+  const failed = state.scannedAssets.filter(a => a.tileState === 'failed').length;
 
-  $('#scan-found').textContent = `Found: ${total} (${images} 🖼 / ${videos} 🎬)`;
+  let foundText = `${prompts} prompts · ${total} assets (${videos} 🎬 ${images} 🖼)`;
+  if (failed > 0) foundText += ` · ${failed} ❌`;
+  $('#scan-found').textContent = foundText;
   $('#scan-selected').textContent = `Showing: ${filtered} | Selected: ${selected}`;
 }
 
@@ -1484,7 +2284,11 @@ function handleQueueStatusUpdate(queue: QueueObject) {
 
   if (queue.status === 'completed' || queue.status === 'stopped') {
     state.isRunning = false;
+    stopKeepalivePort();  // Release service worker keepalive
+    updateStatusDot('connected');
     showToast(`Queue "${queue.name}" ${queue.status}.`);
+  } else if (queue.status === 'running') {
+    updateStatusDot('running');
   }
 
   // Update prompt statuses in prompt list
@@ -1505,7 +2309,7 @@ function updatePromptStatuses(queue: QueueObject) {
       if (badge) {
         badge.className = `af-status af-status-${prompt.status}`;
         badge.textContent = prompt.status === 'not-added' ? 'Not Added' :
-                            prompt.status.charAt(0).toUpperCase() + prompt.status.slice(1);
+          prompt.status.charAt(0).toUpperCase() + prompt.status.slice(1);
       }
       // Show error if failed
       let errEl = rows[idx].querySelector('.af-prompt-error');
@@ -1546,8 +2350,8 @@ async function handleGetImageBlobs(payload: { imageIds: string[] }): Promise<any
         if (!found) found = state.characterImages.find(i => i.meta.id === id);
         if (!found) {
           for (const [, imgs] of state.promptImages) {
-            found = imgs.find(i => i.meta.id === id);
-            if (found) break;
+            const match = imgs.find(i => i && i.meta.id === id);
+            if (match) { found = match; break; }
           }
         }
         if (found) {
@@ -1584,6 +2388,9 @@ function blobToBase64(blob: Blob): Promise<string> {
 function handleRunLockChanged(payload: { locked: boolean }) {
   state.isRunning = payload.locked;
   updateRunLockUI(payload.locked);
+  if (!payload.locked) {
+    stopKeepalivePort();
+  }
 }
 
 function updateRunLockUI(locked: boolean) {
@@ -1595,7 +2402,7 @@ function updateRunLockUI(locked: boolean) {
       btn.title = 'A queue is already running';
     } else {
       // Re-enable only if the queue has a run target set
-      const card = btn.closest('.af-queue-card');
+      const card = btn.closest('.af-q-card');
       const queueId = card?.getAttribute('data-queue-id');
       // We'll just enable them; the run function will check
       btn.disabled = false;
@@ -1688,9 +2495,56 @@ function updateMediaTypeVisibility(mediaType: MediaType) {
   const videoModel = $('#video-model-section');
   const videoOrientation = $('#video-orientation-section');
   const imageSection = $('#image-settings-section');
+  const creationTypeSection = document.getElementById('creation-type-section');
+
   if (videoModel) videoModel.style.display = isImage ? 'none' : '';
   if (videoOrientation) videoOrientation.style.display = isImage ? 'none' : '';
   if (imageSection) imageSection.style.display = isImage ? '' : 'none';
+
+  // Hide Creation Type (Frames is video-only) and force Ingredients when Image
+  if (creationTypeSection) creationTypeSection.style.display = isImage ? 'none' : '';
+  if (isImage) {
+    const ingredientsRadio = document.querySelector('input[name="creationType"][value="ingredients"]') as HTMLInputElement | null;
+    if (ingredientsRadio && !ingredientsRadio.checked) {
+      ingredientsRadio.checked = true;
+      updateCreationTypeVisibility('ingredients');
+    }
+  }
+}
+
+function updateCreationTypeVisibility(creationType: CreationType) {
+  const hasPrompts = state.parsedPrompts.length > 0;
+  const isFrames = creationType === 'frames';
+
+  const sharedSection = $('#shared-images-section');
+  const charSection = $('#character-images-section');
+  const automapSection = $('#automap-section');
+  const framechainSection = $('#framechain-section');
+
+  if (!hasPrompts) {
+    // Hide all when no prompts parsed
+    if (sharedSection) sharedSection.style.display = 'none';
+    if (charSection) charSection.style.display = 'none';
+    if (automapSection) automapSection.style.display = 'none';
+    if (framechainSection) framechainSection.style.display = 'none';
+    return;
+  }
+
+  if (isFrames) {
+    // Frames mode: show only Frame Chain
+    if (sharedSection) sharedSection.style.display = 'none';
+    if (charSection) charSection.style.display = 'none';
+    if (automapSection) automapSection.style.display = 'none';
+    if (framechainSection) framechainSection.style.display = 'block';
+  } else {
+    // Ingredients mode: show ingredient sections, hide Frame Chain
+    if (sharedSection) sharedSection.style.display = 'block';
+    if (charSection) charSection.style.display = 'block';
+    if (automapSection) automapSection.style.display = 'block';
+    if (framechainSection) framechainSection.style.display = 'none';
+    renderSharedImages();
+    renderCharacterImages();
+  }
 }
 
 // ================================================================
