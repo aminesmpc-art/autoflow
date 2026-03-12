@@ -113,6 +113,9 @@ async function handleMessage(msg: Message): Promise<any> {
     case 'RETRY_SINGLE_TILE':
       return retrySingleTileHandler(msg.payload);
 
+    case 'UPSCALE_SELECTED':
+      return upscaleSelected(msg.payload);
+
     case 'PREVIEW_ASSET':
       return previewAssetHandler(msg.payload);
 
@@ -199,6 +202,44 @@ function toAbsoluteUrl(url: string): string {
   }
   const origin = window.location.origin;
   return url.startsWith('/') ? `${origin}${url}` : `${origin}/${url}`;
+}
+
+/**
+ * Upscale selected assets WITHOUT downloading.
+ * Just triggers Flow's upscaling for each video, then returns.
+ */
+async function upscaleSelected(payload: {
+  assets: Array<{
+    locator: string;
+    promptLabel?: string;
+  }>;
+  resolution: string;
+}): Promise<{ triggered: number; failed: number }> {
+  const resolution = payload.resolution || '1080p Upscaled';
+  let triggered = 0;
+  let failed = 0;
+
+  console.log(`[AutoFlow] Upscale-only: triggering ${resolution} for ${payload.assets.length} asset(s)...`);
+
+  for (const asset of payload.assets) {
+    try {
+      const ok = await downloadAssetByMenu(asset.locator, resolution);
+      if (ok) {
+        triggered++;
+        console.log(`[AutoFlow] Upscale triggered: ${asset.promptLabel || 'asset'}`);
+      } else {
+        failed++;
+        console.warn(`[AutoFlow] Could not trigger upscale: ${asset.promptLabel || 'asset'}`);
+      }
+    } catch (e: any) {
+      failed++;
+      console.error('[AutoFlow] Upscale error:', e);
+    }
+    await sleep(2000);
+  }
+
+  console.log(`[AutoFlow] Upscale-only complete: ${triggered} triggered, ${failed} failed`);
+  return { triggered, failed };
 }
 
 async function downloadSelected(payload: {

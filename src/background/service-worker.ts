@@ -242,6 +242,7 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
     case 'SCAN_FAILED_TILES':
     case 'RETRY_FAILED_TILES':
     case 'RETRY_SINGLE_TILE':
+    case 'UPSCALE_SELECTED':
       return forwardToContentScript(msg);
 
     case 'GET_IMAGE_BLOBS':

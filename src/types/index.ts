@@ -181,6 +181,7 @@ export type MessageType =
   | 'FAILED_TILES_RESULT'
   | 'RETRY_FAILED_TILES'
   | 'RETRY_SINGLE_TILE'
+  | 'UPSCALE_SELECTED'
   | 'SET_DOWNLOAD_RENAME';
 
 export interface Message {

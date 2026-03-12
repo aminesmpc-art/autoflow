@@ -1889,6 +1889,32 @@ function initLibraryTab() {
     }
     showToast(`Retry complete: ${succeeded} succeeded, ${failed} failed.`);
   });
+
+  // ── Upscale selected assets (no download) ──
+  $('#btn-upscale-selected').addEventListener('click', async () => {
+    const selected = state.scannedAssets.filter(a => a.selected);
+    if (selected.length === 0) {
+      showToast('No assets selected.');
+      return;
+    }
+    const resolution = ($('#setting-video-resolution') as HTMLSelectElement).value || '1080p Upscaled';
+    showToast(`Upscaling ${selected.length} video(s) to ${resolution}...`);
+
+    const response = await chrome.runtime.sendMessage({
+      type: 'UPSCALE_SELECTED',
+      payload: {
+        assets: selected.map(a => ({
+          locator: a.locator,
+          promptLabel: a.promptLabel,
+        })),
+        resolution,
+      },
+    });
+
+    if (response) {
+      showToast(`Upscale done: ${response.triggered} triggered, ${response.failed} failed.`);
+    }
+  });
 }
 
 /** Return assets matching the current type filter AND text search */
