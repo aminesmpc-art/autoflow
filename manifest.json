@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AutoFlow – Bulk Video Generator for Google Flow",
+  "name": "AutoFlow – Video Task Manager for Google Flow",
   "version": "1.0.0",
-  "description": "Automates Google Flow (labs.google/flow) for bulk Ingredients-to-Video generation. Third-party tool, not affiliated with Google.",
+  "description": "Queue, manage, and monitor video-generation tasks on Google Flow (labs.google/flow). Third-party tool, not affiliated with Google.",
   "permissions": [
     "sidePanel",
     "storage",

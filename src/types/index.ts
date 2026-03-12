@@ -56,7 +56,7 @@ export interface QueueSettings {
   // Timing
   waitMinSec: number;                // Min wait time between prompts (default 10)
   waitMaxSec: number;                // Max wait time between prompts (default 20)
-  humanizedMode: boolean;            // Enable human-like typing (default false)
+  typingMode: boolean;               // Enable variable-speed typing mode (default false)
   typingSpeedMultiplier: number;     // Typing speed multiplier 0.25–3.0 (default 1.0)
 
   // Download
@@ -201,7 +201,7 @@ export const DEFAULT_SETTINGS: QueueSettings = {
   // Timing
   waitMinSec: 10,
   waitMaxSec: 20,
-  humanizedMode: false,
+  typingMode: false,
   typingSpeedMultiplier: 1.0,
 
   // Download

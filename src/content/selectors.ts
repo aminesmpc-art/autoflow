@@ -839,14 +839,14 @@ export function isVisible(el: Element): boolean {
 }
 
 /** Simulate a click using the full pointer→mouse→click event chain.
- *  Uses coordinate jitter for anti-detection.
+ *  Uses coordinate jitter for natural input pacing.
  *  Does NOT also call native .click() — that would double-fire on
  *  Radix toggle buttons (open → close = net no change).
  */
 export function simulateClick(el: Element): void {
   if (el instanceof HTMLElement) el.focus();
   const rect = el.getBoundingClientRect();
-  // ±2px coordinate jitter for anti-detection
+  // ±2px coordinate jitter for natural input variation
   const x = rect.left + rect.width / 2 + (Math.random() * 4 - 2);
   const y = rect.top + rect.height / 2 + (Math.random() * 4 - 2);
   const shared: MouseEventInit = {
@@ -874,7 +874,7 @@ export function nativeClick(el: Element): void {
 }
 
 /** Directly invoke a React component's event handler via __reactProps$.
- *  This bypasses React's event delegation entirely — the nuclear option
+ *  This uses direct handler invocation — the last-resort option
  *  when dispatched events don't trigger React/Radix state changes.
  *  @param el  The DOM element rendered by React
  *  @param handlerName  e.g. 'onPointerDown', 'onClick'
@@ -911,7 +911,7 @@ export function reactTrigger(el: Element, handlerName: string): boolean {
   }
 }
 
-/** Random human-like delay for anti-detection (ms range) */
+/** Random variable delay for natural input pacing (ms range) */
 export function humanDelay(min: number, max: number): Promise<void> {
   const ms = min + Math.random() * (max - min);
   return sleep(ms);

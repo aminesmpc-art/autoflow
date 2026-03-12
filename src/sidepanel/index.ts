@@ -1263,10 +1263,10 @@ function initSettingsTab() {
     }
   });
 
-  // Humanized mode toggle → show/hide typing speed slider
-  const humanizedToggle = $('#setting-humanized') as HTMLInputElement;
-  humanizedToggle.addEventListener('change', () => {
-    updateHumanizedVisibility(humanizedToggle.checked);
+  // Typing mode toggle → show/hide typing speed slider
+  const typingModeToggle = $('#setting-typing-mode') as HTMLInputElement;
+  typingModeToggle.addEventListener('change', () => {
+    updateTypingModeVisibility(typingModeToggle.checked);
   });
 
   // Typing speed slider → update display
@@ -1369,7 +1369,7 @@ async function loadSettings() {
   // Timing
   ($('#setting-wait-min') as HTMLInputElement).value = String(settings.waitMinSec ?? 10);
   ($('#setting-wait-max') as HTMLInputElement).value = String(settings.waitMaxSec ?? 20);
-  ($('#setting-humanized') as HTMLInputElement).checked = settings.humanizedMode ?? false;
+  ($('#setting-typing-mode') as HTMLInputElement).checked = settings.typingMode ?? false;
   const speedSlider = $('#setting-typing-speed-slider') as HTMLInputElement;
   speedSlider.value = String(settings.typingSpeedMultiplier ?? 1.0);
   ($('#typing-speed-display') as HTMLElement).textContent = `${(settings.typingSpeedMultiplier ?? 1.0).toFixed(2)}x`;
@@ -1383,8 +1383,8 @@ async function loadSettings() {
   // Interface
   ($('#setting-language') as HTMLSelectElement).value = settings.language ?? 'English';
 
-  // Show/hide typing speed based on humanized mode
-  updateHumanizedVisibility(settings.humanizedMode ?? false);
+  // Show/hide typing speed based on typing mode
+  updateTypingModeVisibility(settings.typingMode ?? false);
 }
 
 function readSettingsFromUI(): QueueSettings {
@@ -1405,7 +1405,7 @@ function readSettingsFromUI(): QueueSettings {
   // Timing
   const waitMinSec = Math.max(0, parseInt(($('#setting-wait-min') as HTMLInputElement).value, 10) || 10);
   const waitMaxSec = Math.max(waitMinSec, parseInt(($('#setting-wait-max') as HTMLInputElement).value, 10) || 20);
-  const humanizedMode = ($('#setting-humanized') as HTMLInputElement).checked;
+  const typingMode = ($('#setting-typing-mode') as HTMLInputElement).checked;
   const typingSpeedMultiplier = Math.max(0.25, Math.min(3.0, parseFloat(($('#setting-typing-speed-slider') as HTMLInputElement).value) || 1.0));
 
   // Download
@@ -1420,14 +1420,14 @@ function readSettingsFromUI(): QueueSettings {
   // Compute legacy fields from new fields for backward compat
   const autoDownload = autoDownloadVideos || autoDownloadImages;
   const waitBetweenPromptsSec = waitMinSec;
-  const inputMethod: InputMethod = humanizedMode ? 'type' : 'paste';
+  const inputMethod: InputMethod = typingMode ? 'type' : 'paste';
   const typingCharsPerSecond = Math.round(25 * typingSpeedMultiplier);
-  const variableTypingDelay = humanizedMode;
+  const variableTypingDelay = typingMode;
 
   return {
     mediaType, creationType, model, orientation, generations, stopOnError,
     imageModel, imageRatio,
-    waitMinSec, waitMaxSec, humanizedMode, typingSpeedMultiplier,
+    waitMinSec, waitMaxSec, typingMode, typingSpeedMultiplier,
     autoDownloadVideos, videoResolution, autoDownloadImages, imageResolution,
     language,
     autoDownload, waitBetweenPromptsSec, inputMethod, typingCharsPerSecond, variableTypingDelay,
@@ -1566,8 +1566,8 @@ async function refreshQueuesList() {
               <span class="af-q-setting-val">${s.waitMinSec}s – ${s.waitMaxSec}s</span>
             </div>
             <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Humanized</span>
-              <span class="af-q-setting-val">${s.humanizedMode ? `<span class="af-q-on">ON</span> &times;${s.typingSpeedMultiplier}` : '<span class="af-q-off">OFF</span>'}</span>
+              <span class="af-q-setting-key">Typing Mode</span>
+              <span class="af-q-setting-val">${s.typingMode ? `<span class="af-q-on">ON</span> &times;${s.typingSpeedMultiplier}` : '<span class="af-q-off">OFF</span>'}</span>
             </div>
           </div>
 
@@ -2509,7 +2509,7 @@ function showFailedSection() {
 // TYPING OPTIONS VISIBILITY
 // ================================================================
 
-function updateHumanizedVisibility(enabled: boolean) {
+function updateTypingModeVisibility(enabled: boolean) {
   const speedRow = $('#typing-speed-row');
   if (speedRow) {
     speedRow.style.display = enabled ? 'flex' : 'none';

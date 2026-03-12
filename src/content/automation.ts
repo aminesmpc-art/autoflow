@@ -1275,12 +1275,12 @@ export class AutomationEngine {
     }
     await humanDelay(100, 300);
 
-    const method: InputMethod = settings.humanizedMode ? 'type' : (settings.inputMethod ?? 'paste');
+    const method: InputMethod = settings.typingMode ? 'type' : (settings.inputMethod ?? 'paste');
 
     if (method === 'type') {
       const multiplier = settings.typingSpeedMultiplier ?? 1.0;
       const cps = Math.round((settings.typingCharsPerSecond ?? 25) * multiplier);
-      const variable = settings.variableTypingDelay ?? settings.humanizedMode ?? true;
+      const variable = settings.variableTypingDelay ?? settings.typingMode ?? true;
       const chunked = text.length > 100 ? ' [chunked]' : '';
       this.log('info', `Typing prompt (${text.length} chars at ~${cps} cps, speed=${multiplier.toFixed(2)}x, variable=${variable}${chunked})`);
       await simulateTyping(input as HTMLElement, text, cps, variable);

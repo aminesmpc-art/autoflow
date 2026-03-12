@@ -1907,6 +1907,50 @@ body {
   padding-top: 14px;
   border-top: 1px solid var(--border);
   opacity: 0.7;
+  line-height: 1.6;
+}
+
+/* ── Privacy & About ── */
+.af-privacy-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+.af-privacy-list li {
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 3px 0;
+  padding-left: 14px;
+  position: relative;
+}
+.af-privacy-list li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--success);
+  font-size: 10px;
+}
+
+.af-about-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding-top: 4px;
+  font-size: 11px;
+}
+.af-about-links .af-link {
+  color: var(--accent);
+  text-decoration: none;
+  transition: color var(--duration) var(--ease);
+}
+.af-about-links .af-link:hover {
+  color: var(--accent-bright);
+  text-decoration: underline;
+}
+.af-link-sep {
+  color: var(--text-muted);
+  font-size: 10px;
 }
 
 /* ── Hidden file input ── */
