@@ -299,26 +299,41 @@ async function handleLog(entry: LogEntry): Promise<void> {
   broadcastToExtension({ type: 'LOG', payload: entry });
 }
 
+// ── Storage mutex to prevent concurrent read-modify-write ──
+let storageLock: Promise<void> = Promise.resolve();
+function withStorageLock<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = storageLock;
+  let resolve: () => void;
+  storageLock = new Promise(r => { resolve = r; });
+  return prev.then(fn).finally(() => resolve!());
+}
+
 // ── Queue status update ──
 async function handleQueueStatusUpdate(payload: {
   queueId: string;
   status: string;
   currentPromptIndex?: number;
 }): Promise<void> {
-  const queue = await getQueueById(payload.queueId);
-  if (!queue) return;
-  queue.status = payload.status as any;
-  if (payload.currentPromptIndex !== undefined) {
-    queue.currentPromptIndex = payload.currentPromptIndex;
-  }
-  queue.updatedAt = Date.now();
-  await updateQueue(queue);
-  broadcastToExtension({ type: 'QUEUE_STATUS_UPDATE', payload: queue });
+  return withStorageLock(async () => {
+    const queue = await getQueueById(payload.queueId);
+    if (!queue) {
+      console.warn('[AutoFlow BG] handleQueueStatusUpdate: queue not found', payload.queueId);
+      return;
+    }
+    queue.status = payload.status as any;
+    if (payload.currentPromptIndex !== undefined) {
+      queue.currentPromptIndex = payload.currentPromptIndex;
+    }
+    queue.updatedAt = Date.now();
+    await updateQueue(queue);
+    console.log(`[AutoFlow BG] Queue status → ${payload.status}, prompt ${payload.currentPromptIndex}, done: ${queue.prompts.filter(p => p.status === 'done').length}/${queue.prompts.length}`);
+    broadcastToExtension({ type: 'QUEUE_STATUS_UPDATE', payload: queue });
 
-  // Stop keepalive when queue finishes
-  if (payload.status === 'completed' || payload.status === 'stopped') {
-    await stopKeepalive();
-  }
+    // Stop keepalive when queue finishes
+    if (payload.status === 'completed' || payload.status === 'stopped') {
+      await stopKeepalive();
+    }
+  });
 }
 
 // ── Prompt status update ──
@@ -330,17 +345,26 @@ async function handlePromptStatusUpdate(payload: {
   outputFiles?: string[];
   attempts?: number;
 }): Promise<void> {
-  const queue = await getQueueById(payload.queueId);
-  if (!queue) return;
-  const prompt = queue.prompts[payload.promptIndex];
-  if (!prompt) return;
-  prompt.status = payload.status as any;
-  if (payload.error !== undefined) prompt.error = payload.error;
-  if (payload.outputFiles) prompt.outputFiles = payload.outputFiles;
-  if (payload.attempts !== undefined) prompt.attempts = payload.attempts;
-  queue.updatedAt = Date.now();
-  await updateQueue(queue);
-  broadcastToExtension({ type: 'PROMPT_STATUS_UPDATE', payload: { queue, promptIndex: payload.promptIndex } });
+  return withStorageLock(async () => {
+    const queue = await getQueueById(payload.queueId);
+    if (!queue) {
+      console.warn('[AutoFlow BG] handlePromptStatusUpdate: queue not found', payload.queueId);
+      return;
+    }
+    const prompt = queue.prompts[payload.promptIndex];
+    if (!prompt) {
+      console.warn('[AutoFlow BG] handlePromptStatusUpdate: prompt not found at index', payload.promptIndex);
+      return;
+    }
+    prompt.status = payload.status as any;
+    if (payload.error !== undefined) prompt.error = payload.error;
+    if (payload.outputFiles) prompt.outputFiles = payload.outputFiles;
+    if (payload.attempts !== undefined) prompt.attempts = payload.attempts;
+    queue.updatedAt = Date.now();
+    await updateQueue(queue);
+    console.log(`[AutoFlow BG] Prompt #${payload.promptIndex + 1} → ${payload.status}, done: ${queue.prompts.filter(p => p.status === 'done').length}/${queue.prompts.length}`);
+    broadcastToExtension({ type: 'PROMPT_STATUS_UPDATE', payload: { queue, promptIndex: payload.promptIndex } });
+  });
 }
 
 // ── Start queue: use the tab the sidepanel is on (user's project tab) ──

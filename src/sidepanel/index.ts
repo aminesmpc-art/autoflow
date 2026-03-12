@@ -2305,9 +2305,12 @@ function appendLogToMonitor(entry: LogEntry) {
 
 function handleQueueStatusUpdate(queue: QueueObject) {
   // Update monitor
-  $('#monitor-queue-name').textContent = queue.name;
+  const nameEl = $('#monitor-queue-name');
+  const progressEl = $('#monitor-progress');
+  if (nameEl) nameEl.textContent = queue.name;
   const done = queue.prompts.filter(p => p.status === 'done').length;
-  $('#monitor-progress').textContent = `${done} / ${queue.prompts.length}`;
+  if (progressEl) progressEl.textContent = `${done} / ${queue.prompts.length}`;
+  console.log(`[AutoFlow SP] Queue status update: ${queue.name} — done ${done}/${queue.prompts.length}, status=${queue.status}`);
 
   // Toggle pause/resume buttons
   if (queue.status === 'paused') {
@@ -2337,7 +2340,9 @@ function handleQueueStatusUpdate(queue: QueueObject) {
 function handlePromptStatusUpdate(data: { queue: QueueObject; promptIndex: number }) {
   updatePromptStatuses(data.queue);
   const done = data.queue.prompts.filter(p => p.status === 'done').length;
-  $('#monitor-progress').textContent = `${done} / ${data.queue.prompts.length}`;
+  const progressEl = $('#monitor-progress');
+  if (progressEl) progressEl.textContent = `${done} / ${data.queue.prompts.length}`;
+  console.log(`[AutoFlow SP] Prompt #${data.promptIndex + 1} → ${data.queue.prompts[data.promptIndex]?.status}, done ${done}/${data.queue.prompts.length}`);
 }
 
 function updatePromptStatuses(queue: QueueObject) {
