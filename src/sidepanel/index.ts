@@ -170,6 +170,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (!ping?.error) {
     updateStatusDot(state.isRunning ? 'running' : 'connected');
   }
+
+  // First-run disclosure — show once, remember dismissal
+  const { af_first_run_seen } = await chrome.storage.local.get('af_first_run_seen');
+  if (!af_first_run_seen) {
+    const firstRunEl = $('#af-first-run');
+    if (firstRunEl) {
+      firstRunEl.style.display = 'flex';
+      $('#btn-dismiss-first-run')?.addEventListener('click', () => {
+        firstRunEl.style.display = 'none';
+        chrome.storage.local.set({ af_first_run_seen: true });
+      });
+    }
+  }
 });
 
 // ================================================================

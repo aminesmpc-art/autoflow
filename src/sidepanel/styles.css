@@ -2696,6 +2696,43 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ── First-Run Disclosure ── */
+.af-first-run {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(8, 11, 20, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fadeUp 0.3s var(--ease);
+}
+.af-first-run-content {
+  max-width: 380px;
+  padding: 24px !important;
+  text-align: center;
+}
+.af-first-run-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.af-first-run-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+.af-first-run .af-privacy-list {
+  text-align: left;
+  margin-bottom: 16px;
+}
+
 /* ── New Animation Keyframes ── */
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(8px); }

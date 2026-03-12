@@ -10,6 +10,22 @@
   <link rel="stylesheet" href="sidepanel.css" />
 </head>
 <body>
+  <!-- ═══════════════════ FIRST-RUN DISCLOSURE ═══════════════════ -->
+  <div id="af-first-run" class="af-first-run" style="display:none;">
+    <div class="af-first-run-content af-card">
+      <h3 class="af-first-run-title">Welcome to AutoFlow</h3>
+      <p class="af-first-run-text">
+        AutoFlow helps you queue, manage, and monitor video-generation tasks on Flow from this side panel.
+      </p>
+      <ul class="af-privacy-list">
+        <li>Runs only on supported Flow pages</li>
+        <li>Prompts, queues, and settings are stored locally in your browser</li>
+        <li>This is a third-party tool — not affiliated with or endorsed by Google</li>
+      </ul>
+      <button id="btn-dismiss-first-run" class="af-btn af-btn-primary af-btn-full">Got it</button>
+    </div>
+  </div>
+
   <!-- ═══════════════════ HEADER ═══════════════════ -->
   <header class="af-header">
     <div class="af-logo">
@@ -451,19 +467,12 @@
       </div>
     </div>
 
-    <!-- ── Account ── -->
+    <!-- ── Maintenance ── -->
     <div class="af-settings-group af-card">
       <h3 class="af-section-heading">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        Account &amp; Maintenance
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4"/></svg>
+        Maintenance
       </h3>
-
-      <button id="btn-manage-subscription" class="af-btn af-btn-outline af-btn-full">
-        Manage Subscription
-      </button>
-      <p class="af-hint af-mt-sm">Payment, invoices, or cancel.</p>
-
-      <div class="af-separator"></div>
 
       <button id="btn-clear-cache" class="af-btn af-btn-danger af-btn-full">
         Clear Flow Cache
@@ -498,11 +507,15 @@
 
       <div class="af-separator"></div>
 
+      <!-- TODO: Replace placeholder URLs before publish -->
       <div class="af-about-links">
+        <!-- TODO: Replace with real Privacy Policy URL -->
         <a href="https://example.com/privacy" target="_blank" class="af-link">Privacy Policy</a>
         <span class="af-link-sep">·</span>
+        <!-- TODO: Replace with real Terms URL -->
         <a href="https://example.com/terms" target="_blank" class="af-link">Terms of Service</a>
         <span class="af-link-sep">·</span>
+        <!-- TODO: Replace with real support email -->
         <a href="mailto:support@example.com" class="af-link">Support</a>
       </div>
     </div>
@@ -575,13 +588,13 @@
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Download
       </button>
-      <button id="btn-upscale-selected" class="af-btn af-btn-sm" title="Upscale selected videos to 1080p without downloading">
+      <button id="btn-upscale-selected" class="af-btn af-btn-sm" title="Upscale selected videos without downloading">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 11 12 6 7 11"/><line x1="12" y1="18" x2="12" y2="6"/></svg>
-        Upscale
+        Upscale <span class="af-hint-tag">beta</span>
       </button>
-      <button id="btn-retry-selected" class="af-btn af-btn-sm" title="Reuse Prompt and Generate for selected assets">
+      <button id="btn-retry-selected" class="af-btn af-btn-sm" title="Reuse prompt and generate again for selected assets">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-        Retry
+        Retry <span class="af-hint-tag">beta</span>
       </button>
     </div>
 
