@@ -1295,11 +1295,6 @@ function initSettingsTab() {
     showToast('Downloads will go to your browser\'s default download folder. Change it in chrome://settings/downloads.');
   });
 
-  // Manage Subscription button
-  $('#btn-manage-subscription').addEventListener('click', () => {
-    showToast('Subscription management coming soon.');
-  });
-
   // Clear Flow Cache button
   $('#btn-clear-cache').addEventListener('click', async () => {
     const response = await sendToBackground({ type: 'PING' });
