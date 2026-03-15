@@ -30,6 +30,7 @@ import {
   getAllQueues,
   saveAllQueues,
   addQueue,
+  getQueueById,
   deleteQueue,
   updateQueue,
   getNextQueueName,
@@ -42,6 +43,7 @@ import {
   getLogs,
   getActiveQueueId,
 } from '../shared/storage';
+import { login, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl } from '../shared/api';
 
 // ================================================================
 // STATE
@@ -160,8 +162,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSettingsTab();
   initQueuesTab();
   initLibraryTab();
+  initAccountTab();
   initMessageListener();
   await loadSettings();
+  await enforceImageGate(); // Run gate immediately after settings to prevent section flash
   await refreshQueuesList();
   await loadActiveQueueState();
 
@@ -189,9 +193,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 // TABS
 // ================================================================
 
+// Track global auth state for tab gating
+let _isAuthenticated = false;
+
 function initTabs() {
   $$('.af-tab').forEach(tab => {
     tab.addEventListener('click', () => {
+      // Block tabs that require auth when not logged in
+      if (!_isAuthenticated && tab.hasAttribute('data-requires-auth')) {
+        // Flash the account tab to guide user
+        const accountTab = $('[data-tab="account"]');
+        accountTab?.classList.add('af-tab-pulse');
+        setTimeout(() => accountTab?.classList.remove('af-tab-pulse'), 600);
+        return;
+      }
+
       $$('.af-tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
       $$('.af-panel').forEach(p => p.classList.remove('active'));
       tab.classList.add('active');
@@ -203,6 +219,74 @@ function initTabs() {
       if (tab.getAttribute('data-tab') === 'queues') refreshQueuesList();
     });
   });
+}
+
+/** Lock or unlock tabs based on auth state */
+function enforceAuthGate(loggedIn: boolean) {
+  _isAuthenticated = loggedIn;
+  const authTabs = $$('[data-requires-auth]');
+
+  authTabs.forEach(tab => {
+    if (loggedIn) {
+      tab.classList.remove('af-tab-locked');
+      tab.removeAttribute('title');
+    } else {
+      tab.classList.add('af-tab-locked');
+      tab.setAttribute('title', 'Sign in to unlock');
+    }
+  });
+
+  // If just logged in, switch to Create tab
+  if (loggedIn) {
+    const createTab = $('[data-tab="video"]');
+    if (createTab) createTab.click();
+  }
+}
+
+/** Hide image sections + mode cards when full-features limit is reached.
+ *  Also respects the currently active mode card. */
+async function enforceImageGate() {
+  const quota = await checkCanGenerate('full');
+  const limitReached = !quota.allowed;
+
+  // Get current active mode
+  const activeCard = document.querySelector('.af-mode-card.active') as HTMLElement;
+  const activeMode = activeCard?.getAttribute('data-mode') || 'text-to-video';
+
+  // Determine which sections should be visible based on mode + limit
+  const showShared = !limitReached && (activeMode === 'ingredients' || activeMode === 'create-image');
+  const showChar = !limitReached && (activeMode === 'ingredients' || activeMode === 'create-image');
+  const showAutomap = !limitReached && (activeMode === 'ingredients' || activeMode === 'create-image');
+  const showFramechain = !limitReached && activeMode === 'frame-to-video';
+
+  const el = (sel: string) => document.querySelector(sel) as HTMLElement | null;
+  if (el('#shared-images-section')) el('#shared-images-section')!.style.display = showShared ? '' : 'none';
+  if (el('#character-images-section')) el('#character-images-section')!.style.display = showChar ? '' : 'none';
+  if (el('#automap-section')) el('#automap-section')!.style.display = showAutomap ? '' : 'none';
+  if (el('#framechain-section')) el('#framechain-section')!.style.display = showFramechain ? '' : 'none';
+
+  // Hide/show per-prompt "+ Add images" buttons
+  $$('.af-add-img-btn').forEach(btn => {
+    (btn as HTMLElement).style.display = limitReached || activeMode === 'text-to-video' ? 'none' : '';
+  });
+
+  // Hide Frame-to-Video and Ingredients mode cards when limit reached
+  const frameCard = document.querySelector('.af-mode-card[data-mode="frame-to-video"]') as HTMLElement;
+  const ingredCard = document.querySelector('.af-mode-card[data-mode="ingredients"]') as HTMLElement;
+
+  if (limitReached) {
+    if (frameCard) frameCard.style.display = 'none';
+    if (ingredCard) ingredCard.style.display = 'none';
+
+    // If user was on a hidden card, switch to text-to-video
+    if (activeMode === 'frame-to-video' || activeMode === 'ingredients') {
+      const textVideoCard = document.querySelector('.af-mode-card[data-mode="text-to-video"]') as HTMLElement;
+      if (textVideoCard) textVideoCard.click();
+    }
+  } else {
+    if (frameCard) frameCard.style.display = '';
+    if (ingredCard) ingredCard.style.display = '';
+  }
 }
 
 // ================================================================
@@ -235,6 +319,82 @@ function reparsePrompts() {
 }
 
 function initVideoTab() {
+  // ── Mode selection cards ──
+  const modeCards = document.querySelectorAll('.af-mode-card');
+  modeCards.forEach(card => {
+    card.addEventListener('click', () => {
+      // Update active state
+      modeCards.forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+
+      const mode = card.getAttribute('data-mode');
+
+      // Map card to settings
+      // create-image → mediaType: image, creationType: ingredients
+      // text-to-video → mediaType: video, creationType: ingredients
+      // frame-to-video → mediaType: video, creationType: frames
+      // ingredients → mediaType: video, creationType: ingredients
+      let mediaType = 'video';
+      let creationType = 'ingredients';
+
+      if (mode === 'create-image') {
+        mediaType = 'image';
+        creationType = 'ingredients';
+      } else if (mode === 'frame-to-video') {
+        creationType = 'frames';
+      }
+
+      // Sync the radio buttons in Settings tab
+      const mediaRadio = document.querySelector(`input[name="mediaType"][value="${mediaType}"]`) as HTMLInputElement;
+      if (mediaRadio) { mediaRadio.checked = true; mediaRadio.dispatchEvent(new Event('change', { bubbles: true })); }
+
+      const creationRadio = document.querySelector(`input[name="creationType"][value="${creationType}"]`) as HTMLInputElement;
+      if (creationRadio) { creationRadio.checked = true; creationRadio.dispatchEvent(new Event('change', { bubbles: true })); }
+
+      // Show/hide image sections based on mode
+      const sharedSection = $('#shared-images-section');
+      const charSection = $('#character-images-section');
+      const automapSection = $('#automap-section');
+      const framechainSection = $('#framechain-section');
+
+      // text-to-video: hide all image sections
+      // create-image: show shared + character + automap (ingredients mode)
+      // ingredients: show shared + character + automap
+      // frame-to-video: show framechain only
+      if (mode === 'text-to-video') {
+        if (sharedSection) sharedSection.style.display = 'none';
+        if (charSection) charSection.style.display = 'none';
+        if (automapSection) automapSection.style.display = 'none';
+        if (framechainSection) framechainSection.style.display = 'none';
+      } else if (mode === 'frame-to-video') {
+        if (sharedSection) sharedSection.style.display = 'none';
+        if (charSection) charSection.style.display = 'none';
+        if (automapSection) automapSection.style.display = 'none';
+        if (framechainSection) framechainSection.style.display = '';
+      } else {
+        // create-image or ingredients — show shared, character, automap
+        if (sharedSection) sharedSection.style.display = '';
+        if (charSection) charSection.style.display = '';
+        if (automapSection) automapSection.style.display = '';
+        if (framechainSection) framechainSection.style.display = 'none';
+      }
+    });
+  });
+
+  // ── Trigger default active card on init to set correct section visibility ──
+  const defaultActive = document.querySelector('.af-mode-card.active') as HTMLElement;
+  if (defaultActive) defaultActive.click();
+
+  // ── Orientation dropdown → hidden radio sync ──
+  const orientationDropdown = document.getElementById('setting-orientation') as HTMLSelectElement;
+  if (orientationDropdown) {
+    orientationDropdown.addEventListener('change', () => {
+      const value = orientationDropdown.value;
+      const radio = document.querySelector(`input[name="orientation"][value="${value}"]`) as HTMLInputElement;
+      if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+  }
+
   // Parse button
   $('#btn-parse').addEventListener('click', () => {
     reparsePrompts();
@@ -1163,6 +1323,29 @@ async function addToQueue() {
     return;
   }
 
+  // Check if user has enough quota
+  const hasImages = state.sharedImages.length > 0 ||
+    [...state.promptImages.values()].some(imgs => imgs.some(Boolean));
+  const promptType = hasImages ? 'full' : 'text';
+  const quota = await checkCanGenerate(promptType as 'text' | 'full');
+
+  console.log(`[AutoFlow] addToQueue check: type=${promptType}, allowed=${quota.allowed}, remaining=${quota.remaining}, limit=${quota.limit}, prompts=${state.parsedPrompts.length}`);
+
+  if (!quota.allowed) {
+    if (quota.limit === 0) {
+      // Fail-closed: API couldn't be reached
+      showToast('Could not verify your usage. Check your connection and try again.');
+    } else {
+      showToast(`Daily ${promptType === 'full' ? 'full-feature' : 'text'} limit reached (${quota.limit}/day). Upgrade to Pro for unlimited.`);
+    }
+    return;
+  }
+
+  if (state.parsedPrompts.length > quota.remaining) {
+    showToast(`Only ${quota.remaining} ${promptType === 'full' ? 'full-feature' : 'text'} prompts remaining today. You have ${state.parsedPrompts.length}.`);
+    return;
+  }
+
   const settings = await getSettings();
   const queueName = await getNextQueueName();
   const queueId = crypto.randomUUID();
@@ -1251,12 +1434,44 @@ async function setRunTarget(target: 'newProject' | 'currentProject') {
 // TAB B: SETTINGS
 // ================================================================
 
+// Guard: skip auto-save during settings restore
+let _restoringSettings = false;
+
 function initSettingsTab() {
-  $('#btn-save-settings').addEventListener('click', async () => {
-    const settings = readSettingsFromUI();
-    await saveSettings(settings);
-    showToast('Settings saved.');
+  // ── Auto-save: save settings on ANY change (debounced) ──
+  let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  function autoSave() {
+    if (_restoringSettings) return; // Don't save while restoring
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(async () => {
+      const settings = readSettingsFromUI();
+      await saveSettings(settings);
+    }, 300); // 300ms debounce
+  }
+
+  // Attach auto-save to all settings controls
+  const settingsPanel = document.getElementById('panel-settings');
+  if (settingsPanel) {
+    // Dropdowns
+    settingsPanel.querySelectorAll('select').forEach(el => el.addEventListener('change', autoSave));
+    // Checkboxes & toggles
+    settingsPanel.querySelectorAll('input[type="checkbox"]').forEach(el => el.addEventListener('change', autoSave));
+    // Radio buttons
+    settingsPanel.querySelectorAll('input[type="radio"]').forEach(el => el.addEventListener('change', autoSave));
+    // Number inputs
+    settingsPanel.querySelectorAll('input[type="number"]').forEach(el => el.addEventListener('change', autoSave));
+    // Range sliders
+    settingsPanel.querySelectorAll('input[type="range"]').forEach(el => el.addEventListener('input', autoSave));
+  }
+
+  // Also auto-save when mode cards change settings
+  document.querySelectorAll('.af-mode-card').forEach(card => {
+    card.addEventListener('click', () => setTimeout(autoSave, 50));
   });
+
+  // Hide the Save button (no longer needed)
+  const saveBtn = document.getElementById('btn-save-settings');
+  if (saveBtn) saveBtn.style.display = 'none';
 
   $('#btn-refresh-models').addEventListener('click', async () => {
     showToast('Refreshing models from Flow...');
@@ -1348,51 +1563,58 @@ function initSettingsTab() {
 }
 
 async function loadSettings() {
-  const settings = await getSettings();
-  // Media type
-  const mediaRadios = $$('input[name="mediaType"]') as NodeListOf<HTMLInputElement>;
-  mediaRadios.forEach(r => { r.checked = r.value === (settings.mediaType ?? 'video'); });
-  // Creation type
-  const creationRadios = $$('input[name="creationType"]') as NodeListOf<HTMLInputElement>;
-  creationRadios.forEach(r => { r.checked = r.value === (settings.creationType ?? 'ingredients'); });
-  // Model
-  ($('#setting-model') as HTMLSelectElement).value = settings.model;
-  // Orientation
-  const orientationRadios = $$('input[name="orientation"]') as NodeListOf<HTMLInputElement>;
-  orientationRadios.forEach(r => { r.checked = r.value === (settings.orientation ?? 'landscape'); });
-  // Generations
-  ($('#setting-generations') as HTMLSelectElement).value = String(settings.generations);
-  ($('#setting-stop-error') as HTMLInputElement).checked = settings.stopOnError;
+  _restoringSettings = true; // Guard: prevent auto-save during restore
+  try {
+    const settings = await getSettings();
+    // Media type
+    const mediaRadios = $$('input[name="mediaType"]') as NodeListOf<HTMLInputElement>;
+    mediaRadios.forEach(r => { r.checked = r.value === (settings.mediaType ?? 'video'); });
+    // Creation type
+    const creationRadios = $$('input[name="creationType"]') as NodeListOf<HTMLInputElement>;
+    creationRadios.forEach(r => { r.checked = r.value === (settings.creationType ?? 'ingredients'); });
+    // Model
+    ($('#setting-model') as HTMLSelectElement).value = settings.model;
+    // Orientation — sync both hidden radios AND dropdown
+    const orientationRadios = $$('input[name="orientation"]') as NodeListOf<HTMLInputElement>;
+    orientationRadios.forEach(r => { r.checked = r.value === (settings.orientation ?? 'landscape'); });
+    const orientationDropdown = document.getElementById('setting-orientation') as HTMLSelectElement;
+    if (orientationDropdown) orientationDropdown.value = settings.orientation ?? 'landscape';
+    // Generations
+    ($('#setting-generations') as HTMLSelectElement).value = String(settings.generations);
+    ($('#setting-stop-error') as HTMLInputElement).checked = settings.stopOnError;
 
-  // Image generation settings
-  ($('#setting-image-model') as HTMLSelectElement).value = settings.imageModel ?? 'Nano Banana Pro';
-  ($('#setting-image-ratio') as HTMLSelectElement).value = settings.imageRatio ?? 'Landscape (16:9)';
+    // Image generation settings
+    ($('#setting-image-model') as HTMLSelectElement).value = settings.imageModel ?? 'Nano Banana Pro';
+    ($('#setting-image-ratio') as HTMLSelectElement).value = settings.imageRatio ?? 'Landscape (16:9)';
 
-  // Show/hide video vs image settings based on media type
-  updateMediaTypeVisibility(settings.mediaType ?? 'video');
+    // Show/hide video vs image settings based on media type
+    updateMediaTypeVisibility(settings.mediaType ?? 'video');
 
-  // Show/hide frame chain vs ingredient sections based on creation type
-  updateCreationTypeVisibility(settings.creationType ?? 'ingredients');
+    // Show/hide frame chain vs ingredient sections based on creation type
+    updateCreationTypeVisibility(settings.creationType ?? 'ingredients');
 
-  // Timing
-  ($('#setting-wait-min') as HTMLInputElement).value = String(settings.waitMinSec ?? 10);
-  ($('#setting-wait-max') as HTMLInputElement).value = String(settings.waitMaxSec ?? 20);
-  ($('#setting-typing-mode') as HTMLInputElement).checked = settings.typingMode ?? false;
-  const speedSlider = $('#setting-typing-speed-slider') as HTMLInputElement;
-  speedSlider.value = String(settings.typingSpeedMultiplier ?? 1.0);
-  ($('#typing-speed-display') as HTMLElement).textContent = `${(settings.typingSpeedMultiplier ?? 1.0).toFixed(2)}x`;
+    // Timing
+    ($('#setting-wait-min') as HTMLInputElement).value = String(settings.waitMinSec ?? 10);
+    ($('#setting-wait-max') as HTMLInputElement).value = String(settings.waitMaxSec ?? 20);
+    ($('#setting-typing-mode') as HTMLInputElement).checked = settings.typingMode ?? false;
+    const speedSlider = $('#setting-typing-speed-slider') as HTMLInputElement;
+    speedSlider.value = String(settings.typingSpeedMultiplier ?? 1.0);
+    ($('#typing-speed-display') as HTMLElement).textContent = `${(settings.typingSpeedMultiplier ?? 1.0).toFixed(2)}x`;
 
-  // Download
-  ($('#setting-auto-dl-videos') as HTMLInputElement).checked = settings.autoDownloadVideos ?? settings.autoDownload ?? true;
-  ($('#setting-video-resolution') as HTMLSelectElement).value = settings.videoResolution ?? 'Original (720p)';
-  ($('#setting-auto-dl-images') as HTMLInputElement).checked = settings.autoDownloadImages ?? false;
-  ($('#setting-image-resolution') as HTMLSelectElement).value = settings.imageResolution ?? '1K';
+    // Download
+    ($('#setting-auto-dl-videos') as HTMLInputElement).checked = settings.autoDownloadVideos ?? settings.autoDownload ?? true;
+    ($('#setting-video-resolution') as HTMLSelectElement).value = settings.videoResolution ?? 'Original (720p)';
+    ($('#setting-auto-dl-images') as HTMLInputElement).checked = settings.autoDownloadImages ?? false;
+    ($('#setting-image-resolution') as HTMLSelectElement).value = settings.imageResolution ?? '1K';
 
-  // Interface
-  ($('#setting-language') as HTMLSelectElement).value = settings.language ?? 'English';
+    // Interface
+    ($('#setting-language') as HTMLSelectElement).value = settings.language ?? 'English';
 
-  // Show/hide typing speed based on typing mode
-  updateTypingModeVisibility(settings.typingMode ?? false);
+    // Show/hide typing speed based on typing mode
+    updateTypingModeVisibility(settings.typingMode ?? false);
+  } finally {
+    _restoringSettings = false; // Re-enable auto-save
+  }
 }
 
 function readSettingsFromUI(): QueueSettings {
@@ -1401,8 +1623,10 @@ function readSettingsFromUI(): QueueSettings {
   const creationTypeRadio = document.querySelector('input[name="creationType"]:checked') as HTMLInputElement;
   const creationType = (creationTypeRadio?.value || 'ingredients') as CreationType;
   const model = ($('#setting-model') as HTMLSelectElement).value;
+  // Read orientation from dropdown (source of truth) with radio fallback
+  const orientationDropdown = document.getElementById('setting-orientation') as HTMLSelectElement;
   const orientationRadio = document.querySelector('input[name="orientation"]:checked') as HTMLInputElement;
-  const orientation = (orientationRadio?.value || 'landscape') as Orientation;
+  const orientation = (orientationDropdown?.value || orientationRadio?.value || 'landscape') as Orientation;
   const generations = parseInt(($('#setting-generations') as HTMLSelectElement).value, 10) as 1 | 2 | 3 | 4;
   const stopOnError = ($('#setting-stop-error') as HTMLInputElement).checked;
 
@@ -1692,6 +1916,31 @@ async function runQueue(queueId: string) {
     showToast('Another queue is already running. Stop it first.');
     return;
   }
+
+  // Get queue to count prompts and check quota
+  const queue = await getQueueById(queueId);
+  if (!queue) {
+    showToast('Queue not found.');
+    return;
+  }
+
+  const pendingCount = queue.prompts.filter((p: PromptEntry) => p.status === 'queued').length;
+  const hasImages = queue.prompts.some((p: PromptEntry) => p.images && p.images.length > 0);
+  const promptType = hasImages ? 'full' : 'text';
+  const quota = await checkCanGenerate(promptType as 'text' | 'full');
+
+  if (!quota.allowed) {
+    showToast(`Daily limit reached. Upgrade to Pro for unlimited.`);
+    return;
+  }
+
+  if (pendingCount > quota.remaining) {
+    showToast(`Only ${quota.remaining} prompts remaining. Queue has ${pendingCount} pending.`);
+    return;
+  }
+
+  // Just check quota — don't consume upfront.
+  // Credits are consumed per-prompt when they actually complete (in handlePromptStatusUpdate).
   showToast('Starting queue...');
 
   // Get the tab the sidepanel is attached to — this is the project tab the user has open
@@ -1766,6 +2015,8 @@ function initLibraryTab() {
       return;
     }
 
+    // Scan is free for all users — no Pro check needed
+
     // Pre-check: verify extension can talk to the Flow tab
     const pingResult = await sendToBackground({ type: 'PING' });
     if (pingResult?.error) {
@@ -1832,6 +2083,28 @@ function initLibraryTab() {
       showToast('No assets selected.');
       return;
     }
+
+    // Download limit for free users: 10/day
+    const profile = await getProfile();
+    if (!profile || !profile.is_pro_active) {
+      const today = new Date().toISOString().slice(0, 10);
+      const stored = await chrome.storage.local.get('af_download_tracker');
+      const tracker = stored.af_download_tracker || { date: '', count: 0 };
+      const dailyCount = tracker.date === today ? tracker.count : 0;
+      const FREE_DOWNLOAD_LIMIT = 10;
+
+      if (dailyCount + selected.length > FREE_DOWNLOAD_LIMIT) {
+        const remaining = Math.max(0, FREE_DOWNLOAD_LIMIT - dailyCount);
+        showToast(`⭐ Free plan: ${remaining} downloads left today (${FREE_DOWNLOAD_LIMIT}/day). Upgrade for unlimited!`);
+        return;
+      }
+
+      // Update tracker after download
+      await chrome.storage.local.set({
+        af_download_tracker: { date: today, count: dailyCount + selected.length },
+      });
+    }
+
     showToast(`Downloading ${selected.length} file(s)...`);
     // Get the current resolution setting based on media type
     const hasVideo = selected.some(a => a.mediaType === 'video');
@@ -1866,6 +2139,22 @@ function initLibraryTab() {
       showToast('No assets selected.');
       return;
     }
+
+    // Check if user has enough generation quota for retry
+    const hasImages = selected.some(a => a.mediaType === 'video');
+    const promptType = hasImages ? 'full' : 'text';
+    const quota = await checkCanGenerate(promptType as 'text' | 'full');
+    if (!quota.allowed) {
+      showToast('⭐ Daily limit reached. Upgrade to Pro for unlimited retries!');
+      return;
+    }
+    if (selected.length > quota.remaining) {
+      showToast(`Only ${quota.remaining} retries remaining today. Selected ${selected.length}.`);
+      return;
+    }
+
+    // Consume usage for retries
+    await trackUsage(selected.length, promptType as 'text' | 'full');
     showToast(`Retrying ${selected.length} asset(s)...`);
 
     let succeeded = 0;
@@ -1905,6 +2194,14 @@ function initLibraryTab() {
       showToast('No assets selected.');
       return;
     }
+
+    // Upscale is Pro-only
+    const profile = await getProfile();
+    if (!profile || !profile.is_pro_active) {
+      showToast('⭐ Upscaling is a Pro feature. Upgrade to unlock!');
+      return;
+    }
+
     const resolution = ($('#setting-video-resolution') as HTMLSelectElement).value || '1080p Upscaled';
     showToast(`Upscaling ${selected.length} video(s) to ${resolution}...`);
 
@@ -2332,12 +2629,36 @@ function handleQueueStatusUpdate(queue: QueueObject) {
   updatePromptStatuses(queue);
 }
 
+// Track which prompts have already been counted for usage to prevent double-counting.
+// Key format: "queueId:promptIndex"
+const _trackedPromptUsage = new Set<string>();
+
 function handlePromptStatusUpdate(data: { queue: QueueObject; promptIndex: number }) {
-  updatePromptStatuses(data.queue);
+  const prompt = data.queue.prompts[data.promptIndex];
   const done = data.queue.prompts.filter(p => p.status === 'done').length;
   const progressEl = $('#monitor-progress');
   if (progressEl) progressEl.textContent = `${done} / ${data.queue.prompts.length}`;
-  console.log(`[AutoFlow SP] Prompt #${data.promptIndex + 1} → ${data.queue.prompts[data.promptIndex]?.status}, done ${done}/${data.queue.prompts.length}`);
+
+  // Track usage only when a prompt ACTUALLY completes (not failed/skipped)
+  // AND only once per prompt (prevents double-counting from duplicate messages)
+  if (prompt && prompt.status === 'done') {
+    const key = `${data.queue.id}:${data.promptIndex}`;
+    if (!_trackedPromptUsage.has(key)) {
+      _trackedPromptUsage.add(key);
+      const hasImages = prompt.images && prompt.images.length > 0;
+      const promptType = hasImages ? 'full' : 'text';
+      trackUsage(1, promptType as 'text' | 'full').then(success => {
+        if (!success) {
+          console.warn('[AutoFlow] Failed to track usage for completed prompt');
+        }
+        // Re-check image gate after each completion
+        enforceImageGate();
+      });
+    }
+  }
+
+  updatePromptStatuses(data.queue);
+  console.log(`[AutoFlow SP] Prompt #${data.promptIndex + 1} → ${prompt?.status}, done ${done}/${data.queue.prompts.length}`);
 }
 
 function updatePromptStatuses(queue: QueueObject) {
@@ -2624,3 +2945,324 @@ async function sendToBackground(msg: Message): Promise<any> {
     }
   });
 }
+
+// ================================================================
+// TAB E: ACCOUNT — LOGIN / REGISTER / USAGE
+// ================================================================
+
+function initAccountTab() {
+  const btnShowLogin = $('#btn-show-login') as HTMLButtonElement;
+  const btnShowRegister = $('#btn-show-register') as HTMLButtonElement;
+  const formLogin = $('#form-login') as HTMLFormElement;
+  const formRegister = $('#form-register') as HTMLFormElement;
+
+  // Helper to show a styled message in a container
+  function showMessage(containerId: string, text: string, type: 'error' | 'success' | 'info') {
+    const el = $(`#${containerId}`) as HTMLElement;
+    if (!el) return;
+    el.textContent = text;
+    el.className = `af-auth-message ${type}`;
+    el.style.display = 'block';
+  }
+
+  function hideMessage(containerId: string) {
+    const el = $(`#${containerId}`) as HTMLElement;
+    if (el) el.style.display = 'none';
+  }
+
+  // Track last-used email for verification flow
+  let pendingEmail = '';
+
+  // ── Toggle login/register forms ──
+  btnShowLogin?.addEventListener('click', () => {
+    btnShowLogin.classList.add('active');
+    btnShowRegister.classList.remove('active');
+    formLogin.style.display = 'flex';
+    formRegister.style.display = 'none';
+    hideMessage('login-message');
+    hideMessage('register-message');
+  });
+
+  btnShowRegister?.addEventListener('click', () => {
+    btnShowRegister.classList.add('active');
+    btnShowLogin.classList.remove('active');
+    formRegister.style.display = 'flex';
+    formLogin.style.display = 'none';
+    hideMessage('login-message');
+    hideMessage('register-message');
+  });
+
+  // ── Login form ──
+  formLogin?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = ($('#login-email') as HTMLInputElement).value.trim();
+    const password = ($('#login-password') as HTMLInputElement).value;
+    const submitBtn = $('#btn-login-submit') as HTMLButtonElement;
+
+    hideMessage('login-message');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Signing in…';
+
+    const result = await login(email, password);
+
+    if (result.ok) {
+      await showLoggedInState();
+    } else {
+      // Check if it's a verification-needed error (403)
+      if (result.message.toLowerCase().includes('verify')) {
+        pendingEmail = email;
+        showVerifyPendingState(email);
+      } else {
+        showMessage('login-message', result.message, 'error');
+      }
+    }
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Sign In';
+  });
+
+  // ── Register form ──
+  formRegister?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = ($('#register-email') as HTMLInputElement).value.trim();
+    const password = ($('#register-password') as HTMLInputElement).value;
+    const submitBtn = $('#btn-register-submit') as HTMLButtonElement;
+
+    hideMessage('register-message');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating…';
+
+    const result = await register(email, password);
+
+    if (result.ok) {
+      pendingEmail = email;
+      showVerifyPendingState(email);
+    } else {
+      showMessage('register-message', result.message, 'error');
+    }
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Create Account';
+  });
+
+  // ── Resend verification ──
+  $('#btn-resend-verify')?.addEventListener('click', async () => {
+    const btn = $('#btn-resend-verify') as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    hideMessage('resend-message');
+
+    try {
+      const res = await fetch(`https://api.auto-flow.studio/api/auth/resend-verification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: pendingEmail }),
+      });
+      const data = await res.json();
+      showMessage('resend-message', data.message || 'Verification email sent!', 'success');
+    } catch {
+      showMessage('resend-message', 'Could not send email. Try again later.', 'error');
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Resend Verification Email';
+  });
+
+  // ── Back to login ──
+  $('#btn-back-to-login')?.addEventListener('click', () => {
+    showLoggedOutState();
+    // Pre-fill email
+    ($('#login-email') as HTMLInputElement).value = pendingEmail;
+    showMessage('login-message', 'Verified your email? Sign in below.', 'info');
+  });
+
+  // ── Logout ──
+  $('#btn-logout')?.addEventListener('click', async () => {
+    await logout();
+
+    // Clear all user-specific data from storage
+    await chrome.storage.local.remove([
+      'af_queues',
+      'af_settings',
+      'af_queue_counter',
+      'af_cached_profile',
+      'af_active_queue_id',
+    ]);
+
+    // Clear IndexedDB image blobs
+    try {
+      const dbs = await indexedDB.databases();
+      for (const db of dbs) {
+        if (db.name === 'autoflow_images') {
+          indexedDB.deleteDatabase('autoflow_images');
+        }
+      }
+    } catch { /* IDB cleanup optional */ }
+
+    // Reset in-memory sidepanel state
+    state.parsedPrompts = [];
+    state.promptImages.clear();
+    state.sharedImages = [];
+    state.characterImages = [];
+    state.autoAddCharacters = false;
+    state.isRunning = false;
+    state.lastAddedQueueId = null;
+    _trackedPromptUsage.clear();
+
+    // Clear prompt textarea
+    const promptInput = $('#prompt-input') as HTMLTextAreaElement;
+    if (promptInput) promptInput.value = '';
+
+    // Clear prompt list
+    const promptList = $('#prompt-list');
+    if (promptList) promptList.innerHTML = '';
+
+    // Clear shared/character image previews
+    const sharedGrid = $('#shared-images-grid');
+    if (sharedGrid) sharedGrid.innerHTML = '';
+    const charGrid = $('#char-images-grid');
+    if (charGrid) charGrid.innerHTML = '';
+
+    // Clear queues list
+    const queuesList = $('#queues-list');
+    if (queuesList) queuesList.innerHTML = '';
+
+    // Reset counters
+    const sharedCounter = $('#shared-img-count');
+    if (sharedCounter) sharedCounter.textContent = '0/3';
+
+    showLoggedOutState();
+  });
+
+  // ── Refresh usage ──
+  $('#btn-refresh-usage')?.addEventListener('click', () => {
+    updateUsageDisplay();
+  });
+
+  // ── Upgrade to Pro button ──
+  $('#btn-upgrade-pro')?.addEventListener('click', async () => {
+    const url = await getUpgradeUrl();
+    window.open(url, '_blank');
+  });
+
+  // ── Check initial auth state ──
+  checkAuthState();
+}
+
+function showVerifyPendingState(email: string) {
+  $('#account-logged-out')!.style.display = 'none';
+  $('#account-verify-pending')!.style.display = 'block';
+  $('#account-logged-in')!.style.display = 'none';
+  ($('#verify-pending-email') as HTMLElement).textContent = email;
+}
+
+async function checkAuthState() {
+  const loggedIn = await isLoggedIn();
+  if (loggedIn) {
+    await showLoggedInState();
+  } else {
+    showLoggedOutState();
+  }
+}
+
+async function showLoggedInState() {
+  $('#account-logged-out')!.style.display = 'none';
+  $('#account-verify-pending')!.style.display = 'none';
+  $('#account-logged-in')!.style.display = 'block';
+
+  // Unlock all tabs
+  enforceAuthGate(true);
+  // Check if image sections should be hidden (full-features limit)
+  enforceImageGate();
+
+  // Load profile — with cached fallback
+  let profile = await getProfile();
+  if (profile) {
+    // Cache for offline use
+    chrome.storage.local.set({ af_cached_profile: profile });
+    ($('#account-email') as HTMLElement).textContent = profile.email;
+    const badge = $('#account-plan-badge') as HTMLElement;
+    if (profile.is_pro_active) {
+      badge.textContent = 'Pro';
+      badge.className = 'af-plan-badge pro';
+      // Hide upgrade CTA for Pro users
+      const upgradeCta = document.getElementById('upgrade-cta');
+      if (upgradeCta) upgradeCta.style.display = 'none';
+    } else {
+      badge.textContent = 'Free';
+      badge.className = 'af-plan-badge';
+      // Show upgrade CTA for Free users
+      const upgradeCta = document.getElementById('upgrade-cta');
+      if (upgradeCta) upgradeCta.style.display = '';
+    }
+  } else {
+    // API down — try cached profile
+    const { af_cached_profile } = await chrome.storage.local.get('af_cached_profile');
+    if (af_cached_profile) {
+      ($('#account-email') as HTMLElement).textContent = af_cached_profile.email;
+      const badge = $('#account-plan-badge') as HTMLElement;
+      badge.textContent = 'Offline';
+      badge.className = 'af-plan-badge';
+    }
+  }
+
+  await updateUsageDisplay();
+}
+
+function showLoggedOutState() {
+  $('#account-logged-out')!.style.display = 'block';
+  $('#account-verify-pending')!.style.display = 'none';
+  $('#account-logged-in')!.style.display = 'none';
+
+  // Lock all tabs, switch to Account
+  enforceAuthGate(false);
+  const accountTab = $('[data-tab="account"]');
+  if (accountTab) accountTab.click();
+}
+
+async function updateUsageDisplay() {
+  const usage = await getDailyUsage();
+  if (!usage) {
+    // Show 'offline' hint on both bars
+    const textHint = $('#account-text-usage-hint') as HTMLElement;
+    const fullHint = $('#account-full-usage-hint') as HTMLElement;
+    if (textHint) textHint.textContent = 'Could not load usage — check connection';
+    if (fullHint) fullHint.textContent = 'Could not load usage — check connection';
+    return;
+  }
+
+  // Helper to update one usage bar
+  function updateBar(prefix: string, used: number, limit: number, remaining: number, isPro: boolean) {
+    const textEl = $(`#account-${prefix}-usage-text`) as HTMLElement;
+    const barEl = $(`#account-${prefix}-usage-bar`) as HTMLElement;
+    const hintEl = $(`#account-${prefix}-usage-hint`) as HTMLElement;
+    if (!textEl || !barEl || !hintEl) return;
+
+    if (isPro) {
+      textEl.textContent = `${used} / ∞`;
+      barEl.style.width = '0%';
+      barEl.classList.remove('warning', 'full');
+      hintEl.textContent = 'Unlimited — Pro plan';
+      return;
+    }
+
+    const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+    textEl.textContent = `${used} / ${limit}`;
+    barEl.style.width = `${pct}%`;
+
+    barEl.classList.remove('warning', 'full');
+    if (pct >= 100) {
+      barEl.classList.add('full');
+      hintEl.textContent = 'Limit reached!';
+    } else if (pct >= 75) {
+      barEl.classList.add('warning');
+      hintEl.textContent = `${remaining} remaining today`;
+    } else {
+      hintEl.textContent = `${remaining} remaining today`;
+    }
+  }
+
+  updateBar('text', usage.text_used, usage.text_limit, usage.text_remaining, usage.is_pro);
+  updateBar('full', usage.full_used, usage.full_limit, usage.full_remaining, usage.is_pro);
+}
+
