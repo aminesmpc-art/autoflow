@@ -40,14 +40,34 @@ class RegisterView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        # Rate limit: max 5 registrations per IP per hour
+        from django.core.cache import cache
+        ip = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or request.META.get("REMOTE_ADDR", "unknown")
+        cache_key = f"register_rate:{ip}"
+        attempts = cache.get(cache_key, 0)
+        if attempts >= 5:
+            return Response(
+                {"detail": "Too many registration attempts. Try again later."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        cache.set(cache_key, attempts + 1, timeout=3600)  # 1 hour
+
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        register_user(
-            email=serializer.validated_data["email"],
-            password=serializer.validated_data["password"],
-        )
+        try:
+            register_user(
+                email=serializer.validated_data["email"],
+                password=serializer.validated_data["password"],
+            )
+        except Exception as e:
+            import traceback
+            logger.error("Registration failed: %s\n%s", str(e), traceback.format_exc())
+            return Response(
+                {"detail": f"Registration failed: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response(
-            {"message": "Account created. Please check your email to verify your account."},
+            {"message": "Account created! Check your email to verify and log in."},
             status=status.HTTP_201_CREATED,
         )
 
@@ -137,16 +157,31 @@ class VerifyEmailView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
+        from django.shortcuts import render
+
         token = request.query_params.get("token")
         if not token:
-            return Response(
-                {"message": "Token is required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return render(request, "users/verify_result.html", {
+                "status_class": "error",
+                "icon": "⚠️",
+                "title": "Missing Token",
+                "message": "No verification token provided. Please use the link from your email.",
+            }, status=400)
+
         success, message = verify_email(token)
         if success:
-            return Response({"message": message})
-        return Response({"message": message}, status=status.HTTP_400_BAD_REQUEST)
+            return render(request, "users/verify_result.html", {
+                "status_class": "success",
+                "icon": "✅",
+                "title": "Email Verified!",
+                "message": "Your email has been verified. You can now log in from the AutoFlow extension.",
+            })
+        return render(request, "users/verify_result.html", {
+            "status_class": "error",
+            "icon": "❌",
+            "title": "Verification Failed",
+            "message": message,
+        }, status=400)
 
 
 class ResendVerificationView(APIView):
@@ -181,9 +216,20 @@ class ConsumePromptView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        result = consume_prompt(request.user, source="extension")
-        http_status = status.HTTP_200_OK if result["allowed"] else status.HTTP_403_FORBIDDEN
-        return Response(result, status=http_status)
+        prompt_type = request.data.get("prompt_type", "text")
+        prompt_count = int(request.data.get("prompt_count", 1))
+
+        results = []
+        for _ in range(prompt_count):
+            result = consume_prompt(request.user, source="extension", prompt_type=prompt_type)
+            results.append(result)
+            if not result["allowed"]:
+                break
+
+        # Return the last result (has current remaining counts)
+        final = results[-1]
+        http_status = status.HTTP_200_OK if final["allowed"] else status.HTTP_403_FORBIDDEN
+        return Response(final, status=http_status)
 
 
 class UsageEventView(APIView):
@@ -242,12 +288,95 @@ class WhopWebhookView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        # TODO: Verify Whop signature (placeholder for now)
+        import base64
+        import hashlib
+        import hmac
+        import time
+
+        from django.conf import settings
+
+        raw_body = request.body
+
+        # ── 1. Verify Webhook Signature (Standard Webhooks spec) ──
+        webhook_id = request.META.get("HTTP_WEBHOOK_ID", "")
+        webhook_signature = request.META.get("HTTP_WEBHOOK_SIGNATURE", "")
+        webhook_timestamp = request.META.get("HTTP_WEBHOOK_TIMESTAMP", "")
+
+        secret = getattr(settings, "WHOP_WEBHOOK_SECRET", "")
+
+        if not secret:
+            logger.error("WHOP_WEBHOOK_SECRET not configured")
+            return Response(
+                {"error": "Server misconfiguration"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        if not webhook_signature or not webhook_timestamp:
+            logger.warning("Whop webhook missing signature or timestamp headers")
+            return Response(
+                {"error": "Missing signature headers"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Replay protection: reject if timestamp is older than 5 minutes
+        try:
+            ts = int(webhook_timestamp)
+            if abs(time.time() - ts) > 300:
+                logger.warning("Whop webhook timestamp too old: %s", webhook_timestamp)
+                return Response(
+                    {"error": "Timestamp too old"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        except (ValueError, TypeError):
+            return Response(
+                {"error": "Invalid timestamp"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Compute expected signature: HMAC-SHA256(secret, "msg_id.timestamp.body")
+        # Standard Webhooks secret may be base64-encoded with "whsec_" prefix
+        signing_secret = secret
+        if signing_secret.startswith("whsec_"):
+            signing_secret = signing_secret[6:]
+        try:
+            secret_bytes = base64.b64decode(signing_secret)
+        except Exception:
+            secret_bytes = signing_secret.encode("utf-8")
+
+        signed_content = f"{webhook_id}.{webhook_timestamp}.".encode("utf-8") + raw_body
+        expected_sig = base64.b64encode(
+            hmac.new(secret_bytes, signed_content, hashlib.sha256).digest()
+        ).decode("utf-8")
+
+        # webhook-signature header can contain multiple "v1,<sig>" entries
+        valid = False
+        for sig_part in webhook_signature.split(" "):
+            if sig_part.startswith("v1,"):
+                provided_sig = sig_part[3:]
+                if hmac.compare_digest(expected_sig, provided_sig):
+                    valid = True
+                    break
+
+        if not valid:
+            logger.warning("Whop webhook signature mismatch")
+            return Response(
+                {"error": "Invalid signature"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ── 2. Parse payload ──
         payload = request.data
         event_type = payload.get("type", "unknown")
-        external_id = payload.get("id", "")
+        external_id = payload.get("id", "") or webhook_id
 
-        # Store raw event
+        # ── 3. Idempotency: skip if already processed ──
+        if external_id and WebhookEvent.objects.filter(
+            external_event_id=external_id, processed=True
+        ).exists():
+            logger.info("Skipping duplicate Whop webhook: %s", external_id)
+            return Response({"received": True, "duplicate": True}, status=status.HTTP_200_OK)
+
+        # ── 4. Store and process ──
         event = WebhookEvent.objects.create(
             provider="whop",
             external_event_id=external_id,
@@ -255,7 +384,6 @@ class WhopWebhookView(APIView):
             raw_payload=payload,
         )
 
-        # Process
         process_whop_webhook(event)
 
         return Response({"received": True}, status=status.HTTP_200_OK)
@@ -271,3 +399,120 @@ class HealthView(APIView):
 
     def get(self, request):
         return Response({"status": "ok", "service": "autoflow-backend"})
+
+
+class DiagnosticView(APIView):
+    """Temporary endpoint to debug admin 500 error. Remove after fixing."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        import traceback
+        results = {}
+
+        # Test 1: DB connection
+        try:
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+            results["db_connection"] = "OK"
+        except Exception as e:
+            results["db_connection"] = f"FAIL: {e}"
+
+        # Test 2: Session table
+        try:
+            from django.contrib.sessions.models import Session
+            Session.objects.count()
+            results["session_table"] = "OK"
+        except Exception as e:
+            results["session_table"] = f"FAIL: {e}"
+
+        # Test 3: User exists
+        try:
+            user = CustomUser.objects.filter(is_superuser=True).first()
+            results["superuser"] = f"OK: {user.email}" if user else "FAIL: no superuser found"
+        except Exception as e:
+            results["superuser"] = f"FAIL: {e}"
+
+        # Test 4: Authenticate
+        try:
+            user = authenticate(username="admin@auto-flow.studio", password="AutoFlow2026!")
+            results["auth"] = f"OK: {user}" if user else "FAIL: returned None"
+        except Exception as e:
+            results["auth"] = f"FAIL: {traceback.format_exc()}"
+
+        # Test 5: CSRF settings
+        from django.conf import settings
+        results["csrf_trusted_origins"] = getattr(settings, "CSRF_TRUSTED_ORIGINS", "NOT SET")
+        results["secure_proxy_ssl_header"] = str(getattr(settings, "SECURE_PROXY_SSL_HEADER", "NOT SET"))
+        results["debug"] = settings.DEBUG
+        results["static_root"] = str(getattr(settings, "STATIC_ROOT", "NOT SET"))
+        results["staticfiles_storage"] = str(getattr(settings, "STATICFILES_STORAGE", "NOT SET"))
+
+        # Test 6: Static files manifest
+        try:
+            from django.contrib.staticfiles.storage import staticfiles_storage
+            if hasattr(staticfiles_storage, 'read_manifest'):
+                manifest = staticfiles_storage.read_manifest()
+                results["static_manifest"] = "OK" if manifest else "EMPTY"
+            else:
+                results["static_manifest"] = "N/A (no manifest storage)"
+        except Exception as e:
+            results["static_manifest"] = f"FAIL: {e}"
+
+        # Test 7: Show actual database config
+        db_conf = settings.DATABASES.get("default", {})
+        results["db_engine"] = db_conf.get("ENGINE", "NOT SET")
+        results["db_name"] = db_conf.get("NAME", "NOT SET")
+        results["db_host"] = db_conf.get("HOST", "NOT SET")
+
+        # Test 8: List existing tables
+        try:
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = 'public' ORDER BY table_name"
+                )
+                tables = [row[0] for row in cursor.fetchall()]
+            results["existing_tables"] = tables if tables else "NO TABLES FOUND"
+        except Exception as e:
+            results["existing_tables"] = f"FAIL: {e}"
+
+        # Test 9: Email config (no send test - it causes worker timeout)
+        results["email_backend"] = settings.EMAIL_BACKEND
+        results["email_host"] = settings.EMAIL_HOST
+        results["email_port"] = settings.EMAIL_PORT
+        results["email_use_ssl"] = getattr(settings, "EMAIL_USE_SSL", False)
+        results["email_use_tls"] = settings.EMAIL_USE_TLS
+
+        return Response(results)
+
+
+class RunMigrateView(APIView):
+    """Temporary endpoint to trigger migrations. Remove after fixing."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        import io
+        from django.core.management import call_command
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        try:
+            call_command("migrate", "--noinput", verbosity=2, stdout=stdout, stderr=stderr)
+            call_command("collectstatic", "--noinput", stdout=stdout, stderr=stderr)
+            call_command("ensure_superuser", stdout=stdout, stderr=stderr)
+            return Response({
+                "status": "OK",
+                "stdout": stdout.getvalue(),
+                "stderr": stderr.getvalue(),
+            })
+        except Exception as e:
+            import traceback
+            return Response({
+                "status": "FAIL",
+                "error": str(e),
+                "traceback": traceback.format_exc(),
+                "stdout": stdout.getvalue(),
+                "stderr": stderr.getvalue(),
+            })
