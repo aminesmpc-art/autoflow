@@ -697,58 +697,71 @@
     <!-- ── STATE 3: Logged IN ── -->
     <div id="account-logged-in" style="display:none;">
       <div class="af-section af-card af-account-card">
+
+        <!-- Profile Header -->
         <div class="af-account-header">
-          <div class="af-account-avatar af-account-avatar-active">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <div class="af-avatar-ring">
+            <div class="af-account-avatar af-account-avatar-active">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
           </div>
-          <h3 id="account-email" class="af-account-title">user@example.com</h3>
-          <span id="account-plan-badge" class="af-plan-badge">Free</span>
+          <div class="af-account-info">
+            <h3 id="account-email" class="af-account-title">user@example.com</h3>
+            <span id="account-plan-badge" class="af-plan-badge">Free</span>
+          </div>
         </div>
 
-        <!-- Usage Section -->
+        <!-- Usage Gauges -->
         <div class="af-usage-section">
-          <h4 class="af-usage-section-title">Daily Usage</h4>
+          <div class="af-usage-grid">
+            <!-- Text-to-Video -->
+            <div class="af-usage-card">
+              <div class="af-usage-icon">📝</div>
+              <div class="af-usage-info">
+                <span class="af-usage-label">Text-to-Video</span>
+                <span id="account-text-usage-text" class="af-usage-count">0 / 100</span>
+              </div>
+              <div class="af-usage-bar-bg">
+                <div id="account-text-usage-bar" class="af-usage-bar" style="width: 0%;"></div>
+              </div>
+              <p id="account-text-usage-hint" class="af-usage-hint">100 remaining today</p>
+            </div>
 
-          <!-- Text-to-Video Usage -->
-          <div class="af-usage-card">
-            <div class="af-usage-header">
-              <span class="af-usage-label">📝 Text-to-Video</span>
-              <span id="account-text-usage-text" class="af-usage-count">0 / 100</span>
+            <!-- Full Features -->
+            <div class="af-usage-card">
+              <div class="af-usage-icon">🖼️</div>
+              <div class="af-usage-info">
+                <span class="af-usage-label">Full Features</span>
+                <span id="account-full-usage-text" class="af-usage-count">0 / 20</span>
+              </div>
+              <div class="af-usage-bar-bg">
+                <div id="account-full-usage-bar" class="af-usage-bar" style="width: 0%;"></div>
+              </div>
+              <p id="account-full-usage-hint" class="af-usage-hint">20 remaining today</p>
             </div>
-            <div class="af-usage-bar-bg">
-              <div id="account-text-usage-bar" class="af-usage-bar" style="width: 0%;"></div>
-            </div>
-            <p id="account-text-usage-hint" class="af-usage-hint">100 remaining today</p>
-          </div>
-
-          <!-- Full-Feature Usage -->
-          <div class="af-usage-card">
-            <div class="af-usage-header">
-              <span class="af-usage-label">🖼️ Full Features</span>
-              <span id="account-full-usage-text" class="af-usage-count">0 / 20</span>
-            </div>
-            <div class="af-usage-bar-bg">
-              <div id="account-full-usage-bar" class="af-usage-bar" style="width: 0%;"></div>
-            </div>
-            <p id="account-full-usage-hint" class="af-usage-hint">20 remaining today</p>
           </div>
         </div>
 
         <!-- Upgrade CTA (hidden for Pro users) -->
         <div id="upgrade-cta" class="af-upgrade-cta" style="display:none;">
-          <p class="af-upgrade-text">🚀 Unlock unlimited prompts, image modes, and priority support</p>
-          <button id="btn-upgrade-pro" class="af-btn af-btn-primary af-btn-full af-btn-upgrade">
-            ⚡ Upgrade to Pro — $9.99/mo
-          </button>
+          <div class="af-upgrade-card">
+            <div class="af-upgrade-sparkle">✨</div>
+            <p class="af-upgrade-title">Go Unlimited</p>
+            <p class="af-upgrade-text">Unlimited prompts, all image modes, and priority support</p>
+            <button id="btn-upgrade-pro" class="af-btn af-btn-upgrade">
+              <span class="af-upgrade-btn-icon">⚡</span>
+              Upgrade to Pro — $9.99/mo
+            </button>
+          </div>
         </div>
 
         <!-- Actions -->
         <div class="af-account-actions">
-          <button id="btn-refresh-usage" class="af-btn af-btn-secondary af-btn-full">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+          <button id="btn-refresh-usage" class="af-btn af-btn-ghost af-btn-full">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
             Refresh Usage
           </button>
-          <button id="btn-logout" class="af-btn af-btn-danger-ghost af-btn-full">Sign Out</button>
+          <button id="btn-logout" class="af-btn-signout">Sign Out</button>
         </div>
       </div>
     </div>

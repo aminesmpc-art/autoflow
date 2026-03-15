@@ -253,6 +253,30 @@ body {
   animation: scaleIn 0.2s var(--spring);
 }
 
+/* Locked tabs (require auth) */
+.af-tab.af-tab-locked {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+
+.af-tab.af-tab-locked:hover {
+  color: var(--text-muted);
+  background: transparent;
+}
+
+/* Pulse animation for Account tab when user clicks a locked tab */
+@keyframes tabPulse {
+  0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.5); }
+  70% { box-shadow: 0 0 0 8px rgba(99, 102, 241, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+}
+
+.af-tab-pulse {
+  animation: tabPulse 0.6s ease;
+  color: var(--accent-bright) !important;
+}
+
 .af-tab.active::after {
   content: '';
   position: absolute;
@@ -2790,7 +2814,553 @@ button:focus-visible {
   box-shadow: var(--focus-ring);
 }
 
+/* ── Account Tab ── */
+.af-account-card {
+  text-align: center;
+  padding: 20px 16px;
+}
+
+.af-account-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.1);
+}
+
+/* Animated gradient ring around avatar */
+.af-avatar-ring {
+  position: relative;
+  padding: 3px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, #6366f1, #a78bfa, #818cf8, #6366f1);
+  animation: ringRotate 4s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes ringRotate {
+  to { filter: hue-rotate(360deg); }
+}
+
+.af-account-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-bright);
+}
+
+.af-account-avatar-active {
+  color: var(--accent-bright);
+}
+
+.af-account-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.af-account-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+/* Plan Badge */
+.af-plan-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 20px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  background: rgba(100, 116, 139, 0.15);
+  color: var(--text-muted);
+  border: 1px solid rgba(100, 116, 139, 0.2);
+}
+
+.af-plan-badge.pro {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(167, 139, 250, 0.25));
+  color: #a5b4fc;
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.2);
+}
+
+/* Usage Section */
+.af-usage-section {
+  margin-bottom: 16px;
+}
+
+.af-usage-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.af-usage-card {
+  background: rgba(15, 19, 32, 0.6);
+  border: 1px solid rgba(99, 102, 241, 0.1);
+  border-radius: 12px;
+  padding: 14px 12px 10px;
+  text-align: center;
+  transition: all 0.25s ease;
+}
+
+.af-usage-card:hover {
+  border-color: rgba(99, 102, 241, 0.25);
+  background: rgba(15, 19, 32, 0.8);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.af-usage-icon {
+  font-size: 22px;
+  margin-bottom: 6px;
+  line-height: 1;
+}
+
+.af-usage-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.af-usage-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.af-usage-count {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.af-usage-bar-bg {
+  width: 100%;
+  height: 4px;
+  background: rgba(99, 102, 241, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.af-usage-bar {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #6366f1, #a78bfa);
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 0;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+}
+
+.af-usage-bar.warning {
+  background: linear-gradient(90deg, #f59e0b, #ef4444);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+}
+
+.af-usage-bar.full {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+  animation: barPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes barPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.af-usage-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  opacity: 0.7;
+}
+
+/* Upgrade Card — glassmorphism with gradient border */
+.af-upgrade-cta {
+  margin-bottom: 16px;
+}
+
+.af-upgrade-card {
+  position: relative;
+  padding: 20px 16px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(99, 102, 241, 0.08), rgba(167, 139, 250, 0.04));
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  overflow: hidden;
+}
+
+.af-upgrade-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.4), transparent, rgba(167, 139, 250, 0.4));
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: xor;
+  -webkit-mask-composite: xor;
+  pointer-events: none;
+}
+
+.af-upgrade-sparkle {
+  font-size: 28px;
+  margin-bottom: 6px;
+  animation: sparkleFloat 2s ease-in-out infinite;
+}
+
+@keyframes sparkleFloat {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-4px) rotate(5deg); }
+}
+
+.af-upgrade-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 4px;
+  background: linear-gradient(135deg, #e0e7ff, #a5b4fc);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.af-upgrade-text {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+
+.af-btn-upgrade {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+}
+
+.af-btn-upgrade:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(99, 102, 241, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  background: linear-gradient(135deg, #7c7ffd, #9d78ff);
+}
+
+.af-btn-upgrade:active {
+  transform: translateY(0);
+}
+
+.af-btn-upgrade::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -75%;
+  width: 50%;
+  height: 200%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.6s ease;
+}
+
+.af-btn-upgrade:hover::after {
+  left: 150%;
+}
+
+.af-upgrade-btn-icon {
+  font-size: 16px;
+}
+
+/* Account Actions */
+.af-account-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Sign Out — minimal text button */
+.af-btn-signout {
+  background: none;
+  border: none;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.2s;
+  opacity: 0.6;
+}
+
+.af-btn-signout:hover {
+  color: #f87171;
+  opacity: 1;
+}
+
+/* Ghost Button */
+.af-btn-ghost {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+.af-btn-ghost:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+  border-color: var(--border-accent);
+}
+
+/* Danger Ghost (fallback) */
+.af-btn-danger-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  font-size: 12px;
+}
+
+.af-btn-danger-ghost:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+/* Auth Toggle */
+.af-auth-toggle {
+  display: flex;
+  border-radius: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.af-auth-toggle-btn {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.af-auth-toggle-btn.active {
+  background: var(--gradient);
+  color: #fff;
+  font-weight: 600;
+}
+
+.af-auth-toggle-btn:hover:not(.active) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+/* Auth Forms */
+.af-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.af-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.af-form-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.af-auth-form .af-input {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 13px;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.af-auth-form .af-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.af-auth-form .af-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+/* Auth Messages */
+.af-auth-message {
+  font-size: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  text-align: left;
+  line-height: 1.5;
+  animation: fadeSlideIn 0.2s ease;
+}
+
+.af-auth-message.error {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.af-auth-message.success {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.af-auth-message.info {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+/* Verification Pending */
+.af-verify-pending { text-align: center; padding: 8px 0; }
+.af-verify-icon { font-size: 48px; margin-bottom: 12px; animation: float 2s ease-in-out infinite; }
+.af-verify-desc { font-size: 14px; color: var(--text-dim); line-height: 1.6; margin: 8px 0; }
+.af-verify-desc strong { color: var(--accent-bright); }
+.af-verify-actions { margin-top: 20px; }
+
 /* ── Reduced Motion (Accessibility) ── */
+
+/* ── Settings Control Row ── */
+.af-setting-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.af-setting-control .af-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.af-select-sm {
+  width: 70px;
+  min-width: 70px;
+  flex: 0 0 auto;
+}
+
+/* ── Mode Selection Cards ── */
+.af-mode-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 10px 10px 6px;
+}
+
+.af-mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 8px 12px;
+  background: var(--bg-card);
+  border: 1.5px solid rgba(99, 102, 241, 0.12);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--text-muted);
+  position: relative;
+  overflow: hidden;
+}
+
+.af-mode-card:hover {
+  border-color: rgba(99, 102, 241, 0.35);
+  background: rgba(99, 102, 241, 0.06);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.af-mode-card.active {
+  border-color: rgba(99, 102, 241, 0.6);
+  background: linear-gradient(145deg, rgba(99, 102, 241, 0.15) 0%, rgba(79, 70, 229, 0.22) 100%);
+  color: #fff;
+  box-shadow:
+    0 0 20px rgba(99, 102, 241, 0.2),
+    0 0 40px rgba(99, 102, 241, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transform: translateY(0);
+}
+
+.af-mode-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.08);
+  color: var(--text-muted);
+  transition: all 0.25s ease;
+}
+
+.af-mode-card:hover .af-mode-icon {
+  background: rgba(99, 102, 241, 0.14);
+  color: var(--accent);
+}
+
+.af-mode-card.active .af-mode-icon {
+  background: rgba(99, 102, 241, 0.25);
+  color: #a5b4fc;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.15);
+}
+
+.af-mode-label {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-align: center;
+  line-height: 1.2;
+  transition: all 0.25s ease;
+}
+
+.af-mode-card.active .af-mode-label {
+  color: #e0e7ff;
+  font-weight: 600;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
