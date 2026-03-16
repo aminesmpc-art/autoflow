@@ -1,5 +1,8 @@
 import { getDictionary, locales, defaultLocale } from '../dictionaries';
 
+// Only match locales from generateStaticParams — don't catch /blog, /faq, etc.
+export const dynamicParams = false;
+
 export async function generateStaticParams() {
   return locales.map(locale => ({ locale }));
 }
