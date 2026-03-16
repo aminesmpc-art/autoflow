@@ -54,6 +54,7 @@ UNFOLD = {
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": False,
     "THEME": "dark",
+    "DASHBOARD_CALLBACK": "apps.dashboard.dashboard_callback",
     "COLORS": {
         "primary": {
             "50": "#ecfeff",
@@ -81,6 +82,7 @@ UNFOLD = {
                         "title": "Users",
                         "icon": "person",
                         "link": "/admin/users/customuser/",
+                        "badge": "apps.dashboard.badge_callback_users",
                     },
                     {
                         "title": "Verification Tokens",
@@ -102,11 +104,13 @@ UNFOLD = {
                         "title": "Profiles",
                         "icon": "badge",
                         "link": "/admin/plans/profile/",
+                        "badge": "apps.dashboard.badge_callback_pro",
                     },
                     {
                         "title": "Daily Usage",
                         "icon": "analytics",
                         "link": "/admin/usage/dailyusage/",
+                        "badge": "apps.dashboard.badge_callback_today_usage",
                     },
                     {
                         "title": "Usage Events",
@@ -128,6 +132,7 @@ UNFOLD = {
                         "title": "Webhook Events",
                         "icon": "webhook",
                         "link": "/admin/webhooks/webhookevent/",
+                        "badge": "apps.dashboard.badge_callback_pending_webhooks",
                     },
                 ],
             },
