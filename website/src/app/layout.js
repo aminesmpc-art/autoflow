@@ -115,6 +115,43 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
+        {/* ── Organization Schema — tells Google who you are ── */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Organization",
+              name: "AutoFlow",
+              url: "https://auto-flow.studio",
+              logo: "https://auto-flow.studio/og-image.png",
+              description:
+                "AutoFlow automates Google Flow AI video generation — batch prompts, smart queues, auto-retry, and bulk download.",
+              contactPoint: {
+                "@type": "ContactPoint",
+                email: "support@auto-flow.studio",
+                contactType: "customer support",
+              },
+            }),
+          }}
+        />
+        {/* ── WebSite Schema — enables search box in Google ── */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebSite",
+              name: "AutoFlow",
+              url: "https://auto-flow.studio",
+              potentialAction: {
+                "@type": "SearchAction",
+                target: "https://auto-flow.studio/faq?q={search_term_string}",
+                "query-input": "required name=search_term_string",
+              },
+            }),
+          }}
+        />
         {children}
         <Analytics />
         <SpeedInsights />
@@ -135,6 +172,7 @@ function Header() {
           <li><a href="/#features">Features</a></li>
           <li><a href="/#how-it-works">How It Works</a></li>
           <li><a href="/pricing">Pricing</a></li>
+          <li><a href="/blog">Blog</a></li>
           <li><a href="/faq">FAQ</a></li>
         </ul>
         <a
@@ -170,6 +208,7 @@ function Footer() {
             <li><a href="/#features">Features</a></li>
             <li><a href="/#how-it-works">How It Works</a></li>
             <li><a href="/pricing">Pricing</a></li>
+            <li><a href="/blog">Blog</a></li>
           </ul>
         </div>
         <div className="footer-col">

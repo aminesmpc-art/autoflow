@@ -1,6 +1,13 @@
-"use client";
+import FAQClient from "./faq-client";
 
-import { useState } from "react";
+export const metadata = {
+  title: "FAQ — AutoFlow",
+  description:
+    "Frequently asked questions about AutoFlow — how it works, installation, Free vs Pro plans, privacy, and more.",
+  alternates: {
+    canonical: "https://auto-flow.studio/faq",
+  },
+};
 
 const faqs = [
   {
@@ -44,38 +51,66 @@ const faqs = [
 export default function FAQPage() {
   return (
     <>
+      {/* ── FAQPage JSON-LD Schema for Google Rich Snippets ── */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            mainEntity: faqs.map((faq) => ({
+              "@type": "Question",
+              name: faq.q,
+              acceptedAnswer: {
+                "@type": "Answer",
+                text: faq.a,
+              },
+            })),
+          }),
+        }}
+      />
+
+      {/* ── BreadcrumbList Schema ── */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "BreadcrumbList",
+            itemListElement: [
+              {
+                "@type": "ListItem",
+                position: 1,
+                name: "Home",
+                item: "https://auto-flow.studio",
+              },
+              {
+                "@type": "ListItem",
+                position: 2,
+                name: "FAQ",
+                item: "https://auto-flow.studio/faq",
+              },
+            ],
+          }),
+        }}
+      />
+
       <section className="faq-hero">
         <div className="container">
           <div className="badge">FAQ</div>
-          <h1>Frequently Asked <span className="text-gradient">Questions</span></h1>
+          <h1>
+            Frequently Asked{" "}
+            <span className="text-gradient">Questions</span>
+          </h1>
           <p>Everything you need to know about AutoFlow.</p>
         </div>
       </section>
 
       <section className="section">
         <div className="container">
-          <div className="faq-list">
-            {faqs.map((faq, i) => (
-              <FAQItem key={i} question={faq.q} answer={faq.a} />
-            ))}
-          </div>
+          <FAQClient faqs={faqs} />
         </div>
       </section>
     </>
-  );
-}
-
-function FAQItem({ question, answer }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className={`faq-item ${open ? "open" : ""}`}>
-      <button className="faq-question" onClick={() => setOpen(!open)}>
-        {question}
-        <span className="faq-arrow">▼</span>
-      </button>
-      <div className="faq-answer">
-        <p>{answer}</p>
-      </div>
-    </div>
   );
 }
