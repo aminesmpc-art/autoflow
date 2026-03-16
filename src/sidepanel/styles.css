@@ -3361,6 +3361,20 @@ button:focus-visible {
   font-weight: 600;
 }
 
+.af-mode-desc {
+  font-size: 9px;
+  color: var(--text-muted);
+  opacity: 0.6;
+  line-height: 1.2;
+  margin-top: -2px;
+  transition: all 0.25s ease;
+}
+
+.af-mode-card.active .af-mode-desc {
+  color: #c7d2fe;
+  opacity: 0.8;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
