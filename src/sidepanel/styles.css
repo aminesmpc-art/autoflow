@@ -246,11 +246,10 @@ body {
 }
 
 .af-tab.active {
-  color: var(--accent);
-  background: rgba(99, 102, 241, 0.14);
+  color: var(--accent-bright);
+  background: rgba(99, 102, 241, 0.12);
   font-weight: 600;
-  box-shadow: inset 0 0 0 1px var(--border-accent), var(--glow-accent);
-  animation: scaleIn 0.2s var(--spring);
+  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.2), 0 0 12px rgba(99, 102, 241, 0.08);
 }
 
 /* Locked tabs (require auth) */
@@ -2061,6 +2060,20 @@ body {
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.1);
+  position: relative;
+}
+
+.af-section-heading::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 40px;
+  height: 2px;
+  background: var(--gradient);
+  border-radius: 1px;
 }
 .af-section-heading svg { color: var(--accent); flex-shrink: 0; }
 
