@@ -3,14 +3,14 @@
    
    Three-phase scanning architecture:
    Phase 1: Scroll & Collect — gather every tile with raw metadata
-   Phase 2: Group & Deduce  — group by virtuoso row (= prompt),
+   Phase 2: Group & Deduce  — group by prompt label (NOT visual row),
             resolve prompt labels, detect media types
    Phase 3: Enrich          — assign prompt numbers, generation
             numbers, totals, and prepare final ScannedAsset[]
    
    Key design choices:
-   • Groups by virtuoso row data-index (NOT prompt text), so two
-     prompts with identical text stay separate.
+   • Groups by PROMPT LABEL so tiles from the same prompt text
+     are grouped together, regardless of visual row in Grid view.
    • Includes ALL tile states (completed, failed, generating,
      unknown) so the Library UI can show everything.
    • Filters out only user-uploaded images.
@@ -90,36 +90,53 @@ function isUploadedImage(card: Element): boolean {
 function extractPromptLabelFromTile(card: Element): string {
   let bestLabel = '';
 
-  // Strategy 1: Text sibling of a media icon (videocam / image)
-  const icons = card.querySelectorAll('i.google-symbols, i[class*="google-symbols"]');
-  for (const icon of icons) {
-    const iconText = icon.textContent?.trim() || '';
-    if (iconText !== 'videocam' && iconText !== 'image') continue;
-    const iconParent = icon.parentElement;
-    if (!iconParent) continue;
-    const siblings = iconParent.parentElement?.children;
-    if (siblings) {
-      for (const sib of Array.from(siblings)) {
-        if (sib === iconParent) continue;
-        const text = sib.textContent?.trim();
-        if (text && text.length > 2 && text.length < 200 && !NOISE_WORDS.has(text)) {
-          bestLabel = text;
-          break;
-        }
-      }
-    }
-    if (bestLabel) break;
+  // Strategy 0: data-card-open attribute (Flow stores prompt metadata here)
+  const cardOpen = card.querySelector('[data-card-open]');
+  if (cardOpen) {
+    const val = cardOpen.getAttribute('data-card-open') || '';
+    if (val.length > 2 && val.length < 300) bestLabel = val;
   }
 
-  // Strategy 2: Walk all leaf divs looking for meaningful label text
+  // Strategy 1: Text sibling of a media icon (videocam / image)
+  if (!bestLabel) {
+    const icons = card.querySelectorAll('i.google-symbols, i[class*="google-symbols"]');
+    for (const icon of icons) {
+      const iconText = icon.textContent?.trim() || '';
+      if (iconText !== 'videocam' && iconText !== 'image') continue;
+      const iconParent = icon.parentElement;
+      if (!iconParent) continue;
+      const siblings = iconParent.parentElement?.children;
+      if (siblings) {
+        for (const sib of Array.from(siblings)) {
+          if (sib === iconParent) continue;
+          // Skip sibs that contain icons (buttons like Retry/Delete)
+          if (sib.querySelector('i.google-symbols, i[class*="google-symbols"]')) continue;
+          const text = sib.textContent?.trim();
+          if (text && text.length > 2 && text.length < 200 && !NOISE_WORDS.has(text) &&
+            !isNoiseLabel(text)) {
+            bestLabel = text;
+            break;
+          }
+        }
+      }
+      if (bestLabel) break;
+    }
+  }
+
+  // Strategy 2: Walk leaf divs looking for meaningful label text
+  // Only pick divs that are INSIDE the tile (not action buttons)
   if (!bestLabel) {
     const allDivs = card.querySelectorAll('div');
     for (const div of allDivs) {
+      // Skip non-leaf divs
       if (div.querySelector('div')) continue;
+      // Skip divs containing icons (button labels)
       if (div.querySelector('i')) continue;
+      // Skip divs inside buttons (action button text)
+      if (div.closest('button')) continue;
       const text = div.textContent?.trim();
       if (text && text.length > 3 && text.length < 200 && !NOISE_WORDS.has(text) &&
-        !/^\d{1,3}%$/.test(text)) {
+        !/^\d{1,3}%$/.test(text) && !isNoiseLabel(text)) {
         bestLabel = text;
         break;
       }
@@ -130,10 +147,27 @@ function extractPromptLabelFromTile(card: Element): string {
   if (!bestLabel) {
     const ariaLabel = card.getAttribute('aria-label') ||
       card.closest('[aria-label]')?.getAttribute('aria-label') || '';
-    if (ariaLabel.length > 3 && ariaLabel.length < 200) bestLabel = ariaLabel;
+    if (ariaLabel.length > 3 && ariaLabel.length < 200 && !isNoiseLabel(ariaLabel)) {
+      bestLabel = ariaLabel;
+    }
   }
 
   return cleanPromptLabel(bestLabel);
+}
+
+/**
+ * Check if a label looks like UI noise rather than a real prompt.
+ */
+function isNoiseLabel(text: string): boolean {
+  const lower = text.toLowerCase().trim();
+  // Common button/icon text that gets picked up
+  if (/^(redo|retry|reuse|delete|copy|share|download|refresh|undo|more)\b/i.test(lower)) return true;
+  // Just a number or percentage
+  if (/^\d+%?$/.test(lower)) return true;
+  // Concatenated icon text (multiple noise words joined)
+  const noiseCount = [...NOISE_WORDS].filter(w => lower.includes(w.toLowerCase())).length;
+  if (noiseCount >= 2) return true;
+  return false;
 }
 
 /**
@@ -266,40 +300,69 @@ function mapTileState(state: TileState): ScannedTileState {
 
 interface TileGroup {
   groupIndex: number;
-  groupId: string;          // "row-{groupIndex}" — unique per virtuoso row
-  promptLabel: string;      // best prompt label from all tiles in the group
+  groupId: string;          // "prompt-{n}" — unique per prompt label
+  promptLabel: string;      // the prompt text this group represents
   tiles: RawTile[];
   mediaType: 'video' | 'image';   // dominant media type
-  mergedFromRows: number[];       // all row indices merged into this group
+  mergedFromRows: number[];       // all row indices that contributed tiles
 }
 
 /**
- * Build groups from raw tiles. Each virtuoso row = one prompt's generations.
- * Within each group:
- *  - Pick the best prompt label (longest non-empty label wins)
- *  - Determine dominant media type
- *  - Sort tiles by position within row
+ * Build groups from raw tiles by PROMPT LABEL.
+ *
+ * IMPORTANT: Flow's Grid view lays out tiles from different prompts
+ * in the same visual row (data-index). So we CANNOT rely on data-index
+ * to separate prompts. Instead, we group by the prompt text extracted
+ * from each tile.
+ *
+ * For tiles with identical prompt text (retries or x2+ generations),
+ * they naturally merge into one group. For tiles with no label,
+ * each gets its own group to avoid false merges.
  */
 function buildGroups(rawTiles: RawTile[]): TileGroup[] {
-  const groupMap = new Map<number, RawTile[]>();
+  // Normalize label for grouping key
+  function normalizeLabel(label: string): string {
+    return label.toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
+  // Group tiles by their prompt label
+  const labelMap = new Map<string, RawTile[]>();
+  let unknownCounter = 0;
+
   for (const tile of rawTiles) {
-    if (!groupMap.has(tile.groupIndex)) groupMap.set(tile.groupIndex, []);
-    groupMap.get(tile.groupIndex)!.push(tile);
+    const label = tile.promptLabel.trim();
+    if (!label) {
+      // No label — give each tile its own unique group to avoid false merges
+      labelMap.set(`_unknown_${unknownCounter++}`, [tile]);
+      continue;
+    }
+    const key = normalizeLabel(label);
+    if (!labelMap.has(key)) labelMap.set(key, []);
+    labelMap.get(key)!.push(tile);
   }
 
   const groups: TileGroup[] = [];
-  for (const [groupIndex, tiles] of groupMap) {
-    // Sort tiles by position within the row
-    tiles.sort((a, b) => a.positionInRow - b.positionInRow);
+  let groupCounter = 0;
 
-    // Pick the best prompt label — longest meaningful one wins
+  for (const [key, tiles] of labelMap) {
+    // Sort tiles by row index (oldest row = highest index) then by position
+    tiles.sort((a, b) => {
+      if (a.groupIndex !== b.groupIndex) return b.groupIndex - a.groupIndex;
+      return a.positionInRow - b.positionInRow;
+    });
+
+    // Pick the best (longest) prompt label from the group
     let bestLabel = '';
     for (const tile of tiles) {
-      if (tile.promptLabel.length > bestLabel.length &&
-        !tile.promptLabel.startsWith('Prompt group')) {
+      if (tile.promptLabel.length > bestLabel.length) {
         bestLabel = tile.promptLabel;
       }
     }
+
+    // Collect all unique row indices this group spans
+    const rowIndices = [...new Set(tiles.map(t => t.groupIndex))];
+    // Use the highest row index (oldest prompt) as the representative
+    const representativeRow = Math.max(...rowIndices);
 
     // Determine dominant media type (majority wins, video breaks ties)
     const videoCount = tiles.filter(t => t.mediaType === 'video').length;
@@ -307,66 +370,16 @@ function buildGroups(rawTiles: RawTile[]): TileGroup[] {
     const dominantType: 'video' | 'image' = videoCount >= imageCount ? 'video' : 'image';
 
     groups.push({
-      groupIndex,
-      groupId: `row-${groupIndex}`,
-      promptLabel: bestLabel || `Prompt group ${groupIndex}`,
+      groupIndex: representativeRow,
+      groupId: `prompt-${groupCounter++}`,
+      promptLabel: bestLabel || `Prompt group ${groupCounter}`,
       tiles,
       mediaType: dominantType,
-      mergedFromRows: [groupIndex],
+      mergedFromRows: rowIndices,
     });
   }
 
-  // ── Merge groups that share the same prompt text ──
-  // This handles retries: when a prompt fails and is retried, Flow creates
-  // a new row. We merge them back into one group so the library shows 7
-  // prompts instead of 12 for a 7-prompt queue with retries.
-  return mergeGroupsByPromptText(groups);
-}
-
-/**
- * Merge groups that share the same prompt text.
- * The oldest group (highest groupIndex = first created) becomes the primary.
- * Tiles from newer groups (retries) are appended with their original row tracked.
- */
-function mergeGroupsByPromptText(groups: TileGroup[]): TileGroup[] {
-  // Normalize prompt text for comparison (lowercase, collapse whitespace)
-  function normalizeLabel(label: string): string {
-    return label.toLowerCase().replace(/\s+/g, ' ').trim();
-  }
-
-  const merged = new Map<string, TileGroup>();
-  // Sort groups by groupIndex descending (oldest = highest index first)
-  // so the oldest group becomes the primary entry in the map
-  const sorted = [...groups].sort((a, b) => b.groupIndex - a.groupIndex);
-
-  for (const group of sorted) {
-    const key = normalizeLabel(group.promptLabel);
-
-    // Skip generic labels ("Prompt group N") — they shouldn't be merged
-    if (key.startsWith('prompt group')) {
-      // Use unique key to prevent merging
-      merged.set(`_generic_${group.groupIndex}`, group);
-      continue;
-    }
-
-    const existing = merged.get(key);
-    if (existing) {
-      // Merge: append this group's tiles to the existing group
-      existing.tiles.push(...group.tiles);
-      existing.mergedFromRows.push(...group.mergedFromRows);
-      // Re-sort all tiles by position
-      existing.tiles.sort((a, b) => {
-        // Primary sort: original row (older rows first)
-        if (a.groupIndex !== b.groupIndex) return b.groupIndex - a.groupIndex;
-        // Secondary sort: position within row
-        return a.positionInRow - b.positionInRow;
-      });
-    } else {
-      merged.set(key, group);
-    }
-  }
-
-  return Array.from(merged.values());
+  return groups;
 }
 
 // ================================================================

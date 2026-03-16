@@ -4,6 +4,9 @@
    keepalive & anti-throttle for background execution.
    ============================================================ */
 
+// ── Side panel setup — open on icon click ──
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
 import { Message, QueueObject, LogEntry } from '../types';
 import {
   getAllQueues,
@@ -28,7 +31,7 @@ const TAB_PING_ALARM = 'af-tab-ping';
 let _activeTabId: number | null = null;
 
 async function getActiveTabId(): Promise<number | null> {
-  if (_activeTabId) return _activeTabId;
+  // Always read from session storage to avoid stale cached values
   try {
     const data = await chrome.storage.session.get('activeQueueTabId');
     _activeTabId = data.activeQueueTabId ?? null;
@@ -162,25 +165,56 @@ chrome.runtime.onConnect.addListener((port) => {
 
 // ── Restore keepalive on SW restart ──
 // When the SW wakes up (e.g., from an alarm), check if a queue is active
-// and restart keepalive if needed.
+// and restart keepalive if needed — with health verification.
 (async () => {
   try {
     const queueId = await getActiveQueueId();
     if (queueId) {
       const tabId = await getActiveTabId();
       if (tabId) {
-        console.log(`[AutoFlow] SW restarted — restoring keepalive for tab ${tabId}`);
-        await startKeepalive(tabId);
+        // Verify the tab still exists before restarting keepalive
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          if (tab) {
+            console.log(`[AutoFlow] SW restarted — restoring keepalive for tab ${tabId}`);
+            await startKeepalive(tabId);
+          } else {
+            throw new Error('Tab not found');
+          }
+        } catch {
+          // Tab is gone — mark queue as stopped
+          const queue = await getQueueById(queueId);
+          if (queue && queue.status === 'running') {
+            queue.status = 'stopped';
+            queue.updatedAt = Date.now();
+            await updateQueue(queue);
+          }
+          await setActiveQueueId(null);
+          await stopKeepalive();
+          console.log('[AutoFlow] SW restarted — queue tab gone, cleaned up');
+        }
       }
     }
   } catch { /* first run, no active queue */ }
 })();
 
-// ── Tab removal listener — stop keepalive if queue tab is closed ──
+// ── Tab removal listener — stop keepalive and mark queue stopped if queue tab is closed ──
 chrome.tabs.onRemoved.addListener(async (closedTabId) => {
   const activeTab = await getActiveTabId();
   if (activeTab === closedTabId) {
     await logEntry('warn', 'Flow tab was closed while queue was running');
+    // Mark queue as stopped so it doesn't stay in 'running' forever
+    const queueId = await getActiveQueueId();
+    if (queueId) {
+      const queue = await getQueueById(queueId);
+      if (queue && queue.status === 'running') {
+        queue.status = 'stopped';
+        queue.updatedAt = Date.now();
+        await updateQueue(queue);
+        broadcastToExtension({ type: 'QUEUE_STATUS_UPDATE', payload: queue });
+      }
+      await setActiveQueueId(null);
+    }
     await stopKeepalive();
   }
 });
@@ -189,18 +223,10 @@ chrome.tabs.onRemoved.addListener(async (closedTabId) => {
 // CORE EXTENSION SETUP
 // ================================================================
 
-// ── Open side panel on action click ──
-chrome.action.onClicked.addListener(async (tab) => {
-  if (tab.id) {
-    await chrome.sidePanel.open({ tabId: tab.id });
-  }
-});
-
-// ── Enable side panel on Flow pages ──
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
-
 // ── Message router ──
 chrome.runtime.onMessage.addListener((msg: Message, sender, sendResponse) => {
+  // Skip self-broadcasts to prevent infinite loops
+  if (_broadcasting && !sender.tab) { sendResponse({}); return true; }
   handleMessage(msg, sender).then(sendResponse).catch(err => {
     console.error('[AutoFlow BG] Error handling message:', err);
     sendResponse({ error: err.message });
@@ -254,6 +280,20 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
       broadcastToExtension(msg);
       return {};
 
+    case 'SUPPRESS_DOWNLOADS':
+      suppressDownloads = true;
+      // Auto-expire after 60 seconds max (safety net)
+      if (suppressTimeout) clearTimeout(suppressTimeout);
+      suppressTimeout = setTimeout(() => { suppressDownloads = false; }, 60 * 1000);
+      console.log('[AutoFlow] Download suppression ON (upscale-only mode)');
+      return { success: true };
+
+    case 'UNSUPPRESS_DOWNLOADS':
+      suppressDownloads = false;
+      if (suppressTimeout) { clearTimeout(suppressTimeout); suppressTimeout = null; }
+      console.log('[AutoFlow] Download suppression OFF');
+      return { success: true };
+
     case 'FAILED_TILES_RESULT':
       broadcastToExtension(msg);
       return {};
@@ -271,6 +311,13 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
   }
 }
 
+// Track download IDs initiated by our extension — these already have proper filenames
+const ourDownloadIds = new Set<number>();
+
+// Download suppression for upscale-only operations
+let suppressDownloads = false;
+let suppressTimeout: ReturnType<typeof setTimeout> | null = null;
+
 // ── Download handler ──
 async function handleDownload(payload: {
   url: string;
@@ -278,12 +325,17 @@ async function handleDownload(payload: {
   conflictAction?: string;
 }): Promise<{ downloadId?: number; error?: string }> {
   try {
+    console.log(`[AutoFlow] Downloading: ${payload.filename} from ${payload.url.slice(0, 80)}...`);
     const downloadId = await chrome.downloads.download({
       url: payload.url,
       filename: payload.filename,
       conflictAction: (payload.conflictAction as any) || 'uniquify',
       saveAs: false,
     });
+    // Track this ID so onDeterminingFilename won't override our filename
+    ourDownloadIds.add(downloadId);
+    // Clean up after 60s
+    setTimeout(() => ourDownloadIds.delete(downloadId), 60_000);
     return { downloadId };
   } catch (err: any) {
     await logEntry('error', `Download failed: ${err.message}`);
@@ -503,10 +555,12 @@ async function forwardToContentScript(msg: Message): Promise<any> {
 }
 
 // ── Broadcast to all extension views (side panel) ──
+let _broadcasting = false;
 function broadcastToExtension(msg: Message) {
+  _broadcasting = true;
   chrome.runtime.sendMessage(msg).catch(() => {
     // No listener available, that's OK
-  });
+  }).finally(() => { _broadcasting = false; });
 }
 
 // ── Helper ──
@@ -549,6 +603,16 @@ function queueDownloadRename(filename: string) {
  */
 chrome.downloads.onDeterminingFilename.addListener(
   (downloadItem: chrome.downloads.DownloadItem, suggest: (suggestion?: { filename: string; conflictAction?: string }) => void) => {
+    // Skip downloads initiated by our extension — they already have correct filenames
+    // set via chrome.downloads.download({ filename: ... })
+    if (ourDownloadIds.has(downloadItem.id)) {
+      ourDownloadIds.delete(downloadItem.id);
+      // Don't call suggest — let Chrome use the filename we specified
+      // Actually we must call suggest, but pass undefined to keep the original
+      suggest();
+      return;
+    }
+
     // Clean expired entries (older than 30 seconds)
     const now = Date.now();
     while (pendingRenames.length > 0 && now - pendingRenames[0].createdAt > 30000) {
@@ -568,13 +632,23 @@ chrome.downloads.onDeterminingFilename.addListener(
       }
     }
 
-    // No rename needed — pass through the existing filename unchanged.
-    // IMPORTANT: suggest() with no args resets to URL-derived name (UUID).
-    // We must pass downloadItem.filename to preserve names set by
-    // chrome.downloads.download({ filename: ... }).
+    // No rename needed — pass through unchanged
     suggest({ filename: downloadItem.filename, conflictAction: 'uniquify' });
   }
 );
+
+// ── Suppress downloads during upscale-only operations ──
+// When suppressDownloads is true, cancel any download from Google domains
+chrome.downloads.onCreated.addListener((downloadItem) => {
+  if (!suppressDownloads) return;
+  const url = downloadItem.url || '';
+  if (url.includes('labs.google') || url.includes('googleapis.com') || url.includes('googleusercontent.com')) {
+    console.log(`[AutoFlow] Suppressed download (upscale-only): ${url.slice(0, 80)}...`);
+    chrome.downloads.cancel(downloadItem.id);
+    // Also remove the file that may have been partially created
+    chrome.downloads.erase({ id: downloadItem.id });
+  }
+});
 
 // ── Listen for download completion to detect "Ask where to save" issues ──
 chrome.downloads.onChanged.addListener((delta) => {

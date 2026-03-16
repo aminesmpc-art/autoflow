@@ -45,6 +45,15 @@ export async function getQueueCounter(): Promise<number> {
   return storageGet<number>(KEYS.COUNTER, 1);
 }
 
+// ── Queue mutation lock — prevents concurrent read-modify-write races ──
+let _queueLock: Promise<void> = Promise.resolve();
+function withQueueLock<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = _queueLock;
+  let resolve: () => void;
+  _queueLock = new Promise(r => { resolve = r; });
+  return prev.then(fn).finally(() => resolve!());
+}
+
 // ── Queues CRUD ──
 export async function getAllQueues(): Promise<QueueObject[]> {
   return storageGet<QueueObject[]>(KEYS.QUEUES, []);
@@ -60,32 +69,46 @@ export async function getQueueById(id: string): Promise<QueueObject | null> {
 }
 
 export async function addQueue(queue: QueueObject): Promise<void> {
-  const queues = await getAllQueues();
-  queues.push(queue);
-  await saveAllQueues(queues);
+  return withQueueLock(async () => {
+    const queues = await getAllQueues();
+    if (queues.length >= 50) {
+      throw new Error('Queue limit reached (50). Please delete old queues first.');
+    }
+    if (queue.prompts.length > 500) {
+      throw new Error('Too many prompts (max 500 per queue).');
+    }
+    queues.push(queue);
+    await saveAllQueues(queues);
+  });
 }
 
 export async function updateQueue(updated: QueueObject): Promise<void> {
-  const queues = await getAllQueues();
-  const idx = queues.findIndex(q => q.id === updated.id);
-  if (idx >= 0) {
-    queues[idx] = updated;
-    await saveAllQueues(queues);
-  }
+  return withQueueLock(async () => {
+    const queues = await getAllQueues();
+    const idx = queues.findIndex(q => q.id === updated.id);
+    if (idx >= 0) {
+      queues[idx] = updated;
+      await saveAllQueues(queues);
+    }
+  });
 }
 
 export async function deleteQueue(id: string): Promise<void> {
-  let queues = await getAllQueues();
-  queues = queues.filter(q => q.id !== id);
-  await saveAllQueues(queues);
+  return withQueueLock(async () => {
+    let queues = await getAllQueues();
+    queues = queues.filter(q => q.id !== id);
+    await saveAllQueues(queues);
+  });
 }
 
 export async function reorderQueues(fromIndex: number, toIndex: number): Promise<void> {
-  const queues = await getAllQueues();
-  if (fromIndex < 0 || fromIndex >= queues.length || toIndex < 0 || toIndex >= queues.length) return;
-  const [item] = queues.splice(fromIndex, 1);
-  queues.splice(toIndex, 0, item);
-  await saveAllQueues(queues);
+  return withQueueLock(async () => {
+    const queues = await getAllQueues();
+    if (fromIndex < 0 || fromIndex >= queues.length || toIndex < 0 || toIndex >= queues.length) return;
+    const [item] = queues.splice(fromIndex, 1);
+    queues.splice(toIndex, 0, item);
+    await saveAllQueues(queues);
+  });
 }
 
 // ── Active queue tracking ──
@@ -138,7 +161,11 @@ const IDB_NAME = 'autoflow_images';
 const IDB_STORE = 'blobs';
 const IDB_VERSION = 1;
 
+// Singleton: reuse the same connection to avoid resource exhaustion
+let _idbInstance: IDBDatabase | null = null;
+
 function openIDB(): Promise<IDBDatabase> {
+  if (_idbInstance) return Promise.resolve(_idbInstance);
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(IDB_NAME, IDB_VERSION);
     request.onupgradeneeded = () => {
@@ -147,7 +174,12 @@ function openIDB(): Promise<IDBDatabase> {
         db.createObjectStore(IDB_STORE, { keyPath: 'id' });
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      _idbInstance = request.result;
+      // Reset singleton if DB is unexpectedly closed
+      _idbInstance.onclose = () => { _idbInstance = null; };
+      resolve(_idbInstance);
+    };
     request.onerror = () => reject(request.error);
   });
 }

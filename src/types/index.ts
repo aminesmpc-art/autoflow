@@ -2,6 +2,30 @@
    AutoFlow – Shared Type Definitions
    ============================================================ */
 
+// ── Auth & Backend ──
+export interface AuthTokens {
+  access: string;
+  refresh: string;
+}
+
+export interface UserProfile {
+  email: string;
+  plan_type: string;
+  is_pro_active: boolean;
+  daily_limit: number;
+}
+
+export interface DailyUsageResponse {
+  text_used: number;
+  text_limit: number;
+  text_remaining: number;
+  full_used: number;
+  full_limit: number;
+  full_remaining: number;
+  plan_type: string;
+  is_pro: boolean;
+}
+
 // ── Prompt Status ──
 export type PromptStatus = 'not-added' | 'queued' | 'running' | 'done' | 'failed';
 
@@ -182,7 +206,9 @@ export type MessageType =
   | 'RETRY_FAILED_TILES'
   | 'RETRY_SINGLE_TILE'
   | 'UPSCALE_SELECTED'
-  | 'SET_DOWNLOAD_RENAME';
+  | 'SET_DOWNLOAD_RENAME'
+  | 'SUPPRESS_DOWNLOADS'
+  | 'UNSUPPRESS_DOWNLOADS';
 
 export interface Message {
   type: MessageType;

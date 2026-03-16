@@ -5,7 +5,7 @@
 export const EXTENSION_NAME = 'AutoFlow';
 export const MAX_IMAGES_PER_PROMPT = 10;
 export const MAX_FRAMES_PER_PROMPT = 2;                  // frames mode: Start + End only
-export const MAX_SHARED_IMAGES = 10;                    // shared reference images pool
+export const MAX_SHARED_IMAGES = 3;                    // shared reference images pool
 export const IMAGE_UPLOAD_BATCH_SIZE = 5;               // upload in batches of N to avoid overwhelming Flow
 export const MAX_RETRIES = 2;
 export const BACKOFF_BASE_MS = 5000;

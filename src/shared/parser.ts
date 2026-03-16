@@ -23,8 +23,8 @@ export function validatePrompts(prompts: string[]): string | null {
     return 'No prompts found. Enter at least one prompt.';
   }
   for (let i = 0; i < prompts.length; i++) {
-    if (prompts[i].length > 10000) {
-      return `Prompt #${i + 1} exceeds 10,000 characters.`;
+    if (prompts[i].length > 20000) {
+      return `Prompt #${i + 1} exceeds 20,000 characters.`;
     }
   }
   return null;

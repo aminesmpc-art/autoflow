@@ -221,21 +221,30 @@ async function upscaleSelected(payload: {
 
   console.log(`[AutoFlow] Upscale-only: triggering ${resolution} for ${payload.assets.length} asset(s)...`);
 
-  for (const asset of payload.assets) {
-    try {
-      const ok = await downloadAssetByMenu(asset.locator, resolution);
-      if (ok) {
-        triggered++;
-        console.log(`[AutoFlow] Upscale triggered: ${asset.promptLabel || 'asset'}`);
-      } else {
+  // Suppress downloads — Flow's context menu triggers both upscale AND download,
+  // but we only want the upscale. The service worker will cancel any downloads.
+  await chrome.runtime.sendMessage({ type: 'SUPPRESS_DOWNLOADS' });
+
+  try {
+    for (const asset of payload.assets) {
+      try {
+        const ok = await downloadAssetByMenu(asset.locator, resolution);
+        if (ok) {
+          triggered++;
+          console.log(`[AutoFlow] Upscale triggered: ${asset.promptLabel || 'asset'}`);
+        } else {
+          failed++;
+          console.warn(`[AutoFlow] Could not trigger upscale: ${asset.promptLabel || 'asset'}`);
+        }
+      } catch (e: any) {
         failed++;
-        console.warn(`[AutoFlow] Could not trigger upscale: ${asset.promptLabel || 'asset'}`);
+        console.error('[AutoFlow] Upscale error:', e);
       }
-    } catch (e: any) {
-      failed++;
-      console.error('[AutoFlow] Upscale error:', e);
+      await sleep(2000);
     }
-    await sleep(2000);
+  } finally {
+    // Always unsuppress, even if errors occurred
+    await chrome.runtime.sendMessage({ type: 'UNSUPPRESS_DOWNLOADS' });
   }
 
   console.log(`[AutoFlow] Upscale-only complete: ${triggered} triggered, ${failed} failed`);
