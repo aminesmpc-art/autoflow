@@ -44,6 +44,7 @@ import {
   getActiveQueueId,
 } from '../shared/storage';
 import { login, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl } from '../shared/api';
+import { applyLanguage, initLanguage } from './i18n';
 
 // ================================================================
 // STATE
@@ -165,6 +166,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   initAccountTab();
   initMessageListener();
   await loadSettings();
+  await initLanguage(); // Apply saved UI language (must be after DOM + settings are loaded)
+  // Listen for language changes
+  const langSelect = document.getElementById('setting-language') as HTMLSelectElement | null;
+  if (langSelect) {
+    langSelect.addEventListener('change', () => {
+      applyLanguage(langSelect.value);
+    });
+  }
   await enforceImageGate(); // Run gate immediately after settings to prevent section flash
   await refreshQueuesList();
   await loadActiveQueueState();

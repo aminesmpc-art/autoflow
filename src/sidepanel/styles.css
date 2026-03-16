@@ -3444,3 +3444,24 @@ button:focus-visible {
     scroll-behavior: auto !important;
   }
 }
+
+/* ── RTL Support (Arabic) ── */
+.af-rtl {
+  direction: rtl;
+  text-align: right;
+}
+.af-rtl .af-tabs { direction: rtl; }
+.af-rtl .af-tab { flex-direction: row-reverse; }
+.af-rtl .af-header { flex-direction: row-reverse; }
+.af-rtl .af-setting-row { flex-direction: row-reverse; }
+.af-rtl .af-row { flex-direction: row-reverse; }
+.af-rtl .af-monitor-controls { flex-direction: row-reverse; }
+.af-rtl .af-mode-grid { direction: rtl; }
+.af-rtl .af-auth-toggle { flex-direction: row-reverse; }
+.af-rtl .af-form-group { text-align: right; }
+.af-rtl .af-account-header { flex-direction: row-reverse; }
+.af-rtl .af-account-info { text-align: right; }
+.af-rtl .af-usage-card { direction: rtl; text-align: right; }
+.af-rtl .af-help-icon { margin-left: 0; margin-right: 4px; }
+.af-rtl .af-section-heading svg { margin-right: 0; margin-left: 8px; }
+
