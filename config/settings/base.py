@@ -18,6 +18,8 @@ ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1", cast=Csv(
 
 # ── Apps ──
 DJANGO_APPS = [
+    "unfold",  # Must be before django.contrib.admin
+    "unfold.contrib.filters",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -30,6 +32,7 @@ THIRD_PARTY_APPS = [
     "rest_framework",
     "corsheaders",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
 ]
 
 LOCAL_APPS = [
@@ -41,6 +44,97 @@ LOCAL_APPS = [
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+
+# ── Unfold Admin Theme ──
+UNFOLD = {
+    "SITE_TITLE": "AutoFlow",
+    "SITE_HEADER": "AutoFlow Admin",
+    "SITE_SUBHEADER": "Chrome Extension Management",
+    "SITE_URL": "/api/health",
+    "SHOW_HISTORY": True,
+    "SHOW_VIEW_ON_SITE": False,
+    "THEME": "dark",
+    "COLORS": {
+        "primary": {
+            "50": "#ecfeff",
+            "100": "#cffafe",
+            "200": "#a5f3fc",
+            "300": "#67e8f9",
+            "400": "#22d3ee",
+            "500": "#06b6d4",
+            "600": "#0891b2",
+            "700": "#0e7490",
+            "800": "#155e75",
+            "900": "#164e63",
+            "950": "#083344",
+        },
+    },
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": False,
+        "navigation": [
+            {
+                "title": "Users & Auth",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Users",
+                        "icon": "person",
+                        "link": "/admin/users/customuser/",
+                    },
+                    {
+                        "title": "Verification Tokens",
+                        "icon": "verified",
+                        "link": "/admin/users/emailverificationtoken/",
+                    },
+                    {
+                        "title": "Groups",
+                        "icon": "group",
+                        "link": "/admin/auth/group/",
+                    },
+                ],
+            },
+            {
+                "title": "Plans & Usage",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Profiles",
+                        "icon": "badge",
+                        "link": "/admin/plans/profile/",
+                    },
+                    {
+                        "title": "Daily Usage",
+                        "icon": "analytics",
+                        "link": "/admin/usage/dailyusage/",
+                    },
+                    {
+                        "title": "Usage Events",
+                        "icon": "event",
+                        "link": "/admin/usage/usageevent/",
+                    },
+                ],
+            },
+            {
+                "title": "Rewards & Webhooks",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Reward Credits",
+                        "icon": "stars",
+                        "link": "/admin/rewards/rewardcreditledger/",
+                    },
+                    {
+                        "title": "Webhook Events",
+                        "icon": "webhook",
+                        "link": "/admin/webhooks/webhookevent/",
+                    },
+                ],
+            },
+        ],
+    },
+}
+
 
 # ── Middleware ──
 MIDDLEWARE = [
@@ -104,7 +198,7 @@ USE_I18N = True
 USE_TZ = True
 
 # ── Static files ──
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -140,7 +234,7 @@ SIMPLE_JWT = {
         days=config("JWT_REFRESH_LIFETIME_DAYS", default=7, cast=int)
     ),
     "ROTATE_REFRESH_TOKENS": True,
-    "BLACKLIST_AFTER_ROTATION": False,
+    "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
@@ -154,22 +248,14 @@ CORS_ALLOWED_ORIGINS = config(
 )
 CORS_ALLOW_CREDENTIALS = True
 
-# ── Email ──
-EMAIL_BACKEND = config(
-    "EMAIL_BACKEND",
-    default="django.core.mail.backends.console.EmailBackend",
-)
-EMAIL_HOST = config("EMAIL_HOST", default="")
-EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
-EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
-EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
-EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
-DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@autoflow.app")
+# ── Email (Resend) ──
+RESEND_API_KEY = config("RESEND_API_KEY", default="")
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="AutoFlow <noreply@auto-flow.studio>")
 
 # ── App config ──
 VERIFY_EMAIL_BASE_URL = config(
     "VERIFY_EMAIL_BASE_URL",
-    default="http://localhost:3000/verify-email",
+    default="https://api.auto-flow.studio/api/auth/verify-email",
 )
 VERIFICATION_TOKEN_EXPIRY_HOURS = config(
     "VERIFICATION_TOKEN_EXPIRY_HOURS", default=24, cast=int
