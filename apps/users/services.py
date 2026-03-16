@@ -1,8 +1,10 @@
 """Auth service — registration, verification token, and email sending."""
 import logging
+from datetime import datetime
 
 from django.conf import settings
 from django.core.mail import send_mail
+from django.template.loader import render_to_string
 from django.utils import timezone
 
 from apps.plans.models import Profile
@@ -12,11 +14,18 @@ logger = logging.getLogger(__name__)
 
 
 def register_user(email: str, password: str) -> CustomUser:
-    """Create an inactive user, profile, and send verification email."""
+    """Create user + profile, send verification email in background thread."""
+    import threading
+
     user = CustomUser.objects.create_user(email=email, password=password, is_active=False)
     Profile.objects.create(user=user)
     token = create_verification_token(user)
-    send_verification_email(user, token)
+    # Send email in background thread so registration returns instantly
+    threading.Thread(
+        target=send_verification_email,
+        args=(user, token),
+        daemon=True,
+    ).start()
     return user
 
 
@@ -74,25 +83,54 @@ def resend_verification(email: str) -> tuple[bool, str]:
 
 
 def send_verification_email(user: CustomUser, token: EmailVerificationToken):
-    """Send the verification email with the token link."""
-    base_url = getattr(settings, "VERIFY_EMAIL_BASE_URL", "http://localhost:3000/verify-email")
-    verify_url = f"{base_url}?token={token.token}"
+    """Send the verification email using Resend API."""
+    try:
+        import resend
 
-    subject = "AutoFlow — Verify Your Email"
-    message = (
-        f"Hi,\n\n"
-        f"Welcome to AutoFlow! Please verify your email address by clicking the link below:\n\n"
-        f"{verify_url}\n\n"
-        f"This link expires in {getattr(settings, 'VERIFICATION_TOKEN_EXPIRY_HOURS', 24)} hours.\n\n"
-        f"If you didn't create an AutoFlow account, you can safely ignore this email.\n\n"
-        f"— The AutoFlow Team"
-    )
+        api_key = getattr(settings, "RESEND_API_KEY", "")
+        if not api_key:
+            logger.warning("RESEND_API_KEY not set — skipping verification email for %s", user.email)
+            return
 
-    send_mail(
-        subject=subject,
-        message=message,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
-        fail_silently=False,
-    )
-    logger.info("Verification email sent to %s", user.email)
+        resend.api_key = api_key
+
+        base_url = getattr(settings, "VERIFY_EMAIL_BASE_URL", "https://api.auto-flow.studio/api/auth/verify-email")
+        verify_url = f"{base_url}?token={token.token}"
+        expiry_hours = getattr(settings, "VERIFICATION_TOKEN_EXPIRY_HOURS", 24)
+
+        # Plain text fallback
+        text_content = (
+            f"Hi,\n\n"
+            f"Welcome to AutoFlow! Please verify your email:\n\n"
+            f"{verify_url}\n\n"
+            f"This link expires in {expiry_hours} hours.\n\n"
+            f"— The AutoFlow Team"
+        )
+
+        # HTML content
+        try:
+            html_content = render_to_string("users/verify_email.html", {
+                "verify_url": verify_url,
+                "expiry_hours": expiry_hours,
+                "year": datetime.now().year,
+            })
+        except Exception:
+            html_content = None
+
+        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "AutoFlow <noreply@auto-flow.studio>")
+
+        params = {
+            "from": from_email,
+            "to": [user.email],
+            "subject": "Verify Your Email — AutoFlow",
+            "text": text_content,
+        }
+        if html_content:
+            params["html"] = html_content
+
+        resend.Emails.send(params)
+        logger.info("Verification email sent to %s via Resend", user.email)
+
+    except Exception as exc:
+        logger.error("Failed to send verification email to %s: %s", user.email, exc)
+
