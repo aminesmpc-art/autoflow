@@ -136,6 +136,34 @@
   }
 }
 
+/* ── Locale Wrapper: hide root header/footer when locale layout is active ── */
+body:has(.locale-wrapper) > header.site-header {
+  display: none;
+}
+body:has(.locale-wrapper) > footer.site-footer {
+  display: none;
+}
+
+.locale-wrapper .lang-switcher a {
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.locale-wrapper .lang-switcher a:hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.08);
+}
+
+.locale-wrapper .lang-switcher a.active {
+  color: var(--text-primary);
+  background: rgba(99, 102, 241, 0.25);
+}
+
 /* ── Footer ── */
 .site-footer {
   background: var(--bg-surface);

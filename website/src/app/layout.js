@@ -177,14 +177,21 @@ function Header() {
           <li><a href="/blog">Blog</a></li>
           <li><a href="/faq">FAQ</a></li>
         </ul>
-        <a
-          href="https://chromewebstore.google.com"
-          target="_blank"
-          rel="noopener noreferrer nofollow"
-          className="btn btn-primary btn-header"
-        >
-          Install Free
-        </a>
+        <div className="header-actions">
+          <div className="lang-switcher">
+            <a href="/" className="lang-option active">EN</a>
+            <a href="/ar" className="lang-option">AR</a>
+            <a href="/fr" className="lang-option">FR</a>
+          </div>
+          <a
+            href="https://chromewebstore.google.com"
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            className="btn btn-primary btn-header"
+          >
+            Install Free
+          </a>
+        </div>
       </nav>
     </header>
   );
