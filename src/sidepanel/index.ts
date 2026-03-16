@@ -473,13 +473,15 @@ function initVideoTab() {
   // Character images library
   const charAddBtn = $('#btn-add-char-img') as HTMLButtonElement;
   const charFileInput = $('#char-file-input') as HTMLInputElement;
-  const charToggle = $('#toggle-auto-char') as HTMLInputElement;
+  const charToggle = $('#toggle-auto-char') as HTMLInputElement | null;
 
-  charToggle.checked = state.autoAddCharacters;
-  charToggle.addEventListener('change', () => {
-    state.autoAddCharacters = charToggle.checked;
-    renderPromptList(); // re-run auto-matching
-  });
+  if (charToggle) {
+    charToggle.checked = state.autoAddCharacters;
+    charToggle.addEventListener('change', () => {
+      state.autoAddCharacters = charToggle.checked;
+      renderPromptList(); // re-run auto-matching
+    });
+  }
 
   charAddBtn.addEventListener('click', () => {
     charFileInput.click();
