@@ -152,7 +152,9 @@ export default function RootLayout({ children }) {
             }),
           }}
         />
-        {children}
+        <Header />
+        <main>{children}</main>
+        <Footer />
         <Analytics />
         <SpeedInsights />
       </body>
