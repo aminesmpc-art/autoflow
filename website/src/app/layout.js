@@ -2,6 +2,7 @@ import "./globals.css";
 import "./layout.css";
 import "./page.css";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export const metadata = {
   metadataBase: new URL("https://auto-flow.studio"),
@@ -116,6 +117,7 @@ export default function RootLayout({ children }) {
       <body>
         {children}
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
