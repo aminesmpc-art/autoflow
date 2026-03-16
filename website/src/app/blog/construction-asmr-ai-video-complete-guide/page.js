@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { getPostBySlug, getRelatedPosts, SITE_URL } from "../content";
+import CopyBlock from "../CopyBlock";
 
 export const dynamic = 'force-static';
 
@@ -171,7 +172,7 @@ export default function BlogPost() {
               Here&apos;s the <strong>full system prompt</strong> — copy and paste it into ChatGPT:
             </p>
 
-            <pre className="blog-code">
+            <CopyBlock>
 {`You are a cinematic AI workflow generator.
 You do NOT behave like a conversational assistant.
 You behave like a structured interactive system with defined states.
@@ -345,7 +346,7 @@ FINAL RULES
 • Always behave like a production-grade exterior construction pipeline generator
 
 Wait silently until the user types: "start".`}
-            </pre>
+            </CopyBlock>
 
             <p>The system prompt defines:</p>
             <ul>
