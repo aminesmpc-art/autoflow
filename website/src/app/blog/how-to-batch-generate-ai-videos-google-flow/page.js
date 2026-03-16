@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getPostBySlug, getRelatedPosts, SITE_URL } from "../content";
 
+export const dynamic = 'force-static';
+
 const post = getPostBySlug("how-to-batch-generate-ai-videos-google-flow");
 
 export const metadata = {

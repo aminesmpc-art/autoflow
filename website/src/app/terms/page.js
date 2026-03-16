@@ -1,5 +1,5 @@
 
-
+export const dynamic = 'force-static';
 
 export const metadata = {
   title: "Terms of Service",

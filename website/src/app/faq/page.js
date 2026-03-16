@@ -1,3 +1,4 @@
+export const dynamic = 'force-static';
 import FAQClient from "./faq-client";
 
 export const metadata = {

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getAllPosts, getCategories, SITE_URL } from "./content";
 
+export const dynamic = 'force-static';
+
 export const metadata = {
   title: "Blog — AI Video Generation Tips & Tutorials | AutoFlow",
   description:
