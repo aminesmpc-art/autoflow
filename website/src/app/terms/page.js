@@ -4,7 +4,15 @@ export const dynamic = 'force-static';
 export const metadata = {
   title: "Terms of Service",
   description:
-    "AutoFlow terms of service. Rules and guidelines for using the AutoFlow Chrome extension.",
+    "AutoFlow terms of service. Rules and guidelines for using the AutoFlow Chrome extension for Google Flow automation.",
+  alternates: {
+    canonical: "https://auto-flow.studio/terms",
+  },
+  openGraph: {
+    title: "Terms of Service — AutoFlow",
+    description: "Rules and guidelines for using AutoFlow, the Chrome extension for Google Flow automation.",
+    url: "https://auto-flow.studio/terms",
+  },
 };
 
 export default function TermsPage() {

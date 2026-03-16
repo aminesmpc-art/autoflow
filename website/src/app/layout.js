@@ -180,7 +180,7 @@ function Header() {
         <a
           href="https://chromewebstore.google.com"
           target="_blank"
-          rel="noopener noreferrer"
+          rel="noopener noreferrer nofollow"
           className="btn btn-primary btn-header"
         >
           Install Free
