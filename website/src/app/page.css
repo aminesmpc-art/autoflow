@@ -638,6 +638,8 @@
 .blog-article-content {
   max-width: 700px;
   margin: 0 auto;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 
 .blog-article-content p {
@@ -673,6 +675,15 @@
 
 .blog-article-content a:hover {
   color: var(--primary);
+}
+
+.blog-article-content a.btn {
+  color: white;
+  text-decoration: none;
+}
+
+.blog-article-content a.btn:hover {
+  color: white;
 }
 
 .blog-code {
