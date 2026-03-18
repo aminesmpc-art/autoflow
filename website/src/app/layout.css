@@ -183,7 +183,8 @@ body:has(.locale-wrapper) > footer.site-footer {
   max-width: 300px;
 }
 
-.footer-col h4 {
+.footer-heading {
+  display: block;
   font-size: 0.9rem;
   font-weight: 600;
   text-transform: uppercase;

@@ -96,9 +96,12 @@ export default function HomePage() {
           </div>
           <div className="hero-screenshot animate-in delay-4">
             <img
-              src="/screenshots/full-workflow.png"
+              src="/screenshots/full-workflow.webp"
               alt="AutoFlow running alongside Google Flow — queue completed with generated videos"
               className="hero-img"
+              width="1200"
+              height="750"
+              fetchPriority="high"
             />
           </div>
         </div>
@@ -132,8 +135,11 @@ export default function HomePage() {
             </div>
             <div className="feature-image">
               <img
-                src="/screenshots/create-prompts.png"
+                src="/screenshots/create-prompts.webp"
                 alt="AutoFlow Create tab showing batch prompt editor with 5 parsed scenes"
+                width="600"
+                height="450"
+                loading="lazy"
               />
             </div>
           </div>
@@ -157,8 +163,11 @@ export default function HomePage() {
             </div>
             <div className="feature-image">
               <img
-                src="/screenshots/image-mapping.png"
+                src="/screenshots/image-mapping.webp"
                 alt="AutoFlow showing shared reference images, character matching, and per-prompt image slots"
+                width="600"
+                height="450"
+                loading="lazy"
               />
             </div>
           </div>
@@ -182,8 +191,11 @@ export default function HomePage() {
             </div>
             <div className="feature-image">
               <img
-                src="/screenshots/queue-card.png"
+                src="/screenshots/queue-card.webp"
                 alt="AutoFlow queue card showing Veo 3.1 Fast settings, 4 prompts pending, ready to run"
+                width="600"
+                height="450"
+                loading="lazy"
               />
             </div>
           </div>
@@ -207,8 +219,11 @@ export default function HomePage() {
             </div>
             <div className="feature-image">
               <img
-                src="/screenshots/run-monitor.png"
+                src="/screenshots/run-monitor.webp"
                 alt="AutoFlow Run Monitor showing live automation log with pause, resume, stop, skip, and retry controls"
+                width="600"
+                height="450"
+                loading="lazy"
               />
             </div>
           </div>
@@ -232,8 +247,11 @@ export default function HomePage() {
             </div>
             <div className="feature-image">
               <img
-                src="/screenshots/library-results.png"
+                src="/screenshots/library-results.webp"
                 alt="AutoFlow Library showing scanned videos grouped by prompt — cats, sniper, babies — with select and download controls"
+                width="600"
+                height="450"
+                loading="lazy"
               />
             </div>
           </div>
@@ -257,8 +275,11 @@ export default function HomePage() {
             </div>
             <div className="feature-image">
               <img
-                src="/screenshots/settings.png"
+                src="/screenshots/settings.webp"
                 alt="AutoFlow Settings showing video model, ratio, timing, download, and language options"
+                width="600"
+                height="450"
+                loading="lazy"
               />
             </div>
           </div>
@@ -286,8 +307,11 @@ export default function HomePage() {
               </div>
               <div className="step-image">
                 <img
-                  src="/screenshots/prompt-list.png"
+                  src="/screenshots/prompt-list.webp"
                   alt="5 parsed prompts ready to be queued"
+                  width="500"
+                  height="350"
+                  loading="lazy"
                 />
               </div>
             </div>
@@ -303,8 +327,11 @@ export default function HomePage() {
               </div>
               <div className="step-image">
                 <img
-                  src="/screenshots/queue-card.png"
+                  src="/screenshots/queue-card.webp"
                   alt="Queue card with all settings configured and Run button"
+                  width="500"
+                  height="350"
+                  loading="lazy"
                 />
               </div>
             </div>
@@ -321,8 +348,11 @@ export default function HomePage() {
               </div>
               <div className="step-image">
                 <img
-                  src="/screenshots/library-results.png"
+                  src="/screenshots/library-results.webp"
                   alt="Library showing all generated videos grouped and ready for download"
+                  width="500"
+                  height="350"
+                  loading="lazy"
                 />
               </div>
             </div>

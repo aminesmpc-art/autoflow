@@ -114,6 +114,14 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body>
         {/* ── Organization Schema — tells Google who you are ── */}
         <script
@@ -212,7 +220,7 @@ function Footer() {
           </p>
         </div>
         <div className="footer-col">
-          <h4>Product</h4>
+          <span className="footer-heading">Product</span>
           <ul>
             <li><a href="/#features">Features</a></li>
             <li><a href="/#how-it-works">How It Works</a></li>
@@ -221,14 +229,14 @@ function Footer() {
           </ul>
         </div>
         <div className="footer-col">
-          <h4>Support</h4>
+          <span className="footer-heading">Support</span>
           <ul>
             <li><a href="/faq">FAQ</a></li>
             <li><a href="mailto:support@auto-flow.studio">Contact</a></li>
           </ul>
         </div>
         <div className="footer-col">
-          <h4>Legal</h4>
+          <span className="footer-heading">Legal</span>
           <ul>
             <li><a href="/privacy">Privacy Policy</a></li>
             <li><a href="/terms">Terms of Service</a></li>

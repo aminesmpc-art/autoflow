@@ -2,7 +2,7 @@
    AutoFlow Design System
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+/* Google Fonts loaded via layout.js <link> to avoid render-blocking */
 
 :root {
   /* Colors */
@@ -19,7 +19,7 @@
 
   --text-primary: #F8FAFC;
   --text-secondary: #94A3B8;
-  --text-muted: #64748B;
+  --text-muted: #8A94A6;
 
   --success: #22C55E;
   --warning: #F59E0B;
