@@ -3,6 +3,7 @@ import "./layout.css";
 import "./page.css";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import MobileMenu from "./MobileMenu";
 
 export const metadata = {
   metadataBase: new URL("https://auto-flow.studio"),
@@ -200,6 +201,7 @@ function Header() {
             Install Free
           </a>
         </div>
+        <MobileMenu />
       </nav>
     </header>
   );
