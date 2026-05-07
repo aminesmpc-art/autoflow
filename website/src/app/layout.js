@@ -3,6 +3,7 @@ import "./layout.css";
 import "./page.css";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import Script from "next/script";
 import MobileMenu from "./MobileMenu";
 
 export const metadata = {
@@ -122,6 +123,19 @@ export default function RootLayout({ children }) {
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
           rel="stylesheet"
         />
+        {/* ── Google Analytics (GA4) ── */}
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-ZJ953YL6EK"
+          strategy="afterInteractive"
+        />
+        <Script id="google-analytics" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-ZJ953YL6EK');
+          `}
+        </Script>
       </head>
       <body>
         {/* ── Organization Schema — tells Google who you are ── */}
