@@ -42,6 +42,7 @@ import {
   appendLog,
   getLogs,
   getActiveQueueId,
+  savePromptHistory,
 } from '../shared/storage';
 import { login, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl } from '../shared/api';
 import { applyLanguage, initLanguage } from './i18n';
@@ -753,6 +754,8 @@ function renderFrameSlots(row: HTMLElement, promptIdx: number) {
 
 /**
  * Clear a specific frame slot (set to null) without removing the other slot.
+ * If the image is shared with an adjacent prompt (frame chain), keep the
+ * object URL alive so it stays visible on the other prompt.
  */
 function clearFrameSlot(promptIdx: number, slotIdx: number) {
   const images = state.promptImages.get(promptIdx) || [];
@@ -761,11 +764,37 @@ function clearFrameSlot(promptIdx: number, slotIdx: number) {
 
   const old = images[slotIdx];
   if (old) {
-    URL.revokeObjectURL(old.objectUrl);
-    deleteImageBlob(old.meta.id).catch(() => { });
+    // Only revoke URL and delete blob if NO other prompt is using this image
+    const sharedWith = findSharedFrameSlot(promptIdx, slotIdx, old.meta.id);
+    if (!sharedWith) {
+      URL.revokeObjectURL(old.objectUrl);
+      deleteImageBlob(old.meta.id).catch(() => { });
+    }
   }
   images[slotIdx] = null;
   state.promptImages.set(promptIdx, images);
+}
+
+/**
+ * Check if a frame slot image is shared with an adjacent prompt in the frame chain.
+ * End frame of prompt N = Start frame of prompt N+1 (and reverse).
+ */
+function findSharedFrameSlot(promptIdx: number, slotIdx: number, imageId: string): { promptIdx: number; slotIdx: number } | null {
+  // If removing End frame (slot 1), check if prompt N+1's Start frame (slot 0) shares this image
+  if (slotIdx === 1) {
+    const nextImages = state.promptImages.get(promptIdx + 1);
+    if (nextImages && nextImages[0] && nextImages[0].meta.id === imageId) {
+      return { promptIdx: promptIdx + 1, slotIdx: 0 };
+    }
+  }
+  // If removing Start frame (slot 0), check if prompt N-1's End frame (slot 1) shares this image
+  if (slotIdx === 0 && promptIdx > 0) {
+    const prevImages = state.promptImages.get(promptIdx - 1);
+    if (prevImages && prevImages[1] && prevImages[1].meta.id === imageId) {
+      return { promptIdx: promptIdx - 1, slotIdx: 1 };
+    }
+  }
+  return null;
 }
 
 /**
@@ -1596,7 +1625,11 @@ async function loadSettings() {
 
     // Image generation settings
     ($('#setting-image-model') as HTMLSelectElement).value = settings.imageModel ?? 'Nano Banana Pro';
-    ($('#setting-image-ratio') as HTMLSelectElement).value = settings.imageRatio ?? 'Landscape (16:9)';
+    // Migrate legacy imageRatio values (e.g. "Landscape (16:9)" → "16:9")
+    let imgRatioVal = settings.imageRatio ?? '16:9';
+    const legacyMatch = imgRatioVal.match(/(\d+:\d+)/);
+    if (legacyMatch && imgRatioVal.length > 5) imgRatioVal = legacyMatch[1] as any;
+    ($('#setting-image-ratio') as HTMLSelectElement).value = imgRatioVal;
 
     // Show/hide video vs image settings based on media type
     updateMediaTypeVisibility(settings.mediaType ?? 'video');
@@ -2088,6 +2121,41 @@ function initLibraryTab() {
     renderLibrary();
   });
 
+  // ── Set Prompt Order ──
+  const promptOrderModal = $('#prompt-order-modal') as HTMLElement;
+  const promptOrderInput = $('#prompt-order-input') as HTMLTextAreaElement;
+
+  $('#btn-set-prompt-order').addEventListener('click', () => {
+    promptOrderModal.style.display = promptOrderModal.style.display === 'none' ? 'block' : 'none';
+  });
+
+  $('#btn-cancel-prompt-order').addEventListener('click', () => {
+    promptOrderModal.style.display = 'none';
+  });
+
+  $('#btn-save-prompt-order').addEventListener('click', async () => {
+    const text = promptOrderInput.value.trim();
+    if (!text) {
+      showToast('Please paste your prompt list first.');
+      return;
+    }
+    // Parse: split by blank lines (double newline) to get individual prompts
+    const prompts = text.split(/\n\s*\n/).map(p => p.trim()).filter(p => p.length > 0);
+    if (prompts.length === 0) {
+      showToast('No prompts found. Separate prompts with blank lines.');
+      return;
+    }
+    // Save as a manual history entry
+    await savePromptHistory({
+      queueId: 'manual-' + Date.now(),
+      queueName: 'Manual Order',
+      timestamp: Date.now(),
+      prompts: prompts.map((p, i) => ({ index: i, text: p })),
+    });
+    promptOrderModal.style.display = 'none';
+    showToast(`Saved prompt order (${prompts.length} prompts). Re-scan to apply.`);
+  });
+
   $('#btn-download-selected').addEventListener('click', async () => {
     const selected = state.scannedAssets.filter(a => a.selected);
     if (selected.length === 0) {
@@ -2122,10 +2190,17 @@ function initLibraryTab() {
     const resolution = hasVideo
       ? ($('#setting-video-resolution') as HTMLSelectElement).value
       : ($('#setting-image-resolution') as HTMLSelectElement).value;
+    // Sort: by promptNumber DESCENDING so P001 downloads LAST
+    // → gets newest timestamp → appears at TOP in Chrome downloads & Explorer
+    const sorted = [...selected].sort((a, b) => {
+      if (a.promptNumber !== b.promptNumber) return b.promptNumber - a.promptNumber;
+      return b.generationNum - a.generationNum;
+    });
+
     const response = await sendToBackground({
       type: 'DOWNLOAD_SELECTED',
       payload: {
-        assets: selected.map(a => ({
+        assets: sorted.map(a => ({
           locator: a.locator,
           index: a.index,
           mediaType: a.mediaType,
@@ -2133,8 +2208,10 @@ function initLibraryTab() {
           thumbnailUrl: a.thumbnailUrl,
           promptLabel: a.promptLabel,
           groupIndex: a.groupIndex,
+          promptNumber: a.promptNumber,
+          generationNum: a.generationNum,
         })),
-        queueName: state.activeQueueId || 'download',
+        queueName: 'AutoFlow_' + new Date().toISOString().slice(0, 10),
         resolution,
       },
     });
@@ -2376,27 +2453,59 @@ function renderLibrary() {
     const retryCount = assets.filter(a => a.isRetry).length;
     const retryBadge = retryCount > 0 ? `<span class="af-lib-badge af-lib-badge-retry">${retryCount} retr${retryCount > 1 ? 'ies' : 'y'}</span>` : '';
 
+    // Model name badge (use first asset's model, they should all be the same for a group)
+    const modelName = firstAsset.modelName || '';
+    const modelBadge = modelName ? `<span class="af-lib-badge af-lib-badge-model" title="${escapeHtml(modelName)}">${escapeHtml(modelName)}</span>` : '';
+
+    // Creation date
+    const createdAt = firstAsset.createdAt || '';
+    const dateLine = createdAt ? `<span class="af-lib-group-date">${escapeHtml(createdAt)}</span>` : '';
+
     // Group header with prompt number, label, and media summary
     const header = document.createElement('div');
     header.className = 'af-lib-group-header';
-    header.style.cursor = 'pointer';
-    header.title = 'Click to select/deselect all in this group';
     header.innerHTML = `
-      <span class="af-lib-group-num">${promptNum}</span>
-      <span class="af-lib-group-label" title="${escapeHtml(promptLabel)}">${escapeHtml(promptLabel)}</span>
-      ${stateBadges}
-      ${retryBadge}
-      <span class="af-lib-group-count">${mediaLabel}</span>
+      <span class="af-lib-group-num" style="cursor:pointer" title="Click to select/deselect all">
+        ${promptNum}
+      </span>
+      <div class="af-lib-group-info" style="cursor:pointer" title="Click to show/hide full prompt">
+        <span class="af-lib-group-label">${escapeHtml(promptLabel.length > 80 ? promptLabel.slice(0, 80) + '…' : promptLabel)}</span>
+        <div class="af-lib-group-meta">
+          ${modelBadge}
+          ${dateLine}
+          ${stateBadges}
+          ${retryBadge}
+          <span class="af-lib-group-count">${mediaLabel}</span>
+        </div>
+      </div>
     `;
 
-    // Click header → toggle select all assets in this group
-    header.addEventListener('click', () => {
+    // Full prompt expandable area (hidden by default)
+    const promptExpand = document.createElement('div');
+    promptExpand.className = 'af-lib-prompt-expand';
+    promptExpand.style.display = 'none';
+    promptExpand.innerHTML = `<div class="af-lib-prompt-text">${escapeHtml(promptLabel)}</div>`;
+
+    // Click group info → expand/collapse full prompt
+    const groupInfo = header.querySelector('.af-lib-group-info') as HTMLElement;
+    groupInfo.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = promptExpand.style.display !== 'none';
+      promptExpand.style.display = isOpen ? 'none' : 'block';
+      groupInfo.classList.toggle('expanded', !isOpen);
+    });
+
+    // Click prompt number → toggle select all assets in this group
+    const numBadge = header.querySelector('.af-lib-group-num') as HTMLElement;
+    numBadge.addEventListener('click', (e) => {
+      e.stopPropagation();
       const allSelected = assets.every(a => a.selected);
       assets.forEach(a => a.selected = !allSelected);
       renderLibrary();
     });
 
     groupEl.appendChild(header);
+    groupEl.appendChild(promptExpand);
 
     // Assets row
     const row = document.createElement('div');
@@ -2430,15 +2539,7 @@ function renderLibrary() {
           ${genBadge}
           ${stateBadge}
           <div class="af-lib-preview">
-            <video
-              class="af-lib-video"
-              src="${escapeHtml(asset.videoSrc || asset.thumbnailUrl)}"
-              poster="${escapeHtml(asset.thumbnailUrl)}"
-              preload="metadata"
-              playsinline
-              muted
-              loop
-            ></video>
+            <img class="af-lib-thumb" src="${escapeHtml(asset.thumbnailUrl)}" alt="${escapeHtml(asset.label)}" />
             <div class="af-lib-play-overlay">
               <svg width="36" height="36" viewBox="0 0 24 24" fill="white" opacity="0.9"><path d="M8 5v14l11-7z"/></svg>
             </div>
@@ -2446,23 +2547,79 @@ function renderLibrary() {
         `;
 
         const preview = card.querySelector('.af-lib-preview') as HTMLElement;
-        const videoEl = card.querySelector('.af-lib-video') as HTMLVideoElement;
         const playOverlay = card.querySelector('.af-lib-play-overlay') as HTMLElement;
+        let videoLoaded = false;
+        let videoEl: HTMLVideoElement | null = null;
 
-        preview.addEventListener('click', (e) => {
+        preview.addEventListener('click', async (e: MouseEvent) => {
           e.stopPropagation();
-          if (videoEl.paused) {
-            videoEl.muted = false;
-            videoEl.play().catch(() => { });
-            playOverlay.style.opacity = '0';
-          } else {
-            videoEl.pause();
-            playOverlay.style.opacity = '1';
-          }
-        });
 
-        videoEl.addEventListener('ended', () => {
-          playOverlay.style.opacity = '1';
+          // If video is already loaded, toggle play/pause
+          if (videoLoaded && videoEl) {
+            if (videoEl.paused) {
+              videoEl.play().catch(() => {});
+              playOverlay.style.opacity = '0';
+            } else {
+              videoEl.pause();
+              playOverlay.style.opacity = '1';
+            }
+            return;
+          }
+
+          // Show loading state
+          playOverlay.innerHTML = `
+            <div style="width:28px;height:28px;border:3px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:af-spin 0.8s linear infinite"></div>
+          `;
+
+          const videoUrl = (asset as any).videoSrc || '';
+          if (!videoUrl) {
+            showToast('No video URL available');
+            playOverlay.innerHTML = `<svg width="36" height="36" viewBox="0 0 24 24" fill="white" opacity="0.9"><path d="M8 5v14l11-7z"/></svg>`;
+            return;
+          }
+
+          try {
+            // Fetch video through extension's host_permissions (bypasses CORS)
+            const resp = await fetch(videoUrl);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const blob = await resp.blob();
+            const blobUrl = URL.createObjectURL(blob);
+
+            // Replace thumbnail with video element
+            const thumb = preview.querySelector('.af-lib-thumb') as HTMLElement;
+            if (thumb) thumb.style.display = 'none';
+
+            videoEl = document.createElement('video');
+            videoEl.className = 'af-lib-video';
+            videoEl.src = blobUrl;
+            videoEl.controls = true;
+            videoEl.autoplay = true;
+            videoEl.playsInline = true;
+            videoEl.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:6px;';
+            preview.insertBefore(videoEl, playOverlay);
+
+            playOverlay.style.opacity = '0';
+            videoLoaded = true;
+
+            videoEl.addEventListener('pause', () => {
+              playOverlay.style.opacity = '1';
+              playOverlay.innerHTML = `<svg width="36" height="36" viewBox="0 0 24 24" fill="white" opacity="0.9"><path d="M8 5v14l11-7z"/></svg>`;
+            });
+            videoEl.addEventListener('play', () => {
+              playOverlay.style.opacity = '0';
+            });
+            videoEl.addEventListener('ended', () => {
+              playOverlay.style.opacity = '1';
+              playOverlay.innerHTML = `<svg width="36" height="36" viewBox="0 0 24 24" fill="white" opacity="0.9"><path d="M8 5v14l11-7z"/></svg>`;
+            });
+          } catch (err: any) {
+            console.error('[AutoFlow] Video fetch failed:', err);
+            showToast('Could not load video — opening in Flow...');
+            playOverlay.innerHTML = `<svg width="36" height="36" viewBox="0 0 24 24" fill="white" opacity="0.9"><path d="M8 5v14l11-7z"/></svg>`;
+            // Fallback: open on Flow page
+            sendToBackground({ type: 'PREVIEW_ASSET', payload: { locator: asset.locator } });
+            sendToBackground({ type: 'FOCUS_FLOW_TAB' });
+          }
         });
       } else {
         card.innerHTML = `
@@ -2589,6 +2746,9 @@ function initMessageListener() {
         break;
       case 'FAILED_TILES_RESULT':
         handleFailedTilesResult(msg.payload);
+        break;
+      case 'AUTO_SCAN_LIBRARY':
+        handleAutoScanLibrary();
         break;
     }
   });
@@ -2800,6 +2960,38 @@ function handleQueueSummary(payload: { queueName: string; totalPrompts: number; 
   if (payload.failed > 0) {
     showFailedSection();
   }
+}
+
+/**
+ * Auto-scan library after queue completes.
+ * Switches to Library tab and triggers a scan automatically.
+ */
+async function handleAutoScanLibrary() {
+  showToast('Queue complete — auto-scanning library...');
+
+  // Switch to Library tab
+  const libraryTab = document.querySelector('[data-tab="library"]') as HTMLElement;
+  if (libraryTab) {
+    libraryTab.click();
+  }
+
+  // Wait a beat for the UI to switch
+  await new Promise(r => setTimeout(r, 500));
+
+  // Trigger scan
+  const response = await sendToBackground({ type: 'SCAN_LIBRARY' });
+  if (response?.error) {
+    showToast(`Auto-scan error: ${response.error}`);
+    return;
+  }
+  state.scannedAssets = response?.assets || [];
+  if (state.scannedAssets.length === 0) {
+    showToast('Auto-scan: no assets found.');
+  } else {
+    const prompts = new Set(state.scannedAssets.map(a => a.groupId)).size;
+    showToast(`Auto-scan: found ${state.scannedAssets.length} asset(s) across ${prompts} prompt(s).`);
+  }
+  renderLibrary();
 }
 
 // ================================================================

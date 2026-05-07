@@ -9,6 +9,7 @@ import { AutomationEngine, isRunLocked } from './automation';
 import { scanProjectForVideos, previewAsset, retrySingleTile, downloadAssetByMenu, waitForUpscalingDone } from './scanner';
 import { sleep, findModelSelectorTrigger, findMenuItem, simulateClick } from './selectors';
 import { DOM_SETTLE_MS } from '../shared/constants';
+import { getRunningQueue, clearRunningQueue } from '../shared/storage';
 
 // ── Singleton engine ──
 let engine: AutomationEngine | null = null;
@@ -66,6 +67,43 @@ if (!(window as any).__autoflow_injected) {
 } else {
   console.log('[AutoFlow] Content script re-injected, listener refreshed.');
 }
+
+// ── Auto-resume: check if a queue was running before page reload ──
+(async () => {
+  try {
+    const saved = await getRunningQueue();
+    if (!saved) return;
+
+    const { queue, currentIndex } = saved;
+    const remaining = queue.prompts.length - currentIndex;
+
+    if (remaining <= 0) {
+      // Queue was already done, just clear it
+      await clearRunningQueue();
+      return;
+    }
+
+    console.log(`[AutoFlow] Detected interrupted queue "${queue.name}" — ${remaining} prompts remaining (from #${currentIndex + 1})`);
+
+    // Wait for the Flow page to fully load
+    await sleep(3000);
+
+    // Set the resume point
+    queue.currentPromptIndex = currentIndex;
+
+    // Mark already-processed prompts so the engine doesn't re-send them
+    for (let i = 0; i < currentIndex; i++) {
+      if (queue.prompts[i].status !== 'failed') {
+        queue.prompts[i].status = 'done';
+      }
+    }
+
+    console.log(`[AutoFlow] Auto-resuming queue "${queue.name}" from prompt #${currentIndex + 1}...`);
+    startQueue(queue);
+  } catch (e) {
+    console.warn('[AutoFlow] Auto-resume check failed:', e);
+  }
+})();
 
 async function handleMessage(msg: Message): Promise<any> {
   switch (msg.type) {
@@ -144,6 +182,23 @@ async function handleMessage(msg: Message): Promise<any> {
 }
 
 async function startQueue(queue: QueueObject): Promise<any> {
+  // ── Guard: prevent multiple concurrent engines ──
+  // If we already have a running engine, stop it first
+  if (engine) {
+    console.warn('[AutoFlow] Stopping previous engine before starting new queue');
+    engine.stop();
+    engine = null;
+    await sleep(500); // Let DOM settle after stopping
+  }
+
+  // De-duplicate rapid START_QUEUE messages (e.g. double-clicks or re-injections)
+  const now = Date.now();
+  if ((window as any).__af_lastStartTime && now - (window as any).__af_lastStartTime < 3000) {
+    console.warn('[AutoFlow] Ignoring duplicate START_QUEUE (received within 3s of last start)');
+    return { success: true, deduplicated: true };
+  }
+  (window as any).__af_lastStartTime = now;
+
   engine = new AutomationEngine();
   startAntiThrottle();  // Fight tab throttling during automation
   // Don't await — run in background so the message can respond
@@ -260,35 +315,43 @@ async function downloadSelected(payload: {
     thumbnailUrl?: string;
     promptLabel?: string;
     groupIndex?: number;
+    promptNumber?: number;
+    generationNum?: number;
   }>;
   queueName: string;
   resolution?: string;
 }): Promise<any> {
   const results: string[] = [];
-
-  // ── Compute prompt numbers from promptLabel ordering ──
-  // Group by promptLabel so all tiles from the same prompt share one number.
-  // Flow shows newest prompts first (lowest groupIndex = newest), but the user
-  // expects prompt 001 to be the FIRST prompt they created (oldest).
-  // So we reverse the label order: last unique label → 001, first → highest num.
-  const uniqueLabels: string[] = [];
-  for (const a of payload.assets) {
-    const key = a.promptLabel || '';
-    if (!uniqueLabels.includes(key)) uniqueLabels.push(key);
-  }
-  // Reverse so oldest prompt (appearing last in the scan) gets number 1
-  const reversedLabels = [...uniqueLabels].reverse();
-  const labelToPromptNum = new Map<string, number>();
-  reversedLabels.forEach((label, i) => labelToPromptNum.set(label, i + 1));
-
-  // ── Count generations per prompt for sequential naming ──
-  const genCounter = new Map<number, number>();
-
-  // Determine if we need menu-based download (for upscaled resolutions)
+  const folderName = payload.queueName || 'AutoFlow_download';
   const resolutionLabel = payload.resolution || 'Original (720p)';
-  const needsMenuDownload = !resolutionLabel.toLowerCase().includes('720p');
+  const hasVideos = payload.assets.some(a => a.mediaType === 'video');
+  const needsUpscale = hasVideos && !resolutionLabel.toLowerCase().includes('720p');
 
-  if (needsMenuDownload) {
+  /**
+   * Build a clean filename from asset metadata.
+   * Format: P001_G1_short_prompt_snippet.ext
+   */
+  function buildFilename(asset: typeof payload.assets[0]): string {
+    let ext = asset.mediaType === 'image' ? 'jpg' : 'mp4';
+    const url = asset.videoSrc || asset.thumbnailUrl || '';
+    const urlExt = url.match(/\.([a-z0-9]{2,5})(?:[?#]|$)/i);
+    if (urlExt) {
+      const detected = urlExt[1].toLowerCase();
+      if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'webm'].includes(detected)) {
+        ext = detected === 'jpeg' ? 'jpg' : detected;
+      }
+    }
+
+    const pNum = String(asset.promptNumber ?? (asset.index + 1)).padStart(3, '0');
+    const gNum = asset.generationNum ?? 1;
+    const snippet = slugify(asset.promptLabel || '', 30);
+    const base = snippet
+      ? `P${pNum}_G${gNum}_${snippet}`
+      : `P${pNum}_G${gNum}`;
+    return `AutoFlow/${folderName}/${base}.${ext}`;
+  }
+
+  if (needsUpscale) {
     // ══════════════════════════════════════════════════════════
     // 3-PHASE BATCH DOWNLOAD for 1080p / 4K
     // Phase 1: Trigger upscaling for ALL videos
@@ -296,7 +359,6 @@ async function downloadSelected(payload: {
     // Phase 3: Download upscaled videos one by one
     // ══════════════════════════════════════════════════════════
 
-    // ── Phase 1: Trigger upscaling for all selected assets ──
     console.log(`[AutoFlow] Phase 1: Triggering ${resolutionLabel} upscaling for ${payload.assets.length} asset(s)...`);
     for (const asset of payload.assets) {
       try {
@@ -309,99 +371,48 @@ async function downloadSelected(payload: {
       } catch (e: any) {
         console.error(`[AutoFlow] Upscaling trigger error:`, e);
       }
-      await sleep(2000); // 2s between each to avoid overloading Flow
+      await sleep(2000);
     }
 
-    // ── Phase 2: Wait for all upscaling to complete ──
     console.log('[AutoFlow] Phase 2: Waiting for all upscaling to finish...');
-    await sleep(3000); // give toasts time to appear
-    const upscaleDone = await waitForUpscalingDone(15 * 60 * 1000); // 15 min max
+    await sleep(3000);
+    const upscaleDone = await waitForUpscalingDone(15 * 60 * 1000);
     if (!upscaleDone) {
       console.warn('[AutoFlow] Some upscaling may not have completed (timed out)');
     }
-    await sleep(2000); // UI settle time
-
-    // ── Phase 3: Download upscaled videos one by one ──
-    console.log(`[AutoFlow] Phase 3: Downloading ${payload.assets.length} upscaled asset(s)...`);
-    for (const asset of payload.assets) {
-      try {
-        // Build prompt-based filename
-        const ext = asset.mediaType === 'image' ? 'png' : 'mp4';
-        const promptNum = labelToPromptNum.get(asset.promptLabel || '') ?? (asset.index + 1);
-        const genNum = (genCounter.get(promptNum) ?? 0) + 1;
-        genCounter.set(promptNum, genNum);
-
-        const promptSlug = slugify(asset.promptLabel || '');
-        const numTag = String(promptNum).padStart(3, '0');
-        const genSuffix = genNum > 1 ? ` (${genNum - 1})` : '';
-        const baseName = promptSlug
-          ? `${numTag}_${promptSlug}${genSuffix}`
-          : `prompt_${numTag}${genSuffix}`;
-        const filename = `LIBRARY/${payload.queueName || 'project'}/${baseName}.${ext}`;
-
-        // Queue the rename
-        await chrome.runtime.sendMessage({
-          type: 'SET_DOWNLOAD_RENAME',
-          payload: { filename },
-        });
-
-        // Download (now the upscaled version should download directly)
-        const ok = await downloadAssetByMenu(asset.locator, resolutionLabel);
-        if (ok) {
-          results.push(filename);
-        } else {
-          console.warn(`[AutoFlow] Re-download failed for: ${asset.promptLabel || 'asset'}`);
-        }
-      } catch (e: any) {
-        console.error('[AutoFlow] Download error:', e);
-      }
-      await sleep(1500);
-    }
-  } else {
-    // ══════════════════════════════════════════════════════════
-    // DIRECT URL DOWNLOAD for 720p (Original)
-    // ══════════════════════════════════════════════════════════
-    for (const asset of payload.assets) {
-      try {
-        let rawUrl: string | null = null;
-        if (asset.mediaType === 'video' && asset.videoSrc) {
-          rawUrl = asset.videoSrc;
-        } else if (asset.thumbnailUrl) {
-          rawUrl = asset.thumbnailUrl;
-        }
-        if (!rawUrl) continue;
-
-        const absoluteUrl = toAbsoluteUrl(rawUrl);
-
-        const ext = asset.mediaType === 'image' ? 'png' : 'mp4';
-        const promptNum = labelToPromptNum.get(asset.promptLabel || '') ?? (asset.index + 1);
-        const genNum = (genCounter.get(promptNum) ?? 0) + 1;
-        genCounter.set(promptNum, genNum);
-
-        const promptSlug = slugify(asset.promptLabel || '');
-        const numTag = String(promptNum).padStart(3, '0');
-        const genSuffix = genNum > 1 ? ` (${genNum - 1})` : '';
-        const baseName = promptSlug
-          ? `${numTag}_${promptSlug}${genSuffix}`
-          : `prompt_${numTag}${genSuffix}`;
-        const filename = `LIBRARY/${payload.queueName || 'project'}/${baseName}.${ext}`;
-
-        const response = await chrome.runtime.sendMessage({
-          type: 'DOWNLOAD_FILE',
-          payload: { url: absoluteUrl, filename },
-        });
-
-        if (response?.downloadId) {
-          results.push(filename);
-        } else {
-          console.warn('[AutoFlow] Download failed:', response?.error || 'unknown');
-        }
-      } catch (e: any) {
-        console.error('[AutoFlow] Download error:', e);
-      }
-      await sleep(800);
-    }
+    await sleep(2000);
   }
+
+  // ══════════════════════════════════════════════════════════
+  // DOWNLOAD ALL ASSETS via Flow context menu with rename
+  // Always use menu-based download — direct URL download is
+  // unreliable because videoSrc is often empty for tiles.
+  // ══════════════════════════════════════════════════════════
+  console.log(`[AutoFlow] Downloading ${payload.assets.length} asset(s) via context menu with rename...`);
+  for (const asset of payload.assets) {
+    try {
+      const filename = buildFilename(asset);
+
+      // Queue the rename FIRST — so onDeterminingFilename picks it up
+      await chrome.runtime.sendMessage({
+        type: 'SET_DOWNLOAD_RENAME',
+        payload: { filename },
+      });
+
+      // Trigger download via Flow's context menu
+      const ok = await downloadAssetByMenu(asset.locator, resolutionLabel);
+      if (ok) {
+        results.push(filename);
+        console.log(`[AutoFlow] Download queued: ${filename}`);
+      } else {
+        console.warn(`[AutoFlow] Download failed for: ${asset.promptLabel || 'asset'}`);
+      }
+    } catch (e: any) {
+      console.error('[AutoFlow] Download error:', e);
+    }
+    await sleep(1500);
+  }
+
   return { downloaded: results };
 }
 

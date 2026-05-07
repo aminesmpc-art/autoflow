@@ -378,9 +378,11 @@
         <div class="af-setting-row">
           <label class="af-setting-label">Image Ratio</label>
           <select id="setting-image-ratio" class="af-select">
-            <option value="Landscape (16:9)">Landscape (16:9)</option>
-            <option value="Portrait (9:16)">Portrait (9:16)</option>
-            <option value="Square (1:1)">Square (1:1)</option>
+            <option value="16:9">Landscape (16:9)</option>
+            <option value="4:3">Standard (4:3)</option>
+            <option value="1:1">Square (1:1)</option>
+            <option value="3:4">Portrait (3:4)</option>
+            <option value="9:16">Tall Portrait (9:16)</option>
           </select>
         </div>
       </div>
@@ -636,6 +638,27 @@
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
         Retry <span class="af-hint-tag">beta</span>
       </button>
+      <button id="btn-set-prompt-order" class="af-btn af-btn-sm" title="Set prompt order for correct library sorting">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        Set Order
+      </button>
+    </div>
+
+    <!-- Prompt Order Modal -->
+    <div id="prompt-order-modal" class="af-card" style="display:none; margin-top:8px;">
+      <label class="af-label" style="font-size:11px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        Paste your prompt list (one per line)
+      </label>
+      <textarea id="prompt-order-input" class="af-textarea" rows="6" placeholder="Prompt 1 text here...
+
+Prompt 2 text here...
+
+Prompt 3 text here..."></textarea>
+      <div class="af-row af-mt" style="gap:6px;">
+        <button id="btn-save-prompt-order" class="af-btn af-btn-primary af-btn-sm">Save Order</button>
+        <button id="btn-cancel-prompt-order" class="af-btn af-btn-sm">Cancel</button>
+      </div>
     </div>
 
     <div id="library-grid" class="af-library-grid"></div>

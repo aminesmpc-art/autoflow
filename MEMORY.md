@@ -489,15 +489,43 @@ start()
         └── Send QUEUE_SUMMARY + FAILED_TILES_RESULT
 ```
 
-### Image Attachment — Ingredients Mode (`attachIngredientImages`)
+### Image Attachment — Ingredients Mode (`uploadImageBatch` + `searchAndSelectAsset`)
 
-1. Find the "+" button (`aria-haspopup="dialog"`)
-2. Click it to open the asset search dialog
-3. Find the "Upload" button inside the dialog
-4. Create a hidden `<input type="file">` with id `af-bot-file-input-{timestamp}`
-5. Build a `DataTransfer` object with `File` objects (from base64 blobs)
-6. Set the files on the input, trigger change via React fiber tree walk
-7. Wait for ingredient chips to appear (up to `IMAGE_ATTACH_MAX_RETRIES`)
+**⚠️ CRITICAL: Two-path hybrid strategy. DO NOT change the paste approach — it works perfectly.**
+
+Each image is tracked by `uploadedAssets` (a `Set<string>` cache of filenames already uploaded to Flow's library).
+
+#### Path 1: NEW image (not in `uploadedAssets`)
+
+1. Build `File` objects from base64 blobs with names like `af_ref_1_1.jpg`
+2. Create a `DataTransfer` with all new files
+3. Dispatch a synthetic `ClipboardEvent('paste')` on the prompt input
+4. **Wait 8 seconds** for Flow to process the upload (mandatory, proven reliable)
+5. Mark filenames in `uploadedAssets` cache
+6. Images appear as ingredient chips AND get added to Flow's library
+
+#### Path 2: CACHED image (already in `uploadedAssets`)
+
+1. Click the "+" ingredient attach button to open dialog
+2. Find the search input (`input[placeholder*="Search"]`)
+3. Type the filename → press Enter → **image attaches automatically**
+4. No need to detect or click search results — Enter does it all
+5. Takes ~2s per image
+
+#### Mixed Batch Example (3 images: 1 cached + 2 new)
+
+```
+→ Paste 2 new images → wait 8s → uploaded + attached
+→ Search 1 cached image → Enter → attached (~2s)
+→ Total: ~10s
+```
+
+#### Key Rules
+
+- **NEVER remove the paste approach** — it's the only reliable way to upload new images
+- **NEVER add result detection/clicking** to search — just type + Enter = done
+- **8s paste wait** is non-negotiable — less causes intermittent failures
+- `uploadedAssets` persists across prompts in the same queue (clears on new queue)
 
 ### Image Attachment — Frames Mode (`attachFrameImages`)
 

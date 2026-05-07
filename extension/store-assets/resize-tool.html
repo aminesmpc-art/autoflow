@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AutoFlow - Store Image Resizer</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; background: #1a1a2e; color: white; }
+    .card { background: #2a2a40; padding: 30px; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+    h1 { color: #c084fc; margin-top: 0; }
+    p { color: #a0a0c0; line-height: 1.5; }
+    input[type="file"] { display: block; margin: 20px 0; padding: 10px; background: #1a1a2e; border: 2px dashed #818cf8; border-radius: 8px; width: 100%; box-sizing: border-box; cursor: pointer; }
+    .downloads { margin-top: 30px; display: flex; flex-direction: column; gap: 10px; }
+    .download-btn { display: inline-block; background: linear-gradient(135deg, #818cf8, #c084fc); color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; text-align: center; cursor: pointer; transition: opacity 0.2s; }
+    .download-btn:hover { opacity: 0.9; }
+    .promo-btn { background: linear-gradient(135deg, #10b981, #3b82f6); }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Image Resizer tool</h1>
+  <p>Select your 5 screenshots. This tool will instantly resize them to exactly <strong>1280x800</strong> (for screenshots) and create one <strong>440x280</strong> (for the promo tile) directly in your browser.</p>
+  
+  <input type="file" id="fileInput" accept="image/png, image/jpeg" multiple>
+  
+  <div id="downloads" class="downloads"></div>
+</div>
+
+<script>
+document.getElementById('fileInput').addEventListener('change', async (e) => {
+  const files = e.target.files;
+  const downloadsDiv = document.getElementById('downloads');
+  downloadsDiv.innerHTML = '<h3>Ready to download:</h3>';
+  
+  if (files.length === 0) return;
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const imgURL = URL.createObjectURL(file);
+    const img = new Image();
+    
+    await new Promise(resolve => {
+      img.onload = () => {
+        // Create 1280x800 Screenshot
+        const canvas = document.createElement('canvas');
+        canvas.width = 1280;
+        canvas.height = 800;
+        const ctx = canvas.getContext('2d');
+        
+        // Fill black background in case of aspect ratio differences
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Scale and crop to fit (cover)
+        const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
+        const x = (canvas.width / 2) - (img.width / 2) * scale;
+        const y = (canvas.height / 2) - (img.height / 2) * scale;
+        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+        
+        // Create download button for screenshot
+        const dataUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.className = 'download-btn';
+        link.href = dataUrl;
+        link.download = `STORE_1280x800_${file.name}`;
+        link.innerText = `⬇️ Download 1280x800 (${file.name})`;
+        downloadsDiv.appendChild(link);
+        
+        // If this is the FIRST image, also make the 440x280 Promo Tile!
+        if (i === 0) {
+          const promoCanvas = document.createElement('canvas');
+          promoCanvas.width = 440;
+          promoCanvas.height = 280;
+          const promoCtx = promoCanvas.getContext('2d');
+          
+          promoCtx.fillStyle = '#1a1a2e';
+          promoCtx.fillRect(0, 0, promoCanvas.width, promoCanvas.height);
+          
+          const pScale = Math.max(promoCanvas.width / img.width, promoCanvas.height / img.height);
+          const px = (promoCanvas.width / 2) - (img.width / 2) * pScale;
+          const py = (promoCanvas.height / 2) - (img.height / 2) * pScale;
+          promoCtx.drawImage(img, px, py, img.width * pScale, img.height * pScale);
+          
+          const promoDataUrl = promoCanvas.toDataURL('image/png');
+          const promoLink = document.createElement('a');
+          promoLink.className = 'download-btn promo-btn';
+          promoLink.href = promoDataUrl;
+          promoLink.download = `STORE_PROMO_440x280.png`;
+          promoLink.innerText = `🌟 Download Promo Tile (440x280)`;
+          downloadsDiv.insertBefore(promoLink, downloadsDiv.firstChild); // put promo at the top
+        }
+        
+        resolve();
+      };
+      img.src = imgURL;
+    });
+  }
+});
+</script>
+
+</body>
+</html>

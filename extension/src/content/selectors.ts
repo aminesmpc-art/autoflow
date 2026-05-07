@@ -356,7 +356,20 @@ export function findFrameButton(label: 'Start' | 'End'): Element | null {
  *  Google Symbols icon with text "add_2" and a hidden <span>Create</span>.
  */
 export function findIngredientAttachButton(): Element | null {
-  // Strategy 1: button with aria-haspopup="dialog" in the prompt area
+  // Strategy 1 (BEST): button containing Google Symbols icon with "add_2"
+  // This is the most specific selector — the actual "+" ingredient button always has this icon.
+  const buttons = document.querySelectorAll('button');
+  for (const btn of buttons) {
+    const icons = btn.querySelectorAll('i.google-symbols, i.material-icons, .google-symbols');
+    for (const icon of icons) {
+      const iconText = (icon.textContent || '').trim().toLowerCase();
+      if (iconText === 'add_2') {
+        if (isVisible(btn)) return btn;
+      }
+    }
+  }
+
+  // Strategy 2: button with aria-haspopup="dialog" AND add icon near the prompt
   const promptArea = findPromptInput();
   if (promptArea) {
     let container = promptArea.parentElement;
@@ -366,27 +379,26 @@ export function findIngredientAttachButton(): Element | null {
     if (container) {
       const dialogBtns = container.querySelectorAll('button[aria-haspopup="dialog"]');
       for (const btn of dialogBtns) {
-        if (isVisible(btn)) return btn;
+        if (!isVisible(btn)) continue;
+        // Only return if it has an "add" icon (avoid returning wrong button)
+        const icons = btn.querySelectorAll('i.google-symbols, i.material-icons, .google-symbols');
+        for (const icon of icons) {
+          const iconText = (icon.textContent || '').trim().toLowerCase();
+          if (iconText === 'add_2' || iconText === 'add') return btn;
+        }
       }
     }
   }
 
-  // Strategy 2: button containing Google Symbols icon with "add_2" or "add"
-  const buttons = document.querySelectorAll('button');
+  // Strategy 3: button with "add" icon anywhere
   for (const btn of buttons) {
     const icons = btn.querySelectorAll('i.google-symbols, i.material-icons, .google-symbols');
     for (const icon of icons) {
       const iconText = (icon.textContent || '').trim().toLowerCase();
-      if (iconText === 'add_2' || iconText === 'add') {
+      if (iconText === 'add') {
         if (isVisible(btn)) return btn;
       }
     }
-  }
-
-  // Strategy 3: button[aria-haspopup="dialog"] anywhere visible on page
-  const globalDialogBtns = document.querySelectorAll('button[aria-haspopup="dialog"]');
-  for (const btn of globalDialogBtns) {
-    if (isVisible(btn)) return btn;
   }
 
   return null;
@@ -1115,6 +1127,120 @@ export function isViewSettingsOpen(): boolean {
     trigger.getAttribute('data-state') === 'open';
 }
 
+/**
+ * Detect the current view mode (Grid or Batch).
+ * In Flow's view settings panel, the active mode tab has
+ * data-state="active" or aria-selected="true".
+ * We temporarily open the panel if needed, read the state, and close it.
+ */
+export async function getCurrentViewMode(): Promise<'Grid' | 'Batch' | null> {
+  const wasOpen = isViewSettingsOpen();
+
+  // Open the panel if not already open
+  if (!wasOpen) {
+    const trigger = findViewSettingsTrigger();
+    if (!trigger) return null;
+    simulateClick(trigger);
+    await sleep(400);
+  }
+
+  // Look for the active mode button
+  let mode: 'Grid' | 'Batch' | null = null;
+
+  // Check role="tab" buttons first (Radix tab group)
+  const tabs = document.querySelectorAll('button[role="tab"]');
+  for (const tab of tabs) {
+    const text = tab.textContent?.trim().toLowerCase() || '';
+    const isActive = tab.getAttribute('aria-selected') === 'true' ||
+      tab.getAttribute('data-state') === 'active';
+    if (isActive) {
+      if (text.includes('grid')) mode = 'Grid';
+      else if (text.includes('batch')) mode = 'Batch';
+    }
+  }
+
+  // Fallback: check menuitemradio or menuitem with checked state
+  if (!mode) {
+    const items = document.querySelectorAll('[role="menuitemradio"], [role="menuitem"]');
+    for (const item of items) {
+      if (!isVisible(item)) continue;
+      const text = item.textContent?.trim().toLowerCase() || '';
+      const isChecked = item.getAttribute('aria-checked') === 'true' ||
+        item.getAttribute('data-state') === 'checked';
+      if (isChecked) {
+        if (text.includes('grid')) mode = 'Grid';
+        else if (text.includes('batch')) mode = 'Batch';
+      }
+    }
+  }
+
+  // Close the panel if we opened it
+  if (!wasOpen) {
+    const trigger = findViewSettingsTrigger();
+    if (trigger) {
+      simulateClick(trigger);
+      await sleep(300);
+    }
+  }
+
+  return mode;
+}
+
+/**
+ * Switch Flow's output view to Grid or Batch mode.
+ * Opens the View Settings panel, clicks the target mode tab/button,
+ * then closes the panel.
+ *
+ * @returns true if the switch was successful
+ */
+export async function switchToViewMode(targetMode: 'Grid' | 'Batch'): Promise<boolean> {
+  // Check if already in the target mode
+  const current = await getCurrentViewMode();
+  if (current === targetMode) {
+    console.log(`[AutoFlow] Already in ${targetMode} view mode`);
+    return true;
+  }
+
+  // Open the View Settings panel
+  const wasOpen = isViewSettingsOpen();
+  if (!wasOpen) {
+    const trigger = findViewSettingsTrigger();
+    if (!trigger) {
+      console.warn('[AutoFlow] switchToViewMode: View settings trigger not found');
+      return false;
+    }
+    simulateClick(trigger);
+    await sleep(500);
+  }
+
+  // Find and click the target mode button
+  const modeBtn = findModeButton(targetMode);
+  if (!modeBtn) {
+    console.warn(`[AutoFlow] switchToViewMode: "${targetMode}" button not found in view settings`);
+    // Close if we opened
+    if (!wasOpen) {
+      const trigger = findViewSettingsTrigger();
+      if (trigger) simulateClick(trigger);
+    }
+    return false;
+  }
+
+  simulateClick(modeBtn);
+  await sleep(600);
+
+  // Close the panel
+  const trigger = findViewSettingsTrigger();
+  if (trigger && isViewSettingsOpen()) {
+    simulateClick(trigger);
+    await sleep(300);
+  }
+
+  // Wait for the view to re-render
+  await sleep(800);
+
+  console.log(`[AutoFlow] Switched to ${targetMode} view mode`);
+  return true;
+}
 
 /**
  * Find a settings option inside the opened Radix dropdown menu.
@@ -1279,39 +1405,63 @@ export async function simulateTyping(
 }
 
 /** Find ingredient chips/thumbnails that indicate images were attached.
- *  In Flow, each ingredient appears as:
- *    <button data-card-open="false" data-state="closed">
- *      <div><img src="/fx/api/trpc/media.getMediaUrlRedirect?name=..." /></div>
- *      <div><i class="google-symbols">cancel</i></div>
- *    </button>
- *  The chips sit inside the prompt composer (div.sc-21faa80e-0)
- *  in an ingredient strip container (div.sc-8f31d1ba-0).
+ *  Flow's DOM has evolved — chips may or may not have data-card-open.
+ *  The chips are small image thumbnails that appear in the prompt composer
+ *  area when the user attaches reference images.
+ *
+ *  Detection strategy (multiple fallbacks):
+ *  1. button[data-card-open] within prompt composer (legacy)
+ *  2. img[src*="media.getMediaUrlRedirect"] or img[src*="blob:"] in
+ *     the prompt composer that are NOT inside the Slate editor
+ *  3. Walk up from the Slate editor and find sibling containers with
+ *     small image thumbnails
  */
 export function findIngredientChips(): Element[] {
   const chips: Element[] = [];
 
-  // Primary: button[data-card-open] within the prompt composer
-  // These are the actual ingredient chip buttons with thumbnails
   const promptComposer = findPromptComposer();
+
+  // Strategy 1: Legacy data-card-open buttons (still works on older builds)
   if (promptComposer) {
     const cardBtns = promptComposer.querySelectorAll('button[data-card-open]');
     for (const btn of cardBtns) {
       if (isVisible(btn)) chips.push(btn);
     }
   }
-
-  // If we found chips via the primary method, return them
   if (chips.length > 0) return chips;
 
-  // Fallback 1: button[data-card-open] anywhere on the page
+  // Strategy 2: Find image thumbnails inside the prompt composer
+  // that are NOT inside the Slate editor (those would be pasted images, not chips)
+  if (promptComposer) {
+    const slateEditor = promptComposer.querySelector('[data-slate-editor]');
+    const imgs = promptComposer.querySelectorAll('img');
+    for (const img of imgs) {
+      if (!isVisible(img)) continue;
+      // Skip images inside the Slate editor
+      if (slateEditor && slateEditor.contains(img)) continue;
+      // Only count images that look like media references or blobs
+      const src = img.src || '';
+      if (src.includes('media.getMediaUrlRedirect') ||
+          src.includes('blob:') ||
+          src.includes('/api/')) {
+        // Return the closest button or clickable parent as the "chip"
+        const chipEl = img.closest('button') || img.closest('[role="button"]') || img;
+        if (!chips.includes(chipEl)) chips.push(chipEl);
+      }
+    }
+  }
+  if (chips.length > 0) return chips;
+
+  // Strategy 3: Global search for data-card-open buttons
   const globalCards = document.querySelectorAll('button[data-card-open]');
   for (const btn of globalCards) {
     if (isVisible(btn) && !chips.includes(btn)) chips.push(btn);
   }
   if (chips.length > 0) return chips;
 
-  // Fallback 2: img elements within the ingredient strip container
-  const strips = document.querySelectorAll('[class*="sc-8f31d1ba"], [class*="sc-d9d2dca3"]');
+  // Strategy 4: Broader search for ingredient containers
+  // Look for containers with ingredient-related class names
+  const strips = document.querySelectorAll('[class*="sc-8f31d1ba"], [class*="sc-d9d2dca3"], [class*="ingredient"]');
   for (const strip of strips) {
     const imgs = strip.querySelectorAll('img');
     for (const img of imgs) {
@@ -1319,15 +1469,19 @@ export function findIngredientChips(): Element[] {
     }
   }
 
-  // Fallback 3: look for images near the prompt input (inside its ancestor containers)
+  // Strategy 5: Walk up from the Slate editor and look for image thumbnails
+  // in ancestor or sibling containers
   if (chips.length === 0) {
     const promptInput = findPromptInput();
     if (promptInput) {
       let container: Element | null = promptInput;
       for (let i = 0; i < 6 && container; i++) container = container.parentElement;
       if (container) {
+        const slateEditor = container.querySelector('[data-slate-editor]');
         const imgs = container.querySelectorAll('img[src*="media.getMediaUrlRedirect"], img[src*="blob:"]');
         for (const img of imgs) {
+          // Skip images inside the Slate editor
+          if (slateEditor && slateEditor.contains(img)) continue;
           if (isVisible(img) && !chips.includes(img)) chips.push(img);
         }
       }

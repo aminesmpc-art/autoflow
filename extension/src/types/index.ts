@@ -66,7 +66,7 @@ export type ImageResolution = '1K' | '2K' | '4K';
 
 // ── Image generation model & ratio ──
 export type ImageModel = 'Nano Banana Pro' | 'Nano Banana 2' | 'Imagen 4';
-export type ImageRatio = 'Landscape (16:9)' | 'Portrait (9:16)' | 'Square (1:1)';
+export type ImageRatio = '16:9' | '4:3' | '1:1' | '3:4' | '9:16';
 
 // ── Settings snapshot ──
 export interface QueueSettings {
@@ -144,6 +144,16 @@ export interface ScannedAsset {
   totalInGroup: number;            // total generations for this prompt
   promptNumber: number;            // sequential prompt number (oldest = 1)
   isRetry: boolean;                // true if this tile came from a retry (merged group)
+  modelName?: string;              // AI model used (e.g. "Veo 3.1 - Fast") — from Batch view
+  createdAt?: string;              // creation date text (e.g. "Created Mar 31, 2026") — from Batch view
+}
+
+// ── Prompt history — saved when a queue runs, used for library sorting ──
+export interface PromptHistoryEntry {
+  queueId: string;
+  queueName: string;
+  timestamp: number;
+  prompts: { index: number; text: string }[];
 }
 
 // ── Log entry ──
@@ -189,6 +199,7 @@ export type MessageType =
   | 'SCAN_LIBRARY'
   | 'SCAN_RESULT'
   | 'PREVIEW_ASSET'
+  | 'FOCUS_FLOW_TAB'
   | 'DOWNLOAD_SELECTED'
   | 'REFRESH_MODELS'
   | 'MODELS_RESULT'
@@ -201,6 +212,7 @@ export type MessageType =
   | 'IMAGE_BLOBS_RESULT'
   | 'RUN_LOCK_CHANGED'
   | 'QUEUE_SUMMARY'
+  | 'AUTO_SCAN_LIBRARY'
   | 'SCAN_FAILED_TILES'
   | 'FAILED_TILES_RESULT'
   | 'RETRY_FAILED_TILES'
@@ -238,7 +250,7 @@ export const DEFAULT_SETTINGS: QueueSettings = {
 
   // Image generation
   imageModel: 'Nano Banana Pro',
-  imageRatio: 'Landscape (16:9)',
+  imageRatio: '16:9',
 
   // Interface
   language: 'English',

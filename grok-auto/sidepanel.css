@@ -1857,37 +1857,6 @@ body {
   background: rgba(99, 102, 241, 0.15);
   color: #818cf8;
 }
-.af-lib-badge-model {
-  background: rgba(45, 212, 191, 0.12);
-  color: #2dd4bf;
-  font-size: 9px;
-  font-weight: 500;
-  max-width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Group info container: label on first line, meta on second */
-.af-lib-group-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.af-lib-group-meta {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-}
-.af-lib-group-date {
-  font-size: 10px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  opacity: 0.8;
-}
 
 /* ── Group highlight when it contains failures ── */
 .af-lib-group.has-failed {
@@ -1895,43 +1864,6 @@ body {
 }
 .af-lib-group.has-failed .af-lib-group-header {
   background: rgba(239, 68, 68, 0.06);
-}
-
-/* ── Expandable prompt text ── */
-.af-lib-prompt-expand {
-  padding: 0 12px 10px 42px;
-  animation: fadeUp 0.2s var(--ease) both;
-}
-.af-lib-prompt-text {
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  padding: 8px 10px;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 200px;
-  overflow-y: auto;
-  user-select: text;
-  cursor: text;
-}
-.af-lib-group-info::before {
-  content: '▸';
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 11px;
-  color: var(--text-muted);
-  transition: transform 0.2s var(--ease);
-}
-.af-lib-group-info {
-  position: relative;
-}
-.af-lib-group-info.expanded::before {
-  content: '▾';
 }
 
 /* ── Per-card generation badge (e.g. "1/3") ── */

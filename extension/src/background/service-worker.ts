@@ -15,6 +15,7 @@ import {
   setActiveQueueId,
   appendLog,
   getQueueById,
+  getImageBlob,
 } from '../shared/storage';
 
 // ================================================================
@@ -253,6 +254,19 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
     case 'PING':
       return { type: 'PONG' };
 
+    case 'FOCUS_FLOW_TAB': {
+      const flowTabs = await chrome.tabs.query({
+        url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
+      });
+      if (flowTabs.length > 0 && flowTabs[0].id) {
+        await chrome.tabs.update(flowTabs[0].id, { active: true });
+        if (flowTabs[0].windowId) {
+          await chrome.windows.update(flowTabs[0].windowId, { focused: true });
+        }
+      }
+      return { success: true };
+    }
+
     case 'START_QUEUE':
       return startQueueInTab(msg.payload);
 
@@ -302,6 +316,10 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
       broadcastToExtension(msg);
       return {};
 
+    case 'AUTO_SCAN_LIBRARY':
+      broadcastToExtension(msg);
+      return {};
+
     case 'SET_DOWNLOAD_RENAME':
       queueDownloadRename(msg.payload.filename);
       return { success: true };
@@ -319,6 +337,8 @@ let suppressDownloads = false;
 let suppressTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // ── Download handler ──
+// Downloads the file directly. Filename renaming is handled by the
+// onDeterminingFilename listener + queueDownloadRename() mechanism.
 async function handleDownload(payload: {
   url: string;
   filename: string;
@@ -326,16 +346,22 @@ async function handleDownload(payload: {
 }): Promise<{ downloadId?: number; error?: string }> {
   try {
     console.log(`[AutoFlow] Downloading: ${payload.filename} from ${payload.url.slice(0, 80)}...`);
+
+    // Queue the rename BEFORE starting the download, so onDeterminingFilename picks it up
+    queueDownloadRename(payload.filename);
+
     const downloadId = await chrome.downloads.download({
       url: payload.url,
       filename: payload.filename,
       conflictAction: (payload.conflictAction as any) || 'uniquify',
       saveAs: false,
     });
-    // Track this ID so onDeterminingFilename won't override our filename
+
+    // Track this ID so onDeterminingFilename knows this is ours
     ourDownloadIds.add(downloadId);
-    // Clean up after 60s
     setTimeout(() => ourDownloadIds.delete(downloadId), 60_000);
+
+    console.log(`[AutoFlow] Download started: ID=${downloadId}, file=${payload.filename}`);
     return { downloadId };
   } catch (err: any) {
     await logEntry('error', `Download failed: ${err.message}`);
@@ -420,9 +446,18 @@ async function handlePromptStatusUpdate(payload: {
 }
 
 // ── Start queue: use the tab the sidepanel is on (user's project tab) ──
+let _startingQueue = false; // Prevent concurrent startQueueInTab calls
 async function startQueueInTab(payload: { queueId: string; tabId?: number }): Promise<any> {
-  const queue = await getQueueById(payload.queueId);
-  if (!queue) return { error: 'Queue not found' };
+  // Guard: prevent duplicate starts
+  if (_startingQueue) {
+    console.warn('[AutoFlow BG] Ignoring duplicate START_QUEUE — already starting');
+    return { success: true, deduplicated: true };
+  }
+  _startingQueue = true;
+
+  try {
+    const queue = await getQueueById(payload.queueId);
+    if (!queue) { _startingQueue = false; return { error: 'Queue not found' }; }
 
   let tabId: number;
 
@@ -491,22 +526,44 @@ async function startQueueInTab(payload: { queueId: string; tabId?: number }): Pr
 
   broadcastToExtension({ type: 'QUEUE_STATUS_UPDATE', payload: queue });
   return { success: true };
+  } finally {
+    // Release lock after a short delay to prevent rapid re-entry
+    setTimeout(() => { _startingQueue = false; }, 2000);
+  }
 }
 
-// ── Image blob relay: ask sidepanel to read from IndexedDB and return base64 ──
+// ── Image blob handler: read directly from IndexedDB (shared storage) ──
+// No longer relays through the sidepanel — reads blobs directly, which
+// prevents failures when the sidepanel connection dies during long runs.
 async function handleImageBlobRequest(payload: { imageIds: string[] }): Promise<any> {
-  // The sidepanel has access to IndexedDB where image blobs are stored.
-  // We broadcast a request and wait for the sidepanel to respond.
   try {
-    const response = await chrome.runtime.sendMessage({
-      type: 'GET_IMAGE_BLOBS',
-      payload,
-    });
-    return response;
+    const files: Array<{ id: string; filename: string; mime: string; data: string }> = [];
+    for (const id of payload.imageIds) {
+      const blob = await getImageBlob(id);
+      if (blob) {
+        const base64 = await blobToBase64(blob);
+        const mime = blob.type || 'image/png';
+        files.push({ id, filename: `image_${id}.${mime.includes('png') ? 'png' : 'jpg'}`, mime, data: base64 });
+      } else {
+        console.warn(`[AutoFlow] Image blob not found in IndexedDB: ${id}`);
+      }
+    }
+    return { files };
   } catch (err: any) {
-    // Sidepanel may not be open — return error
+    console.error(`[AutoFlow] Failed to read image blobs from IndexedDB: ${err.message}`);
     return { error: `Could not retrieve image blobs: ${err.message}`, files: [] };
   }
+}
+
+/** Convert a Blob to base64 string — service-worker compatible (no FileReader) */
+async function blobToBase64(blob: Blob): Promise<string> {
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
 
 // ── Forward message to the active Flow content script tab ──
@@ -603,19 +660,30 @@ function queueDownloadRename(filename: string) {
  */
 chrome.downloads.onDeterminingFilename.addListener(
   (downloadItem: chrome.downloads.DownloadItem, suggest: (suggestion?: { filename: string; conflictAction?: string }) => void) => {
-    // Skip downloads initiated by our extension — they already have correct filenames
-    // set via chrome.downloads.download({ filename: ... })
+    // For downloads initiated by our extension, consume the pending rename
+    // and apply it via suggest(). We can't rely on chrome.downloads.download's
+    // filename param alone — Content-Disposition from Google's servers overrides it.
     if (ourDownloadIds.has(downloadItem.id)) {
       ourDownloadIds.delete(downloadItem.id);
-      // Don't call suggest — let Chrome use the filename we specified
-      // Actually we must call suggest, but pass undefined to keep the original
+      // Clean expired entries
+      const now = Date.now();
+      while (pendingRenames.length > 0 && now - pendingRenames[0].createdAt > 120000) {
+        pendingRenames.shift();
+      }
+      if (pendingRenames.length > 0) {
+        const rename = pendingRenames.shift()!;
+        console.log(`[AutoFlow] Renaming our download to: ${rename.filename}`);
+        suggest({ filename: rename.filename, conflictAction: 'uniquify' });
+        return;
+      }
+      // No pending rename — let Chrome use what we passed
       suggest();
       return;
     }
 
-    // Clean expired entries (older than 30 seconds)
+    // Clean expired entries (older than 120 seconds)
     const now = Date.now();
-    while (pendingRenames.length > 0 && now - pendingRenames[0].createdAt > 30000) {
+    while (pendingRenames.length > 0 && now - pendingRenames[0].createdAt > 120000) {
       const expired = pendingRenames.shift()!;
       console.log(`[AutoFlow] Rename expired: ${expired.filename}`);
     }

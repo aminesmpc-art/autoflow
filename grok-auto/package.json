@@ -1,0 +1,17 @@
+{
+  "name": "grok-auto-extension",
+  "version": "1.0.0",
+  "description": "Bulk AI Image & Video Generation for Grok",
+  "scripts": {
+    "build": "webpack --mode production",
+    "dev": "webpack --mode development --watch"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.38",
+    "copy-webpack-plugin": "^12.0.2",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.3",
+    "webpack": "^5.90.3",
+    "webpack-cli": "^5.1.4"
+  }
+}

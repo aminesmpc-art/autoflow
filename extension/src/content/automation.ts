@@ -13,6 +13,7 @@ import {
   ImageMeta,
   InputMethod,
 } from '../types';
+import { savePromptHistory, saveRunningQueue, clearRunningQueue } from '../shared/storage';
 import {
   MAX_RETRIES,
   BACKOFF_BASE_MS,
@@ -63,6 +64,7 @@ import {
   scrollAndCollectAllTileStates,
   scrollOutputToTop,
   allTilesSettledWithScroll,
+  findOutputScroller,
 } from './selectors';
 import type { TileSnapshot, FailedTileInfo } from './selectors';
 
@@ -93,6 +95,8 @@ export class AutomationEngine {
   private stopped = false;
   private currentPromptIdx = 0;
   private baselineTileCount = 0; // tiles on page before queue starts
+  /** Cache of filenames already uploaded to Flow's library (persists across prompts) */
+  private uploadedAssets = new Set<string>();
 
   /** Start processing a queue */
   async start(queue: QueueObject): Promise<void> {
@@ -112,6 +116,19 @@ export class AutomationEngine {
 
     this.log('info', `Starting queue "${queue.name}" with ${queue.prompts.length} prompts`);
     this.sendQueueStatus('running');
+
+    // Save prompt order for library sorting (so retries keep correct position)
+    try {
+      await savePromptHistory({
+        queueId: queue.id,
+        queueName: queue.name,
+        timestamp: Date.now(),
+        prompts: queue.prompts.map((p, i) => ({ index: i, text: p.text })),
+      });
+      this.log('info', `Saved prompt order (${queue.prompts.length} prompts) for library sorting`);
+    } catch (e) {
+      this.log('warn', 'Could not save prompt history: ' + (e as Error).message);
+    }
 
     // â”€â”€ Apply settings once at queue start (mode, ratio, generations, model) â”€â”€
     await this.ensurePageReady();
@@ -153,6 +170,11 @@ export class AutomationEngine {
       if (prompt.status === 'done') doneCount++;
       else if (prompt.status === 'failed') failedCount++;
 
+      // Save progress so we can resume after a page reload
+      try {
+        await saveRunningQueue(this.queue, i + 1);
+      } catch { /* ignore storage errors */ }
+
       // Verify page is still usable before next prompt
       if (!this.stopped && i < this.queue.prompts.length - 1) {
         await this.ensurePageReady();
@@ -164,14 +186,44 @@ export class AutomationEngine {
       await this.postQueueScan();
     }
 
-    // Recount after post-queue scan (some done prompts may now be failed)
+    // ── Auto-retry failed tiles (up to 3 rounds) ──
+    const MAX_RETRY_ROUNDS = 3;
+    if (!this.stopped) {
+      for (let round = 1; round <= MAX_RETRY_ROUNDS; round++) {
+        // Count failures after scan
+        const failedNow = this.queue.prompts.filter(p => p.status === 'failed').length;
+        if (failedNow === 0) {
+          this.log('info', 'All prompts succeeded — no retries needed.');
+          break;
+        }
+
+        this.log('info', `Auto-retry round ${round}/${MAX_RETRY_ROUNDS}: ${failedNow} failed prompt(s), retrying on page...`);
+
+        // Click retry on all failed tiles on the page
+        const retryResult = await this.retryFailedOnPage();
+        if (this.stopped) break;
+
+        if (retryResult.retried === 0) {
+          this.log('warn', `Auto-retry round ${round}: no retry buttons found on page, stopping retries.`);
+          break;
+        }
+
+        this.log('info', `Auto-retry round ${round}: clicked retry on ${retryResult.retried} tile(s). Waiting for them to finish...`);
+
+        // Wait for all tiles to settle again
+        await this.postQueueScan();
+        if (this.stopped) break;
+      }
+    }
+
+    // Recount after post-queue scan + retries
     doneCount = this.queue.prompts.filter(p => p.status === 'done').length;
     failedCount = this.queue.prompts.filter(p => p.status === 'failed').length;
 
-    // â”€â”€ Queue summary â”€â”€
+    // ── Queue summary ──
     const totalPrompts = this.queue.prompts.length;
     const skipped = totalPrompts - doneCount - failedCount;
-    const summary = `Queue "${this.queue.name}" finished â€” Done: ${doneCount}, Failed: ${failedCount}, Skipped: ${skipped}`;
+    const summary = `Queue "${this.queue.name}" finished — Done: ${doneCount}, Failed: ${failedCount}, Skipped: ${skipped}`;
 
     if (this.stopped) {
       this.log('info', `Queue "${this.queue.name}" stopped by user. ${summary}`);
@@ -184,7 +236,21 @@ export class AutomationEngine {
     this.sendQueueSummary(doneCount, failedCount, skipped);
     this.state = 'IDLE';
 
-    // â”€â”€ Release run-lock â”€â”€
+    // ── Auto-scan library after queue completes ──
+    if (!this.stopped) {
+      this.log('info', 'Queue complete — triggering auto library scan...');
+      try {
+        chrome.runtime.sendMessage({
+          type: 'AUTO_SCAN_LIBRARY',
+          payload: { queueName: this.queue.name },
+        }).catch(() => {});
+      } catch { /* ignore */ }
+    }
+
+    // ── Clear saved queue state (no longer running) ──
+    try { await clearRunningQueue(); } catch { /* ignore */ }
+
+    // ── Release run-lock ──
     globalRunLock = false;
     this.sendRunLockChanged(false);
   }
@@ -581,10 +647,13 @@ export class AutomationEngine {
     await applyMenuItem(mediaLabel, `Media: ${mediaLabel}`);
     if (this.stopped) return false;
 
-    // 2. Select creation type (Ingredients / Frames)
-    const creationLabel = settings.creationType === 'frames' ? 'Frames' : 'Ingredients';
-    await applyMenuItem(creationLabel, `Creation: ${creationLabel}`);
-    if (this.stopped) return false;
+    // 2. Select creation type (Ingredients / Frames) — only for VIDEO mode
+    // Image mode in Flow UI doesn't have creation type options
+    if (settings.mediaType !== 'image') {
+      const creationLabel = settings.creationType === 'frames' ? 'Frames' : 'Ingredients';
+      await applyMenuItem(creationLabel, `Creation: ${creationLabel}`);
+      if (this.stopped) return false;
+    }
 
     if (settings.mediaType === 'image') {
       // 3a. Set image model via nested dropdown (e.g. "Nano Banana 2", "Imagen 4")
@@ -593,13 +662,24 @@ export class AutomationEngine {
       await this.setModel(settings.imageModel);
       if (this.stopped) return false;
 
-      // 3b. Set image ratio (e.g. "Landscape (16:9)")
-      await applyMenuItem(settings.imageRatio, `Image Ratio: ${settings.imageRatio}`);
+      // 3b. Set image ratio (e.g. "16:9", "4:3", "1:1", "3:4", "9:16")
+      // New Flow UI uses plain ratio chips. Extract ratio from legacy labels if needed.
+      let imgRatio = settings.imageRatio;
+      const ratioMatch = imgRatio.match(/(\d+:\d+)/);
+      if (ratioMatch) imgRatio = ratioMatch[1] as any;
+      await applyMenuItem(imgRatio, `Image Ratio: ${imgRatio}`);
       if (this.stopped) return false;
     } else {
-      // 3. Set orientation (Landscape / Portrait)
-      const orientationLabel = settings.orientation === 'portrait' ? 'Portrait' : 'Landscape';
-      await applyMenuItem(orientationLabel, `Orientation: ${orientationLabel}`);
+      // 3. Set orientation / aspect ratio
+      // New Flow UI uses '9:16' / '16:9' labels; older UI used 'Portrait' / 'Landscape'.
+      // Try new labels first, fall back to old labels for compatibility.
+      const isPortrait = settings.orientation === 'portrait';
+      const newLabel = isPortrait ? '9:16' : '16:9';
+      const oldLabel = isPortrait ? 'Portrait' : 'Landscape';
+      let ratioSet = await applyMenuItem(newLabel, `Ratio: ${newLabel}`);
+      if (!ratioSet) {
+        ratioSet = await applyMenuItem(oldLabel, `Orientation: ${oldLabel}`);
+      }
       if (this.stopped) return false;
 
       // 5. Set model (video models)
@@ -801,7 +881,11 @@ export class AutomationEngine {
     }
 
     const chipText = (trigger.textContent || '').toLowerCase();
-    const expectMedia = chipText.includes(settings.mediaType);
+    // For images, the chip shows model name + ratio (e.g. "Nano Banana 2 crop_16_9 x3")
+    // — it does NOT contain the word "image". So for image mode, check for the model name instead.
+    const expectMedia = settings.mediaType === 'image'
+      ? chipText.includes('banana') || chipText.includes('imagen') || chipText.includes('crop') || chipText.includes(':')
+      : chipText.includes(settings.mediaType);
     const expectGen = chipText.includes(`x${settings.generations}`);
 
     if (!expectMedia || !expectGen) {
@@ -988,8 +1072,10 @@ export class AutomationEngine {
   }
 
   /**
-   * Upload a single batch of images via the asset dialog.
-   * Returns true if the expected number of chips appeared.
+   * Attach images as ingredient chips.
+   * Per-image strategy:
+   *   NEW image → Paste (Ctrl+V) → wait 6s for upload → chip appears
+   *   CACHED image → Search by name in library → click → fast (~2s)
    */
   private async uploadImageBatch(
     batch: any[],
@@ -997,100 +1083,163 @@ export class AutomationEngine {
     batchIdx: number,
     totalBatches: number
   ): Promise<boolean> {
-    // 1. Click "+" to open dialog
-    const addBtn = findIngredientAttachButton();
-    if (!addBtn) {
-      this.log('warn', 'Cannot find "+" ingredient button');
-      return false;
+    // Build filenames using the image's unique ID (not position) so every
+    // distinct image gets a stable, unique name across prompts.
+    // This prevents wrong-image selection when different prompts need
+    // different character images at the same position.
+    const filenames: string[] = [];
+    for (let i = 0; i < batch.length; i++) {
+      const ext = batch[i].mime.includes('png') ? 'png' : 'jpg';
+      const idSlug = (batch[i].id || '').replace(/-/g, '').slice(0, 8) || `${batchIdx}_${i}`;
+      filenames.push(`af_${idSlug}.${ext}`);
     }
 
-    nativeClick(addBtn);
-    await sleep(600);
-
-    let dialog = findAssetSearchDialog();
-    if (!dialog) {
-      simulateClick(addBtn);
-      await sleep(600);
-      dialog = findAssetSearchDialog();
-    }
-    if (!dialog) {
-      this.log('warn', 'Dialog did not open');
-      return false;
-    }
-
-    // 2. Click upload button inside dialog
-    const allBtns = dialog.querySelectorAll('button');
-    for (const btn of allBtns) {
-      const icon = btn.querySelector('i.google-symbols');
-      if (icon && icon.textContent?.trim() === 'upload') {
-        nativeClick(btn);
-        this.log('info', 'Clicked upload button');
-        break;
+    // Split into new vs cached
+    const newIndices: number[] = [];
+    const cachedIndices: number[] = [];
+    for (let i = 0; i < filenames.length; i++) {
+      if (this.uploadedAssets.has(filenames[i])) {
+        cachedIndices.push(i);
+      } else {
+        newIndices.push(i);
       }
     }
-    await sleep(400);
 
-    // 3. Upload batch via file input
-    const fileInput = findFileInput();
-    if (!fileInput) {
-      this.log('warn', 'No file input found');
-      await this.dismissDialogs();
-      return false;
+    this.log('info', `${batch.length} image(s): ${newIndices.length} new, ${cachedIndices.length} cached`);
+
+    // --- PASTE new images (all at once) ---
+    if (newIndices.length > 0) {
+      const promptInput = findPromptInput();
+      if (!promptInput) {
+        this.log('warn', 'Prompt input not found');
+        return false;
+      }
+
+      const dt = new DataTransfer();
+      for (const idx of newIndices) {
+        const fileData = batch[idx];
+        const blob = this.base64ToBlob(fileData.data, fileData.mime);
+        const file = new File([blob], filenames[idx], { type: fileData.mime });
+        dt.items.add(file);
+      }
+
+      if (promptInput instanceof HTMLElement) promptInput.focus();
+      await sleep(100);
+
+      const pasteEvent = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dt,
+      });
+      promptInput.dispatchEvent(pasteEvent);
+      this.log('info', `Pasted ${newIndices.length} new image(s) — waiting 8s for upload...`);
+
+      await sleep(8000);
+
+      // Mark as uploaded
+      for (const idx of newIndices) {
+        this.uploadedAssets.add(filenames[idx]);
+      }
+      this.log('info', 'New image(s) uploaded!');
     }
 
-    const dt = new DataTransfer();
-    for (const fileData of batch) {
-      const blob = this.base64ToBlob(fileData.data, fileData.mime);
-      const file = new File([blob], fileData.filename, { type: fileData.mime });
-      dt.items.add(file);
-    }
-    fileInput.files = dt.files;
-    triggerFileInputChange(fileInput);
-    this.log('info', `Uploaded ${batch.length} file(s) in batch ${batchIdx + 1}/${totalBatches}`);
+    // --- SEARCH cached images (one by one) ---
+    if (cachedIndices.length > 0) {
+      const addBtn = findIngredientAttachButton();
+      if (!addBtn) {
+        this.log('warn', 'Cannot find "+" ingredient button');
+        return false;
+      }
 
-    // 4. Wait for chips — dynamic timeout: base 30s + 10s per image in batch
-    const maxWaitMs = Math.max(30000, batch.length * 15000);
-    const pollMs = 1000;
+      let selectedCount = 0;
+      for (const idx of cachedIndices) {
+        if (this.stopped) return false;
+        const selected = await this.searchAndSelectAsset(filenames[idx], addBtn as HTMLElement);
+        if (selected) selectedCount++;
+        else this.log('warn', `Failed to select "${filenames[idx]}"`);
+        await sleep(200);
+      }
+      this.log('info', `Searched ${selectedCount}/${cachedIndices.length} cached image(s)`);
+    }
+
+    // Wait for all chips to appear
+    const maxWaitMs = 10000;
     const startWait = Date.now();
-    let chipsNow = findIngredientChips().length;
-
     while (Date.now() - startWait < maxWaitMs) {
       if (this.stopped) return false;
-      await sleep(pollMs);
-      chipsNow = findIngredientChips().length;
-
-      if (chipsNow >= expectedTotalChips) {
-        this.log('info', `Batch ${batchIdx + 1}: ${chipsNow} chips present (needed ${expectedTotalChips})`);
-        break;
+      const chips = findIngredientChips().length;
+      if (chips >= expectedTotalChips) {
+        this.log('info', `All ${chips} chip(s) attached — done!`);
+        return true;
       }
+      await sleep(500);
+    }
+    return findIngredientChips().length >= expectedTotalChips;
+  }
 
-      const elapsed = Date.now() - startWait;
-      if (elapsed % 5000 < pollMs) {
-        this.log('info', `Waiting for batch ${batchIdx + 1}... ${chipsNow}/${expectedTotalChips} chips (${Math.round(elapsed / 1000)}s)`);
-      }
+  /**
+   * Search for an asset by filename and attach it.
+   * Flow: Open "+" dialog → type filename → press Enter → image attaches.
+   */
+  private async searchAndSelectAsset(filename: string, addBtn: HTMLElement): Promise<boolean> {
+    if (this.stopped) return false;
+
+    await this.dismissDialogs();
+    await sleep(300);
+
+    // Re-find the add button (prefer fresh DOM lookup)
+    const btn = (findIngredientAttachButton() as HTMLElement) || addBtn;
+    btn.scrollIntoView({ block: 'center', behavior: 'instant' });
+    await sleep(200);
+
+    // Open "+" dialog — simulateClick first, nativeClick as fallback
+    let dialog: Element | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (this.stopped) return false;
+      if (attempt === 0) simulateClick(btn);
+      else nativeClick(btn);
+      await sleep(600);
+
+      dialog = findAssetSearchDialog();
+      if (dialog) break;
+
+      await this.dismissDialogs();
+      await sleep(200);
     }
 
-    // Dismiss dialog before next batch
-    await this.dismissDialogs();
+    if (!dialog) {
+      this.log('warn', '"+" dialog did not open');
+      return false;
+    }
+
+    // Find search input, type filename, press Enter
+    const searchInput = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement;
+    if (!searchInput) {
+      this.log('warn', 'Search input not found in dialog');
+      return false;
+    }
+
+    searchInput.focus();
+    searchInput.value = '';
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(100);
+
+    setInputValue(searchInput, filename);
+    await sleep(100);
+
+    searchInput.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', code: 'Enter', keyCode: 13,
+      bubbles: true, cancelable: true,
+    }));
+    searchInput.dispatchEvent(new KeyboardEvent('keyup', {
+      key: 'Enter', code: 'Enter', keyCode: 13,
+      bubbles: true, cancelable: true,
+    }));
+
+    this.log('info', `Searched "${filename}" + Enter — attached!`);
     await sleep(500);
 
-    // Verify this batch
-    const chipsAfter = findIngredientChips().length;
-    if (chipsAfter >= expectedTotalChips) {
-      this.log('info', `Batch ${batchIdx + 1} complete: ${chipsAfter} chips present`);
-      return true;
-    }
-
-    this.log('warn', `Batch ${batchIdx + 1}: only ${chipsAfter}/${expectedTotalChips} chips after ${Math.round((Date.now() - startWait) / 1000)}s`);
-
-    // Partial success: if we got at least the batch's images, continue
-    const prevExpected = expectedTotalChips - batch.length;
-    if (chipsAfter > prevExpected) {
-      this.log('info', `Batch ${batchIdx + 1}: partial success (${chipsAfter - prevExpected}/${batch.length} new chips). Continuing...`);
-      return true;
-    }
-
-    return false;
+    return true;
   }
 
   /**
@@ -1265,7 +1414,9 @@ export class AutomationEngine {
       throw new Error('Prompt input not found in Flow UI');
     }
 
-    // Clear existing prompt
+    // Clear existing prompt text. The image chips are sibling elements
+    // OUTSIDE the Slate editor div, so selectAll inside the Slate editor
+    // should only clear text content, not the chips.
     if (input instanceof HTMLTextAreaElement || input instanceof HTMLInputElement) {
       input.focus();
       input.select();
@@ -2051,114 +2202,119 @@ export class AutomationEngine {
   }
 
   /**
-   * Scroll through the entire output grid, collect every tile's state,
-   * and map results back to queue prompts using position-based matching.
-   *
-   * Position logic (newest tiles at the top):
-   *   - Prompts were submitted in order 0, 1, 2, …, P-1
-   *   - Each prompt creates G tiles (settings.generations)
-   *   - The newest prompt's tiles appear at the top of the grid
-   *   - So top G tiles = last prompt, next G = second-to-last, etc.
-   *
-   * After mapping, prompt statuses are updated to 'done' or 'failed'
-   * and a FAILED_TILES_RESULT message is sent to the sidepanel.
-   */
-  private async detectAndReportFailures(): Promise<void> {
-    if (!this.queue) return;
+ * Scroll through the entire output grid, collect every tile's state,
+ * and map results back to queue prompts using their tracked tileIds.
+ *
+ * Each prompt stores `tileIds: string[]` — the tile IDs that were
+ * created when that prompt was submitted (captured in processPrompt).
+ * We check the state of each tile directly, avoiding fragile
+ * position-based mapping.
+ *
+ * Prompts with no tiles at all (tileIds empty or tiles not found)
+ * are also flagged as failed so they can be retried.
+ */
+private async detectAndReportFailures(): Promise<void> {
+  if (!this.queue) return;
 
-    this.log('info', 'Scrolling through output grid to collect all tile states...');
-    const allTiles = await scrollAndCollectAllTileStates();
-    this.log('info', `Collected ${allTiles.length} total tile(s) on page`);
+  this.log('info', 'Scrolling through output grid to collect all tile states...');
+  const allTiles = await scrollAndCollectAllTileStates();
+  this.log('info', `Collected ${allTiles.length} total tile(s) on page`);
 
-    // Figure out which tiles belong to our queue
-    const G = this.queue.settings.generations || 1;
-    const doneIndices: number[] = [];
-    for (let i = 0; i < this.queue.prompts.length; i++) {
-      // Prompts that successfully started generation (status 'done' before this scan)
-      if (this.queue.prompts[i].status === 'done') {
-        doneIndices.push(i);
-      }
-    }
-
-    const expectedNewTiles = doneIndices.length * G;
-    // New tiles = total minus baseline (tiles that existed before queue start)
-    const newTileCount = Math.max(0, allTiles.length - this.baselineTileCount);
-    this.log('info',
-      `Expected ${expectedNewTiles} new tiles (${doneIndices.length} done prompts x ${G} gen), ` +
-      `found ${newTileCount} new tiles (total ${allTiles.length} - baseline ${this.baselineTileCount})`
-    );
-
-    // Take the first N tiles from the top (newest first) — these are our queue's tiles
-    const tilesForQueue = allTiles.slice(0, Math.max(expectedNewTiles, newTileCount));
-
-    // Map tiles to prompts by position
-    // Top tiles = last submitted prompt, bottom tiles = first submitted prompt
-    const failedPrompts: Array<{ promptIndex: number; text: string; error: string }> = [];
-    let updatedCount = 0;
-
-    for (let g = 0; g < doneIndices.length; g++) {
-      // g=0 → top of grid → last prompt (doneIndices[doneIndices.length - 1])
-      const promptIdx = doneIndices[doneIndices.length - 1 - g];
-      const groupStart = g * G;
-      const groupEnd = Math.min(groupStart + G, tilesForQueue.length);
-      const group = tilesForQueue.slice(groupStart, groupEnd);
-
-      if (group.length === 0) continue;
-
-      const failedInGroup = group.filter(t => t.state === 'failed').length;
-      const completedInGroup = group.filter(t => t.state === 'completed').length;
-
-      if (failedInGroup > 0 && completedInGroup === 0) {
-        // ALL tiles for this prompt failed
-        this.queue.prompts[promptIdx].status = 'failed';
-        this.queue.prompts[promptIdx].error = 'Generation failed';
-        this.updatePromptStatus(promptIdx, 'failed', 'Generation failed');
-        failedPrompts.push({
-          promptIndex: promptIdx,
-          text: this.queue.prompts[promptIdx].text,
-          error: 'Generation failed',
-        });
-        updatedCount++;
-      } else if (failedInGroup > 0) {
-        // Partial failure — some succeeded, some failed
-        const errMsg = `Partial failure: ${completedInGroup} completed, ${failedInGroup} failed`;
-        this.queue.prompts[promptIdx].status = 'failed';
-        this.queue.prompts[promptIdx].error = errMsg;
-        this.updatePromptStatus(promptIdx, 'failed', errMsg);
-        failedPrompts.push({
-          promptIndex: promptIdx,
-          text: this.queue.prompts[promptIdx].text,
-          error: errMsg,
-        });
-        updatedCount++;
-      } else {
-        // All tiles completed — confirm done status
-        if (this.queue.prompts[promptIdx].status === 'done') {
-          // Re-send the done status to ensure UI is up to date
-          this.updatePromptStatus(promptIdx, 'done');
-          updatedCount++;
-        }
-      }
-    }
-
-    // Also handle prompts that were already marked 'failed' during processPrompt
-    for (let i = 0; i < this.queue.prompts.length; i++) {
-      if (this.queue.prompts[i].status === 'failed' && !failedPrompts.find(fp => fp.promptIndex === i)) {
-        failedPrompts.push({
-          promptIndex: i,
-          text: this.queue.prompts[i].text,
-          error: this.queue.prompts[i].error || 'Failed during processing',
-        });
-      }
-    }
-
-    this.log('info',
-      `Post-queue analysis complete: ${updatedCount} prompt(s) updated, ` +
-      `${failedPrompts.length} total failure(s)`
-    );
-
-    this.sendFailedTilesResult(failedPrompts);
+  // Build a map of tileId → state for fast lookup
+  const tileStateMap = new Map<string, string>();
+  for (const t of allTiles) {
+    tileStateMap.set(t.tileId, t.state);
   }
+
+  const failedPrompts: Array<{ promptIndex: number; text: string; error: string }> = [];
+  let updatedCount = 0;
+
+  for (let i = 0; i < this.queue.prompts.length; i++) {
+    const prompt = this.queue.prompts[i];
+
+    // Skip prompts that were already marked failed during processPrompt (e.g. paste/fill errors)
+    if (prompt.status === 'failed' && prompt.error && !prompt.error.includes('Generation failed')) {
+      failedPrompts.push({
+        promptIndex: i,
+        text: prompt.text,
+        error: prompt.error,
+      });
+      continue;
+    }
+
+    // Skip prompts that never ran (still in 'not-added' or 'queued' state)
+    if (prompt.status === 'not-added') continue;
+
+    const ids: string[] = (prompt as any).tileIds || [];
+
+    // Case 1: Prompt has NO tracked tiles — it never produced output
+    if (ids.length === 0) {
+      prompt.status = 'failed';
+      prompt.error = 'No output generated — no tiles found for this prompt';
+      this.updatePromptStatus(i, 'failed', prompt.error);
+      failedPrompts.push({ promptIndex: i, text: prompt.text, error: prompt.error });
+      updatedCount++;
+      continue;
+    }
+
+    // Case 2: Check the state of each tracked tile
+    let failedCount = 0;
+    let completedCount = 0;
+    let generatingCount = 0;
+    let notFoundCount = 0;
+
+    for (const id of ids) {
+      const state = tileStateMap.get(id);
+      if (!state) {
+        // Tile not found on page — may have been removed or page scrolled past it
+        notFoundCount++;
+      } else if (state === 'failed') {
+        failedCount++;
+      } else if (state === 'completed') {
+        completedCount++;
+      } else if (state === 'generating') {
+        generatingCount++;
+      }
+    }
+
+    if (failedCount > 0 && completedCount === 0) {
+      // All tiles failed
+      prompt.status = 'failed';
+      prompt.error = `Generation failed (${failedCount} tile(s) failed)`;
+      this.updatePromptStatus(i, 'failed', prompt.error);
+      failedPrompts.push({ promptIndex: i, text: prompt.text, error: prompt.error });
+      updatedCount++;
+    } else if (failedCount > 0) {
+      // Partial failure
+      const errMsg = `Partial failure: ${completedCount} completed, ${failedCount} failed`;
+      prompt.status = 'failed';
+      prompt.error = errMsg;
+      this.updatePromptStatus(i, 'failed', errMsg);
+      failedPrompts.push({ promptIndex: i, text: prompt.text, error: errMsg });
+      updatedCount++;
+    } else if (notFoundCount === ids.length) {
+      // All tiles disappeared from the page
+      prompt.status = 'failed';
+      prompt.error = 'No output found on page — tiles may have been removed';
+      this.updatePromptStatus(i, 'failed', prompt.error);
+      failedPrompts.push({ promptIndex: i, text: prompt.text, error: prompt.error });
+      updatedCount++;
+    } else if (completedCount > 0) {
+      // All good — mark as done
+      prompt.status = 'done';
+      this.updatePromptStatus(i, 'done');
+      updatedCount++;
+    }
+    // If still generating, leave status as-is (will be caught on next scan)
+  }
+
+  this.log('info',
+    `Post-queue analysis complete: ${updatedCount} prompt(s) updated, ` +
+    `${failedPrompts.length} total failure(s)`
+  );
+
+  this.sendFailedTilesResult(failedPrompts);
+}
 
   /**
    * Scan the current page for failed tiles (callable on demand via Scan Page button).
@@ -2249,12 +2405,87 @@ export class AutomationEngine {
    * This uses Flow's built-in retry mechanism (refresh icon button).
    */
   async retryFailedOnPage(): Promise<{ retried: number; total: number }> {
-    const failedTiles = findAllFailedTiles();
+    // First pass: check visible tiles
+    let failedTiles = findAllFailedTiles();
+
+    // If no failed tiles visible, scroll through the entire virtualized list
+    // to find off-screen failed tiles and retry them as we go
     if (failedTiles.length === 0) {
-      this.log('info', 'No failed tiles to retry on page');
-      return { retried: 0, total: 0 };
+      this.log('info', 'No failed tiles visible — scrolling through page to find them...');
+      const scroller = findOutputScroller();
+      if (!scroller) {
+        this.log('info', 'No failed tiles to retry on page');
+        return { retried: 0, total: 0 };
+      }
+
+      const retriedIds = new Set<string>();
+      let totalFound = 0;
+
+      // Scroll to top first
+      scroller.scrollTop = 0;
+      await sleep(600);
+
+      let prevScroll = -1;
+      let stuckCount = 0;
+
+      while (stuckCount < 3) {
+        if (this.stopped) break;
+
+        // Check for failed tiles at current scroll position
+        const visibleFailed = findAllFailedTiles();
+        for (const ft of visibleFailed) {
+          if (retriedIds.has(ft.tileId)) continue; // already retried
+          totalFound++;
+
+          const retryBtn = findRetryButtonOnTile(ft.element);
+          if (retryBtn) {
+            simulateClick(retryBtn);
+            retriedIds.add(ft.tileId);
+            this.log('info', `Clicked retry on tile ${ft.tileId || retriedIds.size} (found while scrolling)`);
+            await humanDelay(500, 1000);
+          } else {
+            this.log('warn', `Retry button not found on tile ${ft.tileId || 'unknown'}`);
+          }
+        }
+
+        // Scroll down
+        scroller.scrollBy(0, Math.max(200, scroller.clientHeight * 0.7));
+        await sleep(400);
+
+        if (Math.abs(scroller.scrollTop - prevScroll) < 5) {
+          stuckCount++;
+        } else {
+          stuckCount = 0;
+        }
+        prevScroll = scroller.scrollTop;
+      }
+
+      // Final check at bottom
+      const bottomFailed = findAllFailedTiles();
+      for (const ft of bottomFailed) {
+        if (retriedIds.has(ft.tileId)) continue;
+        totalFound++;
+        const retryBtn = findRetryButtonOnTile(ft.element);
+        if (retryBtn) {
+          simulateClick(retryBtn);
+          retriedIds.add(ft.tileId);
+          this.log('info', `Clicked retry on tile ${ft.tileId || retriedIds.size}`);
+          await humanDelay(500, 1000);
+        }
+      }
+
+      // Scroll back to top
+      scroller.scrollTop = 0;
+
+      if (retriedIds.size === 0) {
+        this.log('info', 'No failed tiles to retry on page (checked all tiles via scroll)');
+      } else {
+        this.log('info', `Retried ${retriedIds.size} of ${totalFound} failed tile(s) via scroll`);
+      }
+      return { retried: retriedIds.size, total: totalFound };
     }
 
+    // Original path: failed tiles are already visible
     this.log('info', `Retrying ${failedTiles.length} failed tile(s) on page...`);
     let retried = 0;
 

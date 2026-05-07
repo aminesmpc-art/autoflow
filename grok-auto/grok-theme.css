@@ -1,0 +1,518 @@
+/* ============================================================
+   Grok Auto – Custom Theme Overrides
+   Amber + Teal palette — distinct from AutoFlow's indigo/violet
+   ============================================================ */
+
+:root {
+  /* Backgrounds – slightly warmer dark */
+  --bg-body:       #080a0d;
+  --bg-primary:    #0c1014;
+  --bg-secondary:  #14191f;
+  --bg-card:       rgba(16, 22, 30, 0.82);
+  --bg-card-solid: #141c26;
+  --bg-hover:      rgba(245, 158, 11, 0.10);
+  --bg-input:      rgba(10, 14, 20, 0.92);
+
+  /* Accent – Warm Amber / Gold */
+  --accent:        #f59e0b;
+  --accent-bright: #fbbf24;
+  --accent-dim:    #d97706;
+  --gradient:      linear-gradient(135deg, #d97706 0%, #f59e0b 50%, #fbbf24 100%);
+  --gradient-glow: 0 0 24px rgba(245, 158, 11, 0.3);
+
+  /* Borders */
+  --border:        rgba(148, 163, 184, 0.08);
+  --border-hover:  rgba(148, 163, 184, 0.18);
+  --border-accent: rgba(245, 158, 11, 0.3);
+
+  /* Shadows */
+  --shadow-glow: 0 0 28px rgba(245, 158, 11, 0.16);
+  --shadow-lift: 0 8px 28px rgba(0, 0, 0, 0.4), 0 0 20px rgba(245, 158, 11, 0.1);
+  --glow-accent: 0 0 24px rgba(245, 158, 11, 0.18);
+  --glow-accent-strong: 0 0 48px rgba(245, 158, 11, 0.3);
+  --gradient-text: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
+  --bg-card-hover: rgba(22, 30, 42, 0.92);
+  --border-glow: rgba(245, 158, 11, 0.3);
+  --focus-ring: 0 0 0 2px var(--bg-body), 0 0 0 4px var(--accent);
+}
+
+/* ── Body gradient – amber instead of indigo ── */
+body {
+  background-image:
+    radial-gradient(ellipse 800px 500px at 15% 0%, rgba(245, 158, 11, 0.10) 0%, transparent 70%),
+    radial-gradient(ellipse 600px 700px at 85% 100%, rgba(217, 119, 6, 0.07) 0%, transparent 70%),
+    radial-gradient(ellipse 500px 500px at 50% 50%, rgba(245, 158, 11, 0.03) 0%, transparent 80%);
+}
+
+/* ── Header ── */
+.af-header {
+  background: linear-gradient(180deg, rgba(12, 16, 20, 0.98), rgba(12, 16, 20, 0.92));
+  border-bottom-color: rgba(245, 158, 11, 0.15);
+}
+
+.af-logo-icon {
+  background: linear-gradient(135deg, #d97706, #f59e0b);
+  box-shadow: 0 2px 12px rgba(245, 158, 11, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+.af-logo-icon:hover {
+  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.af-logo-text {
+  background: linear-gradient(135deg, #fef3c7 0%, #fbbf24 50%, #f59e0b 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.af-version {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.15);
+}
+
+/* ── Tabs ── */
+.af-tabs {
+  background: rgba(12, 16, 20, 0.7);
+  border-bottom-color: rgba(245, 158, 11, 0.08);
+}
+
+.af-tab:hover {
+  background: rgba(245, 158, 11, 0.07);
+}
+
+.af-tab.active {
+  color: #fef3c7;
+  background: rgba(245, 158, 11, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.22), 0 0 16px rgba(245, 158, 11, 0.06);
+}
+
+.af-tab.active::after {
+  background: var(--gradient);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+}
+
+@keyframes tabPulse {
+  0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); }
+  70% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+
+.af-tab-pulse {
+  color: var(--accent-bright) !important;
+}
+
+/* ── Cards ── */
+.af-card {
+  border-color: rgba(245, 158, 11, 0.08);
+}
+.af-card:hover {
+  border-color: rgba(245, 158, 11, 0.2);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35), 0 0 20px rgba(245, 158, 11, 0.06);
+}
+
+/* ── Buttons ── */
+.af-btn-primary {
+  background: var(--gradient);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.2);
+  color: #1a0e00;
+}
+.af-btn-primary:hover {
+  box-shadow: 0 0 28px rgba(245, 158, 11, 0.35), 0 6px 20px rgba(245, 158, 11, 0.25);
+  color: #1a0e00;
+}
+
+.af-btn-secondary {
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--accent);
+  border-color: var(--border-accent);
+}
+.af-btn-secondary:hover {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--accent-bright);
+}
+
+.af-btn-glow {
+  box-shadow: var(--gradient-glow);
+}
+.af-btn-glow:hover {
+  box-shadow: 0 0 28px rgba(245, 158, 11, 0.3);
+}
+
+/* ── Textarea ── */
+.af-textarea {
+  border-color: rgba(245, 158, 11, 0.08);
+}
+.af-textarea:focus {
+  border-color: rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12), 0 0 16px rgba(245, 158, 11, 0.06);
+}
+
+/* ── Select ── */
+.af-select:focus {
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
+}
+
+/* ── Badge ── */
+.af-badge {
+  color: var(--accent);
+  background: rgba(245, 158, 11, 0.1);
+  border-color: var(--border-accent);
+}
+.af-badge-danger {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* ── Prompt number pill ── */
+.af-prompt-num {
+  background: var(--gradient);
+  color: #1a0e00;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.3);
+}
+
+/* ── Tab badge ── */
+.af-tab-badge {
+  background: var(--accent-dim);
+}
+
+/* ── Status colors ── */
+.af-status-queued {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--accent);
+}
+
+/* ── Radio checked ── */
+.af-radio input[type="radio"]:checked + span,
+.af-radio-pills .af-radio:has(input:checked) {
+  background: var(--gradient);
+  color: #1a0e00;
+}
+
+/* ── Mode cards ── */
+.af-mode-card.active {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.08);
+  box-shadow: 0 0 24px rgba(245, 158, 11, 0.1), inset 0 0 0 1px rgba(245, 158, 11, 0.15);
+}
+.af-mode-card.active .af-mode-icon {
+  color: var(--accent);
+}
+.af-mode-card.active .af-mode-label {
+  color: var(--accent-bright);
+}
+.af-mode-card:hover {
+  border-color: rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.05);
+}
+
+/* ── Queue cards in Queues tab ── */
+.af-queue-card {
+  margin-bottom: 10px;
+}
+.af-queue-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.af-queue-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+.af-queue-stats {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.af-queue-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ── Glowing pulse ── */
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(245, 158, 11, 0.15); }
+  50%      { box-shadow: 0 0 22px rgba(245, 158, 11, 0.35); }
+}
+
+/* ── Pulse ring (status dot) ── */
+@keyframes pulseRing {
+  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+  70%  { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.af-status-dot.running {
+  background: var(--accent);
+  animation: pulseRing 2s var(--ease) infinite;
+}
+
+/* ── Auth form overrides ── */
+.af-auth-toggle-btn.active {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--accent);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.af-input:focus {
+  border-color: rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
+}
+
+/* ── Usage bar ── */
+.af-usage-bar {
+  background: var(--gradient);
+}
+
+/* ── Upgrade card ── */
+.af-btn-upgrade {
+  background: linear-gradient(135deg, #d97706, #f59e0b, #fbbf24) !important;
+  color: #1a0e00 !important;
+  border: none !important;
+}
+.af-btn-upgrade:hover {
+  box-shadow: 0 0 28px rgba(245, 158, 11, 0.4);
+}
+
+/* ── Plan badge ── */
+.af-plan-badge {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--accent);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+.af-plan-badge.af-plan-pro {
+  background: linear-gradient(135deg, #d97706, #f59e0b);
+  color: #1a0e00;
+  font-weight: 700;
+}
+
+/* ── SVG accent colors ── */
+.af-label svg,
+.af-subtitle svg {
+  color: var(--accent);
+}
+
+/* ── Toast ── */
+.af-toast {
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+/* ── Text shimmer ── */
+@keyframes textShimmer {
+  0%   { background-position: 0% center; }
+  50%  { background-position: 100% center; }
+  100% { background-position: 0% center; }
+}
+
+/* ── Monitor title ── */
+.af-pulse-dot {
+  background: var(--accent);
+}
+
+/* ── Log entries ── */
+.af-log-entry {
+  font-size: 11px;
+  padding: 2px 6px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  color: var(--text-muted);
+}
+.af-log-info { color: var(--text-secondary); }
+.af-log-warn { color: var(--warning); }
+.af-log-error { color: var(--danger); }
+
+/* ── Generation Progress Bar ── */
+.af-gen-progress {
+  margin: 8px 0;
+}
+.af-gen-progress-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.af-gen-progress-bar-bg {
+  height: 6px;
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.af-gen-progress-bar {
+  height: 100%;
+  background: var(--gradient);
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+.af-gen-progress-bar.af-progress-done {
+  background: linear-gradient(135deg, #10b981, #34d399);
+}
+.af-gen-progress-bar.af-progress-failed {
+  background: linear-gradient(135deg, #ef4444, #f87171);
+}
+
+/* ── Generation Stats ── */
+.af-gen-stats {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.af-gen-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.af-gen-stat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.af-dot-completed { background: #10b981; }
+.af-dot-generating { background: var(--accent); animation: pulseRing 2s ease infinite; }
+.af-dot-failed { background: #ef4444; }
+
+/* ── Scan Section ── */
+.af-scan-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.af-btn-full {
+  width: 100%;
+  justify-content: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.af-scan-result {
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(245, 158, 11, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.1);
+}
+
+/* ── Per-Prompt Queue Rows ── */
+.af-queue-prompts {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+.af-queue-prompts.expanded {
+  max-height: 2000px;
+  margin-top: 8px;
+}
+.af-prompt-row-q {
+  padding: 4px 6px;
+  border-radius: 6px;
+  margin-bottom: 3px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+.af-prompt-row-q.af-ps-running {
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.06);
+}
+.af-prompt-row-q.af-ps-done {
+  opacity: 0.6;
+}
+.af-prompt-row-q.af-ps-failed {
+  border-color: rgba(239, 68, 68, 0.2);
+  background: rgba(239, 68, 68, 0.04);
+}
+.af-pq-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.af-pq-num {
+  min-width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.af-pq-text {
+  flex: 1;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.af-pq-status {
+  flex-shrink: 0;
+  font-size: 12px;
+  min-width: 28px;
+  text-align: right;
+}
+.af-pq-bar-bg {
+  height: 3px;
+  background: rgba(245, 158, 11, 0.06);
+  border-radius: 2px;
+  margin-top: 3px;
+  overflow: hidden;
+}
+.af-pq-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s ease;
+  width: 0%;
+}
+.af-pq-bar.af-ppb-active {
+  background: var(--gradient);
+}
+.af-pq-bar.af-ppb-done {
+  background: linear-gradient(135deg, #10b981, #34d399);
+}
+.af-pq-bar.af-ppb-failed {
+  background: linear-gradient(135deg, #ef4444, #f87171);
+}
+
+/* ── Queue-level progress bar ── */
+.af-queue-progress-bar-bg {
+  height: 4px;
+  background: rgba(245, 158, 11, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 6px 0;
+}
+.af-queue-progress-bar {
+  height: 100%;
+  background: var(--gradient);
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+/* ── Queue stats row ── */
+.af-queue-stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.af-qs-done, .af-qs-failed, .af-qs-total { font-weight: 600; }
+.af-qs-date { opacity: 0.4; margin-left: auto; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(245, 158, 11, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 158, 11, 0.3);
+}

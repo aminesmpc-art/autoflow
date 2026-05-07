@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Grok Auto</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="sidepanel.css" />
+  <link rel="stylesheet" href="grok-theme.css" />
+</head>
+<body>
+  <!-- ═══════════════════ FIRST-RUN DISCLOSURE ═══════════════════ -->
+  <div id="af-first-run" class="af-first-run" style="display:none;">
+    <div class="af-first-run-content af-card">
+      <h3 class="af-first-run-title">Welcome to Grok Auto</h3>
+      <p class="af-first-run-text">
+        Grok Auto helps you queue, manage, and automate image & video generation on Grok Imagine from this side panel.
+      </p>
+      <ul class="af-privacy-list">
+        <li>Runs only on grok.com pages</li>
+        <li>Prompts, queues, and settings are stored locally in your browser</li>
+        <li>This is a third-party tool — not affiliated with or endorsed by xAI</li>
+      </ul>
+      <button id="btn-dismiss-first-run" class="af-btn af-btn-primary af-btn-full">Got it</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ HEADER ═══════════════════ -->
+  <header class="af-header">
+    <div class="af-logo">
+      <span class="af-logo-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <defs>
+            <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#818cf8"/>
+              <stop offset="100%" style="stop-color:#c084fc"/>
+            </linearGradient>
+          </defs>
+          <path d="M5 3l14 9-14 9V3z" fill="url(#logoGrad)"/>
+        </svg>
+      </span>
+      <div class="af-logo-info">
+        <div class="af-logo-title-row">
+          <span class="af-logo-text">Grok Auto</span>
+          <span class="af-version">v1.0.0</span>
+        </div>
+        <span class="af-logo-tagline">AI Generation Engine</span>
+      </div>
+      <span id="af-status-dot" class="af-status-dot" title="Disconnected"></span>
+    </div>
+    <div class="af-disclaimer-mini" title="Third-party tool. Not affiliated with xAI.">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+    </div>
+  </header>
+
+  <!-- ═══════════════════ TABS ═══════════════════ -->
+  <nav class="af-tabs" role="tablist">
+    <button class="af-tab" role="tab" data-tab="video" data-requires-auth aria-selected="false">
+      <span class="af-tab-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+      </span>
+      <span class="af-tab-label">Create</span>
+    </button>
+    <button class="af-tab" role="tab" data-tab="settings" data-requires-auth aria-selected="false">
+      <span class="af-tab-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </span>
+      <span class="af-tab-label">Settings</span>
+    </button>
+    <button class="af-tab" role="tab" data-tab="queues" data-requires-auth aria-selected="false">
+      <span class="af-tab-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      </span>
+      <span class="af-tab-label">Queues</span>
+      <span id="queue-tab-badge" class="af-tab-badge" style="display:none;"></span>
+    </button>
+    <button class="af-tab active" role="tab" data-tab="account" aria-selected="true">
+      <span class="af-tab-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </span>
+      <span class="af-tab-label">Account</span>
+    </button>
+  </nav>
+
+  <!-- ═══════════════════ TAB A: CREATE ═══════════════════ -->
+  <section class="af-panel" id="panel-video" role="tabpanel">
+
+    <!-- Mode Selection -->
+    <div class="af-mode-grid">
+      <button class="af-mode-card active" data-mode="image" title="Generate images from text">
+        <span class="af-mode-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </span>
+        <span class="af-mode-label">Image</span>
+        <span class="af-mode-desc">AI images from text</span>
+      </button>
+      <button class="af-mode-card" data-mode="video" title="Generate video from text">
+        <span class="af-mode-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        </span>
+        <span class="af-mode-label">Video</span>
+        <span class="af-mode-desc">AI video from text</span>
+      </button>
+    </div>
+
+    <!-- Reference Images (Image-to-Video) -->
+    <div class="af-section af-card" id="image-upload-section">
+      <label class="af-label">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        <span>Reference Images</span>
+        <span class="af-help-icon" title="Add Images: same image(s) for ALL prompts. Map Images: each image maps 1:1 to its matching prompt.">?</span>
+      </label>
+      <p class="af-hint">Add = shared across all prompts. Map = image 1→prompt 1, image 2→prompt 2…</p>
+      <div id="image-thumbnails" class="af-img-thumbnails"></div>
+      <div class="af-row" style="margin-top:6px;gap:6px;flex-wrap:wrap;">
+        <button id="btn-add-images" class="af-btn af-btn-secondary af-btn-sm">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span>Add Images</span>
+        </button>
+        <button id="btn-map-images" class="af-btn af-btn-secondary af-btn-sm" title="Upload images — each maps 1:1 to a prompt">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 3H3v18h18V3z"/><path d="M9 3v18"/><path d="M3 9h18"/><path d="M3 15h18"/></svg>
+          <span>Map Images</span>
+        </button>
+        <button id="btn-clear-images" class="af-btn af-btn-sm" style="display:none;">Clear All</button>
+        <span id="image-count" class="af-badge" style="display:none;">0 images</span>
+      </div>
+      <input type="file" id="image-file-input" accept="image/*" multiple style="display:none;" />
+      <input type="file" id="map-image-file-input" accept="image/*" multiple style="display:none;" />
+    </div>
+
+    <div class="af-section af-card">
+      <label class="af-label" for="prompt-input">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        <span>Prompts</span>
+        <span class="af-help-icon" title="Paste your prompts here. Separate each prompt with a blank line. Each block becomes one generation task.">?</span>
+      </label>
+      <p class="af-hint">Separate prompts with a blank line. Each block = one task.</p>
+      <textarea
+        id="prompt-input"
+        class="af-textarea"
+        rows="6"
+        placeholder="A cinematic portrait of an astronaut in golden hour lighting...&#10;&#10;A vibrant cyberpunk street scene with neon reflections in puddles...&#10;&#10;A serene mountain lake at sunrise with mist rolling over the water..."
+      ></textarea>
+      <div class="af-row">
+        <button id="btn-parse" class="af-btn af-btn-secondary">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          <span>Parse Prompts</span>
+        </button>
+        <span id="prompt-count" class="af-badge">0 prompts</span>
+      </div>
+    </div>
+
+    <!-- Parsed prompt rows -->
+    <div id="prompt-list" class="af-prompt-list"></div>
+
+    <!-- Add to Queue -->
+    <div class="af-section" id="queue-actions" style="display:none;">
+      <button id="btn-add-queue" class="af-btn af-btn-primary af-btn-full af-btn-glow">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span>Add to Queue</span>
+      </button>
+    </div>
+
+    <!-- Run Monitor -->
+    <div class="af-section af-monitor af-card" id="run-monitor" style="display:none;">
+      <h3 class="af-subtitle af-monitor-title">
+        <span class="af-pulse-dot"></span>
+        <span>Run Monitor</span>
+      </h3>
+      <div class="af-monitor-info">
+        <span id="monitor-queue-name">—</span>
+        <span id="monitor-progress">0 / 0</span>
+      </div>
+
+      <!-- Generation Progress Bar -->
+      <div id="gen-progress-section" class="af-gen-progress" style="display:none;">
+        <div class="af-gen-progress-header">
+          <span id="gen-progress-label">Generating...</span>
+          <span id="gen-progress-pct">0%</span>
+        </div>
+        <div class="af-gen-progress-bar-bg">
+          <div id="gen-progress-bar" class="af-gen-progress-bar" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <!-- Generation Stats -->
+      <div id="gen-stats" class="af-gen-stats" style="display:none;">
+        <div class="af-gen-stat">
+          <span class="af-gen-stat-dot af-dot-completed"></span>
+          <span id="stat-completed">0</span> Done
+        </div>
+        <div class="af-gen-stat">
+          <span class="af-gen-stat-dot af-dot-generating"></span>
+          <span id="stat-generating">0</span> Generating
+        </div>
+        <div class="af-gen-stat">
+          <span class="af-gen-stat-dot af-dot-failed"></span>
+          <span id="stat-failed">0</span> Failed
+        </div>
+      </div>
+
+      <div class="af-monitor-controls">
+        <button id="btn-pause" class="af-btn af-btn-sm af-monitor-btn">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          <span>Pause</span>
+        </button>
+        <button id="btn-resume" class="af-btn af-btn-sm af-monitor-btn" disabled>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <span>Resume</span>
+        </button>
+        <button id="btn-stop" class="af-btn af-btn-sm af-btn-danger af-monitor-btn">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          <span>Stop</span>
+        </button>
+        <button id="btn-skip" class="af-btn af-btn-sm af-monitor-btn">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+          <span>Skip</span>
+        </button>
+      </div>
+
+      <!-- Scan Page Button -->
+      <div class="af-scan-section">
+        <button id="btn-scan-page" class="af-btn af-btn-secondary af-btn-full">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <span>Scan Page</span>
+        </button>
+        <div id="scan-result" class="af-scan-result" style="display:none;"></div>
+      </div>
+
+      <div id="monitor-logs" class="af-logs"></div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ TAB B: SETTINGS ═══════════════════ -->
+  <section class="af-panel" id="panel-settings" role="tabpanel">
+
+    <div class="af-settings-group af-card">
+      <h3 class="af-section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Generation Settings</span>
+      </h3>
+
+      <!-- Hidden radios for mode card sync -->
+      <div style="display:none;">
+        <input type="radio" name="mediaType" value="image" checked />
+        <input type="radio" name="mediaType" value="video" />
+      </div>
+
+      <!-- Video-specific settings -->
+      <div id="video-settings-section" style="display:none;">
+        <div class="af-setting-row">
+          <label class="af-setting-label">Video Resolution <span class="af-help-icon" title="480p = faster, 720p = higher quality">?</span></label>
+          <select id="setting-video-res" class="af-select af-select-sm">
+            <option value="480p">480p</option>
+            <option value="720p" selected>720p</option>
+          </select>
+        </div>
+        <div class="af-setting-row">
+          <label class="af-setting-label">Video Duration <span class="af-help-icon" title="6s or 10s video clips">?</span></label>
+          <select id="setting-video-dur" class="af-select af-select-sm">
+            <option value="6s" selected>6 seconds</option>
+            <option value="10s">10 seconds</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="af-setting-row">
+        <label class="af-setting-label">Aspect Ratio <span class="af-help-icon" title="Choose the proportions for your generated content">?</span></label>
+        <select id="setting-ratio" class="af-select">
+          <option value="2:3">Portrait (2:3)</option>
+          <option value="3:2">Landscape (3:2)</option>
+          <option value="1:1">Square (1:1)</option>
+          <option value="9:16">Vertical (9:16)</option>
+          <option value="16:9" selected>Widescreen (16:9)</option>
+        </select>
+      </div>
+
+      <div class="af-setting-row" style="margin-bottom:0;">
+        <label class="af-setting-label">Stop on error <span class="af-help-icon" title="If ON, the queue pauses when a generation fails. If OFF, it skips the failure and continues.">?</span></label>
+        <label class="af-toggle">
+          <input type="checkbox" id="setting-stop-error" />
+          <span class="af-toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Timing -->
+    <div class="af-settings-group af-card">
+      <h3 class="af-section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>Timing</span>
+      </h3>
+
+      <div class="af-setting-row">
+        <label class="af-setting-label">
+          Wait time (sec)
+          <span class="af-help-icon" title="Time to wait after clicking Generate before moving to the next prompt.">?</span>
+        </label>
+        <div class="af-range-inputs">
+          <input type="number" id="setting-wait-min" class="af-input af-input-sm" min="5" max="120" step="1" value="10" />
+          <span class="af-range-to">–</span>
+          <input type="number" id="setting-wait-max" class="af-input af-input-sm" min="10" max="120" step="1" value="20" />
+        </div>
+      </div>
+
+      <div class="af-setting-row" style="margin-bottom:0;">
+        <label class="af-setting-label">Wait for completion <span class="af-help-icon" title="When ON, the bot waits for each generation to finish (tracks progress %). When OFF (default), it submits prompts quickly without waiting.">?</span></label>
+        <label class="af-toggle">
+          <input type="checkbox" id="setting-wait-completion" />
+          <span class="af-toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Downloads -->
+    <div class="af-settings-group af-card">
+      <h3 class="af-section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>Downloads</span>
+      </h3>
+
+      <div class="af-setting-row">
+        <label class="af-setting-label">Auto-download outputs <span class="af-help-icon" title="Automatically download completed outputs. Disable 'Ask where to save' in browser settings.">?</span></label>
+        <label class="af-toggle">
+          <input type="checkbox" id="setting-auto-download" checked />
+          <span class="af-toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Video Extend -->
+    <div class="af-settings-group af-card" id="extend-settings-section" style="display:none;">
+      <h3 class="af-section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        <span>Video Extend</span>
+      </h3>
+
+      <div class="af-setting-row">
+        <label class="af-setting-label">Enable Video Extend <span class="af-help-icon" title="When ON, after a video finishes generating, the bot will click 'Extend video' and add more segments (10+10+10 = 30s max). Requires 'Wait for completion' to be ON.">?</span></label>
+        <label class="af-toggle">
+          <input type="checkbox" id="setting-video-extend" />
+          <span class="af-toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="af-setting-row" style="margin-bottom:0;">
+        <label class="af-setting-label">Extend Duration</label>
+        <select id="setting-extend-duration" class="af-select">
+          <option value="+10s">+10s</option>
+          <option value="+6s">+6s</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="af-section">
+      <button id="btn-save-settings" class="af-btn af-btn-primary af-btn-full af-btn-glow">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        Save Settings
+      </button>
+    </div>
+
+    <div class="af-disclaimer">
+      Grok Auto is a third-party productivity tool.<br/>
+      Not affiliated with or endorsed by xAI.<br/>
+      Runs only on grok.com pages.
+    </div>
+  </section>
+
+  <!-- ═══════════════════ TAB C: MANAGE QUEUES ═══════════════════ -->
+  <section class="af-panel" id="panel-queues" role="tabpanel">
+    <div class="af-section">
+      <div class="af-section-header-row">
+        <h3 class="af-subtitle">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          <span>Queues</span>
+        </h3>
+      </div>
+      <div id="queue-list" class="af-queue-list">
+        <div class="af-empty">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <line x1="3" y1="9" x2="21" y2="9"/>
+            <line x1="9" y1="21" x2="9" y2="9"/>
+          </svg>
+          <p class="af-empty-title">No queues yet</p>
+          <p class="af-empty-steps">
+            <span>1. Go to <strong>Create</strong> tab</span>
+            <span>2. Paste your prompts</span>
+            <span>3. Click <strong>Add to Queue</strong></span>
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ TAB D: ACCOUNT ═══════════════════ -->
+  <section class="af-panel active" id="panel-account" role="tabpanel">
+
+    <!-- STATE 1: Logged OUT -->
+    <div id="account-logged-out">
+      <div class="af-section af-card af-account-card">
+        <div class="af-account-header">
+          <div class="af-account-avatar">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <h3 class="af-account-title">Welcome to Grok Auto</h3>
+          <p class="af-hint">Sign in to track usage &amp; unlock features</p>
+        </div>
+
+        <!-- Toggle: Login / Register -->
+        <div class="af-auth-toggle">
+          <button id="btn-show-login" class="af-auth-toggle-btn active">Sign In</button>
+          <button id="btn-show-register" class="af-auth-toggle-btn">Create Account</button>
+        </div>
+
+        <!-- Login Form -->
+        <form id="form-login" class="af-auth-form">
+          <div class="af-form-group">
+            <label for="login-email" class="af-form-label">Email</label>
+            <input type="email" id="login-email" class="af-input" placeholder="you@example.com" required autocomplete="email" />
+          </div>
+          <div class="af-form-group">
+            <label for="login-password" class="af-form-label">Password</label>
+            <input type="password" id="login-password" class="af-input" placeholder="••••••••" required autocomplete="current-password" />
+          </div>
+          <div id="login-message" class="af-auth-message" style="display:none;"></div>
+          <button type="submit" id="btn-login-submit" class="af-btn af-btn-primary af-btn-full">Sign In</button>
+        </form>
+
+        <!-- Register Form -->
+        <form id="form-register" class="af-auth-form" style="display:none;">
+          <div class="af-form-group">
+            <label for="register-email" class="af-form-label">Email</label>
+            <input type="email" id="register-email" class="af-input" placeholder="you@example.com" required autocomplete="email" />
+          </div>
+          <div class="af-form-group">
+            <label for="register-password" class="af-form-label">Password</label>
+            <input type="password" id="register-password" class="af-input" placeholder="Minimum 8 characters" required minlength="8" autocomplete="new-password" />
+          </div>
+          <div id="register-message" class="af-auth-message" style="display:none;"></div>
+          <button type="submit" id="btn-register-submit" class="af-btn af-btn-primary af-btn-full">Create Account</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- STATE 2: Verification Pending -->
+    <div id="account-verify-pending" style="display:none;">
+      <div class="af-section af-card af-account-card">
+        <div class="af-verify-pending">
+          <div class="af-verify-icon">📧</div>
+          <h3 class="af-account-title">Check Your Email</h3>
+          <p class="af-verify-desc">We sent a verification link to<br><strong id="verify-pending-email">your email</strong></p>
+          <p class="af-hint" style="margin-top:12px;">Click the link in the email to activate your account. Check your spam folder too!</p>
+          <div class="af-verify-actions">
+            <button id="btn-resend-verify" class="af-btn af-btn-secondary af-btn-full">Resend Verification Email</button>
+            <button id="btn-back-to-login" class="af-btn af-btn-ghost af-btn-full" style="margin-top:8px;">← Back to Sign In</button>
+          </div>
+          <div id="resend-message" class="af-auth-message" style="display:none; margin-top:10px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATE 3: Logged IN -->
+    <div id="account-logged-in" style="display:none;">
+      <div class="af-section af-card af-account-card">
+
+        <!-- Profile Header -->
+        <div class="af-account-header">
+          <div class="af-avatar-ring">
+            <div class="af-account-avatar af-account-avatar-active">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+          </div>
+          <div class="af-account-info">
+            <h3 id="account-email" class="af-account-title">user@example.com</h3>
+            <span id="account-plan-badge" class="af-plan-badge">Free</span>
+          </div>
+        </div>
+
+        <!-- Usage Gauges -->
+        <div class="af-usage-section">
+          <div class="af-usage-grid">
+            <div class="af-usage-card">
+              <div class="af-usage-icon">📝</div>
+              <div class="af-usage-info">
+                <span class="af-usage-label">Text-to-Video</span>
+                <span id="account-text-usage-text" class="af-usage-count">0 / 100</span>
+              </div>
+              <div class="af-usage-bar-bg">
+                <div id="account-text-usage-bar" class="af-usage-bar" style="width: 0%;"></div>
+              </div>
+              <p id="account-text-usage-hint" class="af-usage-hint">100 remaining today</p>
+            </div>
+            <div class="af-usage-card">
+              <div class="af-usage-icon">🖼️</div>
+              <div class="af-usage-info">
+                <span class="af-usage-label">Full Features</span>
+                <span id="account-full-usage-text" class="af-usage-count">0 / 20</span>
+              </div>
+              <div class="af-usage-bar-bg">
+                <div id="account-full-usage-bar" class="af-usage-bar" style="width: 0%;"></div>
+              </div>
+              <p id="account-full-usage-hint" class="af-usage-hint">20 remaining today</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Upgrade CTA -->
+        <div id="upgrade-cta" class="af-upgrade-cta" style="display:none;">
+          <div class="af-upgrade-card">
+            <div class="af-upgrade-sparkle">✨</div>
+            <p class="af-upgrade-title">Go Unlimited</p>
+            <p class="af-upgrade-text">Unlimited prompts, all features, and priority support</p>
+            <button id="btn-upgrade-pro" class="af-btn af-btn-upgrade">
+              <span class="af-upgrade-btn-icon">⚡</span>
+              Upgrade to Pro — $9.99/mo
+            </button>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="af-account-actions">
+          <button id="btn-refresh-usage" class="af-btn af-btn-ghost af-btn-full">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            <span>Refresh Usage</span>
+          </button>
+          <button id="btn-logout" class="af-btn-signout">Sign Out</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ TOAST ═══════════════════ -->
+  <div id="toast" class="af-toast" style="display:none;"></div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

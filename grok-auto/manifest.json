@@ -1,29 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "AutoFlow – Video Task Manager for Google Flow",
+  "name": "Grok Auto — Bulk AI Generation",
   "version": "1.0.0",
-  "description": "Queue, manage, and monitor video-generation tasks on Google Flow (labs.google/flow). Third-party tool, not affiliated with Google.",
-  "minimum_chrome_version": "114",
-  "offline_enabled": false,
-  "homepage_url": "https://auto-flow.studio",
+  "description": "Automate bulk image and video generation on Grok Imagine",
   "permissions": [
     "sidePanel",
     "storage",
-    "activeTab",
     "downloads",
-    "scripting",
-    "alarms"
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": [
-    "https://labs.google/*",
-    "https://api.auto-flow.studio/*"
+    "https://grok.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["https://labs.google/flow*", "https://labs.google/fx*"],
+      "matches": ["https://grok.com/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
@@ -32,7 +28,7 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "AutoFlow",
+    "default_title": "Grok Auto",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
