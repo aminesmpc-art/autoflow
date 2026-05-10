@@ -176,6 +176,54 @@ export default async function PromptDetailPage({ params }) {
               </div>
             </div>
           )}
+          {/* Export for AutoFlow */}
+          {extraction.shots && extraction.shots.length > 0 && (
+            <div style={{ marginTop: "32px", padding: "48px", borderRadius: "32px", border: "1px solid rgba(22, 163, 74, 0.3)", background: "linear-gradient(145deg, rgba(22, 163, 74, 0.05) 0%, rgba(0,0,0,0.8) 100%)", position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, right: 0, width: "300px", height: "300px", background: "radial-gradient(circle, rgba(22, 163, 74, 0.1) 0%, transparent 70%)", pointerEvents: "none" }}></div>
+              
+              <div style={{ position: "relative", zIndex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "16px" }}>
+                  <div style={{ width: "56px", height: "56px", borderRadius: "16px", background: "rgba(22, 163, 74, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.8rem", border: "1px solid rgba(22, 163, 74, 0.2)", boxShadow: "0 0 20px rgba(22, 163, 74, 0.2)" }}>🚀</div>
+                  <h3 style={{ margin: 0, fontSize: "1.8rem", color: "white" }}>Export for <span style={{ color: "#4ade80" }}>AutoFlow Extension</span></h3>
+                </div>
+                <p className="text-secondary" style={{ marginBottom: "40px", fontSize: "1.1rem", maxWidth: "600px" }}>
+                  Skip the manual copy-pasting. Batch generate these exact scenes simultaneously using the <a href="https://chromewebstore.google.com/detail/autoflow-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc" target="_blank" rel="noopener noreferrer" style={{ color: "#4ade80", textDecoration: "underline", textUnderlineOffset: "4px" }}>AutoFlow Chrome Extension</a>. Not sure how? <a href="/blog/how-to-recreate-ai-videos-with-extractor-and-autoflow" style={{ color: "var(--text-primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}>Read the step-by-step tutorial</a>.
+                </p>
+
+                <div style={{ display: "grid", gap: "32px", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
+                  <div style={{ padding: "24px", background: "rgba(0,0,0,0.4)", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                    <h4 style={{ fontSize: "1.1rem", marginBottom: "8px", color: "white" }}>1. Image Prompts</h4>
+                    <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "20px" }}>Generates the Midjourney style references.</p>
+                    <CopyButton 
+                      text={extraction.shots.map(s => s.image_prompt).filter(Boolean).join("\n\n")} 
+                      label="📋 Copy Image Prompts"
+                      style={{ width: "100%", padding: "16px", borderRadius: "12px", background: "white", color: "black", fontWeight: "600", fontSize: "1.05rem" }} 
+                    />
+                  </div>
+
+                  <div style={{ padding: "24px", background: "rgba(0,0,0,0.4)", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                    <h4 style={{ fontSize: "1.1rem", marginBottom: "8px", color: "white" }}>2. Video Prompts</h4>
+                    <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "20px" }}>Generates the Runway/Sora motion generation.</p>
+                    <CopyButton 
+                      text={extraction.shots.map(s => s.video_prompt).filter(Boolean).join("\n\n")} 
+                      label="📋 Copy Video Prompts"
+                      style={{ width: "100%", padding: "16px", borderRadius: "12px", background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)", color: "white", fontWeight: "600", fontSize: "1.05rem", boxShadow: "0 10px 20px rgba(22, 163, 74, 0.2)" }} 
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginTop: "32px", padding: "20px 24px", background: "rgba(245, 158, 11, 0.05)", borderLeft: "4px solid var(--warning)", borderRadius: "0 12px 12px 0", display: "flex", gap: "16px", alignItems: "flex-start" }}>
+                  <span style={{ fontSize: "1.5rem", lineHeight: 1 }}>💡</span>
+                  <div>
+                    <h4 style={{ color: "var(--warning)", margin: "0 0 4px 0", fontSize: "1rem" }}>Auto Character Mapping Pro-Tip</h4>
+                    <p style={{ margin: 0, fontSize: "0.95rem", color: "rgba(255,255,255,0.8)", lineHeight: "1.5" }}>
+                      Want to use the <em>Auto Character Mapping</em> feature in the extension? Ensure that your generated reference images are named <strong>exactly</strong> the same as the character names in your prompts before clicking the Map button!
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
