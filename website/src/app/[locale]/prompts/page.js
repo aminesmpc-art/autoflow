@@ -3,11 +3,15 @@
 import { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 
 export default function PromptsPage() {
   const [prompts, setPrompts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const params = useParams();
+  const locale = params?.locale;
+  const prefix = locale && locale !== 'en' ? `/${locale}` : '';
 
   const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.auto-flow.studio/api";
 
@@ -59,7 +63,7 @@ export default function PromptsPage() {
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))", gap: "24px", alignItems: "start" }}>
             {prompts.map((extraction) => (
-              <Link href={`/prompts/${extraction.id}`} key={extraction.id} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
+              <Link href={`${prefix}/prompts/${extraction.id}`} key={extraction.id} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
                 <div 
                   className="card-glass" 
                   style={{ 

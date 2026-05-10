@@ -38,13 +38,15 @@ export async function generateMetadata({ params }) {
 export default async function PromptDetailPage({ params }) {
   const resolvedParams = await params;
   const extraction = await getExtraction(resolvedParams.id);
+  const locale = resolvedParams.locale;
+  const prefix = locale && locale !== 'en' ? `/${locale}` : '';
 
   if (!extraction) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "black" }}>
         <div className="card-glass" style={{ textAlign: "center", padding: "40px", borderColor: "rgba(239, 68, 68, 0.3)" }}>
           <p style={{ color: "#ef4444", marginBottom: "16px" }}>Extraction not found</p>
-          <Link href="/prompts" className="btn btn-secondary">← Back to Gallery</Link>
+          <Link href={`${prefix}/prompts`} className="btn btn-secondary">← Back to Gallery</Link>
         </div>
       </div>
     );
@@ -56,7 +58,7 @@ export default async function PromptDetailPage({ params }) {
       <div style={{ position: "absolute", top: "-10%", left: "50%", transform: "translateX(-50%)", width: "80vw", height: "80vw", background: "radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, rgba(0,0,0,0) 70%)", zIndex: -1, pointerEvents: "none" }} />
       
       <div className="container" style={{ position: "relative", zIndex: 1, maxWidth: "900px" }}>
-        <Link href="/prompts" style={{ display: "inline-flex", alignItems: "center", color: "var(--text-secondary)", textDecoration: "none", marginBottom: "32px", fontSize: "0.95rem" }}>
+        <Link href={`${prefix}/prompts`} style={{ display: "inline-flex", alignItems: "center", color: "var(--text-secondary)", textDecoration: "none", marginBottom: "32px", fontSize: "0.95rem" }}>
           ← Back to Prompts Gallery
         </Link>
 
