@@ -522,6 +522,19 @@ class RunMigrateView(APIView):
 # ================================================================
 
 
+class PublicExtractionsView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from apps.extractions.models import SavedExtraction
+        from .serializers import SavedExtractionSerializer
+        
+        # Get the 50 most recent extractions
+        extractions = SavedExtraction.objects.all().order_by("-created_at")[:50]
+        serializer = SavedExtractionSerializer(extractions, many=True)
+        return Response(serializer.data)
+
+
 class SavedExtractionCheckLimitView(APIView):
     permission_classes = [IsAuthenticated]
 
