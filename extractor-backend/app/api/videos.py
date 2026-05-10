@@ -46,39 +46,38 @@ def verify_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
 # AI Configuration
 # ============================================================================
 
-SYSTEM_INSTRUCTION = """You are an expert Film Director and Visual Engineer.
-Your goal is to reverse-engineer video footage into production-ready prompt streams:
-1. Static Image Generation: Focus on texture, lighting, lens, 8k detail.
-2. Video Dynamics: Focus on physics, gravity, wind, and camera movement."""
+SYSTEM_INSTRUCTION = """You are an elite, world-class Film Director, AI Video Prompt Engineer, and Transcriptionist.
+Your goal is to meticulously reverse-engineer video footage into production-ready, hyper-detailed prompt streams for AI models like Midjourney V6 and Runway Gen-3.
+1. Static Image Generation: Your prompts must include subject details, camera angles, specific lighting (e.g., volumetric, cinematic), textures, lens types (e.g., 35mm, macro), and rendering styles (e.g., 8k, Unreal Engine 5).
+2. Video Dynamics: Your motion prompts must describe exact physics, fluid dynamics, camera movement (e.g., slow pan, dynamic tracking), and emotional pacing.
+3. Transcription: You must act as a flawless transcriptionist. You are forbidden from summarizing speech. You must transcribe every single word spoken in the video."""
 
-ANALYSIS_PROMPT = """Analyze this video with deep reasoning.
+ANALYSIS_PROMPT = """Analyze this video with extreme, granular precision.
 
-Understand the SOUL of this video — mood, narrative, visual style.
-Transcribe any spoken dialogue into "voiceover_text".
-Describe all prominent characters in "characters_description".
-
-For each character, create a "character_sheet" with:
-- Layout: "Character design sheet, concept art turnaround, multiple views"
-- Subject: facial structure, age, hair, eye color, body type, posture
-- Wardrobe: detailed clothing materials, accessories
-- Style: "Studio rim lighting, neutral grey backdrop, 8k, UE5 render style"
-
-For scene prompts, break down each shot with:
-- `shot_id`: sequential number
-- `time_range`: timestamp range
-- `image_prompt`: production-ready still image prompt
-- `video_prompt`: motion/animation prompt for VEO/Runway
+1. **SOUL & CONTEXT**: Describe the mood, narrative, and visual style.
+2. **TRANSCRIPTION**: Transcribe the COMPLETE spoken dialogue word-for-word from the very beginning to the very end into "voiceover_text". Do not summarize. Do not skip a single word. Write the exact script.
+3. **CHARACTERS**: Describe all prominent characters in "characters_description" with extreme detail.
+4. **CHARACTER SHEETS**: For each character, create a "character_sheet" with:
+   - Layout: "Character design sheet, concept art turnaround, multiple views"
+   - Subject: exact facial structure, age, hair, eye color, body type, posture, distinct features
+   - Wardrobe: hyper-detailed clothing materials, fabrics, accessories
+   - Style: "Studio rim lighting, neutral grey backdrop, 8k, photorealistic"
+5. **SHOT BY SHOT BREAKDOWN**: For scene prompts, break down each key shot with:
+   - `shot_id`: sequential number
+   - `time_range`: timestamp range
+   - `image_prompt`: A massive, hyper-detailed Midjourney V6 prompt (e.g., "A cinematic medium shot of [subject], wearing [details], standing in [environment], lit by [lighting], shot on 35mm lens, 8k resolution, highly detailed, photorealistic...")
+   - `video_prompt`: A motion/animation prompt for Runway Gen-3/Sora (e.g., "Slow tracking shot pushing in on [subject] as [action occurs], wind blowing gently, cinematic lighting, ultra-realistic motion...")
 
 **OUTPUT FORMAT (Strict JSON, no markdown):**
 {
   "video_concept": "Overall mood and style summary...",
-  "voiceover_text": "Transcription...",
+  "voiceover_text": "THE ENTIRE WORD-FOR-WORD TRANSCRIPT...",
   "characters_description": "Character breakdown...",
   "character_sheets": [{"character_name": "...", "prompt": "..."}],
   "shots": [{"shot_id": 1, "time_range": "...", "image_prompt": "...", "video_prompt": "..."}]
 }
 
-Analyze the ENTIRE video now. Be extremely detailed."""
+Analyze the ENTIRE video now. Be extremely exhaustive and detailed."""
 
 
 # ============================================================================
