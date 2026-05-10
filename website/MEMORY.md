@@ -119,6 +119,9 @@ website/
 | FAQ        | `/faq`       | ✅ en/ar/fr | Common questions |
 | Privacy    | `/privacy`   | ✅ en/ar/fr | Privacy policy |
 | Terms      | `/terms`     | ✅ en/ar/fr | Terms of service |
+| Extractor  | `/extractor` | ✅ en       | The video extractor tool |
+| Prompts    | `/prompts`   | ✅ en       | Community prompts gallery |
+| Prompt SEO | `/prompts/[id]`| ✅ en     | Dynamic SSR SEO page for single extraction |
 
 ### Blog Articles (English only)
 1. `how-to-batch-generate-ai-videos-google-flow`
@@ -175,26 +178,27 @@ Defined in `globals.css` with CSS custom properties:
 # Local development
 npm run dev
 
-# Build (static export)
-npm run build          # outputs to /out
+# Build
+npm run build          # outputs to .next for standard SSR
 
 # Deploy to production via Vercel CLI
 vercel --prod
 ```
 
-**Build mode:** `output: 'export'` (fully static HTML). No server-side features. `trailingSlash: true`. Images unoptimized.
+**Build mode:** Standard SSR (Server-Side Rendering). We removed `output: 'export'` to allow dynamic Server Components like `/prompts/[id]` to generate SEO metadata on the fly.
 
 ---
 
 ## 📌 Key Details to Remember
 
-1. **Static export only** — no API routes, no SSR, no ISR. Pure static HTML.
+1. **Server-Side Rendering** — We use standard Next.js SSR to support dynamic routes like `/prompts/[id]` for SEO.
 2. **No Tailwind** — all styling is vanilla CSS with custom properties.
 3. **Single dictionaries file** — all i18n translations live in `dictionaries.js`, not separate JSON files.
-4. **Middleware runs on Vercel edge** — handles locale detection even with static export.
+4. **Middleware runs on Vercel edge** — handles locale detection.
 5. **Blog articles are English-only** — blog listing page is localized, but individual posts are not.
 6. **Spanish (`/es/`) locale** is defined in middleware but has no pages built yet.
 7. **Google Analytics** loads via `next/script` with `afterInteractive` strategy to avoid blocking page render.
 8. **OG image** is at `/og-image.png` (387KB, referenced in metadata).
 9. **Product screenshots** come in dual format: `.webp` (used on site) + `.png` (fallback/source).
 10. **Chrome Web Store link** currently points to generic `https://chromewebstore.google.com` — needs updating with actual extension URL once published.
+11. **API Fallback URLs:** To prevent Vercel errors when environment variables are missing, all fetch calls fallback directly to production: `https://api.auto-flow.studio/api`. Never fallback to `127.0.0.1` on the frontend codebase.

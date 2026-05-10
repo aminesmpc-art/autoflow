@@ -18,7 +18,8 @@ async function getExtraction(id) {
 }
 
 export async function generateMetadata({ params }) {
-  const extraction = await getExtraction(params.id);
+  const resolvedParams = await params;
+  const extraction = await getExtraction(resolvedParams.id);
   
   if (!extraction) {
     return { title: "Prompt Not Found | AutoFlow" };
@@ -35,7 +36,8 @@ export async function generateMetadata({ params }) {
 }
 
 export default async function PromptDetailPage({ params }) {
-  const extraction = await getExtraction(params.id);
+  const resolvedParams = await params;
+  const extraction = await getExtraction(resolvedParams.id);
 
   if (!extraction) {
     return (
