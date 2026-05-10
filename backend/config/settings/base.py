@@ -138,6 +138,17 @@ UNFOLD = {
                     },
                 ],
             },
+            {
+                "title": "Video Extractor",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Saved Extractions",
+                        "icon": "movie",
+                        "link": "/admin/extractions/savedextraction/",
+                    },
+                ],
+            },
         ],
     },
 }
