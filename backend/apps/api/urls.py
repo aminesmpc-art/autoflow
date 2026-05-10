@@ -29,6 +29,7 @@ urlpatterns = [
     path("health", views.HealthView.as_view(), name="health"),
 
     # Extractions
+    path("extractions/check-limit/", views.SavedExtractionCheckLimitView.as_view(), name="extractions-check-limit"),
     path("extractions/", views.SavedExtractionsView.as_view(), name="extractions-list"),
     path("extractions/<int:pk>/", views.SavedExtractionDetailView.as_view(), name="extractions-detail"),
 

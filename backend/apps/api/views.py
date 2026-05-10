@@ -522,6 +522,52 @@ class RunMigrateView(APIView):
 # ================================================================
 
 
+class SavedExtractionCheckLimitView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from apps.extractions.models import SavedExtraction
+        from django.utils import timezone
+        
+        user = request.user
+        profile = getattr(user, "profile", None)
+        is_pro = profile.is_pro if profile else False
+        
+        now = timezone.now()
+        
+        if is_pro:
+            # PRO: 20 per day
+            count = SavedExtraction.objects.filter(
+                user=user,
+                created_at__year=now.year,
+                created_at__month=now.month,
+                created_at__day=now.day
+            ).count()
+            limit = 20
+            period = "day"
+        else:
+            # FREE: 4 per month
+            count = SavedExtraction.objects.filter(
+                user=user,
+                created_at__year=now.year,
+                created_at__month=now.month
+            ).count()
+            limit = 4
+            period = "month"
+            
+        allowed = count < limit
+        remaining = max(0, limit - count)
+        
+        return Response({
+            "allowed": allowed,
+            "used": count,
+            "limit": limit,
+            "remaining": remaining,
+            "period": period,
+            "is_pro": is_pro
+        })
+
+
 class SavedExtractionsView(APIView):
     permission_classes = [IsAuthenticated]
 

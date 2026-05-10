@@ -46,13 +46,26 @@ export default function ExtractorPage() {
     if (!file) return;
 
     setStatus("uploading");
-    setStepMessage("Uploading video...");
+    setStepMessage("Checking plan limits...");
     setError(null);
 
-    const formData = new FormData();
-    formData.append("video", file);
-
     try {
+      // Pre-flight limit check
+      const limitRes = await fetch(`${DJANGO_API_URL}/extractions/check-limit/`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (limitRes.ok) {
+        const limitData = await limitRes.json();
+        if (!limitData.allowed) {
+          throw new Error(`You have reached your limit of ${limitData.limit} extractions per ${limitData.period}. ${!limitData.is_pro ? "Upgrade to Pro to unlock 20 extractions per day!" : "Please try again tomorrow."}`);
+        }
+      }
+
+      setStepMessage("Uploading video...");
+
+      const formData = new FormData();
+      formData.append("video", file);
+
       const response = await fetch(`${API_URL}/analyze`, {
         method: "POST",
         headers: {
