@@ -1,5 +1,6 @@
 import { getDictionary, locales, defaultLocale } from '../dictionaries';
 import StoreLink from '../StoreLink';
+import Image from 'next/image';
 
 export async function generateStaticParams() {
   return locales.map(locale => ({ locale }));
@@ -83,10 +84,13 @@ export default async function LocaleHomePage({ params }) {
             </a>
           </div>
           <div className="hero-screenshot animate-in delay-4">
-            <img
+            <Image
               src="/screenshots/full-workflow.png"
               alt="AutoFlow running alongside Google Flow"
               className="hero-img"
+              width={1000}
+              height={562}
+              priority
             />
           </div>
         </div>
@@ -121,7 +125,7 @@ export default async function LocaleHomePage({ params }) {
                   </ul>
                 </div>
                 <div className="feature-image">
-                  <img src={screenshots[i]} alt={feat.title} />
+                  <Image src={screenshots[i]} alt={feat.title} width={800} height={500} />
                 </div>
               </div>
             );
@@ -152,7 +156,7 @@ export default async function LocaleHomePage({ params }) {
                     <p className="text-secondary">{step.desc}</p>
                   </div>
                   <div className="step-image">
-                    <img src={stepScreenshots[i]} alt={step.title} />
+                    <Image src={stepScreenshots[i]} alt={step.title} width={600} height={350} />
                   </div>
                 </div>
               );

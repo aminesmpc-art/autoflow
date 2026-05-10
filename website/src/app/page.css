@@ -9,15 +9,10 @@
   text-align: center;
   background: var(--gradient-hero);
 }
-
 .hero-bg-glow {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 800px;
-  height: 800px;
-  transform: translate(-50%, -50%);
-  background: radial-gradient(circle, rgba(79, 70, 229, 0.15) 0%, transparent 70%);
+  inset: 0;
+  background: radial-gradient(400px circle at center, rgba(79, 70, 229, 0.15) 0%, transparent 100%);
   pointer-events: none;
 }
 
