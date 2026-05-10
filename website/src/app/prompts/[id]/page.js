@@ -1,59 +1,47 @@
-"use client";
-
-import { useState, useEffect } from "react";
-import Head from "next/head";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import CopyButton from "./CopyButton";
 
-export default function PromptDetailPage() {
-  const { id } = useParams();
-  const [extraction, setExtraction] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
 
-  const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
-
-  useEffect(() => {
-    if (!id) return;
-    
-    async function fetchExtraction() {
-      try {
-        const res = await fetch(`${DJANGO_API_URL}/extractions/public/${id}/`);
-        if (!res.ok) throw new Error("Failed to load this extraction. It may have been deleted.");
-        const data = await res.json();
-        setExtraction(data);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
+async function getExtraction(id) {
+  try {
+    const res = await fetch(`${DJANGO_API_URL}/extractions/public/${id}/`, {
+      next: { revalidate: 60 } // Cache for 60 seconds
+    });
+    if (!res.ok) {
+      return null;
     }
-    fetchExtraction();
-  }, [id, DJANGO_API_URL]);
-
-  const copyToClipboard = (text, e) => {
-    navigator.clipboard.writeText(text);
-    const originalText = e.currentTarget.innerText;
-    e.currentTarget.innerText = "Copied!";
-    setTimeout(() => {
-      e.currentTarget.innerText = originalText;
-    }, 2000);
-  };
-
-  if (loading) {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "black" }}>
-        <div style={{ width: "40px", height: "40px", border: "3px solid rgba(16, 185, 129, 0.2)", borderTopColor: "var(--success)", borderRadius: "50%", animation: "spin 1s linear infinite" }}></div>
-        <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
-      </div>
-    );
+    return res.json();
+  } catch {
+    return null;
   }
+}
 
-  if (error || !extraction) {
+export async function generateMetadata({ params }) {
+  const extraction = await getExtraction(params.id);
+  
+  if (!extraction) {
+    return { title: "Prompt Not Found | AutoFlow" };
+  }
+  
+  return {
+    title: `${extraction.video_name.replace(/\.[^/.]+$/, "")} AI Prompts | AutoFlow`,
+    description: `Get exact Midjourney and Runway motion prompts used to create the AI video for ${extraction.video_name}. Reverse engineered by AutoFlow.`,
+    openGraph: {
+      title: `${extraction.video_name} AI Video Prompts`,
+      description: extraction.video_concept.substring(0, 160),
+    }
+  };
+}
+
+export default async function PromptDetailPage({ params }) {
+  const extraction = await getExtraction(params.id);
+
+  if (!extraction) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "black" }}>
         <div className="card-glass" style={{ textAlign: "center", padding: "40px", borderColor: "rgba(239, 68, 68, 0.3)" }}>
-          <p style={{ color: "#ef4444", marginBottom: "16px" }}>{error || "Extraction not found"}</p>
+          <p style={{ color: "#ef4444", marginBottom: "16px" }}>Extraction not found</p>
           <Link href="/prompts" className="btn btn-secondary">← Back to Gallery</Link>
         </div>
       </div>
@@ -62,16 +50,11 @@ export default function PromptDetailPage() {
 
   return (
     <div className="section" style={{ minHeight: "100vh", position: "relative", overflow: "hidden", padding: "120px 0 60px" }}>
-      <Head>
-        <title>{extraction.video_name} | AutoFlow Prompts</title>
-        <meta name="description" content={extraction.video_concept.substring(0, 160)} />
-      </Head>
-
       {/* Absolute Ambient Backgrounds */}
       <div style={{ position: "absolute", top: "-10%", left: "50%", transform: "translateX(-50%)", width: "80vw", height: "80vw", background: "radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, rgba(0,0,0,0) 70%)", zIndex: -1, pointerEvents: "none" }} />
       
       <div className="container" style={{ position: "relative", zIndex: 1, maxWidth: "900px" }}>
-        <Link href="/prompts" style={{ display: "inline-flex", alignItems: "center", color: "var(--text-secondary)", textDecoration: "none", marginBottom: "32px", fontSize: "0.95rem", transition: "color 0.2s" }} onMouseEnter={(e) => e.target.style.color = "white"} onMouseLeave={(e) => e.target.style.color = "var(--text-secondary)"}>
+        <Link href="/prompts" style={{ display: "inline-flex", alignItems: "center", color: "var(--text-secondary)", textDecoration: "none", marginBottom: "32px", fontSize: "0.95rem" }}>
           ← Back to Prompts Gallery
         </Link>
 
@@ -120,14 +103,7 @@ export default function PromptDetailPage() {
                         <div style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: "600" }}>Midjourney Prompt</div>
                         <div style={{ background: "rgba(0,0,0,0.4)", padding: "16px", borderRadius: "12px", fontSize: "0.95rem", color: "rgba(255,255,255,0.9)", position: "relative", border: "1px solid rgba(255,255,255,0.05)" }}>
                           <div style={{ paddingRight: "70px", lineHeight: "1.6" }}>{shot.image_prompt}</div>
-                          <button 
-                            onClick={(e) => copyToClipboard(shot.image_prompt, e)}
-                            style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(255,255,255,0.1)", border: "none", color: "white", borderRadius: "6px", padding: "6px 12px", fontSize: "0.8rem", cursor: "pointer", transition: "all 0.2s" }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = "var(--primary)"}
-                            onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
-                          >
-                            Copy
-                          </button>
+                          <CopyButton text={shot.image_prompt} style={{ position: "absolute", top: "12px", right: "12px" }} />
                         </div>
                       </div>
                     )}
@@ -137,14 +113,7 @@ export default function PromptDetailPage() {
                         <div style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: "600" }}>Motion Prompt (Runway/Sora/Veo)</div>
                         <div style={{ background: "rgba(16, 185, 129, 0.05)", padding: "16px", borderRadius: "12px", fontSize: "0.95rem", color: "rgba(255,255,255,0.9)", position: "relative", border: "1px solid rgba(16, 185, 129, 0.1)" }}>
                           <div style={{ paddingRight: "70px", lineHeight: "1.6" }}>{shot.video_prompt}</div>
-                          <button 
-                            onClick={(e) => copyToClipboard(shot.video_prompt, e)}
-                            style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(16, 185, 129, 0.2)", border: "none", color: "white", borderRadius: "6px", padding: "6px 12px", fontSize: "0.8rem", cursor: "pointer", transition: "all 0.2s" }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = "var(--success)"}
-                            onMouseLeave={(e) => e.currentTarget.style.background = "rgba(16, 185, 129, 0.2)"}
-                          >
-                            Copy
-                          </button>
+                          <CopyButton text={shot.video_prompt} style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(16, 185, 129, 0.2)" }} />
                         </div>
                       </div>
                     )}
@@ -172,15 +141,11 @@ export default function PromptDetailPage() {
                       <div style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: "1.6", paddingRight: "40px" }}>
                         {char.prompt}
                       </div>
-                      <button 
-                        onClick={(e) => copyToClipboard(char.prompt, e)}
-                        style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(255,255,255,0.1)", border: "none", color: "white", borderRadius: "6px", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.2s" }}
-                        title="Copy Character Prompt"
-                        onMouseEnter={(e) => e.currentTarget.style.background = "#ec4899"}
-                        onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
-                      >
-                        📋
-                      </button>
+                      <CopyButton 
+                        text={char.prompt} 
+                        label="📋"
+                        style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(255,255,255,0.1)", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }} 
+                      />
                     </div>
                   </div>
                 ))}
@@ -196,17 +161,14 @@ export default function PromptDetailPage() {
                 Voiceover Script
               </h2>
               <div className="card-glass" style={{ padding: "24px", borderRadius: "16px", position: "relative" }}>
-                <p style={{ fontSize: "1.05rem", color: "var(--text-secondary)", lineHeight: "1.7", margin: 0, paddingRight: "60px", whiteSpace: "pre-wrap" }}>
+                <p style={{ fontSize: "1.05rem", color: "var(--text-secondary)", lineHeight: "1.7", margin: 0, paddingRight: "100px", whiteSpace: "pre-wrap" }}>
                   {extraction.voiceover_text}
                 </p>
-                <button 
-                  onClick={(e) => copyToClipboard(extraction.voiceover_text, e)}
-                  style={{ position: "absolute", top: "24px", right: "24px", background: "rgba(255,255,255,0.1)", border: "none", color: "white", borderRadius: "6px", padding: "8px 16px", fontSize: "0.85rem", cursor: "pointer", transition: "all 0.2s" }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = "#f59e0b"}
-                  onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
-                >
-                  Copy Script
-                </button>
+                <CopyButton 
+                  text={extraction.voiceover_text} 
+                  label="Copy Script"
+                  style={{ position: "absolute", top: "24px", right: "24px" }} 
+                />
               </div>
             </div>
           )}
