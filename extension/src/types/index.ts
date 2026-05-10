@@ -63,6 +63,7 @@ export type Orientation = 'landscape' | 'portrait';
 // ── Video resolution for downloads ──
 export type VideoResolution = 'Original (720p)' | '1080p Upscaled' | '4K';
 export type ImageResolution = '1K' | '2K' | '4K';
+export type VideoDuration = '6s' | '8s';
 
 // ── Image generation model & ratio ──
 export type ImageModel = 'Nano Banana Pro' | 'Nano Banana 2' | 'Imagen 4';
@@ -75,6 +76,8 @@ export interface QueueSettings {
   model: string;
   orientation: Orientation;          // 'landscape' or 'portrait'
   generations: 1 | 2 | 3 | 4;
+  duration?: VideoDuration;
+  voiceIngredient?: string;          // Voice character name (e.g., 'Achernar'), or 'none'
   stopOnError: boolean;
 
   // Timing
@@ -172,6 +175,7 @@ export type AutomationState =
   | 'ENSURE_VIDEO_INGREDIENTS_MODE'
   | 'APPLY_SETTINGS'
   | 'VERIFY_SETTINGS'
+  | 'APPLY_VOICE'
   | 'ATTACH_INGREDIENT_IMAGES'
   | 'ATTACH_FRAME_IMAGES'
   | 'FILL_PROMPT'
@@ -220,7 +224,11 @@ export type MessageType =
   | 'UPSCALE_SELECTED'
   | 'SET_DOWNLOAD_RENAME'
   | 'SUPPRESS_DOWNLOADS'
-  | 'UNSUPPRESS_DOWNLOADS';
+  | 'UNSUPPRESS_DOWNLOADS'
+  | 'REACT_TRIGGER'
+  | 'MAIN_WORLD_PASTE'
+  | 'TRUSTED_ENTER'
+  | 'TRUSTED_CLICK';
 
 export interface Message {
   type: MessageType;
@@ -234,6 +242,8 @@ export const DEFAULT_SETTINGS: QueueSettings = {
   model: 'Veo 3.1 - Fast',
   orientation: 'landscape',
   generations: 1,
+  duration: '8s',
+  voiceIngredient: 'none',
   stopOnError: false,
 
   // Timing
@@ -269,4 +279,38 @@ export const AVAILABLE_MODELS = [
   'Veo 3.1 - Quality',
   'Veo 2 - Fast',
   'Veo 2 - Quality',
+];
+
+export const AVAILABLE_VOICES = [
+  'none',
+  'Achernar',
+  'Achird',
+  'Algenib',
+  'Algieba',
+  'Alnilam',
+  'Aoede',
+  'Autonoe',
+  'Callirrhoe',
+  'Charon',
+  'Despina',
+  'Enceladus',
+  'Erinome',
+  'Fenrir',
+  'Gacrux',
+  'Iapetus',
+  'Kore',
+  'Laomedeia',
+  'Leda',
+  'Orus',
+  'Puck',
+  'Pulcherrima',
+  'Rasalgethi',
+  'Sadachbia',
+  'Sadaltager',
+  'Schedar',
+  'Sulafat',
+  'Umbriel',
+  'Vindemiatrix',
+  'Zephyr',
+  'Zubenelgenubi',
 ];

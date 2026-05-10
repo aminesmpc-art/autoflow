@@ -22,6 +22,7 @@ import {
   ImageResolution,
   ImageModel,
   ImageRatio,
+  VideoDuration,
 } from '../types';
 import { MAX_IMAGES_PER_PROMPT, MAX_SHARED_IMAGES, MAX_FRAMES_PER_PROMPT } from '../shared/constants';
 import { parsePrompts, validatePrompts } from '../shared/parser';
@@ -1621,6 +1622,12 @@ async function loadSettings() {
     if (orientationDropdown) orientationDropdown.value = settings.orientation ?? 'landscape';
     // Generations
     ($('#setting-generations') as HTMLSelectElement).value = String(settings.generations);
+    // Duration
+    ($('#setting-duration') as HTMLSelectElement).value = settings.duration ?? '8s';
+    // Voice
+    const voiceSelect = $('#setting-voice') as HTMLSelectElement | null;
+    if (voiceSelect) voiceSelect.value = settings.voiceIngredient ?? 'none';
+
     ($('#setting-stop-error') as HTMLInputElement).checked = settings.stopOnError;
 
     // Image generation settings
@@ -1672,6 +1679,9 @@ function readSettingsFromUI(): QueueSettings {
   const orientationRadio = document.querySelector('input[name="orientation"]:checked') as HTMLInputElement;
   const orientation = (orientationDropdown?.value || orientationRadio?.value || 'landscape') as Orientation;
   const generations = parseInt(($('#setting-generations') as HTMLSelectElement).value, 10) as 1 | 2 | 3 | 4;
+  const duration = ($('#setting-duration') as HTMLSelectElement).value as VideoDuration;
+  const voiceSelect = $('#setting-voice') as HTMLSelectElement | null;
+  const voiceIngredient = voiceSelect ? voiceSelect.value : 'none';
   const stopOnError = ($('#setting-stop-error') as HTMLInputElement).checked;
 
   // Image generation
@@ -1701,7 +1711,7 @@ function readSettingsFromUI(): QueueSettings {
   const variableTypingDelay = typingMode;
 
   return {
-    mediaType, creationType, model, orientation, generations, stopOnError,
+    mediaType, creationType, model, orientation, generations, duration, voiceIngredient, stopOnError,
     imageModel, imageRatio,
     waitMinSec, waitMaxSec, typingMode, typingSpeedMultiplier,
     autoDownloadVideos, videoResolution, autoDownloadImages, imageResolution,
@@ -1833,6 +1843,11 @@ async function refreshQueuesList() {
               <span class="af-q-setting-key">Generations</span>
               <span class="af-q-setting-val">&times;${s.generations}</span>
             </div>
+            ${isVideo ? `
+            <div class="af-q-setting-row">
+              <span class="af-q-setting-key">Voice</span>
+              <span class="af-q-setting-val">${escapeHtml(s.voiceIngredient && s.voiceIngredient !== 'none' ? s.voiceIngredient : 'None')}</span>
+            </div>` : ''}
           </div>
 
           <div class="af-q-settings-group">
@@ -3057,11 +3072,15 @@ function updateMediaTypeVisibility(mediaType: MediaType) {
   const isImage = mediaType === 'image';
   const videoModel = $('#video-model-section');
   const videoOrientation = $('#video-orientation-section');
+  const videoDuration = document.getElementById('video-duration-section');
+  const voiceSection = document.getElementById('voice-section');
   const imageSection = $('#image-settings-section');
   const creationTypeSection = document.getElementById('creation-type-section');
 
   if (videoModel) videoModel.style.display = isImage ? 'none' : '';
   if (videoOrientation) videoOrientation.style.display = isImage ? 'none' : '';
+  if (videoDuration) videoDuration.style.display = isImage ? 'none' : '';
+  if (voiceSection) voiceSection.style.display = isImage ? 'none' : '';
   if (imageSection) imageSection.style.display = isImage ? '' : 'none';
 
   // Hide Creation Type (Frames is video-only) and force Ingredients when Image

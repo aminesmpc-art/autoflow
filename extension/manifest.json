@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFlow – Video Task Manager for Google Flow",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Queue, manage, and monitor video-generation tasks on Google Flow (labs.google/flow). Third-party tool, not affiliated with Google.",
   "minimum_chrome_version": "114",
   "offline_enabled": false,

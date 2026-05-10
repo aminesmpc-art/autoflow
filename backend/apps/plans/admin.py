@@ -1,4 +1,4 @@
-"""Admin config for profiles and plans — with colored badges and quick actions."""
+"""Admin config for profiles and plans — with premium badges and quick actions."""
 from django.contrib import admin
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin
@@ -8,12 +8,16 @@ from .models import Profile, PlanType
 
 @admin.register(Profile)
 class ProfileAdmin(ModelAdmin):
-    list_display = ("user", "plan_badge", "pro_status", "fair_use_flag", "whop_status", "last_seen_at", "created_at")
+    list_display = (
+        "user_display", "plan_badge", "pro_status_badge",
+        "fair_use_flag", "whop_status", "last_seen_display", "created_display",
+    )
     list_filter = ("plan_type", "is_pro_active", "fair_use_flag")
     search_fields = ("user__email", "display_name", "whop_user_id")
     readonly_fields = ("created_at", "updated_at")
     list_editable = ("fair_use_flag",)
     list_per_page = 25
+    list_display_links = ("user_display",)
     actions = ["set_pro", "set_free", "clear_fair_use"]
 
     fieldsets = (
@@ -24,28 +28,80 @@ class ProfileAdmin(ModelAdmin):
         ("Dates", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
 
+    @admin.display(description="User", ordering="user__email")
+    def user_display(self, obj):
+        return format_html(
+            '<span style="color:#34d399;font-weight:500;">{}</span>',
+            obj.user.email,
+        )
+
     @admin.display(description="Plan")
     def plan_badge(self, obj):
         if obj.plan_type == PlanType.PRO:
             return format_html(
-                '<span style="background:#06b6d4;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">⚡ PRO</span>'
+                '<span style="background:linear-gradient(135deg,#065f46,#047857);'
+                'color:#6ee7b7;padding:4px 10px;border-radius:6px;font-size:11px;'
+                'font-weight:600;letter-spacing:0.02em;">⚡ PRO</span>'
             )
         return format_html(
-            '<span style="background:#374151;color:#9ca3af;padding:2px 8px;border-radius:4px;font-size:11px;">Free</span>'
+            '<span style="background:#1f2937;color:#9ca3af;padding:4px 10px;'
+            'border-radius:6px;font-size:11px;font-weight:500;">Free</span>'
         )
 
-    @admin.display(description="Active", boolean=True)
-    def pro_status(self, obj):
-        return obj.is_pro_active
+    @admin.display(description="Active")
+    def pro_status_badge(self, obj):
+        if obj.is_pro_active:
+            return format_html(
+                '<span style="display:inline-flex;align-items:center;gap:4px;'
+                'color:#34d399;font-size:12px;font-weight:500;">'
+                '<span style="width:7px;height:7px;border-radius:50%;'
+                'background:#34d399;display:inline-block;"></span> Yes</span>'
+            )
+        return format_html(
+            '<span style="display:inline-flex;align-items:center;gap:4px;'
+            'color:#6b7280;font-size:12px;">'
+            '<span style="width:7px;height:7px;border-radius:50%;'
+            'background:#4b5563;display:inline-block;"></span> No</span>'
+        )
+
 
     @admin.display(description="Whop")
     def whop_status(self, obj):
         if obj.whop_membership_id:
             return format_html(
-                '<span style="background:#065f46;color:#6ee7b7;padding:2px 8px;border-radius:4px;font-size:11px;">Connected</span>'
+                '<span style="background:#064e3b;color:#6ee7b7;padding:3px 8px;'
+                'border-radius:6px;font-size:11px;font-weight:500;">🔗 Connected</span>'
             )
         return format_html(
-            '<span style="background:#374151;color:#6b7280;padding:2px 8px;border-radius:4px;font-size:11px;">—</span>'
+            '<span style="color:#4b5563;font-size:12px;">—</span>'
+        )
+
+    @admin.display(description="Last Seen")
+    def last_seen_display(self, obj):
+        if not obj.last_seen_at:
+            return format_html(
+                '<span style="color:#4b5563;font-size:12px;font-style:italic;">Never</span>'
+            )
+        from django.utils.timesince import timesince
+        from django.utils import timezone
+        delta = timezone.now() - obj.last_seen_at
+        hours = delta.total_seconds() / 3600
+        if hours < 1:
+            color = "#34d399"
+        elif hours < 24:
+            color = "#fbbf24"
+        else:
+            color = "#6b7280"
+        return format_html(
+            '<span style="color:{};font-size:12px;font-weight:500;">{} ago</span>',
+            color, timesince(obj.last_seen_at),
+        )
+
+    @admin.display(description="Created", ordering="created_at")
+    def created_display(self, obj):
+        return format_html(
+            '<span style="color:#6b7280;font-size:12px;">{}</span>',
+            obj.created_at.strftime("%b %d, %Y"),
         )
 
     @admin.action(description="⚡ Set selected profiles to Pro")

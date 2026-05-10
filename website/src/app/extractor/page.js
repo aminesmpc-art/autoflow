@@ -336,6 +336,7 @@ export default function ExtractorPage() {
           </div>
         )}
       </div>
+      </div>
     </div>
   );
 }

@@ -892,34 +892,52 @@ export function nativeClick(el: Element): void {
  *  @param handlerName  e.g. 'onPointerDown', 'onClick'
  *  @returns true if the handler was found and invoked
  */
-export function reactTrigger(el: Element, handlerName: string): boolean {
-  const propsKey = Object.keys(el).find(k => k.startsWith('__reactProps$'));
-  if (!propsKey) return false;
-  const props = (el as any)[propsKey];
-  if (!props || typeof props[handlerName] !== 'function') return false;
+export async function reactTrigger(el: Element, handlerName: string): Promise<{ found: boolean, success: boolean, error?: string | null }> {
+  const tempId = 'react-trig-' + Math.random().toString(36).slice(2);
+  const oldId = el.id;
+  el.id = tempId;
 
-  const rect = el.getBoundingClientRect();
-  const x = rect.left + rect.width / 2;
-  const y = rect.top + rect.height / 2;
-  const fakeEvent: Record<string, any> = {
-    type: handlerName.replace(/^on/, '').toLowerCase(),
-    target: el, currentTarget: el,
-    clientX: x, clientY: y, screenX: x, screenY: y,
-    pageX: x + window.scrollX, pageY: y + window.scrollY,
-    button: 0, buttons: 1,
-    ctrlKey: false, metaKey: false, shiftKey: false, altKey: false,
-    isPrimary: true, pointerId: 1, pointerType: 'mouse',
-    bubbles: true, cancelable: true,
-    nativeEvent: { button: 0, ctrlKey: false },
-    preventDefault: () => { }, stopPropagation: () => { },
-    isPropagationStopped: () => false, isDefaultPrevented: () => false,
-    persist: () => { },
-  };
   try {
-    props[handlerName](fakeEvent);
-    return true;
-  } catch {
-    return false;
+    const result = await chrome.runtime.sendMessage({
+      type: 'REACT_TRIGGER',
+      payload: { elId: tempId, handlerName, isKey: false, keyVal: '' }
+    });
+    
+    if (oldId) el.id = oldId;
+    else el.removeAttribute('id');
+
+    return result || { found: false, success: false, error: 'No response from BG' };
+  } catch (err: any) {
+    if (oldId) el.id = oldId;
+    else el.removeAttribute('id');
+    return { found: false, success: false, error: err.message };
+  }
+}
+
+/** Directly invoke a React onKeyDown handler via __reactProps$.
+ *  Walks up the DOM tree to find the handler on the element or ancestors.
+ *  Creates a fake keyboard event with the given key.
+ *  @returns true if the handler was found and invoked
+ */
+export async function reactKeyTrigger(el: Element, key: string): Promise<{ found: boolean, success: boolean, error?: string | null }> {
+  const tempId = 'react-key-' + Math.random().toString(36).slice(2);
+  const oldId = el.id;
+  el.id = tempId;
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: 'REACT_TRIGGER',
+      payload: { elId: tempId, handlerName: 'onKeyDown', isKey: true, keyVal: key }
+    });
+    
+    if (oldId) el.id = oldId;
+    else el.removeAttribute('id');
+
+    return result || { found: false, success: false, error: 'No response from BG' };
+  } catch (err: any) {
+    if (oldId) el.id = oldId;
+    else el.removeAttribute('id');
+    return { found: false, success: false, error: err.message };
   }
 }
 
@@ -937,11 +955,40 @@ export function humanDelay(min: number, max: number): Promise<void> {
  * Slate handles paste events natively through its own onPaste handler,
  * keeping the model and DOM in sync.
  */
-function slatePaste(el: HTMLElement, text: string): void {
+async function slatePaste(el: HTMLElement, text: string): Promise<void> {
+  // MAIN WORLD paste — DataTransfer objects from the isolated world cannot be
+  // read by Slate in the main world (browser security). So we route through
+  // the background service worker which uses chrome.scripting.executeScript
+  // with world: 'MAIN'.
+  const tempId = 'slate-paste-' + Math.random().toString(36).slice(2);
+  const oldId = el.id;
+  el.id = tempId;
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: 'MAIN_WORLD_PASTE',
+      payload: { elId: tempId, text }
+    });
+
+    if (result?.error) {
+      console.warn('[AutoFlow] Main-world paste failed:', result.error, '— falling back to isolated-world paste');
+      // Fallback to isolated-world paste (may not work but worth trying)
+      isolatedWorldSlatePaste(el, text);
+    }
+  } catch (err) {
+    console.warn('[AutoFlow] Main-world paste error:', err, '— falling back');
+    isolatedWorldSlatePaste(el, text);
+  } finally {
+    if (oldId) el.id = oldId;
+    else el.removeAttribute('id');
+  }
+}
+
+/** Fallback paste in isolated world (original implementation) */
+function isolatedWorldSlatePaste(el: HTMLElement, text: string): void {
   const dt = new DataTransfer();
   dt.setData('text/plain', text);
 
-  // Dispatch beforeinput with insertFromPaste type — Slate processes this
   const beforeInput = new InputEvent('beforeinput', {
     bubbles: true,
     cancelable: true,
@@ -950,21 +997,21 @@ function slatePaste(el: HTMLElement, text: string): void {
   } as InputEventInit);
   el.dispatchEvent(beforeInput);
 
-  // Also fire a ClipboardEvent paste as backup — this is what Slate's
-  // onPaste handler directly listens for
   const pasteEvent = new ClipboardEvent('paste', {
     bubbles: true,
     cancelable: true,
     clipboardData: dt,
   });
   el.dispatchEvent(pasteEvent);
+
+  el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 /** Set text in an input/textarea/contenteditable.
  *  For Slate.js editors we use clipboard paste events to avoid
  *  breaking Slate's internal DOM model.
  */
-export function setInputValue(el: HTMLElement, text: string): void {
+export async function setInputValue(el: HTMLElement, text: string): Promise<void> {
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
     // Use native input setter to trigger React/Angular change detection
     const nativeSetter = Object.getOwnPropertyDescriptor(
@@ -993,7 +1040,7 @@ export function setInputValue(el: HTMLElement, text: string): void {
     // causing "Cannot resolve a Slate node from DOM" crashes.
     // Instead, simulate a clipboard paste that Slate handles natively.
     if (el.hasAttribute('data-slate-editor')) {
-      slatePaste(el, text);
+      await slatePaste(el, text);
     } else {
       // Non-Slate contenteditable: execCommand is fine
       document.execCommand('insertText', false, text);
@@ -1033,15 +1080,17 @@ export function countTilesWithMedia(): number {
 /**
  * Find the settings panel trigger button.
  * In Flow (Radix UI) this is a <button aria-haspopup="menu"> whose
- * textContent contains a generation count token like "x1".
- * In Video mode the chip text is "Video x1", in Image mode it shows
- * the model name like "Nano Banana 2 x1".
+ * textContent contains a generation count token like "1x" or "x1".
+ * In Video mode the chip text is "Video 1x", in Image mode it shows
+ * the model name like "Nano Banana 2 1x".
+ * NOTE: Flow changed from "x1" to "1x" format in May 2026 update.
  */
 export function findSettingsPanelTrigger(): Element | null {
   const btns = document.querySelectorAll('button[aria-haspopup="menu"]');
   for (const btn of btns) {
     const text = btn.textContent?.toLowerCase() || '';
-    if (/x\d/.test(text) && isVisible(btn)) {
+    // Match both old "x1" and new "1x" formats
+    if ((/x\d/.test(text) || /\dx/.test(text)) && isVisible(btn)) {
       return btn;
     }
   }
@@ -1080,8 +1129,8 @@ export function findViewSettingsTrigger(): Element | null {
     if (!isVisible(btn)) continue;
     const text = btn.textContent?.trim().toLowerCase() || '';
 
-    // Skip the model settings chip (contains "x1", "x2", etc.)
-    if (/x\d/.test(text)) continue;
+    // Skip the model settings chip (contains "1x", "2x", or legacy "x1", "x2" etc.)
+    if (/x\d/.test(text) || /\dx/.test(text)) continue;
 
     // Method 1: Look for the hidden span with "View Tile Grid Settings"
     const spans = btn.querySelectorAll('span');
@@ -1362,7 +1411,7 @@ export async function simulateTyping(
 
       // Delete existing selection via Slate-safe paste of empty string
       // then paste the new text in chunks for realism.
-      slatePaste(el, ''); // clears selection
+      await slatePaste(el, ''); // clears selection
       await sleep(50);
 
       // Paste in chunks of 15-25 chars with realistic delays
@@ -1376,7 +1425,7 @@ export async function simulateTyping(
         const chunk = text.slice(offset, offset + chunkSize);
         offset += chunk.length;
 
-        slatePaste(el, chunk);
+        await slatePaste(el, chunk);
 
         // Delay proportional to chunk length
         let delay = baseDelayMs * chunk.length;
@@ -1855,5 +1904,81 @@ export async function scrollAndCollectAllTileStates(): Promise<Array<{ tileId: s
 export async function allTilesSettledWithScroll(): Promise<boolean> {
   const tiles = await scrollAndCollectAllTileStates();
   return tiles.every(t => t.state !== 'generating');
+}
+
+/**
+ * Find the voice chip button in the prompt area.
+ */
+export function findVoiceChip(): Element | null {
+  return document.querySelector('button[aria-label="Play audio"]');
+}
+
+/**
+ * Get the currently active voice name from the voice chip.
+ */
+export function getActiveVoiceName(): string | null {
+  const chip = findVoiceChip();
+  if (!chip) return null;
+  const h4 = chip.querySelector('h4[title]');
+  return h4 ? h4.getAttribute('title') : null;
+}
+/**
+ * Check if the ingredient menu/dialog is currently open.
+ */
+export function isIngredientMenuOpen(): boolean {
+  // Try to find the voice tab, or any common ingredient menu items
+  if (findVoiceTabInDialog()) return true;
+  // If no tab, check if there's an active menu/dialog that contains typical ingredient text
+  const popups = document.querySelectorAll('[role="dialog"], [role="menu"], [role="presentation"]');
+  for (const popup of popups) {
+    const text = popup.textContent || '';
+    if (text.includes('Voice') || text.includes('Image') || text.includes('Character')) {
+      if (isVisible(popup)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Find the Voice tab button inside the "+" ingredient dialog.
+ */
+export function findVoiceTabInDialog(): Element | null {
+  // The Voice tab has an ID ending in -trigger-AUDIO or aria-controls ending in -content-AUDIO
+  const tab = document.querySelector('button[role="tab"][id$="-trigger-AUDIO"], button[role="tab"][aria-controls$="-content-AUDIO"]');
+  if (tab && isVisible(tab)) return tab;
+
+  // Fallback to text/aria matching
+  const elements = document.querySelectorAll('[role="tab"], [role="menuitem"], button, div.tab');
+  for (const el of elements) {
+    const text = (el.textContent || '').trim().toLowerCase();
+    const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+    
+    if (((text === 'voice' || text === 'voices' || text === 'audio' || text === 'voice ingredient') && el.children.length < 5) || 
+        aria === 'voice' || aria === 'voices' || aria === 'audio') {
+      if (isVisible(el)) return el;
+    }
+  }
+  return null;
+}
+
+/**
+ * Find the Image tab button inside the "+" ingredient dialog.
+ */
+export function findImageTabInDialog(): Element | null {
+  // The Image tab has an ID ending in -trigger-IMAGE or aria-controls ending in -content-IMAGE
+  const tab = document.querySelector('button[role="tab"][id$="-trigger-IMAGE"], button[role="tab"][aria-controls$="-content-IMAGE"]');
+  if (tab && isVisible(tab)) return tab;
+
+  // Fallback to text/aria matching
+  const elements = document.querySelectorAll('[role="tab"], [role="menuitem"], button, div.tab');
+  for (const el of elements) {
+    const text = (el.textContent || '').trim().toLowerCase();
+    const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+    
+    if (((text === 'image' || text === 'images') && el.children.length < 5) || aria === 'image' || aria === 'images') {
+      if (isVisible(el)) return el;
+    }
+  }
+  return null;
 }
 

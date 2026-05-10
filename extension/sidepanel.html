@@ -43,7 +43,7 @@
       <div class="af-logo-info">
         <div class="af-logo-title-row">
           <span class="af-logo-text">AutoFlow</span>
-          <span class="af-version">v5.10.1</span>
+          <span class="af-version">v5.11.0</span>
         </div>
         <span class="af-logo-tagline">AI Video Engine</span>
       </div>
@@ -330,11 +330,11 @@
         <label class="af-setting-label">Video Model <span class="af-help-icon" title="Choose which AI model generates your videos. 'Fast' models are quicker but slightly lower quality. 'Quality' models take longer but produce better results.">?</span></label>
         <div class="af-setting-control">
           <select id="setting-model" class="af-select">
+            <option value="Veo 3.1 - Lite">Veo 3.1 - Lite</option>
             <option value="Veo 3.1 - Fast">Veo 3.1 - Fast</option>
-            <option value="Veo 3.1 - Fast [Lower Priority]">Veo 3.1 - Fast [LP]</option>
             <option value="Veo 3.1 - Quality">Veo 3.1 - Quality</option>
-            <option value="Veo 2 - Fast">Veo 2 - Fast</option>
-            <option value="Veo 2 - Quality">Veo 2 - Quality</option>
+            <option value="Veo 3.1 - Lite [Lower Priority]">Veo 3.1 - Lite [LP]</option>
+            <option value="Veo 3.1 - Fast [Lower Priority]">Veo 3.1 - Fast [LP]</option>
           </select>
           <button id="btn-refresh-models" class="af-btn af-btn-sm af-btn-icon" title="Refresh models from Flow UI">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
@@ -362,6 +362,55 @@
           <option value="2">2</option>
           <option value="3">3</option>
           <option value="4">4</option>
+        </select>
+      </div>
+
+      <div id="video-duration-section" class="af-setting-row">
+        <label class="af-setting-label">Video Duration <span class="af-help-icon" title="Length of each generated video clip. Longer durations use more quota.">?</span></label>
+        <select id="setting-duration" class="af-select af-select-sm">
+          <option value="4s">4s</option>
+          <option value="6s">6s</option>
+          <option value="8s" selected>8s</option>
+        </select>
+      </div>
+
+      <div id="voice-section" class="af-setting-row">
+        <label class="af-setting-label">Voice 
+          <span class="af-help-icon" title="Assign an AI voice to your video. You must also attach a character image for the voice to work.">?</span>
+          <span class="af-hint-tag">new</span>
+        </label>
+        <select id="setting-voice" class="af-select">
+          <option value="none">None (silent)</option>
+          <option value="Achernar">Achernar ♀ soft, high</option>
+          <option value="Achird">Achird ♂ friendly, mid</option>
+          <option value="Algenib">Algenib ♂ gravelly, low</option>
+          <option value="Algieba">Algieba ♂ easy-going, mid-low</option>
+          <option value="Alnilam">Alnilam ♂ firm, mid-low</option>
+          <option value="Aoede">Aoede ♀ breezy, mid</option>
+          <option value="Autonoe">Autonoe ♀ bright, mid</option>
+          <option value="Callirrhoe">Callirrhoe ♀ easy-going, mid</option>
+          <option value="Charon">Charon ♂ informative, low</option>
+          <option value="Despina">Despina ♀ smooth, mid</option>
+          <option value="Enceladus">Enceladus ♂ breathy, low</option>
+          <option value="Erinome">Erinome ♀ clear, mid</option>
+          <option value="Fenrir">Fenrir ♂ excitable, young</option>
+          <option value="Gacrux">Gacrux ♀ mature, mid</option>
+          <option value="Iapetus">Iapetus ♂ clear, mid-low</option>
+          <option value="Kore">Kore ♀ firm, mid</option>
+          <option value="Laomedeia">Laomedeia ♀ upbeat, mid-high</option>
+          <option value="Leda">Leda ♀ youthful, mid-high</option>
+          <option value="Orus">Orus ♂ firm, mid-low</option>
+          <option value="Puck">Puck ♂ upbeat, mid</option>
+          <option value="Pulcherrima">Pulcherrima ⚥ forward, mid-high</option>
+          <option value="Rasalgethi">Rasalgethi ♂ informative, mid</option>
+          <option value="Sadachbia">Sadachbia ♂ lively, low</option>
+          <option value="Sadaltager">Sadaltager ♂ knowledgeable, mid</option>
+          <option value="Schedar">Schedar ♂ even, mid-low</option>
+          <option value="Sulafat">Sulafat ♀ warm, mid</option>
+          <option value="Umbriel">Umbriel ♂ smooth, low</option>
+          <option value="Vindemiatrix">Vindemiatrix ♀ gentle, mid</option>
+          <option value="Zephyr">Zephyr ♀ bright, mid-high</option>
+          <option value="Zubenelgenubi">Zubenelgenubi ♂ casual, mid-low</option>
         </select>
       </div>
 

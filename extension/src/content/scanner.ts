@@ -1369,7 +1369,7 @@ export async function retrySingleTile(
     if (promptLabel) {
       const promptInput = findPromptInput();
       if (promptInput) {
-        setInputValue(promptInput, promptLabel);
+        await setInputValue(promptInput, promptLabel);
         await sleep(500);
         const genBtn = findGenerateButton();
         if (genBtn) {

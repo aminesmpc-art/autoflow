@@ -41,6 +41,7 @@ import {
   simulateClick,
   nativeClick,
   reactTrigger,
+  reactKeyTrigger,
   humanDelay,
   setInputValue,
   simulateTyping,
@@ -57,6 +58,11 @@ import {
   findModeButton,
   getTileState,
   findAllFailedTiles,
+  findVoiceChip,
+  getActiveVoiceName,
+  findVoiceTabInDialog,
+  findImageTabInDialog,
+  isIngredientMenuOpen,
   findRetryButtonOnTile,
   allTilesSettled,
   getAllTileIds,
@@ -299,6 +305,13 @@ export class AutomationEngine {
           if (this.stopped) return;
         }
 
+        // State: APPLY_VOICE
+        if (this.queue!.settings.mediaType !== 'image') {
+          this.state = 'APPLY_VOICE';
+          await this.applyVoiceIngredient(this.queue!.settings.voiceIngredient);
+          if (this.stopped) return;
+        }
+
         // State: FILL_PROMPT
         this.state = 'FILL_PROMPT';
         await this.fillPrompt(prompt.text, this.queue!.settings);
@@ -459,23 +472,23 @@ export class AutomationEngine {
 
     // Each strategy returns true if it actually fired an action,
     // false if it immediately knows it can't work (skip the wait).
-    const strategies: Array<{ name: string; fn: () => boolean }> = [
+    const strategies: Array<{ name: string; fn: () => boolean | Promise<boolean> }> = [
       {
         name: 'native .click()',
         fn: () => { nativeClick(trigger); return true; },
       },
       {
         name: 'React onPointerDown',
-        fn: () => {
-          const ok = reactTrigger(trigger, 'onPointerDown');
+        fn: async () => {
+          const ok = (await reactTrigger(trigger, 'onPointerDown')).success;
           if (!ok) this.log('info', 'No React onPointerDown handler found');
           return ok;
         },
       },
       {
         name: 'React onClick',
-        fn: () => {
-          const ok = reactTrigger(trigger, 'onClick');
+        fn: async () => {
+          const ok = (await reactTrigger(trigger, 'onClick')).success;
           if (!ok) this.log('info', 'No React onClick handler found');
           return ok;
         },
@@ -507,7 +520,7 @@ export class AutomationEngine {
       }
 
       this.log('info', `Opening settings panel via: ${strategy.name}`);
-      const fired = strategy.fn();
+      const fired = await strategy.fn();
 
       if (!fired) {
         // Strategy immediately knew it can't work — skip waiting
@@ -630,8 +643,8 @@ export class AutomationEngine {
           } else {
             // Fallback: try React handler directly
             this.log('warn', `${description} not active after simulateClick, trying React handler`);
-            const ok = reactTrigger(item, 'onMouseDown');
-            if (!ok) reactTrigger(item, 'onPointerDown');
+            let trig = await reactTrigger(item, 'onMouseDown');
+            if (!trig.success) trig = await reactTrigger(item, 'onPointerDown');
             await humanDelay(300, 500);
           }
         }
@@ -688,9 +701,20 @@ export class AutomationEngine {
       await humanDelay(200, 400);
     }
 
-    // 4. Set generations count
-    await applyMenuItem(`x${settings.generations}`, `Generations: x${settings.generations}`);
+    // Try new format "1x" first, then old format "x1"
+    const genNewFmt = `${settings.generations}x`;
+    const genOldFmt = `x${settings.generations}`;
+    let genSet = await applyMenuItem(genNewFmt, `Generations: ${genNewFmt}`);
+    if (!genSet) {
+      genSet = await applyMenuItem(genOldFmt, `Generations: ${genOldFmt}`);
+    }
     if (this.stopped) return false;
+
+    // 4b. Set video duration (4s/6s/8s) — video mode only
+    if (settings.mediaType !== 'image' && settings.duration) {
+      await applyMenuItem(settings.duration, `Duration: ${settings.duration}`);
+      if (this.stopped) return false;
+    }
 
     // 6. Ensure critical toggles are ON
     await this.ensureToggles();
@@ -699,6 +723,200 @@ export class AutomationEngine {
     await this.closeSettingsPanel();
 
     this.log('info', 'All settings applied');
+    return true;
+  }
+
+  /**
+   * Apply a Voice Ingredient from settings.
+   * Runs per-prompt to ensure voice is always set (clear prompt on submit resets it).
+   */
+  private async applyVoiceIngredient(voiceName: string | undefined): Promise<boolean> {
+    if (!voiceName || voiceName === 'none') {
+      this.log('info', 'No voice selected for queue');
+      return true;
+    }
+
+    const currentVoice = getActiveVoiceName();
+    if (currentVoice === voiceName) {
+      this.log('info', `Voice "${voiceName}" already active`);
+      return true;
+    }
+
+    this.log('info', `Setting voice to "${voiceName}"...`);
+    
+    // 1. Open ingredient dialog (the "+" button)
+    const addBtn = findIngredientAttachButton();
+    if (!addBtn) {
+      this.log('warn', 'Cannot find "+" ingredient button to set voice');
+      return false;
+    }
+
+    // Dismiss any stale dialogs first
+    await this.dismissDialogs();
+    await sleep(300);
+
+    let opened = false;
+    const openStrategies = [
+      { name: 'React onPointerDown', fn: () => reactTrigger(addBtn, 'onPointerDown') },
+      { name: 'React onClick', fn: () => reactTrigger(addBtn, 'onClick') },
+      { name: 'simulateClick', fn: () => { simulateClick(addBtn); return true; } },
+      { name: 'native .click()', fn: () => { nativeClick(addBtn); return true; } }
+    ];
+
+    for (const strat of openStrategies) {
+      if (isIngredientMenuOpen()) {
+        opened = true;
+        break;
+      }
+      this.log('info', `Opening ingredient menu via: ${strat.name}`);
+      await strat.fn();
+      await sleep(600);
+      if (isIngredientMenuOpen()) {
+        opened = true;
+        break;
+      }
+    }
+    
+    if (!opened) {
+      this.log('warn', 'Failed to open ingredient menu for voice');
+      return false;
+    }
+
+    // 2. ALWAYS click the Voice/AUDIO tab to switch to the voice list.
+    //    The dialog may have opened on the Image tab (e.g. after attaching images).
+    const voiceTab = findVoiceTabInDialog();
+    if (voiceTab) {
+      this.log('info', 'Clicking Voice/AUDIO tab...');
+      // Fire all click strategies to ensure the tab switches
+      const tabStrategies = [
+        () => reactTrigger(voiceTab, 'onPointerDown'),
+        () => reactTrigger(voiceTab, 'onClick'),
+        () => { simulateClick(voiceTab); return true; },
+        () => { nativeClick(voiceTab); return true; }
+      ];
+      for (const strat of tabStrategies) {
+        await strat();
+        await sleep(100);
+      }
+
+      // Wait until the Voice tab is confirmed active
+      const tabStart = Date.now();
+      while (Date.now() - tabStart < 2000) {
+        const activeState = voiceTab.getAttribute('aria-selected') === 'true' ||
+                            voiceTab.getAttribute('data-state') === 'active';
+        if (activeState) {
+          this.log('info', 'Voice/AUDIO tab is now active');
+          break;
+        }
+        await sleep(100);
+      }
+      await sleep(300);
+    } else {
+      this.log('info', 'No explicit Voice tab found, assuming voices are already visible');
+    }
+
+    // 3. Type the voice name into the search box to filter the list.
+    //    This is critical because voice lists can be virtualized (lazy-loaded)
+    //    and the target voice may not be in the DOM until searched.
+    const searchInput = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement;
+    if (searchInput && isVisible(searchInput)) {
+      this.log('info', `Searching for voice "${voiceName}"...`);
+      searchInput.focus();
+      // Clear any previous search text
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype, 'value'
+      )?.set;
+      if (nativeSetter) nativeSetter.call(searchInput, '');
+      else searchInput.value = '';
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(100);
+      // Type the voice name
+      await setInputValue(searchInput, voiceName);
+      await sleep(800); // Wait for results to filter
+    } else {
+      this.log('info', 'No search input found in voice panel');
+    }
+
+    // 4. Find and click the voice name in the filtered list
+    let found = false;
+    const targetName = voiceName.toLowerCase();
+
+    // Try up to 2 times (in case the first scan is too early)
+    for (let scanAttempt = 0; scanAttempt < 2 && !found; scanAttempt++) {
+      if (scanAttempt > 0) {
+        this.log('info', 'Retrying voice scan after brief wait...');
+        await sleep(600);
+      }
+
+      const voiceHeaders = document.querySelectorAll('h4, div, span, [role="menuitem"], button');
+      for (const header of voiceHeaders) {
+        const text = (header.textContent || '').trim().toLowerCase();
+        
+        // Match: exact name, name followed by space/newline, or name followed by gender symbol
+        // e.g. "callirrhoe", "callirrhoe ♀ easy-going, mid", "callirrhoe\nFemale..."
+        if (text === targetName || 
+            text.startsWith(targetName + ' ') || 
+            text.startsWith(targetName + '\n') ||
+            text.startsWith(targetName + '♀') ||
+            text.startsWith(targetName + '♂') ||
+            text.startsWith(targetName + '⚥')) {
+          // Must be visible
+          if (!isVisible(header)) continue;
+          
+          // Scroll into view (may be off-screen in scrollable list)
+          try {
+            header.scrollIntoView({ block: 'center', behavior: 'instant' });
+          } catch { /* ignore */ }
+          await sleep(100);
+
+          // Gather all possible click targets
+          const targets = new Set<Element>();
+          targets.add(header);
+          if (header.parentElement) targets.add(header.parentElement);
+          if (header.parentElement?.parentElement) targets.add(header.parentElement.parentElement);
+          const container = header.closest('[role="button"], [role="menuitem"], [role="option"], button, li');
+          if (container) targets.add(container);
+
+          for (const target of targets) {
+            const clickStrategies = [
+              () => reactTrigger(target, 'onPointerDown'),
+              () => reactTrigger(target, 'onClick'),
+              () => { simulateClick(target); return true; },
+              () => { nativeClick(target); return true; }
+            ];
+            for (const strat of clickStrategies) {
+              await strat();
+              await sleep(50);
+            }
+          }
+          
+          found = true;
+          this.log('info', `Clicked voice "${voiceName}"`);
+          break;
+        }
+      }
+    }
+
+    if (!found) {
+      this.log('warn', `Voice "${voiceName}" not found in list after search`);
+    }
+
+    await sleep(300);
+    await this.dismissDialogs();
+    await sleep(400);
+    
+    // Verify — but don't fail the queue if verification can't find the chip.
+    // The voice chip may take a moment to appear, or the selector may not match.
+    const verifyVoice = getActiveVoiceName();
+    if (verifyVoice === voiceName) {
+      this.log('info', `Voice successfully set to "${voiceName}"`);
+    } else if (found) {
+      // We clicked something but can't verify — warn but continue (don't block the queue)
+      this.log('warn', `Voice click succeeded but verification found "${verifyVoice || 'none'}" instead of "${voiceName}". Continuing anyway.`);
+    } else {
+      this.log('warn', `Failed to set voice. Expected ${voiceName}, found ${verifyVoice || 'none'}`);
+      return false;
+    }
     return true;
   }
 
@@ -737,13 +955,13 @@ export class AutomationEngine {
     }
 
     // Try clicking the gear button
-    const strategies: Array<{ name: string; fn: () => boolean }> = [
+    const strategies: Array<{ name: string; fn: () => boolean | Promise<boolean> }> = [
       { name: 'simulateClick', fn: () => { simulateClick(trigger); return true; } },
       { name: 'native .click()', fn: () => { nativeClick(trigger); return true; } },
       {
         name: 'React onPointerDown',
-        fn: () => {
-          const ok = reactTrigger(trigger, 'onPointerDown');
+        fn: async () => {
+          const ok = (await reactTrigger(trigger, 'onPointerDown')).success;
           return ok;
         },
       },
@@ -753,7 +971,7 @@ export class AutomationEngine {
       if (isViewSettingsOpen()) return true;
 
       this.log('info', `Opening view settings via: ${strategy.name}`);
-      const fired = strategy.fn();
+      const fired = await strategy.fn();
       if (!fired) continue;
 
       // Wait for panel to appear
@@ -886,7 +1104,7 @@ export class AutomationEngine {
     const expectMedia = settings.mediaType === 'image'
       ? chipText.includes('banana') || chipText.includes('imagen') || chipText.includes('crop') || chipText.includes(':')
       : chipText.includes(settings.mediaType);
-    const expectGen = chipText.includes(`x${settings.generations}`);
+    const expectGen = chipText.includes(`${settings.generations}x`) || chipText.includes(`x${settings.generations}`);
 
     if (!expectMedia || !expectGen) {
       this.log('info', `Settings chip "${trigger.textContent?.trim()}" doesn't match expected. Re-applying...`);
@@ -952,7 +1170,7 @@ export class AutomationEngine {
       menuItems = findModelOptions();
     }
     if (!menuItems || menuItems.length === 0) {
-      reactTrigger(trigger, 'onPointerDown');
+      await reactTrigger(trigger, 'onPointerDown');
       await humanDelay(600, 1000);
       if (this.stopped) return;
       menuItems = findModelOptions();
@@ -1212,6 +1430,22 @@ export class AutomationEngine {
       return false;
     }
 
+    // Switch to Image tab if not already active
+    const imageTab = findImageTabInDialog();
+    if (imageTab && imageTab.getAttribute('aria-selected') !== 'true') {
+      const tabStrategies = [
+        () => reactTrigger(imageTab, 'onPointerDown'),
+        () => reactTrigger(imageTab, 'onClick'),
+        () => { simulateClick(imageTab); return true; },
+        () => { nativeClick(imageTab); return true; }
+      ];
+      for (const strat of tabStrategies) {
+        await strat();
+        await sleep(100);
+      }
+      await sleep(200);
+    }
+
     // Find search input, type filename, press Enter
     const searchInput = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement;
     if (!searchInput) {
@@ -1224,7 +1458,7 @@ export class AutomationEngine {
     searchInput.dispatchEvent(new Event('input', { bubbles: true }));
     await sleep(100);
 
-    setInputValue(searchInput, filename);
+    await setInputValue(searchInput, filename);
     await sleep(100);
 
     searchInput.dispatchEvent(new KeyboardEvent('keydown', {
@@ -1380,12 +1614,22 @@ export class AutomationEngine {
     }
   }
 
-  /** Request image blobs from the sidepanel via background */
+  /** Request image blobs from the sidepanel via background (30s timeout) */
   private requestImageBlobs(images: ImageMeta[]): Promise<any> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Image blob request timed out after 30s'));
+      }, 30_000);
       chrome.runtime.sendMessage(
         { type: 'GET_IMAGE_BLOBS', payload: { imageIds: images.map(i => i.id) } },
-        (response) => resolve(response)
+        (response) => {
+          clearTimeout(timeout);
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(response);
+          }
+        }
       );
     });
   }
@@ -1436,7 +1680,7 @@ export class AutomationEngine {
       this.log('info', `Typing prompt (${text.length} chars at ~${cps} cps, speed=${multiplier.toFixed(2)}x, variable=${variable}${chunked})`);
       await simulateTyping(input as HTMLElement, text, cps, variable);
     } else {
-      setInputValue(input as HTMLElement, text);
+      await setInputValue(input as HTMLElement, text);
     }
 
     this.log('info', `Prompt filled (${text.length} chars, method=${method})`);
@@ -1487,261 +1731,107 @@ export class AutomationEngine {
 
     this.log('info', 'Generate button is ready');
 
-    // Strategy 1: simulateClick (pointerdown→mousedown→click chain)
-    simulateClick(btn);
-    this.log('info', 'Clicked Generate (simulateClick)');
-    await humanDelay(500, 800);
+    // Helper: check if the click actually worked by verifying
+    // the prompt was cleared (since "clear prompt on submit" is ON).
+    // isGenerating() can give false positives in the new UI.
+    const promptInput = findPromptInput();
+    const promptTextBefore = promptInput
+      ? ((promptInput as HTMLInputElement).value || promptInput.textContent || '').trim()
+      : '';
 
-    // Check if generation started (tile progress or isGenerating)
-    if (tilesHaveProgress() || isGenerating()) {
+    const clickWorked = async (): Promise<boolean> => {
+      // Poll a few times — Flow's UI needs a moment to clear the prompt and start tiles
+      for (let attempt = 0; attempt < 4; attempt++) {
+        // Primary signal: prompt was cleared after submit
+        if (promptInput) {
+          const textNow = ((promptInput as HTMLInputElement).value || promptInput.textContent || '').trim();
+          if (promptTextBefore.length > 0 && textNow.length === 0) return true;
+        }
+        // Secondary signal: tiles appeared
+        if (tilesHaveProgress()) return true;
+        if (attempt < 3) await sleep(500);
+      }
+      return false;
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    // CLICK STRATEGIES — React MAIN-world handlers carry isTrusted
+    // (replaces Chrome DevTools Protocol debugger approach)
+    // ═══════════════════════════════════════════════════════════════
+
+    // Strategy 1: React onPointerDown via MAIN world (most Radix UI buttons use this)
+    const trig1 = await reactTrigger(btn, 'onPointerDown');
+    if (trig1.found && trig1.success) {
+      this.log('info', 'Strategy 1: React onPointerDown (isTrusted)');
+      await humanDelay(800, 1200);
+      if (await clickWorked()) {
+        this.log('info', 'Generation confirmed started after React onPointerDown');
+        return;
+      }
+    }
+
+    // Strategy 2: React onClick via MAIN world
+    const trig2 = await reactTrigger(btn, 'onClick');
+    if (trig2.found && trig2.success) {
+      this.log('info', 'Strategy 2: React onClick (isTrusted)');
+      await humanDelay(800, 1200);
+      if (await clickWorked()) {
+        this.log('info', 'Generation confirmed started after React onClick');
+        return;
+      }
+    }
+
+    // Strategy 3: React onKeyDown Enter via MAIN world (on prompt input)
+    if (promptInput) {
+      const trig3 = await reactKeyTrigger(promptInput, 'Enter');
+      if (trig3.found && trig3.success) {
+        this.log('info', 'Strategy 3: React onKeyDown Enter (isTrusted)');
+        await humanDelay(800, 1200);
+        if (await clickWorked()) {
+          this.log('info', 'Generation confirmed started after React Enter');
+          return;
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FALLBACK STRATEGIES (synthetic events — less reliable)
+    // ═══════════════════════════════════════════════════════════════
+
+    // Fallback 1: simulateClick (full pointer→mouse→click chain)
+    simulateClick(btn);
+    this.log('info', 'Fallback 1: simulateClick');
+    await humanDelay(800, 1200);
+    if (await clickWorked()) {
       this.log('info', 'Generation confirmed started after simulateClick');
       return;
     }
 
-    // Strategy 2: Native .click()
-    (btn as HTMLElement).click();
-    this.log('info', 'Retrying Generate (native .click)');
-    await humanDelay(500, 800);
-
-    if (tilesHaveProgress() || isGenerating()) {
+    // Fallback 2: Native .click()
+    nativeClick(btn);
+    this.log('info', 'Fallback 2: native .click()');
+    await humanDelay(800, 1200);
+    if (await clickWorked()) {
       this.log('info', 'Generation confirmed started after native click');
       return;
     }
 
-    // Strategy 3: React onPointerDown handler (Radix buttons)
-    const ok1 = reactTrigger(btn, 'onPointerDown');
-    if (ok1) {
-      this.log('info', 'Retrying Generate (React onPointerDown)');
-      await humanDelay(500, 800);
-      if (tilesHaveProgress() || isGenerating()) return;
-    }
-
-    // Strategy 4: React onClick handler
-    const ok2 = reactTrigger(btn, 'onClick');
-    if (ok2) {
-      this.log('info', 'Retrying Generate (React onClick)');
-      await humanDelay(500, 800);
-      if (tilesHaveProgress() || isGenerating()) return;
-    }
-
-    // Strategy 5: Enter key on the prompt input
-    const promptInput = findPromptInput();
+    // Fallback 3: Dispatched Enter key on prompt
     if (promptInput) {
-      this.log('info', 'Retrying Generate (Enter key on prompt)');
       (promptInput as HTMLElement).focus();
       promptInput.dispatchEvent(new KeyboardEvent('keydown', {
         key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true,
       }));
-      await humanDelay(500, 800);
+      this.log('info', 'Fallback 3: dispatched Enter on prompt');
+      await humanDelay(800, 1200);
+      if (await clickWorked()) return;
     }
 
-    this.log('info', 'Clicked Generate (all strategies attempted)');
+    this.log('warn', 'All click strategies attempted — none confirmed');
     await humanDelay(500, 1000);
   }
 
-  /**
-   * Wait for generation to complete.
-   * Uses multiple signals:
-   * 1. Tile progress percentage text ("15%", "73%") appearing then disappearing
-   * 2. New tiles appearing (count increase)
-   * 3. Tile-level state transitions: generating → completed (blur removal, play button appears)
-   * 4. Flow status text ("is preparing", "creating video")
-   */
-  private async waitForCompletion(
-    snapshotBefore: TileSnapshot,
-    expectedOutputs: number
-  ): Promise<void> {
-    const startTime = Date.now();
-    const POLL_MS = POLL_INTERVAL_MS;
-    const completedBefore = snapshotBefore.completed;
-
-    // Phase 1: Wait for generation to START (up to 60 seconds)
-    // Look for: generate button disabled, tiles in 'generating' state, new tiles, status text
-    let generationStarted = false;
-    for (let i = 0; i < 60; i++) {
-      if (this.stopped) return;
-
-      const snap = snapshotTiles();
-
-      // Signal: tiles entered 'generating' state (blur / progress %)
-      if (snap.generating > 0) {
-        generationStarted = true;
-        this.log('info', `Generation started (${snap.generating} tile(s) generating)`);
-        break;
-      }
-
-      // Signal: generate button became disabled
-      if (!isGenerateButtonEnabled()) {
-        generationStarted = true;
-        this.log('info', 'Generation started (generate button disabled)');
-        break;
-      }
-
-      // Signal: new tiles appeared
-      if (snap.total > snapshotBefore.total || snap.tileIds !== snapshotBefore.tileIds) {
-        generationStarted = true;
-        this.log('info', `Generation started (tiles changed: ${snapshotBefore.total}→${snap.total})`);
-        break;
-      }
-
-      // Signal: status text
-      if (isGenerating()) {
-        generationStarted = true;
-        this.log('info', 'Generation started (status text detected)');
-        break;
-      }
-
-      // Check for errors
-      const errorText = this.checkForFlowError();
-      if (errorText) {
-        throw new Error(`Flow error: ${errorText}`);
-      }
-
-      await sleep(1000);
-    }
-
-    if (!generationStarted) {
-      const errorText = this.checkForFlowError();
-      if (errorText) {
-        throw new Error(`Flow error: ${errorText}`);
-      }
-      this.log('warn', 'Generation may not have started after 60s. Continuing to watch...');
-    }
-
-    // Phase 2: Wait for generation to COMPLETE (up to GENERATION_TIMEOUT_MS)
-    // Primary signal: tile state transitions from 'generating' → 'completed'
-    // Secondary: button re-enables, completed count increases, all quiet
-    let lastLogTime = 0;
-    let generatingSeenCount = 0;
-    let buttonWasDisabled = false;
-    let peakGenerating = 0;
-    const failedBefore = snapshotBefore.failed;
-
-    while (Date.now() - startTime < GENERATION_TIMEOUT_MS) {
-      if (this.stopped) return;
-      while (this.paused) {
-        await sleep(500);
-        if (this.stopped) return;
-      }
-
-      const snap = snapshotTiles();
-      const btnEnabled = isGenerateButtonEnabled();
-      const elapsed = Date.now() - startTime;
-
-      if (snap.generating > 0) generatingSeenCount++;
-      if (snap.generating > peakGenerating) peakGenerating = snap.generating;
-      if (!btnEnabled) buttonWasDisabled = true;
-
-      // Log detailed status every 15 seconds
-      if (elapsed - lastLogTime > 15000) {
-        lastLogTime = elapsed;
-        this.log('info',
-          `Waiting... total: ${snap.total}, generating: ${snap.generating}, ` +
-          `completed: ${snap.completed}(was ${completedBefore}), ` +
-          `failed: ${snap.failed}(was ${failedBefore}), ` +
-          `empty: ${snap.empty}, btnEnabled: ${btnEnabled}, ` +
-          `elapsed: ${Math.round(elapsed / 1000)}s`
-        );
-      }
-
-      // ── Failure condition: new failed tiles appeared ──
-      if (snap.failed > failedBefore) {
-        const newFailed = snap.failed - failedBefore;
-        this.log('warn', `${newFailed} tile(s) failed during generation`);
-        // If ALL expected outputs failed and none completed, throw
-        if (snap.completed <= completedBefore && snap.generating === 0) {
-          throw new Error(`Generation failed: ${newFailed} tile(s) failed (policy violation, rate limit, or content error)`);
-        }
-        // Some failed but others may still be generating — continue watching
-      }
-
-      // ── Completion condition 1: All previously-generating tiles finished ──
-      // We saw tiles generating, and now none are generating, and completed count went up
-      if (generatingSeenCount > 0 && snap.generating === 0 && snap.completed > completedBefore) {
-        // Wait a moment for UI to fully settle
-        await sleep(2000);
-        const final = snapshotTiles();
-        if (final.generating === 0 && final.completed > completedBefore) {
-          this.log('info',
-            `Generation completed! Completed: ${completedBefore}→${final.completed} ` +
-            `(+${final.completed - completedBefore} new)` +
-            (final.failed > failedBefore ? `, ${final.failed - failedBefore} failed` : '')
-          );
-          await humanDelay(800, 1500);
-          return;
-        }
-      }
-
-      // ── Completion condition 2: All tiles settled (mix of completed + failed, none generating) ──
-      if (generatingSeenCount > 0 && snap.generating === 0 &&
-        (snap.completed > completedBefore || snap.failed > failedBefore) && elapsed > 5000) {
-        await sleep(2000);
-        const final = snapshotTiles();
-        if (final.generating === 0) {
-          const newCompleted = final.completed - completedBefore;
-          const newFailed = final.failed - failedBefore;
-          if (newCompleted > 0) {
-            this.log('info',
-              `Generation settled: ${newCompleted} completed, ${newFailed} failed`
-            );
-            await humanDelay(800, 1500);
-            return;
-          } else if (newFailed > 0) {
-            throw new Error(`All ${newFailed} generation(s) failed`);
-          }
-        }
-      }
-
-      // ── Completion condition 2: Button was disabled and is now re-enabled ──
-      if (buttonWasDisabled && btnEnabled && elapsed > 5000) {
-        await sleep(2000);
-        const final = snapshotTiles();
-        this.log('info',
-          `Generation completed (button re-enabled). Completed: ${completedBefore}→${final.completed}`
-        );
-        await humanDelay(800, 1500);
-        return;
-      }
-
-      // ── Completion condition 3: Completed count increased, no active generation ──
-      if (snap.completed > completedBefore && snap.generating === 0 && elapsed > 10000) {
-        this.log('info',
-          `Generation completed (new media). Completed: ${completedBefore}→${snap.completed}`
-        );
-        await humanDelay(800, 1500);
-        return;
-      }
-
-      // ── Completion condition 4: All quiet for a long time after generation started ──
-      if (generationStarted && snap.generating === 0 && btnEnabled && elapsed > 60000) {
-        const generatingNow = isGenerating();
-        if (!generatingNow) {
-          this.log('info', 'Generation completed (all signals quiet after 60s)');
-          await humanDelay(800, 1500);
-          return;
-        }
-      }
-
-      // Check for errors during generation
-      const errorText = this.checkForFlowError();
-      if (errorText) {
-        throw new Error(`Generation failed: ${errorText}`);
-      }
-
-      await sleep(POLL_MS);
-    }
-
-    // Timeout — check if anything actually completed
-    const final = snapshotTiles();
-    if (final.completed > completedBefore) {
-      this.log('info',
-        `Generation completed on timeout. Completed: ${completedBefore}→${final.completed}`
-      );
-      return;
-    }
-
-    throw new Error(`Generation timed out after ${GENERATION_TIMEOUT_MS / 1000}s`);
-  }
+  // -- Control methods --
 
   /** Check for Flow error alerts. Returns error text or null. */
   private checkForFlowError(): string | null {
@@ -1791,125 +1881,6 @@ export class AutomationEngine {
     }
 
     return null;
-  }
-
-  /** Download the latest generated outputs.
-   *  Uses Flow's right-click Radix ContextMenu which contains quality
-   *  options (270p, 720p Original Size, 1080p Upscaled, 4K) and a
-   *  generic "Download" menuitem.  Clicking a quality option triggers
-   *  a native browser download of the video at that resolution.
-   */
-  private async downloadOutputs(promptIdx: number, settings: QueueSettings): Promise<string[]> {
-    // Check both new and legacy auto-download settings
-    const isVideo = (settings.mediaType ?? 'video') === 'video';
-    const shouldDownload = isVideo
-      ? (settings.autoDownloadVideos ?? settings.autoDownload ?? true)
-      : (settings.autoDownloadImages ?? settings.autoDownload ?? true);
-
-    if (!shouldDownload) {
-      this.log('info', 'Auto-download disabled, skipping download');
-      return [];
-    }
-
-    const files: string[] = [];
-    const cards = findAssetCards().filter(el => isVisible(el));
-    const startIdx = Math.max(0, cards.length - settings.generations);
-
-    for (let i = startIdx; i < cards.length; i++) {
-      if (this.stopped) break;
-      const card = cards[i];
-      const genNum = i - startIdx + 1;
-
-      if (getTileState(card) !== 'completed') {
-        this.log('warn', `Tile ${genNum} not completed, skipping download`);
-        continue;
-      }
-
-      try {
-        const ok = await this.downloadTile(card);
-        if (ok) {
-          files.push(`prompt_${promptIdx + 1}_gen_${genNum}`);
-          this.log('info', `Downloaded output ${genNum} of prompt #${promptIdx + 1}`);
-        } else {
-          this.log('warn', `Could not download output ${genNum} of prompt #${promptIdx + 1}`);
-        }
-      } catch (e: any) {
-        this.log('error', `Download error for output ${genNum}: ${e.message}`);
-      }
-
-      await humanDelay(1500, 2500);
-    }
-
-    return files;
-  }
-
-  /**
-   * Download a single tile via Flow's context menu or edit page.
-   */
-  private async downloadTile(card: Element): Promise<boolean> {
-    // Strategy 1: Right-click context menu → quality option
-    if (await this.tryContextMenuDownload(card)) return true;
-
-    // Strategy 2: Navigate to edit page → Download button
-    if (await this.tryEditPageDownload(card)) return true;
-
-    return false;
-  }
-
-  /**
-   * Right-click on tile → open Radix ContextMenu → click 720p / Download.
-   * Flow DOM: the tile is wrapped in span[data-state] which acts as the
-   * Radix ContextMenu.Trigger.  Right-clicking dispatches contextmenu
-   * which the trigger intercepts to show the quality download menu.
-   */
-  private async tryContextMenuDownload(card: Element): Promise<boolean> {
-    const rect = card.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-
-    // Full right-click event chain
-    const opts: MouseEventInit = {
-      bubbles: true, cancelable: true, view: window,
-      clientX: cx, clientY: cy, button: 2, buttons: 2,
-    };
-    card.dispatchEvent(new PointerEvent('pointerdown', { ...opts, pointerId: 1 }));
-    await sleep(50);
-    card.dispatchEvent(new MouseEvent('contextmenu', opts));
-    await sleep(800);
-
-    if (await this.findAndClickDownloadOption()) return true;
-
-    // Dismiss whatever opened
-    this.dismissOpenMenu();
-    await sleep(300);
-
-    // Retry on all inner span[data-state] triggers (ContextMenu.Trigger)
-    const triggers = card.querySelectorAll('span[data-state]');
-    for (const trigger of triggers) {
-      const tRect = trigger.getBoundingClientRect();
-      if (tRect.width === 0 || tRect.height === 0) continue;
-      const tx = tRect.left + tRect.width / 2;
-      const ty = tRect.top + tRect.height / 2;
-
-      trigger.dispatchEvent(new PointerEvent('pointerdown', {
-        bubbles: true, cancelable: true, view: window,
-        clientX: tx, clientY: ty,
-        button: 2, buttons: 2, pointerId: 1,
-      }));
-      await sleep(50);
-      trigger.dispatchEvent(new MouseEvent('contextmenu', {
-        bubbles: true, cancelable: true, view: window,
-        clientX: tx, clientY: ty, button: 2,
-      }));
-      await sleep(800);
-
-      if (await this.findAndClickDownloadOption()) return true;
-
-      this.dismissOpenMenu();
-      await sleep(300);
-    }
-
-    return false;
   }
 
   /**
@@ -2118,9 +2089,8 @@ export class AutomationEngine {
     this.stopped = true;
     this.paused = false;
     this.log('info', 'Queue stop requested');
-    // Release run-lock immediately on stop
-    globalRunLock = false;
-    this.sendRunLockChanged(false);
+    // Note: run-lock is released at the end of start() to prevent
+    // a new queue from starting while this one is still winding down.
   }
 
   skipCurrent(): void {
@@ -2156,7 +2126,7 @@ export class AutomationEngine {
     await scrollOutputToTop();
 
     // Wait for all tiles to settle (no more generating state)
-    const POST_QUEUE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes max
+    const POST_QUEUE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes max
     const startTime = Date.now();
     let lastLogTime = 0;
 
@@ -2245,7 +2215,7 @@ private async detectAndReportFailures(): Promise<void> {
     // Skip prompts that never ran (still in 'not-added' or 'queued' state)
     if (prompt.status === 'not-added') continue;
 
-    const ids: string[] = (prompt as any).tileIds || [];
+    const ids: string[] = prompt.tileIds || [];
 
     // Case 1: Prompt has NO tracked tiles — it never produced output
     if (ids.length === 0) {
