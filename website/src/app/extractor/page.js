@@ -19,12 +19,6 @@ export default function ExtractorPage() {
   const API_URL = process.env.NEXT_PUBLIC_EXTRACTOR_API_URL || "http://127.0.0.1:8000/api/videos";
   const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
 
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push("/login");
-    }
-  }, [user, loading, router]);
-
   const handleDrop = useCallback((e) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
@@ -145,8 +139,7 @@ export default function ExtractorPage() {
     return () => clearInterval(interval);
   }, [status, jobId, token, API_URL]);
 
-
-  if (loading || !user) return <div className="container" style={{ minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center" }}>Loading...</div>;
+  if (loading) return <div className="container" style={{ minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center" }}>Loading...</div>;
 
   return (
     <div className="section" style={{ minHeight: "100vh", position: "relative", overflow: "hidden" }}>
@@ -168,68 +161,82 @@ export default function ExtractorPage() {
         </div>
 
         <div style={{ maxWidth: "860px", margin: "0 auto" }}>
-          {/* --- Upload Zone --- */}
+          {/* --- Upload Zone or Auth CTA --- */}
           {status === "idle" && (
-            <div 
-              className="card-glass animate-in delay-1"
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              style={{ 
-                textAlign: "center",
-                cursor: "pointer",
-                padding: "100px 40px",
-                border: "2px dashed rgba(79, 70, 229, 0.4)",
-                background: "linear-gradient(180deg, rgba(79, 70, 229, 0.03) 0%, rgba(0,0,0,0.5) 100%)",
-                backdropFilter: "blur(20px)",
-                borderRadius: "32px",
-                transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
-                position: "relative",
-                overflow: "hidden",
-                boxShadow: "0 20px 40px rgba(0,0,0,0.4)"
-              }}
-              onClick={() => document.getElementById("file-upload").click()}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "var(--primary-light)";
-                e.currentTarget.style.boxShadow = "0 0 60px rgba(79, 70, 229, 0.3), inset 0 0 30px rgba(79, 70, 229, 0.1)";
-                e.currentTarget.style.transform = "translateY(-4px)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "rgba(79, 70, 229, 0.4)";
-                e.currentTarget.style.boxShadow = "0 20px 40px rgba(0,0,0,0.4)";
-                e.currentTarget.style.transform = "translateY(0)";
-              }}
-            >
-              <div className="cta-glow" style={{ opacity: 0.5 }}></div>
-              <input 
-                id="file-upload" 
-                type="file" 
-                accept="video/mp4,video/quicktime,video/webm" 
-                style={{ display: "none" }} 
-                onChange={handleFileSelect}
-              />
-              {file ? (
-                <div style={{ position: "relative", zIndex: 1 }}>
-                  <div style={{ fontSize: "4rem", marginBottom: "20px", filter: "drop-shadow(0 0 30px rgba(79, 70, 229, 0.6))" }}>🎥</div>
-                  <h3 style={{ marginBottom: "8px", fontSize: "1.8rem" }}>{file.name}</h3>
-                  <p className="text-secondary" style={{ marginBottom: "32px" }}>{(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to reverse-engineer</p>
-                  <button 
-                    className="btn btn-primary btn-lg" 
-                    onClick={(e) => { e.stopPropagation(); startAnalysis(); }}
-                    style={{ fontSize: "1.2rem", padding: "16px 40px", borderRadius: "100px", boxShadow: "0 10px 30px rgba(79, 70, 229, 0.4)" }}
-                  >
-                    Extract Prompts Now ⚡
-                  </button>
-                </div>
-              ) : (
-                <div style={{ position: "relative", zIndex: 1 }}>
-                  <div style={{ width: "100px", height: "100px", margin: "0 auto 24px", background: "rgba(79, 70, 229, 0.1)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(79, 70, 229, 0.2)", filter: "drop-shadow(0 0 20px rgba(79, 70, 229, 0.4))" }}>
-                    <span style={{ fontSize: "3rem" }}>📥</span>
+            user ? (
+              <div 
+                className="card-glass animate-in delay-1"
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                style={{ 
+                  textAlign: "center",
+                  cursor: "pointer",
+                  padding: "100px 40px",
+                  border: "2px dashed rgba(79, 70, 229, 0.4)",
+                  background: "linear-gradient(180deg, rgba(79, 70, 229, 0.03) 0%, rgba(0,0,0,0.5) 100%)",
+                  backdropFilter: "blur(20px)",
+                  borderRadius: "32px",
+                  transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+                  position: "relative",
+                  overflow: "hidden",
+                  boxShadow: "0 20px 40px rgba(0,0,0,0.4)"
+                }}
+                onClick={() => document.getElementById("file-upload").click()}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = "var(--primary-light)";
+                  e.currentTarget.style.boxShadow = "0 0 60px rgba(79, 70, 229, 0.3), inset 0 0 30px rgba(79, 70, 229, 0.1)";
+                  e.currentTarget.style.transform = "translateY(-4px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = "rgba(79, 70, 229, 0.4)";
+                  e.currentTarget.style.boxShadow = "0 20px 40px rgba(0,0,0,0.4)";
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}
+              >
+                <div className="cta-glow" style={{ opacity: 0.5 }}></div>
+                <input 
+                  id="file-upload" 
+                  type="file" 
+                  accept="video/mp4,video/quicktime,video/webm" 
+                  style={{ display: "none" }} 
+                  onChange={handleFileSelect}
+                />
+                {file ? (
+                  <div style={{ position: "relative", zIndex: 1 }}>
+                    <div style={{ fontSize: "4rem", marginBottom: "20px", filter: "drop-shadow(0 0 30px rgba(79, 70, 229, 0.6))" }}>🎥</div>
+                    <h3 style={{ marginBottom: "8px", fontSize: "1.8rem" }}>{file.name}</h3>
+                    <p className="text-secondary" style={{ marginBottom: "32px" }}>{(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to reverse-engineer</p>
+                    <button 
+                      className="btn btn-primary btn-lg" 
+                      onClick={(e) => { e.stopPropagation(); startAnalysis(); }}
+                      style={{ fontSize: "1.2rem", padding: "16px 40px", borderRadius: "100px", boxShadow: "0 10px 30px rgba(79, 70, 229, 0.4)" }}
+                    >
+                      Extract Prompts Now ⚡
+                    </button>
                   </div>
-                  <h3 style={{ fontSize: "2rem", marginBottom: "12px", letterSpacing: "-0.02em" }}>Drag & Drop Video Here</h3>
-                  <p className="text-secondary" style={{ fontSize: "1.1rem" }}>or click to browse your computer (Max 500MB)</p>
+                ) : (
+                  <div style={{ position: "relative", zIndex: 1 }}>
+                    <div style={{ width: "100px", height: "100px", margin: "0 auto 24px", background: "rgba(79, 70, 229, 0.1)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(79, 70, 229, 0.2)", filter: "drop-shadow(0 0 20px rgba(79, 70, 229, 0.4))" }}>
+                      <span style={{ fontSize: "3rem" }}>📥</span>
+                    </div>
+                    <h3 style={{ fontSize: "2rem", marginBottom: "12px", letterSpacing: "-0.02em" }}>Drag & Drop Video Here</h3>
+                    <p className="text-secondary" style={{ fontSize: "1.1rem" }}>or click to browse your computer (Max 500MB)</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="card-glass animate-in delay-1" style={{ padding: "80px 40px", borderRadius: "32px", textAlign: "center", background: "linear-gradient(180deg, rgba(79, 70, 229, 0.05) 0%, rgba(0,0,0,0.5) 100%)", border: "1px solid rgba(79, 70, 229, 0.3)" }}>
+                <div style={{ width: "80px", height: "80px", margin: "0 auto 24px", background: "rgba(79, 70, 229, 0.1)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(79, 70, 229, 0.2)" }}>
+                  <span style={{ fontSize: "2.5rem" }}>🔒</span>
                 </div>
-              )}
-            </div>
+                <h3 style={{ marginBottom: "16px", fontSize: "2rem" }}>Login to Extract Prompts</h3>
+                <p className="text-secondary" style={{ maxWidth: "500px", margin: "0 auto 32px", fontSize: "1.1rem" }}>Create a free account to reverse-engineer viral AI videos and get exact Midjourney and Runway prompts.</p>
+                <div style={{ display: "flex", gap: "16px", justifyContent: "center" }}>
+                  <a href="/login" className="btn btn-primary btn-lg" style={{ borderRadius: "100px", padding: "16px 40px", fontSize: "1.1rem" }}>Login to AutoFlow</a>
+                  <a href="/register" className="btn btn-secondary btn-lg" style={{ borderRadius: "100px", padding: "16px 40px", fontSize: "1.1rem" }}>Create Free Account</a>
+                </div>
+              </div>
+            )
           )}
 
         {(status === "uploading" || status === "processing") && (

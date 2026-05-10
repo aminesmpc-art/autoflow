@@ -203,7 +203,6 @@ function Header() {
           <li><a href="/#how-it-works">How It Works</a></li>
           <li><a href="/extractor">Extractor</a></li>
           <li><a href="/pricing">Pricing</a></li>
-          <li><a href="/pricing#pro" className="nav-link-pro">Download Pro</a></li>
           <li><a href="/blog">Blog</a></li>
           <li><a href="/faq">FAQ</a></li>
         </ul>
@@ -244,7 +243,6 @@ function Footer() {
             <li><a href="/#features">Features</a></li>
             <li><a href="/#how-it-works">How It Works</a></li>
             <li><a href="/pricing">Pricing</a></li>
-            <li><a href="/pricing#pro">Download Pro</a></li>
             <li><a href="/blog">Blog</a></li>
           </ul>
         </div>
