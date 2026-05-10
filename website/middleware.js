@@ -43,12 +43,9 @@ export function middleware(request) {
     }
   }
 
-  // For the root path, don't redirect English users (keep / as English for SEO)
+  // For English users, serve paths from the root directly (e.g. /blog)
   if (detectedLocale === defaultLocale) {
-    // Rewrite to /en internally but keep URL clean
-    const url = request.nextUrl.clone();
-    url.pathname = `/en${pathname}`;
-    return NextResponse.rewrite(url);
+    return NextResponse.next();
   }
 
   // For non-English, redirect to locale path
