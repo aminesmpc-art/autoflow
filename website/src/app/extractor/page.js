@@ -112,7 +112,7 @@ export default function ExtractorPage() {
     <div className="section" style={{ minHeight: "80vh" }}>
       <div className="container">
         {/* --- Hero Section --- */}
-        <div className="hero" style={{ padding: "40px 0 60px" }}>
+        <div className="hero" style={{ padding: "140px 0 60px" }}>
           <div className="hero-bg-glow"></div>
           <div className="hero-content">
             <span className="badge hero-badge">PRO TOOL</span>

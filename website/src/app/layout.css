@@ -9,7 +9,7 @@
   left: 50%;
   transform: translateX(-50%);
   width: 90%;
-  max-width: 1200px;
+  max-width: 1400px;
   z-index: 100;
   background: rgba(10, 10, 10, 0.6);
   backdrop-filter: blur(24px);
@@ -25,7 +25,8 @@
   align-items: center;
   justify-content: space-between;
   height: 64px;
-  padding: 0 24px;
+  padding: 0 20px;
+  gap: 20px;
 }
 
 .logo {
@@ -35,6 +36,7 @@
   font-size: 1.3rem;
   font-weight: 800;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .logo-icon {
@@ -51,7 +53,8 @@
 .nav-links {
   display: flex;
   list-style: none;
-  gap: 36px;
+  gap: 20px;
+  white-space: nowrap;
 }
 
 .nav-links a {
@@ -88,9 +91,10 @@
 }
 
 .btn-header {
-  padding: 8px 20px;
+  padding: 8px 16px;
   font-size: 0.9rem;
   border-radius: 100px;
+  white-space: nowrap;
 }
 
 @media (max-width: 768px) {
@@ -112,6 +116,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  white-space: nowrap;
 }
 
 /* ── Mobile Menu Button ── */
