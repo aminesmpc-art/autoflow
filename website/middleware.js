@@ -13,6 +13,11 @@ const publicPaths = [
   '/icons',
   '/robots.txt',
   '/sitemap.xml',
+  '/prompts',
+  '/extractor',
+  '/dashboard',
+  '/login',
+  '/register'
 ];
 
 export function middleware(request) {
