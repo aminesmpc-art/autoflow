@@ -202,6 +202,7 @@ function Header() {
           <li><a href="/#features">Features</a></li>
           <li><a href="/#how-it-works">How It Works</a></li>
           <li><a href="/extractor">Extractor</a></li>
+          <li><a href="/prompts">Prompts</a></li>
           <li><a href="/pricing">Pricing</a></li>
           <li><a href="/blog">Blog</a></li>
           <li><a href="/faq">FAQ</a></li>
@@ -243,6 +244,7 @@ function Footer() {
             <li><a href="/#features">Features</a></li>
             <li><a href="/#how-it-works">How It Works</a></li>
             <li><a href="/pricing">Pricing</a></li>
+            <li><a href="/prompts">Prompts</a></li>
             <li><a href="/blog">Blog</a></li>
           </ul>
         </div>
