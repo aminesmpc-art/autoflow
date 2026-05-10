@@ -30,6 +30,7 @@ export default function MobileMenu() {
               <li><a href="/#features" onClick={() => setOpen(false)}>Features</a></li>
               <li><a href="/#how-it-works" onClick={() => setOpen(false)}>How It Works</a></li>
               <li><a href="/extractor" onClick={() => setOpen(false)}>Extractor</a></li>
+              <li><a href="/prompts" onClick={() => setOpen(false)}>Prompts</a></li>
               <li><a href="/pricing" onClick={() => setOpen(false)}>Pricing</a></li>
               <li><a href="/blog" onClick={() => setOpen(false)}>Blog</a></li>
               <li><a href="/faq" onClick={() => setOpen(false)}>FAQ</a></li>

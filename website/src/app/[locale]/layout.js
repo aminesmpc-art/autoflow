@@ -26,6 +26,7 @@ export default async function LocaleLayout({ children, params }) {
             <li><a href={`/${locale}#features`}>{t.nav.features}</a></li>
             <li><a href={`/${locale}#how-it-works`}>{t.nav.howItWorks}</a></li>
             <li><a href="/extractor">Extractor</a></li>
+            <li><a href="/prompts">Prompts</a></li>
             <li><a href={`/${locale}/pricing`}>{t.nav.pricing}</a></li>
             <li><a href={`/${locale}/blog`}>Blog</a></li>
             <li><a href={`/${locale}/faq`}>{t.nav.faq}</a></li>
@@ -60,6 +61,8 @@ export default async function LocaleLayout({ children, params }) {
             <ul>
               <li><a href={`/${locale}#features`}>{t.nav.features}</a></li>
               <li><a href={`/${locale}#how-it-works`}>{t.nav.howItWorks}</a></li>
+              <li><a href="/extractor">Extractor</a></li>
+              <li><a href="/prompts">Prompts</a></li>
               <li><a href={`/${locale}/pricing`}>{t.nav.pricing}</a></li>
               <li><a href={`/${locale}/blog`}>Blog</a></li>
             </ul>
