@@ -189,11 +189,18 @@ async def process_video(job_id: str, video_path: str):
         # Parse result
         clean_json = clean_json_response(response.text)
         try:
-            analysis_data = json.loads(clean_json)
-        except json.JSONDecodeError as e:
+            import json_repair
+            analysis_data = json_repair.loads(clean_json)
+            if not isinstance(analysis_data, dict):
+                raise ValueError("Parsed JSON is not a dictionary")
+        except Exception as e:
             # Fallback for minor unescaped quotes if schema fails
-            clean_json = clean_json.replace('\\', '\\\\')
-            analysis_data = json.loads(clean_json)
+            try:
+                clean_json_fallback = clean_json.replace('\\', '\\\\')
+                analysis_data = json.loads(clean_json_fallback)
+            except Exception:
+                # If everything fails, raise the RAW TEXT so the user can see what Gemini returned!
+                raise RuntimeError(f"JSON Parsing failed. Error: {str(e)}. Raw AI Output: {response.text}")
 
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["step"] = ""
