@@ -1,3 +1,4 @@
+import StoreLink from "../StoreLink";
 
 export const dynamic = 'force-static';
 
@@ -43,14 +44,9 @@ export default function PricingPage() {
                 <li>Auto-download results</li>
                 <li>Batch prompt processing</li>
               </ul>
-              <a
-                href="https://chromewebstore.google.com"
-                target="_blank"
-                rel="noopener noreferrer nofollow"
-                className="btn btn-secondary"
-              >
+              <StoreLink className="btn btn-secondary">
                 Install Free
-              </a>
+              </StoreLink>
             </div>
 
             {/* Pro Tier */}

@@ -249,7 +249,7 @@ marketplace, light distortion at the threshold`}
             </p>
 
             <p>
-              <a href="https://chromewebstore.google.com" target="_blank" rel="noopener noreferrer" className="btn btn-primary">
+              <a href="https://chromewebstore.google.com/detail/autoflow-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc" target="_blank" rel="noopener noreferrer" className="btn btn-primary">
                 Install AutoFlow — Free
               </a>
             </p>

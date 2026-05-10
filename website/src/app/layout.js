@@ -5,6 +5,9 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import Script from "next/script";
 import MobileMenu from "./MobileMenu";
+import StoreLink from "./StoreLink";
+import { AuthProvider } from "../context/AuthContext";
+import AuthButtons from "./AuthButtons";
 
 export const metadata = {
   metadataBase: new URL("https://auto-flow.studio"),
@@ -70,9 +73,6 @@ export const metadata = {
   authors: [{ name: "AutoFlow" }],
   creator: "AutoFlow",
   publisher: "AutoFlow",
-  alternates: {
-    canonical: "https://auto-flow.studio",
-  },
   openGraph: {
     type: "website",
     locale: "en_US",
@@ -147,7 +147,10 @@ export default function RootLayout({ children }) {
               "@type": "Organization",
               name: "AutoFlow",
               url: "https://auto-flow.studio",
-              logo: "https://auto-flow.studio/og-image.png",
+              logo: {
+                "@type": "ImageObject",
+                url: "https://auto-flow.studio/og-image.png"
+              },
               description:
                 "AutoFlow automates Google Flow AI video generation — batch prompts, smart queues, auto-retry, and bulk download.",
               contactPoint: {
@@ -175,9 +178,11 @@ export default function RootLayout({ children }) {
             }),
           }}
         />
-        <Header />
-        <main>{children}</main>
-        <Footer />
+        <AuthProvider>
+          <Header />
+          <main>{children}</main>
+          <Footer />
+        </AuthProvider>
         <Analytics />
         <SpeedInsights />
       </body>
@@ -196,7 +201,9 @@ function Header() {
         <ul className="nav-links">
           <li><a href="/#features">Features</a></li>
           <li><a href="/#how-it-works">How It Works</a></li>
+          <li><a href="/extractor">Extractor</a></li>
           <li><a href="/pricing">Pricing</a></li>
+          <li><a href="/pricing#pro" className="nav-link-pro">Download Pro</a></li>
           <li><a href="/blog">Blog</a></li>
           <li><a href="/faq">FAQ</a></li>
         </ul>
@@ -206,14 +213,10 @@ function Header() {
             <a href="/ar" className="lang-option">AR</a>
             <a href="/fr" className="lang-option">FR</a>
           </div>
-          <a
-            href="https://chromewebstore.google.com"
-            target="_blank"
-            rel="noopener noreferrer nofollow"
-            className="btn btn-primary btn-header"
-          >
+          <AuthButtons />
+          <StoreLink className="btn btn-primary btn-header">
             Install Free
-          </a>
+          </StoreLink>
         </div>
         <MobileMenu />
       </nav>
@@ -241,6 +244,7 @@ function Footer() {
             <li><a href="/#features">Features</a></li>
             <li><a href="/#how-it-works">How It Works</a></li>
             <li><a href="/pricing">Pricing</a></li>
+            <li><a href="/pricing#pro">Download Pro</a></li>
             <li><a href="/blog">Blog</a></li>
           </ul>
         </div>

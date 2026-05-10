@@ -656,7 +656,7 @@ Wait silently until the user types: "start".`}
 
             <p>
               <a
-                href="https://chromewebstore.google.com"
+                href="https://chromewebstore.google.com/detail/autoflow-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-primary"

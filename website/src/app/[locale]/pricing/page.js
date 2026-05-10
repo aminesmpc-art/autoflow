@@ -1,4 +1,5 @@
 import { getDictionary, locales, defaultLocale } from '../../dictionaries';
+import StoreLink from '../../StoreLink';
 
 export async function generateStaticParams() {
   return locales.filter(l => l !== defaultLocale).map(locale => ({ locale }));
@@ -41,14 +42,9 @@ export default async function LocalePricingPage({ params }) {
               <ul className="pricing-features">
                 {t.pricing.free.features.map((f, i) => <li key={i}>{f}</li>)}
               </ul>
-              <a
-                href="https://chromewebstore.google.com"
-                target="_blank"
-                rel="noopener noreferrer nofollow"
-                className="btn btn-secondary"
-              >
+              <StoreLink className="btn btn-secondary">
                 {t.pricing.free.btn}
-              </a>
+              </StoreLink>
             </div>
 
             {/* Pro Tier */}

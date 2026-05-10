@@ -59,6 +59,28 @@
   color: var(--text-primary);
 }
 
+.nav-link-pro {
+  color: var(--accent-light) !important;
+  position: relative;
+}
+
+.nav-link-pro::after {
+  content: "";
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gradient-primary);
+  border-radius: 1px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.nav-link-pro:hover::after {
+  opacity: 1;
+}
+
 .btn-header {
   padding: 10px 24px;
   font-size: 0.9rem;

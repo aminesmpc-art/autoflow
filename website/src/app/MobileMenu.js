@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import StoreLink from "./StoreLink";
 
 export default function MobileMenu() {
   const [open, setOpen] = useState(false);
@@ -28,6 +29,7 @@ export default function MobileMenu() {
             <ul>
               <li><a href="/#features" onClick={() => setOpen(false)}>Features</a></li>
               <li><a href="/#how-it-works" onClick={() => setOpen(false)}>How It Works</a></li>
+              <li><a href="/extractor" onClick={() => setOpen(false)}>Extractor</a></li>
               <li><a href="/pricing" onClick={() => setOpen(false)}>Pricing</a></li>
               <li><a href="/blog" onClick={() => setOpen(false)}>Blog</a></li>
               <li><a href="/faq" onClick={() => setOpen(false)}>FAQ</a></li>
@@ -37,14 +39,12 @@ export default function MobileMenu() {
               <a href="/ar" className="lang-option">AR</a>
               <a href="/fr" className="lang-option">FR</a>
             </div>
-            <a
-              href="https://chromewebstore.google.com"
-              target="_blank"
-              rel="noopener noreferrer nofollow"
+            <StoreLink
               className="btn btn-primary mobile-menu-cta"
+              onClick={() => setOpen(false)}
             >
               Install Free
-            </a>
+            </StoreLink>
           </nav>
         </div>
       )}

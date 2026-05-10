@@ -1,4 +1,5 @@
 import { getDictionary, locales, defaultLocale } from '../dictionaries';
+import StoreLink from '../StoreLink';
 
 export async function generateStaticParams() {
   return locales.map(locale => ({ locale }));
@@ -74,14 +75,9 @@ export default async function LocaleHomePage({ params }) {
             {t.hero.subtitle}
           </p>
           <div className="hero-buttons animate-in delay-3">
-            <a
-              href="https://chromewebstore.google.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-primary btn-lg"
-            >
+            <StoreLink className="btn btn-primary btn-lg">
               <ChromeIcon /> {t.hero.installBtn}
-            </a>
+            </StoreLink>
             <a href="#features" className="btn btn-secondary btn-lg">
               {t.hero.featuresBtn}
             </a>
@@ -172,14 +168,9 @@ export default async function LocaleHomePage({ params }) {
             <div className="cta-glow" aria-hidden="true" />
             <h2>{t.cta.title}</h2>
             <p className="text-secondary">{t.cta.subtitle}</p>
-            <a
-              href="https://chromewebstore.google.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-primary btn-lg"
-            >
+            <StoreLink className="btn btn-primary btn-lg">
               <ChromeIcon /> {t.cta.btn}
-            </a>
+            </StoreLink>
           </div>
         </div>
       </section>

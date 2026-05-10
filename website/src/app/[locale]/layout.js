@@ -1,4 +1,5 @@
 import { getDictionary, locales } from '../dictionaries';
+import StoreLink from '../StoreLink';
 
 // Only match locales from generateStaticParams — don't catch /blog, /faq, etc.
 export const dynamicParams = false;
@@ -24,6 +25,7 @@ export default async function LocaleLayout({ children, params }) {
           <ul className="nav-links">
             <li><a href={`/${locale}#features`}>{t.nav.features}</a></li>
             <li><a href={`/${locale}#how-it-works`}>{t.nav.howItWorks}</a></li>
+            <li><a href="/extractor">Extractor</a></li>
             <li><a href={`/${locale}/pricing`}>{t.nav.pricing}</a></li>
             <li><a href={`/${locale}/blog`}>Blog</a></li>
             <li><a href={`/${locale}/faq`}>{t.nav.faq}</a></li>
@@ -34,14 +36,9 @@ export default async function LocaleLayout({ children, params }) {
               <a href="/ar" className={locale === 'ar' ? 'active' : ''}>AR</a>
               <a href="/fr" className={locale === 'fr' ? 'active' : ''}>FR</a>
             </div>
-            <a
-              href="https://chromewebstore.google.com"
-              target="_blank"
-              rel="noopener noreferrer nofollow"
-              className="btn btn-primary btn-header"
-            >
+            <StoreLink className="btn btn-primary btn-header">
               {t.nav.install}
-            </a>
+            </StoreLink>
           </div>
         </nav>
       </header>

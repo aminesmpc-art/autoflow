@@ -17,6 +17,7 @@ const dictionaries = {
       howItWorks: 'How It Works',
       pricing: 'Pricing',
       faq: 'FAQ',
+      prompts: 'Prompts',
       install: 'Install Free',
     },
     hero: {
@@ -189,6 +190,47 @@ const dictionaries = {
       title: 'Terms of Service',
       lastUpdated: 'Last updated: March 2026',
     },
+    promptsPage: {
+      badge: 'Prompt Library',
+      title: 'Best Prompts for',
+      titleGradient: 'Google Flow AI',
+      subtitle: 'Copy and paste these highly optimized text-to-video prompts. Use AutoFlow to run them all at once.',
+      copyBtn: 'Copy Prompt',
+      copiedBtn: 'Copied!',
+      runBtn: 'Run in AutoFlow',
+      categories: {
+        cinematic: 'Cinematic & Realistic',
+        animation: 'Animation & 3D',
+        abstract: 'Abstract & Experimental'
+      },
+      prompts: [
+        {
+          category: 'cinematic',
+          title: 'Neon Cyberpunk City',
+          text: 'A cinematic drone shot flying through a dense, neon-lit futuristic cyberpunk city while it rains. Volumetric fog, 8k resolution, photorealistic, anamorphic lens flare, moody atmosphere.'
+        },
+        {
+          category: 'cinematic',
+          title: 'Desert Coffee Pour',
+          text: 'Extreme close up macro shot of dark espresso coffee pouring into a ceramic cup resting on golden sand dunes. Slow motion 120fps, highly detailed, dramatic lighting, depth of field.'
+        },
+        {
+          category: 'animation',
+          title: 'Pixar-style Cute Robot',
+          text: 'A cute, rusty little robot holding a glowing blue flower in a magical forest. Pixar 3D animation style, soft lighting, vibrant colors, expressive eyes, magical glowing dust motes in the air.'
+        },
+        {
+          category: 'animation',
+          title: 'Anime Samurai Duel',
+          text: '2D anime style animation of a samurai drawing a glowing katana on a snowy mountain peak at midnight. High action, dynamic camera angle, Studio Ghibli style, cherry blossoms blowing in the wind.'
+        },
+        {
+          category: 'abstract',
+          title: 'Liquid Gold Flow',
+          text: 'Abstract macro fluid dynamics of liquid gold mixing with deep space nebula colors. Swirling, mesmerizing slow motion, highly detailed 8k, particle simulation, luxury aesthetic.'
+        }
+      ]
+    },
   },
 
   ar: {
@@ -201,6 +243,7 @@ const dictionaries = {
       howItWorks: 'كيف يعمل',
       pricing: 'الأسعار',
       faq: 'الأسئلة الشائعة',
+      prompts: 'النصوص',
       install: 'تثبيت مجاني',
     },
     hero: {
@@ -373,6 +416,47 @@ const dictionaries = {
       title: 'شروط الخدمة',
       lastUpdated: 'آخر تحديث: مارس 2026',
     },
+    promptsPage: {
+      badge: 'مكتبة النصوص',
+      title: 'أفضل النصوص لـ',
+      titleGradient: 'Google Flow AI',
+      subtitle: 'انسخ والصق هذه النصوص المحسنة لإنشاء الفيديوهات. استخدم AutoFlow لتشغيلها جميعًا دفعة واحدة.',
+      copyBtn: 'نسخ النص',
+      copiedBtn: 'تم النسخ!',
+      runBtn: 'تشغيل في AutoFlow',
+      categories: {
+        cinematic: 'سينمائي وواقعي',
+        animation: 'رسوم متحركة و3D',
+        abstract: 'تجريدي وتجريبي'
+      },
+      prompts: [
+        {
+          category: 'cinematic',
+          title: 'مدينة سايبر بانك نيون',
+          text: 'لقطة سينمائية بطائرة بدون طيار تحلق عبر مدينة مستقبلية كثيفة ومضاءة بالنيون أثناء المطر. ضباب حجمي، دقة 8k، واقعية عالية، توهج عدسة، جو درامي.'
+        },
+        {
+          category: 'cinematic',
+          title: 'صب القهوة في الصحراء',
+          text: 'لقطة مقربة جداً لقهوة إسبريسو داكنة تُصب في كوب سيراميك على الكثبان الرملية الذهبية. تصوير بطيء 120 إطار في الثانية، تفاصيل عالية، إضاءة درامية، عمق ميداني.'
+        },
+        {
+          category: 'animation',
+          title: 'روبوت لطيف بأسلوب بيكسار',
+          text: 'روبوت صغير ولطيف وصدئ يحمل زهرة زرقاء متوهجة في غابة سحرية. أسلوب الرسوم المتحركة ثلاثية الأبعاد لبيكسار، إضاءة ناعمة، ألوان نابضة بالحياة، عيون معبرة، غبار متوهج سحري في الهواء.'
+        },
+        {
+          category: 'animation',
+          title: 'مبارزة ساموراي بأسلوب الأنمي',
+          text: 'رسوم متحركة ثنائية الأبعاد لساموراي يسحب سيف كاتانا متوهج على قمة جبل ثلجي في منتصف الليل. حركة عالية، زاوية كاميرا ديناميكية، أسلوب استوديو جيبلي، أزهار الكرز تهب في الريح.'
+        },
+        {
+          category: 'abstract',
+          title: 'تدفق الذهب السائل',
+          text: 'ديناميكيات السوائل التجريدية للذهب السائل يختلط بألوان السديم في الفضاء العميق. دوامات، تصوير بطيء ساحر، دقة 8k عالية التفاصيل، محاكاة الجسيمات، جمالية فاخرة.'
+        }
+      ]
+    },
   },
 
   fr: {
@@ -385,6 +469,7 @@ const dictionaries = {
       howItWorks: 'Comment ça marche',
       pricing: 'Tarifs',
       faq: 'FAQ',
+      prompts: 'Prompts',
       install: 'Installer Gratuit',
     },
     hero: {
@@ -556,6 +641,47 @@ const dictionaries = {
     termsPage: {
       title: "Conditions d'Utilisation",
       lastUpdated: 'Dernière mise à jour : Mars 2026',
+    },
+    promptsPage: {
+      badge: 'Bibliothèque de Prompts',
+      title: 'Les Meilleurs Prompts',
+      titleGradient: 'Google Flow AI',
+      subtitle: 'Copiez et collez ces prompts optimisés pour la vidéo. Utilisez AutoFlow pour tous les exécuter en même temps.',
+      copyBtn: 'Copier le Prompt',
+      copiedBtn: 'Copié !',
+      runBtn: 'Lancer dans AutoFlow',
+      categories: {
+        cinematic: 'Cinématique & Réaliste',
+        animation: 'Animation & 3D',
+        abstract: 'Abstrait & Expérimental'
+      },
+      prompts: [
+        {
+          category: 'cinematic',
+          title: 'Ville Cyberpunk Néon',
+          text: 'Un plan cinématique de drone volant à travers une ville cyberpunk futuriste dense et éclairée au néon pendant qu\'il pleut. Brouillard volumétrique, résolution 8k, photoréaliste, atmosphère sombre.'
+        },
+        {
+          category: 'cinematic',
+          title: 'Café dans le Désert',
+          text: 'Gros plan extrême sur du café expresso noir versé dans une tasse en céramique posée sur des dunes de sable doré. Ralenti 120fps, très détaillé, éclairage dramatique, profondeur de champ.'
+        },
+        {
+          category: 'animation',
+          title: 'Robot Mignon Style Pixar',
+          text: 'Un petit robot rouillé et mignon tenant une fleur bleue lumineuse dans une forêt magique. Style d\'animation 3D Pixar, éclairage doux, couleurs vibrantes, yeux expressifs, poussière magique dans l\'air.'
+        },
+        {
+          category: 'animation',
+          title: 'Duel de Samouraï Anime',
+          text: 'Animation style anime 2D d\'un samouraï dégainant un katana lumineux sur un sommet de montagne enneigé à minuit. Action intense, angle de caméra dynamique, style Studio Ghibli, fleurs de cerisier dans le vent.'
+        },
+        {
+          category: 'abstract',
+          title: 'Or Liquide',
+          text: 'Dynamique des fluides macro abstraite d\'or liquide se mélangeant aux couleurs d\'une nébuleuse de l\'espace profond. Tourbillonnant, ralenti hypnotisant, 8k très détaillé, esthétique de luxe.'
+        }
+      ]
     },
   },
 };

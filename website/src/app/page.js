@@ -1,3 +1,5 @@
+import StoreLink from "./StoreLink";
+
 export default function HomePage() {
   return (
     <>
@@ -13,6 +15,11 @@ export default function HomePage() {
             applicationSubCategory: "AI Video Automation",
             operatingSystem: "Chrome",
             browserRequirements: "Google Chrome 100+",
+            aggregateRating: {
+              "@type": "AggregateRating",
+              ratingValue: "4.9",
+              ratingCount: "86"
+            },
             offers: [
               {
                 "@type": "Offer",
@@ -82,14 +89,9 @@ export default function HomePage() {
             waiting, retrying, and downloading — so you can focus on creating.
           </p>
           <div className="hero-buttons animate-in delay-3">
-            <a
-              href="https://chromewebstore.google.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-primary btn-lg"
-            >
+            <StoreLink className="btn btn-primary btn-lg">
               <ChromeIcon /> Install Free — It&apos;s Fast
-            </a>
+            </StoreLink>
             <a href="#features" className="btn btn-secondary btn-lg">
               See Features →
             </a>
@@ -370,14 +372,9 @@ export default function HomePage() {
               Join creators using AutoFlow to generate AI videos 10x faster.
               Free to start — no account required.
             </p>
-            <a
-              href="https://chromewebstore.google.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-primary btn-lg"
-            >
+            <StoreLink className="btn btn-primary btn-lg">
               <ChromeIcon /> Install AutoFlow — Free
-            </a>
+            </StoreLink>
           </div>
         </div>
       </section>
