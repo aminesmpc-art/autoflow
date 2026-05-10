@@ -12,7 +12,7 @@ export default function DashboardPage() {
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
 
-  const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
+  const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.auto-flow.studio/api";
 
   useEffect(() => {
     if (!loading && !user) {

@@ -16,8 +16,8 @@ export default function ExtractorPage() {
   const [error, setError] = useState(null);
   const [saveStatus, setSaveStatus] = useState("idle");
 
-  const API_URL = process.env.NEXT_PUBLIC_EXTRACTOR_API_URL || "http://127.0.0.1:8000/api/videos";
-  const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
+  const API_URL = process.env.NEXT_PUBLIC_EXTRACTOR_API_URL || "https://api.auto-flow.studio/api/videos";
+  const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.auto-flow.studio/api";
 
   const handleDrop = useCallback((e) => {
     e.preventDefault();

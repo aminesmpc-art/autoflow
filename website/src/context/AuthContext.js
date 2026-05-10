@@ -10,7 +10,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   // Define API URL (fallback to localhost:8000 for Django backend)
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.auto-flow.studio/api";
 
   useEffect(() => {
     // Check if token exists in localStorage on mount
