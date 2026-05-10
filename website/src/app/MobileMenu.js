@@ -1,9 +1,13 @@
 "use client";
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import StoreLink from "./StoreLink";
 
 export default function MobileMenu() {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname() || '';
+  const localeMatch = pathname.match(/^\/(ar|fr|es)(\/|$)/);
+  const prefix = localeMatch ? `/${localeMatch[1]}` : "";
 
   return (
     <>
@@ -27,18 +31,18 @@ export default function MobileMenu() {
             onClick={(e) => e.stopPropagation()}
           >
             <ul>
-              <li><a href="/#features" onClick={() => setOpen(false)}>Features</a></li>
-              <li><a href="/#how-it-works" onClick={() => setOpen(false)}>How It Works</a></li>
-              <li><a href="/extractor" onClick={() => setOpen(false)}>Extractor</a></li>
-              <li><a href="/prompts" onClick={() => setOpen(false)}>Prompts</a></li>
-              <li><a href="/pricing" onClick={() => setOpen(false)}>Pricing</a></li>
-              <li><a href="/blog" onClick={() => setOpen(false)}>Blog</a></li>
-              <li><a href="/faq" onClick={() => setOpen(false)}>FAQ</a></li>
+              <li><a href={`${prefix}/#features`} onClick={() => setOpen(false)}>Features</a></li>
+              <li><a href={`${prefix}/#how-it-works`} onClick={() => setOpen(false)}>How It Works</a></li>
+              <li><a href={`${prefix}/extractor`} onClick={() => setOpen(false)}>Extractor</a></li>
+              <li><a href={`${prefix}/prompts`} onClick={() => setOpen(false)}>Prompts</a></li>
+              <li><a href={`${prefix}/pricing`} onClick={() => setOpen(false)}>Pricing</a></li>
+              <li><a href={`${prefix}/blog`} onClick={() => setOpen(false)}>Blog</a></li>
+              <li><a href={`${prefix}/faq`} onClick={() => setOpen(false)}>FAQ</a></li>
             </ul>
             <div className="mobile-menu-lang">
-              <a href="/" className="lang-option active">EN</a>
-              <a href="/ar" className="lang-option">AR</a>
-              <a href="/fr" className="lang-option">FR</a>
+              <a href="/" className={`lang-option ${!localeMatch ? "active" : ""}`}>EN</a>
+              <a href="/ar" className={`lang-option ${localeMatch && localeMatch[1] === "ar" ? "active" : ""}`}>AR</a>
+              <a href="/fr" className={`lang-option ${localeMatch && localeMatch[1] === "fr" ? "active" : ""}`}>FR</a>
             </div>
             <StoreLink
               className="btn btn-primary mobile-menu-cta"

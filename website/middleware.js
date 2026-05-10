@@ -12,12 +12,7 @@ const publicPaths = [
   '/screenshots',
   '/icons',
   '/robots.txt',
-  '/sitemap.xml',
-  '/prompts',
-  '/extractor',
-  '/dashboard',
-  '/login',
-  '/register'
+  '/sitemap.xml'
 ];
 
 export function middleware(request) {
