@@ -482,7 +482,7 @@ export default function ExtractorPage() {
                     <h3 style={{ margin: 0, fontSize: "1.8rem", color: "white" }}>Export for <span style={{ color: "#4ade80" }}>AutoFlow Extension</span></h3>
                   </div>
                   <p className="text-secondary" style={{ marginBottom: "40px", fontSize: "1.1rem", maxWidth: "600px" }}>
-                    Skip the manual copy-pasting. Batch generate these exact scenes simultaneously using the <a href="https://chromewebstore.google.com/detail/autoflow-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc" target="_blank" rel="noopener noreferrer" style={{ color: "#4ade80", textDecoration: "underline", textUnderlineOffset: "4px" }}>AutoFlow Chrome Extension</a>.
+                    Skip the manual copy-pasting. Batch generate these exact scenes simultaneously using the <a href="https://chromewebstore.google.com/detail/autoflow-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc" target="_blank" rel="noopener noreferrer" style={{ color: "#4ade80", textDecoration: "underline", textUnderlineOffset: "4px" }}>AutoFlow Chrome Extension</a>. Not sure how? <a href="/blog/how-to-recreate-ai-videos-with-extractor-and-autoflow" style={{ color: "var(--text-primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}>Read the step-by-step tutorial</a>.
                   </p>
 
                   <div className="grid-2" style={{ gap: "32px" }}>
