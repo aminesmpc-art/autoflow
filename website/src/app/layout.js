@@ -22,13 +22,31 @@ export const metadata = {
     "AutoFlow",
     "AutoFlow Chrome extension",
     "AutoFlow for Google Flow",
-    // Primary — high volume
+    "AutoFlow Extractor",
+    
+    // Primary Core Features
     "Google Flow",
     "Google Flow automation",
     "Google Flow batch processing",
     "Google Flow Chrome extension",
     "Google Flow video generator",
     "Google Flow bulk download",
+    "Google Veo 2 automation",
+    "Imagen 3 video generation",
+    
+    // Extractor & Prompt Reverse-Engineering
+    "AI video prompt extractor",
+    "reverse-engineer AI video",
+    "extract prompt from AI video",
+    "Midjourney video prompts",
+    "Runway Gen-3 prompts",
+    "Sora prompt engineering",
+    "Kling AI prompts",
+    "Luma Dream Machine prompts",
+    "Pika Labs prompts",
+    "AI video prompt gallery",
+    "best AI video prompts",
+    
     // AI Video — top search terms
     "AI video generation",
     "AI video generator",
@@ -38,6 +56,7 @@ export const metadata = {
     "automated video generation",
     "batch AI video generation",
     "bulk AI video creation",
+    
     // Specific features
     "text to video AI",
     "image to video AI",
@@ -49,12 +68,14 @@ export const metadata = {
     "AI video batch download",
     "4K AI video download",
     "AI video upscale",
+    
     // Technology
     "Chrome extension video",
     "Chrome extension AI",
     "Veo video generation",
     "Veo 3 automation",
     "Google AI video",
+    
     // Long-tail — what people actually search
     "how to batch generate videos in Google Flow",
     "automate Google Flow prompts",
@@ -65,6 +86,9 @@ export const metadata = {
     "generate multiple AI videos at once",
     "Google Flow auto retry",
     "reference image video generation",
+    "how to reverse engineer Midjourney prompts",
+    "how to extract Runway Gen 3 prompts",
+    
     // Competitor/alternative terms
     "best AI video automation tool",
     "free AI video generator Chrome extension",
