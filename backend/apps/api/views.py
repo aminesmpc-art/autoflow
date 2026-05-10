@@ -535,6 +535,19 @@ class PublicExtractionsView(APIView):
         return Response(serializer.data)
 
 
+class PublicExtractionDetailView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        from apps.extractions.models import SavedExtraction
+        from .serializers import SavedExtractionSerializer
+        from django.shortcuts import get_object_or_404
+        
+        extraction = get_object_or_404(SavedExtraction, pk=pk)
+        serializer = SavedExtractionSerializer(extraction)
+        return Response(serializer.data)
+
+
 class SavedExtractionCheckLimitView(APIView):
     permission_classes = [IsAuthenticated]
 
