@@ -7,7 +7,6 @@
   position: relative;
   padding: 160px 0 100px;
   text-align: center;
-  overflow: hidden;
   background: var(--gradient-hero);
 }
 
