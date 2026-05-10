@@ -64,3 +64,22 @@ class GrantRewardSerializer(serializers.Serializer):
     source = serializers.CharField(max_length=50)
     reference_id = serializers.CharField(max_length=128, required=False, allow_blank=True)
     metadata = serializers.DictField(required=False, default=dict)
+
+
+# ── Extractions ──
+
+from apps.extractions.models import SavedExtraction
+
+class SavedExtractionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SavedExtraction
+        fields = [
+            "id",
+            "video_name",
+            "video_concept",
+            "voiceover_text",
+            "character_sheets",
+            "shots",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at"]

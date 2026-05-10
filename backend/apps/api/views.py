@@ -516,3 +516,44 @@ class RunMigrateView(APIView):
                 "stdout": stdout.getvalue(),
                 "stderr": stderr.getvalue(),
             })
+
+# ================================================================
+# EXTRACTIONS
+# ================================================================
+
+
+class SavedExtractionsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from apps.extractions.models import SavedExtraction
+        from .serializers import SavedExtractionSerializer
+        
+        extractions = SavedExtraction.objects.filter(user=request.user)
+        serializer = SavedExtractionSerializer(extractions, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        from .serializers import SavedExtractionSerializer
+        
+        serializer = SavedExtractionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Save to database
+        serializer.save(user=request.user)
+        
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class SavedExtractionDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        from apps.extractions.models import SavedExtraction
+        
+        try:
+            extraction = SavedExtraction.objects.get(pk=pk, user=request.user)
+            extraction.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except SavedExtraction.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)

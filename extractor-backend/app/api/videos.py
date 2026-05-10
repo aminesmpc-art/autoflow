@@ -68,6 +68,10 @@ ANALYSIS_PROMPT = """Analyze this video with extreme, granular precision.
    - `image_prompt`: A massive, hyper-detailed Midjourney V6 prompt (e.g., "A cinematic medium shot of [subject], wearing [details], standing in [environment], lit by [lighting], shot on 35mm lens, 8k resolution, highly detailed, photorealistic...")
    - `video_prompt`: A motion/animation prompt for Runway Gen-3/Sora (e.g., "Slow tracking shot pushing in on [subject] as [action occurs], wind blowing gently, cinematic lighting, ultra-realistic motion...")
 
+**CRITICAL RULES FOR EXTRACTION:**
+- YOU MUST return at least ONE (1) character_sheet. If there is no character visible, describe the target audience or the unseen narrator. DO NOT return an empty character_sheets array.
+- YOU MUST return at least ONE (1) shot in the shots array. If it is one continuous video, make it shot 1. DO NOT return an empty shots array.
+
 **OUTPUT FORMAT (Strict JSON, no markdown):**
 {
   "video_concept": "Overall mood and style summary...",
@@ -153,8 +157,10 @@ async def process_video(job_id: str, video_path: str):
                         "properties": {
                             "character_name": {"type": "STRING"},
                             "prompt": {"type": "STRING"}
-                        }
-                    }
+                        },
+                        "required": ["character_name", "prompt"]
+                    },
+                    "description": "MUST CONTAIN AT LEAST 1 ITEM"
                 },
                 "shots": {
                     "type": "ARRAY",
@@ -165,10 +171,13 @@ async def process_video(job_id: str, video_path: str):
                             "time_range": {"type": "STRING"},
                             "image_prompt": {"type": "STRING"},
                             "video_prompt": {"type": "STRING"}
-                        }
-                    }
+                        },
+                        "required": ["shot_id", "time_range", "image_prompt", "video_prompt"]
+                    },
+                    "description": "MUST CONTAIN AT LEAST 1 ITEM"
                 }
-            }
+            },
+            "required": ["video_concept", "voiceover_text", "characters_description", "character_sheets", "shots"]
         }
 
         # Run analysis

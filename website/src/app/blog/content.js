@@ -13,6 +13,19 @@
 
 export const posts = [
   {
+    slug: "how-to-recreate-ai-videos-with-extractor-and-autoflow",
+    title: "How to Reverse-Engineer and Recreate AI Videos using AutoFlow",
+    description:
+      "Learn how to extract prompts from any AI video and seamlessly batch-generate the entire scene timeline using the AutoFlow Chrome Extension.",
+    date: "2026-05-10",
+    updated: "2026-05-10",
+    category: "Tutorial",
+    tags: ["google-flow", "extractor", "tutorial", "automation"],
+    image: "/screenshots/blog/extractor-tutorial/01.png",
+    readTime: "8 min read",
+    featured: true,
+  },
+  {
     slug: "how-to-batch-generate-ai-videos-google-flow",
     title: "How to Batch Generate AI Videos with Google Flow in 2026",
     description:
