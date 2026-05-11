@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.plans.services import (
+    consume_download,
     consume_prompt,
     get_entitlement_snapshot,
     grant_reward_credits,
@@ -230,6 +231,22 @@ class ConsumePromptView(APIView):
         final = results[-1]
         http_status = status.HTTP_200_OK if final["allowed"] else status.HTTP_403_FORBIDDEN
         return Response(final, status=http_status)
+
+
+class ConsumeDownloadView(APIView):
+    """Track download consumption server-side. Free users: 20/day."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        count = int(request.data.get("count", 1))
+        if count < 1:
+            return Response(
+                {"detail": "Count must be at least 1."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        result = consume_download(request.user, count=count)
+        http_status = status.HTTP_200_OK if result["allowed"] else status.HTTP_403_FORBIDDEN
+        return Response(result, status=http_status)
 
 
 class UsageEventView(APIView):
