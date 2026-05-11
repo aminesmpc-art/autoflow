@@ -146,6 +146,7 @@ UNFOLD = {
                         "title": "Saved Extractions",
                         "icon": "movie",
                         "link": "/admin/extractions/savedextraction/",
+                        "badge": "apps.dashboard.badge_callback_extractions",
                     },
                 ],
             },
