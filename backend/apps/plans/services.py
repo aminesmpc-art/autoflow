@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 # ── Plan limits ──
 FREE_TEXT_DAILY_LIMIT = getattr(settings, "FREE_TEXT_DAILY_LIMIT", 100)
 FREE_FULL_DAILY_LIMIT = getattr(settings, "FREE_FULL_DAILY_LIMIT", 20)
+FREE_DOWNLOAD_DAILY_LIMIT = getattr(settings, "FREE_DOWNLOAD_DAILY_LIMIT", 20)
 # Keep legacy constant for backward compat
 FREE_DAILY_LIMIT = FREE_TEXT_DAILY_LIMIT
 
@@ -41,6 +42,7 @@ def get_or_create_daily_usage(user, target_date: date_type = None) -> DailyUsage
             "total_prompts_used": 0,
             "text_prompts_used": 0,
             "full_prompts_used": 0,
+            "downloads_used": 0,
         },
     )
     return usage
@@ -150,6 +152,10 @@ def get_entitlement_snapshot(user) -> dict:
         "reward_credit_balance": reward_balance,
         "can_run_prompt": can_run,
         "reset_at": reset_dt.isoformat(),
+        # Download limits
+        "download_daily_limit": FREE_DOWNLOAD_DAILY_LIMIT,
+        "downloads_used_today": usage.downloads_used,
+        "downloads_remaining_today": max(0, FREE_DOWNLOAD_DAILY_LIMIT - usage.downloads_used),
     }
 
 
@@ -297,3 +303,68 @@ def sync_profile_plan(user, plan_type: str, is_pro_active: bool, **extra):
         updated_at=timezone.now(),
         **extra,
     )
+
+
+# ── Download consumption ──
+
+
+def can_download(user, count: int = 1) -> tuple[bool, int]:
+    """Check if user can download `count` files. Returns (allowed, remaining)."""
+    profile = Profile.objects.get(user=user)
+    if profile.is_pro:
+        return True, 999
+
+    today = timezone.now().date()
+    usage = get_or_create_daily_usage(user, today)
+    remaining = max(0, FREE_DOWNLOAD_DAILY_LIMIT - usage.downloads_used)
+    return count <= remaining, remaining
+
+
+@transaction.atomic
+def consume_download(user, count: int = 1) -> dict:
+    """Atomically consume download credits. Returns result dict."""
+    profile = Profile.objects.get(user=user)
+    today = timezone.now().date()
+
+    usage, _ = DailyUsage.objects.select_for_update().get_or_create(
+        user=user,
+        date=today,
+        defaults={
+            "free_prompts_used": 0,
+            "reward_prompts_used": 0,
+            "total_prompts_used": 0,
+            "text_prompts_used": 0,
+            "full_prompts_used": 0,
+            "downloads_used": 0,
+        },
+    )
+
+    if not profile.is_pro:
+        remaining = FREE_DOWNLOAD_DAILY_LIMIT - usage.downloads_used
+        if count > remaining:
+            return {
+                "allowed": False,
+                "downloads_used_today": usage.downloads_used,
+                "downloads_remaining_today": max(0, remaining),
+                "download_daily_limit": FREE_DOWNLOAD_DAILY_LIMIT,
+                "message": f"Daily download limit reached ({FREE_DOWNLOAD_DAILY_LIMIT}/day). Upgrade to Pro for unlimited.",
+            }
+
+    usage.downloads_used += count
+    usage.save()
+
+    UsageEvent.objects.create(
+        user=user,
+        event_type=UsageEvent.EventType.DOWNLOAD_COMPLETED,
+        prompt_count=count,
+        metadata={"source": "extension", "count": count},
+    )
+
+    new_remaining = max(0, FREE_DOWNLOAD_DAILY_LIMIT - usage.downloads_used) if not profile.is_pro else 999
+    return {
+        "allowed": True,
+        "downloads_used_today": usage.downloads_used,
+        "downloads_remaining_today": new_remaining,
+        "download_daily_limit": FREE_DOWNLOAD_DAILY_LIMIT if not profile.is_pro else 999,
+        "message": f"{count} download(s) recorded.",
+    }
