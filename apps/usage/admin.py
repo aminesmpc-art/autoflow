@@ -18,7 +18,24 @@ class DailyUsageAdmin(ModelAdmin):
     date_hierarchy = "date"
     list_per_page = 50
     list_display_links = ("user_display",)
-    actions = ["reset_usage"]
+    actions = ["reset_usage", "export_csv"]
+
+    @admin.action(description="📥 Export selected as CSV")
+    def export_csv(self, request, queryset):
+        import csv
+        from django.http import HttpResponse
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="autoflow_usage.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["User", "Date", "Text", "Full", "Downloads", "Total", "Rewards"])
+        for row in queryset.select_related("user").order_by("-date"):
+            writer.writerow([
+                row.user.email, row.date, row.text_prompts_used,
+                row.full_prompts_used, row.downloads_used,
+                row.total_prompts_used, row.reward_prompts_used,
+            ])
+        self.message_user(request, f"📥 Exported {queryset.count()} row(s) to CSV.")
+        return response
 
     @admin.display(description="User", ordering="user__email")
     def user_display(self, obj):

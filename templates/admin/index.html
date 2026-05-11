@@ -9,170 +9,109 @@
 
 {% block content %}
 <style>
-    /* ── KPI Cards ── */
     .af-grid { display: grid; gap: 1rem; margin-bottom: 1.5rem; }
-    .af-grid-6 { grid-template-columns: repeat(6, 1fr); }
+    .af-grid-7 { grid-template-columns: repeat(7, 1fr); }
     .af-grid-2 { grid-template-columns: repeat(2, 1fr); }
     .af-grid-3 { grid-template-columns: 2fr 1fr; }
-
-    @media (max-width: 1280px) {
-        .af-grid-6 { grid-template-columns: repeat(3, 1fr); }
-        .af-grid-3 { grid-template-columns: 1fr; }
-    }
-    @media (max-width: 768px) {
-        .af-grid-6 { grid-template-columns: repeat(2, 1fr); }
-        .af-grid-2 { grid-template-columns: 1fr; }
-    }
+    .af-grid-3eq { grid-template-columns: repeat(3, 1fr); }
+    @media (max-width: 1400px) { .af-grid-7 { grid-template-columns: repeat(4, 1fr); } }
+    @media (max-width: 1024px) { .af-grid-7 { grid-template-columns: repeat(3, 1fr); } .af-grid-3eq { grid-template-columns: 1fr; } }
+    @media (max-width: 768px) { .af-grid-7,.af-grid-2,.af-grid-3 { grid-template-columns: 1fr; } }
 
     .af-card {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.06);
-        border-radius: 12px;
-        padding: 1.25rem 1.5rem;
-        transition: all 0.2s ease;
+        background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 12px; padding: 1.25rem 1.5rem; transition: all 0.2s ease;
     }
-    .af-card:hover {
-        background: rgba(255, 255, 255, 0.05);
-        border-color: rgba(16, 185, 129, 0.2);
-        transform: translateY(-1px);
-    }
-    .af-card-header {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        margin-bottom: 0.75rem;
-    }
-    .af-card-icon {
-        width: 36px; height: 36px;
-        border-radius: 8px;
-        display: flex; align-items: center; justify-content: center;
-        background: rgba(16, 185, 129, 0.12);
-        color: #34d399;
-        font-size: 20px;
-    }
-    .af-card-title {
-        font-size: 0.8rem;
-        font-weight: 500;
-        color: #9ca3af;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-    .af-card-metric {
-        font-size: 2rem;
-        font-weight: 700;
-        color: #f9fafb;
-        line-height: 1.1;
-        margin-bottom: 0.5rem;
-    }
-    .af-card-footer {
-        font-size: 0.78rem;
-        color: #6b7280;
-    }
+    .af-card:hover { background: rgba(255,255,255,0.05); border-color: rgba(16,185,129,0.2); transform: translateY(-1px); }
+    .af-card.accent-gold:hover { border-color: rgba(234,179,8,0.3); }
+    .af-card.accent-purple:hover { border-color: rgba(167,139,250,0.3); }
+    .af-card.accent-red:hover { border-color: rgba(239,68,68,0.3); }
+    .af-card-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .af-card-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: rgba(16,185,129,0.12); color: #34d399; font-size: 20px; }
+    .af-card.accent-gold .af-card-icon { background: rgba(234,179,8,0.12); color: #fbbf24; }
+    .af-card.accent-purple .af-card-icon { background: rgba(167,139,250,0.12); color: #a78bfa; }
+    .af-card.accent-red .af-card-icon { background: rgba(239,68,68,0.12); color: #f87171; }
+    .af-card-title { font-size: 0.75rem; font-weight: 500; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; }
+    .af-card-metric { font-size: 2rem; font-weight: 700; color: #f9fafb; line-height: 1.1; margin-bottom: 0.25rem; }
+    .af-card-highlight { font-size: 0.72rem; color: #34d399; font-weight: 500; margin-bottom: 0.25rem; }
+    .af-card-footer { font-size: 0.72rem; color: #6b7280; }
 
-    /* ── Chart cards ── */
-    .af-chart-card {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.06);
-        border-radius: 12px;
-        padding: 1.5rem;
-    }
-    .af-chart-title {
-        font-size: 0.95rem;
-        font-weight: 600;
-        color: #e5e7eb;
-        margin-bottom: 1rem;
-    }
+    .af-chart-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 1.5rem; }
+    .af-chart-title { font-size: 0.95rem; font-weight: 600; color: #e5e7eb; margin-bottom: 1rem; }
+    .af-section-title { font-size: 0.75rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.06); }
 
-    /* ── Tables ── */
-    .af-table {
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 0;
-    }
-    .af-table th {
-        font-size: 0.7rem;
-        font-weight: 600;
-        color: #6b7280;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        padding: 0.5rem 0.75rem;
-        text-align: left;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    }
-    .af-table td {
-        font-size: 0.82rem;
-        color: #d1d5db;
-        padding: 0.6rem 0.75rem;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    }
-    .af-table tr:hover td {
-        background: rgba(16, 185, 129, 0.04);
-    }
-    .af-table .af-email {
-        color: #34d399;
-        font-weight: 500;
-    }
-    .af-table .af-num {
-        font-weight: 600;
-        font-variant-numeric: tabular-nums;
-    }
+    .af-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .af-table th { font-size: 0.7rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .af-table td { font-size: 0.82rem; color: #d1d5db; padding: 0.6rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .af-table tr:hover td { background: rgba(16,185,129,0.04); }
+    .af-table .af-email { color: #34d399; font-weight: 500; }
+    .af-table .af-num { font-weight: 600; font-variant-numeric: tabular-nums; }
 
-    /* ── Progress bar ── */
-    .af-progress-wrap {
-        margin-bottom: 1rem;
-    }
-    .af-progress-label {
-        display: flex;
-        justify-content: space-between;
-        font-size: 0.78rem;
-        margin-bottom: 0.35rem;
-    }
+    .af-progress-wrap { margin-bottom: 0.75rem; }
+    .af-progress-label { display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 0.3rem; }
     .af-progress-label span:first-child { color: #d1d5db; font-weight: 500; }
     .af-progress-label span:last-child { color: #6b7280; }
-    .af-progress-bar {
-        height: 8px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.06);
-        overflow: hidden;
-    }
-    .af-progress-fill {
-        height: 100%;
-        border-radius: 999px;
-        transition: width 0.6s ease;
-    }
+    .af-progress-bar { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.06); overflow: hidden; }
+    .af-progress-fill { height: 100%; border-radius: 999px; transition: width 0.6s ease; }
     .af-progress-fill.emerald { background: linear-gradient(90deg, #059669, #34d399); }
     .af-progress-fill.slate { background: linear-gradient(90deg, #374151, #6b7280); }
+    .af-progress-fill.blue { background: linear-gradient(90deg, #1d4ed8, #3b82f6); }
+    .af-progress-fill.purple { background: linear-gradient(90deg, #6d28d9, #a78bfa); }
+    .af-progress-fill.amber { background: linear-gradient(90deg, #b45309, #f59e0b); }
 
-    /* ── Badges ── */
-    .af-badge {
-        display: inline-flex;
-        padding: 2px 8px;
-        border-radius: 6px;
-        font-size: 0.7rem;
-        font-weight: 600;
-    }
+    .af-badge { display: inline-flex; padding: 2px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 600; }
     .af-badge-pro { background: #065f46; color: #6ee7b7; }
     .af-badge-free { background: #374151; color: #9ca3af; }
     .af-badge-active { background: #064e3b; color: #34d399; }
     .af-badge-inactive { background: #7f1d1d; color: #fca5a5; }
 
-    /* ── Section header ── */
-    .af-section-title {
-        font-size: 0.75rem;
-        font-weight: 600;
-        color: #6b7280;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        margin-bottom: 0.75rem;
-        padding-bottom: 0.5rem;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    }
+    /* Funnel */
+    .af-funnel-step { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .af-funnel-step:last-child { border-bottom: none; }
+    .af-funnel-num { font-size: 1.5rem; font-weight: 700; color: #f9fafb; min-width: 60px; font-variant-numeric: tabular-nums; }
+    .af-funnel-label { font-size: 0.82rem; color: #d1d5db; font-weight: 500; }
+    .af-funnel-pct { font-size: 0.72rem; color: #6b7280; }
+    .af-funnel-arrow { color: #4b5563; font-size: 0.7rem; margin: 0 0.5rem; }
+
+    /* Activity feed */
+    .af-feed-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
+    .af-feed-item:last-child { border-bottom: none; }
+    .af-feed-icon { font-size: 1rem; flex-shrink: 0; }
+    .af-feed-text { font-size: 0.78rem; color: #d1d5db; flex: 1; }
+    .af-feed-text strong { color: #34d399; font-weight: 500; }
+    .af-feed-time { font-size: 0.7rem; color: #4b5563; white-space: nowrap; }
+
+    /* All-time banner */
+    .af-alltime { display: flex; gap: 2rem; padding: 0.75rem 1.5rem; background: linear-gradient(135deg, rgba(16,185,129,0.06), rgba(167,139,250,0.06)); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; margin-bottom: 1.5rem; }
+    .af-alltime-item { text-align: center; }
+    .af-alltime-num { font-size: 1.25rem; font-weight: 700; color: #f9fafb; }
+    .af-alltime-label { font-size: 0.68rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
 </style>
 
+<!-- ── All-Time Banner ── -->
+<div class="af-alltime">
+    <div class="af-alltime-item">
+        <div class="af-alltime-num">{{ all_time.prompts|default:"0" }}</div>
+        <div class="af-alltime-label">Total Prompts</div>
+    </div>
+    <div class="af-alltime-item">
+        <div class="af-alltime-num">{{ all_time.downloads|default:"0" }}</div>
+        <div class="af-alltime-label">Total Downloads</div>
+    </div>
+    <div class="af-alltime-item">
+        <div class="af-alltime-num">${{ revenue.mrr|floatformat:0 }}</div>
+        <div class="af-alltime-label">Monthly Revenue</div>
+    </div>
+    <div class="af-alltime-item">
+        <div class="af-alltime-num">${{ revenue.arr|floatformat:0 }}</div>
+        <div class="af-alltime-label">Annual Revenue</div>
+    </div>
+</div>
+
 <!-- ── KPI Cards ── -->
-<div class="af-grid af-grid-6">
+<div class="af-grid af-grid-7">
     {% for card in kpi %}
-    <div class="af-card">
+    <div class="af-card {% if card.accent %}accent-{{ card.accent }}{% endif %}">
         <div class="af-card-header">
             <div class="af-card-icon">
                 <span class="material-symbols-outlined">{{ card.icon }}</span>
@@ -180,6 +119,7 @@
             <span class="af-card-title">{{ card.title }}</span>
         </div>
         <div class="af-card-metric">{{ card.metric }}</div>
+        {% if card.highlight %}<div class="af-card-highlight">{{ card.highlight }}</div>{% endif %}
         <div class="af-card-footer">{{ card.footer }}</div>
     </div>
     {% endfor %}
@@ -188,129 +128,157 @@
 <!-- ── Charts Row ── -->
 <div class="af-grid af-grid-2">
     <div class="af-chart-card">
-        <div class="af-chart-title">📊 Prompts — Last 7 Days</div>
-        <div style="position: relative; height: 260px; width: 100%;">
-            <canvas id="usageChart"></canvas>
-        </div>
+        <div class="af-chart-title">📊 Prompts & Downloads — Last 7 Days</div>
+        <div style="position: relative; height: 280px; width: 100%;"><canvas id="usageChart"></canvas></div>
     </div>
     <div class="af-chart-card">
         <div class="af-chart-title">📈 Signups — Last 7 Days</div>
-        <div style="position: relative; height: 260px; width: 100%;">
-            <canvas id="signupChart"></canvas>
-        </div>
+        <div style="position: relative; height: 280px; width: 100%;"><canvas id="signupChart"></canvas></div>
     </div>
 </div>
 
-<!-- ── Distribution + Tables ── -->
-<div class="af-grid af-grid-3" style="margin-top: 1rem;">
-    <!-- Left: Top Users + Recent Signups -->
+<!-- ── Funnel + Retention + Events ── -->
+<div class="af-grid af-grid-3eq" style="margin-top: 1rem;">
+    <!-- Conversion Funnel -->
     <div class="af-chart-card">
+        <div class="af-section-title">🔻 Conversion Funnel</div>
+        <div class="af-funnel-step">
+            <div class="af-funnel-num">{{ funnel.total_users }}</div>
+            <div><div class="af-funnel-label">Signed Up</div><div class="af-funnel-pct">100%</div></div>
+        </div>
+        <div class="af-funnel-step">
+            <div class="af-funnel-num">{{ funnel.verified }}</div>
+            <div><div class="af-funnel-label">Verified Email</div><div class="af-funnel-pct">{{ funnel.signup_to_verified }}% of signups</div></div>
+        </div>
+        <div class="af-funnel-step">
+            <div class="af-funnel-num">{{ funnel.active }}</div>
+            <div><div class="af-funnel-label">Used Extension</div><div class="af-funnel-pct">{{ funnel.verified_to_active }}% of verified</div></div>
+        </div>
+        <div class="af-funnel-step">
+            <div class="af-funnel-num" style="color:#fbbf24;">{{ funnel.pro }}</div>
+            <div><div class="af-funnel-label" style="color:#fbbf24;">💎 Upgraded to Pro</div><div class="af-funnel-pct">{{ funnel.active_to_pro }}% of active</div></div>
+        </div>
+    </div>
+
+    <!-- 7-Day Retention -->
+    <div class="af-chart-card">
+        <div class="af-section-title">📅 7-Day Retention (Cohort)</div>
+        {% for r in retention %}
+        <div class="af-progress-wrap">
+            <div class="af-progress-label">
+                <span>{{ r.date }} ({{ r.cohort_size }} users)</span>
+                <span>{{ r.returned }} returned · {{ r.pct }}%</span>
+            </div>
+            <div class="af-progress-bar">
+                <div class="af-progress-fill blue" style="width: {{ r.pct }}%;"></div>
+            </div>
+        </div>
+        {% endfor %}
+        {% if not retention %}<p style="color:#6b7280;font-size:0.85rem;padding:1rem 0;">No cohort data yet.</p>{% endif %}
+    </div>
+
+    <!-- Event Distribution -->
+    <div class="af-chart-card">
+        <div class="af-section-title">⚡ Today's Events</div>
+        {% if event_distribution %}
+        <div style="position:relative;height:180px;margin-bottom:1rem;"><canvas id="eventDonut"></canvas></div>
+        {% for ev in event_distribution %}
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0;">
+            <span style="width:10px;height:10px;border-radius:50%;background:{{ ev.color }};flex-shrink:0;"></span>
+            <span style="font-size:0.78rem;color:#d1d5db;flex:1;">{{ ev.type }}</span>
+            <span style="font-size:0.82rem;font-weight:600;color:#f9fafb;">{{ ev.count }}</span>
+        </div>
+        {% endfor %}
+        {% else %}<p style="color:#6b7280;font-size:0.85rem;padding:1rem 0;">No events today yet.</p>{% endif %}
+    </div>
+</div>
+
+<!-- ── Tables Row ── -->
+<div class="af-grid af-grid-3" style="margin-top: 1rem;">
+    <div class="af-chart-card">
+        <!-- Top Users -->
         <div class="af-section-title">🏆 Top Users Today</div>
         {% if top_users %}
         <table class="af-table">
-            <thead>
-                <tr>
-                    <th>User</th>
-                    <th>Text</th>
-                    <th>Image</th>
-                    <th>Total</th>
-                </tr>
-            </thead>
+            <thead><tr><th>User</th><th>Text</th><th>Image</th><th>DL</th><th>Total</th></tr></thead>
             <tbody>
-                {% for u in top_users %}
-                <tr>
-                    <td class="af-email">{{ u.email }}</td>
-                    <td class="af-num">{{ u.text }}</td>
-                    <td class="af-num">{{ u.full }}</td>
-                    <td class="af-num" style="color: #34d399; font-weight: 700;">{{ u.total }}</td>
-                </tr>
-                {% endfor %}
+            {% for u in top_users %}
+            <tr>
+                <td class="af-email">{{ u.email }}</td>
+                <td class="af-num">{{ u.text }}</td>
+                <td class="af-num">{{ u.full }}</td>
+                <td class="af-num" style="color:#a78bfa;">{{ u.downloads }}</td>
+                <td class="af-num" style="color:#34d399;font-weight:700;">{{ u.total }}</td>
+            </tr>
+            {% endfor %}
             </tbody>
         </table>
-        {% else %}
-        <p style="color: #6b7280; font-size: 0.85rem; padding: 1rem 0;">No usage recorded today yet.</p>
+        {% else %}<p style="color:#6b7280;font-size:0.85rem;padding:1rem 0;">No usage today yet.</p>{% endif %}
+
+        <!-- Power Users -->
+        {% if power_users %}
+        <div class="af-section-title" style="margin-top:1.5rem;">🔥 Power Users (>50% limit)</div>
+        {% for p in power_users %}
+        <div class="af-progress-wrap">
+            <div class="af-progress-label">
+                <span>{{ p.email }} {% if p.is_pro %}<span class="af-badge af-badge-pro" style="margin-left:4px;">PRO</span>{% endif %}</span>
+                <span>{{ p.total }} prompts · {{ p.pct }}%</span>
+            </div>
+            <div class="af-progress-bar"><div class="af-progress-fill {% if p.pct >= 90 %}emerald{% elif p.pct >= 70 %}amber{% else %}blue{% endif %}" style="width:{{ p.pct }}%;"></div></div>
+        </div>
+        {% endfor %}
         {% endif %}
 
-        <div class="af-section-title" style="margin-top: 1.5rem;">🆕 Recent Signups</div>
+        <!-- Recent Signups -->
+        <div class="af-section-title" style="margin-top:1.5rem;">🆕 Recent Signups</div>
         {% if recent_users %}
         <table class="af-table">
-            <thead>
-                <tr>
-                    <th>Email</th>
-                    <th>Plan</th>
-                    <th>Status</th>
-                    <th>Date</th>
-                </tr>
-            </thead>
+            <thead><tr><th>Email</th><th>Plan</th><th>Status</th><th>Date</th></tr></thead>
             <tbody>
-                {% for u in recent_users %}
-                <tr>
-                    <td class="af-email">{{ u.email }}</td>
-                    <td>
-                        {% if u.plan == "Pro" %}
-                            <span class="af-badge af-badge-pro">⚡ PRO</span>
-                        {% else %}
-                            <span class="af-badge af-badge-free">Free</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if u.active %}
-                            <span class="af-badge af-badge-active">Active</span>
-                        {% else %}
-                            <span class="af-badge af-badge-inactive">Pending</span>
-                        {% endif %}
-                    </td>
-                    <td style="color: #6b7280; font-size: 0.78rem;">{{ u.date }}</td>
-                </tr>
-                {% endfor %}
+            {% for u in recent_users %}
+            <tr>
+                <td class="af-email">{{ u.email }}</td>
+                <td>{% if u.plan == "Pro" %}<span class="af-badge af-badge-pro">⚡ PRO</span>{% else %}<span class="af-badge af-badge-free">Free</span>{% endif %}</td>
+                <td>{% if u.active %}<span class="af-badge af-badge-active">Active</span>{% else %}<span class="af-badge af-badge-inactive">Pending</span>{% endif %}</td>
+                <td style="color:#6b7280;font-size:0.78rem;">{{ u.date }}</td>
+            </tr>
+            {% endfor %}
             </tbody>
         </table>
         {% endif %}
     </div>
 
-    <!-- Right: Plan Distribution -->
     <div class="af-chart-card">
+        <!-- Plan Distribution -->
         <div class="af-section-title">📊 Plan Distribution</div>
-
-        <div style="text-align: center; margin: 1.5rem 0;">
-            <div style="font-size: 2.5rem; font-weight: 700; color: #f9fafb;">
-                {{ plan_distribution.pro_count }}
-            </div>
-            <div style="font-size: 0.8rem; color: #6b7280; margin-top: 0.25rem;">
-                Pro subscribers
-            </div>
+        <div style="text-align:center;margin:1.5rem 0;">
+            <div style="font-size:2.5rem;font-weight:700;color:#fbbf24;">{{ plan_distribution.pro_count }}</div>
+            <div style="font-size:0.8rem;color:#6b7280;">Pro subscribers</div>
         </div>
-
         <div class="af-progress-wrap">
-            <div class="af-progress-label">
-                <span>⚡ Pro</span>
-                <span>{{ plan_distribution.pro_pct }}%</span>
-            </div>
-            <div class="af-progress-bar">
-                <div class="af-progress-fill emerald" style="width: {{ plan_distribution.pro_pct }}%;"></div>
-            </div>
+            <div class="af-progress-label"><span>⚡ Pro</span><span>{{ plan_distribution.pro_pct }}%</span></div>
+            <div class="af-progress-bar"><div class="af-progress-fill emerald" style="width:{{ plan_distribution.pro_pct }}%;"></div></div>
         </div>
-
         <div class="af-progress-wrap">
-            <div class="af-progress-label">
-                <span>Free</span>
-                <span>{{ plan_distribution.free_pct }}%</span>
-            </div>
-            <div class="af-progress-bar">
-                <div class="af-progress-fill slate" style="width: {{ plan_distribution.free_pct }}%;"></div>
-            </div>
+            <div class="af-progress-label"><span>Free</span><span>{{ plan_distribution.free_pct }}%</span></div>
+            <div class="af-progress-bar"><div class="af-progress-fill slate" style="width:{{ plan_distribution.free_pct }}%;"></div></div>
+        </div>
+        <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.06);">
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;"><span style="font-size:0.8rem;color:#9ca3af;">Total users</span><span style="font-size:0.8rem;color:#f9fafb;font-weight:600;">{{ plan_distribution.pro_count|add:plan_distribution.free_count }}</span></div>
+            <div style="display:flex;justify-content:space-between;"><span style="font-size:0.8rem;color:#9ca3af;">Conversion rate</span><span style="font-size:0.8rem;color:#34d399;font-weight:600;">{{ plan_distribution.pro_pct }}%</span></div>
         </div>
 
-        <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06);">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
-                <span style="font-size: 0.8rem; color: #9ca3af;">Total users</span>
-                <span style="font-size: 0.8rem; color: #f9fafb; font-weight: 600;">{{ plan_distribution.pro_count|add:plan_distribution.free_count }}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between;">
-                <span style="font-size: 0.8rem; color: #9ca3af;">Conversion rate</span>
-                <span style="font-size: 0.8rem; color: #34d399; font-weight: 600;">{{ plan_distribution.pro_pct }}%</span>
-            </div>
+        <!-- Live Activity Feed -->
+        <div class="af-section-title" style="margin-top:1.5rem;">📡 Live Activity</div>
+        {% if recent_activity %}
+        {% for ev in recent_activity %}
+        <div class="af-feed-item">
+            <span class="af-feed-icon">{{ ev.icon }}</span>
+            <span class="af-feed-text"><strong>{{ ev.email }}</strong> · {{ ev.label }}{% if ev.count > 0 %} (×{{ ev.count }}){% endif %}</span>
+            <span class="af-feed-time">{{ ev.time_ago }}</span>
         </div>
+        {% endfor %}
+        {% else %}<p style="color:#6b7280;font-size:0.85rem;padding:1rem 0;">No recent activity.</p>{% endif %}
     </div>
 </div>
 
@@ -318,70 +286,28 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
 (function() {
-    const gridColor = 'rgba(255, 255, 255, 0.04)';
+    const gridColor = 'rgba(255,255,255,0.04)';
     const tickColor = '#6b7280';
+    const chartOpts = { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { color: tickColor, boxWidth: 12, padding: 16, font: { size: 11 } } } },
+        scales: { x: { grid: { display: false }, ticks: { color: tickColor, font: { size: 11 } }, border: { display: false } },
+                  y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 }, stepSize: 1 }, border: { display: false } } } };
 
-    // Usage chart (bar)
-    const usageData = {{ usage_chart|safe }};
-    new Chart(document.getElementById('usageChart'), {
-        type: 'bar',
-        data: usageData,
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: { color: tickColor, boxWidth: 12, padding: 16, font: { size: 11 } }
-                }
-            },
-            scales: {
-                x: {
-                    grid: { display: false },
-                    ticks: { color: tickColor, font: { size: 11 } },
-                    border: { display: false }
-                },
-                y: {
-                    beginAtZero: true,
-                    grid: { color: gridColor },
-                    ticks: { color: tickColor, font: { size: 11 }, stepSize: 1 },
-                    border: { display: false }
-                }
-            },
-            barPercentage: 0.6,
-            categoryPercentage: 0.8
-        }
-    });
+    new Chart(document.getElementById('usageChart'), { type: 'bar', data: {{ usage_chart|safe }},
+        options: { ...chartOpts, barPercentage: 0.6, categoryPercentage: 0.8 } });
 
-    // Signup chart (line)
-    const signupData = {{ signup_chart|safe }};
-    new Chart(document.getElementById('signupChart'), {
-        type: 'line',
-        data: signupData,
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: { color: tickColor, boxWidth: 12, padding: 16, font: { size: 11 } }
-                }
-            },
-            scales: {
-                x: {
-                    grid: { display: false },
-                    ticks: { color: tickColor, font: { size: 11 } },
-                    border: { display: false }
-                },
-                y: {
-                    beginAtZero: true,
-                    grid: { color: gridColor },
-                    ticks: { color: tickColor, font: { size: 11 }, stepSize: 1 },
-                    border: { display: false }
-                }
-            }
-        }
-    });
+    new Chart(document.getElementById('signupChart'), { type: 'line', data: {{ signup_chart|safe }}, options: chartOpts });
+
+    // Event donut
+    const donutEl = document.getElementById('eventDonut');
+    if (donutEl) {
+        const evData = [{% for ev in event_distribution %}{{ ev.count }},{% endfor %}];
+        const evColors = [{% for ev in event_distribution %}'{{ ev.color }}',{% endfor %}];
+        const evLabels = [{% for ev in event_distribution %}'{{ ev.type }}',{% endfor %}];
+        new Chart(donutEl, { type: 'doughnut', data: { labels: evLabels, datasets: [{ data: evData, backgroundColor: evColors, borderWidth: 0 }] },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '65%',
+                plugins: { legend: { display: false } } } });
+    }
 })();
 </script>
 {% endblock %}
