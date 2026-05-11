@@ -10,7 +10,7 @@ from .models import DailyUsage, UsageEvent
 class DailyUsageAdmin(ModelAdmin):
     list_display = (
         "user_display", "date_display", "text_count", "full_count",
-        "total_badge", "created_display",
+        "download_count", "total_badge", "created_display",
     )
     list_filter = ("date",)
     search_fields = ("user__email",)
@@ -82,6 +82,19 @@ class DailyUsageAdmin(ModelAdmin):
             bg, total, label,
         )
 
+    @admin.display(description="Downloads")
+    def download_count(self, obj):
+        count = obj.downloads_used
+        if count == 0:
+            return format_html(
+                '<span style="color:#4b5563;font-size:13px;">0</span>'
+            )
+        return format_html(
+            '<span style="font-weight:600;font-size:13px;color:#a78bfa;'
+            'font-variant-numeric:tabular-nums;">⬇ {}</span>',
+            count,
+        )
+
     @admin.display(description="Created", ordering="created_at")
     def created_display(self, obj):
         return format_html(
@@ -93,7 +106,7 @@ class DailyUsageAdmin(ModelAdmin):
     def reset_usage(self, request, queryset):
         count = queryset.update(
             free_prompts_used=0, reward_prompts_used=0, total_prompts_used=0,
-            text_prompts_used=0, full_prompts_used=0,
+            text_prompts_used=0, full_prompts_used=0, downloads_used=0,
         )
         self.message_user(request, f"✅ Reset usage for {count} record(s).")
 

@@ -33,10 +33,12 @@ def dashboard_callback(request, context):
         total=Sum("total_prompts_used"),
         text=Sum("text_prompts_used"),
         full=Sum("full_prompts_used"),
+        downloads=Sum("downloads_used"),
     )
     today_total = today_agg["total"] or 0
     today_text = today_agg["text"] or 0
     today_full = today_agg["full"] or 0
+    today_downloads = today_agg["downloads"] or 0
     active_today = DailyUsage.objects.filter(date=today).count()
     total_events = UsageEvent.objects.filter(created_at__date=today).count()
 
@@ -48,6 +50,7 @@ def dashboard_callback(request, context):
     chart_text = []
     chart_full = []
     chart_total = []
+    chart_downloads = []
     for i in range(6, -1, -1):
         d = today - timedelta(days=i)
         chart_labels.append(d.strftime("%b %d"))
@@ -55,10 +58,12 @@ def dashboard_callback(request, context):
             t=Sum("text_prompts_used"),
             f=Sum("full_prompts_used"),
             tot=Sum("total_prompts_used"),
+            dl=Sum("downloads_used"),
         )
         chart_text.append(agg["t"] or 0)
         chart_full.append(agg["f"] or 0)
         chart_total.append(agg["tot"] or 0)
+        chart_downloads.append(agg["dl"] or 0)
 
     # ── 7-day signup chart data ──
     signup_labels = []
@@ -82,6 +87,7 @@ def dashboard_callback(request, context):
             "email": du.user.email,
             "text": du.text_prompts_used,
             "full": du.full_prompts_used,
+            "downloads": du.downloads_used,
             "total": du.total_prompts_used,
         })
 
@@ -127,6 +133,12 @@ def dashboard_callback(request, context):
                 "icon": "edit_note",
             },
             {
+                "title": "Downloads Today",
+                "metric": today_downloads,
+                "footer": "Media files downloaded",
+                "icon": "download",
+            },
+            {
                 "title": "Active Today",
                 "metric": active_today,
                 "footer": f"{total_events} events logged",
@@ -152,6 +164,11 @@ def dashboard_callback(request, context):
                     "label": "Image Prompts",
                     "data": chart_full,
                     "backgroundColor": "#6ee7b7",
+                },
+                {
+                    "label": "Downloads",
+                    "data": chart_downloads,
+                    "backgroundColor": "#a78bfa",
                 },
             ],
         }),
