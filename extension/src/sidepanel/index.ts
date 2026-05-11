@@ -45,7 +45,7 @@ import {
   getActiveQueueId,
   savePromptHistory,
 } from '../shared/storage';
-import { login, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl } from '../shared/api';
+import { login, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl, consumeDownload } from '../shared/api';
 import { applyLanguage, initLanguage } from './i18n';
 
 // ================================================================
@@ -198,6 +198,34 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     }
   }
+
+  // WhatsApp Support Button
+  $('#btn-whatsapp-support')?.addEventListener('click', () => {
+    const phoneNumber = '+212723164437';
+    const message = encodeURIComponent('Hi, I need some help with the AutoFlow extension.');
+    chrome.tabs.create({ url: `https://wa.me/${phoneNumber.replace('+', '')}?text=${message}` });
+  });
+
+  // Flow Tab Guidance Banner — open Flow in a new tab
+  const openFlowBtn = document.getElementById('btn-open-flow');
+  if (openFlowBtn) {
+    openFlowBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      await chrome.tabs.create({ url: 'https://labs.google/flow' });
+      showToast('Google Flow is opening — wait for it to load, then hit Run!', 'success');
+      const banner = document.getElementById('flow-tab-banner');
+      if (banner) banner.style.display = 'none';
+    });
+  }
+
+  // Check if a Flow tab is already open — if not, show the guidance banner
+  try {
+    const flowTabs = await chrome.tabs.query({ url: ['https://labs.google/flow*', 'https://labs.google/fx*'] });
+    const banner = document.getElementById('flow-tab-banner');
+    if (banner && flowTabs.length === 0) {
+      banner.style.display = 'flex';
+    }
+  } catch { /* ignore — may fail in some contexts */ }
 });
 
 // ================================================================
@@ -423,9 +451,7 @@ function initVideoTab() {
   // Add to Queue
   $('#btn-add-queue').addEventListener('click', addToQueue);
 
-  // Run target buttons
-  $('#btn-target-new').addEventListener('click', () => setRunTarget('newProject'));
-  $('#btn-target-current').addEventListener('click', () => setRunTarget('currentProject'));
+
 
   // Monitor controls
   $('#btn-pause').addEventListener('click', () => sendToBackground({ type: 'PAUSE_QUEUE' }));
@@ -440,23 +466,23 @@ function initVideoTab() {
 
   // Failed generations controls
   $('#btn-scan-failed').addEventListener('click', () => {
-    showToast('Scanning page for failed tiles...');
+    showToast('Scanning page for failed tiles...', 'info');
     sendToBackground({ type: 'SCAN_FAILED_TILES' });
   });
   $('#btn-copy-failed').addEventListener('click', () => {
     const textarea = $('#failed-prompts') as HTMLTextAreaElement;
     if (textarea.value) {
       navigator.clipboard.writeText(textarea.value).then(() => {
-        showToast('Failed prompts copied to clipboard!');
+        showToast('Failed prompts copied to clipboard!', 'success');
       }).catch(() => {
         textarea.select();
         document.execCommand('copy');
-        showToast('Failed prompts copied!');
+        showToast('Failed prompts copied!', 'success');
       });
     }
   });
   $('#btn-retry-page').addEventListener('click', () => {
-    showToast('Retrying failed tiles on page...');
+    showToast('Retrying failed tiles on page...', 'info');
     sendToBackground({ type: 'RETRY_FAILED_TILES' });
   });
 
@@ -466,7 +492,7 @@ function initVideoTab() {
 
   sharedAddBtn.addEventListener('click', () => {
     if (state.sharedImages.length >= MAX_SHARED_IMAGES) {
-      showToast(`Maximum ${MAX_SHARED_IMAGES} shared reference images.`);
+      showToast(`Maximum ${MAX_SHARED_IMAGES} shared reference images.`, 'warning');
       return;
     }
     sharedFileInput.click();
@@ -513,7 +539,7 @@ function initVideoTab() {
 
   automapBtn.addEventListener('click', () => {
     if (state.parsedPrompts.length === 0) {
-      showToast('Parse prompts first before auto-mapping images.');
+      showToast('Parse prompts first before auto-mapping images.', 'warning');
       return;
     }
     automapFileInput.click();
@@ -533,7 +559,7 @@ function initVideoTab() {
 
   framechainBtn.addEventListener('click', () => {
     if (state.parsedPrompts.length === 0) {
-      showToast('Parse prompts first before chaining frames.');
+      showToast('Parse prompts first before chaining frames.', 'warning');
       return;
     }
     framechainFileInput.click();
@@ -609,7 +635,7 @@ function renderPromptList() {
       addBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (imgCount >= maxImg) {
-          showToast(`Maximum ${MAX_IMAGES_PER_PROMPT} reference images per prompt.`);
+          showToast(`Maximum ${MAX_IMAGES_PER_PROMPT} reference images per prompt.`, 'warning');
           return;
         }
         fileInput.click();
@@ -1360,7 +1386,7 @@ function renderSharedThumbnailsInRow(row: HTMLElement) {
 
 async function addToQueue() {
   if (state.parsedPrompts.length === 0) {
-    showToast('No prompts to add. Parse prompts first.');
+    showToast('No prompts to add. Write some prompts first!', 'warning');
     return;
   }
 
@@ -1375,15 +1401,15 @@ async function addToQueue() {
   if (!quota.allowed) {
     if (quota.limit === 0) {
       // Fail-closed: API couldn't be reached
-      showToast('Could not verify your usage. Check your connection and try again.');
+      showToast('Could not verify your usage. Check your connection and try again.', 'error');
     } else {
-      showToast(`Daily ${promptType === 'full' ? 'full-feature' : 'text'} limit reached (${quota.limit}/day). Upgrade to Pro for unlimited.`);
+      showToast(`Daily ${promptType === 'full' ? 'full-feature' : 'text'} limit reached (${quota.limit}/day). Upgrade to Pro for unlimited.`, 'warning');
     }
     return;
   }
 
   if (state.parsedPrompts.length > quota.remaining) {
-    showToast(`Only ${quota.remaining} ${promptType === 'full' ? 'full-feature' : 'text'} prompts remaining today. You have ${state.parsedPrompts.length}.`);
+    showToast(`Only ${quota.remaining} ${promptType === 'full' ? 'full-feature' : 'text'} prompts remaining today. You have ${state.parsedPrompts.length}.`, 'warning');
     return;
   }
 
@@ -1426,12 +1452,17 @@ async function addToQueue() {
     };
   });
 
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const url = tabs[0]?.url || '';
+  const isProjectPage = /\/app\/prompts\/[a-zA-Z0-9_-]+/.test(url) && !url.endsWith('new_chat');
+  const target = isProjectPage ? 'currentProject' : 'newProject';
+
   const queue: QueueObject = {
     id: queueId,
     name: queueName,
     prompts,
     settings: { ...settings },
-    runTarget: null,
+    runTarget: target,
     status: 'pending',
     currentPromptIndex: 0,
     createdAt: Date.now(),
@@ -1441,35 +1472,19 @@ async function addToQueue() {
   await addQueue(queue);
   state.lastAddedQueueId = queueId;
 
-  showToast(`Queue "${queueName}" created with ${prompts.length} prompt(s).`);
-
-  // Show run target options
-  $('#run-target-options').style.display = 'flex';
+  showToast(`Queue "${queueName}" added! Will ${target === 'newProject' ? 'start a new project' : 'run in current project'}.`);
 
   // Update prompt statuses visually
   $$('.af-status').forEach(badge => {
     badge.className = 'af-status af-status-queued';
     badge.textContent = 'Queued';
   });
-}
 
-async function setRunTarget(target: 'newProject' | 'currentProject') {
-  if (!state.lastAddedQueueId) return;
-
-  const queues = await getAllQueues();
-  const queue = queues.find(q => q.id === state.lastAddedQueueId);
-  if (!queue) return;
-
-  queue.runTarget = target;
-  queue.updatedAt = Date.now();
-  await saveAllQueues(queues);
-
-  showToast(`Queue "${queue.name}" will ${target === 'newProject' ? 'start a new project' : 'run in current project'}.`);
-  $('#run-target-options').style.display = 'none';
-
-  // Switch to Queues tab to show the new queue and let user run it
+  // Automatically switch to Queues tab
   (document.querySelector('[data-tab="queues"]') as HTMLElement)?.click();
 }
+
+
 
 // ================================================================
 // TAB B: SETTINGS
@@ -1515,7 +1530,7 @@ function initSettingsTab() {
   if (saveBtn) saveBtn.style.display = 'none';
 
   $('#btn-refresh-models').addEventListener('click', async () => {
-    showToast('Refreshing models from Flow...');
+    showToast('Refreshing models from Flow...', 'info');
     const response = await sendToBackground({ type: 'REFRESH_MODELS' });
     if (response?.models && response.models.length > 0) {
       const select = $('#setting-model') as HTMLSelectElement;
@@ -1526,9 +1541,9 @@ function initSettingsTab() {
         opt.textContent = model;
         select.appendChild(opt);
       }
-      showToast(`Found ${response.models.length} models.`);
+      showToast(`Found ${response.models.length} models.`, 'success');
     } else {
-      showToast(response?.error || 'No models found. Make sure a Flow tab is open.');
+      showToast(response?.error || 'No models found. Make sure a Flow tab is open.', 'warning');
     }
   });
 
@@ -1548,7 +1563,7 @@ function initSettingsTab() {
   // Configure folder link
   $('#btn-configure-folder').addEventListener('click', (e) => {
     e.preventDefault();
-    showToast('Downloads will go to your browser\'s default download folder. Change it in chrome://settings/downloads.');
+    showToast('Downloads go to your browser\'s default download folder. Change it in chrome://settings/downloads.', 'info');
   });
 
   // Clear Flow Cache button
@@ -1556,13 +1571,13 @@ function initSettingsTab() {
     const response = await sendToBackground({ type: 'PING' });
     if (response) {
       // Reload the Flow tab to clear its cache
-      showToast('Clearing Flow cache... The Flow tab will reload.');
+      showToast('Clearing Flow cache... The Flow tab will reload.', 'info');
       await sendToBackground({ type: 'STOP_QUEUE' });
       // Send a reload command via background
       chrome.runtime.sendMessage({ type: 'PING' }); // Re-establish connection
-      showToast('Flow cache cleared. Please reload the Flow tab manually if needed.');
+      showToast('Flow cache cleared. Reload the Flow tab if needed.', 'success');
     } else {
-      showToast('No active Flow tab found. Open Flow first.');
+      showToast('No active Flow tab found. Open Flow first.', 'warning');
     }
   });
 
@@ -1792,7 +1807,7 @@ async function refreshQueuesList() {
     const progressPct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
     const st = queueStatusConfig(queue.status);
 
-    const targetLabel = queue.runTarget === 'newProject' ? 'New Project' :
+    const targetLabel = queue.runTarget === 'newProject' ? '+ New Project' :
       queue.runTarget === 'currentProject' ? 'Current Project' : 'Not set';
     const targetIcon = queue.runTarget === 'newProject'
       ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
@@ -1833,15 +1848,43 @@ async function refreshQueuesList() {
             </div>
             <div class="af-q-setting-row">
               <span class="af-q-setting-key">Model</span>
-              <span class="af-q-setting-val af-q-setting-highlight">${escapeHtml(modelDisplay)}</span>
+              <select class="af-q-select af-q-setting-val" data-action="update-setting" data-key="${isVideo ? 'model' : 'imageModel'}">
+                ${isVideo ? `
+                  <option value="Veo 3.1 - Lite" ${s.model === 'Veo 3.1 - Lite' ? 'selected' : ''}>Veo 3.1 - Lite</option>
+                  <option value="Veo 3.1 - Fast" ${s.model === 'Veo 3.1 - Fast' ? 'selected' : ''}>Veo 3.1 - Fast</option>
+                  <option value="Veo 3.1 - Quality" ${s.model === 'Veo 3.1 - Quality' ? 'selected' : ''}>Veo 3.1 - Quality</option>
+                  <option value="Veo 3.1 - Lite [Lower Priority]" ${s.model === 'Veo 3.1 - Lite [Lower Priority]' ? 'selected' : ''}>Veo 3.1 - Lite [LP]</option>
+                  <option value="Veo 3.1 - Fast [Lower Priority]" ${s.model === 'Veo 3.1 - Fast [Lower Priority]' ? 'selected' : ''}>Veo 3.1 - Fast [LP]</option>
+                ` : `
+                  <option value="Nano Banana Pro" ${s.imageModel === 'Nano Banana Pro' ? 'selected' : ''}>Nano Banana Pro</option>
+                  <option value="Nano Banana 2" ${s.imageModel === 'Nano Banana 2' ? 'selected' : ''}>Nano Banana 2</option>
+                  <option value="Imagen 4" ${s.imageModel === 'Imagen 4' ? 'selected' : ''}>Imagen 4</option>
+                `}
+              </select>
             </div>
             <div class="af-q-setting-row">
               <span class="af-q-setting-key">${isVideo ? 'Orientation' : 'Ratio'}</span>
-              <span class="af-q-setting-val">${escapeHtml(isVideo ? (s.orientation ?? 'landscape') : s.imageRatio)}</span>
+              <select class="af-q-select af-q-setting-val" data-action="update-setting" data-key="${isVideo ? 'orientation' : 'imageRatio'}">
+                ${isVideo ? `
+                  <option value="landscape" ${s.orientation === 'landscape' ? 'selected' : ''}>Landscape (16:9)</option>
+                  <option value="portrait" ${s.orientation === 'portrait' ? 'selected' : ''}>Portrait (9:16)</option>
+                ` : `
+                  <option value="16:9" ${s.imageRatio === '16:9' ? 'selected' : ''}>16:9</option>
+                  <option value="4:3" ${s.imageRatio === '4:3' ? 'selected' : ''}>4:3</option>
+                  <option value="1:1" ${s.imageRatio === '1:1' ? 'selected' : ''}>1:1</option>
+                  <option value="3:4" ${s.imageRatio === '3:4' ? 'selected' : ''}>3:4</option>
+                  <option value="9:16" ${s.imageRatio === '9:16' ? 'selected' : ''}>9:16</option>
+                `}
+              </select>
             </div>
             <div class="af-q-setting-row">
               <span class="af-q-setting-key">Generations</span>
-              <span class="af-q-setting-val">&times;${s.generations}</span>
+              <select class="af-q-select af-q-setting-val" data-action="update-setting" data-key="generations">
+                <option value="1" ${s.generations === 1 ? 'selected' : ''}>&times;1</option>
+                <option value="2" ${s.generations === 2 ? 'selected' : ''}>&times;2</option>
+                <option value="3" ${s.generations === 3 ? 'selected' : ''}>&times;3</option>
+                <option value="4" ${s.generations === 4 ? 'selected' : ''}>&times;4</option>
+              </select>
             </div>
             ${isVideo ? `
             <div class="af-q-setting-row">
@@ -1926,6 +1969,9 @@ async function refreshQueuesList() {
             <button class="af-q-act-btn" data-action="down" ${idx === queues.length - 1 ? 'disabled' : ''} title="Move down">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
+            <button class="af-q-act-btn" data-action="sync-settings" title="Sync with current Settings" style="margin-left: 8px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>
+            </button>
           </div>
           <div class="af-q-actions-right">
             <button class="af-q-act-btn af-q-act-delete" data-action="delete" title="Delete queue">
@@ -1940,6 +1986,27 @@ async function refreshQueuesList() {
       </div>
     `;
 
+    // Inline Settings Edit
+    card.querySelectorAll('.af-q-select[data-action="update-setting"]').forEach(select => {
+      select.addEventListener('change', async (e) => {
+        const target = e.target as HTMLSelectElement;
+        const key = target.dataset.key as keyof QueueSettings;
+        let value: any = target.value;
+        if (key === 'generations') value = parseInt(value, 10);
+        
+        (queue.settings as any)[key] = value;
+        queue.updatedAt = Date.now();
+        
+        const queuesToSave = await getAllQueues();
+        const idxToUpdate = queuesToSave.findIndex(q => q.id === queue.id);
+        if (idxToUpdate !== -1) {
+          queuesToSave[idxToUpdate] = queue;
+          await saveAllQueues(queuesToSave);
+          // no toast here to prevent spamming, it's auto-saved
+        }
+      });
+    });
+
     // Actions
     card.querySelector('[data-action="up"]')?.addEventListener('click', async () => {
       await moveQueue(idx, idx - 1);
@@ -1947,10 +2014,24 @@ async function refreshQueuesList() {
     card.querySelector('[data-action="down"]')?.addEventListener('click', async () => {
       await moveQueue(idx, idx + 1);
     });
+    card.querySelector('[data-action="sync-settings"]')?.addEventListener('click', async () => {
+      const currentSettings = await getSettings();
+      queue.settings = { ...currentSettings };
+      queue.updatedAt = Date.now();
+      
+      const queuesToSave = await getAllQueues();
+      const idxToUpdate = queuesToSave.findIndex(q => q.id === queue.id);
+      if (idxToUpdate !== -1) {
+        queuesToSave[idxToUpdate] = queue;
+        await saveAllQueues(queuesToSave);
+        showToast(`Settings synced for "${queue.name}"!`, 'success');
+        await refreshQueuesList();
+      }
+    });
     card.querySelector('[data-action="delete"]')?.addEventListener('click', async () => {
       if (!confirm(`Delete queue "${queue.name}"?`)) return;
       await deleteQueue(queue.id);
-      showToast(`Queue "${queue.name}" deleted.`);
+      showToast(`Queue "${queue.name}" deleted.`, 'success');
       await refreshQueuesList();
     });
     card.querySelector('[data-action="run"]')?.addEventListener('click', async () => {
@@ -1972,14 +2053,14 @@ async function moveQueue(fromIdx: number, toIdx: number) {
 
 async function runQueue(queueId: string) {
   if (state.isRunning) {
-    showToast('Another queue is already running. Stop it first.');
+    showToast('Another queue is already running. Stop it first.', 'warning');
     return;
   }
 
   // Get queue to count prompts and check quota
   const queue = await getQueueById(queueId);
   if (!queue) {
-    showToast('Queue not found.');
+    showToast('Queue not found. It may have been deleted.', 'error');
     return;
   }
 
@@ -1989,18 +2070,18 @@ async function runQueue(queueId: string) {
   const quota = await checkCanGenerate(promptType as 'text' | 'full');
 
   if (!quota.allowed) {
-    showToast(`Daily limit reached. Upgrade to Pro for unlimited.`);
+    showToast('Daily limit reached. Upgrade to Pro for unlimited.', 'warning');
     return;
   }
 
   if (pendingCount > quota.remaining) {
-    showToast(`Only ${quota.remaining} prompts remaining. Queue has ${pendingCount} pending.`);
+    showToast(`Only ${quota.remaining} prompts remaining. Queue has ${pendingCount} pending.`, 'warning');
     return;
   }
 
   // Just check quota — don't consume upfront.
   // Credits are consumed per-prompt when they actually complete (in handlePromptStatusUpdate).
-  showToast('Starting queue...');
+  showToast('Starting queue...', 'info');
 
   // Get the tab the sidepanel is attached to — this is the project tab the user has open
   let currentTabId: number | undefined;
@@ -2014,13 +2095,22 @@ async function runQueue(queueId: string) {
     payload: { queueId, tabId: currentTabId },
   });
   if (response?.error) {
-    showToast(`Error: ${response.error}`);
+    showToast(response.error, 'error');
+    // Show the Flow banner if the error is about needing a Flow tab
+    if (response.error.toLowerCase().includes('flow') || response.error.toLowerCase().includes('tab')) {
+      const banner = document.getElementById('flow-tab-banner');
+      if (banner) banner.style.display = 'flex';
+    }
     return;
   }
   state.isRunning = true;
   state.activeQueueId = queueId;
   updateRunLockUI(true);
   startKeepalivePort();  // Keep service worker alive during queue execution
+
+  // Hide the Flow banner since we confirmed a Flow tab is available
+  const flowBanner = document.getElementById('flow-tab-banner');
+  if (flowBanner) flowBanner.style.display = 'none';
 
   // Switch to Video tab and show monitor
   (document.querySelector('[data-tab="video"]') as HTMLElement)?.click();
@@ -2070,7 +2160,7 @@ let librarySearch = '';
 function initLibraryTab() {
   $('#btn-scan').addEventListener('click', async () => {
     if (state.isRunning) {
-      showToast('Pause the running queue before scanning.');
+      showToast('Pause the running queue before scanning.', 'warning');
       return;
     }
 
@@ -2079,22 +2169,22 @@ function initLibraryTab() {
     // Pre-check: verify extension can talk to the Flow tab
     const pingResult = await sendToBackground({ type: 'PING' });
     if (pingResult?.error) {
-      showToast(`Cannot reach Flow tab: ${pingResult.error}`);
+      showToast(`Cannot reach Flow tab. Open a Flow project first.`, 'error');
       return;
     }
 
-    showToast('Scanning project...');
+    showToast('Scanning project...', 'info');
     const response = await sendToBackground({ type: 'SCAN_LIBRARY' });
     if (response?.error) {
-      showToast(`Scan error: ${response.error}`);
+      showToast(`Scan error: ${response.error}`, 'error');
       return;
     }
     state.scannedAssets = response?.assets || [];
     if (state.scannedAssets.length === 0) {
-      showToast('No assets found. Make sure you\'re on a Flow project page with generated content.');
+      showToast('No assets found. Make sure you\'re on a Flow project page with generated content.', 'warning');
     } else {
       const prompts = new Set(state.scannedAssets.map(a => a.groupId)).size;
-      showToast(`Found ${state.scannedAssets.length} asset(s) across ${prompts} prompt(s).`);
+      showToast(`Found ${state.scannedAssets.length} asset(s) across ${prompts} prompt(s).`, 'success');
     }
     renderLibrary();
   });
@@ -2174,29 +2264,15 @@ function initLibraryTab() {
   $('#btn-download-selected').addEventListener('click', async () => {
     const selected = state.scannedAssets.filter(a => a.selected);
     if (selected.length === 0) {
-      showToast('No assets selected.');
+      showToast('No assets selected.', 'warning');
       return;
     }
 
-    // Download limit for free users: 10/day
-    const profile = await getProfile();
-    if (!profile || !profile.is_pro_active) {
-      const today = new Date().toISOString().slice(0, 10);
-      const stored = await chrome.storage.local.get('af_download_tracker');
-      const tracker = stored.af_download_tracker || { date: '', count: 0 };
-      const dailyCount = tracker.date === today ? tracker.count : 0;
-      const FREE_DOWNLOAD_LIMIT = 10;
-
-      if (dailyCount + selected.length > FREE_DOWNLOAD_LIMIT) {
-        const remaining = Math.max(0, FREE_DOWNLOAD_LIMIT - dailyCount);
-        showToast(`⭐ Free plan: ${remaining} downloads left today (${FREE_DOWNLOAD_LIMIT}/day). Upgrade for unlimited!`);
-        return;
-      }
-
-      // Update tracker after download
-      await chrome.storage.local.set({
-        af_download_tracker: { date: today, count: dailyCount + selected.length },
-      });
+    // Server-side download limit check (free users: 20/day)
+    const dlQuota = await consumeDownload(selected.length);
+    if (!dlQuota.allowed) {
+      showToast(dlQuota.message || `Daily download limit reached (${dlQuota.limit}/day). Upgrade for unlimited!`, 'warning');
+      return;
     }
 
     showToast(`Downloading ${selected.length} file(s)...`);
@@ -2969,7 +3045,7 @@ function updateRunLockUI(locked: boolean) {
 
 function handleQueueSummary(payload: { queueName: string; totalPrompts: number; done: number; failed: number; skipped: number }) {
   const msg = `${payload.queueName}: ${payload.done} done, ${payload.failed} failed, ${payload.skipped} skipped (of ${payload.totalPrompts})`;
-  showToast(msg, 6000);
+  showToast(msg, payload.failed > 0 ? 'warning' : 'success', 6000);
 
   // Auto-show failed section if there are failures
   if (payload.failed > 0) {
@@ -2982,7 +3058,7 @@ function handleQueueSummary(payload: { queueName: string; totalPrompts: number; 
  * Switches to Library tab and triggers a scan automatically.
  */
 async function handleAutoScanLibrary() {
-  showToast('Queue complete — auto-scanning library...');
+  showToast('Queue complete — auto-scanning library...', 'info');
 
   // Switch to Library tab
   const libraryTab = document.querySelector('[data-tab="library"]') as HTMLElement;
@@ -2996,15 +3072,15 @@ async function handleAutoScanLibrary() {
   // Trigger scan
   const response = await sendToBackground({ type: 'SCAN_LIBRARY' });
   if (response?.error) {
-    showToast(`Auto-scan error: ${response.error}`);
+    showToast(`Auto-scan error: ${response.error}`, 'error');
     return;
   }
   state.scannedAssets = response?.assets || [];
   if (state.scannedAssets.length === 0) {
-    showToast('Auto-scan: no assets found.');
+    showToast('Auto-scan: no assets found.', 'warning');
   } else {
     const prompts = new Set(state.scannedAssets.map(a => a.groupId)).size;
-    showToast(`Auto-scan: found ${state.scannedAssets.length} asset(s) across ${prompts} prompt(s).`);
+    showToast(`Auto-scan: found ${state.scannedAssets.length} asset(s) across ${prompts} prompt(s).`, 'success');
   }
   renderLibrary();
 }
@@ -3022,7 +3098,7 @@ function handleFailedTilesResult(payload: { failedPrompts: Array<{ promptIndex: 
 
   if (payload.failedCount === 0) {
     section.style.display = 'none';
-    showToast('No failed generations found on page.');
+    showToast('No failed generations found on page.', 'success');
     return;
   }
 
@@ -3133,11 +3209,31 @@ function updateCreationTypeVisibility(creationType: CreationType) {
 // UTILS
 // ================================================================
 
-function showToast(msg: string, duration = 3000) {
+type ToastType = 'success' | 'error' | 'warning' | 'info';
+
+const TOAST_ICONS: Record<ToastType, string> = {
+  success: '✅',
+  error: '❌',
+  warning: '⚠️',
+  info: 'ℹ️',
+};
+
+function showToast(msg: string, type: ToastType = 'info', duration = 3500) {
   const toast = $('#toast');
-  toast.textContent = msg;
-  toast.style.display = 'block';
-  setTimeout(() => { toast.style.display = 'none'; }, duration);
+  const iconEl = toast.querySelector('.af-toast-icon') as HTMLElement;
+  const msgEl = toast.querySelector('.af-toast-msg') as HTMLElement;
+
+  // Reset classes
+  toast.className = 'af-toast';
+  if (type) toast.classList.add(`af-toast-${type}`);
+
+  if (iconEl) iconEl.textContent = TOAST_ICONS[type] || '';
+  if (msgEl) msgEl.textContent = msg;
+
+  toast.style.display = 'flex';
+  // Clear any existing timeout
+  if ((toast as any)._hideTimer) clearTimeout((toast as any)._hideTimer);
+  (toast as any)._hideTimer = setTimeout(() => { toast.style.display = 'none'; }, duration);
 }
 
 function escapeHtml(text: string): string {
@@ -3152,18 +3248,18 @@ async function sendToBackground(msg: Message): Promise<any> {
       chrome.runtime.sendMessage(msg, (response) => {
         if (chrome.runtime.lastError) {
           console.error('[AutoFlow] sendToBackground error:', chrome.runtime.lastError.message);
-          resolve({ error: chrome.runtime.lastError.message || 'Extension communication error. Try reloading the page.' });
+          resolve({ error: 'Extension disconnected. Reload AutoFlow from chrome://extensions and reopen this panel.' });
           return;
         }
         if (response === undefined || response === null) {
-          resolve({ error: 'No response from extension. Try refreshing the Flow tab and reopening the side panel.' });
+          resolve({ error: 'No response from AutoFlow. Refresh the Flow tab and reopen the side panel.' });
           return;
         }
         resolve(response);
       });
     } catch (err: any) {
       console.error('[AutoFlow] sendToBackground exception:', err);
-      resolve({ error: err.message || 'Extension communication failed.' });
+      resolve({ error: 'Extension communication failed. Try reloading the extension.' });
     }
   });
 }
