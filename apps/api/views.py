@@ -138,6 +138,19 @@ class MeView(APIView):
     def get(self, request):
         user = request.user
         profile = user.profile
+        
+        # Self-healing check: if they have an approved review claim but aren't pro
+        if not profile.is_pro_active:
+            from apps.rewards.models import ReviewRewardClaim
+            claim = ReviewRewardClaim.objects.filter(user=user, status="approved").first()
+            if claim:
+                from apps.plans.models import PlanType
+                profile.plan_type = PlanType.PRO
+                profile.is_pro_active = True
+                if claim.pro_granted_until:
+                    profile.pro_expires_at = claim.pro_granted_until
+                profile.save()
+        
         mark_last_seen(user)
         return Response({
             "user": {
@@ -321,6 +334,16 @@ class ReviewRewardStatusView(APIView):
         claim = ReviewRewardClaim.objects.filter(user=request.user).first()
         if not claim:
             return Response({"status": "none"})
+            
+        # Self-healing: If claim is approved but profile is not pro, fix the profile
+        if claim.status == "approved" and not request.user.profile.is_pro_active:
+            from apps.plans.models import PlanType
+            profile = request.user.profile
+            profile.plan_type = PlanType.PRO
+            profile.is_pro_active = True
+            if claim.pro_granted_until:
+                profile.pro_expires_at = claim.pro_granted_until
+            profile.save()
             
         return Response({
             "status": claim.status,
