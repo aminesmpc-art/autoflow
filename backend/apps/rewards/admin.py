@@ -98,10 +98,37 @@ class ReviewRewardClaimAdmin(ModelAdmin):
     )
     list_filter = ("status",)
     search_fields = ("user__email",)
-    readonly_fields = ("claimed_at", "reviewed_at")
+    readonly_fields = ("claimed_at", "reviewed_at", "pro_granted_until")
     date_hierarchy = "claimed_at"
     list_per_page = 50
     actions = ["approve_claims", "reject_claims"]
+
+    def save_model(self, request, obj, form, change):
+        from django.utils import timezone
+        from datetime import timedelta
+        from apps.plans.models import PlanType
+
+        # If status is being changed to approved manually in the form
+        if change and "status" in form.changed_data:
+            if obj.status == "approved" and not obj.pro_granted_until:
+                now = timezone.now()
+                thirty_days = now + timedelta(days=30)
+                
+                obj.reviewed_at = now
+                obj.pro_granted_until = thirty_days
+                
+                profile = obj.user.profile
+                profile.plan_type = PlanType.PRO
+                profile.is_pro_active = True
+                profile.pro_expires_at = thirty_days
+                profile.save()
+                
+                self.message_user(request, f"Pro granted automatically! {obj.user.email} given 30 days.")
+            
+            elif obj.status == "rejected":
+                obj.reviewed_at = timezone.now()
+
+        super().save_model(request, obj, form, change)
 
     @admin.display(description="User", ordering="user__email")
     def user_display(self, obj):
