@@ -440,3 +440,11 @@ def badge_callback_downloads_today(request):
     ).aggregate(d=Sum("downloads_used"))
     count = result["d"] or 0
     return count if count > 0 else None
+
+
+def badge_callback_pending_claims(request):
+    """Sidebar badge: pending review reward claims."""
+    from apps.rewards.models import ReviewRewardClaim
+    count = ReviewRewardClaim.objects.filter(status="pending").count()
+    return count if count > 0 else None
+
