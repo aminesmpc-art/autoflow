@@ -22,6 +22,8 @@ urlpatterns = [
 
     # Rewards
     path("rewards/grant", views.GrantRewardView.as_view(), name="rewards-grant"),
+    path("rewards/claim-review", views.ClaimReviewRewardView.as_view(), name="rewards-claim-review"),
+    path("rewards/review-status", views.ReviewRewardStatusView.as_view(), name="rewards-review-status"),
 
     # Webhooks
     path("webhooks/whop", views.WhopWebhookView.as_view(), name="webhooks-whop"),
