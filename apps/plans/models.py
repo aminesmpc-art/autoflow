@@ -3,6 +3,7 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class PlanType(models.TextChoices):
@@ -27,6 +28,10 @@ class Profile(models.Model):
     fair_use_flag = models.BooleanField(default=False)
     timezone = models.CharField(max_length=64, blank=True, default="UTC")
     last_seen_at = models.DateTimeField(null=True, blank=True)
+    pro_expires_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="If set, Pro access expires at this time (e.g. review reward)",
+    )
 
     # Whop integration (nullable until connected)
     whop_user_id = models.CharField(max_length=128, null=True, blank=True)
@@ -44,4 +49,9 @@ class Profile(models.Model):
 
     @property
     def is_pro(self) -> bool:
-        return self.plan_type == PlanType.PRO and self.is_pro_active
+        if self.plan_type != PlanType.PRO or not self.is_pro_active:
+            return False
+        # Auto-expire time-limited Pro (e.g. review reward)
+        if self.pro_expires_at and timezone.now() > self.pro_expires_at:
+            return False
+        return True

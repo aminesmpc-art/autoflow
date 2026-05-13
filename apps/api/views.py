@@ -296,6 +296,38 @@ class GrantRewardView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
+class ClaimReviewRewardView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from apps.rewards.models import ReviewRewardClaim
+
+        # Check if already claimed
+        claim, created = ReviewRewardClaim.objects.get_or_create(
+            user=request.user,
+        )
+        return Response({
+            "status": claim.status,
+            "message": "Under review" if claim.status == "pending" else claim.status
+        })
+
+
+class ReviewRewardStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from apps.rewards.models import ReviewRewardClaim
+
+        claim = ReviewRewardClaim.objects.filter(user=request.user).first()
+        if not claim:
+            return Response({"status": "none"})
+            
+        return Response({
+            "status": claim.status,
+            "pro_until": claim.pro_granted_until.isoformat() if claim.pro_granted_until else None
+        })
+
+
 # ================================================================
 # WEBHOOKS
 # ================================================================

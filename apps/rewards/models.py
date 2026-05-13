@@ -50,3 +50,45 @@ class RewardCreditLedger(models.Model):
     def __str__(self):
         sign = "+" if self.amount > 0 else ""
         return f"{self.user.email} {sign}{self.amount} ({self.source})"
+
+
+class ReviewClaimStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
+
+
+class ReviewRewardClaim(models.Model):
+    """Tracks review-for-pro claims. One per user, ever.
+
+    User leaves a 5-star review on Chrome Web Store → clicks 'I left my review'
+    → this record is created with status=pending → admin approves from Django admin
+    → user gets 1 month of Pro.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="review_claim",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=ReviewClaimStatus.choices,
+        default=ReviewClaimStatus.PENDING,
+    )
+    claimed_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(
+        null=True, blank=True, help_text="When admin approved or rejected"
+    )
+    pro_granted_until = models.DateTimeField(
+        null=True, blank=True, help_text="Pro access expires at this time"
+    )
+    admin_notes = models.TextField(blank=True, default="")
+
+    class Meta:
+        verbose_name = "review reward claim"
+        verbose_name_plural = "review reward claims"
+
+    def __str__(self):
+        return f"{self.user.email} — {self.status}"
