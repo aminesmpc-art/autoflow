@@ -3749,7 +3749,17 @@ async function initReviewReward() {
     hideReviewModal();
   });
 
-  // Header Pro button click -> open modal
+  // ── Ultra Family Header Button ──
+  const btnUltraFamily = $('#btn-header-ultra-family');
+  if (btnUltraFamily) {
+    btnUltraFamily.addEventListener('click', () => {
+      const phoneNumber = '212723164437';
+      const message = encodeURIComponent('Hi, I would like to join the Ultra Family.');
+      chrome.tabs.create({ url: `https://wa.me/${phoneNumber}?text=${message}` });
+    });
+  }
+
+  // ── Free Pro Header Button ──
   const btnHeaderPro = $('#btn-header-get-pro-free');
   btnHeaderPro?.addEventListener('click', () => {
     const modal = $('#review-modal');
