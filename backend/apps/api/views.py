@@ -144,12 +144,16 @@ class MeView(APIView):
             from apps.rewards.models import ReviewRewardClaim
             claim = ReviewRewardClaim.objects.filter(user=user, status="approved").first()
             if claim:
-                from apps.plans.models import PlanType
-                profile.plan_type = PlanType.PRO
-                profile.is_pro_active = True
-                if claim.pro_granted_until:
-                    profile.pro_expires_at = claim.pro_granted_until
-                profile.save()
+                from django.utils import timezone
+                is_expired = claim.pro_granted_until and timezone.now() > claim.pro_granted_until
+                
+                if not is_expired:
+                    from apps.plans.models import PlanType
+                    profile.plan_type = PlanType.PRO
+                    profile.is_pro_active = True
+                    if claim.pro_granted_until:
+                        profile.pro_expires_at = claim.pro_granted_until
+                    profile.save()
         
         mark_last_seen(user)
         return Response({
@@ -161,7 +165,7 @@ class MeView(APIView):
             },
             "profile": {
                 "plan_type": profile.plan_type,
-                "is_pro_active": profile.is_pro_active,
+                "is_pro_active": profile.is_pro,
                 "display_name": profile.display_name,
             },
         })
@@ -335,8 +339,11 @@ class ReviewRewardStatusView(APIView):
         if not claim:
             return Response({"status": "none"})
             
-        # Self-healing: If claim is approved but profile is not pro, fix the profile
-        if claim.status == "approved" and not request.user.profile.is_pro_active:
+        # Self-healing: If claim is approved but profile is not pro, and the claim hasn't expired, fix the profile
+        from django.utils import timezone
+        is_expired = claim.pro_granted_until and timezone.now() > claim.pro_granted_until
+        
+        if claim.status == "approved" and not request.user.profile.is_pro_active and not is_expired:
             from apps.plans.models import PlanType
             profile = request.user.profile
             profile.plan_type = PlanType.PRO
