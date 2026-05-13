@@ -135,7 +135,7 @@ def get_entitlement_snapshot(user) -> dict:
 
     return {
         "plan_type": profile.plan_type,
-        "is_pro_active": profile.is_pro_active,
+        "is_pro_active": profile.is_pro,
         # Text-to-video limits (no images)
         "text_daily_limit": FREE_TEXT_DAILY_LIMIT,
         "text_used_today": usage.text_prompts_used,
