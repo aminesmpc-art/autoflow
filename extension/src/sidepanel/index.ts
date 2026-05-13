@@ -262,6 +262,7 @@ function initTabs() {
 
 /** Lock or unlock tabs based on auth state */
 function enforceAuthGate(loggedIn: boolean) {
+  const wasAuthenticated = _isAuthenticated;
   _isAuthenticated = loggedIn;
   const authTabs = $$('[data-requires-auth]');
 
@@ -275,8 +276,8 @@ function enforceAuthGate(loggedIn: boolean) {
     }
   });
 
-  // If just logged in, switch to Create tab
-  if (loggedIn) {
+  // If transitioning from logged out to logged in, switch to Create tab
+  if (loggedIn && !wasAuthenticated) {
     const createTab = $('[data-tab="video"]');
     if (createTab) createTab.click();
   }
@@ -1766,6 +1767,7 @@ function queueStatusConfig(status: string) {
 }
 
 async function refreshQueuesList() {
+  console.log('[AutoFlow] Running NEW refreshQueuesList logic with Active/History split');
   const queues = await getAllQueues();
   const container = $('#queue-list');
 
@@ -1795,7 +1797,18 @@ async function refreshQueuesList() {
 
   container.innerHTML = '';
 
-  queues.forEach((queue, idx) => {
+  const activeQueues: { q: QueueObject, originalIdx: number }[] = [];
+  const historyQueues: { q: QueueObject, originalIdx: number }[] = [];
+
+  queues.forEach((queue, originalIdx) => {
+    if (queue.status === 'completed') {
+      historyQueues.push({ q: queue, originalIdx });
+    } else {
+      activeQueues.push({ q: queue, originalIdx });
+    }
+  });
+
+  const renderCard = (queue: QueueObject, idx: number) => {
     const card = document.createElement('div');
     card.className = 'af-q-card';
     card.dataset.queueId = queue.id;
@@ -2038,8 +2051,85 @@ async function refreshQueuesList() {
       await runQueue(queue.id);
     });
 
-    container.appendChild(card);
-  });
+    return card;
+  };
+
+  const renderCompactCard = (queue: QueueObject, idx: number) => {
+    const card = document.createElement('div');
+    card.className = 'af-q-compact';
+    card.dataset.queueId = queue.id;
+
+    const total = queue.prompts.length;
+    const doneCount = queue.prompts.filter(p => p.status === 'done').length;
+    const failedCount = queue.prompts.filter(p => p.status === 'failed').length;
+    const st = queueStatusConfig(queue.status);
+    const timeAgo = formatTimeAgo(queue.updatedAt || queue.createdAt);
+
+    card.innerHTML = `
+      <div class="af-q-compact-left">
+        <div class="af-q-status-dot af-q-status-${st.cls}" style="width:8px;height:8px;border-radius:50%;background:currentColor;"></div>
+        <div class="af-q-compact-info">
+          <span class="af-q-name" title="${escapeHtml(queue.name)}">${escapeHtml(queue.name)}</span>
+          <span class="af-q-time">${timeAgo}</span>
+        </div>
+      </div>
+      <div class="af-q-compact-stats">
+        <span class="af-q-stat-badge">${doneCount}/${total} done</span>
+        ${failedCount > 0 ? `<span class="af-q-stat-badge fail">${failedCount} fail</span>` : ''}
+      </div>
+      <div class="af-q-compact-actions">
+        <button class="af-q-act-btn af-q-act-delete" data-action="delete" title="Delete queue">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+        </button>
+        <button class="af-q-act-btn" data-action="run" title="Run Again">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        </button>
+      </div>
+    `;
+
+    card.querySelector('[data-action="delete"]')?.addEventListener('click', async () => {
+      if (!confirm(`Delete queue "${queue.name}"?`)) return;
+      await deleteQueue(queue.id);
+      showToast(`Queue "${queue.name}" deleted.`, 'success');
+      await refreshQueuesList();
+    });
+
+    card.querySelector('[data-action="run"]')?.addEventListener('click', async () => {
+      await runQueue(queue.id);
+    });
+
+    return card;
+  };
+
+  if (activeQueues.length > 0) {
+    const activeHeader = document.createElement('h3');
+    activeHeader.className = 'af-section-heading';
+    activeHeader.style.margin = '0 0 12px 0';
+    activeHeader.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Active Queues';
+    container.appendChild(activeHeader);
+    
+    activeQueues.forEach(item => {
+      container.appendChild(renderCard(item.q, item.originalIdx));
+    });
+  }
+
+  if (historyQueues.length > 0) {
+    if (activeQueues.length > 0) {
+      const sep = document.createElement('div');
+      sep.className = 'af-separator';
+      sep.style.margin = '24px 0 16px 0';
+      container.appendChild(sep);
+    }
+    const historyHeader = document.createElement('h3');
+    historyHeader.className = 'af-section-heading';
+    historyHeader.style.margin = '0 0 12px 0';
+    historyHeader.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg> History';
+    container.appendChild(historyHeader);
+    
+    historyQueues.forEach(item => {
+      container.appendChild(renderCompactCard(item.q, item.originalIdx));
+    });
+  }
 }
 
 async function moveQueue(fromIdx: number, toIdx: number) {
@@ -2363,7 +2453,7 @@ function initLibraryTab() {
         await new Promise(r => setTimeout(r, 3000));
       }
     }
-    showToast(`Retry complete: ${succeeded} succeeded, ${failed} failed.`);
+    showToast(`Retry complete: ${succeeded} succeeded, ${failed} failed. Please click Scan Library when they finish generating.`);
   });
 
   // ── Upscale selected assets (no download) ──
@@ -2767,9 +2857,9 @@ function renderLibrary() {
           if (response?.success) {
             const method = response.method || '';
             if (method.includes('failed')) {
-              showToast('Retry started! The tile will regenerate in place.');
+              showToast('Retrying this single video in place. Please re-scan when finished.');
             } else {
-              showToast('Regeneration started! Re-scan after it completes.');
+              showToast('Generating a new batch of 4 videos. Please re-scan when finished.');
             }
           } else {
             showToast(response?.error || 'Retry failed. Make sure you are on a Flow project page.');
@@ -3051,6 +3141,9 @@ function handleQueueSummary(payload: { queueName: string; totalPrompts: number; 
   if (payload.failed > 0) {
     showFailedSection();
   }
+
+  // Show review modal if applicable
+  checkAndShowReviewModal();
 }
 
 /**
@@ -3453,8 +3546,16 @@ function initAccountTab() {
   });
 
   // ── Refresh usage ──
-  $('#btn-refresh-usage')?.addEventListener('click', () => {
-    updateUsageDisplay();
+  $('#btn-refresh-usage')?.addEventListener('click', async () => {
+    const btn = $('#btn-refresh-usage') as HTMLButtonElement;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = 'Refreshing...';
+    btn.disabled = true;
+    
+    await showLoggedInState();
+    
+    btn.innerHTML = originalText;
+    btn.disabled = false;
   });
 
   // ── Upgrade to Pro button ──
@@ -3462,6 +3563,9 @@ function initAccountTab() {
     const url = await getUpgradeUrl();
     window.open(url, '_blank');
   });
+
+  // Initialize Review Reward functionality
+  initReviewReward();
 
   // ── Check initial auth state ──
   checkAuthState();
@@ -3506,12 +3610,23 @@ async function showLoggedInState() {
       // Hide upgrade CTA for Pro users
       const upgradeCta = document.getElementById('upgrade-cta');
       if (upgradeCta) upgradeCta.style.display = 'none';
+      
+      // Hide review reward card for Pro users
+      const reviewCta = document.getElementById('review-reward-cta');
+      if (reviewCta) reviewCta.style.display = 'none';
+      const headerBtn = document.getElementById('btn-header-get-pro-free');
+      if (headerBtn) headerBtn.style.display = 'none';
     } else {
       badge.textContent = 'Free';
       badge.className = 'af-plan-badge';
       // Show upgrade CTA for Free users
       const upgradeCta = document.getElementById('upgrade-cta');
       if (upgradeCta) upgradeCta.style.display = '';
+
+      // Check review reward status for Free users
+      const { getReviewRewardStatus } = await import('../shared/api');
+      const reviewStatus = await getReviewRewardStatus();
+      await updateReviewCardStatus(reviewStatus.status);
     }
   } else {
     // API down — try cached profile
@@ -3582,5 +3697,120 @@ async function updateUsageDisplay() {
 
   updateBar('text', usage.text_used, usage.text_limit, usage.text_remaining, usage.is_pro);
   updateBar('full', usage.full_used, usage.full_limit, usage.full_remaining, usage.is_pro);
+}
+
+// ================================================================
+// REVIEW-FOR-PRO FEATURE
+// ================================================================
+
+let hasShownReviewModalThisSession = false;
+
+async function initReviewReward() {
+  const btnLeaveReviewTab = $('#btn-leave-review-tab');
+  const btnClaimReviewTab = $('#btn-claim-review-tab');
+  const btnLeaveReviewModal = $('#btn-leave-review-modal');
+  const btnClaimReviewModal = $('#btn-claim-review-modal');
+  const btnCloseModal = $('#btn-close-review-modal');
+
+  // When user clicks 'Leave a Review' -> show the 'I Left My Review' button
+  const onLeaveReview = () => {
+    if (btnLeaveReviewTab) btnLeaveReviewTab.style.display = 'none';
+    if (btnClaimReviewTab) btnClaimReviewTab.style.display = 'flex';
+    if (btnLeaveReviewModal) btnLeaveReviewModal.style.display = 'none';
+    if (btnClaimReviewModal) btnClaimReviewModal.style.display = 'flex';
+  };
+
+  btnLeaveReviewTab?.addEventListener('click', onLeaveReview);
+  btnLeaveReviewModal?.addEventListener('click', onLeaveReview);
+
+  // When user clicks 'I Left My Review' -> send claim to backend
+  const onClaimReview = async () => {
+    if (btnClaimReviewTab) btnClaimReviewTab.textContent = 'Claiming...';
+    if (btnClaimReviewModal) btnClaimReviewModal.textContent = 'Claiming...';
+
+    const { claimReviewReward } = await import('../shared/api');
+    const result = await claimReviewReward();
+
+    if (result.status === 'error') {
+      showToast(result.message, 'error');
+      if (btnClaimReviewTab) btnClaimReviewTab.textContent = '✓ I Left My Review';
+      if (btnClaimReviewModal) btnClaimReviewModal.textContent = '✓ I Left My Review';
+    } else {
+      showToast('Thank you! Your claim is under review.', 'success');
+      hideReviewModal();
+      await updateReviewCardStatus(result.status);
+    }
+  };
+
+  btnClaimReviewTab?.addEventListener('click', onClaimReview);
+  btnClaimReviewModal?.addEventListener('click', onClaimReview);
+
+  btnCloseModal?.addEventListener('click', () => {
+    hideReviewModal();
+  });
+
+  // Header Pro button click -> open modal
+  const btnHeaderPro = $('#btn-header-get-pro-free');
+  btnHeaderPro?.addEventListener('click', () => {
+    const modal = $('#review-modal');
+    if (modal) modal.style.display = 'flex';
+  });
+}
+
+export async function checkAndShowReviewModal() {
+  // Only show once per session
+  if (hasShownReviewModalThisSession) return;
+  
+  const { isLoggedIn, getProfile, getReviewRewardStatus } = await import('../shared/api');
+  if (!(await isLoggedIn())) return;
+
+  const profile = await getProfile();
+  if (!profile || profile.is_pro_active) return;
+
+  const statusObj = await getReviewRewardStatus();
+  if (statusObj.status !== 'none') return; // Already claimed
+
+  // Show modal
+  const modal = $('#review-modal');
+  if (modal) {
+    modal.style.display = 'flex';
+    hasShownReviewModalThisSession = true;
+  }
+}
+
+function hideReviewModal() {
+  const modal = $('#review-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+export async function updateReviewCardStatus(status: string) {
+  const cta = $('#review-reward-cta');
+  const btnLeave = $('#btn-leave-review-tab');
+  const btnClaim = $('#btn-claim-review-tab');
+  const statusMsg = $('#review-status-msg-tab');
+  const headerBtn = $('#btn-header-get-pro-free');
+
+  if (!cta) return;
+
+  if (status === 'none') {
+    cta.style.display = 'block';
+    if (btnLeave) btnLeave.style.display = 'inline-flex';
+    if (btnClaim) btnClaim.style.display = 'none';
+    if (statusMsg) statusMsg.style.display = 'none';
+    if (headerBtn) headerBtn.style.display = 'inline-flex';
+  } else if (status === 'pending') {
+    cta.style.display = 'block';
+    if (btnLeave) btnLeave.style.display = 'none';
+    if (btnClaim) btnClaim.style.display = 'none';
+    if (statusMsg) {
+      statusMsg.textContent = '⏳ Your review claim is pending approval.';
+      statusMsg.style.display = 'block';
+    }
+    if (headerBtn) headerBtn.style.display = 'none';
+  } else {
+    // approved, rejected, or error -> hide the card
+    cta.style.display = 'none';
+    if (headerBtn) headerBtn.style.display = 'none';
+  }
 }
 
