@@ -2,6 +2,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin
+from unfold.decorators import action
 
 from .models import RewardCreditLedger, ReviewRewardClaim
 
@@ -148,6 +149,54 @@ class ReviewRewardClaimAdmin(ModelAdmin):
             obj.pro_granted_until.strftime("%b %d, %Y"),
         )
 
+    # ── Row Actions ──
+    actions_row = ("approve_claim_row", "reject_claim_row")
+
+    @action(description="✅ Approve", url_path="approve-claim")
+    def approve_claim_row(self, request, object_id):
+        from django.shortcuts import redirect
+        from django.urls import reverse
+        from django.utils import timezone
+        from datetime import timedelta
+        from apps.plans.models import PlanType
+        
+        claim = self.get_object(request, object_id)
+        if claim and claim.status == "pending":
+            now = timezone.now()
+            thirty_days = now + timedelta(days=30)
+            
+            claim.status = "approved"
+            claim.reviewed_at = now
+            claim.pro_granted_until = thirty_days
+            claim.save()
+            
+            profile = claim.user.profile
+            profile.plan_type = PlanType.PRO
+            profile.is_pro_active = True
+            profile.pro_expires_at = thirty_days
+            profile.save()
+            
+            self.message_user(request, f"Claim approved! {claim.user.email} granted 30 days of Pro.")
+        
+        return redirect(request.META.get('HTTP_REFERER', reverse('admin:rewards_reviewrewardclaim_changelist')))
+
+    @action(description="❌ Reject", url_path="reject-claim")
+    def reject_claim_row(self, request, object_id):
+        from django.shortcuts import redirect
+        from django.urls import reverse
+        from django.utils import timezone
+        
+        claim = self.get_object(request, object_id)
+        if claim and claim.status == "pending":
+            claim.status = "rejected"
+            claim.reviewed_at = timezone.now()
+            claim.save()
+            
+            self.message_user(request, f"Claim for {claim.user.email} rejected.", level="warning")
+            
+        return redirect(request.META.get('HTTP_REFERER', reverse('admin:rewards_reviewrewardclaim_changelist')))
+
+    # ── Bulk Actions ──
     @admin.action(description="✅ Approve selected claims (Grants 30 Days Pro)")
     def approve_claims(self, request, queryset):
         from django.utils import timezone
@@ -185,4 +234,4 @@ class ReviewRewardClaimAdmin(ModelAdmin):
             status="rejected", 
             reviewed_at=now
         )
-        self.message_user(request, f"{count} claim(s) rejected.")
+        self.message_user(request, f"{count} claim(s) rejected.", level="warning")
