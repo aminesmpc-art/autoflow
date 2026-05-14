@@ -3603,6 +3603,9 @@ async function showLoggedInState() {
     // Cache for offline use
     chrome.storage.local.set({ af_cached_profile: profile });
     ($('#account-email') as HTMLElement).textContent = profile.email;
+    // Show Ultra Family button for signed-in users
+    const ultraBtn = document.getElementById('btn-header-ultra-family');
+    if (ultraBtn) ultraBtn.style.display = '';
     const badge = $('#account-plan-badge') as HTMLElement;
     if (profile.is_pro_active) {
       badge.textContent = 'Pro';
@@ -3646,6 +3649,10 @@ function showLoggedOutState() {
   $('#account-logged-out')!.style.display = 'block';
   $('#account-verify-pending')!.style.display = 'none';
   $('#account-logged-in')!.style.display = 'none';
+
+  // Hide Ultra Family button when logged out
+  const ultraBtn = document.getElementById('btn-header-ultra-family');
+  if (ultraBtn) ultraBtn.style.display = 'none';
 
   // Lock all tabs, switch to Account
   enforceAuthGate(false);
