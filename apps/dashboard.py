@@ -13,6 +13,7 @@ def dashboard_callback(request, context):
     from apps.users.models import CustomUser
     from apps.webhooks.models import WebhookEvent
     from apps.extractions.models import SavedExtraction
+    from apps.marketing.models import EmailSequenceSubscriber
     from django.db.models import Sum, Count, Avg, Q
 
     today = timezone.localdate()
@@ -75,6 +76,17 @@ def dashboard_callback(request, context):
     # ── Extractions ──
     total_extractions = SavedExtraction.objects.count()
     today_extractions = SavedExtraction.objects.filter(created_at__date=today).count()
+
+    # ── Marketing Sequence ──
+    marketing_total = EmailSequenceSubscriber.objects.count()
+    marketing_active = EmailSequenceSubscriber.objects.filter(sequence_completed=False).count()
+    marketing_completed = EmailSequenceSubscriber.objects.filter(sequence_completed=True).count()
+    marketing_acted = EmailSequenceSubscriber.objects.filter(action_taken=True).count()
+    marketing_converted_to_pro = CustomUser.objects.filter(
+        email__in=EmailSequenceSubscriber.objects.filter(action_taken=True).values("email"),
+        profile__is_pro_active=True
+    ).count()
+    marketing_conversion_rate = round((marketing_converted_to_pro / marketing_acted * 100) if marketing_acted else 0)
 
     # ── Conversion Funnel ──
     verified_users = CustomUser.objects.filter(is_active=True).count()
@@ -386,6 +398,15 @@ def dashboard_callback(request, context):
         # Tables
         "top_users": top_users,
         "recent_users": recent_users,
+        # Marketing Analytics
+        "marketing": {
+            "total": marketing_total,
+            "active": marketing_active,
+            "completed": marketing_completed,
+            "acted": marketing_acted,
+            "converted_to_pro": marketing_converted_to_pro,
+            "conversion_rate": marketing_conversion_rate,
+        },
     })
 
     return context
