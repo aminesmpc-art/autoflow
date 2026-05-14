@@ -61,20 +61,19 @@ class CustomUserAdmin(BaseUserAdmin, ModelAdmin):
     fieldsets = (
         (None, {
             "fields": ("email", "password"),
-            "tab": True,
+            "classes": ("tab",),
         }),
         ("Status", {
             "fields": ("is_active", "is_staff", "is_superuser"),
-            "tab": True,
+            "classes": ("tab",),
         }),
         ("Dates", {
             "fields": ("created_at", "updated_at", "last_login"),
-            "tab": True,
+            "classes": ("tab",),
         }),
         ("Permissions", {
             "fields": ("groups", "user_permissions"),
-            "classes": ("collapse",),
-            "tab": True,
+            "classes": ("collapse", "tab"),
         }),
     )
 
