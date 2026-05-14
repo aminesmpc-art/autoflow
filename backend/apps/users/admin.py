@@ -5,6 +5,7 @@ from django.utils.html import format_html
 from unfold.admin import ModelAdmin, StackedInline, TabularInline
 
 from apps.plans.models import Profile
+from apps.usage.models import UsageEvent
 from .models import CustomUser, EmailVerificationToken
 
 
@@ -22,6 +23,60 @@ class ProfileInline(StackedInline):
         ("Whop", {"fields": ("whop_user_id", "whop_membership_id")}),
         ("Dates", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
+
+
+class UsageEventInline(TabularInline):
+    """Show user's activity and errors."""
+    model = UsageEvent
+    extra = 0
+    can_delete = False
+    verbose_name = "Activity & Error Log"
+    verbose_name_plural = "Activity & Error Logs"
+    readonly_fields = ("event_badge", "metadata_display", "time_display")
+    fields = ("event_badge", "metadata_display", "time_display")
+    ordering = ("-created_at",)
+    tab = True
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description="Event")
+    def event_badge(self, obj):
+        colors = {
+            "consume_prompt": ("#2563eb", "📝", "Prompt Used"),
+            "queue_started": ("#059669", "▶️", "Queue Started"),
+            "queue_finished": ("#10b981", "✅", "Queue Finished"),
+            "prompt_failed": ("#dc2626", "❌", "Prompt Failed"),
+            "download_completed": ("#8b5cf6", "⬇️", "Download Done"),
+            "run_aborted": ("#f59e0b", "⚠️", "Run Stopped"),
+            "reward_granted": ("#eab308", "🎁", "Reward Given"),
+        }
+        color, icon, label = colors.get(obj.event_type, ("#6b7280", "•", obj.event_type))
+        return format_html(
+            '<span style="background:{};color:#fff;padding:4px 10px;border-radius:6px;'
+            'font-size:11px;font-weight:600;letter-spacing:0.02em;">{} {}</span>',
+            color, icon, label,
+        )
+
+    @admin.display(description="Details")
+    def metadata_display(self, obj):
+        if not obj.metadata:
+            return "—"
+        import json
+        return format_html(
+            '<pre style="margin:0;font-size:10px;color:#9ca3af;white-space:pre-wrap;">{}</pre>',
+            json.dumps(obj.metadata, indent=2)
+        )
+
+    @admin.display(description="When")
+    def time_display(self, obj):
+        from django.utils.timesince import timesince
+        return format_html(
+            '<span style="color:#6b7280;font-size:12px;">{} ago</span><br>'
+            '<span style="color:#4b5563;font-size:10px;">{}</span>',
+            timesince(obj.created_at),
+            obj.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        )
 
 
 from django.contrib.auth.forms import UserChangeForm, UserCreationForm
@@ -55,7 +110,7 @@ class CustomUserAdmin(BaseUserAdmin, ModelAdmin):
     readonly_fields = ("created_at", "updated_at")
     list_per_page = 25
     list_display_links = ("email_display",)
-    inlines = [ProfileInline]
+    inlines = [ProfileInline, UsageEventInline]
     actions = ["activate_users", "deactivate_users", "grant_pro", "revoke_pro"]
 
     fieldsets = (
