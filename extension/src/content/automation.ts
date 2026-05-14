@@ -2096,8 +2096,8 @@ export class AutomationEngine {
     this.stopped = true;
     this.paused = false;
     this.log('info', 'Queue stop requested');
-    // Note: run-lock is released at the end of start() to prevent
-    // a new queue from starting while this one is still winding down.
+    // Immediately notify the UI so the user sees the state change
+    this.sendQueueStatus('stopped');
   }
 
   skipCurrent(): void {
@@ -2131,6 +2131,7 @@ export class AutomationEngine {
 
     // Scroll output area to the top so newest (potentially still generating) tiles are visible
     await scrollOutputToTop();
+    if (this.stopped) return;
 
     // Wait for all tiles to settle (no more generating state)
     const POST_QUEUE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes max
@@ -2146,11 +2147,14 @@ export class AutomationEngine {
 
       // Scroll to top before checking — generating tiles are at the top
       await scrollOutputToTop();
+      if (this.stopped) return;
 
       if (allTilesSettled()) {
         // Double-check with a full scroll to catch off-screen generating tiles
         await sleep(2000);
+        if (this.stopped) return;
         const fullySettled = await allTilesSettledWithScroll();
+        if (this.stopped) return;
         if (fullySettled) {
           this.log('info', 'All tiles have settled (no more generating)');
           break;
@@ -2170,12 +2174,16 @@ export class AutomationEngine {
       await sleep(POLL_INTERVAL_MS);
     }
 
+    if (this.stopped) return;
+
     if (Date.now() - startTime >= POST_QUEUE_TIMEOUT_MS) {
-      this.log('warn', 'Post-queue scan timed out after 30 minutes');
+      this.log('warn', 'Post-queue scan timed out after 10 minutes');
     }
 
     // Now scroll through ALL tiles and detect failures by position
-    await this.detectAndReportFailures();
+    if (!this.stopped) {
+      await this.detectAndReportFailures();
+    }
   }
 
   /**
