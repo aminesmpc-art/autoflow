@@ -3603,7 +3603,10 @@ async function showLoggedInState() {
   // Unlock all tabs
   enforceAuthGate(true);
   // Check if image sections should be hidden (full-features limit)
-  enforceImageGate();
+  await enforceImageGate();
+  // Re-trigger mode card to ensure mode-specific sections are correct (e.g. text-to-video hides images)
+  const activeCard = document.querySelector('.af-mode-card.active') as HTMLElement;
+  if (activeCard) activeCard.click();
 
   // Load profile — with cached fallback
   let profile = await getProfile();
