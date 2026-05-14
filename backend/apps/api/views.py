@@ -77,6 +77,17 @@ class LoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        from django.core.cache import cache
+        ip = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or request.META.get("REMOTE_ADDR", "unknown")
+        cache_key = f"login_rate:{ip}"
+        attempts = cache.get(cache_key, 0)
+        
+        if attempts >= 10:
+            return Response(
+                {"detail": "Too many failed login attempts. Try again later."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -96,11 +107,13 @@ class LoginView(APIView):
 
         user = authenticate(request, username=email, password=password)
         if user is None:
+            cache.set(cache_key, attempts + 1, timeout=300)  # 5 minutes lockout
             return Response(
                 {"message": "Invalid email or password."},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
+        cache.delete(cache_key)  # clear attempts on success
         mark_last_seen(user)
         refresh = RefreshToken.for_user(user)
         return Response({
