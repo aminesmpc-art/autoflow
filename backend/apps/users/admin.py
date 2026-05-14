@@ -24,8 +24,24 @@ class ProfileInline(StackedInline):
     )
 
 
+from django.contrib.auth.forms import UserChangeForm, UserCreationForm
+from unfold.forms import AdminPasswordChangeForm
+
+class CustomUserChangeForm(UserChangeForm):
+    class Meta:
+        model = CustomUser
+        fields = "__all__"
+
+class CustomUserCreationForm(UserCreationForm):
+    class Meta:
+        model = CustomUser
+        fields = ("email",)
+
 @admin.register(CustomUser)
 class CustomUserAdmin(BaseUserAdmin, ModelAdmin):
+    form = CustomUserChangeForm
+    add_form = CustomUserCreationForm
+    change_password_form = AdminPasswordChangeForm
     list_display = (
         "email_display", "plan_badge", "active_badge",
         "staff_badge", "last_seen_display", "created_display",
