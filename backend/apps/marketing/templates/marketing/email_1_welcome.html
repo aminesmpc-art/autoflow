@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to {{ product_name }}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0f0f14; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    <!-- Wrapper -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #0f0f14;">
+        <tr>
+            <td align="center" style="padding: 40px 16px;">
+                <!-- Main Card -->
+                <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; width: 100%; background-color: #1a1a24; border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06);">
+                    
+                    <!-- Header with gradient -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%); padding: 48px 40px; text-align: center;">
+                            <h1 style="margin: 0 0 8px; font-size: 32px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px;">
+                                🎉 Welcome!
+                            </h1>
+                            <p style="margin: 0; font-size: 16px; color: rgba(255,255,255,0.85); font-weight: 400;">
+                                You're one step away from unlocking the full power of {{ product_name }}
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Body -->
+                    <tr>
+                        <td style="padding: 40px;">
+                            <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #e0e0e8;">
+                                Hey there! 👋
+                            </p>
+                            <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #e0e0e8;">
+                                Thanks for joining the {{ product_name }} community. We're thrilled to have you on board!
+                            </p>
+                            <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.6; color: #e0e0e8;">
+                                As a special welcome, we'd like to offer you an <strong style="color: #10b981;">exclusive deal</strong> on our Pro plan:
+                            </p>
+
+                            <!-- Offer Box -->
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px;">
+                                <tr>
+                                    <td style="background: linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(5,150,105,0.08) 100%); border: 1px solid rgba(16,185,129,0.25); border-radius: 12px; padding: 24px; text-align: center;">
+                                        <p style="margin: 0 0 4px; font-size: 14px; text-transform: uppercase; letter-spacing: 1.5px; color: #10b981; font-weight: 600;">
+                                            Limited Time Offer
+                                        </p>
+                                        <p style="margin: 0 0 8px; font-size: 36px; font-weight: 700; color: #ffffff;">
+                                            50% OFF
+                                        </p>
+                                        <p style="margin: 0; font-size: 14px; color: #9ca3af;">
+                                            Unlock unlimited prompts, priority support, and more
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Feature highlights -->
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px;">
+                                <tr>
+                                    <td style="padding: 8px 0; font-size: 15px; color: #e0e0e8;">
+                                        ✅ &nbsp; Unlimited daily prompts
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0; font-size: 15px; color: #e0e0e8;">
+                                        ✅ &nbsp; Batch queue processing
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0; font-size: 15px; color: #e0e0e8;">
+                                        ✅ &nbsp; Priority download speeds
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0; font-size: 15px; color: #e0e0e8;">
+                                        ✅ &nbsp; Advanced video extraction
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- CTA Button -->
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td align="center" style="padding: 8px 0 32px;">
+                                        <a href="{{ cta_url }}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; font-size: 16px; font-weight: 600; text-decoration: none; padding: 16px 48px; border-radius: 10px; letter-spacing: 0.3px;">
+                                            Claim Your 50% Off →
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin: 0; font-size: 13px; color: #6b7280; text-align: center;">
+                                This offer is valid for a limited time only.
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 24px 40px; border-top: 1px solid rgba(255,255,255,0.06); text-align: center;">
+                            <p style="margin: 0 0 8px; font-size: 13px; color: #6b7280;">
+                                You're receiving this because you opted in via {{ product_name }}.
+                            </p>
+                            <p style="margin: 0; font-size: 13px; color: #6b7280;">
+                                © {{ year }} AutoFlow. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
