@@ -1,12 +1,27 @@
-node_modules/
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
 dist/
-.chrome-debug-profile/
-*.js.map
-dist.crx
-dist.pem
-dom-after-images.html
-flow-dom.html
-flow_page_with_all_media.html
-page_with_videos.html
-whenimageisaddtotheprompt.html
-extractor-backend/.env
+build/
+
+# Virtual environment
+venv/
+.venv/
+
+# Database
+db.sqlite3
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Static files
+staticfiles/
+
+# OS
+.DS_Store
+Thumbs.db

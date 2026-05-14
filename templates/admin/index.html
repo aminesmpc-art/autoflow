@@ -1,0 +1,524 @@
+{% extends 'admin/base.html' %}
+{% load i18n unfold %}
+
+{% block title %}Dashboard | AutoFlow Admin{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block content %}
+<style>
+    /* ── Premium Glassmorphism Theme ── */
+    :root {
+        --glass-bg: rgba(255, 255, 255, 0.02);
+        --glass-border: rgba(255, 255, 255, 0.05);
+        --glass-hover: rgba(255, 255, 255, 0.04);
+        --glass-border-hover: rgba(16, 185, 129, 0.3);
+        
+        --text-muted: #9ca3af;
+        --text-body: #d1d5db;
+        --text-heading: #f9fafb;
+    }
+
+    .af-grid { display: grid; gap: 1.25rem; margin-bottom: 1.5rem; }
+    .af-grid-4 { grid-template-columns: repeat(4, 1fr); }
+    .af-grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .af-grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .af-grid-3-split { grid-template-columns: 2fr 1fr; }
+    @media (max-width: 1200px) { .af-grid-4 { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 1024px) { .af-grid-4 { grid-template-columns: repeat(2, 1fr); } .af-grid-3, .af-grid-3-split { grid-template-columns: 1fr; } }
+    @media (max-width: 768px) { .af-grid-4,.af-grid-2,.af-grid-3,.af-grid-3-split { grid-template-columns: 1fr; } }
+
+    /* ── Cards ── */
+    .af-card {
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        padding: 1.5rem;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.2);
+        position: relative;
+        overflow: hidden;
+    }
+    .af-card:hover {
+        background: var(--glass-hover);
+        border-color: var(--glass-border-hover);
+        transform: translateY(-2px);
+        box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.3);
+    }
+    
+    /* Subtle glowing gradients in corners */
+    .af-card::before {
+        content: ''; position: absolute; top: -50px; right: -50px; width: 100px; height: 100px;
+        background: radial-gradient(circle, rgba(16,185,129,0.1) 0%, transparent 70%); border-radius: 50%; pointer-events: none;
+    }
+
+    .af-card.accent-gold:hover { border-color: rgba(234,179,8,0.4); }
+    .af-card.accent-gold::before { background: radial-gradient(circle, rgba(234,179,8,0.1) 0%, transparent 70%); }
+    
+    .af-card.accent-purple:hover { border-color: rgba(167,139,250,0.4); }
+    .af-card.accent-purple::before { background: radial-gradient(circle, rgba(167,139,250,0.1) 0%, transparent 70%); }
+    
+    .af-card.accent-red:hover { border-color: rgba(239,68,68,0.4); }
+    .af-card.accent-red::before { background: radial-gradient(circle, rgba(239,68,68,0.1) 0%, transparent 70%); }
+
+    /* ── Card Content ── */
+    .af-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+    .af-card-title-group { display: flex; align-items: center; gap: 0.75rem; }
+    .af-card-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: rgba(16,185,129,0.1); color: #34d399; font-size: 20px; border: 1px solid rgba(16,185,129,0.2); }
+    
+    .af-card.accent-gold .af-card-icon { background: rgba(234,179,8,0.1); color: #fbbf24; border-color: rgba(234,179,8,0.2); }
+    .af-card.accent-purple .af-card-icon { background: rgba(167,139,250,0.1); color: #a78bfa; border-color: rgba(167,139,250,0.2); }
+    .af-card.accent-red .af-card-icon { background: rgba(239,68,68,0.1); color: #f87171; border-color: rgba(239,68,68,0.2); }
+    .af-card.accent-blue .af-card-icon { background: rgba(59,130,246,0.1); color: #60a5fa; border-color: rgba(59,130,246,0.2); }
+
+    .af-card-title { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .af-card-metric { font-size: 2.25rem; font-weight: 800; color: var(--text-heading); line-height: 1.1; margin-bottom: 0.5rem; letter-spacing: -0.02em; }
+    .af-card-highlight { font-size: 0.8rem; color: #34d399; font-weight: 600; margin-bottom: 0.25rem; }
+    .af-card-footer { font-size: 0.8rem; color: var(--text-muted); font-weight: 500; }
+
+    .af-section-title { font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.5rem; }
+    .af-section-title::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--glass-border), transparent); margin-left: 0.5rem; }
+
+    /* ── All-Time Hero Banner ── */
+    .af-hero { 
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 2rem; 
+        padding: 2rem; background: linear-gradient(135deg, rgba(16,185,129,0.08) 0%, rgba(139,92,246,0.08) 100%); 
+        border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; margin-bottom: 2rem; 
+        box-shadow: inset 0 2px 20px rgba(255,255,255,0.02);
+    }
+    @media (max-width: 768px) { .af-hero { grid-template-columns: repeat(2, 1fr); gap: 1.5rem; padding: 1.5rem; } }
+    .af-hero-item { text-align: center; }
+    .af-hero-num { font-size: 2.5rem; font-weight: 800; color: var(--text-heading); letter-spacing: -0.03em; margin-bottom: 0.25rem; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+    .af-hero-num.highlight { background: linear-gradient(135deg, #34d399 0%, #10b981 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .af-hero-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+
+    /* ── Progress Bars & Badges ── */
+    .af-progress-wrap { margin-bottom: 1rem; }
+    .af-progress-label { display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 0.4rem; }
+    .af-progress-label span:first-child { color: var(--text-body); font-weight: 600; }
+    .af-progress-label span:last-child { color: var(--text-muted); font-weight: 500; }
+    .af-progress-bar { height: 6px; border-radius: 999px; background: rgba(0,0,0,0.2); overflow: hidden; border: 1px solid rgba(255,255,255,0.02); }
+    .af-progress-fill { height: 100%; border-radius: 999px; transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
+    .af-progress-fill.emerald { background: linear-gradient(90deg, #10b981, #34d399); box-shadow: 0 0 10px rgba(16,185,129,0.4); }
+    .af-progress-fill.blue { background: linear-gradient(90deg, #3b82f6, #60a5fa); box-shadow: 0 0 10px rgba(59,130,246,0.4); }
+    .af-progress-fill.amber { background: linear-gradient(90deg, #d97706, #fbbf24); box-shadow: 0 0 10px rgba(217,119,6,0.4); }
+    .af-progress-fill.slate { background: linear-gradient(90deg, #4b5563, #9ca3af); }
+
+    .af-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+    .af-badge-pro { background: rgba(16,185,129,0.15); color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
+    .af-badge-free { background: rgba(255,255,255,0.05); color: #9ca3af; border: 1px solid rgba(255,255,255,0.1); }
+
+    /* ── Tables ── */
+    .af-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .af-table th { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--glass-border); }
+    .af-table td { font-size: 0.85rem; color: var(--text-body); padding: 0.85rem 1rem; border-bottom: 1px solid rgba(255,255,255,0.02); transition: background 0.2s ease; }
+    .af-table tr:last-child td { border-bottom: none; }
+    .af-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .af-table .af-email { color: #f9fafb; font-weight: 500; }
+    .af-table .af-num { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    /* ── Redesigned Funnel ── */
+    .af-funnel { display: flex; flex-direction: column; gap: 0.5rem; }
+    .af-funnel-step { display: flex; align-items: center; background: rgba(0,0,0,0.15); padding: 1rem 1.25rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.03); position: relative; }
+    .af-funnel-step::before { content: ''; position: absolute; left: 1.5rem; top: -0.5rem; width: 2px; height: 0.5rem; background: var(--glass-border); }
+    .af-funnel-step:first-child::before { display: none; }
+    .af-funnel-icon { width: 32px; height: 32px; border-radius: 8px; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; font-size: 16px; margin-right: 1rem; }
+    .af-funnel-content { flex: 1; display: flex; justify-content: space-between; align-items: center; }
+    .af-funnel-title { font-size: 0.85rem; font-weight: 600; color: var(--text-heading); margin-bottom: 0.2rem; }
+    .af-funnel-desc { font-size: 0.75rem; color: var(--text-muted); }
+    .af-funnel-num { font-size: 1.25rem; font-weight: 800; color: #f9fafb; font-variant-numeric: tabular-nums; text-align: right; }
+    .af-funnel-rate { font-size: 0.75rem; font-weight: 600; color: #10b981; background: rgba(16,185,129,0.1); padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 0.25rem; }
+
+    /* ── Activity Feed ── */
+    .af-feed { display: flex; flex-direction: column; gap: 0; }
+    .af-feed-item { display: flex; align-items: flex-start; gap: 1rem; padding: 0.85rem 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
+    .af-feed-item:last-child { border-bottom: none; }
+    .af-feed-icon-wrap { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; background: rgba(255,255,255,0.05); flex-shrink: 0; margin-top: 2px; }
+    .af-feed-content { flex: 1; }
+    .af-feed-text { font-size: 0.85rem; color: var(--text-body); line-height: 1.4; }
+    .af-feed-text strong { color: var(--text-heading); font-weight: 600; }
+    .af-feed-time { font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 0.2rem; }
+</style>
+
+<!-- ── ALL-TIME HERO BANNER ── -->
+<div class="af-hero">
+    <div class="af-hero-item">
+        <div class="af-hero-num">{{ all_time.prompts|default:"0" }}</div>
+        <div class="af-hero-label">Total Prompts Run</div>
+    </div>
+    <div class="af-hero-item">
+        <div class="af-hero-num">{{ all_time.downloads|default:"0" }}</div>
+        <div class="af-hero-label">Videos Downloaded</div>
+    </div>
+    <div class="af-hero-item">
+        <div class="af-hero-num highlight">${{ revenue.mrr|floatformat:0 }}</div>
+        <div class="af-hero-label">Monthly Recurring Rev</div>
+    </div>
+    <div class="af-hero-item">
+        <div class="af-hero-num">${{ revenue.arr|floatformat:0 }}</div>
+        <div class="af-hero-label">Annual Run Rate</div>
+    </div>
+</div>
+
+<!-- ── PRIMARY KPIs ── -->
+<div class="af-section-title"><span class="material-symbols-outlined" style="font-size: 18px;">monitoring</span> Overview & Usage</div>
+<div class="af-grid af-grid-4">
+    <div class="af-card">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">group</span></div>
+                <span class="af-card-title">Total Users</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ funnel.total_users }}</div>
+        <div class="af-card-highlight">{% if kpi.0.highlight %}{{ kpi.0.highlight }}{% endif %}</div>
+        <div class="af-card-footer">{{ kpi.0.footer }}</div>
+    </div>
+    
+    <div class="af-card accent-gold">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">workspace_premium</span></div>
+                <span class="af-card-title">Pro Subscribers</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ plan_distribution.pro_count }}</div>
+        <div class="af-card-highlight">{{ plan_distribution.pro_pct }}% conversion rate</div>
+        <div class="af-card-footer">Active paying users</div>
+    </div>
+
+    <div class="af-card">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">edit_note</span></div>
+                <span class="af-card-title">Prompts Today</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ kpi.2.metric }}</div>
+        <div class="af-card-highlight">{{ kpi.2.highlight }}</div>
+        <div class="af-card-footer">{{ kpi.2.footer }}</div>
+    </div>
+
+    <div class="af-card accent-purple">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">download</span></div>
+                <span class="af-card-title">Downloads Today</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ kpi.3.metric }}</div>
+        <div class="af-card-footer">{{ kpi.3.footer }}</div>
+    </div>
+</div>
+
+<!-- ── MARKETING & ENGAGEMENT ── -->
+<div class="af-section-title" style="margin-top: 2rem;"><span class="material-symbols-outlined" style="font-size: 18px;">mail</span> Marketing & Engagement</div>
+<div class="af-grid af-grid-4">
+    <!-- New Marketing KPI 1 -->
+    <div class="af-card accent-blue">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">mark_email_read</span></div>
+                <span class="af-card-title">Email Subscribers</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ marketing.total }}</div>
+        <div class="af-card-footer">{{ marketing.active }} active sequences</div>
+    </div>
+
+    <!-- New Marketing KPI 2 -->
+    <div class="af-card accent-blue">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">ads_click</span></div>
+                <span class="af-card-title">Marketing Conversion</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ marketing.acted }}</div>
+        <div class="af-card-highlight">{{ marketing.conversion_rate }}% upgraded to Pro</div>
+        <div class="af-card-footer">Clicked email CTA link</div>
+    </div>
+
+    <!-- Existing Webhooks KPI -->
+    <div class="af-card {% if kpi.6.metric > 0 %}accent-red{% endif %}">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">webhook</span></div>
+                <span class="af-card-title">Pending Webhooks</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ kpi.6.metric }}</div>
+        <div class="af-card-footer" style="{% if kpi.6.metric > 0 %}color: #f87171; font-weight: 600;{% endif %}">{{ kpi.6.footer }}</div>
+    </div>
+
+    <!-- Existing Extractions KPI -->
+    <div class="af-card">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">movie</span></div>
+                <span class="af-card-title">Saved Extractions</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ kpi.5.metric }}</div>
+        <div class="af-card-footer">{{ kpi.5.footer }}</div>
+    </div>
+</div>
+
+<!-- ── CHARTS ROW ── -->
+<div class="af-section-title" style="margin-top: 2rem;"><span class="material-symbols-outlined" style="font-size: 18px;">bar_chart</span> Trends</div>
+<div class="af-grid af-grid-2">
+    <div class="af-card" style="padding: 1.5rem;">
+        <div class="af-section-title" style="margin-bottom: 1rem; border: none; padding: 0;">Prompts & Downloads (7 Days)</div>
+        <div style="position: relative; height: 300px; width: 100%;"><canvas id="usageChart"></canvas></div>
+    </div>
+    <div class="af-card" style="padding: 1.5rem;">
+        <div class="af-section-title" style="margin-bottom: 1rem; border: none; padding: 0;">New Signups (7 Days)</div>
+        <div style="position: relative; height: 300px; width: 100%;"><canvas id="signupChart"></canvas></div>
+    </div>
+</div>
+
+<!-- ── ANALYTICS ROW ── -->
+<div class="af-section-title" style="margin-top: 2rem;"><span class="material-symbols-outlined" style="font-size: 18px;">analytics</span> Deep Analytics</div>
+<div class="af-grid af-grid-3">
+    
+    <!-- Redesigned Funnel -->
+    <div class="af-card">
+        <div class="af-section-title">User Journey Funnel</div>
+        <div class="af-funnel">
+            <div class="af-funnel-step">
+                <div class="af-funnel-icon">👋</div>
+                <div class="af-funnel-content">
+                    <div>
+                        <div class="af-funnel-title">Total Signups</div>
+                        <div class="af-funnel-desc">Created an account</div>
+                    </div>
+                    <div class="af-funnel-num">{{ funnel.total_users }}</div>
+                </div>
+            </div>
+            <div class="af-funnel-step">
+                <div class="af-funnel-icon">✉️</div>
+                <div class="af-funnel-content">
+                    <div>
+                        <div class="af-funnel-title">Verified Users</div>
+                        <div class="af-funnel-rate">{{ funnel.signup_to_verified }}% of signups</div>
+                    </div>
+                    <div class="af-funnel-num">{{ funnel.verified }}</div>
+                </div>
+            </div>
+            <div class="af-funnel-step">
+                <div class="af-funnel-icon">⚡</div>
+                <div class="af-funnel-content">
+                    <div>
+                        <div class="af-funnel-title">Active Users</div>
+                        <div class="af-funnel-rate">{{ funnel.verified_to_active }}% of verified</div>
+                    </div>
+                    <div class="af-funnel-num">{{ funnel.active }}</div>
+                </div>
+            </div>
+            <div class="af-funnel-step" style="background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.2);">
+                <div class="af-funnel-icon" style="background: rgba(245,158,11,0.15);">💎</div>
+                <div class="af-funnel-content">
+                    <div>
+                        <div class="af-funnel-title" style="color: #fbbf24;">Upgraded to Pro</div>
+                        <div class="af-funnel-rate" style="color: #f59e0b; background: rgba(245,158,11,0.1);">{{ funnel.active_to_pro }}% of active</div>
+                    </div>
+                    <div class="af-funnel-num" style="color: #fbbf24;">{{ funnel.pro }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7-Day Retention -->
+    <div class="af-card">
+        <div class="af-section-title">7-Day Retention</div>
+        {% for r in retention %}
+        <div class="af-progress-wrap">
+            <div class="af-progress-label">
+                <span>{{ r.date }} <span style="color:var(--text-muted);font-weight:400;font-size:0.75rem;">({{ r.cohort_size }} users)</span></span>
+                <span>{{ r.pct }}%</span>
+            </div>
+            <div class="af-progress-bar">
+                <div class="af-progress-fill blue" style="width: {{ r.pct }}%;"></div>
+            </div>
+        </div>
+        {% endfor %}
+        {% if not retention %}<p style="color:var(--text-muted);font-size:0.85rem;">No cohort data yet.</p>{% endif %}
+    </div>
+
+    <!-- Event Distribution -->
+    <div class="af-card">
+        <div class="af-section-title">Events Today</div>
+        {% if event_distribution %}
+        <div style="position:relative;height:180px;margin-bottom:1.5rem;"><canvas id="eventDonut"></canvas></div>
+        <div style="display:flex;flex-direction:column;gap:0.6rem;">
+            {% for ev in event_distribution %}
+            <div style="display:flex;align-items:center;gap:0.75rem;">
+                <span style="width:12px;height:12px;border-radius:3px;background:{{ ev.color }};flex-shrink:0;"></span>
+                <span style="font-size:0.85rem;color:var(--text-body);flex:1;font-weight:500;">{{ ev.type }}</span>
+                <span style="font-size:0.85rem;font-weight:700;color:var(--text-heading);font-variant-numeric:tabular-nums;">{{ ev.count }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}<p style="color:var(--text-muted);font-size:0.85rem;">No events today yet.</p>{% endif %}
+    </div>
+</div>
+
+<!-- ── TABLES ROW ── -->
+<div class="af-grid af-grid-3-split">
+    <!-- Left Column: Tables -->
+    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        
+        <div class="af-card" style="padding: 0;">
+            <div class="af-section-title" style="padding: 1.5rem 1.5rem 0; margin-bottom: 1rem;">🏆 Top Users Today</div>
+            {% if top_users %}
+            <div style="overflow-x: auto;">
+                <table class="af-table">
+                    <thead><tr><th>User</th><th>Text Prompts</th><th>Image Prompts</th><th>Downloads</th><th>Total Usage</th></tr></thead>
+                    <tbody>
+                    {% for u in top_users %}
+                    <tr>
+                        <td class="af-email">{{ u.email }}</td>
+                        <td class="af-num">{{ u.text }}</td>
+                        <td class="af-num">{{ u.full }}</td>
+                        <td class="af-num" style="color: #a78bfa;">{{ u.downloads }}</td>
+                        <td class="af-num" style="color: #34d399;">{{ u.total }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<p style="color:var(--text-muted);font-size:0.85rem;padding:0 1.5rem 1.5rem;">No usage today yet.</p>{% endif %}
+        </div>
+
+        <div class="af-card" style="padding: 0;">
+            <div class="af-section-title" style="padding: 1.5rem 1.5rem 0; margin-bottom: 1rem;">🆕 Recent Signups</div>
+            {% if recent_users %}
+            <div style="overflow-x: auto;">
+                <table class="af-table">
+                    <thead><tr><th>Email</th><th>Plan</th><th>Status</th><th>Signup Date</th></tr></thead>
+                    <tbody>
+                    {% for u in recent_users %}
+                    <tr>
+                        <td class="af-email">{{ u.email }}</td>
+                        <td>{% if u.plan == "Pro" %}<span class="af-badge af-badge-pro">⚡ PRO</span>{% else %}<span class="af-badge af-badge-free">Free</span>{% endif %}</td>
+                        <td>{% if u.active %}<span class="af-badge" style="background:rgba(16,185,129,0.1);color:#34d399;">Active</span>{% else %}<span class="af-badge" style="background:rgba(239,68,68,0.1);color:#f87171;">Pending</span>{% endif %}</td>
+                        <td style="color:var(--text-muted);font-size:0.8rem;">{{ u.date }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Right Column: Live Feed & Power Users -->
+    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        
+        <div class="af-card">
+            <div class="af-section-title">🔥 Power Users (Approaching Limit)</div>
+            {% if power_users %}
+                {% for p in power_users %}
+                <div class="af-progress-wrap" style="margin-bottom: 1.25rem;">
+                    <div class="af-progress-label">
+                        <span>{{ p.email }} {% if p.is_pro %}<span class="af-badge af-badge-pro" style="margin-left:6px;font-size:0.6rem;">PRO</span>{% endif %}</span>
+                        <span style="font-weight:700;">{{ p.pct }}%</span>
+                    </div>
+                    <div class="af-progress-bar"><div class="af-progress-fill {% if p.pct >= 90 %}red{% elif p.pct >= 70 %}amber{% else %}emerald{% endif %}" style="width:{{ p.pct }}%;"></div></div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.3rem;">{{ p.total }} prompts used today</div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p style="color:var(--text-muted);font-size:0.85rem;">No users are close to their limits today.</p>
+            {% endif %}
+        </div>
+
+        <div class="af-card">
+            <div class="af-section-title">📡 Live Activity Feed</div>
+            <div class="af-feed">
+                {% if recent_activity %}
+                {% for ev in recent_activity %}
+                <div class="af-feed-item">
+                    <div class="af-feed-icon-wrap" style="color: {{ ev.color }}; border: 1px solid {{ ev.color }}40;">{{ ev.icon }}</div>
+                    <div class="af-feed-content">
+                        <div class="af-feed-text"><strong>{{ ev.email }}</strong> triggered {{ ev.label }}{% if ev.count > 0 %} (×{{ ev.count }}){% endif %}</div>
+                        <div class="af-feed-time">{{ ev.time_ago }} ago</div>
+                    </div>
+                </div>
+                {% endfor %}
+                {% else %}<p style="color:var(--text-muted);font-size:0.85rem;">No recent activity.</p>{% endif %}
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- ── Chart.js ── -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+(function() {
+    Chart.defaults.color = '#9ca3af';
+    Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+    
+    const gridColor = 'rgba(255,255,255,0.05)';
+    const tickColor = '#9ca3af';
+    
+    const chartOpts = { 
+        responsive: true, 
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { 
+            legend: { position: 'top', align: 'end', labels: { color: tickColor, boxWidth: 10, usePointStyle: true, padding: 20, font: { size: 12, weight: 500 } } },
+            tooltip: { backgroundColor: 'rgba(19,19,24,0.9)', titleColor: '#fff', bodyColor: '#d1d5db', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 12, boxPadding: 6, usePointStyle: true }
+        },
+        scales: { 
+            x: { grid: { display: false }, ticks: { color: tickColor, font: { size: 11 } }, border: { display: false } },
+            y: { beginAtZero: true, grid: { color: gridColor, drawBorder: false }, ticks: { color: tickColor, font: { size: 11 }, padding: 10 }, border: { display: false } } 
+        } 
+    };
+
+    // Usage Chart
+    new Chart(document.getElementById('usageChart'), { 
+        type: 'bar', 
+        data: {{ usage_chart|safe }},
+        options: { 
+            ...chartOpts, 
+            barPercentage: 0.5, 
+            categoryPercentage: 0.8,
+            elements: { bar: { borderRadius: 6, borderSkipped: false } }
+        } 
+    });
+
+    // Signup Chart
+    new Chart(document.getElementById('signupChart'), { 
+        type: 'line', 
+        data: {{ signup_chart|safe }}, 
+        options: {
+            ...chartOpts,
+            elements: { line: { tension: 0.4, borderWidth: 3 }, point: { radius: 4, hitRadius: 20, hoverRadius: 6 } },
+            plugins: { ...chartOpts.plugins, legend: { display: false } }
+        }
+    });
+
+    // Event Donut
+    const donutEl = document.getElementById('eventDonut');
+    if (donutEl) {
+        const evData = [{% for ev in event_distribution %}{{ ev.count }},{% endfor %}];
+        const evColors = [{% for ev in event_distribution %}'{{ ev.color }}',{% endfor %}];
+        const evLabels = [{% for ev in event_distribution %}'{{ ev.type }}',{% endfor %}];
+        new Chart(donutEl, { 
+            type: 'doughnut', 
+            data: { labels: evLabels, datasets: [{ data: evData, backgroundColor: evColors, borderWidth: 2, borderColor: '#131318', hoverOffset: 4 }] },
+            options: { 
+                responsive: true, maintainAspectRatio: false, cutout: '75%',
+                plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(19,19,24,0.9)', bodyColor: '#d1d5db', padding: 12, borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1 } } 
+            } 
+        });
+    }
+})();
+</script>
+{% endblock %}
