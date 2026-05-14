@@ -42,6 +42,7 @@ LOCAL_APPS = [
     "apps.rewards",
     "apps.webhooks",
     "apps.extractions",
+    "apps.marketing",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -153,6 +154,17 @@ UNFOLD = {
                         "icon": "movie",
                         "link": "/admin/extractions/savedextraction/",
                         "badge": "apps.dashboard.badge_callback_extractions",
+                    },
+                ],
+            },
+            {
+                "title": "Marketing",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Email Subscribers",
+                        "icon": "campaign",
+                        "link": "/admin/marketing/emailsequencesubscriber/",
                     },
                 ],
             },
@@ -276,6 +288,10 @@ CORS_ALLOW_CREDENTIALS = True
 # ── Email (Resend) ──
 RESEND_API_KEY = config("RESEND_API_KEY", default="")
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="AutoFlow <noreply@auto-flow.studio>")
+
+# ── Marketing Email Sequence ──
+MARKETING_CTA_URL = config("MARKETING_CTA_URL", default="https://auto-flow.studio/upgrade")
+MARKETING_PRODUCT_NAME = config("MARKETING_PRODUCT_NAME", default="AutoFlow Pro")
 
 # ── App config ──
 VERIFY_EMAIL_BASE_URL = config(
