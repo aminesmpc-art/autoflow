@@ -186,18 +186,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateStatusDot(state.isRunning ? 'running' : 'connected');
   }
 
-  // First-run disclosure — show once, remember dismissal
-  const { af_first_run_seen } = await chrome.storage.local.get('af_first_run_seen');
-  if (!af_first_run_seen) {
-    const firstRunEl = $('#af-first-run');
-    if (firstRunEl) {
-      firstRunEl.style.display = 'flex';
-      $('#btn-dismiss-first-run')?.addEventListener('click', () => {
-        firstRunEl.style.display = 'none';
-        chrome.storage.local.set({ af_first_run_seen: true });
-      });
-    }
-  }
+  // First-run disclosure — moved to showLoggedInState() so it only shows after sign-in
 
   // WhatsApp Support Button
   $('#btn-whatsapp-support')?.addEventListener('click', () => {
@@ -3591,6 +3580,25 @@ async function showLoggedInState() {
   $('#account-logged-out')!.style.display = 'none';
   $('#account-verify-pending')!.style.display = 'none';
   $('#account-logged-in')!.style.display = 'block';
+
+  // First-run disclosure — show once after sign-in, remember dismissal
+  const { af_first_run_seen } = await chrome.storage.local.get('af_first_run_seen');
+  if (!af_first_run_seen) {
+    const firstRunEl = $('#af-first-run');
+    if (firstRunEl) {
+      firstRunEl.style.display = 'flex';
+      const dismissBtn = $('#btn-dismiss-first-run');
+      if (dismissBtn) {
+        // Remove old listeners to avoid duplicates on re-call
+        const newBtn = dismissBtn.cloneNode(true) as HTMLElement;
+        dismissBtn.parentNode?.replaceChild(newBtn, dismissBtn);
+        newBtn.addEventListener('click', () => {
+          firstRunEl.style.display = 'none';
+          chrome.storage.local.set({ af_first_run_seen: true });
+        });
+      }
+    }
+  }
 
   // Unlock all tabs
   enforceAuthGate(true);
