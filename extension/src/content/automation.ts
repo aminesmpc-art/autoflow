@@ -308,7 +308,10 @@ export class AutomationEngine {
         // State: APPLY_VOICE
         if (this.queue!.settings.mediaType !== 'image') {
           this.state = 'APPLY_VOICE';
-          await this.applyVoiceIngredient(this.queue!.settings.voiceIngredient);
+          const voiceToApply = (prompt.images && prompt.images.length > 0) 
+            ? this.queue!.settings.voiceIngredient 
+            : 'none';
+          await this.applyVoiceIngredient(voiceToApply);
           if (this.stopped) return;
         }
 
@@ -420,38 +423,42 @@ export class AutomationEngine {
   /**
    * Ensure the page is ready for the next prompt.
    * If the prompt input has disappeared (e.g., Flow navigated away),
-   * wait and check repeatedly. If we detect we're on the homepage (no
-   * project), click "+ New project" to get back into a creation view.
+   * wait and check repeatedly.
    */
   private async ensurePageReady(): Promise<void> {
-    const maxWait = 15000; // 15 seconds
+    const maxWait = 30000; // 30 seconds — new projects can take time to load
     const start = Date.now();
+    let clickedNewProject = false;
 
     while (Date.now() - start < maxWait) {
       if (this.stopped) return;
 
       const promptInput = findPromptInput();
       if (promptInput && isVisible(promptInput)) {
-        this.log('info', 'Page ready â€” prompt input visible');
+        this.log('info', 'Page ready — prompt input visible');
         return;
       }
 
-      // Check if we landed on the homepage â€” look for "+ New project" button
-      const newProjectBtn = queryButtonByText('new project');
-      if (newProjectBtn && isVisible(newProjectBtn)) {
-        this.log('info', 'Detected Flow homepage. Clicking "+ New project" to continue...');
-        simulateClick(newProjectBtn);
-        await sleep(3000); // wait for new project to load
-        // New projects reset toggles — ensure they're ON
-        await this.ensureToggles();
-        continue;
+      // Check if we landed on the homepage — look for "+ New project" button
+      // Only click it once to avoid re-clicking during page transition
+      if (!clickedNewProject) {
+        const newProjectBtn = queryButtonByText('new project');
+        if (newProjectBtn && isVisible(newProjectBtn)) {
+          this.log('info', 'Detected Flow homepage. Clicking "+ New project" to continue...');
+          simulateClick(newProjectBtn);
+          clickedNewProject = true;
+          await sleep(6000); // wait longer for new project to load — Flow creates a project + navigates
+          // New projects reset toggles — ensure they're ON
+          await this.ensureToggles();
+          continue;
+        }
       }
 
       this.log('info', 'Waiting for page to be ready (prompt input not found yet)...');
       await sleep(2000);
     }
 
-    this.log('warn', 'Page may not be ready â€” prompt input not found after waiting');
+    this.log('warn', 'Page may not be ready — prompt input not found after waiting');
   }
 
   /** Open the settings flyout panel if not already open.

@@ -40,14 +40,21 @@ async function apiFetch(
   retry = true
 ): Promise<Response> {
   const tokens = await getStoredTokens();
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {}),
-  };
+  const headers = new Headers(options.headers || {});
+  
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  
+  // Prevent aggressive browser caching for GET requests
+  if (!options.method || options.method.toUpperCase() === 'GET') {
+    headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    headers.set('Pragma', 'no-cache');
+    headers.set('Expires', '0');
+  }
 
   if (tokens?.access) {
-    headers['Authorization'] = `Bearer ${tokens.access}`;
+    headers.set('Authorization', `Bearer ${tokens.access}`);
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
@@ -256,6 +263,26 @@ export async function checkCanGenerate(promptType: 'text' | 'full' = 'text'): Pr
   }
 }
 
+export async function consumeDownload(count: number = 1): Promise<{ allowed: boolean; remaining: number; limit: number; message?: string }> {
+  try {
+    const res = await apiFetch('/api/usage/download', {
+      method: 'POST',
+      body: JSON.stringify({ count }),
+    });
+    const data = await res.json();
+    return {
+      allowed: data.allowed !== false,
+      remaining: data.downloads_remaining_today ?? 0,
+      limit: data.download_daily_limit ?? 20,
+      message: data.message,
+    };
+  } catch {
+    // FAIL-OPEN for downloads: if server is unreachable, allow the download
+    // (the media is already generated on Google's side anyway)
+    return { allowed: true, remaining: 999, limit: 999 };
+  }
+}
+
 /** Get Whop checkout URL, optionally prefilled with user's email. */
 export async function getUpgradeUrl(): Promise<string> {
   const profile = await getProfile();
@@ -264,3 +291,30 @@ export async function getUpgradeUrl(): Promise<string> {
   }
   return WHOP_CHECKOUT_URL;
 }
+
+// ── Rewards API ──
+
+export async function claimReviewReward(reviewerName: string): Promise<{ status: string; message: string }> {
+  try {
+    const res = await apiFetch('/api/rewards/claim-review', { 
+      method: 'POST',
+      body: JSON.stringify({ reviewer_name: reviewerName })
+    });
+    const data = await res.json();
+    return { status: data.status || 'error', message: data.message || 'Unknown error' };
+  } catch (err) {
+    return { status: 'error', message: 'Network error' };
+  }
+}
+
+export async function getReviewRewardStatus(): Promise<{ status: string; pro_until?: string }> {
+  try {
+    const res = await apiFetch('/api/rewards/review-status');
+    if (!res.ok) return { status: 'none' };
+    const data = await res.json();
+    return { status: data.status || 'none', pro_until: data.pro_until };
+  } catch (err) {
+    return { status: 'none' };
+  }
+}
+

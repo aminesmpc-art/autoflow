@@ -3715,26 +3715,37 @@ async function initReviewReward() {
   // When user clicks 'Leave a Review' -> show the 'I Left My Review' button
   const onLeaveReview = () => {
     if (btnLeaveReviewTab) btnLeaveReviewTab.style.display = 'none';
-    if (btnClaimReviewTab) btnClaimReviewTab.style.display = 'flex';
+    const claimGroupTab = $('#claim-review-group-tab');
+    if (claimGroupTab) claimGroupTab.style.display = 'flex';
     if (btnLeaveReviewModal) btnLeaveReviewModal.style.display = 'none';
-    if (btnClaimReviewModal) btnClaimReviewModal.style.display = 'flex';
+    const claimGroupModal = $('#claim-review-group-modal');
+    if (claimGroupModal) claimGroupModal.style.display = 'flex';
   };
 
   btnLeaveReviewTab?.addEventListener('click', onLeaveReview);
   btnLeaveReviewModal?.addEventListener('click', onLeaveReview);
 
   // When user clicks 'I Left My Review' -> send claim to backend
-  const onClaimReview = async () => {
+  const onClaimReview = async (isModal: boolean) => {
+    const inputEl = $(isModal ? '#reviewer-name-modal' : '#reviewer-name-tab') as HTMLInputElement;
+    const reviewerName = inputEl?.value?.trim();
+    
+    if (!reviewerName) {
+      showToast('Please enter your Chrome Display Name.', 'warning');
+      inputEl?.focus();
+      return;
+    }
+
     if (btnClaimReviewTab) btnClaimReviewTab.textContent = 'Claiming...';
     if (btnClaimReviewModal) btnClaimReviewModal.textContent = 'Claiming...';
 
     const { claimReviewReward } = await import('../shared/api');
-    const result = await claimReviewReward();
+    const result = await claimReviewReward(reviewerName);
 
     if (result.status === 'error') {
       showToast(result.message, 'error');
-      if (btnClaimReviewTab) btnClaimReviewTab.textContent = '✓ I Left My Review';
-      if (btnClaimReviewModal) btnClaimReviewModal.textContent = '✓ I Left My Review';
+      if (btnClaimReviewTab) btnClaimReviewTab.textContent = '✓ Submit Claim';
+      if (btnClaimReviewModal) btnClaimReviewModal.textContent = '✓ Submit Claim';
     } else {
       showToast('Thank you! Your claim is under review.', 'success');
       hideReviewModal();
@@ -3742,8 +3753,8 @@ async function initReviewReward() {
     }
   };
 
-  btnClaimReviewTab?.addEventListener('click', onClaimReview);
-  btnClaimReviewModal?.addEventListener('click', onClaimReview);
+  btnClaimReviewTab?.addEventListener('click', () => onClaimReview(false));
+  btnClaimReviewModal?.addEventListener('click', () => onClaimReview(true));
 
   btnCloseModal?.addEventListener('click', () => {
     hideReviewModal();
@@ -3754,7 +3765,7 @@ async function initReviewReward() {
   if (btnUltraFamily) {
     btnUltraFamily.addEventListener('click', () => {
       const phoneNumber = '212723164437';
-      const message = encodeURIComponent('Hi, I would like to join the Ultra Family.');
+      const message = encodeURIComponent('I want a slot on Google AI Ultra Family.');
       chrome.tabs.create({ url: `https://wa.me/${phoneNumber}?text=${message}` });
     });
   }
@@ -3797,6 +3808,7 @@ export async function updateReviewCardStatus(status: string) {
   const cta = $('#review-reward-cta');
   const btnLeave = $('#btn-leave-review-tab');
   const btnClaim = $('#btn-claim-review-tab');
+  const claimGroup = $('#claim-review-group-tab');
   const statusMsg = $('#review-status-msg-tab');
   const headerBtn = $('#btn-header-get-pro-free');
 
@@ -3806,14 +3818,16 @@ export async function updateReviewCardStatus(status: string) {
     cta.style.display = 'block';
     if (btnLeave) btnLeave.style.display = 'inline-flex';
     if (btnClaim) btnClaim.style.display = 'none';
+    if (claimGroup) claimGroup.style.display = 'none';
     if (statusMsg) statusMsg.style.display = 'none';
     if (headerBtn) headerBtn.style.display = 'inline-flex';
   } else if (status === 'pending') {
     cta.style.display = 'block';
     if (btnLeave) btnLeave.style.display = 'none';
     if (btnClaim) btnClaim.style.display = 'none';
+    if (claimGroup) claimGroup.style.display = 'none';
     if (statusMsg) {
-      statusMsg.textContent = '⏳ Your review claim is pending approval.';
+      statusMsg.innerHTML = '⏳ <span style="font-weight: 600; background: linear-gradient(135deg, #e0e7ff, #a5b4fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Your review claim is pending approval.</span>';
       statusMsg.style.display = 'block';
     }
     if (headerBtn) headerBtn.style.display = 'none';

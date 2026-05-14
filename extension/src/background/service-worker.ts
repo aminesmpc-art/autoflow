@@ -633,13 +633,20 @@ async function startQueueInTab(payload: { queueId: string; tabId?: number }): Pr
     const queue = await getQueueById(payload.queueId);
     if (!queue) { _startingQueue = false; return { error: 'Queue not found' }; }
 
-  let tabId: number;
+  let tabId: number | undefined;
 
   if (payload.tabId) {
-    // Use the exact tab the sidepanel sent us — this is the user's project tab
-    tabId = payload.tabId;
-    await chrome.tabs.update(tabId, { active: true });
-  } else {
+    // Verify the tab is actually a Google Flow tab before using it
+    try {
+      const tab = await chrome.tabs.get(payload.tabId);
+      if (tab.url && (tab.url.startsWith('https://labs.google/flow') || tab.url.startsWith('https://labs.google/fx'))) {
+        tabId = payload.tabId;
+        await chrome.tabs.update(tabId, { active: true });
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (!tabId) {
     // Fallback: find the currently active Flow tab
     const tabs = await chrome.tabs.query({
       url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
@@ -658,7 +665,8 @@ async function startQueueInTab(payload: { queueId: string; tabId?: number }): Pr
         tabId = allFlowTabs[0].id;
         await chrome.tabs.update(tabId, { active: true });
       } else {
-        return { error: 'No Flow project tab found. Please open a project in labs.google/flow first.' };
+        await chrome.tabs.create({ url: 'https://labs.google/flow' });
+        return { error: 'Opening Google Flow — wait a few seconds for it to load, then hit Run again!' };
       }
     }
   }
@@ -758,7 +766,8 @@ async function forwardToContentScript(msg: Message): Promise<any> {
       url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
     });
     if (allTabs.length === 0 || !allTabs[0].id) {
-      return { error: 'No Flow tab found. Please open labs.google/flow first.' };
+      await chrome.tabs.create({ url: 'https://labs.google/flow' });
+      return { error: 'Google Flow opened in a new tab! Wait for it to load, then try again.' };
     }
     tabId = allTabs[0].id;
   }

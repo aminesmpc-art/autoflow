@@ -12,7 +12,18 @@ const publicPaths = [
   '/screenshots',
   '/icons',
   '/robots.txt',
-  '/sitemap.xml'
+  '/sitemap.xml',
+  '/llms.txt',
+  '/llms-full.txt'
+];
+
+// Paths that are English-only and exist outside of [locale]
+const unlocalizedPaths = [
+  '/blog',
+  '/faq',
+  '/pricing',
+  '/privacy',
+  '/terms'
 ];
 
 export function middleware(request) {
@@ -21,6 +32,15 @@ export function middleware(request) {
   // Skip public paths
   if (publicPaths.some(p => pathname.startsWith(p))) {
     return NextResponse.next();
+  }
+
+  // If the pathname explicitly starts with the default locale (e.g. /en/something)
+  // we should REDIRECT them to the clean URL without /en/ to prevent 404s
+  if (pathname.startsWith(`/${defaultLocale}/`) || pathname === `/${defaultLocale}`) {
+    const cleanPath = pathname.replace(new RegExp(`^/${defaultLocale}`), '') || '/';
+    const url = request.nextUrl.clone();
+    url.pathname = cleanPath;
+    return NextResponse.redirect(url);
   }
 
   // Check if the pathname already has a locale
@@ -43,9 +63,14 @@ export function middleware(request) {
     }
   }
 
-  // For English users, serve paths from the root directly (e.g. /blog)
+  // For English users, serve unlocalized paths and root directly. Otherwise, rewrite to /en.
   if (detectedLocale === defaultLocale) {
-    return NextResponse.next();
+    if (pathname === '/' || unlocalizedPaths.some(p => pathname.startsWith(p))) {
+      return NextResponse.next();
+    }
+    const url = request.nextUrl.clone();
+    url.pathname = `/en${pathname}`;
+    return NextResponse.rewrite(url);
   }
 
   // For non-English, redirect to locale path

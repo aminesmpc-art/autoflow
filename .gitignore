@@ -1,27 +1,16 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
+node_modules/
 dist/
-build/
-
-# Virtual environment
-venv/
-.venv/
-
-# Database
-db.sqlite3
-
-# Environment
+.chrome-debug-profile/
+*.js.map
+dist.crx
+dist.pem
+dom-after-images.html
+flow-dom.html
+flow_page_with_all_media.html
+page_with_videos.html
+whenimageisaddtotheprompt.html
+# Secrets — never commit .env files
 .env
-
-# IDE
-.vscode/
-.idea/
-
-# Static files
-staticfiles/
-
-# OS
-.DS_Store
-Thumbs.db
+.env.*
+*.env
+.vercel

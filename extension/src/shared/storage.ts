@@ -79,7 +79,7 @@ export async function addQueue(queue: QueueObject): Promise<void> {
     if (queue.prompts.length > 500) {
       throw new Error('Too many prompts (max 500 per queue).');
     }
-    queues.push(queue);
+    queues.unshift(queue);
     await saveAllQueues(queues);
   });
 }

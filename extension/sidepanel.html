@@ -852,14 +852,26 @@ Prompt 3 text here..."></textarea>
         </div>
 
         <!-- Review Reward CTA (hidden if not applicable) -->
-        <div id="review-reward-cta" class="af-review-reward" style="display:none;">
-          <div class="af-review-card">
-            <div class="af-review-stars">⭐⭐⭐⭐⭐</div>
-            <p class="af-review-title">Get 1 Month Pro — Free!</p>
-            <p class="af-review-text">Leave a 5-star review and get Pro features for 30 days.</p>
-            <a href="https://chromewebstore.google.com/detail/autoflow-%E2%80%93-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc/reviews" target="_blank" rel="noopener noreferrer" id="btn-leave-review-tab" class="af-btn af-btn-review" style="text-decoration:none; text-align:center;">⭐ Leave a Review</a>
-            <button id="btn-claim-review-tab" class="af-btn af-btn-ghost" style="display:none; margin-top:8px;">✓ I Left My Review</button>
-            <p id="review-status-msg-tab" class="af-review-status" style="display:none;"></p>
+        <div id="review-reward-cta" class="af-upgrade-cta" style="display:none;">
+          <div class="af-upgrade-card" style="text-align: center;">
+            <div class="af-upgrade-sparkle" style="font-size: 24px; letter-spacing: 2px;">⭐⭐⭐⭐⭐</div>
+            <h3 class="af-upgrade-title" style="font-size: 16px;">Get 1 Month Pro — Free!</h3>
+            <p class="af-upgrade-text" id="review-reward-desc-tab" style="margin-bottom: 16px;">Leave a 5-star review and a comment, then enter your Chrome Display Name below so we can verify it.</p>
+            <a href="https://chromewebstore.google.com/detail/autoflow-%E2%80%93-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc/reviews" target="_blank" rel="noopener noreferrer" id="btn-leave-review-tab" class="af-btn-upgrade" style="text-decoration:none; text-align:center;">
+              <span class="af-upgrade-btn-icon">⭐</span> Leave a Review
+            </a>
+            <div id="claim-review-group-tab" style="display:none; margin-top:16px; flex-direction:column; gap:10px; background: rgba(15, 19, 32, 0.6); padding: 14px; border-radius: 12px; border: 1px solid rgba(99, 102, 241, 0.2); box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+              <label style="font-size:11px; font-weight:600; color: var(--text-dim); text-align: left; text-transform: uppercase; letter-spacing: 0.5px;">Chrome Display Name</label>
+              <div style="position:relative;">
+                <input type="text" id="reviewer-name-tab" class="af-input" placeholder="e.g. John Doe" style="padding-left: 34px; width: 100%; box-sizing: border-box;" />
+                <svg style="position:absolute; left:12px; top:12px; color:var(--accent);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </div>
+              <button id="btn-claim-review-tab" class="af-btn af-btn-primary af-btn-glow" style="width: 100%; justify-content: center;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Submit Claim
+              </button>
+            </div>
+            <p id="review-status-msg-tab" class="af-review-status" style="display:none; font-size: 12px; margin-top: 12px;"></p>
           </div>
         </div>
 
@@ -902,10 +914,20 @@ Prompt 3 text here..."></textarea>
       </div>
       <div class="af-review-stars" style="font-size:28px; margin-bottom:8px;">⭐⭐⭐⭐⭐</div>
       <h3 class="af-review-title" style="font-size:18px;">Get 1 Month Pro — Free!</h3>
-      <p class="af-review-text" style="font-size:13px; margin-bottom:16px;">We noticed you just finished a batch. Support AutoFlow by leaving a 5-star review on the Chrome Web Store and we'll upgrade your account to Pro for 30 days automatically!</p>
+      <p class="af-review-text" style="font-size:13px; margin-bottom:16px;">We noticed you just finished a batch. Support AutoFlow by leaving a 5-star review and a comment on the Chrome Web Store. Enter your Chrome Display Name below so we can verify it, and we'll upgrade your account to Pro for 30 days automatically!</p>
       
       <a href="https://chromewebstore.google.com/detail/autoflow-%E2%80%93-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc/reviews" target="_blank" rel="noopener noreferrer" id="btn-leave-review-modal" class="af-btn af-btn-review" style="text-decoration:none; text-align:center; padding:12px;">⭐ Leave a 5-Star Review</a>
-      <button id="btn-claim-review-modal" class="af-btn af-btn-ghost" style="display:none; margin-top:8px;">✓ I Left My Review</button>
+      <div id="claim-review-group-modal" style="display:none; margin-top:16px; flex-direction:column; gap:10px; background: rgba(15, 19, 32, 0.6); padding: 14px; border-radius: 12px; border: 1px solid rgba(99, 102, 241, 0.2); box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: left;">
+        <label style="font-size:11px; font-weight:600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">Chrome Display Name</label>
+        <div style="position:relative;">
+          <input type="text" id="reviewer-name-modal" class="af-input" placeholder="e.g. John Doe" style="padding-left: 34px; width: 100%; box-sizing: border-box;" />
+          <svg style="position:absolute; left:12px; top:12px; color:var(--accent);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <button id="btn-claim-review-modal" class="af-btn af-btn-primary af-btn-glow" style="width: 100%; justify-content: center;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Submit Claim
+        </button>
+      </div>
       <p id="review-status-msg-modal" class="af-review-status" style="display:none;"></p>
     </div>
   </div>

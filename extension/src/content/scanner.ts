@@ -36,6 +36,8 @@ import {
   TileState,
   getCurrentViewMode,
   switchToViewMode,
+  reactTrigger,
+  reactKeyTrigger,
 } from './selectors';
 
 // ── Noise words to filter from prompt label extraction ──
@@ -1408,8 +1410,29 @@ export async function retrySingleTile(
   // Click Generate
   const genBtn = findGenerateButton();
   if (genBtn) {
-    simulateClick(genBtn);
-    console.log('[AutoFlow] retrySingleTile: clicked Generate after Reuse Prompt');
+    const trig1 = await reactTrigger(genBtn, 'onPointerDown');
+    if (trig1.success) {
+      console.log('[AutoFlow] retrySingleTile: clicked Generate after Reuse Prompt (onPointerDown)');
+    } else {
+      const trig2 = await reactTrigger(genBtn, 'onClick');
+      if (trig2.success) {
+        console.log('[AutoFlow] retrySingleTile: clicked Generate after Reuse Prompt (onClick)');
+      } else {
+        const promptInput = findPromptInput();
+        let keyTrigOk = false;
+        if (promptInput) {
+          const trig3 = await reactKeyTrigger(promptInput, 'Enter');
+          if (trig3.success) {
+            console.log('[AutoFlow] retrySingleTile: clicked Generate via Enter key');
+            keyTrigOk = true;
+          }
+        }
+        if (!keyTrigOk) {
+          simulateClick(genBtn);
+          console.log('[AutoFlow] retrySingleTile: clicked Generate (simulateClick fallback)');
+        }
+      }
+    }
     return { success: true, method: 'context-menu-reuse' };
   }
 
