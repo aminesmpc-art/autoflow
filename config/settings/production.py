@@ -26,12 +26,11 @@ CSRF_TRUSTED_ORIGINS = [
     "https://api.auto-flow.studio",
 ]
 
-# Allow Chrome extension origins (chrome-extension://<id>) + known domains
+# Allow specific Chrome extension origin + known domains
 CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^chrome-extension://.*$",  # All Chrome extension installs
-]
+CORS_ALLOWED_ORIGIN_REGEXES = []
 CORS_ALLOWED_ORIGINS = [  # noqa: F405
+    "chrome-extension://egplmjhmcicjkojopeoaohofckgeoipc",
     "https://auto-flow.studio",
     "https://www.auto-flow.studio",
     "https://api.auto-flow.studio",
