@@ -87,63 +87,14 @@ class EmailSequenceSubscriberAdmin(ModelAdmin):
         """Green check if acted, red X if not."""
         return obj.action_taken
 
-    # ── Bulk Actions (dropdown menu) ──
-    actions_list = [
-        "send_welcome_email",
-        "send_reminder_email",
-        "send_final_email",
-        "mark_as_acted",
-        "reset_sequence",
-        "import_all_users",
-    ]
+    # ── Header Buttons (Standalone) ──
+    actions_list = ["import_all_users_button"]
 
-    @action(description="📧 Send Email 1 (Welcome) to selected")
-    def send_welcome_email(self, request, queryset):
-        """Send the welcome email to all selected subscribers."""
-        sent = 0
-        for sub in queryset.filter(emails_sent__lt=1, action_taken=False):
-            threading.Thread(target=send_marketing_email, args=(sub, 1), daemon=True).start()
-            sent += 1
-        messages.success(request, f"✅ Sending Email 1 to {sent} subscriber(s) in the background.")
-
-    @action(description="📧 Send Email 2 (Reminder) to selected")
-    def send_reminder_email(self, request, queryset):
-        """Send the 3-day reminder to all selected subscribers."""
-        sent = 0
-        for sub in queryset.filter(emails_sent__lt=2, action_taken=False):
-            threading.Thread(target=send_marketing_email, args=(sub, 2), daemon=True).start()
-            sent += 1
-        messages.success(request, f"✅ Sending Email 2 to {sent} subscriber(s) in the background.")
-
-    @action(description="📧 Send Email 3 (Final) to selected")
-    def send_final_email(self, request, queryset):
-        """Send the final reminder to all selected subscribers."""
-        sent = 0
-        for sub in queryset.filter(emails_sent__lt=3, action_taken=False):
-            threading.Thread(target=send_marketing_email, args=(sub, 3), daemon=True).start()
-            sent += 1
-        messages.success(request, f"✅ Sending Email 3 to {sent} subscriber(s) in the background.")
-
-    @action(description="✅ Mark selected as 'Action Taken' (stop emails)")
-    def mark_as_acted(self, request, queryset):
-        """Mark subscribers as having taken action — stops their email sequence."""
-        updated = queryset.update(action_taken=True, sequence_completed=True)
-        messages.success(request, f"✅ Marked {updated} subscriber(s) as acted.")
-
-    @action(description="🔄 Reset sequence for selected (start over)")
-    def reset_sequence(self, request, queryset):
-        """Reset the email sequence — useful for re-sending the full sequence."""
-        updated = queryset.update(
-            emails_sent=0,
-            action_taken=False,
-            sequence_completed=False,
-            last_email_at=None,
-        )
-        messages.success(request, f"🔄 Reset {updated} subscriber(s). You can now resend emails.")
-
-    @action(description="📥 Import ALL existing users into marketing")
-    def import_all_users(self, request, queryset):
+    @action(description="📥 Import ALL Existing Users", url_path="import-all-users")
+    def import_all_users_button(self, request):
         """One-click import: adds all registered users as subscribers."""
+        from django.shortcuts import redirect
+        from django.urls import reverse
         from apps.users.models import CustomUser
 
         existing_emails = set(
@@ -167,3 +118,58 @@ class EmailSequenceSubscriberAdmin(ModelAdmin):
             )
         else:
             messages.info(request, "All users are already imported. Nothing to do! 👍")
+            
+        return redirect(request.META.get('HTTP_REFERER', reverse('admin:marketing_emailsequencesubscriber_changelist')))
+
+    # ── Bulk Actions (Checkbox Dropdown) ──
+    actions = [
+        "send_welcome_email",
+        "send_reminder_email",
+        "send_final_email",
+        "mark_as_acted",
+        "reset_sequence",
+    ]
+
+    @admin.action(description="📧 Send Email 1 (Welcome) to selected")
+    def send_welcome_email(self, request, queryset):
+        """Send the welcome email to all selected subscribers."""
+        sent = 0
+        for sub in queryset.filter(emails_sent__lt=1, action_taken=False):
+            threading.Thread(target=send_marketing_email, args=(sub, 1), daemon=True).start()
+            sent += 1
+        messages.success(request, f"✅ Sending Email 1 to {sent} subscriber(s) in the background.")
+
+    @admin.action(description="📧 Send Email 2 (Reminder) to selected")
+    def send_reminder_email(self, request, queryset):
+        """Send the 3-day reminder to all selected subscribers."""
+        sent = 0
+        for sub in queryset.filter(emails_sent__lt=2, action_taken=False):
+            threading.Thread(target=send_marketing_email, args=(sub, 2), daemon=True).start()
+            sent += 1
+        messages.success(request, f"✅ Sending Email 2 to {sent} subscriber(s) in the background.")
+
+    @admin.action(description="📧 Send Email 3 (Final) to selected")
+    def send_final_email(self, request, queryset):
+        """Send the final reminder to all selected subscribers."""
+        sent = 0
+        for sub in queryset.filter(emails_sent__lt=3, action_taken=False):
+            threading.Thread(target=send_marketing_email, args=(sub, 3), daemon=True).start()
+            sent += 1
+        messages.success(request, f"✅ Sending Email 3 to {sent} subscriber(s) in the background.")
+
+    @admin.action(description="✅ Mark selected as 'Action Taken' (stop emails)")
+    def mark_as_acted(self, request, queryset):
+        """Mark subscribers as having taken action — stops their email sequence."""
+        updated = queryset.update(action_taken=True, sequence_completed=True)
+        messages.success(request, f"✅ Marked {updated} subscriber(s) as acted.")
+
+    @admin.action(description="🔄 Reset sequence for selected (start over)")
+    def reset_sequence(self, request, queryset):
+        """Reset the email sequence — useful for re-sending the full sequence."""
+        updated = queryset.update(
+            emails_sent=0,
+            action_taken=False,
+            sequence_completed=False,
+            last_email_at=None,
+        )
+        messages.success(request, f"🔄 Reset {updated} subscriber(s). You can now resend emails.")
