@@ -1385,6 +1385,16 @@ async function addToQueue() {
     return;
   }
 
+  // Prevent Extend feature in unsupported modes
+  const activeCard = document.querySelector('.af-mode-card.active') as HTMLElement;
+  const activeMode = activeCard?.getAttribute('data-mode') || 'text-to-video';
+  const hasExtension = state.parsedPrompts.some(p => p.isExtension);
+  
+  if (hasExtension && activeMode !== 'text-to-video' && activeMode !== 'ingredients') {
+    showToast('The Extend feature is only available in Text-to-Video and Ingredients modes.', 'warning');
+    return;
+  }
+
   // Check if user has enough quota
   const hasImages = state.sharedImages.length > 0 ||
     [...state.promptImages.values()].some(imgs => imgs.some(Boolean));
@@ -2995,8 +3005,11 @@ function handlePromptStatusUpdate(data: { queue: QueueObject; promptIndex: numbe
     if (!_trackedPromptUsage.has(key)) {
       _trackedPromptUsage.add(key);
       const hasImages = prompt.images && prompt.images.length > 0;
-      const promptType = hasImages ? 'full' : 'text';
-      trackUsage(1, promptType as 'text' | 'full').then(success => {
+      let promptType = hasImages ? 'full' : 'text';
+      if (prompt.isExtension) {
+        promptType = 'extend';
+      }
+      trackUsage(1, promptType as 'text' | 'full' | 'extend').then(success => {
         if (!success) {
           console.warn('[AutoFlow] Failed to track usage for completed prompt');
         }
