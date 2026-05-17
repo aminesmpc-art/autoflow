@@ -734,6 +734,22 @@ body {
   flex-shrink: 0;
   box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
 }
+.af-prompt-ext-icon {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-dim);
+  font-family: monospace;
+  padding: 2px 0;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+.af-prompt-extension {
+  margin-left: 20px;
+  border-left: 2px solid var(--border-accent);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  background: rgba(14, 18, 38, 0.3);
+}
 .af-prompt-preview {
   flex: 1;
   font-size: 12px;

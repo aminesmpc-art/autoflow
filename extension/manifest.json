@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFlow – Video Task Manager for Google Flow",
-  "version": "1.2.5",
+  "version": "2.2",
   "description": "Automate prompt queues, upscale workflows, and bulk generation for Google Veo on Flow. Third-party tool, not affiliated with Google.",
   "minimum_chrome_version": "114",
   "offline_enabled": false,

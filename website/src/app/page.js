@@ -1,4 +1,5 @@
 import StoreLink from "./StoreLink";
+import { YouTubeEmbed } from '@next/third-parties/google';
 
 export default function HomePage() {
   return (
@@ -102,15 +103,8 @@ export default function HomePage() {
           </div>
 
           <div className="animate-in delay-4" style={{ perspective: "1200px" }}>
-            <div style={{ transform: "rotateX(5deg) scale(0.95)", transformStyle: "preserve-3d", transition: "transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)", borderRadius: "var(--radius-xl)", overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 40px 100px -20px rgba(79, 70, 229, 0.4), 0 20px 40px rgba(0,0,0,0.8)" }}>
-              <img
-                src="/screenshots/full-workflow.webp"
-                alt="AutoFlow running alongside Google Flow"
-                style={{ width: "100%", display: "block" }}
-                width="1200"
-                height="750"
-                fetchPriority="high"
-              />
+            <div style={{ transform: "rotateX(5deg) scale(0.95)", transformStyle: "preserve-3d", transition: "transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)", borderRadius: "var(--radius-xl)", overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 40px 100px -20px rgba(79, 70, 229, 0.4), 0 20px 40px rgba(0,0,0,0.8)", aspectRatio: "16/9", backgroundColor: "#000" }}>
+              <YouTubeEmbed videoid="nVhWOscBCgM" params="controls=1&rel=0" />
             </div>
           </div>
         </div>

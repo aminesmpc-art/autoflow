@@ -6,7 +6,7 @@
 
 import { Message, QueueObject } from '../types';
 import { AutomationEngine, isRunLocked } from './automation';
-import { scanProjectForVideos, previewAsset, retrySingleTile, downloadAssetByMenu, waitForUpscalingDone } from './scanner';
+import { scanProjectForVideos, previewAsset, retrySingleTile, downloadAssetByMenu, waitForUpscalingDone, waitForExtendedVideoDownloadDone } from './scanner';
 import { sleep, findModelSelectorTrigger, findMenuItem, simulateClick } from './selectors';
 import { DOM_SETTLE_MS } from '../shared/constants';
 import { getRunningQueue, clearRunningQueue } from '../shared/storage';
@@ -404,6 +404,11 @@ async function downloadSelected(payload: {
       if (ok) {
         results.push(filename);
         console.log(`[AutoFlow] Download queued: ${filename}`);
+        
+        // Extended videos take ~20s to prepare on the server before downloading.
+        // We MUST wait for the "Downloading your extended video." toast to disappear
+        // before we click download on the next one, or else Flow might ignore it or crash.
+        await waitForExtendedVideoDownloadDone();
       } else {
         console.warn(`[AutoFlow] Download failed for: ${asset.promptLabel || 'asset'}`);
       }
