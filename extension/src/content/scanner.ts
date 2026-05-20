@@ -1171,6 +1171,47 @@ export async function waitForUpscalingDone(maxWaitMs: number = 10 * 60 * 1000): 
 }
 
 /**
+ * Check if Flow is currently preparing an extended video download.
+ * Extended videos require server-side stitching, which can take 20+ seconds.
+ */
+export function isExtendedVideoDownloadingActive(): boolean {
+  const toasts = document.querySelectorAll('[role="status"], [role="alert"], [class*="toast"], [class*="snackbar"]');
+  for (const t of toasts) {
+    if (!isVisible(t)) continue;
+    const text = t.textContent?.toLowerCase() || '';
+    // Look for "Downloading your extended video."
+    if (text.includes('downloading') && text.includes('extend')) return true;
+  }
+  const allText = document.body.innerText?.toLowerCase() || '';
+  return allText.includes('downloading your extended video');
+}
+
+/**
+ * Wait for extended video download preparation to finish.
+ * Polls every 2 seconds, up to maxWaitMs (default 3 minutes).
+ */
+export async function waitForExtendedVideoDownloadDone(maxWaitMs: number = 3 * 60 * 1000): Promise<boolean> {
+  // Give the UI a moment to show the toast after clicking download
+  await sleep(1500);
+
+  if (!isExtendedVideoDownloadingActive()) return true;
+
+  console.log('[AutoFlow] Waiting for extended video download preparation...');
+  const start = Date.now();
+
+  while (Date.now() - start < maxWaitMs) {
+    if (!isExtendedVideoDownloadingActive()) {
+      console.log(`[AutoFlow] Extended video preparation finished in ${Math.round((Date.now() - start) / 1000)}s`);
+      return true;
+    }
+    await sleep(2000);
+  }
+
+  console.warn('[AutoFlow] Extended video download wait timed out.');
+  return false;
+}
+
+/**
  * Find a visible menu item by text (case-insensitive partial match).
  */
 function findVisibleMenuItem(searchText: string): Element | null {

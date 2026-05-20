@@ -262,9 +262,14 @@ export function findMoreMenuOnAsset(assetElement: Element): Element | null {
  *  a virtuoso scroller: div[data-testid="virtuoso-item-list"].
  */
 export function findAssetCards(): Element[] {
-  // Primary: tile elements with data-tile-id attribute
+  // Primary: history steps in the detail view. We prioritize these because
+  // when the detail view is open, the background grid tiles often stop receiving React updates.
+  const historySteps = document.querySelectorAll('div[id^="history-step-fe_id_"]');
   const tiles = document.querySelectorAll('div[data-tile-id]');
-  if (tiles.length > 0) return Array.from(tiles);
+  
+  if (tiles.length > 0 || historySteps.length > 0) {
+     return [...Array.from(historySteps), ...Array.from(tiles)];
+  }
 
   // Secondary: individual tiles inside virtuoso scroller rows.
   // Flow structure: virtuoso-item-list > div[data-index] (ROW) > div (flex container) > div (individual tile)
@@ -309,6 +314,101 @@ export function findAssetCards(): Element[] {
     if (children.length > 0) return Array.from(children);
   }
   return [];
+}
+
+/** Find the prompt input specifically for the Extend phase */
+export function findExtendPromptInput(): HTMLElement | null {
+  // Primary: Slate editor that has "What happens next?" text nearby.
+  const slateEditors = document.querySelectorAll('div[data-slate-editor="true"]');
+  for (const slate of slateEditors) {
+    if (!isVisible(slate)) continue;
+    let container = slate.parentElement;
+    for (let i = 0; i < 5 && container; i++) {
+      if (container.textContent?.toLowerCase().includes('what happens next')) {
+        return slate as HTMLElement;
+      }
+      container = container.parentElement;
+    }
+  }
+
+  // Fallback: return the first visible slate editor that is NOT the main prompt box.
+  for (const slate of slateEditors) {
+    if (!isVisible(slate)) continue;
+    let container = slate.parentElement;
+    let isMain = false;
+    for (let i = 0; i < 5 && container; i++) {
+      if (container.textContent?.toLowerCase().includes('what do you want to create')) {
+        isMain = true;
+        break;
+      }
+      container = container.parentElement;
+    }
+    if (!isMain) return slate as HTMLElement;
+  }
+
+  // Absolute fallback: return the first visible one
+  for (const slate of slateEditors) {
+    if (isVisible(slate)) return slate as HTMLElement;
+  }
+
+  return null;
+}
+
+/** Find the model selector specifically inside the Extend phase prompt area */
+export function findExtendModelSelectorTrigger(): Element | null {
+  const input = findExtendPromptInput();
+  if (input) {
+    let container = input.parentElement;
+    for (let i = 0; i < 4 && container; i++) {
+      container = container.parentElement;
+    }
+    if (container) {
+      const btns = container.querySelectorAll('button[aria-haspopup="menu"]');
+      for (const btn of btns) {
+        if (isVisible(btn)) return btn;
+      }
+    }
+  }
+  return null;
+}
+
+/** Find the generate/send arrow specifically for the Extend phase */
+export function findExtendGenerateButton(): Element | null {
+  const modelTrigger = findExtendModelSelectorTrigger();
+  if (modelTrigger) {
+    // The generate button is normally exactly next to the model selector in the Extend prompt box
+    if (modelTrigger.nextElementSibling && modelTrigger.nextElementSibling.tagName === 'BUTTON') {
+      return modelTrigger.nextElementSibling;
+    }
+    // Alternatively, find the next button in the same parent
+    if (modelTrigger.parentElement) {
+      const btns = Array.from(modelTrigger.parentElement.querySelectorAll('button'));
+      const triggerIdx = btns.indexOf(modelTrigger as HTMLButtonElement);
+      if (triggerIdx >= 0 && triggerIdx + 1 < btns.length) {
+        return btns[triggerIdx + 1];
+      }
+    }
+  }
+
+  // Fallback: look near the input, but limit traversal so we don't accidentally grab the Camera pill button
+  const input = findExtendPromptInput();
+  if (input) {
+    let container = input.parentElement;
+    for (let i = 0; i < 4 && container; i++) {
+      container = container.parentElement;
+    }
+    if (container) {
+      const btns = container.querySelectorAll('button');
+      // Return the right-most arrow-like button, avoiding "Camera" or "Insert" pills
+      for (const btn of Array.from(btns).reverse()) {
+        const text = btn.textContent?.toLowerCase() || '';
+        if (!text.includes('camera') && !text.includes('insert') && !text.includes('remove') && !text.includes('extend')) {
+          if (isVisible(btn)) return btn;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 /** Find the "Start" or "End" frame button in Frames mode.
@@ -639,6 +739,14 @@ export function getTileState(tile: Element): TileState {
   while ((textNode = walker.nextNode() as Text | null)) {
     const t = textNode.textContent?.trim() || '';
     if (/^\d{1,3}%$/.test(t)) return 'generating';
+  }
+
+  // ── Signal 2.5: detail view history sidebar generating text ──
+  // When chaining extensions, the detail view history sidebar shows a grey box with:
+  // "generation. You can update your settings..."
+  const tileTextRaw = tile.textContent?.toLowerCase() || '';
+  if (tileTextRaw.includes('generation.') && tileTextRaw.includes('update your settings')) {
+    return 'generating';
   }
 
   // ── Signal 3: loading spinner / circular progress indicator ──
@@ -1736,8 +1844,13 @@ export function getAllTileIds(): string[] {
   const cards = findAssetCards().filter(el => isVisible(el));
   const ids: string[] = [];
   for (const card of cards) {
-    const id = findTileId(card);
-    if (id) ids.push(id);
+    let id = findTileId(card);
+    if (!id && card.id && card.id.startsWith('history-step-')) {
+       id = card.id.replace('history-step-', '');
+    }
+    if (id && !ids.includes(id)) {
+       ids.push(id);
+    }
   }
   return ids;
 }
@@ -1747,7 +1860,11 @@ export function getAllTileIds(): string[] {
  * Returns null if the tile is not found.
  */
 export function getTileStateById(tileId: string): TileState | null {
-  const el = document.querySelector(`div[data-tile-id="${CSS.escape(tileId)}"]`);
+  // Prioritize history steps over grid tiles, as grid tiles can freeze when behind the detail view
+  let el = document.querySelector(`#history-step-${CSS.escape(tileId)}`);
+  if (!el) {
+     el = document.querySelector(`div[data-tile-id="${CSS.escape(tileId)}"]`);
+  }
   if (!el) return null;
   return getTileState(el);
 }

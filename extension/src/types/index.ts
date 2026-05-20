@@ -50,6 +50,8 @@ export interface PromptEntry {
   error?: string;
   outputFiles: string[];
   tileIds?: string[];   // tile IDs created when this prompt was generated
+  isExtension?: boolean; // True if this prompt extends the previous one in the chain
+  baseIndex?: number;    // The index of the base prompt this extends
 }
 
 // ── Input method for filling prompts ──
@@ -180,6 +182,7 @@ export type AutomationState =
   | 'ATTACH_FRAME_IMAGES'
   | 'FILL_PROMPT'
   | 'CLICK_GENERATE'
+  | 'EXTEND_VIDEO'
   | 'WAIT_FOR_COMPLETE'
   | 'DOWNLOAD_OUTPUTS'
   | 'MARK_DONE'

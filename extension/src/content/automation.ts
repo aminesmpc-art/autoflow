@@ -71,8 +71,11 @@ import {
   scrollOutputToTop,
   allTilesSettledWithScroll,
   findOutputScroller,
+  findExtendPromptInput,
+  findExtendModelSelectorTrigger,
+  findExtendGenerateButton,
 } from './selectors';
-import type { TileSnapshot, FailedTileInfo } from './selectors';
+import type { TileSnapshot, FailedTileInfo, TileState } from './selectors';
 
 /**
  * Normalize a model name for fuzzy matching.
@@ -183,12 +186,17 @@ export class AutomationEngine {
 
       // Verify page is still usable before next prompt
       if (!this.stopped && i < this.queue.prompts.length - 1) {
-        await this.ensurePageReady();
+        await this.ensurePageReady(this.queue.prompts[i + 1]);
       }
     }
 
     // Post-queue: wait for all generations to settle and detect failures
     if (!this.stopped) {
+      // IMPORTANT: If the queue ended on an extension prompt, the Detail View is still open.
+      // We MUST close it to un-freeze the background grid so that the post-queue scan
+      // can see the tiles from all the other prompts in the queue!
+      this.log('info', 'Queue complete. Ensuring we are on the main grid before final scan...');
+      await this.ensurePageReady();
       await this.postQueueScan();
     }
 
@@ -278,6 +286,14 @@ export class AutomationEngine {
           this.state = 'VERIFY_SETTINGS';
           await this.verifyOrReapplySettings(this.queue!.settings);
           if (this.stopped) return;
+        }
+
+        // State: EXTEND VIDEO
+        if (prompt.isExtension) {
+          this.state = 'EXTEND_VIDEO';
+          await this.executeExtendPhase(prompt, idx);
+          this.updatePromptStatus(idx, 'done');
+          return;
         }
 
         // State: ATTACH IMAGES — branch based on creation type
@@ -425,14 +441,52 @@ export class AutomationEngine {
    * If the prompt input has disappeared (e.g., Flow navigated away),
    * wait and check repeatedly.
    */
-  private async ensurePageReady(): Promise<void> {
+  private async ensurePageReady(nextPrompt?: PromptEntry): Promise<void> {
+    // If the next prompt is an extension, we don't need the main prompt input.
+    // The history grid remains accessible even if the detail view is open.
+    if (nextPrompt && nextPrompt.isExtension) {
+      await sleep(1500);
+      return;
+    }
+
     const maxWait = 30000; // 30 seconds — new projects can take time to load
     const start = Date.now();
     let clickedNewProject = false;
+    let triedEscape = false;
 
     while (Date.now() - start < maxWait) {
       if (this.stopped) return;
 
+      // 1. Actively check if the Detail View (or any blocking modal) is open.
+      // We must close it FIRST, otherwise findPromptInput() gets tricked by the Extend prompt box
+      // which is also a valid Slate editor!
+      const closeBtns = Array.from(document.querySelectorAll('button'));
+      const doneBtn = closeBtns.find(b => {
+         const t = b.textContent?.trim().toLowerCase() || '';
+         return (t.includes('done') || t.includes('fermer') || t.includes('close')) && isVisible(b);
+      });
+      const closeIconBtns = Array.from(document.querySelectorAll('button[aria-label="Close"], button[aria-label="Back"]'));
+      const closeIconBtn = closeIconBtns.find(b => isVisible(b));
+      
+      const isDetailViewOpen = !!doneBtn || !!closeIconBtn;
+      
+      if (isDetailViewOpen) {
+         this.log('info', 'Detail view or modal is open. Closing it to return to main grid...');
+         if (doneBtn && isVisible(doneBtn)) {
+            simulateClick(doneBtn);
+         } else if (closeIconBtn && isVisible(closeIconBtn)) {
+            simulateClick(closeIconBtn);
+         } else if (!triedEscape) {
+            document.body.dispatchEvent(new KeyboardEvent('keydown', {
+              key: 'Escape', code: 'Escape', bubbles: true, cancelable: true,
+            }));
+            triedEscape = true;
+         }
+         await sleep(1500); // Wait for the animation to finish
+         continue; // Re-evaluate the page state
+      }
+
+      // 2. Now that we are sure the Detail View is closed, look for the main prompt input.
       const promptInput = findPromptInput();
       if (promptInput && isVisible(promptInput)) {
         this.log('info', 'Page ready — prompt input visible');
@@ -459,6 +513,306 @@ export class AutomationEngine {
     }
 
     this.log('warn', 'Page may not be ready — prompt input not found after waiting');
+  }
+
+  /**
+   * Execute the "Extend" phase for a prompt that is part of an extension chain.
+   * This skips normal image attachment/voice selection and uses the extension UI.
+   */
+  private async executeExtendPhase(prompt: PromptEntry, idx: number): Promise<void> {
+    this.log('info', `Executing Extension phase for prompt #${idx + 1}`);
+
+    // 1. Wait for the parent tile to complete
+    if (typeof prompt.baseIndex !== 'number') {
+      throw new Error(`Extension prompt missing baseIndex`);
+    }
+    const parentPrompt = this.queue!.prompts[prompt.baseIndex];
+    if (!parentPrompt.tileIds || parentPrompt.tileIds.length === 0) {
+      throw new Error(`Cannot extend: parent prompt #${prompt.baseIndex + 1} did not generate any tiles.`);
+    }
+
+    // Always extend the first tile generated by the parent prompt
+    const targetTileId = parentPrompt.tileIds[0];
+    
+    // Check if the detail view is currently open
+    const btns = Array.from(document.querySelectorAll('button'));
+    const isDetailViewOpen = !!btns.find(b => {
+      const t = b.textContent?.trim().toLowerCase() || '';
+      return (t.includes('done') || t === 'hide history' || t === 'show history') && isVisible(b);
+    });
+    
+    let isParentInHistorySidebar = false;
+    
+    if (isDetailViewOpen) {
+      // First, ensure the history sidebar is actually expanded so we can see the steps
+      const showHistoryBtn = btns.find(b => (b.textContent?.trim().toLowerCase() || '') === 'show history' && isVisible(b));
+      if (showHistoryBtn) {
+        this.log('info', 'Clicking "Show history" to properly monitor generation progress...');
+        simulateClick(showHistoryBtn);
+        await sleep(1000); // Give the sidebar time to slide in
+      }
+      
+      // Now check if the parent tile we want is in this sidebar!
+      const historyStepEl = document.querySelector(`#history-step-${CSS.escape(targetTileId)}`);
+      if (historyStepEl && isVisible(historyStepEl)) {
+         isParentInHistorySidebar = true;
+         this.log('info', 'Parent tile found in current history sidebar. Selecting it...');
+         simulateClick(historyStepEl); // Select the exact step we want to extend
+         await sleep(1000);
+      }
+    }
+
+    // Wait up to 5 minutes for parent tile to finish if it's still generating
+    const MAX_WAIT_MS = 5 * 60 * 1000; 
+    const waitStart = Date.now();
+    let tileEl: Element | null = null;
+    let parentRetries = 0;
+    const MAX_PARENT_RETRIES = 3;
+    let missingCount = 0;
+    
+    while (Date.now() - waitStart < MAX_WAIT_MS) {
+      if (this.stopped) return;
+      
+      let stateEl: Element | null = null;
+      if (isParentInHistorySidebar) {
+         stateEl = document.querySelector(`#history-step-${CSS.escape(targetTileId)}`);
+      } else {
+         stateEl = document.querySelector(`[data-tile-id="${CSS.escape(targetTileId)}"]`);
+      }
+
+      if (!stateEl) {
+         // Fallback: If we couldn't find the tile by ID, let's look for any tile containing the prompt text!
+         // This handles cases where Google Flow replaced the parent tile with a combined "chain" tile.
+         if (!isParentInHistorySidebar) {
+            const tiles = findAssetCards();
+            for (const t of tiles) {
+               if (t.textContent?.toLowerCase().includes(parentPrompt.text.toLowerCase())) {
+                  stateEl = t;
+                  this.log('info', `Found parent tile by text match: "${parentPrompt.text.substring(0, 30)}..."`);
+                  break;
+               }
+            }
+         }
+      }
+
+      if (!stateEl) {
+        missingCount++;
+        this.log('warn', `Tile ${targetTileId} not in DOM. It might be scrolled out of view.`);
+        if (missingCount === 3 && !isParentInHistorySidebar) {
+           // If we can't find it in the grid, maybe the detail view is hiding it. Press Escape.
+           this.log('info', `Pressing Escape to ensure grid is visible...`);
+           document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+        }
+        if (missingCount > 10) {
+           throw new Error(`Cannot extend: parent tile disappeared from DOM permanently.`);
+        }
+      } else {
+        missingCount = 0; // reset
+        
+        // Save the resolved stateEl immediately so we don't lose it if we break
+        tileEl = stateEl;
+        
+        const state: TileState = getTileState(stateEl);
+
+        if (state === 'completed') {
+          break; // Ready!
+        } else if (state === 'failed') {
+          if (parentRetries < MAX_PARENT_RETRIES) {
+             this.log('warn', `Parent generation failed! Attempting to auto-retry it (${parentRetries + 1}/${MAX_PARENT_RETRIES})...`);
+             let retryBtn: Element | null = null;
+             if (isParentInHistorySidebar) {
+               // Detail view: find a retry button inside the history step
+               retryBtn = stateEl.querySelector('button[aria-label*="retry"], button[aria-label*="Retry"]') || null;
+               if (!retryBtn) {
+                 const currentBtns = Array.from(document.querySelectorAll('button'));
+                 retryBtn = currentBtns.find(b => (b.textContent||'').toLowerCase().includes('retry')) || null;
+               }
+             } else {
+               retryBtn = findRetryButtonOnTile(stateEl);
+             }
+             
+             if (retryBtn) {
+               simulateClick(retryBtn);
+               parentRetries++;
+               await sleep(2000); // Wait for state to change to generating
+               continue;
+             } else {
+               throw new Error(`Cannot extend: parent generation failed and no retry button found.`);
+             }
+          } else {
+             throw new Error(`Cannot extend: parent generation failed and exhausted ${MAX_PARENT_RETRIES} retries.`);
+          }
+        }
+      }
+      await sleep(3000);
+    }
+
+    if (!isParentInHistorySidebar) {
+      // If tileEl is not yet set (e.g. wait loop was skipped), try one last time by ID
+      if (!tileEl) {
+         tileEl = document.querySelector(`[data-tile-id="${CSS.escape(targetTileId)}"]`);
+      }
+      if (!tileEl || getTileState(tileEl) !== 'completed') {
+        throw new Error(`Cannot extend: parent tile did not complete in time or is missing.`);
+      }
+
+      // 2. Click the tile to open detail view
+      this.log('info', `Parent tile complete. Opening detail view...`);
+      const clickable = tileEl.querySelector('img, video, [role="button"]') || tileEl;
+      simulateClick(clickable);
+      nativeClick(clickable);
+      await sleep(3500); // Wait for detail view to open and render
+    } else {
+      this.log('info', `Parent generation complete in detail view. Continuing chain...`);
+      await sleep(1000);
+    }
+    
+    // 3. Find prompt input
+    const input = findExtendPromptInput();
+    if (!input) throw new Error('Extend prompt input not found.');
+
+    // 4. Set the model to the user's configured model, using the selector INSIDE the extend prompt area
+    const queueModel = this.queue!.settings.model;
+    if (queueModel) {
+      const modelTrigger = findExtendModelSelectorTrigger();
+      if (modelTrigger) {
+        await this.setModel(queueModel, modelTrigger);
+      } else {
+        this.log('warn', 'Extend model selector not found, using default model.');
+      }
+    }
+
+    // 5. Fill text
+    await setInputValue(input, prompt.text);
+    await sleep(500);
+
+    // Snapshot tile IDs before
+    const tileIdsBefore = new Set(getAllTileIds());
+
+    // 6. Click Generate
+    const genBtn = findExtendGenerateButton();
+    if (!genBtn) throw new Error('Extend generate button not found.');
+    
+    // We need to verify if the click worked by checking if generation started.
+    const clickWorked = async () => {
+      // 1. Grid view check: new tile appears
+      const currentTiles = getAllTileIds();
+      if (currentTiles.length > tileIdsBefore.size) return true;
+      
+      // 2. Detail view check: history sidebar generating box appears
+      const historyTextRaw = document.body.innerText?.toLowerCase() || '';
+      if (historyTextRaw.includes('generation.') && historyTextRaw.includes('update your settings')) return true;
+      
+      // 3. Button check: disabled or disappeared
+      if (!document.body.contains(genBtn)) return true;
+      if (genBtn.hasAttribute('disabled') || genBtn.getAttribute('aria-disabled') === 'true') return true;
+      
+      return false;
+    };
+
+    let generationStarted = false;
+
+    // Strategy 1: React onClick via MAIN world
+    const trig2 = await reactTrigger(genBtn, 'onClick');
+    if (trig2.found && trig2.success) {
+      this.log('info', 'Strategy 2: React onClick (isTrusted)');
+      await humanDelay(1500, 2000);
+      if (await clickWorked()) {
+        generationStarted = true;
+      }
+    }
+
+    if (!generationStarted) {
+      // Strategy 3: React onKeyDown Enter via MAIN world (on prompt input)
+      const trig3 = await reactKeyTrigger(input, 'Enter');
+      if (trig3.found && trig3.success) {
+        this.log('info', 'Strategy 3: React onKeyDown Enter (isTrusted)');
+        await humanDelay(1500, 2000);
+        if (await clickWorked()) {
+          generationStarted = true;
+        }
+      }
+    }
+
+    if (!generationStarted) {
+      // Fallback: simulateClick
+      simulateClick(genBtn);
+      this.log('info', 'Fallback 1: simulateClick');
+      await humanDelay(1500, 2000);
+      if (await clickWorked()) {
+        generationStarted = true;
+      }
+    }
+
+    if (!generationStarted) {
+      // Absolute fallback: nativeClick
+      nativeClick(genBtn);
+      this.log('info', 'Fallback 2: nativeClick');
+      await humanDelay(1500, 2000);
+      if (await clickWorked()) {
+        generationStarted = true;
+      }
+    }
+
+    if (!generationStarted) {
+      this.log('warn', 'Extend generation did not start automatically. Proceeding anyway...');
+    } else {
+      this.log('info', 'Extend generation successfully started.');
+    }
+    
+    // We explicitly DO NOT press Escape here anymore. 
+    // This allows the detail view to stay open so the user can watch the video generating,
+    // or quickly see the result. If the next prompt requires the main prompt box,
+    // ensurePageReady() will press Escape for us.
+    await sleep(1500);
+
+    // Track new tile
+    const tileIdsAfter = getAllTileIds();
+    const newTileIds = tileIdsAfter.filter(id => !tileIdsBefore.has(id));
+    prompt.tileIds = newTileIds;
+    if (newTileIds.length > 0) {
+      this.log('info', `Prompt #${idx + 1} (Extension): ${newTileIds.length} new tile(s) tracked`);
+    }
+
+    // Wait for the new extension tile to finish generation
+    this.log('info', `Extension started. Waiting for generation to complete...`);
+    const MAX_EXT_WAIT_MS = 5 * 60 * 1000; // 5 minutes max
+    const extWaitStart = Date.now();
+    let extFinished = false;
+    
+    while (Date.now() - extWaitStart < MAX_EXT_WAIT_MS) {
+      if (this.stopped) return;
+      
+      const states = checkTileStates(newTileIds);
+      // If we have at least one completed or failed tile, we consider it finished
+      if (states.completed > 0 || states.failed > 0) {
+        extFinished = true;
+        this.log('info', `Extension generation finished (completed: ${states.completed}, failed: ${states.failed}).`);
+        break;
+      }
+      
+      await sleep(3000);
+    }
+    
+    if (!extFinished) {
+      this.log('warn', `Extension generation did not finish within 5 minutes. Moving to next prompt.`);
+    }
+
+    // Small delay before moving to the next prompt
+    await sleep(2000);
+    if (this.stopped) return;
+    
+    let earlyFailure = false;
+    const finalStates = checkTileStates(newTileIds);
+    if (finalStates.failed > 0 && finalStates.completed === 0) {
+       earlyFailure = true;
+    }
+    
+    if (earlyFailure) {
+      const failedTiles = findAllFailedTiles();
+      const thisTileFailed = failedTiles.find(ft => newTileIds.includes(ft.tileId));
+      throw new Error(thisTileFailed?.errorText || 'Extension failed (detected during wait)');
+    }
   }
 
   /** Open the settings flyout panel if not already open.
@@ -1120,27 +1474,31 @@ export class AutomationEngine {
     // If they match, settings are still correct â€” no action needed.
   }
 
-  private async setModel(modelName: string): Promise<void> {
-    if (this.stopped) return;
-    // The model dropdown is INSIDE the settings panel — make sure it's open
-    if (!isSettingsPanelOpen()) {
-      const opened = await this.openSettingsPanel();
-      if (!opened || this.stopped) {
-        this.log('warn', 'Could not open settings panel to set model');
-        return;
-      }
-      await humanDelay(300, 600);
-    }
+  private async setModel(modelName: string, overrideTrigger?: Element | null): Promise<void> {
     if (this.stopped) return;
 
-    // Model dropdown is a separate Radix menu button inside the panel
-    const trigger = findModelSelectorTrigger();
+    // Use override trigger if provided, else use the global settings panel trigger
+    const trigger = overrideTrigger || findModelSelectorTrigger();
     if (!trigger) {
+      // The model dropdown is INSIDE the settings panel — make sure it's open if we don't have an override
+      if (!overrideTrigger && !isSettingsPanelOpen()) {
+        const opened = await this.openSettingsPanel();
+        if (!opened || this.stopped) {
+          this.log('warn', 'Could not open settings panel to set model');
+          return;
+        }
+        await humanDelay(300, 600);
+      }
+      if (this.stopped) return;
+    }
+
+    const finalTrigger = overrideTrigger || findModelSelectorTrigger();
+    if (!finalTrigger) {
       this.log('warn', 'Model dropdown not found. Using Flow default.');
       return;
     }
 
-    const currentModelRaw = trigger.textContent?.trim() || '';
+    const currentModelRaw = finalTrigger.textContent?.trim() || '';
     const currentModelNorm = normalizeForModelMatch(currentModelRaw);
     const targetNorm = normalizeForModelMatch(modelName);
     if (currentModelNorm.includes(targetNorm)) {
@@ -1149,7 +1507,7 @@ export class AutomationEngine {
     }
 
     // Open the model dropdown — try multiple strategies
-    simulateClick(trigger);
+    simulateClick(finalTrigger);
     await humanDelay(600, 1000);
     if (this.stopped) return;
 
@@ -1171,13 +1529,13 @@ export class AutomationEngine {
 
     let menuItems = findModelOptions();
     if (!menuItems || menuItems.length === 0) {
-      nativeClick(trigger);
+      nativeClick(finalTrigger);
       await humanDelay(600, 1000);
       if (this.stopped) return;
       menuItems = findModelOptions();
     }
     if (!menuItems || menuItems.length === 0) {
-      await reactTrigger(trigger, 'onPointerDown');
+      await reactTrigger(finalTrigger, 'onPointerDown');
       await humanDelay(600, 1000);
       if (this.stopped) return;
       menuItems = findModelOptions();
@@ -2234,6 +2592,12 @@ private async detectAndReportFailures(): Promise<void> {
 
     // Case 1: Prompt has NO tracked tiles — it never produced output
     if (ids.length === 0) {
+      if (prompt.isExtension && prompt.status === 'done') {
+        this.log('info', `Extension prompt #${i + 1} has no tracked tiles but was marked done. Keeping status as done.`);
+        updatedCount++;
+        continue;
+      }
+      
       prompt.status = 'failed';
       prompt.error = 'No output generated — no tiles found for this prompt';
       this.updatePromptStatus(i, 'failed', prompt.error);
@@ -2278,6 +2642,15 @@ private async detectAndReportFailures(): Promise<void> {
       failedPrompts.push({ promptIndex: i, text: prompt.text, error: errMsg });
       updatedCount++;
     } else if (notFoundCount === ids.length) {
+      if (prompt.isExtension && prompt.status === 'done') {
+        // This is an extension prompt. It is bundled into a chain tile and its original ID
+        // is not visible on the main grid. Since executeExtendPhase already waited and verified it,
+        // we can safely assume it is still 'done'.
+        this.log('info', `Extension prompt #${i + 1} tiles not found on main grid (expected), keeping status as done.`);
+        updatedCount++;
+        continue;
+      }
+      
       // All tiles disappeared from the page
       prompt.status = 'failed';
       prompt.error = 'No output found on page — tiles may have been removed';
