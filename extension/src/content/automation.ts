@@ -2605,9 +2605,12 @@ export class AutomationEngine {
     if (this.stopped) return;
 
     // Wait for all tiles to settle (no more generating state)
-    const POST_QUEUE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes max
+    const POST_QUEUE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max
+    const STALE_THRESHOLD_MS = 90_000; // If generating count doesn't change for 90s, assume stale
     const startTime = Date.now();
     let lastLogTime = 0;
+    let lastGeneratingCount = -1;
+    let staleStartTime = 0;
 
     while (Date.now() - startTime < POST_QUEUE_TIMEOUT_MS) {
       if (this.stopped) return;
@@ -2632,10 +2635,21 @@ export class AutomationEngine {
         }
       }
 
+      // Stale detection: if generating count hasn't changed, track how long
+      const snap = snapshotTiles();
+      if (snap.generating !== lastGeneratingCount) {
+        lastGeneratingCount = snap.generating;
+        staleStartTime = Date.now();
+      } else if (snap.generating > 0 && Date.now() - staleStartTime > STALE_THRESHOLD_MS) {
+        this.log('warn',
+          `Generating count stuck at ${snap.generating} for ${Math.round(STALE_THRESHOLD_MS / 1000)}s — treating as settled (likely phantom tile)`
+        );
+        break;
+      }
+
       const elapsed = Date.now() - startTime;
       if (elapsed - lastLogTime > 15000) {
         lastLogTime = elapsed;
-        const snap = snapshotTiles();
         this.log('info',
           `Post-queue waiting... generating: ${snap.generating}, completed: ${snap.completed}, ` +
           `failed: ${snap.failed}, elapsed: ${Math.round(elapsed / 1000)}s`
@@ -2648,7 +2662,7 @@ export class AutomationEngine {
     if (this.stopped) return;
 
     if (Date.now() - startTime >= POST_QUEUE_TIMEOUT_MS) {
-      this.log('warn', 'Post-queue scan timed out after 10 minutes');
+      this.log('warn', 'Post-queue scan timed out after 5 minutes');
     }
 
     // Now scroll through ALL tiles and detect failures by position
