@@ -199,9 +199,17 @@ async function handleMessage(msg: Message): Promise<any> {
       return { success: true };
 
     case 'STOP_QUEUE':
-      engine?.stop();
-      recoveryCancelled = true; // Cancel any running recovery scan
-      clearRunningQueue().catch(() => {}); // Prevent recovery from restarting
+      if (engine) {
+        engine.stop();
+      } else {
+        // Engine is null (page was reloaded) — force-clear the UI
+        chrome.runtime.sendMessage({
+          type: 'QUEUE_STATUS_UPDATE',
+          payload: { status: 'stopped' }
+        }).catch(() => {});
+      }
+      recoveryCancelled = true;
+      clearRunningQueue().catch(() => {});
       stopAntiThrottle();
       return { success: true };
 
