@@ -238,7 +238,10 @@ export type MessageType =
   | 'TRUSTED_ENTER'
   | 'TRUSTED_CLICK'
   | 'REPROMPT_NEEDED'
-  | 'REPROMPT_RESPONSE';
+  | 'REPROMPT_RESPONSE'
+  | 'QUEUE_RESUME_AVAILABLE'
+  | 'RESUME_QUEUE_CONFIRMED'
+  | 'DISCARD_INTERRUPTED_QUEUE';
 
 export interface Message {
   type: MessageType;

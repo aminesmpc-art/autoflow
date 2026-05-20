@@ -68,7 +68,7 @@ if (!(window as any).__autoflow_injected) {
   console.log('[AutoFlow] Content script re-injected, listener refreshed.');
 }
 
-// ── Auto-resume: check if a queue was running before page reload ──
+// ── Auto-resume: detect interrupted queue and notify sidepanel ──
 (async () => {
   try {
     const saved = await getRunningQueue();
@@ -85,21 +85,20 @@ if (!(window as any).__autoflow_injected) {
 
     console.log(`[AutoFlow] Detected interrupted queue "${queue.name}" — ${remaining} prompts remaining (from #${currentIndex + 1})`);
 
-    // Wait for the Flow page to fully load
-    await sleep(3000);
-
-    // Set the resume point
-    queue.currentPromptIndex = currentIndex;
-
-    // Mark already-processed prompts so the engine doesn't re-send them
-    for (let i = 0; i < currentIndex; i++) {
-      if (queue.prompts[i].status !== 'failed') {
-        queue.prompts[i].status = 'done';
-      }
-    }
-
-    console.log(`[AutoFlow] Auto-resuming queue "${queue.name}" from prompt #${currentIndex + 1}...`);
-    startQueue(queue);
+    // DON'T auto-resume. Instead, notify the sidepanel so the user can decide.
+    // Wait a moment for the sidepanel to be ready
+    await sleep(2000);
+    try {
+      chrome.runtime.sendMessage({
+        type: 'QUEUE_RESUME_AVAILABLE',
+        payload: {
+          queueName: queue.name,
+          remaining,
+          currentIndex,
+          total: queue.prompts.length,
+        }
+      }).catch(() => {});
+    } catch { /* sidepanel may not be open yet */ }
   } catch (e) {
     console.warn('[AutoFlow] Auto-resume check failed:', e);
   }
@@ -133,6 +132,13 @@ async function handleMessage(msg: Message): Promise<any> {
 
     case 'REPROMPT_RESPONSE':
       engine?.handleRepromptResponse(msg.payload.text, msg.payload.skip);
+      return { success: true };
+
+    case 'RESUME_QUEUE_CONFIRMED':
+      return resumeInterruptedQueue();
+
+    case 'DISCARD_INTERRUPTED_QUEUE':
+      await clearRunningQueue();
       return { success: true };
 
     case 'SCAN_FAILED_TILES':
@@ -215,6 +221,34 @@ async function startQueue(queue: QueueObject): Promise<any> {
   return { success: true };
 }
 
+async function resumeInterruptedQueue(): Promise<any> {
+  try {
+    const saved = await getRunningQueue();
+    if (!saved) return { success: false, error: 'No interrupted queue found' };
+
+    const { queue, currentIndex } = saved;
+    const remaining = queue.prompts.length - currentIndex;
+    if (remaining <= 0) {
+      await clearRunningQueue();
+      return { success: false, error: 'Queue already completed' };
+    }
+
+    // Set the resume point
+    queue.currentPromptIndex = currentIndex;
+
+    // Mark already-processed prompts so the engine doesn't re-send them
+    for (let i = 0; i < currentIndex; i++) {
+      if (queue.prompts[i].status !== 'failed') {
+        queue.prompts[i].status = 'done';
+      }
+    }
+
+    console.log(`[AutoFlow] Resuming queue "${queue.name}" from prompt #${currentIndex + 1}...`);
+    return startQueue(queue);
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+}
 async function scanLibrary(): Promise<any> {
   try {
     const assets = await scanProjectForVideos();

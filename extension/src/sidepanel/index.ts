@@ -1939,7 +1939,11 @@ async function refreshQueuesList() {
             <div class="af-q-settings-title">Behavior</div>
             <div class="af-q-setting-row">
               <span class="af-q-setting-key">Mode</span>
-              <span class="af-q-setting-val">${s.automationMode === 'full' ? '🚀 Full' : s.automationMode === 'lite' ? '🎯 Lite' : '⚡ Flow'}</span>
+              <select class="af-q-select af-q-setting-val" data-action="update-setting" data-key="automationMode">
+                <option value="full" ${s.automationMode === 'full' ? 'selected' : ''}>🚀 Full</option>
+                <option value="flow" ${s.automationMode === 'flow' || !s.automationMode ? 'selected' : ''}>⚡ Flow</option>
+                <option value="lite" ${s.automationMode === 'lite' ? 'selected' : ''}>🎯 Lite</option>
+              </select>
             </div>
             <div class="af-q-setting-row">
               <span class="af-q-setting-key">Stop on error</span>
@@ -2942,6 +2946,9 @@ function initMessageListener() {
         break;
       case 'REPROMPT_NEEDED':
         showRepromptDialog(msg.payload.promptText, msg.payload.error);
+        break;
+      case 'QUEUE_RESUME_AVAILABLE':
+        showResumePrompt(msg.payload);
         break;
     }
   });
@@ -3960,4 +3967,50 @@ function closeRepromptDialog(skip: boolean, newText?: string) {
     type: 'REPROMPT_RESPONSE',
     payload: { text: newText || '', skip }
   }).catch(() => {});
+}
+
+// ================================================================
+// RESUME INTERRUPTED QUEUE PROMPT
+// ================================================================
+
+function showResumePrompt(payload: { queueName: string; remaining: number; currentIndex: number; total: number }) {
+  // Remove any existing resume banner
+  document.getElementById('af-resume-banner')?.remove();
+
+  const banner = document.createElement('div');
+  banner.id = 'af-resume-banner';
+  banner.className = 'af-resume-banner';
+  banner.innerHTML = `
+    <div class="af-resume-content">
+      <div class="af-resume-text">
+        <strong>⏸️ Interrupted Queue</strong>
+        <span>"${escapeHtml(payload.queueName)}" — ${payload.remaining} of ${payload.total} prompts remaining</span>
+      </div>
+      <div class="af-resume-actions">
+        <button class="af-btn af-btn-ghost af-btn-sm" id="af-resume-discard">Discard</button>
+        <button class="af-btn af-btn-primary af-btn-sm" id="af-resume-continue">▶ Resume</button>
+      </div>
+    </div>
+  `;
+  
+  // Insert at the top of the main content area
+  const main = document.querySelector('.af-main') || document.body;
+  main.prepend(banner);
+
+  // Animate in
+  requestAnimationFrame(() => banner.classList.add('af-resume-visible'));
+
+  document.getElementById('af-resume-discard')!.addEventListener('click', () => {
+    banner.classList.remove('af-resume-visible');
+    setTimeout(() => banner.remove(), 300);
+    sendToBackground({ type: 'DISCARD_INTERRUPTED_QUEUE', payload: {} }).catch(() => {});
+    showToast('Interrupted queue discarded.', 'info');
+  });
+
+  document.getElementById('af-resume-continue')!.addEventListener('click', () => {
+    banner.classList.remove('af-resume-visible');
+    setTimeout(() => banner.remove(), 300);
+    sendToBackground({ type: 'RESUME_QUEUE_CONFIRMED', payload: {} }).catch(() => {});
+    showToast(`Resuming "${payload.queueName}" from prompt #${payload.currentIndex + 1}...`, 'success');
+  });
 }
