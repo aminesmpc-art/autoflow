@@ -236,7 +236,9 @@ export class AutomationEngine {
     // ── Recovery Reload: Only when retry buttons are missing ──
     // "Cancelled" tiles often have no retry button. Reloading clears fake
     // failures and reveals the actual completed videos.
-    if (!this.stopped && this.mode !== 'lite' && noRetryButtonsFound) {
+    // GUARD: Don't trigger recovery if this is already a recovery queue (prevent infinite loop)
+    const isRecoveryQueue = this.queue.name.includes('(Recovery)');
+    if (!this.stopped && this.mode !== 'lite' && noRetryButtonsFound && !isRecoveryQueue) {
       const failedAfterRetries = this.queue.prompts.filter(p => p.status === 'failed').length;
       if (failedAfterRetries > 0) {
         this.log('info', `${failedAfterRetries} failed prompt(s) with no retry button. Triggering recovery reload...`);
@@ -250,6 +252,11 @@ export class AutomationEngine {
         this.sendRunLockChanged(false);
         window.location.reload();
         return; // Script context dies here
+      }
+    } else if (isRecoveryQueue && noRetryButtonsFound) {
+      const stillFailing = this.queue.prompts.filter(p => p.status === 'failed').length;
+      if (stillFailing > 0) {
+        this.log('warn', `Recovery queue still has ${stillFailing} failure(s) — these may be content-policy blocks. Skipping further recovery.`);
       }
     }
 
