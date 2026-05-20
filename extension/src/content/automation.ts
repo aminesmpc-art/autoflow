@@ -387,9 +387,7 @@ export class AutomationEngine {
         // State: APPLY_VOICE
         if (this.queue!.settings.mediaType !== 'image') {
           this.state = 'APPLY_VOICE';
-          const voiceToApply = (prompt.images && prompt.images.length > 0) 
-            ? this.queue!.settings.voiceIngredient 
-            : 'none';
+          const voiceToApply = this.queue!.settings.voiceIngredient;
           await this.applyVoiceIngredient(voiceToApply);
           if (this.stopped) return;
         }
