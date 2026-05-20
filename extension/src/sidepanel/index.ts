@@ -2950,6 +2950,9 @@ function initMessageListener() {
       case 'QUEUE_RESUME_AVAILABLE':
         showResumePrompt(msg.payload);
         break;
+      case 'QUEUE_RECOVERY_RESULT':
+        handleRecoveryResult(msg.payload);
+        break;
     }
   });
 }
@@ -4013,4 +4016,39 @@ function showResumePrompt(payload: { queueName: string; remaining: number; curre
     sendToBackground({ type: 'RESUME_QUEUE_CONFIRMED', payload: {} }).catch(() => {});
     showToast(`Resuming "${payload.queueName}" from prompt #${payload.currentIndex + 1}...`, 'success');
   });
+}
+
+// ================================================================
+// RECOVERY RESULT HANDLER
+// ================================================================
+
+function handleRecoveryResult(payload: {
+  queueName: string;
+  recovered: number;
+  trulyFailed: number;
+  failedPrompts: Array<{ index: number; text: string; error: string }>;
+}) {
+  // Show recovery summary
+  if (payload.recovered > 0 && payload.trulyFailed === 0) {
+    showToast(`✅ Recovery: All ${payload.recovered} "failed" prompt(s) were actually fine!`, 'success');
+  } else if (payload.recovered > 0) {
+    showToast(`🔄 Recovery: ${payload.recovered} recovered, ${payload.trulyFailed} truly failed`, 'info');
+  } else if (payload.trulyFailed > 0) {
+    showToast(`⚠️ ${payload.trulyFailed} prompt(s) truly failed — edit & retry below`, 'error');
+  }
+
+  // Show re-prompt dialog for each truly failed prompt
+  if (payload.failedPrompts.length > 0) {
+    // Show them one at a time with a small delay
+    let i = 0;
+    function showNext() {
+      if (i >= payload.failedPrompts.length) return;
+      const fp = payload.failedPrompts[i];
+      showRepromptDialog(fp.text, `Prompt #${fp.index + 1}: ${fp.error}`);
+      i++;
+      // The next dialog will be shown when the user responds to the current one
+      // (since showRepromptDialog removes the previous one)
+    }
+    showNext();
+  }
 }

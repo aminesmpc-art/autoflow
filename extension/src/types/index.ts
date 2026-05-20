@@ -241,7 +241,8 @@ export type MessageType =
   | 'REPROMPT_RESPONSE'
   | 'QUEUE_RESUME_AVAILABLE'
   | 'RESUME_QUEUE_CONFIRMED'
-  | 'DISCARD_INTERRUPTED_QUEUE';
+  | 'DISCARD_INTERRUPTED_QUEUE'
+  | 'QUEUE_RECOVERY_RESULT';
 
 export interface Message {
   type: MessageType;

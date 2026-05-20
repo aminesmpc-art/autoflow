@@ -169,17 +169,18 @@ export async function savePromptHistory(entry: PromptHistoryEntry): Promise<void
 }
 
 // ── Running Queue State (for auto-resume after page reload) ──
-export async function saveRunningQueue(queue: QueueObject, currentIndex: number): Promise<void> {
+export async function saveRunningQueue(queue: QueueObject, currentIndex: number, recoveryMode = false): Promise<void> {
   await storageSet({
     [KEYS.RUNNING_QUEUE]: {
       queue,
       currentIndex,
       savedAt: Date.now(),
+      recoveryMode,
     },
   });
 }
 
-export async function getRunningQueue(): Promise<{ queue: QueueObject; currentIndex: number; savedAt: number } | null> {
+export async function getRunningQueue(): Promise<{ queue: QueueObject; currentIndex: number; savedAt: number; recoveryMode?: boolean } | null> {
   const data = await storageGet<any>(KEYS.RUNNING_QUEUE, null);
   if (!data || !data.queue) return null;
   // Expire after 2 hours (queue probably abandoned)

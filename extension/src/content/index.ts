@@ -68,25 +68,93 @@ if (!(window as any).__autoflow_injected) {
   console.log('[AutoFlow] Content script re-injected, listener refreshed.');
 }
 
-// ── Auto-resume: detect interrupted queue and notify sidepanel ──
+// ── Post-reload: detect interrupted or recovery queue ──
 (async () => {
   try {
     const saved = await getRunningQueue();
     if (!saved) return;
 
-    const { queue, currentIndex } = saved;
-    const remaining = queue.prompts.length - currentIndex;
+    const { queue, currentIndex, recoveryMode } = saved;
 
+    if (recoveryMode) {
+      // ── RECOVERY MODE: Page was reloaded to clear fake failures ──
+      console.log(`[AutoFlow] Recovery mode: scanning tiles for "${queue.name}"...`);
+
+      // Wait for Flow to fully load and render tiles
+      await sleep(5000);
+
+      // Get all tile labels on the page
+      const allCards = document.querySelectorAll('[data-asset-card], [class*="asset-card"], [class*="generation-card"]');
+      const tileLabels = new Set<string>();
+      allCards.forEach(card => {
+        // Try to get prompt text from tile overlay or nearby elements
+        const textEl = card.querySelector('[class*="prompt"], [class*="label"], [class*="title"]');
+        const text = (textEl?.textContent || card.textContent || '').trim().toLowerCase().slice(0, 60);
+        if (text.length > 5) tileLabels.add(text);
+      });
+
+      // Also scan visible text on the page for prompt matches
+      const pageText = document.body.innerText.toLowerCase();
+
+      let recovered = 0;
+      let trulyFailed = 0;
+      const failedPrompts: Array<{ prompt: any; idx: number }> = [];
+
+      for (let i = 0; i < queue.prompts.length; i++) {
+        const p = queue.prompts[i];
+        if (p.status !== 'failed') continue;
+
+        // Check if this prompt's text appears on the page (first 40 chars)
+        const searchText = p.text.trim().toLowerCase().slice(0, 40);
+        const found = pageText.includes(searchText);
+
+        if (found) {
+          p.status = 'done';
+          p.error = undefined;
+          recovered++;
+          console.log(`[AutoFlow] Recovery: prompt #${i + 1} found on page — marking as done`);
+        } else {
+          trulyFailed++;
+          failedPrompts.push({ prompt: p, idx: i });
+          console.log(`[AutoFlow] Recovery: prompt #${i + 1} NOT found — truly failed`);
+        }
+      }
+
+      console.log(`[AutoFlow] Recovery complete: ${recovered} recovered, ${trulyFailed} truly failed`);
+
+      // Clear the saved state
+      await clearRunningQueue();
+
+      // Notify sidepanel with results
+      await sleep(1000);
+      try {
+        chrome.runtime.sendMessage({
+          type: 'QUEUE_RECOVERY_RESULT',
+          payload: {
+            queueName: queue.name,
+            recovered,
+            trulyFailed,
+            failedPrompts: failedPrompts.map(fp => ({
+              index: fp.idx,
+              text: fp.prompt.text,
+              error: fp.prompt.error || 'Generation not found after reload'
+            }))
+          }
+        }).catch(() => {});
+      } catch { /* ignore */ }
+
+      return;
+    }
+
+    // ── NORMAL INTERRUPT: Ask user to resume or discard ──
+    const remaining = queue.prompts.length - currentIndex;
     if (remaining <= 0) {
-      // Queue was already done, just clear it
       await clearRunningQueue();
       return;
     }
 
     console.log(`[AutoFlow] Detected interrupted queue "${queue.name}" — ${remaining} prompts remaining (from #${currentIndex + 1})`);
 
-    // DON'T auto-resume. Instead, notify the sidepanel so the user can decide.
-    // Wait a moment for the sidepanel to be ready
     await sleep(2000);
     try {
       chrome.runtime.sendMessage({

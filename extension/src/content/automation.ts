@@ -206,46 +206,40 @@ export class AutomationEngine {
       this.log('info', 'Queue complete. Ensuring we are on the main grid before final scan...');
       await this.ensurePageReady();
       await this.postQueueScan();
-    }
 
-    // ── Auto-retry failed tiles (up to 3 rounds) ──
-    const MAX_RETRY_ROUNDS = 3;
-    if (!this.stopped && this.mode !== 'lite') {
-      for (let round = 1; round <= MAX_RETRY_ROUNDS; round++) {
-        // Count failures after scan
-        const failedNow = this.queue.prompts.filter(p => p.status === 'failed').length;
-        if (failedNow === 0) {
-          this.log('info', 'All prompts succeeded — no retries needed.');
-          break;
-        }
+      // ── Recovery Reload: Many "failed/cancelled" tiles are fake ──
+      // Reloading the page clears fake failures. After reload, we re-scan
+      // and only truly missing prompts need regeneration.
+      const failedAfterScan = this.queue.prompts.filter(p => p.status === 'failed').length;
+      if (failedAfterScan > 0 && !this.stopped) {
+        this.log('info', `${failedAfterScan} failed prompt(s) detected. Triggering recovery reload...`);
+        this.log('info', 'Many "cancelled" errors are fake — reloading page to recover real results.');
 
-        this.log('info', `Auto-retry round ${round}/${MAX_RETRY_ROUNDS}: ${failedNow} failed prompt(s), retrying on page...`);
+        // Save queue state with recovery flag so the content script
+        // knows to run recovery scan after page reload
+        try {
+          await saveRunningQueue(this.queue, this.queue.prompts.length, true);
+        } catch { /* ignore */ }
 
-        // Click retry on all failed tiles on the page
-        const retryResult = await this.retryFailedOnPage();
-        if (this.stopped) break;
+        // Release lock before reload (page will re-inject fresh)
+        globalRunLock = false;
+        this.sendRunLockChanged(false);
 
-        if (retryResult.retried === 0) {
-          this.log('warn', `Auto-retry round ${round}: no retry buttons found on page, stopping retries.`);
-          break;
-        }
-
-        this.log('info', `Auto-retry round ${round}: clicked retry on ${retryResult.retried} tile(s). Waiting for them to finish...`);
-
-        // Wait for all tiles to settle again
-        await this.postQueueScan();
-        if (this.stopped) break;
+        // Reload the page — this kills the current script context
+        // The content script re-inject will detect recoveryMode and handle it
+        window.location.reload();
+        return; // Script context dies here
       }
     }
 
-    // ── Re-prompt: Ask user to fix remaining failures ──
+    // ── Re-prompt: Ask user to fix remaining failures (no recovery needed) ──
     if (!this.stopped && this.mode !== 'lite') {
       const stillFailed = this.queue.prompts
         .map((p, i) => ({ prompt: p, idx: i }))
         .filter(item => item.prompt.status === 'failed');
 
       if (stillFailed.length > 0) {
-        this.log('info', `${stillFailed.length} prompt(s) still failed after retries. Showing re-prompt dialog...`);
+        this.log('info', `${stillFailed.length} prompt(s) still failed. Showing re-prompt dialog...`);
 
         for (const { prompt: failedPrompt, idx: failedIdx } of stillFailed) {
           if (this.stopped) break;
@@ -255,7 +249,6 @@ export class AutomationEngine {
           if (result.skip) {
             this.log('info', `Prompt #${failedIdx + 1} auto-skipped (no user response).`);
           } else {
-            // User edited the prompt — re-process it
             failedPrompt.text = result.text;
             failedPrompt.attempts = 0;
             failedPrompt.status = 'running' as any;
