@@ -14,6 +14,9 @@ import { getRunningQueue, clearRunningQueue } from '../shared/storage';
 // ── Singleton engine ──
 let engine: AutomationEngine | null = null;
 
+// ── Recovery cancellation flag ──
+let recoveryCancelled = false;
+
 // ── Anti-throttle: periodic self-ping via service worker roundtrip ──
 // When Chrome throttles background tabs, setTimeout delays balloon.
 // A message roundtrip to the service worker wakes up the main thread.
@@ -78,10 +81,12 @@ if (!(window as any).__autoflow_injected) {
 
     if (recoveryMode) {
       // ── RECOVERY MODE: Page was reloaded to clear fake failures ──
+      recoveryCancelled = false;
       console.log(`[AutoFlow] Recovery mode: scanning tiles for "${queue.name}"...`);
 
       // Wait for Flow to fully load and render tiles
       await sleep(5000);
+      if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
 
       // Scan visible text on the page for prompt matches
       const pageText = document.body.innerText.toLowerCase();
@@ -114,6 +119,7 @@ if (!(window as any).__autoflow_injected) {
       }
 
       console.log(`[AutoFlow] Recovery: ${recovered} recovered, ${trulyFailedPrompts.length} need regeneration`);
+      if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
 
       // Clear the saved state
       await clearRunningQueue();
@@ -133,7 +139,7 @@ if (!(window as any).__autoflow_injected) {
       } catch { /* ignore */ }
 
       // Auto-regenerate truly failed prompts with the same settings
-      if (trulyFailedPrompts.length > 0) {
+      if (trulyFailedPrompts.length > 0 && !recoveryCancelled) {
         console.log(`[AutoFlow] Auto-regenerating ${trulyFailedPrompts.length} truly failed prompt(s) with original settings...`);
 
         // Build a mini-queue with only the failed prompts, keeping all original settings
@@ -194,6 +200,8 @@ async function handleMessage(msg: Message): Promise<any> {
 
     case 'STOP_QUEUE':
       engine?.stop();
+      recoveryCancelled = true; // Cancel any running recovery scan
+      clearRunningQueue().catch(() => {}); // Prevent recovery from restarting
       stopAntiThrottle();
       return { success: true };
 
