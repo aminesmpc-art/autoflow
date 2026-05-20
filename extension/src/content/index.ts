@@ -133,7 +133,7 @@ if (!(window as any).__autoflow_injected) {
             queueName: queue.name,
             recovered,
             trulyFailed: trulyFailedPrompts.length,
-            failedPrompts: [] // No re-prompt needed — we auto-regenerate
+            failedPrompts: []
           }
         }).catch(() => {});
       } catch { /* ignore */ }
@@ -142,7 +142,6 @@ if (!(window as any).__autoflow_injected) {
       if (trulyFailedPrompts.length > 0 && !recoveryCancelled) {
         console.log(`[AutoFlow] Auto-regenerating ${trulyFailedPrompts.length} truly failed prompt(s) with original settings...`);
 
-        // Build a mini-queue with only the failed prompts, keeping all original settings
         const recoveryQueue: QueueObject = {
           ...queue,
           id: queue.id + '_recovery',
@@ -151,9 +150,17 @@ if (!(window as any).__autoflow_injected) {
           status: 'running',
         };
 
-        // Wait for page to be fully ready
         await sleep(3000);
         startQueue(recoveryQueue);
+      } else {
+        // All recovered or nothing to regenerate — tell background to clear the running state
+        console.log('[AutoFlow] Recovery complete — no regeneration needed. Clearing queue state.');
+        try {
+          chrome.runtime.sendMessage({
+            type: 'QUEUE_STATUS_UPDATE',
+            payload: { queueId: queue.id, status: 'completed' }
+          }).catch(() => {});
+        } catch { /* ignore */ }
       }
 
       return;
