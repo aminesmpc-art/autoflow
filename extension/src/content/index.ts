@@ -83,22 +83,11 @@ if (!(window as any).__autoflow_injected) {
       // Wait for Flow to fully load and render tiles
       await sleep(5000);
 
-      // Get all tile labels on the page
-      const allCards = document.querySelectorAll('[data-asset-card], [class*="asset-card"], [class*="generation-card"]');
-      const tileLabels = new Set<string>();
-      allCards.forEach(card => {
-        // Try to get prompt text from tile overlay or nearby elements
-        const textEl = card.querySelector('[class*="prompt"], [class*="label"], [class*="title"]');
-        const text = (textEl?.textContent || card.textContent || '').trim().toLowerCase().slice(0, 60);
-        if (text.length > 5) tileLabels.add(text);
-      });
-
-      // Also scan visible text on the page for prompt matches
+      // Scan visible text on the page for prompt matches
       const pageText = document.body.innerText.toLowerCase();
 
       let recovered = 0;
-      let trulyFailed = 0;
-      const failedPrompts: Array<{ prompt: any; idx: number }> = [];
+      const trulyFailedPrompts: typeof queue.prompts = [];
 
       for (let i = 0; i < queue.prompts.length; i++) {
         const p = queue.prompts[i];
@@ -114,34 +103,52 @@ if (!(window as any).__autoflow_injected) {
           recovered++;
           console.log(`[AutoFlow] Recovery: prompt #${i + 1} found on page — marking as done`);
         } else {
-          trulyFailed++;
-          failedPrompts.push({ prompt: p, idx: i });
-          console.log(`[AutoFlow] Recovery: prompt #${i + 1} NOT found — truly failed`);
+          // Reset the prompt for re-processing (keep text, images, voice etc.)
+          p.status = 'queued';
+          p.attempts = 0;
+          p.error = undefined;
+          p.tileIds = [];
+          trulyFailedPrompts.push(p);
+          console.log(`[AutoFlow] Recovery: prompt #${i + 1} NOT found — will regenerate`);
         }
       }
 
-      console.log(`[AutoFlow] Recovery complete: ${recovered} recovered, ${trulyFailed} truly failed`);
+      console.log(`[AutoFlow] Recovery: ${recovered} recovered, ${trulyFailedPrompts.length} need regeneration`);
 
       // Clear the saved state
       await clearRunningQueue();
 
       // Notify sidepanel with results
-      await sleep(1000);
+      await sleep(500);
       try {
         chrome.runtime.sendMessage({
           type: 'QUEUE_RECOVERY_RESULT',
           payload: {
             queueName: queue.name,
             recovered,
-            trulyFailed,
-            failedPrompts: failedPrompts.map(fp => ({
-              index: fp.idx,
-              text: fp.prompt.text,
-              error: fp.prompt.error || 'Generation not found after reload'
-            }))
+            trulyFailed: trulyFailedPrompts.length,
+            failedPrompts: [] // No re-prompt needed — we auto-regenerate
           }
         }).catch(() => {});
       } catch { /* ignore */ }
+
+      // Auto-regenerate truly failed prompts with the same settings
+      if (trulyFailedPrompts.length > 0) {
+        console.log(`[AutoFlow] Auto-regenerating ${trulyFailedPrompts.length} truly failed prompt(s) with original settings...`);
+
+        // Build a mini-queue with only the failed prompts, keeping all original settings
+        const recoveryQueue: QueueObject = {
+          ...queue,
+          id: queue.id + '_recovery',
+          name: queue.name + ' (Recovery)',
+          prompts: trulyFailedPrompts,
+          status: 'running',
+        };
+
+        // Wait for page to be fully ready
+        await sleep(3000);
+        startQueue(recoveryQueue);
+      }
 
       return;
     }
