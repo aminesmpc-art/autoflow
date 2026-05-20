@@ -25,7 +25,7 @@ import {
   VideoDuration,
 } from '../types';
 import { MAX_IMAGES_PER_PROMPT, MAX_SHARED_IMAGES, MAX_FRAMES_PER_PROMPT } from '../shared/constants';
-import { parsePrompts, validatePrompts, ParsedPromptNode } from '../shared/parser';
+import { parsePrompts, validatePrompts } from '../shared/parser';
 import { sha256 } from '../shared/crypto';
 import {
   getAllQueues,
@@ -53,7 +53,7 @@ import { applyLanguage, initLanguage } from './i18n';
 // ================================================================
 
 interface AppState {
-  parsedPrompts: ParsedPromptNode[];
+  parsedPrompts: string[];
   promptImages: Map<number, ({ meta: ImageMeta; objectUrl: string } | null)[]>; // promptIndex → images (null = empty slot)
   sharedImages: { meta: ImageMeta; objectUrl: string }[];               // shared across ALL prompts
   characterImages: { meta: ImageMeta; objectUrl: string }[];            // character library for auto-matching
@@ -576,14 +576,9 @@ function renderPromptList() {
   const isFrames = creationType === 'frames';
   const maxImg = isFrames ? MAX_FRAMES_PER_PROMPT : MAX_IMAGES_PER_PROMPT;
 
-  state.parsedPrompts.forEach((node, idx) => {
-    const text = node.text;
-    const isExtension = node.isExtension;
+  state.parsedPrompts.forEach((text, idx) => {
     const row = document.createElement('div');
     row.className = 'af-prompt-row';
-    if (isExtension) {
-      row.classList.add('af-prompt-extension');
-    }
     row.dataset.index = String(idx);
 
     const preview = text.length > 80 ? text.substring(0, 80) + '…' : text;
@@ -603,16 +598,16 @@ function renderPromptList() {
 
     row.innerHTML = `
       <div class="af-prompt-header" data-toggle>
-        ${isExtension ? `<span class="af-prompt-ext-icon">└─ Extend:</span>` : `<span class="af-prompt-num">#${idx + 1}</span>`}
+        <span class="af-prompt-num">#${idx + 1}</span>
         <span class="af-prompt-preview">${escapeHtml(preview)}</span>
         <span class="af-status af-status-not-added">Not Added</span>
       </div>
       <div class="af-prompt-full">${escapeHtml(text)}</div>
-      <div class="af-images-section" ${isExtension ? 'style="display:none"' : ''}>
+      <div class="af-images-section">
         <div class="af-img-thumbnails" data-prompt-idx="${idx}"></div>
         ${isFrames ? '' : `<span class="af-img-counter">${effectiveCount}/${maxImg}${extrasStr}</span>`}
-        ${isFrames || isExtension ? '' : `<button class="af-btn af-btn-add-img af-btn-sm" data-prompt-idx="${idx}">+ Add images</button>`}
-        ${!isFrames && !isExtension && imgCount > 0 ? `<button class="af-btn-copy-all" data-copy-from="${idx}" title="Copy these images to all other prompts">Copy to all</button>` : ''}
+        ${isFrames ? '' : `<button class="af-btn af-btn-add-img af-btn-sm" data-prompt-idx="${idx}">+ Add images</button>`}
+        ${!isFrames && imgCount > 0 ? `<button class="af-btn-copy-all" data-copy-from="${idx}" title="Copy these images to all other prompts">Copy to all</button>` : ''}
         ${isFrames ? '' : `<input type="file" class="af-file-input" data-prompt-idx="${idx}" accept="image/*" multiple />`}
       </div>
     `;
@@ -1385,16 +1380,6 @@ async function addToQueue() {
     return;
   }
 
-  // Prevent Extend feature in unsupported modes
-  const activeCard = document.querySelector('.af-mode-card.active') as HTMLElement;
-  const activeMode = activeCard?.getAttribute('data-mode') || 'text-to-video';
-  const hasExtension = state.parsedPrompts.some(p => p.isExtension);
-  
-  if (hasExtension && activeMode !== 'text-to-video' && activeMode !== 'ingredients') {
-    showToast('The Extend feature is only available in Text-to-Video and Ingredients modes.', 'warning');
-    return;
-  }
-
   // Check if user has enough quota
   const hasImages = state.sharedImages.length > 0 ||
     [...state.promptImages.values()].some(imgs => imgs.some(Boolean));
@@ -1422,8 +1407,7 @@ async function addToQueue() {
   const queueName = await getNextQueueName();
   const queueId = crypto.randomUUID();
 
-  const prompts: PromptEntry[] = state.parsedPrompts.map((node, idx) => {
-    const text = node.text;
+  const prompts: PromptEntry[] = state.parsedPrompts.map((text, idx) => {
     // Merge all image sources: per-prompt (manual) > auto-matched characters > shared
     const perPrompt = (state.promptImages.get(idx) || []).filter(Boolean).map(i => i!.meta);
 
@@ -1455,8 +1439,6 @@ async function addToQueue() {
       status: 'queued',
       attempts: 0,
       outputFiles: [],
-      isExtension: node.isExtension,
-      baseIndex: node.baseIndex,
     };
   });
 
@@ -3005,11 +2987,8 @@ function handlePromptStatusUpdate(data: { queue: QueueObject; promptIndex: numbe
     if (!_trackedPromptUsage.has(key)) {
       _trackedPromptUsage.add(key);
       const hasImages = prompt.images && prompt.images.length > 0;
-      let promptType = hasImages ? 'full' : 'text';
-      if (prompt.isExtension) {
-        promptType = 'extend';
-      }
-      trackUsage(1, promptType as 'text' | 'full' | 'extend').then(success => {
+      const promptType = hasImages ? 'full' : 'text';
+      trackUsage(1, promptType as 'text' | 'full').then(success => {
         if (!success) {
           console.warn('[AutoFlow] Failed to track usage for completed prompt');
         }

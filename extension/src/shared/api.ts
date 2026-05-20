@@ -212,7 +212,7 @@ export async function getDailyUsage(): Promise<DailyUsageResponse | null> {
   }
 }
 
-export async function trackUsage(promptCount: number = 1, promptType: 'text' | 'full' | 'extend' = 'text'): Promise<boolean> {
+export async function trackUsage(promptCount: number = 1, promptType: 'text' | 'full' = 'text'): Promise<boolean> {
   try {
     const res = await apiFetch('/api/usage/consume', {
       method: 'POST',
