@@ -444,9 +444,24 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
     case 'START_QUEUE':
       return startQueueInTab(msg.payload);
 
+    case 'STOP_QUEUE':
+      // Forward to content script (if engine exists, it will stop)
+      forwardToContentScript(msg).catch(() => {});
+      // ALSO force-stop from background: mark active queue as stopped
+      // This ensures the sidepanel clears even if the content script
+      // has no engine (e.g. after page reload)
+      {
+        const activeQueueId = await getActiveQueueId();
+        if (activeQueueId) {
+          await handleQueueStatusUpdate({ queueId: activeQueueId, status: 'stopped' });
+          await setActiveQueueId(null);
+        }
+        await stopKeepalive();
+      }
+      return { success: true };
+
     case 'PAUSE_QUEUE':
     case 'RESUME_QUEUE':
-    case 'STOP_QUEUE':
     case 'SKIP_CURRENT':
     case 'RETRY_FAILED':
     case 'SCAN_LIBRARY':
