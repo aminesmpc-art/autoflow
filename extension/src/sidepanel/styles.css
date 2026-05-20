@@ -1077,6 +1077,54 @@ body {
   box-shadow: 0 2px 8px rgba(0,0,0,0.4);
 }
 
+/* ── Automation Mode Selector ── */
+.af-mode-selector {
+  display: flex;
+  gap: 8px;
+}
+.af-mode-option {
+  flex: 1;
+  cursor: pointer;
+}
+.af-mode-option input[type="radio"] {
+  display: none;
+}
+.af-mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 6px;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+  background: var(--card-bg);
+  transition: all 0.2s ease;
+  text-align: center;
+}
+.af-mode-card:hover {
+  border-color: var(--accent);
+  background: rgba(168, 85, 247, 0.05);
+}
+.af-mode-option input[type="radio"]:checked + .af-mode-card {
+  border-color: var(--accent);
+  background: rgba(168, 85, 247, 0.12);
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.2);
+}
+.af-mode-icon {
+  font-size: 20px;
+  margin-bottom: 4px;
+}
+.af-mode-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+.af-mode-desc {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
 /* ── Character thumb ── */
 .af-char-thumb {
   width: 52px;

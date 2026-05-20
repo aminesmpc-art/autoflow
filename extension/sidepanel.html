@@ -456,6 +456,40 @@
       </div>
     </div>
 
+    <!-- ── Automation Mode ── -->
+    <div class="af-settings-group af-card">
+      <h3 class="af-section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <span>Automation Mode</span>
+      </h3>
+      <div class="af-mode-selector">
+        <label class="af-mode-option" title="Generate → Wait → Download → Next. Full automation with auto-download.">
+          <input type="radio" name="automationMode" value="full" />
+          <div class="af-mode-card" data-mode="full">
+            <span class="af-mode-icon">🚀</span>
+            <span class="af-mode-name">Full</span>
+            <span class="af-mode-desc">Auto-download</span>
+          </div>
+        </label>
+        <label class="af-mode-option" title="Generate → Next → Retry failed at end. Standard automation flow.">
+          <input type="radio" name="automationMode" value="flow" checked />
+          <div class="af-mode-card" data-mode="flow">
+            <span class="af-mode-icon">⚡</span>
+            <span class="af-mode-name">Flow</span>
+            <span class="af-mode-desc">Standard</span>
+          </div>
+        </label>
+        <label class="af-mode-option" title="Generate → Next. No waiting, no retries, no download.">
+          <input type="radio" name="automationMode" value="lite" />
+          <div class="af-mode-card" data-mode="lite">
+            <span class="af-mode-icon">🎯</span>
+            <span class="af-mode-name">Lite</span>
+            <span class="af-mode-desc">Just submit</span>
+          </div>
+        </label>
+      </div>
+    </div>
+
     <!-- ── Timing ── -->
     <div class="af-settings-group af-card">
       <h3 class="af-section-heading">

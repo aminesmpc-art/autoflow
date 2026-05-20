@@ -7,6 +7,7 @@ import './styles.css';
 import {
   QueueObject,
   QueueSettings,
+  AutomationMode,
   PromptEntry,
   ImageMeta,
   ScannedAsset,
@@ -1644,6 +1645,10 @@ async function loadSettings() {
 
     ($('#setting-stop-error') as HTMLInputElement).checked = settings.stopOnError;
 
+    // Automation Mode
+    const modeRadios = $$('input[name="automationMode"]') as NodeListOf<HTMLInputElement>;
+    modeRadios.forEach(r => { r.checked = r.value === (settings.automationMode ?? 'flow'); });
+
     // Image generation settings
     ($('#setting-image-model') as HTMLSelectElement).value = settings.imageModel ?? 'Nano Banana Pro';
     // Migrate legacy imageRatio values (e.g. "Landscape (16:9)" → "16:9")
@@ -1697,6 +1702,8 @@ function readSettingsFromUI(): QueueSettings {
   const voiceSelect = $('#setting-voice') as HTMLSelectElement | null;
   const voiceIngredient = voiceSelect ? voiceSelect.value : 'none';
   const stopOnError = ($('#setting-stop-error') as HTMLInputElement).checked;
+  const automationModeRadio = document.querySelector('input[name="automationMode"]:checked') as HTMLInputElement;
+  const automationMode = (automationModeRadio?.value || 'flow') as AutomationMode;
 
   // Image generation
   const imageModel = ($('#setting-image-model') as HTMLSelectElement).value as ImageModel;
@@ -1725,7 +1732,7 @@ function readSettingsFromUI(): QueueSettings {
   const variableTypingDelay = typingMode;
 
   return {
-    mediaType, creationType, model, orientation, generations, duration, voiceIngredient, stopOnError,
+    mediaType, creationType, model, orientation, generations, duration, voiceIngredient, stopOnError, automationMode,
     imageModel, imageRatio,
     waitMinSec, waitMaxSec, typingMode, typingSpeedMultiplier,
     autoDownloadVideos, videoResolution, autoDownloadImages, imageResolution,

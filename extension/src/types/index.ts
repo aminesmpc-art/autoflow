@@ -62,6 +62,9 @@ export type MediaType = 'video' | 'image';
 export type CreationType = 'ingredients' | 'frames';
 export type Orientation = 'landscape' | 'portrait';
 
+// ── Automation mode ──
+export type AutomationMode = 'full' | 'flow' | 'lite';
+
 // ── Video resolution for downloads ──
 export type VideoResolution = 'Original (720p)' | '1080p Upscaled' | '4K';
 export type ImageResolution = '1K' | '2K' | '4K';
@@ -81,6 +84,7 @@ export interface QueueSettings {
   duration?: VideoDuration;
   voiceIngredient?: string;          // Voice character name (e.g., 'Achernar'), or 'none'
   stopOnError: boolean;
+  automationMode: AutomationMode;   // 'full' | 'flow' | 'lite'
 
   // Timing
   waitMinSec: number;                // Min wait time between prompts (default 10)
@@ -248,6 +252,7 @@ export const DEFAULT_SETTINGS: QueueSettings = {
   duration: '8s',
   voiceIngredient: 'none',
   stopOnError: false,
+  automationMode: 'flow',
 
   // Timing
   waitMinSec: 10,

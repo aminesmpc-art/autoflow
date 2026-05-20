@@ -9,6 +9,7 @@ import {
   PromptEntry,
   QueueSettings,
   AutomationState,
+  AutomationMode,
   Message,
   ImageMeta,
   InputMethod,
@@ -106,6 +107,8 @@ export class AutomationEngine {
   private baselineTileCount = 0; // tiles on page before queue starts
   /** Cache of filenames already uploaded to Flow's library (persists across prompts) */
   private uploadedAssets = new Set<string>();
+  /** Current automation mode */
+  private mode: AutomationMode = 'flow';
 
   /** Start processing a queue */
   async start(queue: QueueObject): Promise<void> {
@@ -141,6 +144,8 @@ export class AutomationEngine {
 
     // â”€â”€ Apply settings once at queue start (mode, ratio, generations, model) â”€â”€
     await this.ensurePageReady();
+    this.mode = this.queue.settings.automationMode || 'flow';
+    this.log('info', `Automation mode: ${this.mode.toUpperCase()}`);
     await humanDelay(500, 1000);
     const settingsOk = await this.applyAllSettings(this.queue.settings);
     if (this.stopped) {
@@ -191,7 +196,8 @@ export class AutomationEngine {
     }
 
     // Post-queue: wait for all generations to settle and detect failures
-    if (!this.stopped) {
+    // Lite mode skips this — it only submits prompts, nothing else
+    if (!this.stopped && this.mode !== 'lite') {
       // IMPORTANT: If the queue ended on an extension prompt, the Detail View is still open.
       // We MUST close it to un-freeze the background grid so that the post-queue scan
       // can see the tiles from all the other prompts in the queue!
@@ -202,7 +208,7 @@ export class AutomationEngine {
 
     // ── Auto-retry failed tiles (up to 3 rounds) ──
     const MAX_RETRY_ROUNDS = 3;
-    if (!this.stopped) {
+    if (!this.stopped && this.mode !== 'lite') {
       for (let round = 1; round <= MAX_RETRY_ROUNDS; round++) {
         // Count failures after scan
         const failedNow = this.queue.prompts.filter(p => p.status === 'failed').length;
@@ -252,11 +258,13 @@ export class AutomationEngine {
 
     // ── Auto-scan library after queue completes ──
     if (!this.stopped) {
-      this.log('info', 'Queue complete — triggering auto library scan...');
+      // Full mode: also auto-download after scan
+      const autoDownload = this.mode === 'full';
+      this.log('info', `Queue complete — triggering library scan${autoDownload ? ' + auto-download' : ''}...`);
       try {
         chrome.runtime.sendMessage({
           type: 'AUTO_SCAN_LIBRARY',
-          payload: { queueName: this.queue.name },
+          payload: { queueName: this.queue.name, autoDownload },
         }).catch(() => {});
       } catch { /* ignore */ }
     }
@@ -355,45 +363,51 @@ export class AutomationEngine {
           this.log('info', `Prompt #${idx + 1}: ${newTileIds.length} new tile(s) tracked`);
         }
 
-        // ── Wait the configured "Video creation wait time" after clicking Generate ──
-        // During the wait, poll the tracked tiles for early failure detection.
+        // ── Automation Mode Handling: Wait after clicking Generate ──
         this.state = 'WAIT_BETWEEN_PROMPTS';
         const minSec = this.queue!.settings.waitMinSec ?? this.queue!.settings.waitBetweenPromptsSec ?? 10;
         const maxSec = this.queue!.settings.waitMaxSec ?? minSec;
         const waitSec = minSec + Math.random() * Math.max(0, maxSec - minSec);
-        const totalWaitMs = Math.max(0, waitSec * 1000 - 2000); // subtract tile snapshot delay
-        this.log('info', `Generation started. Waiting ${waitSec.toFixed(1)}s before next prompt (range: ${minSec}-${maxSec}s)...`);
-
-        // Poll during the wait to detect early failures.
-        // IMPORTANT: Don't check too early — tiles can briefly show as "failed"
-        // during initialization (3-6s after Generate). We enforce a 15s grace
-        // period so Flow has time to fully start the generation.
-        const FAILURE_GRACE_MS = 15_000;
-        const waitStart = Date.now();
+        
         let earlyFailure = false;
-        while (Date.now() - waitStart < totalWaitMs) {
-          if (this.stopped) return;
-          await sleep(2000); // check every 2 seconds
 
-          // Check if the tiles created by this prompt have failed,
-          // but only after the grace period has elapsed.
-          const elapsed = Date.now() - waitStart;
-          if (newTileIds.length > 0 && elapsed >= FAILURE_GRACE_MS) {
-            const tileStates = checkTileStates(newTileIds);
-            if (tileStates.failed > 0 && tileStates.generating === 0) {
-              // All tiles have settled and at least one failed
-              this.log('warn', `Prompt #${idx + 1}: detected ${tileStates.failed} failed tile(s) during wait (${tileStates.completed} completed)`);
-              if (tileStates.completed === 0) {
-                // ALL tiles failed — mark prompt as failed
-                earlyFailure = true;
+        if (this.mode === 'lite') {
+          // LITE MODE: Fast submission, no polling, just a minimal delay to let UI reset
+          const liteWaitMs = Math.max(3000, waitSec * 1000 - 2000);
+          this.log('info', `[Lite] Generation started. Waiting ${Math.round(liteWaitMs / 1000)}s before next prompt...`);
+          await sleep(liteWaitMs);
+        } else {
+          // FLOW + FULL MODE: Wait the configured time, poll for early failures
+          const totalWaitMs = Math.max(0, waitSec * 1000 - 2000);
+          const modeLabel = this.mode === 'full' ? 'Full' : 'Flow';
+          this.log('info', `[${modeLabel}] Generation started. Waiting ${waitSec.toFixed(1)}s before next prompt (range: ${minSec}-${maxSec}s)...`);
+
+          // Poll during the wait to detect early failures.
+          // IMPORTANT: Don't check too early — tiles can briefly show as "failed"
+          // during initialization (3-6s after Generate). We enforce a 15s grace
+          // period so Flow has time to fully start the generation.
+          const FAILURE_GRACE_MS = 15_000;
+          const waitStart = Date.now();
+          while (Date.now() - waitStart < totalWaitMs) {
+            if (this.stopped) return;
+            await sleep(2000); // check every 2 seconds
+
+            const elapsed = Date.now() - waitStart;
+            if (newTileIds.length > 0 && elapsed >= FAILURE_GRACE_MS) {
+              const tileStates = checkTileStates(newTileIds);
+              if (tileStates.failed > 0 && tileStates.generating === 0) {
+                this.log('warn', `Prompt #${idx + 1}: detected ${tileStates.failed} failed tile(s) during wait (${tileStates.completed} completed)`);
+                if (tileStates.completed === 0) {
+                  earlyFailure = true;
+                  break;
+                }
+                this.log('warn', `Prompt #${idx + 1}: partial failure — ${tileStates.completed} completed, ${tileStates.failed} failed`);
                 break;
               }
-              // Some completed, some failed — still mark as done but log warning
-              this.log('warn', `Prompt #${idx + 1}: partial failure — ${tileStates.completed} completed, ${tileStates.failed} failed`);
-              break;
             }
           }
         }
+
         if (this.stopped) return;
 
         if (earlyFailure) {

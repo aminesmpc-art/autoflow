@@ -2060,18 +2060,24 @@ export function isIngredientMenuOpen(): boolean {
  * Find the Voice tab button inside the "+" ingredient dialog.
  */
 export function findVoiceTabInDialog(): Element | null {
-  // The Voice tab has an ID ending in -trigger-AUDIO or aria-controls ending in -content-AUDIO
+  // Strategy 1: button[role="tab"] — Flow prefixes icon name to text (e.g. "voice_selectionVoices")
+  const tabs = document.querySelectorAll('button[role="tab"]');
+  for (const tab of tabs) {
+    const text = (tab.textContent || '').trim();
+    if (text.endsWith('Voices') || text.endsWith('Voice') || text.endsWith('Audio')) {
+      if (isVisible(tab)) return tab;
+    }
+  }
+
+  // Strategy 2: Old Radix tab IDs
   const tab = document.querySelector('button[role="tab"][id$="-trigger-AUDIO"], button[role="tab"][aria-controls$="-content-AUDIO"]');
   if (tab && isVisible(tab)) return tab;
 
-  // Fallback to text/aria matching
-  const elements = document.querySelectorAll('[role="tab"], [role="menuitem"], button, div.tab');
+  // Strategy 3: aria-label fallback
+  const elements = document.querySelectorAll('[role="tab"], [role="menuitem"], button');
   for (const el of elements) {
-    const text = (el.textContent || '').trim().toLowerCase();
     const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
-    
-    if (((text === 'voice' || text === 'voices' || text === 'audio' || text === 'voice ingredient') && el.children.length < 5) || 
-        aria === 'voice' || aria === 'voices' || aria === 'audio') {
+    if (aria === 'voice' || aria === 'voices' || aria === 'audio') {
       if (isVisible(el)) return el;
     }
   }
@@ -2082,17 +2088,24 @@ export function findVoiceTabInDialog(): Element | null {
  * Find the Image tab button inside the "+" ingredient dialog.
  */
 export function findImageTabInDialog(): Element | null {
-  // The Image tab has an ID ending in -trigger-IMAGE or aria-controls ending in -content-IMAGE
+  // Strategy 1: button[role="tab"] — Flow prefixes icon name (e.g. "photoImages")
+  const tabs = document.querySelectorAll('button[role="tab"]');
+  for (const tab of tabs) {
+    const text = (tab.textContent || '').trim();
+    if (text.endsWith('Images') || text.endsWith('Image')) {
+      if (isVisible(tab)) return tab;
+    }
+  }
+
+  // Strategy 2: Old Radix tab IDs
   const tab = document.querySelector('button[role="tab"][id$="-trigger-IMAGE"], button[role="tab"][aria-controls$="-content-IMAGE"]');
   if (tab && isVisible(tab)) return tab;
 
-  // Fallback to text/aria matching
-  const elements = document.querySelectorAll('[role="tab"], [role="menuitem"], button, div.tab');
+  // Strategy 3: aria-label fallback
+  const elements = document.querySelectorAll('[role="tab"], [role="menuitem"], button');
   for (const el of elements) {
-    const text = (el.textContent || '').trim().toLowerCase();
     const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
-    
-    if (((text === 'image' || text === 'images') && el.children.length < 5) || aria === 'image' || aria === 'images') {
+    if (aria === 'image' || aria === 'images') {
       if (isVisible(el)) return el;
     }
   }
