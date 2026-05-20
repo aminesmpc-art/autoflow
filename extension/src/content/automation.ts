@@ -200,39 +200,60 @@ export class AutomationEngine {
     // Post-queue: wait for all generations to settle and detect failures
     // Lite mode skips this — it only submits prompts, nothing else
     if (!this.stopped && this.mode !== 'lite') {
-      // IMPORTANT: If the queue ended on an extension prompt, the Detail View is still open.
-      // We MUST close it to un-freeze the background grid so that the post-queue scan
-      // can see the tiles from all the other prompts in the queue!
       this.log('info', 'Queue complete. Ensuring we are on the main grid before final scan...');
       await this.ensurePageReady();
       await this.postQueueScan();
+    }
 
-      // ── Recovery Reload: Many "failed/cancelled" tiles are fake ──
-      // Reloading the page clears fake failures. After reload, we re-scan
-      // and only truly missing prompts need regeneration.
-      const failedAfterScan = this.queue.prompts.filter(p => p.status === 'failed').length;
-      if (failedAfterScan > 0 && !this.stopped) {
-        this.log('info', `${failedAfterScan} failed prompt(s) detected. Triggering recovery reload...`);
-        this.log('info', 'Many "cancelled" errors are fake — reloading page to recover real results.');
+    // ── Auto-retry failed tiles (up to 3 rounds) ──
+    const MAX_RETRY_ROUNDS = 3;
+    let noRetryButtonsFound = false;
+    if (!this.stopped && this.mode !== 'lite') {
+      for (let round = 1; round <= MAX_RETRY_ROUNDS; round++) {
+        const failedNow = this.queue.prompts.filter(p => p.status === 'failed').length;
+        if (failedNow === 0) {
+          this.log('info', 'All prompts succeeded — no retries needed.');
+          break;
+        }
 
-        // Save queue state with recovery flag so the content script
-        // knows to run recovery scan after page reload
+        this.log('info', `Auto-retry round ${round}/${MAX_RETRY_ROUNDS}: ${failedNow} failed prompt(s), retrying on page...`);
+
+        const retryResult = await this.retryFailedOnPage();
+        if (this.stopped) break;
+
+        if (retryResult.retried === 0) {
+          this.log('warn', `Auto-retry round ${round}: no retry buttons found — tiles may show "cancelled" (likely fake).`);
+          noRetryButtonsFound = true;
+          break;
+        }
+
+        this.log('info', `Auto-retry round ${round}: clicked retry on ${retryResult.retried} tile(s). Waiting for them to finish...`);
+        await this.postQueueScan();
+        if (this.stopped) break;
+      }
+    }
+
+    // ── Recovery Reload: Only when retry buttons are missing ──
+    // "Cancelled" tiles often have no retry button. Reloading clears fake
+    // failures and reveals the actual completed videos.
+    if (!this.stopped && this.mode !== 'lite' && noRetryButtonsFound) {
+      const failedAfterRetries = this.queue.prompts.filter(p => p.status === 'failed').length;
+      if (failedAfterRetries > 0) {
+        this.log('info', `${failedAfterRetries} failed prompt(s) with no retry button. Triggering recovery reload...`);
+        this.log('info', '"Cancelled" errors are often fake — reloading page to recover real results.');
+
         try {
           await saveRunningQueue(this.queue, this.queue.prompts.length, true);
         } catch { /* ignore */ }
 
-        // Release lock before reload (page will re-inject fresh)
         globalRunLock = false;
         this.sendRunLockChanged(false);
-
-        // Reload the page — this kills the current script context
-        // The content script re-inject will detect recoveryMode and handle it
         window.location.reload();
         return; // Script context dies here
       }
     }
 
-    // ── Re-prompt: Ask user to fix remaining failures (no recovery needed) ──
+    // ── Re-prompt: Ask user to fix remaining failures ──
     if (!this.stopped && this.mode !== 'lite') {
       const stillFailed = this.queue.prompts
         .map((p, i) => ({ prompt: p, idx: i }))
