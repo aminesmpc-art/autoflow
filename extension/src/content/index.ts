@@ -131,6 +131,10 @@ async function handleMessage(msg: Message): Promise<any> {
       engine?.retryFailed();
       return { success: true };
 
+    case 'REPROMPT_RESPONSE':
+      engine?.handleRepromptResponse(msg.payload.text, msg.payload.skip);
+      return { success: true };
+
     case 'SCAN_FAILED_TILES':
       if (engine) {
         const result = await engine.scanFailedTiles();

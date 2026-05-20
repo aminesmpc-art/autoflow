@@ -1938,6 +1938,10 @@ async function refreshQueuesList() {
           <div class="af-q-settings-group">
             <div class="af-q-settings-title">Behavior</div>
             <div class="af-q-setting-row">
+              <span class="af-q-setting-key">Mode</span>
+              <span class="af-q-setting-val">${s.automationMode === 'full' ? '🚀 Full' : s.automationMode === 'lite' ? '🎯 Lite' : '⚡ Flow'}</span>
+            </div>
+            <div class="af-q-setting-row">
               <span class="af-q-setting-key">Stop on error</span>
               <span class="af-q-setting-val">${s.stopOnError ? '<span class="af-q-on">ON</span>' : '<span class="af-q-off">OFF</span>'}</span>
             </div>
@@ -2936,6 +2940,9 @@ function initMessageListener() {
       case 'AUTO_SCAN_LIBRARY':
         handleAutoScanLibrary();
         break;
+      case 'REPROMPT_NEEDED':
+        showRepromptDialog(msg.payload.promptText, msg.payload.error);
+        break;
     }
   });
 }
@@ -3872,3 +3879,85 @@ export async function updateReviewCardStatus(status: string) {
   }
 }
 
+// ================================================================
+// RE-PROMPT DIALOG
+// ================================================================
+
+let _repromptTimer: ReturnType<typeof setInterval> | null = null;
+
+function showRepromptDialog(promptText: string, error: string) {
+  // Remove any existing dialog
+  document.getElementById('af-reprompt-overlay')?.remove();
+  if (_repromptTimer) { clearInterval(_repromptTimer); _repromptTimer = null; }
+
+  const TIMEOUT_SEC = 120; // 2 minutes
+  let remaining = TIMEOUT_SEC;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'af-reprompt-overlay';
+  overlay.className = 'af-reprompt-overlay';
+  overlay.innerHTML = `
+    <div class="af-reprompt-dialog">
+      <div class="af-reprompt-header">
+        <span class="af-reprompt-icon">⚠️</span>
+        <span class="af-reprompt-title">Prompt Failed — Edit & Retry?</span>
+      </div>
+      <div class="af-reprompt-error">${escapeHtml(error)}</div>
+      <textarea class="af-reprompt-input" id="af-reprompt-text" rows="4">${escapeHtml(promptText)}</textarea>
+      <div class="af-reprompt-footer">
+        <span class="af-reprompt-countdown" id="af-reprompt-countdown">Auto-skip in ${remaining}s</span>
+        <div class="af-reprompt-actions">
+          <button class="af-btn af-btn-ghost" id="af-reprompt-skip">Skip</button>
+          <button class="af-btn af-btn-primary" id="af-reprompt-submit">Submit Fix</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Play notification sound (system beep)
+  try { new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVggoqGdV5dalqRsK+cgGhNTWV5h4V5bGNhcpSrrZ+Fe1tTYnN/gHx4c3R0hJafoZ2TjIV/fH5+fn18fn+Dip2ZlpCMh4SBgH59fHx8fX6AgoaJio2Qk5WXmJiYl5aUkpCOjIqJiIiIiYuOkJOWmJqbnJycnJybm5qZmJeWl5iZmpubnJycm5uampqZmZiYmJmam5ubnJycnJubnA==').play(); } catch {}
+
+  // Countdown timer
+  const countdownEl = document.getElementById('af-reprompt-countdown')!;
+  _repromptTimer = setInterval(() => {
+    remaining--;
+    countdownEl.textContent = `Auto-skip in ${remaining}s`;
+    if (remaining <= 0) {
+      closeRepromptDialog(true);
+    }
+  }, 1000);
+
+  // Button handlers
+  document.getElementById('af-reprompt-skip')!.addEventListener('click', () => {
+    closeRepromptDialog(true);
+  });
+
+  document.getElementById('af-reprompt-submit')!.addEventListener('click', () => {
+    const newText = (document.getElementById('af-reprompt-text') as HTMLTextAreaElement).value.trim();
+    if (!newText) {
+      showToast('Prompt cannot be empty!', 'error');
+      return;
+    }
+    closeRepromptDialog(false, newText);
+  });
+
+  // Animate in
+  requestAnimationFrame(() => overlay.classList.add('af-reprompt-visible'));
+}
+
+function closeRepromptDialog(skip: boolean, newText?: string) {
+  if (_repromptTimer) { clearInterval(_repromptTimer); _repromptTimer = null; }
+
+  const overlay = document.getElementById('af-reprompt-overlay');
+  if (overlay) {
+    overlay.classList.remove('af-reprompt-visible');
+    setTimeout(() => overlay.remove(), 300);
+  }
+
+  // Send response to content script via background
+  sendToBackground({
+    type: 'REPROMPT_RESPONSE',
+    payload: { text: newText || '', skip }
+  }).catch(() => {});
+}

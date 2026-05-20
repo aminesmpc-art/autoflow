@@ -193,7 +193,8 @@ export type AutomationState =
   | 'MARK_FAILED'
   | 'NEXT'
   | 'PAUSED'
-  | 'WAIT_BETWEEN_PROMPTS';
+  | 'WAIT_BETWEEN_PROMPTS'
+  | 'WAIT_FOR_REPROMPT';
 
 // ── Messages between side panel ↔ background ↔ content script ──
 export type MessageType =
@@ -235,7 +236,9 @@ export type MessageType =
   | 'REACT_TRIGGER'
   | 'MAIN_WORLD_PASTE'
   | 'TRUSTED_ENTER'
-  | 'TRUSTED_CLICK';
+  | 'TRUSTED_CLICK'
+  | 'REPROMPT_NEEDED'
+  | 'REPROMPT_RESPONSE';
 
 export interface Message {
   type: MessageType;

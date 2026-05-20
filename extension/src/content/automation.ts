@@ -109,6 +109,8 @@ export class AutomationEngine {
   private uploadedAssets = new Set<string>();
   /** Current automation mode */
   private mode: AutomationMode = 'flow';
+  /** Resolver for re-prompt dialog — waits for user to edit or skip a failed prompt */
+  private repromptResolver: ((result: { text: string; skip: boolean }) => void) | null = null;
 
   /** Start processing a queue */
   async start(queue: QueueObject): Promise<void> {
@@ -233,6 +235,38 @@ export class AutomationEngine {
         // Wait for all tiles to settle again
         await this.postQueueScan();
         if (this.stopped) break;
+      }
+    }
+
+    // ── Re-prompt: Ask user to fix remaining failures ──
+    if (!this.stopped && this.mode !== 'lite') {
+      const stillFailed = this.queue.prompts
+        .map((p, i) => ({ prompt: p, idx: i }))
+        .filter(item => item.prompt.status === 'failed');
+
+      if (stillFailed.length > 0) {
+        this.log('info', `${stillFailed.length} prompt(s) still failed after retries. Showing re-prompt dialog...`);
+
+        for (const { prompt: failedPrompt, idx: failedIdx } of stillFailed) {
+          if (this.stopped) break;
+
+          const result = await this.promptUserForFix(failedPrompt, failedPrompt.error || 'Generation failed after retries');
+
+          if (result.skip) {
+            this.log('info', `Prompt #${failedIdx + 1} auto-skipped (no user response).`);
+          } else {
+            // User edited the prompt — re-process it
+            failedPrompt.text = result.text;
+            failedPrompt.attempts = 0;
+            failedPrompt.status = 'running' as any;
+            failedPrompt.error = undefined;
+            failedPrompt.tileIds = [];
+
+            this.log('info', `User edited prompt #${failedIdx + 1}. Re-processing...`);
+            await this.ensurePageReady(failedPrompt);
+            await this.processPrompt(failedPrompt, failedIdx);
+          }
+        }
       }
     }
 
@@ -2470,6 +2504,52 @@ export class AutomationEngine {
     this.log('info', 'Queue stop requested');
     // Immediately notify the UI so the user sees the state change
     this.sendQueueStatus('stopped');
+  }
+
+  /**
+   * Ask the user to fix a failed prompt.
+   * Sends a message to sidepanel, waits up to 2 minutes for response.
+   * If no response, auto-skips.
+   */
+  private async promptUserForFix(prompt: PromptEntry, errorMsg: string): Promise<{ text: string; skip: boolean }> {
+    const REPROMPT_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+
+    return new Promise((resolve) => {
+      let resolved = false;
+
+      this.repromptResolver = (result) => {
+        if (!resolved) {
+          resolved = true;
+          resolve(result);
+        }
+      };
+      this.state = 'WAIT_FOR_REPROMPT';
+
+      // Send the re-prompt request to sidepanel
+      try {
+        chrome.runtime.sendMessage({
+          type: 'REPROMPT_NEEDED',
+          payload: { promptText: prompt.text, error: errorMsg }
+        }).catch(() => {});
+      } catch { /* ignore */ }
+
+      // Auto-skip after 2 minutes if user doesn't respond
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          this.log('warn', 'No response for re-prompt after 2 minutes — auto-skipping.');
+          resolve({ text: prompt.text, skip: true });
+        }
+      }, REPROMPT_TIMEOUT_MS);
+    });
+  }
+
+  /** Called by message listener when user responds to a re-prompt dialog */
+  handleRepromptResponse(text: string, skip: boolean): void {
+    if (this.repromptResolver) {
+      this.repromptResolver({ text, skip });
+      this.repromptResolver = null;
+    }
   }
 
   skipCurrent(): void {

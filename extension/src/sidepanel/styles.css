@@ -4040,3 +4040,93 @@ button:focus-visible {
   box-shadow: 0 0 16px rgba(245, 158, 11, 0.4);
   color: #fff;
 }
+
+/* ── Re-prompt Dialog ── */
+.af-reprompt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.af-reprompt-overlay.af-reprompt-visible {
+  opacity: 1;
+}
+.af-reprompt-dialog {
+  width: 90%;
+  max-width: 420px;
+  background: var(--card-bg, #1e1e2e);
+  border: 1px solid var(--border, #333);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  transform: translateY(20px);
+  transition: transform 0.3s ease;
+}
+.af-reprompt-visible .af-reprompt-dialog {
+  transform: translateY(0);
+}
+.af-reprompt-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.af-reprompt-icon {
+  font-size: 22px;
+}
+.af-reprompt-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary, #fff);
+}
+.af-reprompt-error {
+  font-size: 11px;
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  line-height: 1.4;
+  max-height: 60px;
+  overflow-y: auto;
+}
+.af-reprompt-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg, #0f0f17);
+  border: 1px solid var(--border, #333);
+  border-radius: 10px;
+  color: var(--text-primary, #fff);
+  font-size: 13px;
+  padding: 10px 12px;
+  resize: vertical;
+  min-height: 80px;
+  font-family: inherit;
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+.af-reprompt-input:focus {
+  outline: none;
+  border-color: var(--accent, #a855f7);
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2);
+}
+.af-reprompt-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.af-reprompt-countdown {
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+  font-variant-numeric: tabular-nums;
+}
+.af-reprompt-actions {
+  display: flex;
+  gap: 8px;
+}
