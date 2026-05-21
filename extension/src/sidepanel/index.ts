@@ -2188,15 +2188,47 @@ async function runQueue(queueId: string) {
     return;
   }
 
-  // ── Queue Run Limit Gate ──
-  // Check if the user can start a queue in this mode (lite/flow/full)
-  const mode = (queue.settings?.automationMode || 'flow') as 'lite' | 'flow' | 'full';
-  const runCheck = await checkCanStartQueue(mode);
+  // ── Queue Run Limit Gate (with auto-fallback) ──
+  // If current mode is exhausted, auto-downgrade: full → flow → lite
+  let mode = (queue.settings?.automationMode || 'flow') as 'lite' | 'flow' | 'full';
+  const fallbackOrder: Array<'lite' | 'flow' | 'full'> = ['full', 'flow', 'lite'];
+  const modeLabels: Record<string, string> = { full: '🚀 Full', flow: '🔄 Flow', lite: '⚡ Lite' };
+  const originalMode = mode;
+  let runCheck = await checkCanStartQueue(mode);
 
   if (!runCheck.allowed) {
-    showQueueLimitDialog(mode, runCheck);
-    state.isRunning = false;
-    return;
+    // Try fallback modes (only downgrade, never upgrade)
+    const currentIdx = fallbackOrder.indexOf(mode);
+    let switched = false;
+    for (let i = currentIdx + 1; i < fallbackOrder.length; i++) {
+      const fallback = fallbackOrder[i];
+      const fbCheck = await checkCanStartQueue(fallback);
+      if (fbCheck.allowed) {
+        mode = fallback;
+        runCheck = fbCheck;
+        switched = true;
+        break;
+      }
+    }
+
+    if (!switched) {
+      // All modes exhausted — show upgrade dialog
+      showQueueLimitDialog(originalMode, runCheck);
+      state.isRunning = false;
+      return;
+    }
+
+    // Update queue settings with the fallback mode
+    (queue.settings as any).automationMode = mode;
+    queue.updatedAt = Date.now();
+    const queuesToSave = await getAllQueues();
+    const idxToUpdate = queuesToSave.findIndex(q => q.id === queue.id);
+    if (idxToUpdate !== -1) {
+      queuesToSave[idxToUpdate] = queue;
+      await saveAllQueues(queuesToSave);
+    }
+
+    showToast(`${modeLabels[originalMode]} limit reached → switched to ${modeLabels[mode]}`, 'warning');
   }
 
   // Consume the queue run server-side BEFORE starting
@@ -2207,9 +2239,8 @@ async function runQueue(queueId: string) {
     return;
   }
 
-  // Just check quota — don't consume upfront.
   // Credits are consumed per-prompt when they actually complete (in handlePromptStatusUpdate).
-  showToast(`Starting queue... (${consumeResult.remaining} ${mode} run(s) left)`, 'info');
+  showToast(`Starting queue in ${modeLabels[mode]}... (${consumeResult.remaining} run(s) left)`, 'info');
 
   // Get the tab the sidepanel is attached to — this is the project tab the user has open
   let currentTabId: number | undefined;
