@@ -80,92 +80,138 @@ if (!(window as any).__autoflow_injected) {
     const { queue, currentIndex, recoveryMode } = saved;
 
     if (recoveryMode) {
-      // ── RECOVERY MODE: Page was reloaded to clear fake failures ──
+      // ── RECOVERY MODE: Page was reloaded to clear fake "cancelled" tiles ──
+      // The ONLY source of truth is: does a completed video exist on the page for each prompt?
+      // We DON'T trust the prompt.status from before the reload — tile IDs are stale after refresh.
       recoveryCancelled = false;
-      console.log(`[AutoFlow] Recovery mode: scanning tiles for "${queue.name}"...`);
+      console.log(`[AutoFlow] Recovery mode: scanning page for "${queue.name}"...`);
 
-      // Wait for Flow to fully load and render tiles (tiles need time after reload)
+      // Wait for Flow to fully load
       await sleep(6000);
       if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
 
       // Import tile scanning tools
-      const { findAssetCards, getTileState, isVisible } = await import('./selectors');
+      const { findAssetCards, getTileState, isVisible, findPromptInput } = await import('./selectors');
 
-      // Wait for tiles to appear on page (up to 30s)
+      // Check if we're on a project page (has prompt input) vs homepage
+      // If on homepage, we need to wait for the project to load
+      let onProjectPage = false;
+      for (let wait = 0; wait < 15; wait++) {
+        const promptInput = findPromptInput();
+        const tiles = findAssetCards().filter(el => isVisible(el));
+        if (promptInput || tiles.length > 0) {
+          onProjectPage = true;
+          break;
+        }
+        console.log(`[AutoFlow] Recovery: waiting for project page to load... (${(wait + 1) * 2}s)`);
+        await sleep(2000);
+        if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
+      }
+
+      if (!onProjectPage) {
+        console.log('[AutoFlow] Recovery: not on a project page after 30s. Clearing queue.');
+        await clearRunningQueue();
+        return;
+      }
+
+      // Wait for tiles to appear (up to 20s more)
       let tilesFound = 0;
-      for (let wait = 0; wait < 12; wait++) {
+      for (let wait = 0; wait < 8; wait++) {
         tilesFound = findAssetCards().filter(el => isVisible(el)).length;
         if (tilesFound > 0) break;
-        console.log(`[AutoFlow] Recovery: waiting for tiles to appear... (${(wait + 1) * 2.5}s)`);
+        console.log(`[AutoFlow] Recovery: waiting for tiles... (${(wait + 1) * 2.5}s)`);
         await sleep(2500);
         if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
       }
 
       if (tilesFound === 0) {
-        console.log('[AutoFlow] Recovery: no tiles found after 30s — clearing queue.');
+        console.log('[AutoFlow] Recovery: no tiles found. Clearing queue.');
         await clearRunningQueue();
         return;
       }
 
       // Wait for any still-generating tiles to finish (up to 5 minutes)
-      console.log(`[AutoFlow] Recovery: found ${tilesFound} tile(s). Waiting for generating tiles to settle...`);
+      console.log(`[AutoFlow] Recovery: ${tilesFound} tile(s) found. Waiting for generating tiles to settle...`);
       for (let elapsed = 0; elapsed < 300; elapsed += 15) {
+        if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
         const cards = findAssetCards().filter(el => isVisible(el));
         const generating = cards.filter(el => getTileState(el) === 'generating').length;
         const completed = cards.filter(el => getTileState(el) === 'completed').length;
         const failed = cards.filter(el => getTileState(el) === 'failed').length;
 
         if (generating === 0) {
-          console.log(`[AutoFlow] Recovery: all tiles settled — ${completed} completed, ${failed} failed`);
+          console.log(`[AutoFlow] Recovery: tiles settled — ${completed} completed, ${failed} failed (DOM state)`);
           break;
         }
         console.log(`[AutoFlow] Recovery: waiting... generating: ${generating}, completed: ${completed}, failed: ${failed}, elapsed: ${elapsed}s`);
         await sleep(15000);
-        if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
       }
 
-      // Now scan page text + tile states to determine real prompt outcomes
+      // ── CORE LOGIC: Match each prompt against the page ──
+      // Grab ALL text from the page + individual completed tile texts
       const pageText = document.body.innerText.toLowerCase();
-      const cards = findAssetCards().filter(el => isVisible(el));
-      const completedTileTexts = cards
+      const allCards = findAssetCards().filter(el => isVisible(el));
+      const completedTileTexts = allCards
         .filter(el => getTileState(el) === 'completed')
         .map(el => (el.textContent || '').toLowerCase());
+
+      console.log(`[AutoFlow] Recovery: ${allCards.length} total tiles, ${completedTileTexts.length} completed tiles on page`);
 
       let recovered = 0;
       const trulyFailedPrompts: typeof queue.prompts = [];
 
+      // Check ALL prompts — not just "failed" ones, because statuses from before
+      // the reload are unreliable (tile IDs become stale after page refresh)
       for (let i = 0; i < queue.prompts.length; i++) {
         const p = queue.prompts[i];
-        if (p.status !== 'failed') continue;
 
-        // Check if this prompt's text appears on the page or in a completed tile
+        // Skip prompts that were never started
+        if (p.status === 'not-added' || p.status === 'queued') continue;
+
+        // Search for this prompt's text on the page
         const searchText = p.text.trim().toLowerCase().slice(0, 40);
-        const foundInPage = pageText.includes(searchText);
-        const foundInCompletedTile = completedTileTexts.some(t => t.includes(searchText));
 
-        if (foundInPage || foundInCompletedTile) {
+        // For very short prompts (< 4 chars), skip text matching — too unreliable
+        if (searchText.length < 4) {
+          console.log(`[AutoFlow] Recovery: prompt #${i + 1} text too short for matching ("${searchText}"), assuming done`);
           p.status = 'done';
           p.error = undefined;
           recovered++;
-          console.log(`[AutoFlow] Recovery: prompt #${i + 1} found on page — marking as done`);
+          continue;
+        }
+
+        // Check: does this prompt text appear in any completed tile?
+        const foundInCompletedTile = completedTileTexts.some(t => t.includes(searchText));
+        // Fallback: does it appear anywhere on the page? (detail panel, etc.)
+        const foundOnPage = pageText.includes(searchText);
+
+        if (foundInCompletedTile || foundOnPage) {
+          if (p.status === 'failed') {
+            p.status = 'done';
+            p.error = undefined;
+            recovered++;
+            console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ FOUND on page — was "${p.status}", now "done"`);
+          } else {
+            console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ confirmed on page (status: ${p.status})`);
+          }
         } else {
-          // Reset the prompt for re-processing
+          // NOT found anywhere — this is a truly failed prompt
           p.status = 'queued';
           p.attempts = 0;
           p.error = undefined;
           p.tileIds = [];
           trulyFailedPrompts.push(p);
-          console.log(`[AutoFlow] Recovery: prompt #${i + 1} NOT found — will regenerate`);
+          console.log(`[AutoFlow] Recovery: prompt #${i + 1} ❌ NOT FOUND on page — will regenerate`);
         }
       }
 
-      console.log(`[AutoFlow] Recovery: ${recovered} recovered, ${trulyFailedPrompts.length} need regeneration`);
+      console.log(`[AutoFlow] Recovery complete: ${recovered} recovered from fake failures, ${trulyFailedPrompts.length} truly missing`);
       if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
 
       // Clear the saved state
       await clearRunningQueue();
 
-      // Notify sidepanel with results
+      // Notify sidepanel
       await sleep(500);
       try {
         chrome.runtime.sendMessage({
@@ -179,9 +225,9 @@ if (!(window as any).__autoflow_injected) {
         }).catch(() => {});
       } catch { /* ignore */ }
 
-      // Auto-regenerate truly failed prompts with the same settings
+      // Only create a recovery queue if there are truly missing prompts
       if (trulyFailedPrompts.length > 0 && !recoveryCancelled) {
-        console.log(`[AutoFlow] Auto-regenerating ${trulyFailedPrompts.length} truly failed prompt(s) with original settings...`);
+        console.log(`[AutoFlow] Regenerating ${trulyFailedPrompts.length} truly missing prompt(s)...`);
 
         const recoveryQueue: QueueObject = {
           ...queue,
@@ -194,8 +240,7 @@ if (!(window as any).__autoflow_injected) {
         await sleep(3000);
         startQueue(recoveryQueue);
       } else {
-        // All recovered or nothing to regenerate
-        console.log('[AutoFlow] Recovery complete — no regeneration needed. Clearing queue state.');
+        console.log('[AutoFlow] All prompts found on page! No regeneration needed. ✅');
         try {
           chrome.runtime.sendMessage({
             type: 'QUEUE_STATUS_UPDATE',

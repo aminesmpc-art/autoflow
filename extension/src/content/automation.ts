@@ -2938,7 +2938,7 @@ private async detectAndReportFailures(): Promise<void> {
    */
   private isPromptVisibleOnPage(promptText: string): boolean {
     const searchText = promptText.trim().toLowerCase().slice(0, 40);
-    if (searchText.length < 10) return false; // too short to be reliable
+    if (searchText.length < 4) return false; // too short to be reliable
     const pageText = document.body.innerText.toLowerCase();
     return pageText.includes(searchText);
   }
