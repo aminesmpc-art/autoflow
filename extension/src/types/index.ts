@@ -24,6 +24,16 @@ export interface DailyUsageResponse {
   full_remaining: number;
   plan_type: string;
   is_pro: boolean;
+  // Queue run limits
+  lite_used: number;
+  lite_limit: number;
+  lite_remaining: number;
+  flow_used: number;
+  flow_limit: number;
+  flow_remaining: number;
+  full_monthly_used: number;
+  full_monthly_limit: number;
+  full_monthly_remaining: number;
 }
 
 // ── Prompt Status ──

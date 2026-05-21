@@ -46,7 +46,7 @@ import {
   getActiveQueueId,
   savePromptHistory,
 } from '../shared/storage';
-import { login, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl, consumeDownload } from '../shared/api';
+import { login, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl, consumeDownload, checkCanStartQueue, consumeQueueRun } from '../shared/api';
 import { applyLanguage, initLanguage } from './i18n';
 
 // ================================================================
@@ -2182,9 +2182,26 @@ async function runQueue(queueId: string) {
     return;
   }
 
+  // ── Queue Run Limit Gate ──
+  // Check if the user can start a queue in this mode (lite/flow/full)
+  const mode = (queue.settings?.automationMode || 'flow') as 'lite' | 'flow' | 'full';
+  const runCheck = await checkCanStartQueue(mode);
+
+  if (!runCheck.allowed) {
+    showQueueLimitDialog(mode, runCheck);
+    return;
+  }
+
+  // Consume the queue run server-side BEFORE starting
+  const consumeResult = await consumeQueueRun(mode, pendingCount);
+  if (!consumeResult.allowed) {
+    showQueueLimitDialog(mode, consumeResult);
+    return;
+  }
+
   // Just check quota — don't consume upfront.
   // Credits are consumed per-prompt when they actually complete (in handlePromptStatusUpdate).
-  showToast('Starting queue...', 'info');
+  showToast(`Starting queue... (${consumeResult.remaining} ${mode} run(s) left)`, 'info');
 
   // Get the tab the sidepanel is attached to — this is the project tab the user has open
   let currentTabId: number | undefined;
@@ -2218,6 +2235,88 @@ async function runQueue(queueId: string) {
   // Switch to Video tab and show monitor
   (document.querySelector('[data-tab="video"]') as HTMLElement)?.click();
   showRunMonitor(queueId);
+}
+
+// ================================================================
+// QUEUE LIMIT DIALOG
+// ================================================================
+
+async function showQueueLimitDialog(mode: string, result: { used: number; limit: number; remaining: number; period: string; message?: string }) {
+  // Remove any existing dialog
+  document.getElementById('af-queue-limit-dialog')?.remove();
+
+  const modeLabels: Record<string, string> = { lite: '⚡ Lite', flow: '🔄 Flow', full: '🚀 Full' };
+  const modeLabel = modeLabels[mode] || mode;
+  const periodLabel = result.period === 'month' ? 'this month' : 'today';
+
+  const upgradeUrl = await getUpgradeUrl();
+
+  const dialog = document.createElement('div');
+  dialog.id = 'af-queue-limit-dialog';
+  dialog.innerHTML = `
+    <div style="
+      position:fixed;top:0;left:0;right:0;bottom:0;
+      background:rgba(0,0,0,0.6);backdrop-filter:blur(6px);
+      z-index:99999;display:flex;align-items:center;justify-content:center;
+      animation:fadeIn 0.2s ease-out;
+    ">
+      <div style="
+        background:linear-gradient(145deg, #1a1a2e, #16213e);
+        border:1px solid rgba(99,102,241,0.3);
+        border-radius:16px;padding:28px 24px;max-width:340px;width:90%;
+        box-shadow:0 20px 60px rgba(0,0,0,0.5),0 0 40px rgba(99,102,241,0.1);
+        text-align:center;
+      ">
+        <div style="font-size:40px;margin-bottom:12px;">🔒</div>
+        <h3 style="
+          margin:0 0 8px;color:#f1f5f9;font-size:17px;font-weight:700;
+          letter-spacing:-0.3px;
+        ">${modeLabel} Limit Reached</h3>
+        <p style="
+          color:#94a3b8;font-size:13px;line-height:1.5;margin:0 0 16px;
+        ">You've used <span style="color:#f1f5f9;font-weight:600;">${result.used}/${result.limit}</span> ${mode} runs ${periodLabel}.</p>
+        
+        <div style="
+          background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.15);
+          border-radius:10px;padding:12px;margin-bottom:18px;
+        ">
+          <div style="color:#a5b4fc;font-size:12px;font-weight:600;margin-bottom:6px;">
+            ✨ Upgrade to Pro
+          </div>
+          <div style="color:#cbd5e1;font-size:12px;line-height:1.4;">
+            Unlimited runs in all modes — Lite, Flow & Full. No daily caps.
+          </div>
+        </div>
+
+        <a href="${upgradeUrl}" target="_blank" id="af-limit-upgrade-btn" style="
+          display:block;width:100%;padding:12px;border:none;border-radius:10px;
+          background:linear-gradient(135deg, #6366f1, #8b5cf6);
+          color:#fff;font-weight:700;font-size:14px;cursor:pointer;
+          text-decoration:none;text-align:center;
+          box-shadow:0 4px 15px rgba(99,102,241,0.3);
+          transition:transform 0.15s,box-shadow 0.15s;
+        ">Upgrade to Pro →</a>
+        <button id="af-limit-dismiss-btn" style="
+          display:block;width:100%;margin-top:10px;padding:10px;
+          background:transparent;border:1px solid rgba(148,163,184,0.2);
+          border-radius:10px;color:#94a3b8;font-size:13px;cursor:pointer;
+          transition:background 0.15s;
+        ">Maybe Later</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(dialog);
+
+  // Event listeners
+  dialog.querySelector('#af-limit-dismiss-btn')?.addEventListener('click', () => dialog.remove());
+  dialog.querySelector('#af-limit-upgrade-btn')?.addEventListener('click', () => {
+    setTimeout(() => dialog.remove(), 500);
+  });
+  // Click backdrop to close
+  dialog.firstElementChild?.addEventListener('click', (e) => {
+    if (e.target === dialog.firstElementChild) dialog.remove();
+  });
 }
 
 // ================================================================

@@ -206,6 +206,16 @@ export async function getDailyUsage(): Promise<DailyUsageResponse | null> {
       full_remaining: data.is_pro_active ? 999 : (data.full_remaining_today ?? 20),
       plan_type: data.plan_type ?? 'free',
       is_pro: data.is_pro_active ?? false,
+      // Queue run limits
+      lite_used: data.lite_runs_today ?? 0,
+      lite_limit: data.is_pro_active ? 999 : (data.lite_daily_limit ?? 3),
+      lite_remaining: data.is_pro_active ? 999 : (data.lite_remaining_today ?? 3),
+      flow_used: data.flow_runs_today ?? 0,
+      flow_limit: data.is_pro_active ? 999 : (data.flow_daily_limit ?? 6),
+      flow_remaining: data.is_pro_active ? 999 : (data.flow_remaining_today ?? 6),
+      full_monthly_used: data.full_runs_this_month ?? 0,
+      full_monthly_limit: data.is_pro_active ? 999 : (data.full_monthly_limit ?? 2),
+      full_monthly_remaining: data.is_pro_active ? 999 : (data.full_remaining_this_month ?? 2),
     };
   } catch {
     return null;
@@ -318,3 +328,77 @@ export async function getReviewRewardStatus(): Promise<{ status: string; pro_unt
   }
 }
 
+
+// ── Queue Run Limits ──
+
+export interface QueueRunCheckResult {
+  allowed: boolean;
+  used: number;
+  limit: number;
+  remaining: number;
+  period: 'day' | 'month' | 'unlimited';
+  message?: string;
+}
+
+/** Check if the user can start a queue in the given mode (lite/flow/full). */
+export async function checkCanStartQueue(mode: 'lite' | 'flow' | 'full'): Promise<QueueRunCheckResult> {
+  try {
+    const usage = await getDailyUsage();
+    // FAIL-CLOSED: if we can't get usage data, block
+    if (!usage) return { allowed: false, used: 0, limit: 0, remaining: 0, period: 'day', message: 'Unable to verify limits.' };
+    if (usage.is_pro) return { allowed: true, used: 0, limit: 999, remaining: 999, period: 'unlimited' };
+
+    if (mode === 'lite') {
+      return {
+        allowed: usage.lite_remaining > 0,
+        used: usage.lite_used,
+        limit: usage.lite_limit,
+        remaining: usage.lite_remaining,
+        period: 'day',
+        message: usage.lite_remaining <= 0 ? `Lite mode limit reached (${usage.lite_limit}/day). Upgrade to Pro for unlimited.` : undefined,
+      };
+    } else if (mode === 'flow') {
+      return {
+        allowed: usage.flow_remaining > 0,
+        used: usage.flow_used,
+        limit: usage.flow_limit,
+        remaining: usage.flow_remaining,
+        period: 'day',
+        message: usage.flow_remaining <= 0 ? `Flow mode limit reached (${usage.flow_limit}/day). Upgrade to Pro for unlimited.` : undefined,
+      };
+    } else {
+      return {
+        allowed: usage.full_monthly_remaining > 0,
+        used: usage.full_monthly_used,
+        limit: usage.full_monthly_limit,
+        remaining: usage.full_monthly_remaining,
+        period: 'month',
+        message: usage.full_monthly_remaining <= 0 ? `Full mode limit reached (${usage.full_monthly_limit}/month). Upgrade to Pro for unlimited.` : undefined,
+      };
+    }
+  } catch {
+    return { allowed: false, used: 0, limit: 0, remaining: 0, period: 'day', message: 'Unable to verify limits.' };
+  }
+}
+
+/** Consume a queue run server-side. Call BEFORE starting the queue. */
+export async function consumeQueueRun(mode: 'lite' | 'flow' | 'full', promptCount: number): Promise<QueueRunCheckResult> {
+  try {
+    const res = await apiFetch('/api/usage/queue-run', {
+      method: 'POST',
+      body: JSON.stringify({ mode, prompt_count: promptCount }),
+    });
+    const data = await res.json();
+    return {
+      allowed: data.allowed !== false,
+      used: data.used ?? 0,
+      limit: data.limit ?? 0,
+      remaining: data.remaining ?? 0,
+      period: data.period ?? 'day',
+      message: data.message,
+    };
+  } catch {
+    // FAIL-CLOSED: if server is unreachable, block queue start
+    return { allowed: false, used: 0, limit: 0, remaining: 0, period: 'day', message: 'Unable to verify limits.' };
+  }
+}
