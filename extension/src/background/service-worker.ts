@@ -465,6 +465,7 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
     case 'SKIP_CURRENT':
     case 'RETRY_FAILED':
     case 'REPROMPT_RESPONSE':
+    case 'BATCH_REPROMPT_RESPONSE':
     case 'SCAN_LIBRARY':
     case 'PREVIEW_ASSET':
     case 'DOWNLOAD_SELECTED':

@@ -111,6 +111,8 @@ export class AutomationEngine {
   private mode: AutomationMode = 'flow';
   /** Resolver for re-prompt dialog — waits for user to edit or skip a failed prompt */
   private repromptResolver: ((result: { text: string; skip: boolean }) => void) | null = null;
+  /** Resolver for batch re-prompt — waits for user to edit/skip ALL failed prompts at once */
+  private batchRepromptResolver: ((results: Array<{ promptIndex: number; text: string; skip: boolean }>) => void) | null = null;
 
   /** Start processing a queue */
   async start(queue: QueueObject): Promise<void> {
@@ -260,32 +262,47 @@ export class AutomationEngine {
       }
     }
 
-    // ── Re-prompt: Ask user to fix remaining failures ──
+    // ── Re-prompt: Ask user to fix remaining failures (batch) ──
     if (!this.stopped && this.mode !== 'lite') {
       const stillFailed = this.queue.prompts
         .map((p, i) => ({ prompt: p, idx: i }))
         .filter(item => item.prompt.status === 'failed');
 
       if (stillFailed.length > 0) {
-        this.log('info', `${stillFailed.length} prompt(s) still failed. Showing re-prompt dialog...`);
+        this.log('info', `${stillFailed.length} prompt(s) still failed. Showing batch re-prompt panel...`);
 
-        for (const { prompt: failedPrompt, idx: failedIdx } of stillFailed) {
-          if (this.stopped) break;
+        const batchResult = await this.promptUserForBatchFix(
+          stillFailed.map(({ prompt: p, idx }) => ({
+            promptIndex: idx,
+            text: p.text,
+            error: p.error || 'Generation failed after retries',
+            hasImages: !!(p.images && p.images.length > 0),
+          }))
+        );
 
-          const result = await this.promptUserForFix(failedPrompt, failedPrompt.error || 'Generation failed after retries');
+        if (this.stopped) { /* user stopped during re-prompt */ }
+        else if (batchResult.length === 0) {
+          this.log('info', 'User skipped all failed prompts.');
+        } else {
+          // Process each response
+          for (const edit of batchResult) {
+            if (this.stopped) break;
+            const prompt = this.queue.prompts[edit.promptIndex];
+            if (!prompt) continue;
 
-          if (result.skip) {
-            this.log('info', `Prompt #${failedIdx + 1} auto-skipped (no user response).`);
-          } else {
-            failedPrompt.text = result.text;
-            failedPrompt.attempts = 0;
-            failedPrompt.status = 'running' as any;
-            failedPrompt.error = undefined;
-            failedPrompt.tileIds = [];
+            if (edit.skip) {
+              this.log('info', `Prompt #${edit.promptIndex + 1} skipped by user.`);
+            } else {
+              prompt.text = edit.text;
+              prompt.attempts = 0;
+              prompt.status = 'running' as any;
+              prompt.error = undefined;
+              prompt.tileIds = [];
 
-            this.log('info', `User edited prompt #${failedIdx + 1}. Re-processing...`);
-            await this.ensurePageReady(failedPrompt);
-            await this.processPrompt(failedPrompt, failedIdx);
+              this.log('info', `User edited prompt #${edit.promptIndex + 1}. Re-processing...`);
+              await this.ensurePageReady(prompt);
+              await this.processPrompt(prompt, edit.promptIndex);
+            }
           }
         }
       }
@@ -2573,6 +2590,53 @@ export class AutomationEngine {
     }
   }
 
+  /**
+   * Ask the user to fix ALL failed prompts at once (batch).
+   * Sends all failures to the sidepanel in a single message, waits up to 5 minutes.
+   */
+  private async promptUserForBatchFix(
+    failedPrompts: Array<{ promptIndex: number; text: string; error: string; hasImages: boolean }>
+  ): Promise<Array<{ promptIndex: number; text: string; skip: boolean }>> {
+    const BATCH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+    return new Promise((resolve) => {
+      let resolved = false;
+
+      this.batchRepromptResolver = (results) => {
+        if (!resolved) {
+          resolved = true;
+          resolve(results);
+        }
+      };
+      this.state = 'WAIT_FOR_REPROMPT';
+
+      // Send ALL failed prompts to sidepanel
+      try {
+        chrome.runtime.sendMessage({
+          type: 'BATCH_REPROMPT_NEEDED',
+          payload: { failedPrompts }
+        }).catch(() => {});
+      } catch { /* ignore */ }
+
+      // Auto-skip ALL after 5 minutes
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          this.log('warn', `No batch re-prompt response after ${BATCH_TIMEOUT_MS / 60000} minutes — auto-skipping all.`);
+          resolve(failedPrompts.map(fp => ({ promptIndex: fp.promptIndex, text: fp.text, skip: true })));
+        }
+      }, BATCH_TIMEOUT_MS);
+    });
+  }
+
+  /** Called by message listener when user responds to the batch re-prompt panel */
+  handleBatchRepromptResponse(results: Array<{ promptIndex: number; text: string; skip: boolean }>): void {
+    if (this.batchRepromptResolver) {
+      this.batchRepromptResolver(results);
+      this.batchRepromptResolver = null;
+    }
+  }
+
   skipCurrent(): void {
     if (this.queue && this.currentPromptIdx < this.queue.prompts.length) {
       this.log('info', `Skipping prompt #${this.currentPromptIdx + 1}`);
@@ -2763,12 +2827,10 @@ private async detectAndReportFailures(): Promise<void> {
       failedPrompts.push({ promptIndex: i, text: prompt.text, error: prompt.error });
       updatedCount++;
     } else if (failedCount > 0) {
-      // Partial failure
-      const errMsg = `Partial failure: ${completedCount} completed, ${failedCount} failed`;
-      prompt.status = 'failed';
-      prompt.error = errMsg;
-      this.updatePromptStatus(i, 'failed', errMsg);
-      failedPrompts.push({ promptIndex: i, text: prompt.text, error: errMsg });
+      // Partial success — at least one generation completed, keep what worked
+      prompt.status = 'done';
+      this.updatePromptStatus(i, 'done');
+      this.log('info', `Prompt #${i + 1}: partial result (${completedCount} ok, ${failedCount} failed) — keeping as done`);
       updatedCount++;
     } else if (notFoundCount === ids.length) {
       if (prompt.isExtension && prompt.status === 'done') {

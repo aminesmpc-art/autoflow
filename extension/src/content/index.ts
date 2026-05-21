@@ -232,6 +232,10 @@ async function handleMessage(msg: Message): Promise<any> {
       engine?.handleRepromptResponse(msg.payload.text, msg.payload.skip);
       return { success: true };
 
+    case 'BATCH_REPROMPT_RESPONSE':
+      engine?.handleBatchRepromptResponse(msg.payload.results);
+      return { success: true };
+
     case 'RESUME_QUEUE_CONFIRMED':
       return resumeInterruptedQueue();
 

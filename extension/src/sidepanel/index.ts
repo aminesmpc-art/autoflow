@@ -2947,6 +2947,9 @@ function initMessageListener() {
       case 'REPROMPT_NEEDED':
         showRepromptDialog(msg.payload.promptText, msg.payload.error);
         break;
+      case 'BATCH_REPROMPT_NEEDED':
+        showBatchRepromptPanel(msg.payload.failedPrompts);
+        break;
       case 'QUEUE_RESUME_AVAILABLE':
         showResumePrompt(msg.payload);
         break;
@@ -3996,6 +3999,175 @@ function closeRepromptDialog(skip: boolean, newText?: string) {
     type: 'REPROMPT_RESPONSE',
     payload: { text: newText || '', skip }
   }).catch(() => {});
+}
+
+// ================================================================
+// BATCH RE-PROMPT PANEL — All failed prompts at once
+// ================================================================
+
+let _batchRepromptTimer: ReturnType<typeof setInterval> | null = null;
+
+interface BatchFailedPrompt {
+  promptIndex: number;
+  text: string;
+  error: string;
+  hasImages: boolean;
+}
+
+function showBatchRepromptPanel(failedPrompts: BatchFailedPrompt[]) {
+  // Remove any existing dialogs
+  document.getElementById('af-reprompt-overlay')?.remove();
+  document.getElementById('af-batch-reprompt-overlay')?.remove();
+  if (_repromptTimer) { clearInterval(_repromptTimer); _repromptTimer = null; }
+  if (_batchRepromptTimer) { clearInterval(_batchRepromptTimer); _batchRepromptTimer = null; }
+
+  const TIMEOUT_SEC = 300; // 5 minutes
+  let remaining = TIMEOUT_SEC;
+
+  // Play notification sound
+  try { new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVggoqGdV5dalqRsK+cgGhNTWV5h4V5bGNhcpSrrZ+Fe1tTYnN/gHx4c3R0hJafoZ2TjIV/fH5+fn18fn+Dip2ZlpCMh4SBgH59fHx8fX6AgoaJio2Qk5WXmJiYl5aUkpCOjIqJiIiIiYuOkJOWmJqbnJycnJybm5qZmJeWl5iZmpubnJycm5uampqZmZiYmJmam5ubnJycnJubnA==').play(); } catch {}
+
+  // Build prompt cards HTML
+  const promptCards = failedPrompts.map((fp, i) => `
+    <div class="af-brp-card" data-brp-idx="${i}">
+      <div class="af-brp-card-header">
+        <span class="af-brp-badge">#${fp.promptIndex + 1}</span>
+        <span class="af-brp-card-error">${escapeHtml(fp.error)}</span>
+        <label class="af-brp-skip-toggle" title="Skip this prompt">
+          <input type="checkbox" class="af-brp-skip-cb" data-brp-idx="${i}" />
+          <span class="af-brp-skip-label">Skip</span>
+        </label>
+      </div>
+      ${fp.hasImages ? '<div class="af-brp-badge-img">🖼️ Has character image</div>' : ''}
+      <textarea class="af-brp-textarea" data-brp-idx="${i}" rows="3">${escapeHtml(fp.text)}</textarea>
+    </div>
+  `).join('');
+
+  const overlay = document.createElement('div');
+  overlay.id = 'af-batch-reprompt-overlay';
+  overlay.className = 'af-brp-overlay';
+  overlay.innerHTML = `
+    <div class="af-brp-panel">
+      <div class="af-brp-header">
+        <div class="af-brp-header-top">
+          <div class="af-brp-title-group">
+            <span class="af-brp-icon">⚠️</span>
+            <span class="af-brp-title">${failedPrompts.length} Prompt${failedPrompts.length > 1 ? 's' : ''} Failed</span>
+          </div>
+          <span class="af-brp-countdown" id="af-brp-countdown">${formatCountdown(remaining)}</span>
+        </div>
+        <p class="af-brp-subtitle">Edit the prompts below and retry, or skip the ones you don't want.</p>
+      </div>
+      <div class="af-brp-body">
+        ${promptCards}
+      </div>
+      <div class="af-brp-footer">
+        <button class="af-btn af-btn-ghost af-btn-sm" id="af-brp-skip-all">Skip All</button>
+        <button class="af-btn af-btn-primary af-btn-sm" id="af-brp-submit">
+          <span>Submit & Retry</span>
+          <span class="af-brp-submit-count" id="af-brp-submit-count">(${failedPrompts.length})</span>
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Update submit count when skip checkboxes change
+  function updateSubmitCount() {
+    const checkboxes = overlay.querySelectorAll('.af-brp-skip-cb') as NodeListOf<HTMLInputElement>;
+    let editCount = 0;
+    checkboxes.forEach(cb => { if (!cb.checked) editCount++; });
+    const countEl = document.getElementById('af-brp-submit-count');
+    if (countEl) countEl.textContent = `(${editCount})`;
+
+    // Toggle textarea disabled state
+    checkboxes.forEach(cb => {
+      const idx = cb.getAttribute('data-brp-idx');
+      const textarea = overlay.querySelector(`.af-brp-textarea[data-brp-idx="${idx}"]`) as HTMLTextAreaElement;
+      const card = overlay.querySelector(`.af-brp-card[data-brp-idx="${idx}"]`) as HTMLElement;
+      if (textarea && card) {
+        textarea.disabled = cb.checked;
+        card.classList.toggle('af-brp-card-skipped', cb.checked);
+      }
+    });
+  }
+
+  overlay.querySelectorAll('.af-brp-skip-cb').forEach(cb => {
+    cb.addEventListener('change', updateSubmitCount);
+  });
+
+  // Countdown
+  const countdownEl = document.getElementById('af-brp-countdown')!;
+  _batchRepromptTimer = setInterval(() => {
+    remaining--;
+    countdownEl.textContent = formatCountdown(remaining);
+    if (remaining <= 0) {
+      closeBatchRepromptPanel(true); // auto-skip all
+    }
+  }, 1000);
+
+  // Skip All
+  document.getElementById('af-brp-skip-all')!.addEventListener('click', () => {
+    closeBatchRepromptPanel(true);
+  });
+
+  // Submit
+  document.getElementById('af-brp-submit')!.addEventListener('click', () => {
+    // Collect results
+    const results: Array<{ promptIndex: number; text: string; skip: boolean }> = [];
+    failedPrompts.forEach((fp, i) => {
+      const skipCb = overlay.querySelector(`.af-brp-skip-cb[data-brp-idx="${i}"]`) as HTMLInputElement;
+      const textarea = overlay.querySelector(`.af-brp-textarea[data-brp-idx="${i}"]`) as HTMLTextAreaElement;
+      const skip = skipCb?.checked ?? false;
+      const text = textarea?.value.trim() || fp.text;
+
+      if (!skip && !text) {
+        showToast(`Prompt #${fp.promptIndex + 1} is empty!`, 'error');
+        return;
+      }
+
+      results.push({ promptIndex: fp.promptIndex, text, skip });
+    });
+
+    if (results.length !== failedPrompts.length) return; // validation failed
+
+    closeBatchRepromptPanel(false, results);
+  });
+
+  // Animate in
+  requestAnimationFrame(() => overlay.classList.add('af-brp-visible'));
+}
+
+function formatCountdown(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function closeBatchRepromptPanel(
+  skipAll: boolean,
+  results?: Array<{ promptIndex: number; text: string; skip: boolean }>
+) {
+  if (_batchRepromptTimer) { clearInterval(_batchRepromptTimer); _batchRepromptTimer = null; }
+
+  const overlay = document.getElementById('af-batch-reprompt-overlay');
+  if (overlay) {
+    overlay.classList.remove('af-brp-visible');
+    setTimeout(() => overlay.remove(), 300);
+  }
+
+  if (skipAll) {
+    // Send skip-all response
+    sendToBackground({
+      type: 'BATCH_REPROMPT_RESPONSE',
+      payload: { results: [] } // empty = skip all (engine will auto-skip via timeout)
+    }).catch(() => {});
+  } else if (results) {
+    sendToBackground({
+      type: 'BATCH_REPROMPT_RESPONSE',
+      payload: { results }
+    }).catch(() => {});
+  }
 }
 
 // ================================================================
