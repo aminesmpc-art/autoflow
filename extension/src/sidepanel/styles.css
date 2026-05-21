@@ -1452,6 +1452,11 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 8px 10px 6px;
+  transition: all 0.25s ease;
+}
+.af-q-settings-group:hover {
+  border-color: rgba(99, 102, 241, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 .af-q-settings-title {
   font-size: 9px;
@@ -1461,6 +1466,13 @@ body {
   color: var(--accent);
   margin-bottom: 5px;
   opacity: 0.85;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.af-q-settings-title svg {
+  opacity: 0.7;
+  flex-shrink: 0;
 }
 .af-q-setting-row {
   display: flex;
@@ -1555,15 +1567,15 @@ body {
 }
 .af-q-progress-track {
   flex: 1;
-  height: 4px;
+  height: 6px;
   background: var(--bg-input);
-  border-radius: 2px;
+  border-radius: 3px;
   overflow: hidden;
   position: relative;
 }
 .af-q-progress-fill {
   height: 100%;
-  border-radius: 2px;
+  border-radius: 3px;
   transition: width 0.5s var(--ease);
   position: absolute;
   top: 0;
@@ -1591,19 +1603,42 @@ body {
 }
 .af-q-stat {
   text-align: center;
-  padding: 6px 4px;
+  padding: 8px 4px 6px;
   background: var(--bg-input);
   border-radius: var(--radius-xs);
   border: 1px solid var(--border);
-  transition: border-color var(--duration) var(--ease);
+  transition: all var(--duration) var(--ease);
+  position: relative;
+  overflow: hidden;
 }
-.af-q-stat:hover { border-color: var(--border-hover); }
+.af-q-stat::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--text-muted);
+  opacity: 0.3;
+}
+.af-q-stat:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+.af-q-stat-icon {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 2px;
+  line-height: 1;
+}
 .af-q-stat-num {
   display: block;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 800;
   color: var(--text-primary);
   line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 .af-q-stat-label {
   font-size: 9px;
@@ -1612,8 +1647,14 @@ body {
   letter-spacing: 0.5px;
   color: var(--text-muted);
 }
+/* Colored stat borders */
+.af-q-stat-total::before { background: var(--accent); }
+.af-q-stat-done::before { background: var(--success); }
 .af-q-stat-done .af-q-stat-num { color: var(--success); }
+.af-q-stat-fail::before { background: var(--danger); }
 .af-q-stat-fail .af-q-stat-num { color: var(--danger); }
+.af-q-stat-pending::before { background: var(--warning); }
+.af-q-stat-pending .af-q-stat-num { color: var(--warning); }
 
 /* Actions row */
 .af-q-actions {

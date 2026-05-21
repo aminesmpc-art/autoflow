@@ -1855,7 +1855,7 @@ async function refreshQueuesList() {
         <!-- Settings Grid -->
         <div class="af-q-settings">
           <div class="af-q-settings-group">
-            <div class="af-q-settings-title">Generation</div>
+            <div class="af-q-settings-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Generation</div>
             <div class="af-q-setting-row">
               <span class="af-q-setting-key">Media</span>
               <span class="af-q-setting-val">${escapeHtml(s.mediaType ?? 'video')}</span>
@@ -1912,7 +1912,7 @@ async function refreshQueuesList() {
           </div>
 
           <div class="af-q-settings-group">
-            <div class="af-q-settings-title">Timing</div>
+            <div class="af-q-settings-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Timing</div>
             <div class="af-q-setting-row">
               <span class="af-q-setting-key">Wait</span>
               <span class="af-q-setting-val">${s.waitMinSec}s – ${s.waitMaxSec}s</span>
@@ -1924,7 +1924,7 @@ async function refreshQueuesList() {
           </div>
 
           <div class="af-q-settings-group">
-            <div class="af-q-settings-title">Download</div>
+            <div class="af-q-settings-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download</div>
             <div class="af-q-setting-row">
               <span class="af-q-setting-key">Auto-DL</span>
               <span class="af-q-setting-val">${autoDownload ? '<span class="af-q-on">ON</span>' : '<span class="af-q-off">OFF</span>'}</span>
@@ -1936,14 +1936,16 @@ async function refreshQueuesList() {
           </div>
 
           <div class="af-q-settings-group">
-            <div class="af-q-settings-title">Behavior</div>
+            <div class="af-q-settings-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Behavior</div>
             <div class="af-q-setting-row">
               <span class="af-q-setting-key">Mode</span>
-              <select class="af-q-select af-q-setting-val" data-action="update-setting" data-key="automationMode">
-                <option value="full" ${s.automationMode === 'full' ? 'selected' : ''}>🚀 Full</option>
-                <option value="flow" ${s.automationMode === 'flow' || !s.automationMode ? 'selected' : ''}>⚡ Flow</option>
-                <option value="lite" ${s.automationMode === 'lite' ? 'selected' : ''}>🎯 Lite</option>
-              </select>
+              <div class="af-q-mode-wrap">
+                <select class="af-q-select af-q-setting-val" data-action="update-setting" data-key="automationMode">
+                  <option value="full" ${s.automationMode === 'full' ? 'selected' : ''}>🚀 Full</option>
+                  <option value="flow" ${s.automationMode === 'flow' || !s.automationMode ? 'selected' : ''}>🔄 Flow</option>
+                  <option value="lite" ${s.automationMode === 'lite' ? 'selected' : ''}>⚡ Lite</option>
+                </select>
+              </div>
             </div>
             <div class="af-q-setting-row">
               <span class="af-q-setting-key">Stop on error</span>
@@ -1969,19 +1971,23 @@ async function refreshQueuesList() {
         </div>
 
         <div class="af-q-stats">
-          <div class="af-q-stat">
+          <div class="af-q-stat af-q-stat-total">
+            <span class="af-q-stat-icon">📋</span>
             <span class="af-q-stat-num">${total}</span>
             <span class="af-q-stat-label">Prompts</span>
           </div>
           <div class="af-q-stat af-q-stat-done">
+            <span class="af-q-stat-icon">✅</span>
             <span class="af-q-stat-num">${doneCount}</span>
             <span class="af-q-stat-label">Done</span>
           </div>
           <div class="af-q-stat af-q-stat-fail">
+            <span class="af-q-stat-icon">❌</span>
             <span class="af-q-stat-num">${failedCount}</span>
             <span class="af-q-stat-label">Failed</span>
           </div>
-          <div class="af-q-stat">
+          <div class="af-q-stat af-q-stat-pending">
+            <span class="af-q-stat-icon">⏳</span>
             <span class="af-q-stat-num">${pendingCount}</span>
             <span class="af-q-stat-label">Pending</span>
           </div>
