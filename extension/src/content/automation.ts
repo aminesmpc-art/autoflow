@@ -333,7 +333,8 @@ export class AutomationEngine {
     this.state = 'IDLE';
 
     // ── Auto-scan library after queue completes ──
-    if (!this.stopped) {
+    // Lite mode skips this — it doesn't wait for generations, so tiles are still generating
+    if (!this.stopped && this.mode !== 'lite') {
       // Full mode: also auto-download after scan
       const autoDownload = this.mode === 'full';
       this.log('info', `Queue complete — triggering library scan${autoDownload ? ' + auto-download' : ''}...`);
