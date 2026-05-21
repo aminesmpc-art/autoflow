@@ -90,11 +90,10 @@ if (!(window as any).__autoflow_injected) {
       await sleep(6000);
       if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
 
-      // Import tile scanning tools
-      const { findAssetCards, getTileState, isVisible, findPromptInput } = await import('./selectors');
+      // Import tile scanning tools — including scroll collector for virtualized lists
+      const { findAssetCards, getTileState, isVisible, findPromptInput, findOutputScroller, scrollAndCollectAllTileStates } = await import('./selectors');
 
       // Check if we're on a project page (has prompt input) vs homepage
-      // If on homepage, we need to wait for the project to load
       let onProjectPage = false;
       for (let wait = 0; wait < 15; wait++) {
         const promptInput = findPromptInput();
@@ -114,7 +113,7 @@ if (!(window as any).__autoflow_injected) {
         return;
       }
 
-      // Wait for tiles to appear (up to 20s more)
+      // Wait for tiles to appear (up to 20s)
       let tilesFound = 0;
       for (let wait = 0; wait < 8; wait++) {
         tilesFound = findAssetCards().filter(el => isVisible(el)).length;
@@ -130,7 +129,7 @@ if (!(window as any).__autoflow_injected) {
         return;
       }
 
-      // Wait for any still-generating tiles to finish (up to 5 minutes)
+      // Wait for any still-generating tiles to settle (up to 5 min)
       console.log(`[AutoFlow] Recovery: ${tilesFound} tile(s) found. Waiting for generating tiles to settle...`);
       for (let elapsed = 0; elapsed < 300; elapsed += 15) {
         if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
@@ -140,68 +139,136 @@ if (!(window as any).__autoflow_injected) {
         const failed = cards.filter(el => getTileState(el) === 'failed').length;
 
         if (generating === 0) {
-          console.log(`[AutoFlow] Recovery: tiles settled — ${completed} completed, ${failed} failed (DOM state)`);
+          console.log(`[AutoFlow] Recovery: tiles settled — ${completed} completed, ${failed} failed (visible)`);
           break;
         }
         console.log(`[AutoFlow] Recovery: waiting... generating: ${generating}, completed: ${completed}, failed: ${failed}, elapsed: ${elapsed}s`);
         await sleep(15000);
       }
 
-      // ── CORE LOGIC: Match each prompt against the page ──
-      // Grab ALL text from the page + individual completed tile texts
-      const pageText = document.body.innerText.toLowerCase();
-      const allCards = findAssetCards().filter(el => isVisible(el));
-      const completedTileTexts = allCards
-        .filter(el => getTileState(el) === 'completed')
-        .map(el => (el.textContent || '').toLowerCase());
+      // ── CORE LOGIC: Scroll through the ENTIRE virtualized grid ──
+      // Flow uses Virtuoso which REMOVES off-screen tiles from the DOM.
+      // We MUST scroll through all positions to see every tile.
+      console.log('[AutoFlow] Recovery: scrolling through entire grid to collect ALL tile texts...');
 
-      console.log(`[AutoFlow] Recovery: ${allCards.length} total tiles, ${completedTileTexts.length} completed tiles on page`);
+      // Use scrollAndCollectAllTileStates to get every tile's state
+      const allTileStates = await scrollAndCollectAllTileStates();
+      const completedTileIds = allTileStates
+        .filter(t => t.state === 'completed')
+        .map(t => t.tileId);
+
+      // Now scroll again and collect TEXT from each completed tile
+      // We need to do this because virtualized tiles are only in DOM when scrolled to
+      const completedTileTexts: string[] = [];
+      const scroller = findOutputScroller();
+
+      if (scroller) {
+        scroller.scrollTop = 0;
+        await sleep(600);
+
+        let prevScroll = -1;
+        let stuckCount = 0;
+        const seenIds = new Set<string>();
+
+        while (stuckCount < 3) {
+          // Collect text from all currently visible completed tiles
+          const visibleTiles = document.querySelectorAll('div[data-tile-id]');
+          for (const tile of visibleTiles) {
+            const tileId = (tile as HTMLElement).dataset.tileId || '';
+            if (!tileId || seenIds.has(tileId)) continue;
+            seenIds.add(tileId);
+
+            if (completedTileIds.includes(tileId) || getTileState(tile) === 'completed') {
+              const text = (tile.textContent || '').toLowerCase();
+              if (text.length > 0) completedTileTexts.push(text);
+            }
+          }
+
+          scroller.scrollBy(0, Math.max(200, scroller.clientHeight * 0.7));
+          await sleep(400);
+
+          if (Math.abs(scroller.scrollTop - prevScroll) < 5) {
+            stuckCount++;
+          } else {
+            stuckCount = 0;
+          }
+          prevScroll = scroller.scrollTop;
+        }
+
+        // Final collection at bottom
+        const bottomTiles = document.querySelectorAll('div[data-tile-id]');
+        for (const tile of bottomTiles) {
+          const tileId = (tile as HTMLElement).dataset.tileId || '';
+          if (!tileId || seenIds.has(tileId)) continue;
+          seenIds.add(tileId);
+          if (completedTileIds.includes(tileId) || getTileState(tile) === 'completed') {
+            const text = (tile.textContent || '').toLowerCase();
+            if (text.length > 0) completedTileTexts.push(text);
+          }
+        }
+
+        scroller.scrollTop = 0;
+      } else {
+        // No scroller — collect from visible tiles
+        const visibleTiles = findAssetCards().filter(el => isVisible(el));
+        for (const tile of visibleTiles) {
+          if (getTileState(tile) === 'completed') {
+            const text = (tile.textContent || '').toLowerCase();
+            if (text.length > 0) completedTileTexts.push(text);
+          }
+        }
+      }
+
+      // Also get full page text as final fallback
+      const pageText = document.body.innerText.toLowerCase();
+
+      const totalCompleted = allTileStates.filter(t => t.state === 'completed').length;
+      const totalFailed = allTileStates.filter(t => t.state === 'failed').length;
+      console.log(`[AutoFlow] Recovery: found ${allTileStates.length} total tiles (${totalCompleted} completed, ${totalFailed} failed), collected text from ${completedTileTexts.length} completed tiles`);
 
       let recovered = 0;
       const trulyFailedPrompts: typeof queue.prompts = [];
 
-      // Check ALL prompts — not just "failed" ones, because statuses from before
-      // the reload are unreliable (tile IDs become stale after page refresh)
+      // Check ALL prompts against the collected tile texts
       for (let i = 0; i < queue.prompts.length; i++) {
         const p = queue.prompts[i];
 
         // Skip prompts that were never started
         if (p.status === 'not-added' || p.status === 'queued') continue;
 
-        // Search for this prompt's text on the page
         const searchText = p.text.trim().toLowerCase().slice(0, 40);
 
-        // For very short prompts (< 4 chars), skip text matching — too unreliable
+        // Very short prompts — can't reliably match
         if (searchText.length < 4) {
-          console.log(`[AutoFlow] Recovery: prompt #${i + 1} text too short for matching ("${searchText}"), assuming done`);
+          console.log(`[AutoFlow] Recovery: prompt #${i + 1} too short ("${searchText}"), assuming done`);
           p.status = 'done';
           p.error = undefined;
           recovered++;
           continue;
         }
 
-        // Check: does this prompt text appear in any completed tile?
-        const foundInCompletedTile = completedTileTexts.some(t => t.includes(searchText));
-        // Fallback: does it appear anywhere on the page? (detail panel, etc.)
+        // Check completed tile texts (from scrolling through entire grid)
+        const foundInTile = completedTileTexts.some(t => t.includes(searchText));
+        // Fallback: check full page text
         const foundOnPage = pageText.includes(searchText);
 
-        if (foundInCompletedTile || foundOnPage) {
+        if (foundInTile || foundOnPage) {
           if (p.status === 'failed') {
-            p.status = 'done';
-            p.error = undefined;
             recovered++;
-            console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ FOUND on page — was "${p.status}", now "done"`);
+            console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ FOUND — "${searchText.slice(0, 30)}..." → marking done`);
           } else {
-            console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ confirmed on page (status: ${p.status})`);
+            console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ confirmed (${p.status})`);
           }
+          p.status = 'done';
+          p.error = undefined;
         } else {
-          // NOT found anywhere — this is a truly failed prompt
+          // NOT found anywhere — truly failed
           p.status = 'queued';
           p.attempts = 0;
           p.error = undefined;
           p.tileIds = [];
           trulyFailedPrompts.push(p);
-          console.log(`[AutoFlow] Recovery: prompt #${i + 1} ❌ NOT FOUND on page — will regenerate`);
+          console.log(`[AutoFlow] Recovery: prompt #${i + 1} ❌ NOT FOUND — "${searchText.slice(0, 30)}..." → will regenerate`);
         }
       }
 
