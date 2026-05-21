@@ -1,6 +1,6 @@
 # 📖 MEMORY.md — AutoFlow Project
 
-> **Last updated**: March 2026
+> **Last updated**: May 2026 (v2.3)
 > Complete developer reference for the AutoFlow project: Chrome Extension + Django Backend + Next.js Website.
 
 ---
@@ -13,7 +13,7 @@
 | --------------- | ---------------------- | --------- | ------------------------------ |
 | **Backend API** | `api.auto-flow.studio` | Railway   | `autoflow-backend` (separate!) |
 | **Website**     | `www.auto-flow.studio` | Vercel    | `autoflow` → `website/`        |
-| **Extension**   | Chrome Web Store       | —         | `autoflow` → `src/`            |
+| **Extension**   | Chrome Web Store       | —         | `autoflow` → `extension/`      |
 
 ### 🚨 #1 Rule: Backend = TWO Repos
 
@@ -38,7 +38,9 @@ cd website && npx vercel --prod
 **Build extension:**
 
 ```bash
-npm run build   # → dist/ folder → upload to Chrome Web Store
+cd extension
+npm run build           # → dist/ folder → load unpacked in Chrome
+npm run build:publish   # → dist/ folder (no source maps) → zip for CWS
 ```
 
 ### ⚠️ Top 3 Gotchas
@@ -114,6 +116,7 @@ The extension manipulates Google Flow's React/Radix UI DOM through simulated use
 | Extension   | Chrome Manifest V3                             |
 | Target Site | Google Flow (React + Radix UI + Slate.js)      |
 | Storage     | `chrome.storage.local` + IndexedDB             |
+| Backend API | Django REST → `api.auto-flow.studio`           |
 | Tests       | Jest + ts-jest                                 |
 
 ---
@@ -122,38 +125,69 @@ The extension manipulates Google Flow's React/Radix UI DOM through simulated use
 
 ```
 autoflow/
-├── manifest.json          # Chrome MV3 manifest
-├── package.json           # Dependencies & scripts
-├── webpack.config.js      # 3 entry points → dist/
-├── tsconfig.json          # TypeScript config (ES2020, strict)
-├── jest.config.js         # Jest config (ts-jest)
-├── sidepanel.html         # Side panel UI (4 tabs)
-├── README.md              # User-facing readme
 ├── MEMORY.md              # THIS FILE — developer documentation
-├── icons/                 # Extension icons (16/48/128)
-├── dist/                  # Build output (gitignored)
-└── src/
-    ├── types/
-    │   └── index.ts       # All shared types, enums, constants (222 lines)
-    ├── shared/
-    │   ├── constants.ts   # Numeric limits & timeouts
-    │   ├── crypto.ts      # sha256() via Web Crypto API
-    │   ├── parser.ts      # Prompt parsing & validation
-    │   └── storage.ts     # chrome.storage.local + IndexedDB wrappers (~200 lines)
-    ├── background/
-    │   └── service-worker.ts  # Message router, tab management (313 lines)
-    ├── content/
-    │   ├── index.ts       # Content script entry, message handler (273 lines)
-    │   ├── automation.ts  # AutomationEngine — core state machine (2128 lines)
-    │   ├── selectors.ts   # DOM queries, click simulation, React triggers (1508 lines)
-    │   └── scanner.ts     # Library scanning & asset downloading (405 lines)
-    ├── sidepanel/
-    │   ├── index.ts       # Side panel app logic (1882 lines)
-    │   └── styles.css     # Dark theme styles (1452 lines)
-    └── tests/
-        ├── parser.test.ts
-        ├── queue.test.ts
-        └── storage.test.ts
+├── README.md              # User-facing readme
+│
+├── extension/             # Chrome Extension (v2.3)
+│   ├── manifest.json      # Chrome MV3 manifest
+│   ├── package.json       # Dependencies & scripts
+│   ├── webpack.config.js  # 3 entry points → dist/
+│   ├── tsconfig.json      # TypeScript config (ES2020, strict)
+│   ├── jest.config.js     # Jest config (ts-jest)
+│   ├── sidepanel.html     # Side panel UI (5 tabs incl. Account)
+│   ├── icons/             # Extension icons (16/48/128)
+│   ├── store-assets/      # CWS screenshots & promo images
+│   ├── dist/              # Build output (gitignored)
+│   └── src/
+│       ├── types/
+│       │   └── index.ts       # All shared types, enums, constants
+│       ├── shared/
+│       │   ├── constants.ts   # Numeric limits & timeouts
+│       │   ├── crypto.ts      # sha256() via Web Crypto API
+│       │   ├── parser.ts      # Prompt parsing & validation
+│       │   ├── api.ts         # Backend API client (auth, usage, quotas)
+│       │   └── storage.ts     # chrome.storage.local + IndexedDB wrappers
+│       ├── background/
+│       │   └── service-worker.ts  # Message router, tab mgmt, keepalive
+│       ├── content/
+│       │   ├── index.ts       # Content script entry, auto-resume, recovery
+│       │   ├── automation.ts  # AutomationEngine — core state machine
+│       │   ├── selectors.ts   # DOM queries, click simulation, React triggers
+│       │   └── scanner.ts     # Library scanning & asset downloading
+│       ├── sidepanel/
+│       │   ├── index.ts       # Side panel app logic (~4400 lines)
+│       │   ├── i18n.ts        # Translations (EN, AR, FR, ES)
+│       │   └── styles.css     # Dark theme styles (~4400 lines)
+│       └── tests/
+│           ├── parser.test.ts
+│           ├── queue.test.ts
+│           └── storage.test.ts
+│
+├── backend/               # Django REST API (pushed to autoflow-backend repo)
+│   ├── manage.py
+│   ├── start.py           # Railway startup script
+│   ├── requirements.txt
+│   ├── config/            # Django settings
+│   │   └── settings/
+│   │       ├── base.py    # Shared settings + Unfold config
+│   │       └── production.py  # Railway settings
+│   └── apps/
+│       ├── users/         # Custom user model + email auth
+│       ├── plans/         # Profile + plan types (Free/Pro)
+│       ├── usage/         # DailyUsage + MonthlyUsage + UsageEvent
+│       ├── rewards/       # Review reward credits
+│       ├── webhooks/      # Whop payment webhooks
+│       ├── api/           # REST API views + services
+│       └── dashboard.py   # Admin KPI callbacks
+│
+├── website/               # Next.js landing page (Vercel)
+│   └── src/app/
+│       ├── [locale]/      # i18n pages (EN, AR, FR, ES)
+│       ├── dictionaries.js
+│       └── sitemap.js
+│
+├── extractor-backend/     # Standalone metadata extractor (Render)
+└── grok-auto/             # Grok automation extension (separate)
 ```
 
 ---
@@ -1116,9 +1150,11 @@ Prompt 1    Prompt 2    Prompt 3
 
 ```json
 {
+  "build": "webpack --mode production",
+  "build:publish": "webpack --mode production && del dist\\*.map",
   "build:dev": "webpack --mode development --devtool source-map",
-  "build:watch": "webpack --watch --mode development --devtool source-map",
-  "build:prod": "webpack --mode production",
+  "build:watch": "webpack --mode development --devtool source-map --watch",
+  "dev": "webpack --mode development --watch",
   "test": "jest"
 }
 ```
@@ -1127,26 +1163,27 @@ Prompt 1    Prompt 2    Prompt 3
 
 - 3 entry points: `background`, `content`, `sidepanel`
 - Output to `dist/` with `[name].js` naming
-- `MiniCssExtractPlugin` → `styles.css`
+- `MiniCssExtractPlugin` → `sidepanel.css`
 - `CopyWebpackPlugin` → copies `sidepanel.html`, `manifest.json`, `icons/`
-- Target: `web` (not `node`)
-- Devtool: `source-map` (dev), `false` (prod)
-
-### TypeScript Config:
-
-- Target: `ES2020`
-- Module: `ES2020`
-- Strict mode enabled
-- DOM + DOM.Iterable libs
-- Output to `dist/`
+- Devtool: `false` (prod), `cheap-module-source-map` (dev)
+- CSS source maps: disabled in production
 
 ### Loading the Extension:
 
-1. `npm run build:dev` or `npm run build:watch`
+1. `cd extension && npm run build` (or `npm run dev` for watch mode)
 2. Chrome → `chrome://extensions` → Enable Developer Mode
-3. "Load unpacked" → select `dist/` folder
+3. "Load unpacked" → select `extension/dist/` folder
 4. Navigate to `https://labs.google/flow`
 5. Click extension icon to open side panel
+
+### Publishing to Chrome Web Store:
+
+```powershell
+cd extension
+npm run build:publish
+Compress-Archive -Path dist\* -DestinationPath autoflow-v2.3.zip -Force
+# Upload .zip to https://chrome.google.com/webstore/devconsole
+```
 
 ---
 
@@ -1184,11 +1221,19 @@ DEFAULT_SETTINGS = {
 ## Available Models
 
 ```ts
+// Video models
 AVAILABLE_MODELS = [
-  "Veo 3.1 Fast",
-  "Veo 3.1 Quality",
-  "Veo 2 Fast",
-  "Veo 2 Quality",
+  "Veo 3.1 - Lite",
+  "Veo 3.1 - Fast",
+  "Veo 3.1 - Quality",
+  "Veo 3.1 - Lite [Lower Priority]",
+  "Veo 3.1 - Fast [Lower Priority]",
+];
+// Image models
+IMAGE_MODELS = [
+  "Nano Banana Pro",
+  "Nano Banana 2",
+  "Imagen 4",
 ];
 ```
 
@@ -1555,8 +1600,10 @@ autoflow/                              ← Main monorepo
 ### Extension (Chrome Web Store)
 
 ```bash
-npm run build          # Build to dist/
-# Then upload dist/ folder to Chrome Web Store
+cd extension
+npm run build:publish                # Build + strip source maps
+Compress-Archive -Path dist\* -DestinationPath autoflow-v2.3.zip -Force
+# Upload .zip to Chrome Web Store Developer Dashboard
 ```
 
 ### Website (Vercel)
@@ -1638,8 +1685,9 @@ The admin is at `/admin/` (with trailing slash). CSRF requires `api.auto-flow.st
 ### 8. Extension Build
 
 ```bash
-npm run build   # webpack → dist/ folder
-# Load dist/ as unpacked extension in Chrome
+cd extension
+npm run build           # webpack → dist/ folder
+npm run build:publish   # same + removes .map files for CWS
 ```
 
 ### 9. i18n Translation Keys
@@ -1652,4 +1700,91 @@ The `.gitattributes` file forces LF endings for `.sh` files. This prevents CRLF 
 
 ---
 
-_End of MEMORY.md — Last updated: March 2026_
+## Subscription & Quota System (v2.3)
+
+### Tier Limits (Free Users)
+
+| Mode | Emoji | Limit | Period | Color |
+|------|-------|-------|--------|-------|
+| Lite | ⚡ | 3 runs | per day | Yellow |
+| Flow | 🔄 | 6 runs | per day | Emerald |
+| Full | 🚀 | 2 runs | per month | Indigo |
+
+**Pro users** have unlimited runs on all modes. Usage is still tracked for admin monitoring.
+
+### Auto-Fallback Logic
+
+When a queue starts and the current mode's limit is exhausted, the extension automatically downgrades:
+
+```
+🚀 Full exhausted? → try 🔄 Flow
+🔄 Flow exhausted? → try ⚡ Lite
+⚡ Lite exhausted? → show upgrade dialog (all modes gone)
+```
+
+- The queue settings are updated and saved with the new mode
+- A warning toast informs the user of the switch
+- Only shows upgrade dialog if ALL three modes are exhausted
+
+### API Module (`src/shared/api.ts`)
+
+Centralized backend communication:
+
+| Function | Endpoint | Purpose |
+|----------|----------|---------|
+| `apiFetch(path)` | — | Auth wrapper (JWT from storage) |
+| `register()` | `POST /api/register` | Create account |
+| `login()` | `POST /api/login` | Get JWT tokens |
+| `getDailyUsage()` | `GET /api/usage/daily` | Current day's usage + limits |
+| `consumePrompt()` | `POST /api/usage/consume` | Deduct prompt credit |
+| `checkCanStartQueue()` | client-side | Check if mode has remaining runs |
+| `consumeQueueRun()` | `POST /api/usage/queue-run` | Atomic consume with `SELECT FOR UPDATE` |
+| `getReviewRewardStatus()` | `GET /api/rewards/review-status` | Check review reward eligibility |
+
+### Server-Side Enforcement
+
+- **Atomic**: `consume_queue_run` uses `SELECT FOR UPDATE` to prevent race conditions
+- **Fail-closed**: If the server is unreachable, queue starts are blocked (not allowed)
+- **Concurrency**: `state.isRunning` lock in sidepanel prevents double-starts
+
+### Usage Display (Account Tab)
+
+Three compact usage bars with mode-specific gradients:
+- **Lite** bar: Yellow gradient, `X / 3` runs today
+- **Flow** bar: Emerald gradient, `X / 6` runs today
+- **Full** bar: Indigo gradient, `X / 2` runs this month
+- Warning state at 75% capacity (orange-red)
+- "Limit reached!" pulsing red when maxed
+- "Unlimited — Pro plan" for Pro users
+
+### Upgrade Modal
+
+Glassmorphism dialog triggered when limits hit:
+- Shows which mode was exhausted
+- "Upgrade to Pro" button links to Whop checkout
+- Only shows when ALL fallback modes are also exhausted
+
+---
+
+## Queue Card UI (v2.3)
+
+### Settings Groups
+4 groups with SVG icons: ⚙️ Generation, 🕐 Timing, ⬇️ Download, ✏️ Behavior
+
+### Stats Cards
+4 colored stat cards with emoji icons and colored top borders:
+- 📋 Prompts (accent border)
+- ✅ Done (green border + text)
+- ❌ Failed (red border + text)
+- ⏳ Pending (amber border + text)
+
+### Progress Bar
+6px tall with rounded corners, mode-colored fill, smooth 0.5s transitions
+
+### Hover Effects
+- Settings groups: border glow + shadow on hover
+- Stat cards: lift animation + shadow on hover
+
+---
+
+_End of MEMORY.md — Last updated: May 2026 (v2.3)_
