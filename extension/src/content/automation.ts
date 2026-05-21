@@ -333,15 +333,13 @@ export class AutomationEngine {
     this.state = 'IDLE';
 
     // ── Auto-scan library after queue completes ──
-    // Lite mode skips this — it doesn't wait for generations, so tiles are still generating
-    if (!this.stopped && this.mode !== 'lite') {
-      // Full mode: also auto-download after scan
-      const autoDownload = this.mode === 'full';
-      this.log('info', `Queue complete — triggering library scan${autoDownload ? ' + auto-download' : ''}...`);
+    // Only full mode auto-scans + downloads. Flow mode stays on the create page.
+    if (!this.stopped && this.mode === 'full') {
+      this.log('info', 'Queue complete — triggering library scan + auto-download...');
       try {
         chrome.runtime.sendMessage({
           type: 'AUTO_SCAN_LIBRARY',
-          payload: { queueName: this.queue.name, autoDownload },
+          payload: { queueName: this.queue.name, autoDownload: true },
         }).catch(() => {});
       } catch { /* ignore */ }
     }
@@ -2597,11 +2595,13 @@ export class AutomationEngine {
 
   /**
    * Ask the user to fix ALL failed prompts at once (batch).
-   * Sends all failures to the sidepanel in a single message, waits up to 5 minutes.
+   * Full mode: 5-minute countdown then auto-skip.
+   * Flow mode: no timeout — user takes their time.
    */
   private async promptUserForBatchFix(
     failedPrompts: Array<{ promptIndex: number; text: string; error: string; hasImages: boolean }>
   ): Promise<Array<{ promptIndex: number; text: string; skip: boolean }>> {
+    const useTimeout = this.mode === 'full';
     const BATCH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
     return new Promise((resolve) => {
@@ -2615,22 +2615,24 @@ export class AutomationEngine {
       };
       this.state = 'WAIT_FOR_REPROMPT';
 
-      // Send ALL failed prompts to sidepanel
+      // Send ALL failed prompts to sidepanel (include mode so panel knows about countdown)
       try {
         chrome.runtime.sendMessage({
           type: 'BATCH_REPROMPT_NEEDED',
-          payload: { failedPrompts }
+          payload: { failedPrompts, noTimeout: !useTimeout }
         }).catch(() => {});
       } catch { /* ignore */ }
 
-      // Auto-skip ALL after 5 minutes
-      setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          this.log('warn', `No batch re-prompt response after ${BATCH_TIMEOUT_MS / 60000} minutes — auto-skipping all.`);
-          resolve(failedPrompts.map(fp => ({ promptIndex: fp.promptIndex, text: fp.text, skip: true })));
-        }
-      }, BATCH_TIMEOUT_MS);
+      // Auto-skip after timeout (full mode only)
+      if (useTimeout) {
+        setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            this.log('warn', `No batch re-prompt response after ${BATCH_TIMEOUT_MS / 60000} minutes — auto-skipping all.`);
+            resolve(failedPrompts.map(fp => ({ promptIndex: fp.promptIndex, text: fp.text, skip: true })));
+          }
+        }, BATCH_TIMEOUT_MS);
+      }
     });
   }
 

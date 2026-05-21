@@ -2958,7 +2958,7 @@ function initMessageListener() {
         showRepromptDialog(msg.payload.promptText, msg.payload.error);
         break;
       case 'BATCH_REPROMPT_NEEDED':
-        showBatchRepromptPanel(msg.payload.failedPrompts);
+        showBatchRepromptPanel(msg.payload.failedPrompts, msg.payload.noTimeout);
         break;
       case 'QUEUE_RESUME_AVAILABLE':
         showResumePrompt(msg.payload);
@@ -4034,7 +4034,7 @@ interface BatchFailedPrompt {
   hasImages: boolean;
 }
 
-function showBatchRepromptPanel(failedPrompts: BatchFailedPrompt[]) {
+function showBatchRepromptPanel(failedPrompts: BatchFailedPrompt[], noTimeout = false) {
   // Remove any existing popup dialogs (legacy)
   document.getElementById('af-reprompt-overlay')?.remove();
   document.getElementById('af-batch-reprompt-overlay')?.remove();
@@ -4065,9 +4065,15 @@ function showBatchRepromptPanel(failedPrompts: BatchFailedPrompt[]) {
   textarea.style.display = 'none'; // hide old textarea
   cardsContainer.style.display = 'flex';
   batchFooter.style.display = 'flex';
-  countdownEl.style.display = 'inline-block';
-  countdownEl.textContent = formatCountdown(remaining);
   submitCount.textContent = `(${failedPrompts.length})`;
+
+  // Countdown: only in full mode
+  if (noTimeout) {
+    countdownEl.style.display = 'none';
+  } else {
+    countdownEl.style.display = 'inline-block';
+    countdownEl.textContent = formatCountdown(remaining);
+  }
 
   // Build per-prompt cards
   cardsContainer.innerHTML = failedPrompts.map((fp, i) => `
@@ -4107,14 +4113,16 @@ function showBatchRepromptPanel(failedPrompts: BatchFailedPrompt[]) {
     cb.addEventListener('change', updateSubmitCount);
   });
 
-  // Countdown timer
-  _batchRepromptTimer = setInterval(() => {
-    remaining--;
-    countdownEl.textContent = formatCountdown(remaining);
-    if (remaining <= 0) {
-      closeBatchRepromptPanel(true);
-    }
-  }, 1000);
+  // Countdown timer (full mode only)
+  if (!noTimeout) {
+    _batchRepromptTimer = setInterval(() => {
+      remaining--;
+      countdownEl.textContent = formatCountdown(remaining);
+      if (remaining <= 0) {
+        closeBatchRepromptPanel(true);
+      }
+    }, 1000);
+  }
 
   // Wire up footer buttons (remove old listeners by cloning)
   const skipAllBtn = $('#btn-failed-skip-all');
