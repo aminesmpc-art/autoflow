@@ -84,12 +84,52 @@ if (!(window as any).__autoflow_injected) {
       recoveryCancelled = false;
       console.log(`[AutoFlow] Recovery mode: scanning tiles for "${queue.name}"...`);
 
-      // Wait for Flow to fully load and render tiles
-      await sleep(5000);
+      // Wait for Flow to fully load and render tiles (tiles need time after reload)
+      await sleep(6000);
       if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
 
-      // Scan visible text on the page for prompt matches
+      // Import tile scanning tools
+      const { findAssetCards, getTileState, isVisible } = await import('./selectors');
+
+      // Wait for tiles to appear on page (up to 30s)
+      let tilesFound = 0;
+      for (let wait = 0; wait < 12; wait++) {
+        tilesFound = findAssetCards().filter(el => isVisible(el)).length;
+        if (tilesFound > 0) break;
+        console.log(`[AutoFlow] Recovery: waiting for tiles to appear... (${(wait + 1) * 2.5}s)`);
+        await sleep(2500);
+        if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
+      }
+
+      if (tilesFound === 0) {
+        console.log('[AutoFlow] Recovery: no tiles found after 30s — clearing queue.');
+        await clearRunningQueue();
+        return;
+      }
+
+      // Wait for any still-generating tiles to finish (up to 5 minutes)
+      console.log(`[AutoFlow] Recovery: found ${tilesFound} tile(s). Waiting for generating tiles to settle...`);
+      for (let elapsed = 0; elapsed < 300; elapsed += 15) {
+        const cards = findAssetCards().filter(el => isVisible(el));
+        const generating = cards.filter(el => getTileState(el) === 'generating').length;
+        const completed = cards.filter(el => getTileState(el) === 'completed').length;
+        const failed = cards.filter(el => getTileState(el) === 'failed').length;
+
+        if (generating === 0) {
+          console.log(`[AutoFlow] Recovery: all tiles settled — ${completed} completed, ${failed} failed`);
+          break;
+        }
+        console.log(`[AutoFlow] Recovery: waiting... generating: ${generating}, completed: ${completed}, failed: ${failed}, elapsed: ${elapsed}s`);
+        await sleep(15000);
+        if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
+      }
+
+      // Now scan page text + tile states to determine real prompt outcomes
       const pageText = document.body.innerText.toLowerCase();
+      const cards = findAssetCards().filter(el => isVisible(el));
+      const completedTileTexts = cards
+        .filter(el => getTileState(el) === 'completed')
+        .map(el => (el.textContent || '').toLowerCase());
 
       let recovered = 0;
       const trulyFailedPrompts: typeof queue.prompts = [];
@@ -98,17 +138,18 @@ if (!(window as any).__autoflow_injected) {
         const p = queue.prompts[i];
         if (p.status !== 'failed') continue;
 
-        // Check if this prompt's text appears on the page (first 40 chars)
+        // Check if this prompt's text appears on the page or in a completed tile
         const searchText = p.text.trim().toLowerCase().slice(0, 40);
-        const found = pageText.includes(searchText);
+        const foundInPage = pageText.includes(searchText);
+        const foundInCompletedTile = completedTileTexts.some(t => t.includes(searchText));
 
-        if (found) {
+        if (foundInPage || foundInCompletedTile) {
           p.status = 'done';
           p.error = undefined;
           recovered++;
           console.log(`[AutoFlow] Recovery: prompt #${i + 1} found on page — marking as done`);
         } else {
-          // Reset the prompt for re-processing (keep text, images, voice etc.)
+          // Reset the prompt for re-processing
           p.status = 'queued';
           p.attempts = 0;
           p.error = undefined;
@@ -153,7 +194,7 @@ if (!(window as any).__autoflow_injected) {
         await sleep(3000);
         startQueue(recoveryQueue);
       } else {
-        // All recovered or nothing to regenerate — tell background to clear the running state
+        // All recovered or nothing to regenerate
         console.log('[AutoFlow] Recovery complete — no regeneration needed. Clearing queue state.');
         try {
           chrome.runtime.sendMessage({
