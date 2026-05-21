@@ -166,14 +166,40 @@ if (!(window as any).__autoflow_injected) {
       return;
     }
 
-    // ── NORMAL INTERRUPT: Ask user to resume or discard ──
+    // ── NORMAL INTERRUPT: Auto-resume if recent, ask user if old ──
     const remaining = queue.prompts.length - currentIndex;
     if (remaining <= 0) {
       await clearRunningQueue();
       return;
     }
 
-    console.log(`[AutoFlow] Detected interrupted queue "${queue.name}" — ${remaining} prompts remaining (from #${currentIndex + 1})`);
+    const ageMs = Date.now() - saved.savedAt;
+    const AUTO_RESUME_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+
+    if (ageMs < AUTO_RESUME_THRESHOLD_MS) {
+      // Recent save — Chrome likely auto-refreshed the page. Resume immediately.
+      console.log(`[AutoFlow] Page refreshed while queue "${queue.name}" was running (saved ${Math.round(ageMs / 1000)}s ago). Auto-resuming from prompt #${currentIndex + 1}...`);
+
+      // Wait for Flow to fully load
+      await sleep(4000);
+
+      // Notify sidepanel that we're resuming
+      try {
+        chrome.runtime.sendMessage({
+          type: 'LOG',
+          payload: {
+            timestamp: Date.now(),
+            level: 'info',
+            message: `Page refreshed — auto-resuming queue "${queue.name}" from prompt #${currentIndex + 1} (${remaining} remaining)`
+          }
+        }).catch(() => {});
+      } catch { /* ignore */ }
+
+      return resumeInterruptedQueue();
+    }
+
+    // Old save — ask user whether to resume or discard
+    console.log(`[AutoFlow] Detected interrupted queue "${queue.name}" — ${remaining} prompts remaining (from #${currentIndex + 1}), saved ${Math.round(ageMs / 60000)} minutes ago`);
 
     await sleep(2000);
     try {
