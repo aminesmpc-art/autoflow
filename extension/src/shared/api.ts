@@ -208,8 +208,8 @@ export async function getDailyUsage(): Promise<DailyUsageResponse | null> {
       is_pro: data.is_pro_active ?? false,
       // Queue run limits
       lite_used: data.lite_runs_today ?? 0,
-      lite_limit: data.is_pro_active ? 999 : (data.lite_daily_limit ?? 3),
-      lite_remaining: data.is_pro_active ? 999 : (data.lite_remaining_today ?? 3),
+      lite_limit: 999,  // Lite is unlimited for all users
+      lite_remaining: 999,
       flow_used: data.flow_runs_today ?? 0,
       flow_limit: data.is_pro_active ? 999 : (data.flow_daily_limit ?? 6),
       flow_remaining: data.is_pro_active ? 999 : (data.flow_remaining_today ?? 6),

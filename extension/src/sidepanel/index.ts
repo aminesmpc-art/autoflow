@@ -3914,11 +3914,11 @@ async function updateUsageDisplay() {
     const hintEl = $(`#account-${prefix}-usage-hint`) as HTMLElement;
     if (!textEl || !barEl || !hintEl) return;
 
-    if (isPro) {
+    if (isPro || limit >= 999) {
       textEl.textContent = `${used} / ∞`;
       barEl.style.width = '0%';
       barEl.classList.remove('warning', 'full');
-      hintEl.textContent = 'Unlimited — Pro plan';
+      hintEl.textContent = 'Unlimited';
       return;
     }
 
