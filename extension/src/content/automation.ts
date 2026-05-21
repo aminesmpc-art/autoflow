@@ -2791,9 +2791,18 @@ private async detectAndReportFailures(): Promise<void> {
     const ids: string[] = prompt.tileIds || [];
 
     // Case 1: Prompt has NO tracked tiles — it never produced output
+    // BUT: after a page refresh, tile IDs become stale. Before marking as failed,
+    // check if the prompt text actually appears on a completed tile on the page.
     if (ids.length === 0) {
       if (prompt.isExtension && prompt.status === 'done') {
         this.log('info', `Extension prompt #${i + 1} has no tracked tiles but was marked done. Keeping status as done.`);
+        updatedCount++;
+        continue;
+      }
+
+      // Fallback: search visible tiles for this prompt's text
+      if (prompt.status === 'done' && this.isPromptVisibleOnPage(prompt.text)) {
+        this.log('info', `Prompt #${i + 1}: no tile IDs tracked but text found on page — keeping as done (likely page refresh)`);
         updatedCount++;
         continue;
       }
@@ -2849,7 +2858,15 @@ private async detectAndReportFailures(): Promise<void> {
         continue;
       }
       
-      // All tiles disappeared from the page
+      // All tiles disappeared from the page — but check text fallback first (page refresh)
+      if (this.isPromptVisibleOnPage(prompt.text)) {
+        this.log('info', `Prompt #${i + 1}: tile IDs stale but text found on page — keeping as done (likely page refresh)`);
+        prompt.status = 'done';
+        this.updatePromptStatus(i, 'done');
+        updatedCount++;
+        continue;
+      }
+
       prompt.status = 'failed';
       prompt.error = 'No output found on page — tiles may have been removed';
       this.updatePromptStatus(i, 'failed', prompt.error);
@@ -2871,6 +2888,18 @@ private async detectAndReportFailures(): Promise<void> {
 
   this.sendFailedTilesResult(failedPrompts);
 }
+
+  /**
+   * Check if a prompt's text is visible on any tile on the current page.
+   * Used as a fallback when tile IDs become stale after a page refresh.
+   * Searches the first 40 chars of the prompt in the page's visible text.
+   */
+  private isPromptVisibleOnPage(promptText: string): boolean {
+    const searchText = promptText.trim().toLowerCase().slice(0, 40);
+    if (searchText.length < 10) return false; // too short to be reliable
+    const pageText = document.body.innerText.toLowerCase();
+    return pageText.includes(searchText);
+  }
 
   /**
    * Scan the current page for failed tiles (callable on demand via Scan Page button).
