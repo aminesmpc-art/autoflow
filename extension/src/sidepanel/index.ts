@@ -2942,7 +2942,7 @@ function initMessageListener() {
         handleFailedTilesResult(msg.payload);
         break;
       case 'AUTO_SCAN_LIBRARY':
-        handleAutoScanLibrary();
+        handleAutoScanLibrary(msg.payload);
         break;
       case 'REPROMPT_NEEDED':
         showRepromptDialog(msg.payload.promptText, msg.payload.error);
@@ -3172,8 +3172,9 @@ function handleQueueSummary(payload: { queueName: string; totalPrompts: number; 
  * Auto-scan library after queue completes.
  * Switches to Library tab and triggers a scan automatically.
  */
-async function handleAutoScanLibrary() {
-  showToast('Queue complete — auto-scanning library...', 'info');
+async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownload?: boolean }) {
+  const autoDownload = payload?.autoDownload ?? false;
+  showToast(`Queue complete — auto-scanning library${autoDownload ? ' + downloading' : ''}...`, 'info');
 
   // Switch to Library tab
   const libraryTab = document.querySelector('[data-tab="library"]') as HTMLElement;
@@ -3193,11 +3194,36 @@ async function handleAutoScanLibrary() {
   state.scannedAssets = response?.assets || [];
   if (state.scannedAssets.length === 0) {
     showToast('Auto-scan: no assets found.', 'warning');
-  } else {
-    const prompts = new Set(state.scannedAssets.map(a => a.groupId)).size;
-    showToast(`Auto-scan: found ${state.scannedAssets.length} asset(s) across ${prompts} prompt(s).`, 'success');
+    return;
   }
+
+  const prompts = new Set(state.scannedAssets.map(a => a.groupId)).size;
+  showToast(`Auto-scan: found ${state.scannedAssets.length} asset(s) across ${prompts} prompt(s).`, 'success');
   renderLibrary();
+
+  // Auto-download in FULL mode: select all videos and trigger download
+  if (autoDownload) {
+    // Select all video assets
+    const videoAssets = state.scannedAssets.filter(a => a.mediaType === 'video');
+    if (videoAssets.length === 0) {
+      showToast('Auto-download: no videos to download.', 'info');
+      return;
+    }
+    videoAssets.forEach(a => a.selected = true);
+    renderLibrary();
+
+    // Wait briefly for UI to update
+    await new Promise(r => setTimeout(r, 300));
+
+    // Trigger the download button click programmatically
+    const downloadBtn = document.getElementById('btn-download-selected') as HTMLButtonElement;
+    if (downloadBtn) {
+      showToast(`Auto-downloading ${videoAssets.length} video(s)...`, 'info');
+      downloadBtn.click();
+    } else {
+      showToast('Auto-download: download button not found.', 'error');
+    }
+  }
 }
 
 // ================================================================
