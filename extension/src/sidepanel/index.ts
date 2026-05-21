@@ -3209,6 +3209,11 @@ async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownloa
 
   const prompts = new Set(state.scannedAssets.map(a => a.groupId)).size;
   showToast(`Auto-scan: found ${state.scannedAssets.length} asset(s) across ${prompts} prompt(s).`, 'success');
+
+  // Auto-set sort to "By prompt #" so videos match the queue's prompt order
+  const sortSelect = $('#library-sort') as HTMLSelectElement;
+  if (sortSelect) sortSelect.value = 'prompt-num';
+
   renderLibrary();
 
   // Auto-download in FULL mode: select all videos and trigger download
