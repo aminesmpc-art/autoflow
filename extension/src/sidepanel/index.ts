@@ -2289,6 +2289,9 @@ function initLibraryTab() {
       const prompts = new Set(state.scannedAssets.map(a => a.groupId)).size;
       showToast(`Found ${state.scannedAssets.length} asset(s) across ${prompts} prompt(s).`, 'success');
     }
+    // Sort by prompt order so results match the user's prompt list
+    const sortSelect = $('#library-sort') as HTMLSelectElement;
+    if (sortSelect) sortSelect.value = 'prompt-num';
     renderLibrary();
   });
 
