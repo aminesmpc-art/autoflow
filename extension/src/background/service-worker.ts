@@ -511,6 +511,11 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
       broadcastToExtension(msg);
       return {};
 
+    case 'REPROMPT_NEEDED':
+    case 'BATCH_REPROMPT_NEEDED':
+      broadcastToExtension(msg);
+      return {};
+
     case 'SET_DOWNLOAD_RENAME':
       queueDownloadRename(msg.payload.filename);
       return { success: true };
