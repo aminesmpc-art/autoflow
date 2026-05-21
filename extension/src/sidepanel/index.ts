@@ -2921,6 +2921,13 @@ function initMessageListener() {
         break;
       case 'QUEUE_STATUS_UPDATE':
         handleQueueStatusUpdate(msg.payload);
+        // Auto-close batch edit panel when queue ends
+        if (msg.payload.status === 'stopped' || msg.payload.status === 'completed') {
+          const failedSection = document.getElementById('failed-section');
+          if (failedSection?.classList.contains('af-failed-batch-active')) {
+            closeBatchRepromptPanel(true);
+          }
+        }
         break;
       case 'PROMPT_STATUS_UPDATE':
         handlePromptStatusUpdate(msg.payload);
@@ -3235,6 +3242,10 @@ async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownloa
 
 function handleFailedTilesResult(payload: { failedPrompts: Array<{ promptIndex: number; text: string; error: string }>; failedCount: number }) {
   const section = $('#failed-section');
+
+  // Don't interfere if batch edit mode is active — the user is editing prompt cards
+  if (section.classList.contains('af-failed-batch-active')) return;
+
   const countBadge = $('#failed-count');
   const textarea = $('#failed-prompts') as HTMLTextAreaElement;
   const copyBtn = $('#btn-copy-failed') as HTMLButtonElement;
