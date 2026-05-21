@@ -3350,6 +3350,64 @@ button:focus-visible {
   opacity: 0.7;
 }
 
+/* Queue Runs Divider */
+.af-usage-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 10px;
+}
+.af-usage-divider::before,
+.af-usage-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.15), transparent);
+}
+.af-usage-divider-text {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* 3-column grid for queue runs */
+.af-usage-grid-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+/* Compact card variant */
+.af-usage-card-compact {
+  padding: 10px 8px 8px;
+}
+.af-usage-card-compact .af-usage-icon {
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+.af-usage-card-compact .af-usage-count {
+  font-size: 13px;
+}
+.af-usage-card-compact .af-usage-info {
+  margin-bottom: 6px;
+}
+
+/* Per-mode bar colors */
+.af-usage-bar-lite {
+  background: linear-gradient(90deg, #facc15, #eab308);
+  box-shadow: 0 0 8px rgba(250, 204, 21, 0.35);
+}
+.af-usage-bar-flow {
+  background: linear-gradient(90deg, #34d399, #10b981);
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
+}
+.af-usage-bar-fullrun {
+  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.35);
+}
+
 /* Upgrade Card — glassmorphism with gradient border */
 .af-upgrade-cta {
   margin-bottom: 16px;

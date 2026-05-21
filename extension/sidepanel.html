@@ -896,6 +896,51 @@ Prompt 3 text here..."></textarea>
               <p id="account-full-usage-hint" class="af-usage-hint">20 remaining today</p>
             </div>
           </div>
+
+          <!-- Queue Run Limits -->
+          <div class="af-usage-divider">
+            <span class="af-usage-divider-text">Queue Runs</span>
+          </div>
+          <div class="af-usage-grid af-usage-grid-3">
+            <!-- Lite Runs -->
+            <div class="af-usage-card af-usage-card-compact">
+              <div class="af-usage-icon">⚡</div>
+              <div class="af-usage-info">
+                <span class="af-usage-label">Lite</span>
+                <span id="account-lite-usage-text" class="af-usage-count">0 / 3</span>
+              </div>
+              <div class="af-usage-bar-bg">
+                <div id="account-lite-usage-bar" class="af-usage-bar af-usage-bar-lite" style="width: 0%;"></div>
+              </div>
+              <p id="account-lite-usage-hint" class="af-usage-hint">3 left today</p>
+            </div>
+
+            <!-- Flow Runs -->
+            <div class="af-usage-card af-usage-card-compact">
+              <div class="af-usage-icon">🔄</div>
+              <div class="af-usage-info">
+                <span class="af-usage-label">Flow</span>
+                <span id="account-flow-usage-text" class="af-usage-count">0 / 6</span>
+              </div>
+              <div class="af-usage-bar-bg">
+                <div id="account-flow-usage-bar" class="af-usage-bar af-usage-bar-flow" style="width: 0%;"></div>
+              </div>
+              <p id="account-flow-usage-hint" class="af-usage-hint">6 left today</p>
+            </div>
+
+            <!-- Full Runs (monthly) -->
+            <div class="af-usage-card af-usage-card-compact">
+              <div class="af-usage-icon">🚀</div>
+              <div class="af-usage-info">
+                <span class="af-usage-label">Full</span>
+                <span id="account-fullrun-usage-text" class="af-usage-count">0 / 2</span>
+              </div>
+              <div class="af-usage-bar-bg">
+                <div id="account-fullrun-usage-bar" class="af-usage-bar af-usage-bar-fullrun" style="width: 0%;"></div>
+              </div>
+              <p id="account-fullrun-usage-hint" class="af-usage-hint">2 left this month</p>
+            </div>
+          </div>
         </div>
 
         <!-- Review Reward CTA (hidden if not applicable) -->
