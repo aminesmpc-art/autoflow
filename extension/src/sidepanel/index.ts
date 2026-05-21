@@ -2160,10 +2160,14 @@ async function runQueue(queueId: string) {
     return;
   }
 
+  // Lock immediately to prevent double-click
+  state.isRunning = true;
+
   // Get queue to count prompts and check quota
   const queue = await getQueueById(queueId);
   if (!queue) {
     showToast('Queue not found. It may have been deleted.', 'error');
+    state.isRunning = false;
     return;
   }
 
@@ -2174,11 +2178,13 @@ async function runQueue(queueId: string) {
 
   if (!quota.allowed) {
     showToast('Daily limit reached. Upgrade to Pro for unlimited.', 'warning');
+    state.isRunning = false;
     return;
   }
 
   if (pendingCount > quota.remaining) {
     showToast(`Only ${quota.remaining} prompts remaining. Queue has ${pendingCount} pending.`, 'warning');
+    state.isRunning = false;
     return;
   }
 
@@ -2189,6 +2195,7 @@ async function runQueue(queueId: string) {
 
   if (!runCheck.allowed) {
     showQueueLimitDialog(mode, runCheck);
+    state.isRunning = false;
     return;
   }
 
@@ -2196,6 +2203,7 @@ async function runQueue(queueId: string) {
   const consumeResult = await consumeQueueRun(mode, pendingCount);
   if (!consumeResult.allowed) {
     showQueueLimitDialog(mode, consumeResult);
+    state.isRunning = false;
     return;
   }
 
@@ -2221,9 +2229,9 @@ async function runQueue(queueId: string) {
       const banner = document.getElementById('flow-tab-banner');
       if (banner) banner.style.display = 'flex';
     }
+    state.isRunning = false;
     return;
   }
-  state.isRunning = true;
   state.activeQueueId = queueId;
   updateRunLockUI(true);
   startKeepalivePort();  // Keep service worker alive during queue execution
