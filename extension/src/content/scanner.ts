@@ -116,7 +116,9 @@ function extractBatchMetadata(card: Element): { modelName: string; createdAt: st
       // Skip texts that are clearly not prompts
       const lower = text.toLowerCase();
       const isNoise = /^(failed|retry|reuse|delete|download|share|created|edited)/i.test(text) ||
-        lower.includes('not been charged') || lower.includes('try again');
+        lower.includes('not been charged') || lower.includes('try again') ||
+        lower.includes('violate our') || lower.includes('violates our') ||
+        lower.includes('generating harmful') || lower.includes('content policy');
       if (!isNoise) {
         longestText = text;
       }
@@ -145,7 +147,9 @@ function extractBatchMetadata(card: Element): { modelName: string; createdAt: st
           .trim();
         if (cleaned.length > 30 && cleaned.length > longestText.length) {
           const isNoise = /^(failed|retry|reuse|delete|download|share|created|edited)/i.test(cleaned) ||
-            cleaned.toLowerCase().includes('not been charged');
+            cleaned.toLowerCase().includes('not been charged') ||
+            cleaned.toLowerCase().includes('violate our') || cleaned.toLowerCase().includes('violates our') ||
+            cleaned.toLowerCase().includes('generating harmful') || cleaned.toLowerCase().includes('content policy');
           if (!isNoise) {
             longestText = cleaned;
           }
@@ -174,6 +178,8 @@ function extractBatchMetadata(card: Element): { modelName: string; createdAt: st
       if (text.length > 50 && text.length > longestText.length && text.length < 2000) {
         const isNoise = /^(failed|retry|reuse|delete|download|share|created|edited)/i.test(text) ||
           text.toLowerCase().includes('not been charged') || text.toLowerCase().includes('try again') ||
+          text.toLowerCase().includes('violate our') || text.toLowerCase().includes('violates our') ||
+          text.toLowerCase().includes('generating harmful') || text.toLowerCase().includes('content policy') ||
           /^(Veo|Imagen|Nano)\s/i.test(text) || /^(Created|Edited)\s/i.test(text);
         if (!isNoise) {
           longestText = text;
@@ -665,22 +671,42 @@ function enrichAndBuild(groups: TileGroup[], history: PromptHistoryEntry[]): Sca
     }
   }
 
+  // Detect error messages (same logic as buildGroups)
+  function isErrorLabel(label: string): boolean {
+    const lower = label.toLowerCase();
+    return (
+      lower.includes('please try a different prompt') ||
+      lower.includes('not been charged') ||
+      lower.includes('try again later') ||
+      lower.includes('unable to generate') ||
+      lower.includes('violates our') ||
+      lower.includes('violate our') ||
+      lower.includes('content policy') ||
+      lower.includes('generation failed') ||
+      lower.includes('generating harmful') ||
+      /^audio generation\s*\./i.test(label)
+    );
+  }
+
   // Try to match each group to a saved history position
   let matchedCount = 0;
   for (const group of groups) {
     const groupNorm = norm(group.promptLabel);
     let matchedIndex = -1;
 
-    // Exact match first
-    if (historyLookup.has(groupNorm)) {
-      matchedIndex = historyLookup.get(groupNorm)!;
-    } else {
-      // Substring match: check if the scanned label contains or is contained by a saved prompt
-      for (const [savedNorm, idx] of historyLookup) {
-        if (groupNorm.length > 20 && savedNorm.length > 20) {
-          if (savedNorm.includes(groupNorm) || groupNorm.includes(savedNorm)) {
-            matchedIndex = idx;
-            break;
+    // Skip error-message labels for text matching (they won't match any saved prompt)
+    if (!isErrorLabel(group.promptLabel)) {
+      // Exact match first
+      if (historyLookup.has(groupNorm)) {
+        matchedIndex = historyLookup.get(groupNorm)!;
+      } else {
+        // Substring match: check if the scanned label contains or is contained by a saved prompt
+        for (const [savedNorm, idx] of historyLookup) {
+          if (groupNorm.length > 20 && savedNorm.length > 20) {
+            if (savedNorm.includes(groupNorm) || groupNorm.includes(savedNorm)) {
+              matchedIndex = idx;
+              break;
+            }
           }
         }
       }
@@ -688,6 +714,44 @@ function enrichAndBuild(groups: TileGroup[], history: PromptHistoryEntry[]): Sca
 
     (group as any)._historyIndex = matchedIndex;
     if (matchedIndex >= 0) matchedCount++;
+  }
+
+  // ── Resolve error-message labels from history ──
+  // For groups whose label is an error message and didn't match,
+  // try to assign the real prompt text from unmatched history entries.
+  const matchedHistoryIndices = new Set(
+    groups.filter(g => (g as any)._historyIndex >= 0).map(g => (g as any)._historyIndex as number)
+  );
+
+  // Build a reverse lookup: history index → prompt text
+  const historyTextByIndex = new Map<number, string>();
+  for (const entry of history) {
+    for (const p of entry.prompts) {
+      historyTextByIndex.set(p.index, p.text);
+    }
+  }
+
+  // Collect unmatched history indices (prompts that no group claimed)
+  const unmatchedHistoryIndices = [...historyTextByIndex.keys()]
+    .filter(idx => !matchedHistoryIndices.has(idx))
+    .sort((a, b) => a - b);
+
+  // Assign unmatched history prompts to error-label groups by position
+  let unmatchedIdx = 0;
+  for (const group of groups) {
+    if ((group as any)._historyIndex >= 0) continue; // already matched
+    if (!isErrorLabel(group.promptLabel)) continue; // not an error label
+    if (unmatchedIdx >= unmatchedHistoryIndices.length) break;
+
+    const histIdx = unmatchedHistoryIndices[unmatchedIdx];
+    const realText = historyTextByIndex.get(histIdx);
+    if (realText) {
+      console.log(`[AutoFlow] Resolved error-label group to history prompt #${histIdx}: "${realText.substring(0, 60)}..."`);
+      group.promptLabel = realText;
+      (group as any)._historyIndex = histIdx;
+      matchedCount++;
+    }
+    unmatchedIdx++;
   }
 
   console.log(`[AutoFlow] Prompt history match: ${matchedCount}/${groups.length} groups matched`);
