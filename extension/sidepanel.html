@@ -292,7 +292,10 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           Failed Generations
         </h3>
-        <span id="failed-count" class="af-badge af-badge-danger">0 failed</span>
+        <div class="af-failed-header-right">
+          <span id="af-failed-countdown" class="af-failed-countdown" style="display:none;"></span>
+          <span id="failed-count" class="af-badge af-badge-danger">0 failed</span>
+        </div>
       </div>
       <div class="af-failed-actions">
         <button id="btn-scan-failed" class="af-btn af-btn-sm af-btn-secondary">
@@ -308,7 +311,17 @@
           Retry All
         </button>
       </div>
+      <!-- Default: readonly textarea for scan results -->
       <textarea id="failed-prompts" class="af-textarea af-failed-textarea" readonly rows="5" placeholder="Failed prompt texts will appear here after scanning..."></textarea>
+      <!-- Batch edit: individual prompt cards (shown during batch reprompt) -->
+      <div id="failed-prompt-cards" class="af-failed-cards" style="display:none;"></div>
+      <!-- Batch footer: submit/skip buttons (shown during batch reprompt) -->
+      <div id="failed-batch-footer" class="af-failed-batch-footer" style="display:none;">
+        <button id="btn-failed-skip-all" class="af-btn af-btn-sm af-btn-ghost">Skip All</button>
+        <button id="btn-failed-submit" class="af-btn af-btn-sm af-btn-primary">
+          Submit &amp; Retry <span id="af-failed-submit-count"></span>
+        </button>
+      </div>
     </div>
 
     <!-- Manual Intervention Banner -->
