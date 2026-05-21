@@ -133,17 +133,21 @@ export class AutomationEngine {
     this.log('info', `Starting queue "${queue.name}" with ${queue.prompts.length} prompts`);
     this.sendQueueStatus('running');
 
-    // Save prompt order for library sorting (so retries keep correct position)
-    try {
-      await savePromptHistory({
-        queueId: queue.id,
-        queueName: queue.name,
-        timestamp: Date.now(),
-        prompts: queue.prompts.map((p, i) => ({ index: i, text: p.text })),
-      });
-      this.log('info', `Saved prompt order (${queue.prompts.length} prompts) for library sorting`);
-    } catch (e) {
-      this.log('warn', 'Could not save prompt history: ' + (e as Error).message);
+    // Save prompt order for library sorting
+    // Skip for recovery queues — they'd overwrite the original queue's correct indices
+    const isRecovery = queue.name.includes('(Recovery)');
+    if (!isRecovery) {
+      try {
+        await savePromptHistory({
+          queueId: queue.id,
+          queueName: queue.name,
+          timestamp: Date.now(),
+          prompts: queue.prompts.map((p, i) => ({ index: i, text: p.text })),
+        });
+        this.log('info', `Saved prompt order (${queue.prompts.length} prompts) for library sorting`);
+      } catch (e) {
+        this.log('warn', 'Could not save prompt history: ' + (e as Error).message);
+      }
     }
 
     // â”€â”€ Apply settings once at queue start (mode, ratio, generations, model) â”€â”€
