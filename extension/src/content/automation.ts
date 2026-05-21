@@ -266,6 +266,48 @@ export class AutomationEngine {
       }
     }
 
+    // ── Final Reconciliation: cross-check "failed" prompts against completed tiles ──
+    // Sometimes tiles show "cancelled" during scan but actually completed.
+    // One last sweep: check all completed tiles on the page for prompt text matches.
+    if (!this.stopped && this.mode !== 'lite') {
+      const failedPromptEntries = this.queue.prompts
+        .map((p, i) => ({ prompt: p, idx: i }))
+        .filter(item => item.prompt.status === 'failed');
+
+      if (failedPromptEntries.length > 0) {
+        this.log('info', `Final reconciliation: checking ${failedPromptEntries.length} "failed" prompt(s) against completed tiles on page...`);
+
+        // Collect text from all completed tiles
+        const allCards = findAssetCards().filter(el => isVisible(el));
+        const completedTexts = allCards
+          .filter(el => getTileState(el) === 'completed')
+          .map(el => (el.textContent || '').toLowerCase());
+
+        // Also grab full page text as fallback (tile details panel, etc.)
+        const pageText = document.body.innerText.toLowerCase();
+
+        let reconciled = 0;
+        for (const { prompt: p, idx } of failedPromptEntries) {
+          const searchText = p.text.trim().toLowerCase().slice(0, 40);
+          if (searchText.length < 3) continue; // skip tiny prompts to avoid false positives
+
+          const foundInTile = completedTexts.some(t => t.includes(searchText));
+          const foundInPage = pageText.includes(searchText);
+
+          if (foundInTile || foundInPage) {
+            p.status = 'done';
+            p.error = undefined;
+            reconciled++;
+            this.log('info', `Reconciled: prompt #${idx + 1} "${searchText.slice(0, 30)}..." found in completed tile — marking as done`);
+          }
+        }
+
+        if (reconciled > 0) {
+          this.log('info', `Reconciliation recovered ${reconciled} prompt(s) that were incorrectly marked as failed.`);
+        }
+      }
+    }
+
     // ── Re-prompt: Ask user to fix remaining failures (batch) ──
     if (!this.stopped && this.mode !== 'lite') {
       const stillFailed = this.queue.prompts
