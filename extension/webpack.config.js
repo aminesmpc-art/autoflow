@@ -25,7 +25,13 @@ module.exports = {
       },
       {
         test: /\.css$/,
-        use: [MiniCssExtractPlugin.loader, 'css-loader'],
+        use: [
+          MiniCssExtractPlugin.loader,
+          {
+            loader: 'css-loader',
+            options: { sourceMap: process.env.NODE_ENV !== 'production' },
+          },
+        ],
       },
     ],
   },
@@ -39,5 +45,5 @@ module.exports = {
       ],
     }),
   ],
-  devtool: 'cheap-module-source-map',
+  devtool: process.env.NODE_ENV === 'production' ? false : 'cheap-module-source-map',
 };
