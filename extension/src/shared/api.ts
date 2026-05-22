@@ -211,11 +211,11 @@ export async function getDailyUsage(): Promise<DailyUsageResponse | null> {
       lite_limit: 999,  // Lite is unlimited for all users
       lite_remaining: 999,
       flow_used: data.flow_runs_today ?? 0,
-      flow_limit: data.is_pro_active ? 999 : (data.flow_daily_limit ?? 6),
-      flow_remaining: data.is_pro_active ? 999 : (data.flow_remaining_today ?? 6),
-      full_monthly_used: data.full_runs_this_month ?? 0,
-      full_monthly_limit: data.is_pro_active ? 999 : (data.full_monthly_limit ?? 2),
-      full_monthly_remaining: data.is_pro_active ? 999 : (data.full_remaining_this_month ?? 2),
+      flow_limit: data.is_pro_active ? 999 : (data.flow_daily_limit ?? 5),
+      flow_remaining: data.is_pro_active ? 999 : (data.flow_remaining_today ?? 5),
+      full_monthly_used: data.full_runs_today ?? data.full_runs_this_month ?? 0,
+      full_monthly_limit: data.is_pro_active ? 999 : (data.full_daily_limit ?? 1),
+      full_monthly_remaining: data.is_pro_active ? 999 : (data.full_remaining_today_runs ?? data.full_remaining_this_month ?? 1),
     };
   } catch {
     return null;

@@ -3946,13 +3946,13 @@ async function updateUsageDisplay() {
   updateBar('flow', usage.flow_used, usage.flow_limit, usage.flow_remaining, usage.is_pro);
   updateBar('fullrun', usage.full_monthly_used, usage.full_monthly_limit, usage.full_monthly_remaining, usage.is_pro);
 
-  // Fix hint text for monthly Full mode
+  // Fix hint text for daily Full mode
   const fullrunHint = $(`#account-fullrun-usage-hint`) as HTMLElement;
   if (fullrunHint && !usage.is_pro) {
     if (usage.full_monthly_remaining <= 0) {
       fullrunHint.textContent = 'Limit reached!';
     } else {
-      fullrunHint.textContent = `${usage.full_monthly_remaining} left this month`;
+      fullrunHint.textContent = `${usage.full_monthly_remaining} remaining today`;
     }
   }
 }
