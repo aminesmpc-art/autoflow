@@ -3208,6 +3208,9 @@ function initMessageListener() {
       case 'PROMPT_STATUS_UPDATE':
         handlePromptStatusUpdate(msg.payload);
         break;
+      case 'QUEUE_PHASE_UPDATE':
+        handlePhaseUpdate(msg.payload);
+        break;
       case 'MANUAL_INTERVENTION_NEEDED':
         handleManualIntervention(msg.payload);
         break;
@@ -3328,6 +3331,23 @@ function handleQueueStatusUpdate(queue: QueueObject) {
   updateMonitorSteps(queue);
 
 
+}
+
+/** Handle phase updates from the automation engine */
+function handlePhaseUpdate(data: { phase: string; detail: string }) {
+  const statusIcon = document.querySelector('#monitor-status-msg .af-status-icon');
+  const statusText = document.getElementById('monitor-status-text');
+  if (!statusIcon || !statusText) return;
+
+  const phaseIcons: Record<string, string> = {
+    scanning: '🔍',
+    retrying: '🔄',
+    reloading: '🔃',
+    checking: '✔️',
+  };
+
+  statusIcon.textContent = phaseIcons[data.phase] || '⏳';
+  statusText.textContent = data.detail || data.phase;
 }
 
 // Track which prompts have already been counted for usage to prevent double-counting.

@@ -219,6 +219,7 @@ export type MessageType =
   | 'SKIP_CURRENT'
   | 'RETRY_FAILED'
   | 'QUEUE_STATUS_UPDATE'
+  | 'QUEUE_PHASE_UPDATE'
   | 'PROMPT_STATUS_UPDATE'
   | 'LOG'
   | 'DOWNLOAD_FILE'

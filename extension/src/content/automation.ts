@@ -208,6 +208,7 @@ export class AutomationEngine {
     // Post-queue: wait for all generations to settle and detect failures
     // Lite mode skips this — it only submits prompts, nothing else
     if (!this.stopped && this.mode !== 'lite') {
+      this.sendPhaseUpdate('scanning', 'Waiting for all videos to finish...');
       this.log('info', 'Queue complete. Ensuring we are on the main grid before final scan...');
       await this.ensurePageReady();
       await this.postQueueScan();
@@ -224,6 +225,7 @@ export class AutomationEngine {
           break;
         }
 
+        this.sendPhaseUpdate('retrying', `Auto-retry round ${round}/${MAX_RETRY_ROUNDS} — ${failedNow} to fix`);
         this.log('info', `Auto-retry round ${round}/${MAX_RETRY_ROUNDS}: ${failedNow} failed prompt(s), retrying on page...`);
 
         const retryResult = await this.retryFailedOnPage();
@@ -235,6 +237,7 @@ export class AutomationEngine {
           break;
         }
 
+        this.sendPhaseUpdate('retrying', `Retried ${retryResult.retried} — waiting for results...`);
         this.log('info', `Auto-retry round ${round}: clicked retry on ${retryResult.retried} tile(s). Waiting for them to finish...`);
         await this.postQueueScan();
         if (this.stopped) break;
@@ -254,6 +257,7 @@ export class AutomationEngine {
       && failedAfterRetries > 0;
 
     if (shouldReloadForRecovery) {
+      this.sendPhaseUpdate('reloading', 'Reloading page to recover results — don\'t touch anything!');
       this.log('info', `${failedAfterRetries} failed prompt(s) remain after retries. Triggering recovery reload...`);
       this.log('info', '"Cancelled" errors are often fake — reloading page to recover real results.');
 
@@ -276,6 +280,7 @@ export class AutomationEngine {
     // Sometimes tiles show "cancelled" during scan but actually completed.
     // One last sweep: check all completed tiles on the page for prompt text matches.
     if (!this.stopped && this.mode !== 'lite') {
+      this.sendPhaseUpdate('checking', 'Checking all results one last time...');
       const failedPromptEntries = this.queue.prompts
         .map((p, i) => ({ prompt: p, idx: i }))
         .filter(item => item.prompt.status === 'failed');
@@ -3191,6 +3196,18 @@ private async detectAndReportFailures(): Promise<void> {
         error,
         outputFiles,
         attempts: this.queue?.prompts[idx]?.attempts,
+      },
+    }).catch(() => { });
+  }
+
+  /** Send a phase update to the sidepanel so the monitor can show what's happening */
+  private sendPhaseUpdate(phase: string, detail?: string): void {
+    chrome.runtime.sendMessage({
+      type: 'QUEUE_PHASE_UPDATE',
+      payload: {
+        queueId: this.queue?.id,
+        phase,
+        detail: detail || '',
       },
     }).catch(() => { });
   }

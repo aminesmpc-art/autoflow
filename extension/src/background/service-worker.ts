@@ -253,6 +253,11 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
     case 'PROMPT_STATUS_UPDATE':
       return handlePromptStatusUpdate(msg.payload);
 
+    case 'QUEUE_PHASE_UPDATE':
+      // Forward phase updates directly to sidepanel
+      broadcastToExtension({ type: 'QUEUE_PHASE_UPDATE', payload: msg.payload });
+      return;
+
     case 'REACT_TRIGGER': {
       if (!sender.tab?.id) return { error: 'No tab ID' };
       try {
