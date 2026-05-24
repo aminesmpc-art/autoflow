@@ -10,6 +10,78 @@
   <link rel="stylesheet" href="sidepanel.css" />
 </head>
 <body>
+  <!-- ═══════════════════ RUNNING DASHBOARD (full takeover) ═══════════════════ -->
+  <div id="af-dashboard" class="af-dashboard" style="display:none;">
+    <!-- Dashboard Header -->
+    <div class="af-dash-header">
+      <button id="af-dash-back" class="af-dash-back" title="Back to editor">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <span id="af-dash-queue-name" class="af-dash-queue-name">Queue</span>
+      <span id="af-dash-mode-badge" class="af-dash-mode-badge">⚡ Flow</span>
+    </div>
+
+    <!-- Progress Section -->
+    <div class="af-dash-progress-section">
+      <div class="af-dash-progress-ring-wrap">
+        <svg class="af-dash-progress-ring" viewBox="0 0 120 120">
+          <defs>
+            <linearGradient id="dashGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#818cf8"/>
+              <stop offset="100%" style="stop-color:#34d399"/>
+            </linearGradient>
+          </defs>
+          <circle class="af-dash-progress-bg" cx="60" cy="60" r="52" />
+          <circle id="af-dash-progress-circle" class="af-dash-progress-fill" cx="60" cy="60" r="52" />
+        </svg>
+        <div class="af-dash-progress-text">
+          <span id="af-dash-percent" class="af-dash-percent">0%</span>
+        </div>
+      </div>
+      <div class="af-dash-progress-info">
+        <span id="af-dash-counts" class="af-dash-counts">0 of 0 prompts</span>
+        <span id="af-dash-eta" class="af-dash-eta"></span>
+      </div>
+    </div>
+
+    <!-- Prompt Status List -->
+    <div class="af-dash-prompts-section">
+      <h4 class="af-dash-prompts-title">Prompts</h4>
+      <div id="af-dash-prompt-list" class="af-dash-prompt-list">
+        <!-- Dynamically populated -->
+      </div>
+    </div>
+
+    <!-- Controls (only visible while running) -->
+    <div id="af-dash-controls" class="af-dash-controls">
+      <button id="af-dash-pause" class="af-dash-btn af-dash-btn-secondary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        Pause
+      </button>
+      <button id="af-dash-stop" class="af-dash-btn af-dash-btn-danger">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+        Stop
+      </button>
+    </div>
+
+    <!-- Completion Screen (hidden until done) -->
+    <div id="af-dash-complete" class="af-dash-complete" style="display:none;">
+      <div id="af-dash-complete-icon" class="af-dash-complete-icon">🎉</div>
+      <h3 id="af-dash-complete-title" class="af-dash-complete-title">All Done!</h3>
+      <div id="af-dash-complete-summary" class="af-dash-complete-summary"></div>
+      <div class="af-dash-complete-actions">
+        <button id="af-dash-download-all" class="af-dash-btn af-dash-btn-primary" style="display:none;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download All
+        </button>
+        <button id="af-dash-new-queue" class="af-dash-btn af-dash-btn-secondary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Create New Queue
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══════════════════ FIRST-RUN DISCLOSURE ═══════════════════ -->
   <div id="af-first-run" class="af-first-run" style="display:none;">
     <div class="af-first-run-content af-card">

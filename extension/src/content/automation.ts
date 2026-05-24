@@ -241,30 +241,34 @@ export class AutomationEngine {
       }
     }
 
-    // ── Recovery Reload: Only when retry buttons are missing ──
-    // "Cancelled" tiles often have no retry button. Reloading clears fake
-    // failures and reveals the actual completed videos.
+    // ── Recovery Reload: When failures persist after retries ──
+    // "Cancelled" tiles often have no retry button, or retries don't help because
+    // the "cancelled" state is a fake UI glitch. Reloading clears fake failures
+    // and reveals the actual completed videos.
     // GUARD: Don't trigger recovery if this is already a recovery queue (prevent infinite loop)
     const isRecoveryQueue = this.queue.name.includes('(Recovery)');
-    if (!this.stopped && this.mode !== 'lite' && noRetryButtonsFound && !isRecoveryQueue) {
-      const failedAfterRetries = this.queue.prompts.filter(p => p.status === 'failed').length;
-      if (failedAfterRetries > 0) {
-        this.log('info', `${failedAfterRetries} failed prompt(s) with no retry button. Triggering recovery reload...`);
-        this.log('info', '"Cancelled" errors are often fake — reloading page to recover real results.');
+    const failedAfterRetries = this.stopped ? 0 : this.queue.prompts.filter(p => p.status === 'failed').length;
+    const shouldReloadForRecovery = !this.stopped
+      && this.mode !== 'lite'
+      && !isRecoveryQueue
+      && failedAfterRetries > 0;
 
-        try {
-          await saveRunningQueue(this.queue, this.queue.prompts.length, true);
-        } catch { /* ignore */ }
+    if (shouldReloadForRecovery) {
+      this.log('info', `${failedAfterRetries} failed prompt(s) remain after retries. Triggering recovery reload...`);
+      this.log('info', '"Cancelled" errors are often fake — reloading page to recover real results.');
 
-        globalRunLock = false;
-        this.sendRunLockChanged(false);
-        window.location.reload();
-        return; // Script context dies here
-      }
-    } else if (isRecoveryQueue && noRetryButtonsFound) {
+      try {
+        await saveRunningQueue(this.queue, this.queue.prompts.length, true);
+      } catch { /* ignore */ }
+
+      globalRunLock = false;
+      this.sendRunLockChanged(false);
+      window.location.reload();
+      return; // Script context dies here
+    } else if (isRecoveryQueue) {
       const stillFailing = this.queue.prompts.filter(p => p.status === 'failed').length;
       if (stillFailing > 0) {
-        this.log('warn', `Recovery queue still has ${stillFailing} failure(s) — these may be content-policy blocks. Skipping further recovery.`);
+        this.log('warn', `Recovery queue still has ${stillFailing} failure(s) — these may be real failures (content-policy blocks or server errors). Skipping further recovery.`);
       }
     }
 
@@ -310,49 +314,11 @@ export class AutomationEngine {
       }
     }
 
-    // ── Re-prompt: Ask user to fix remaining failures (batch) ──
+    // ── Log remaining failures (no user re-prompt — just retry and move on) ──
     if (!this.stopped && this.mode !== 'lite') {
-      const stillFailed = this.queue.prompts
-        .map((p, i) => ({ prompt: p, idx: i }))
-        .filter(item => item.prompt.status === 'failed');
-
-      if (stillFailed.length > 0) {
-        this.log('info', `${stillFailed.length} prompt(s) still failed. Showing batch re-prompt panel...`);
-
-        const batchResult = await this.promptUserForBatchFix(
-          stillFailed.map(({ prompt: p, idx }) => ({
-            promptIndex: idx,
-            text: p.text,
-            error: p.error || 'Generation failed after retries',
-            hasImages: !!(p.images && p.images.length > 0),
-          }))
-        );
-
-        if (this.stopped) { /* user stopped during re-prompt */ }
-        else if (batchResult.length === 0) {
-          this.log('info', 'User skipped all failed prompts.');
-        } else {
-          // Process each response
-          for (const edit of batchResult) {
-            if (this.stopped) break;
-            const prompt = this.queue.prompts[edit.promptIndex];
-            if (!prompt) continue;
-
-            if (edit.skip) {
-              this.log('info', `Prompt #${edit.promptIndex + 1} skipped by user.`);
-            } else {
-              prompt.text = edit.text;
-              prompt.attempts = 0;
-              prompt.status = 'running' as any;
-              prompt.error = undefined;
-              prompt.tileIds = [];
-
-              this.log('info', `User edited prompt #${edit.promptIndex + 1}. Re-processing...`);
-              await this.ensurePageReady(prompt);
-              await this.processPrompt(prompt, edit.promptIndex);
-            }
-          }
-        }
+      const stillFailed = this.queue.prompts.filter(p => p.status === 'failed').length;
+      if (stillFailed > 0) {
+        this.log('info', `${stillFailed} prompt(s) still failed after all retries. Moving on.`);
       }
     }
 

@@ -168,6 +168,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initLibraryTab();
   initAccountTab();
   initMessageListener();
+  initDashboardControls();
   await loadSettings();
   await initLanguage(); // Apply saved UI language (must be after DOM + settings are loaded)
   // Listen for language changes
@@ -2390,6 +2391,9 @@ async function showRunMonitor(queueId: string) {
 
   // Clear logs
   $('#monitor-logs').innerHTML = '';
+
+  // Show the new dashboard overlay
+  showDashboard(queue);
 }
 
 async function loadActiveQueueState() {
@@ -2404,6 +2408,270 @@ async function loadActiveQueueState() {
       showRunMonitor(activeId);
     }
   }
+}
+
+// ================================================================
+// RUNNING DASHBOARD — Full-page takeover overlay
+// ================================================================
+
+// Track timing for ETA calculation
+let _dashStartTime = 0;
+let _dashLastQueue: any = null;
+
+const CIRCUMFERENCE = 2 * Math.PI * 52; // 326.73 — matches CSS stroke-dasharray
+
+function showDashboard(queue: QueueObject) {
+  const dash = document.getElementById('af-dashboard');
+  if (!dash) return;
+  _dashStartTime = Date.now();
+  _dashLastQueue = queue;
+
+  dash.style.display = 'flex';
+
+  // Set header info
+  const nameEl = document.getElementById('af-dash-queue-name');
+  if (nameEl) nameEl.textContent = queue.name;
+
+  // Mode badge
+  const modeBadge = document.getElementById('af-dash-mode-badge');
+  if (modeBadge) {
+    const mode = (queue.settings as any)?.automationMode || 'flow';
+    const modeLabels: Record<string, string> = {
+      flow: '⚡ Flow', full: '🚀 Full', lite: '🎯 Lite',
+    };
+    modeBadge.textContent = modeLabels[mode] || '⚡ Flow';
+  }
+
+  // Show controls, hide completion
+  const controls = document.getElementById('af-dash-controls');
+  const complete = document.getElementById('af-dash-complete');
+  if (controls) controls.style.display = 'flex';
+  if (complete) complete.style.display = 'none';
+
+  // Reset progress
+  updateDashboard(queue);
+}
+
+function updateDashboard(queue: QueueObject) {
+  const dash = document.getElementById('af-dashboard');
+  if (!dash || dash.style.display === 'none') return;
+  _dashLastQueue = queue;
+
+  const total = queue.prompts.length;
+  const done = queue.prompts.filter(p => p.status === 'done').length;
+  const failed = queue.prompts.filter(p => p.status === 'failed').length;
+  const finished = done + failed;
+  const pct = total > 0 ? Math.round((finished / total) * 100) : 0;
+
+  // Update progress ring
+  const circle = document.getElementById('af-dash-progress-circle') as SVGCircleElement | null;
+  if (circle) {
+    const offset = CIRCUMFERENCE - (pct / 100) * CIRCUMFERENCE;
+    circle.style.strokeDashoffset = String(offset);
+    // Change stroke color for completion
+    if (pct >= 100) {
+      circle.style.stroke = failed > 0 ? '#f59e0b' : '#34d399';
+    }
+  }
+
+  // Update percentage text
+  const pctEl = document.getElementById('af-dash-percent');
+  if (pctEl) pctEl.textContent = `${pct}%`;
+
+  // Update counts
+  const countsEl = document.getElementById('af-dash-counts');
+  if (countsEl) countsEl.textContent = `${finished} of ${total} prompts`;
+
+  // ETA
+  const etaEl = document.getElementById('af-dash-eta');
+  if (etaEl && finished > 0 && finished < total) {
+    const elapsed = (Date.now() - _dashStartTime) / 1000;
+    const perPrompt = elapsed / finished;
+    const remaining = (total - finished) * perPrompt;
+    if (remaining < 60) {
+      etaEl.textContent = `⏱️ ~${Math.ceil(remaining)}s remaining`;
+    } else {
+      etaEl.textContent = `⏱️ ~${Math.ceil(remaining / 60)} min remaining`;
+    }
+  } else if (etaEl) {
+    etaEl.textContent = finished >= total ? '' : '⏱️ Calculating...';
+  }
+
+  // Update prompt list
+  const listEl = document.getElementById('af-dash-prompt-list');
+  if (listEl) {
+    listEl.innerHTML = queue.prompts.map((p, i) => {
+      let statusIcon = '○'; // waiting
+      let statusClass = '';
+      let meta = 'In queue — coming up next';
+
+      if (p.status === 'done') {
+        statusIcon = '✅';
+        statusClass = 'af-dash-prompt--done';
+        meta = '🎬 Video ready';
+      } else if (p.status === 'failed') {
+        statusIcon = '❌';
+        statusClass = 'af-dash-prompt--failed';
+        // Make error messages human-friendly
+        const err = (p.error || '').toLowerCase();
+        if (err.includes('cancelled') || err.includes('canceled')) {
+          meta = '⚠️ Google cancelled this — credits refunded';
+        } else if (err.includes('rate') || err.includes('too quickly') || err.includes('quota')) {
+          meta = '⚠️ Rate limited — too many requests';
+        } else if (err.includes('safety') || err.includes('blocked') || err.includes('policy')) {
+          meta = '⚠️ Blocked by safety filter';
+        } else if (err.includes('timeout') || err.includes('timed out')) {
+          meta = '⚠️ Took too long — timed out';
+        } else if (err.includes('retry') || err.includes('tile')) {
+          meta = '⚠️ Generation failed — could not recover';
+        } else if (p.error) {
+          // Shorten the raw error for display
+          meta = `⚠️ ${p.error.substring(0, 40)}`;
+        } else {
+          meta = '⚠️ Something went wrong';
+        }
+      } else if (p.status === 'running') {
+        statusIcon = '<span class="af-dash-spinner">⏳</span>';
+        statusClass = 'af-dash-prompt--running';
+        meta = 'Creating your video...';
+      } else if (p.status === 'queued') {
+        statusIcon = '○';
+        meta = 'In queue';
+      }
+
+      const promptText = p.text.length > 60 ? p.text.substring(0, 60) + '...' : p.text;
+      const metaClass = p.status === 'failed' ? 'af-dash-prompt-meta af-dash-meta-fail' : 'af-dash-prompt-meta';
+
+      return `
+        <div class="af-dash-prompt ${statusClass}">
+          <span class="af-dash-prompt-status">${statusIcon}</span>
+          <div class="af-dash-prompt-content">
+            <div class="af-dash-prompt-text">${escapeHtml(promptText)}</div>
+            <div class="${metaClass}">${meta}</div>
+          </div>
+          <span class="af-dash-prompt-num">#${i + 1}</span>
+        </div>
+      `;
+    }).join('');
+
+    // Auto-scroll to running prompt
+    const runningEl = listEl.querySelector('.af-dash-prompt--running');
+    if (runningEl) {
+      runningEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  // Handle paused state
+  const pauseBtn = document.getElementById('af-dash-pause');
+  if (pauseBtn) {
+    if (queue.status === 'paused') {
+      pauseBtn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Resume
+      `;
+      pauseBtn.className = 'af-dash-btn af-dash-btn-secondary af-dash-btn--resume';
+    } else {
+      pauseBtn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        Pause
+      `;
+      pauseBtn.className = 'af-dash-btn af-dash-btn-secondary';
+    }
+  }
+
+  // Handle completion
+  if (queue.status === 'completed' || queue.status === 'stopped') {
+    showDashboardComplete(queue);
+  }
+}
+
+function showDashboardComplete(queue: QueueObject) {
+  const controls = document.getElementById('af-dash-controls');
+  const complete = document.getElementById('af-dash-complete');
+  if (controls) controls.style.display = 'none';
+  if (complete) complete.style.display = 'flex';
+
+  const done = queue.prompts.filter(p => p.status === 'done').length;
+  const failed = queue.prompts.filter(p => p.status === 'failed').length;
+  const total = queue.prompts.length;
+  const isComplete = queue.status === 'completed';
+
+  // Icon + title
+  const iconEl = document.getElementById('af-dash-complete-icon');
+  const titleEl = document.getElementById('af-dash-complete-title');
+  if (isComplete && failed === 0) {
+    if (iconEl) iconEl.textContent = '🎉';
+    if (titleEl) titleEl.textContent = done === 1 ? 'Your video is ready!' : 'All videos are ready!';
+  } else if (isComplete && failed > 0 && done > 0) {
+    if (iconEl) iconEl.textContent = '⚠️';
+    if (titleEl) titleEl.textContent = 'Almost there!';
+  } else if (isComplete && done === 0) {
+    if (iconEl) iconEl.textContent = '😔';
+    if (titleEl) titleEl.textContent = 'No videos generated';
+  } else {
+    if (iconEl) iconEl.textContent = '⏹️';
+    if (titleEl) titleEl.textContent = 'Queue stopped';
+  }
+
+  // Summary — richer info
+  const summaryEl = document.getElementById('af-dash-complete-summary');
+  if (summaryEl) {
+    const parts: string[] = [];
+    if (done > 0) parts.push(`✅ ${done} video${done > 1 ? 's' : ''} generated successfully`);
+    if (failed > 0) parts.push(`❌ ${failed} failed — you can retry from the Queues tab`);
+    if (done === 0 && failed === 0) parts.push('No prompts were processed');
+    // Add time elapsed
+    if (_dashStartTime > 0) {
+      const elapsed = Math.round((Date.now() - _dashStartTime) / 1000);
+      if (elapsed < 60) {
+        parts.push(`⏱️ Completed in ${elapsed}s`);
+      } else {
+        parts.push(`⏱️ Completed in ${Math.round(elapsed / 60)} min`);
+      }
+    }
+    summaryEl.innerHTML = parts.join('<br>');
+  }
+
+  // Show download button if there are successes and mode is 'full'
+  const downloadBtn = document.getElementById('af-dash-download-all');
+  if (downloadBtn) {
+    const mode = (queue.settings as any)?.automationMode || 'flow';
+    downloadBtn.style.display = done > 0 && mode === 'full' ? 'flex' : 'none';
+  }
+}
+
+function hideDashboard() {
+  const dash = document.getElementById('af-dashboard');
+  if (dash) dash.style.display = 'none';
+  _dashLastQueue = null;
+}
+
+function initDashboardControls() {
+  // Back button — goes back to editor (dashboard stays accessible via monitor)
+  document.getElementById('af-dash-back')?.addEventListener('click', () => {
+    hideDashboard();
+  });
+
+  // Pause/Resume — toggles based on current state
+  document.getElementById('af-dash-pause')?.addEventListener('click', () => {
+    if (_dashLastQueue?.status === 'paused') {
+      sendToBackground({ type: 'RESUME_QUEUE' });
+    } else {
+      sendToBackground({ type: 'PAUSE_QUEUE' });
+    }
+  });
+
+  // Stop
+  document.getElementById('af-dash-stop')?.addEventListener('click', () => {
+    sendToBackground({ type: 'STOP_QUEUE' });
+  });
+
+  // New Queue — hide dashboard and switch to Create tab
+  document.getElementById('af-dash-new-queue')?.addEventListener('click', () => {
+    hideDashboard();
+    const createTab = document.querySelector('[data-tab="video"]') as HTMLElement;
+    if (createTab) createTab.click();
+  });
 }
 
 // ================================================================
@@ -3205,6 +3473,9 @@ function handleQueueStatusUpdate(queue: QueueObject) {
 
   // Update prompt statuses in prompt list
   updatePromptStatuses(queue);
+
+  // Update running dashboard overlay
+  updateDashboard(queue);
 }
 
 // Track which prompts have already been counted for usage to prevent double-counting.
@@ -3236,6 +3507,7 @@ function handlePromptStatusUpdate(data: { queue: QueueObject; promptIndex: numbe
   }
 
   updatePromptStatuses(data.queue);
+  updateDashboard(data.queue);
   console.log(`[AutoFlow SP] Prompt #${data.promptIndex + 1} → ${prompt?.status}, done ${done}/${data.queue.prompts.length}`);
 }
 
