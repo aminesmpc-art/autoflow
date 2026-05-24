@@ -2384,14 +2384,131 @@ async function showRunMonitor(queueId: string) {
   if (!queue) return;
 
   $('#run-monitor').style.display = 'block';
-  $('#monitor-queue-name').textContent = queue.name;
   $('#monitor-progress').textContent = `0 / ${queue.prompts.length}`;
   ($('#btn-pause') as HTMLButtonElement).disabled = false;
   ($('#btn-resume') as HTMLButtonElement).disabled = true;
+  _monitorStartTime = Date.now();
 
-  // Clear logs
+  // Init progress bar
+  const fill = document.getElementById('monitor-progress-fill');
+  if (fill) fill.style.width = '0%';
+  const pct = document.getElementById('monitor-percent');
+  if (pct) pct.textContent = '0%';
+
+  // Mode badge
+  const badge = document.getElementById('monitor-mode-badge');
+  if (badge) {
+    const mode = (queue.settings as any)?.automationMode || 'flow';
+    const labels: Record<string, string> = { flow: '⚡ Flow', full: '🚀 Full', lite: '🎯 Lite' };
+    badge.textContent = labels[mode] || '⚡ Flow';
+  }
+
+  // Update steps
+  updateMonitorSteps(queue);
+
+  // Clear logs (hidden)
   $('#monitor-logs').innerHTML = '';
+}
 
+/** Track when monitor started for ETA */
+let _monitorStartTime = 0;
+
+/** Update progress bar, scores, ETA, status, and mini prompt list */
+function updateMonitorSteps(queue: QueueObject) {
+  if (_monitorStartTime === 0) _monitorStartTime = Date.now();
+
+  const total = queue.prompts.length;
+  const done = queue.prompts.filter(p => p.status === 'done').length;
+  const failed = queue.prompts.filter(p => p.status === 'failed').length;
+  const finished = done + failed;
+  const pct = total > 0 ? Math.round((finished / total) * 100) : 0;
+
+  // Progress bar
+  const fill = document.getElementById('monitor-progress-fill');
+  if (fill) fill.style.width = `${pct}%`;
+  const pctEl = document.getElementById('monitor-percent');
+  if (pctEl) pctEl.textContent = `${pct}%`;
+
+  // Progress text
+  const progressEl = document.getElementById('monitor-progress');
+  if (progressEl) progressEl.textContent = `${finished} / ${total}`;
+
+  // Score counters
+  const doneEl = document.getElementById('monitor-done-count');
+  if (doneEl) doneEl.textContent = String(done);
+  const failedEl = document.getElementById('monitor-failed-count');
+  if (failedEl) failedEl.textContent = String(failed);
+
+  // ETA
+  const etaEl = document.getElementById('monitor-eta');
+  if (etaEl && finished > 0 && finished < total) {
+    const elapsed = (Date.now() - _monitorStartTime) / 1000;
+    const perPrompt = elapsed / finished;
+    const remaining = (total - finished) * perPrompt;
+    if (remaining < 60) {
+      etaEl.textContent = `⏱️ ~${Math.ceil(remaining)}s left`;
+    } else {
+      etaEl.textContent = `⏱️ ~${Math.ceil(remaining / 60)} min left`;
+    }
+  } else if (etaEl) {
+    if (finished >= total && total > 0) {
+      const elapsed = Math.round((Date.now() - _monitorStartTime) / 1000);
+      etaEl.textContent = elapsed < 60 ? `⏱️ ${elapsed}s total` : `⏱️ ${Math.round(elapsed / 60)} min total`;
+    } else {
+      etaEl.textContent = '';
+    }
+  }
+
+  // Status message
+  const statusIcon = document.querySelector('#monitor-status-msg .af-status-icon');
+  const statusText = document.getElementById('monitor-status-text');
+  if (statusIcon && statusText) {
+    const currentIdx = queue.prompts.findIndex(p => p.status === 'running');
+    if (queue.status === 'completed' && failed === 0) {
+      statusIcon.textContent = '🎉';
+      statusText.textContent = done === 1 ? 'Your video is ready!' : `All ${done} videos are ready!`;
+    } else if (queue.status === 'completed' && failed > 0) {
+      statusIcon.textContent = '⚠️';
+      statusText.textContent = `${done} done, ${failed} failed — check results`;
+    } else if (queue.status === 'stopped') {
+      statusIcon.textContent = '⏹️';
+      statusText.textContent = 'Queue stopped';
+    } else if (queue.status === 'paused') {
+      statusIcon.textContent = '⏸️';
+      statusText.textContent = 'Paused — click Resume to continue';
+    } else if (currentIdx >= 0) {
+      statusIcon.textContent = '⏳';
+      const text = queue.prompts[currentIdx].text;
+      const short = text.length > 45 ? text.substring(0, 45) + '...' : text;
+      statusText.textContent = `Creating #${currentIdx + 1}: ${short}`;
+    } else {
+      statusIcon.textContent = '⏳';
+      statusText.textContent = 'Starting...';
+    }
+  }
+
+  // Mini prompt list
+  const listEl = document.getElementById('monitor-mini-list');
+  if (listEl) {
+    listEl.innerHTML = queue.prompts.map((p, i) => {
+      let icon = '○';
+      let cls = '';
+      if (p.status === 'done') { icon = '✅'; cls = 'af-mini-prompt--done'; }
+      else if (p.status === 'failed') { icon = '❌'; cls = 'af-mini-prompt--failed'; }
+      else if (p.status === 'running') { icon = '<span class="af-mini-spinner">⏳</span>'; cls = 'af-mini-prompt--running'; }
+
+      const text = p.text.length > 40 ? p.text.substring(0, 40) + '...' : p.text;
+      return `<div class="af-mini-prompt ${cls}">
+        <span class="af-mini-icon">${icon}</span>
+        <span class="af-mini-num">#${i + 1}</span>
+        <span class="af-mini-text">${escapeHtml(text)}</span>
+      </div>`;
+    }).join('');
+
+    // Auto-scroll to running prompt
+    const running = listEl.querySelector('.af-mini-prompt--running');
+    if (running) running.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
 }
 
 async function loadActiveQueueState() {
@@ -3208,6 +3325,7 @@ function handleQueueStatusUpdate(queue: QueueObject) {
 
   // Update prompt statuses in prompt list
   updatePromptStatuses(queue);
+  updateMonitorSteps(queue);
 
 
 }
@@ -3241,6 +3359,7 @@ function handlePromptStatusUpdate(data: { queue: QueueObject; promptIndex: numbe
   }
 
   updatePromptStatuses(data.queue);
+  updateMonitorSteps(data.queue);
 
   console.log(`[AutoFlow SP] Prompt #${data.promptIndex + 1} → ${prompt?.status}, done ${done}/${data.queue.prompts.length}`);
 }

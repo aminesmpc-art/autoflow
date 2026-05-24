@@ -4400,3 +4400,142 @@ button:focus-visible {
   font-size: 11px !important;
 }
 
+/* ── Progress Bar ── */
+.af-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 2px;
+}
+.af-progress-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.06);
+  overflow: hidden;
+}
+.af-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #6366f1, #34d399);
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.3);
+}
+.af-progress-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.25) 50%, transparent 100%);
+  animation: progressShimmer 1.8s ease-in-out infinite;
+}
+@keyframes progressShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.af-progress-percent {
+  font-size: 12px;
+  font-weight: 800;
+  color: #818cf8;
+  min-width: 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Mode Badge ── */
+.af-mode-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+  margin-left: auto;
+}
+
+/* ── Score Row ── */
+.af-monitor-score {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary, #94a3b8);
+}
+.af-score-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.af-score--done { color: #34d399; }
+.af-score--failed { color: #f87171; }
+.af-score-divider {
+  color: rgba(255,255,255,0.1);
+  font-size: 14px;
+}
+.af-score-eta {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted, #64748b);
+  font-weight: 500;
+}
+
+/* ── Status Message ── */
+.af-monitor-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.05);
+  border: 1px solid rgba(99, 102, 241, 0.1);
+  margin: 4px 0;
+}
+.af-status-icon { font-size: 14px; flex-shrink: 0; }
+#monitor-status-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary, #e2e8f0);
+}
+
+/* ── Mini Prompt List ── */
+.af-mini-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 6px 0;
+  max-height: 160px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.af-mini-prompt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  transition: background 0.2s;
+}
+.af-mini-prompt:hover { background: rgba(255,255,255,0.03); }
+.af-mini-prompt--running {
+  background: rgba(99, 102, 241, 0.06);
+  border-left: 2px solid #818cf8;
+}
+.af-mini-prompt--done { opacity: 0.6; }
+.af-mini-prompt--failed {
+  opacity: 0.7;
+  border-left: 2px solid #f87171;
+}
+.af-mini-icon { font-size: 11px; flex-shrink: 0; width: 16px; text-align: center; }
+.af-mini-num { font-size: 9px; font-weight: 700; color: var(--text-muted, #64748b); min-width: 16px; }
+.af-mini-text {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--text-secondary, #94a3b8); font-weight: 400;
+}
+.af-mini-prompt--running .af-mini-text { color: var(--text-primary, #e2e8f0); font-weight: 500; }
+@keyframes miniSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.af-mini-spinner { display: inline-block; animation: miniSpin 1.2s linear infinite; }
+

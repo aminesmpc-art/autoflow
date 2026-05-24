@@ -254,12 +254,38 @@
     <div class="af-section af-monitor af-card" id="run-monitor" style="display:none;">
       <h3 class="af-subtitle af-monitor-title">
         <span class="af-pulse-dot"></span>
-        <span data-i18n="monitor.title">Run Monitor</span>
+        <span data-i18n="monitor.title">Running</span>
+        <span id="monitor-mode-badge" class="af-mode-badge"></span>
       </h3>
-      <div class="af-monitor-info">
-        <span id="monitor-queue-name">—</span>
-        <span id="monitor-progress">0 / 0</span>
+
+      <!-- Progress Bar -->
+      <div class="af-progress-wrap">
+        <div class="af-progress-bar">
+          <div id="monitor-progress-fill" class="af-progress-fill" style="width:0%"></div>
+        </div>
+        <span id="monitor-percent" class="af-progress-percent">0%</span>
       </div>
+
+      <!-- Score Row: done / failed / total + ETA -->
+      <div class="af-monitor-score">
+        <span class="af-score-item af-score--done"><span id="monitor-done-count">0</span> ✅</span>
+        <span class="af-score-item af-score--failed"><span id="monitor-failed-count">0</span> ❌</span>
+        <span class="af-score-divider">·</span>
+        <span class="af-score-item" id="monitor-progress">0 / 0</span>
+        <span class="af-score-eta" id="monitor-eta"></span>
+      </div>
+
+      <!-- Status Message -->
+      <div class="af-monitor-status" id="monitor-status-msg">
+        <span class="af-status-icon">⏳</span>
+        <span id="monitor-status-text">Starting...</span>
+      </div>
+
+      <!-- Mini Prompt List -->
+      <div class="af-mini-prompts" id="monitor-mini-list">
+        <!-- Dynamically populated -->
+      </div>
+
       <div class="af-monitor-controls">
         <button id="btn-pause" class="af-btn af-btn-sm af-monitor-btn">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
@@ -273,16 +299,9 @@
           <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
           <span data-i18n="monitor.stop">Stop</span>
         </button>
-        <button id="btn-skip" class="af-btn af-btn-sm af-monitor-btn">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
-          <span data-i18n="monitor.skip">Skip</span>
-        </button>
-        <button id="btn-retry" class="af-btn af-btn-sm af-monitor-btn">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          <span data-i18n="monitor.retry">Retry</span>
-        </button>
       </div>
-      <div id="monitor-logs" class="af-logs"></div>
+      <!-- Hidden logs for dev console only -->
+      <div id="monitor-logs" class="af-logs" style="display:none;"></div>
     </div>
 
     <!-- Failed Generations Section -->
