@@ -591,6 +591,30 @@
       </p>
     </div>
 
+    <!-- ── Notifications ── -->
+    <div class="af-settings-group af-card">
+      <h3 class="af-section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span>Notifications</span>
+      </h3>
+
+      <div class="af-setting-row">
+        <label class="af-setting-label">Show notifications <span class="af-help-icon" title="Get a browser notification when your queue finishes or stops. Useful when you switch to another tab.">?</span></label>
+        <label class="af-toggle">
+          <input type="checkbox" id="setting-notifications" checked />
+          <span class="af-toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="af-setting-row" style="margin-bottom:0;">
+        <label class="af-setting-label">Notification sound <span class="af-help-icon" title="Play a sound when a notification appears.">?</span></label>
+        <label class="af-toggle">
+          <input type="checkbox" id="setting-notification-sound" checked />
+          <span class="af-toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
     <!-- ── Interface ── -->
     <div class="af-settings-group af-card">
       <h3 class="af-section-heading">
@@ -606,6 +630,35 @@
           <option value="French">Français</option>
           <option value="Spanish">Español</option>
         </select>
+      </div>
+
+      <p class="af-tip">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        AutoFlow supports Google Flow in: <strong>English, French, Spanish, Portuguese, German, Italian, Dutch, Turkish, Russian, Japanese, Korean, Chinese &amp; Arabic</strong>.
+      </p>
+    </div>
+
+    <!-- ── Notifications ── -->
+    <div class="af-settings-group af-card">
+      <h3 class="af-section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span>Notifications</span>
+      </h3>
+
+      <div class="af-setting-row">
+        <label class="af-setting-label">Queue alerts <span class="af-help-icon" title="Show a Chrome notification when a queue finishes or stops. Works even if the browser is in the background.">?</span></label>
+        <label class="af-toggle">
+          <input type="checkbox" id="setting-notifications" checked />
+          <span class="af-toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="af-setting-row" style="margin-bottom:0;">
+        <label class="af-setting-label">Sound alert <span class="af-help-icon" title="Play a short chime when a queue completes. Useful when you're working in another tab.">?</span></label>
+        <label class="af-toggle">
+          <input type="checkbox" id="setting-notification-sound" />
+          <span class="af-toggle-slider"></span>
+        </label>
       </div>
     </div>
 

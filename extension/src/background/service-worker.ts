@@ -16,6 +16,7 @@ import {
   appendLog,
   getQueueById,
   getImageBlob,
+  getSettings,
 } from '../shared/storage';
 
 // ================================================================
@@ -520,6 +521,10 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
       queueDownloadRename(msg.payload.filename);
       return { success: true };
 
+    case 'PLAY_NOTIFICATION_SOUND':
+      // Acknowledged — sound is played by the sidepanel, not the SW
+      return {};
+
     default:
       return { error: 'Unknown message type' };
   }
@@ -606,6 +611,8 @@ async function handleQueueStatusUpdate(payload: {
     // Stop keepalive when queue finishes
     if (payload.status === 'completed' || payload.status === 'stopped') {
       await stopKeepalive();
+      // Send notification
+      await sendQueueNotification(queue);
     }
   });
 }
@@ -833,6 +840,82 @@ function sleep(ms: number): Promise<void> {
 async function logEntry(level: 'info' | 'warn' | 'error', message: string) {
   await appendLog({ timestamp: Date.now(), level, message });
 }
+
+// ================================================================
+// QUEUE COMPLETION NOTIFICATIONS
+// ================================================================
+
+/**
+ * Show a Chrome notification when a queue finishes.
+ * Reads the user's notification preference from storage.
+ */
+async function sendQueueNotification(queue: QueueObject) {
+  try {
+    // Check user preference
+    const settings = await getSettings();
+    if (settings.showNotifications === false) return; // opt-out
+
+    const done = queue.prompts.filter(p => p.status === 'done').length;
+    const failed = queue.prompts.filter(p => p.status === 'failed').length;
+    const total = queue.prompts.length;
+    const isComplete = queue.status === 'completed';
+
+    const title = isComplete ? `\u2705 ${queue.name} Complete` : `\u26A0\uFE0F ${queue.name} Stopped`;
+    const message = isComplete
+      ? `${done}/${total} prompts succeeded${failed > 0 ? `, ${failed} failed` : ''}.`
+      : `Stopped at ${done}/${total} completed${failed > 0 ? `, ${failed} failed` : ''}.`;
+
+    const notifId = `af-queue-${queue.id}-${Date.now()}`;
+    chrome.notifications.create(notifId, {
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title,
+      message,
+      priority: 2,
+    });
+
+    // If sound is enabled, tell the sidepanel to play it
+    if (settings.notificationSound !== false) {
+      broadcastToExtension({ type: 'PLAY_NOTIFICATION_SOUND' as any, payload: { status: queue.status } });
+    }
+
+    console.log(`[AutoFlow] Notification sent: ${title} — ${message}`);
+  } catch (err) {
+    console.warn('[AutoFlow] Failed to send notification:', err);
+  }
+}
+
+// When user clicks a notification → focus the Flow tab and open sidepanel
+chrome.notifications.onClicked.addListener(async (notifId) => {
+  if (!notifId.startsWith('af-queue-')) return;
+
+  // Focus or open a Flow tab
+  const flowTabs = await chrome.tabs.query({
+    url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
+  });
+
+  let tabId: number | undefined;
+  if (flowTabs.length > 0 && flowTabs[0].id) {
+    tabId = flowTabs[0].id;
+    await chrome.tabs.update(tabId, { active: true });
+    if (flowTabs[0].windowId) {
+      await chrome.windows.update(flowTabs[0].windowId, { focused: true });
+    }
+  } else {
+    const tab = await chrome.tabs.create({ url: 'https://labs.google/flow' });
+    tabId = tab.id;
+  }
+
+  // Open sidepanel on that tab
+  if (tabId) {
+    try {
+      await chrome.sidePanel.open({ tabId });
+    } catch { /* sidepanel may already be open */ }
+  }
+
+  // Clear the notification
+  chrome.notifications.clear(notifId);
+});
 
 // ================================================================
 // DOWNLOAD RENAME INTERCEPTION

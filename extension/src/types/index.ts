@@ -115,6 +115,10 @@ export interface QueueSettings {
   // Interface
   language: string;                  // UI language (default 'English')
 
+  // Notifications
+  showNotifications: boolean;        // Chrome notification on queue complete (default true)
+  notificationSound: boolean;        // Play sound when queue completes (default false)
+
   // Legacy (kept for backward compat)
   autoDownload: boolean;
   waitBetweenPromptsSec: number;
@@ -254,7 +258,8 @@ export type MessageType =
   | 'QUEUE_RESUME_AVAILABLE'
   | 'RESUME_QUEUE_CONFIRMED'
   | 'DISCARD_INTERRUPTED_QUEUE'
-  | 'QUEUE_RECOVERY_RESULT';
+  | 'QUEUE_RECOVERY_RESULT'
+  | 'PLAY_NOTIFICATION_SOUND';
 
 export interface Message {
   type: MessageType;
@@ -291,6 +296,10 @@ export const DEFAULT_SETTINGS: QueueSettings = {
 
   // Interface
   language: 'English',
+
+  // Notifications
+  showNotifications: true,
+  notificationSound: false,
 
   // Legacy
   autoDownload: true,

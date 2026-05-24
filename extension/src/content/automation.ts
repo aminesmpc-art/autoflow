@@ -57,6 +57,7 @@ import {
   findViewSettingsTrigger,
   isViewSettingsOpen,
   findModeButton,
+  switchToViewMode,
   getTileState,
   findAllFailedTiles,
   findVoiceChip,
@@ -77,6 +78,7 @@ import {
   findExtendGenerateButton,
 } from './selectors';
 import type { TileSnapshot, FailedTileInfo, TileState } from './selectors';
+import { matchesFlowText, exactMatchFlowText, closeAriaSelectors, FLOW_STRINGS } from './flowStrings';
 
 /**
  * Normalize a model name for fuzzy matching.
@@ -593,10 +595,10 @@ export class AutomationEngine {
       // which is also a valid Slate editor!
       const closeBtns = Array.from(document.querySelectorAll('button'));
       const doneBtn = closeBtns.find(b => {
-         const t = b.textContent?.trim().toLowerCase() || '';
-         return (t.includes('done') || t.includes('fermer') || t.includes('close')) && isVisible(b);
+         const t = b.textContent?.trim() || '';
+         return matchesFlowText(t, 'done') && isVisible(b);
       });
-      const closeIconBtns = Array.from(document.querySelectorAll('button[aria-label="Close"], button[aria-label="Back"]'));
+      const closeIconBtns = Array.from(document.querySelectorAll(closeAriaSelectors()));
       const closeIconBtn = closeIconBtns.find(b => isVisible(b));
       
       const isDetailViewOpen = !!doneBtn || !!closeIconBtn;
@@ -627,7 +629,7 @@ export class AutomationEngine {
       // Check if we landed on the homepage — look for "+ New project" button
       // Only click it once to avoid re-clicking during page transition
       if (!clickedNewProject) {
-        const newProjectBtn = queryButtonByText('new project');
+        const newProjectBtn = queryButtonByText('new project') || FLOW_STRINGS.newProject.slice(1).reduce((found: Element | null, text) => found || queryButtonByText(text), null as Element | null);
         if (newProjectBtn && isVisible(newProjectBtn)) {
           this.log('info', 'Detected Flow homepage. Clicking "+ New project" to continue...');
           simulateClick(newProjectBtn);
@@ -669,14 +671,17 @@ export class AutomationEngine {
     const btns = Array.from(document.querySelectorAll('button'));
     const isDetailViewOpen = !!btns.find(b => {
       const t = b.textContent?.trim().toLowerCase() || '';
-      return (t.includes('done') || t === 'hide history' || t === 'show history') && isVisible(b);
+      return (matchesFlowText(t, 'done') || exactMatchFlowText(t, 'showHistory') || exactMatchFlowText(t, 'hideHistory')) && isVisible(b);
     });
     
     let isParentInHistorySidebar = false;
     
     if (isDetailViewOpen) {
       // First, ensure the history sidebar is actually expanded so we can see the steps
-      const showHistoryBtn = btns.find(b => (b.textContent?.trim().toLowerCase() || '') === 'show history' && isVisible(b));
+      const showHistoryBtn = btns.find(b => {
+        const ht = (b.textContent?.trim() || '');
+        return exactMatchFlowText(ht, 'showHistory') && isVisible(b);
+      });
       if (showHistoryBtn) {
         this.log('info', 'Clicking "Show history" to properly monitor generation progress...');
         simulateClick(showHistoryBtn);
@@ -753,10 +758,13 @@ export class AutomationEngine {
              let retryBtn: Element | null = null;
              if (isParentInHistorySidebar) {
                // Detail view: find a retry button inside the history step
-               retryBtn = stateEl.querySelector('button[aria-label*="retry"], button[aria-label*="Retry"]') || null;
+               retryBtn = stateEl.querySelector('button[aria-label*="retry"], button[aria-label*="Retry"], button[aria-label*="réessayer"], button[aria-label*="Réessayer"], button[aria-label*="Reintentar"], button[aria-label*="Wiederholen"]') || null;
                if (!retryBtn) {
                  const currentBtns = Array.from(document.querySelectorAll('button'));
-                 retryBtn = currentBtns.find(b => (b.textContent||'').toLowerCase().includes('retry')) || null;
+                 retryBtn = currentBtns.find(b => {
+                    const rt = (b.textContent||'').trim();
+                    return matchesFlowText(rt, 'retry');
+                  }) || null;
                }
              } else {
                retryBtn = findRetryButtonOnTile(stateEl);
@@ -1310,7 +1318,7 @@ export class AutomationEngine {
     // 3. Type the voice name into the search box to filter the list.
     //    This is critical because voice lists can be virtualized (lazy-loaded)
     //    and the target voice may not be in the DOM until searched.
-    const searchInput = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement;
+    const searchInput = document.querySelector('input[placeholder*="Search"], input[placeholder*="Rechercher"], input[placeholder*="Buscar"], input[placeholder*="Suchen"], input[placeholder*="Cerca"], input[placeholder*="Pesquisar"]') as HTMLInputElement;
     if (searchInput && isVisible(searchInput)) {
       this.log('info', `Searching for voice "${voiceName}"...`);
       searchInput.focus();
@@ -1425,9 +1433,21 @@ export class AutomationEngine {
     const opened = await this.openViewSettingsPanel();
     if (!opened || this.stopped) return;
 
+    // Switch to Batch view mode (better for automation — shows all tiles)
+    const switched = await switchToViewMode('Batch');
+    if (switched) {
+      this.log('info', 'Switched to Batch view mode');
+    }
+    if (this.stopped) return;
+
+    // Re-open view settings if switchToViewMode closed it
+    if (!isViewSettingsOpen()) {
+      await this.openViewSettingsPanel();
+    }
+
     // Check both toggles while the panel is open
-    await this.ensureToggleOn('clear prompt on submit');
-    await this.ensureToggleOn('show tile details');
+    await this.ensureToggleOn('clearPromptOnSubmit');
+    await this.ensureToggleOn('showTileDetails');
 
     // Close the view settings panel
     await this.closeViewSettingsPanel();
@@ -1483,7 +1503,7 @@ export class AutomationEngine {
         for (const btn of allBtns) {
           let container: Element | null = btn;
           for (let i = 0; i < 5 && container; i++) container = container.parentElement;
-          if (container?.textContent?.toLowerCase().includes('clear prompt on submit')) {
+          if (matchesFlowText(container?.textContent || '', 'clearPromptOnSubmit')) {
             this.log('info', 'View settings panel content detected');
             return true;
           }
@@ -1521,7 +1541,7 @@ export class AutomationEngine {
    * The toggle uses two Radix-style tab buttons with aria-label="Off" and aria-label="On"
    * inside a section that contains the given label text.
    */
-  private async ensureToggleOn(toggleLabel: string): Promise<void> {
+  private async ensureToggleOn(toggleKey: string): Promise<void> {
     if (this.stopped) return;
 
     // The view settings panel should already be open (called from ensureToggles)
@@ -1530,6 +1550,14 @@ export class AutomationEngine {
       const opened = await this.openViewSettingsPanel();
       if (!opened || this.stopped) return;
     }
+
+    // Map of flowStrings keys for toggle labels
+    const toggleKeys: Record<string, keyof typeof FLOW_STRINGS> = {
+      clearPromptOnSubmit: 'clearPromptOnSubmit',
+      showTileDetails: 'showTileDetails',
+    };
+    const flowKey = toggleKeys[toggleKey];
+    const otherFlowKeys = Object.values(toggleKeys).filter(k => k !== flowKey);
 
     const allBtns = document.querySelectorAll('button[role="tab"]');
     for (const btn of allBtns) {
@@ -1543,13 +1571,10 @@ export class AutomationEngine {
       let ancestor: Element | null = btn.parentElement;
       for (let i = 0; i < 5 && ancestor; i++) {
         const ancestorText = ancestor.textContent?.toLowerCase() || '';
-        if (ancestorText.includes(toggleLabel.toLowerCase())) {
+        if (flowKey && matchesFlowText(ancestorText, flowKey)) {
           // Make sure this ancestor does NOT also contain other toggle labels —
           // if it does, we're too high up. Keep walking to find a tighter match.
-          // But if it contains only our target, we found the right row.
-          const otherToggles = ['sound on hover', 'show tile details', 'clear prompt on submit']
-            .filter(t => t !== toggleLabel.toLowerCase());
-          const containsOthers = otherToggles.some(t => ancestorText.includes(t));
+          const containsOthers = otherFlowKeys.some(k => matchesFlowText(ancestorText, k));
           if (!containsOthers) {
             matched = true;
             break;
@@ -1562,18 +1587,18 @@ export class AutomationEngine {
       // Check if already active
       const state = btn.getAttribute('data-state');
       if (state === 'active') {
-        this.log('info', `${toggleLabel}: already ON`);
+        this.log('info', `${toggleKey}: already ON`);
         return;
       }
 
       // Click it ON
       simulateClick(btn);
-      this.log('info', `Enabled "${toggleLabel}"`);
+      this.log('info', `Enabled "${toggleKey}"`);
       await humanDelay(300, 500);
       return;
     }
 
-    this.log('info', `${toggleLabel} toggle not found (may already be ON)`);
+    this.log('info', `${toggleKey} toggle not found (may already be ON)`);
   }
 
   /**
@@ -1943,7 +1968,7 @@ export class AutomationEngine {
     }
 
     // Find search input, type filename, press Enter
-    const searchInput = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement;
+    const searchInput = document.querySelector('input[placeholder*="Search"], input[placeholder*="Rechercher"], input[placeholder*="Buscar"], input[placeholder*="Suchen"], input[placeholder*="Cerca"], input[placeholder*="Pesquisar"]') as HTMLInputElement;
     if (!searchInput) {
       this.log('warn', 'Search input not found in dialog');
       return false;
@@ -2055,10 +2080,10 @@ export class AutomationEngine {
         for (const btn of allBtns) {
           const btnEl = btn as HTMLElement;
           if (btnEl.getAttribute('aria-haspopup') === 'menu') continue;
-          if (btnEl.getAttribute('aria-label')?.toLowerCase().includes('close')) continue;
+          if (matchesFlowText(btnEl.getAttribute('aria-label') || '', 'done')) continue;
           if (!isVisible(btnEl)) continue;
           const btnText = (btnEl.textContent || '').trim();
-          if (btnText.toLowerCase().includes('recently') || btnText.toLowerCase().includes('close')) continue;
+          if (matchesFlowText(btnText, 'recently') || matchesFlowText(btnText, 'done')) continue;
           nativeClick(btnEl);
           this.log('info', `Clicked fallback upload button in ${slot.label} dialog`);
           uploadClicked = true;
@@ -2361,7 +2386,7 @@ export class AutomationEngine {
       if (lower.includes('error') || lower.includes('failed') || lower.includes('unable') ||
         lower.includes('cannot') || lower.includes('capacity') ||
         lower.includes('unavailable') || lower.includes('oops') ||
-        lower.includes('try again') || lower.includes('something went wrong')) {
+        matchesFlowText(lower, 'tryAgain') || lower.includes('something went wrong')) {
         return errorText;
       }
     }

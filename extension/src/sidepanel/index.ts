@@ -1680,6 +1680,10 @@ async function loadSettings() {
     // Interface
     ($('#setting-language') as HTMLSelectElement).value = settings.language ?? 'English';
 
+    // Notifications
+    ($('#setting-notifications') as HTMLInputElement).checked = settings.showNotifications ?? true;
+    ($('#setting-notification-sound') as HTMLInputElement).checked = settings.notificationSound ?? false;
+
     // Show/hide typing speed based on typing mode
     updateTypingModeVisibility(settings.typingMode ?? false);
   } finally {
@@ -1724,6 +1728,10 @@ function readSettingsFromUI(): QueueSettings {
   // Interface
   const language = ($('#setting-language') as HTMLSelectElement).value;
 
+  // Notifications
+  const showNotifications = ($('#setting-notifications') as HTMLInputElement).checked;
+  const notificationSound = ($('#setting-notification-sound') as HTMLInputElement).checked;
+
   // Compute legacy fields from new fields for backward compat
   const autoDownload = autoDownloadVideos || autoDownloadImages;
   const waitBetweenPromptsSec = waitMinSec;
@@ -1737,6 +1745,7 @@ function readSettingsFromUI(): QueueSettings {
     waitMinSec, waitMaxSec, typingMode, typingSpeedMultiplier,
     autoDownloadVideos, videoResolution, autoDownloadImages, imageResolution,
     language,
+    showNotifications, notificationSound,
     autoDownload, waitBetweenPromptsSec, inputMethod, typingCharsPerSecond, variableTypingDelay,
   };
 }
@@ -3110,8 +3119,46 @@ function initMessageListener() {
       case 'QUEUE_RECOVERY_RESULT':
         handleRecoveryResult(msg.payload);
         break;
+      case 'PLAY_NOTIFICATION_SOUND':
+        playNotificationChime();
+        break;
     }
   });
+}
+
+/**
+ * Play a short two-tone chime using the Web Audio API.
+ * No external audio file needed — generates the sound programmatically.
+ */
+function playNotificationChime() {
+  try {
+    const ctx = new AudioContext();
+    const now = ctx.currentTime;
+
+    // Two-tone chime: C5 (523Hz) → E5 (659Hz)
+    const tones = [
+      { freq: 523.25, start: now, end: now + 0.12 },
+      { freq: 659.25, start: now + 0.14, end: now + 0.28 },
+    ];
+
+    for (const tone of tones) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = tone.freq;
+      gain.gain.setValueAtTime(0.3, tone.start);
+      gain.gain.exponentialRampToValueAtTime(0.001, tone.end);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(tone.start);
+      osc.stop(tone.end + 0.05);
+    }
+
+    // Close audio context after playback
+    setTimeout(() => ctx.close().catch(() => {}), 500);
+  } catch {
+    // Audio not available — silently ignore
+  }
 }
 
 function appendLogToMonitor(entry: LogEntry) {

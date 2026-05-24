@@ -12,7 +12,8 @@
     "activeTab",
     "downloads",
     "scripting",
-    "alarms"
+    "alarms",
+    "notifications"
   ],
   "host_permissions": [
     "https://labs.google/*",

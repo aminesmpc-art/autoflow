@@ -3,6 +3,7 @@
    Robust selectors using aria-labels, roles, visible text,
    and stable data-* attributes. Avoids brittle CSS paths.
    ============================================================ */
+import { matchesFlowText, exactMatchFlowText } from './flowStrings';
 
 /** Sleep helper */
 export function sleep(ms: number): Promise<void> {
@@ -110,14 +111,8 @@ export function findPromptInput(): HTMLTextAreaElement | HTMLInputElement | HTML
     const placeholder = (ta.placeholder || '').toLowerCase();
     const label = (ta.getAttribute('aria-label') || '').toLowerCase();
     if (
-      placeholder.includes('prompt') ||
-      placeholder.includes('describe') ||
-      placeholder.includes('enter') ||
-      placeholder.includes('create') ||
-      placeholder.includes('what do you want') ||
-      label.includes('prompt') ||
-      label.includes('describe') ||
-      label.includes('create')
+      matchesFlowText(placeholder, 'prompt') ||
+      matchesFlowText(label, 'prompt')
     ) {
       return ta;
     }
@@ -244,7 +239,7 @@ export function findModeTab(modeText: string): Element | null {
 
 /** Find the "More" menu button on an asset card */
 export function findMoreMenuOnAsset(assetElement: Element): Element | null {
-  const moreBtn = assetElement.querySelector('[aria-label*="More"], [aria-label*="more"], button[aria-label*="menu"]');
+  const moreBtn = assetElement.querySelector('[aria-label*="More"], [aria-label*="more"], [aria-label*="Plus"], [aria-label*="plus"], [aria-label*="Más"], [aria-label*="Mehr"], button[aria-label*="menu"]');
   if (moreBtn) return moreBtn;
   // Try three-dot icon buttons
   const iconBtns = assetElement.querySelectorAll('button, [role="button"]');
@@ -324,7 +319,7 @@ export function findExtendPromptInput(): HTMLElement | null {
     if (!isVisible(slate)) continue;
     let container = slate.parentElement;
     for (let i = 0; i < 5 && container; i++) {
-      if (container.textContent?.toLowerCase().includes('what happens next')) {
+      if (matchesFlowText(container.textContent?.toLowerCase() || '', 'whatHappensNext')) {
         return slate as HTMLElement;
       }
       container = container.parentElement;
@@ -337,7 +332,7 @@ export function findExtendPromptInput(): HTMLElement | null {
     let container = slate.parentElement;
     let isMain = false;
     for (let i = 0; i < 5 && container; i++) {
-      if (container.textContent?.toLowerCase().includes('what do you want to create')) {
+      if (matchesFlowText(container.textContent?.toLowerCase() || '', 'whatDoYouWantToCreate')) {
         isMain = true;
         break;
       }
@@ -511,44 +506,49 @@ export function findIngredientAttachButton(): Element | null {
  *  - A list of asset results (clickable to add as ingredient)
  */
 export function findAssetSearchDialog(): Element | null {
-  // Primary: Find the Radix dialog (role="dialog") that contains
-  // the "Search for Assets" input. This is the inner dialog element,
-  // not the outer data-radix-popper-content-wrapper.
+  // Helper: check if a container has a search input (any language)
+  const hasSearchInput = (el: Element) => {
+    const inputs = el.querySelectorAll('input');
+    for (const input of inputs) {
+      const placeholder = input.getAttribute('placeholder') || '';
+      if (matchesFlowText(placeholder, 'search')) return true;
+    }
+    return false;
+  };
+
+  // Primary: Find the Radix dialog (role="dialog") with a search input
   const dialogs = document.querySelectorAll('[role="dialog"]');
   for (const dialog of dialogs) {
     if (!isVisible(dialog)) continue;
-    const searchInput = dialog.querySelector('input[placeholder*="Search"]');
-    if (searchInput) return dialog;
+    if (hasSearchInput(dialog)) return dialog;
   }
 
-  // Fallback 1: data-radix-popper-content-wrapper with a Search input
+  // Fallback 1: data-radix-popper-content-wrapper with a search input
   const wrappers = document.querySelectorAll('[data-radix-popper-content-wrapper]');
   for (const wrapper of wrappers) {
     if (!isVisible(wrapper)) continue;
-    const searchInput = wrapper.querySelector('input[placeholder*="Search"]');
-    if (searchInput) return wrapper;
+    if (hasSearchInput(wrapper)) return wrapper;
   }
 
-  // Fallback 2: any visible popover/overlay containing a "Search for Assets" input
+  // Fallback 2: any visible popover/overlay with a search input
   const popovers = document.querySelectorAll(
     '[class*="popover"], [class*="modal"], [class*="overlay"], [class*="dialog"]'
   );
   for (const p of popovers) {
     if (!isVisible(p)) continue;
-    const searchInput = p.querySelector('input[placeholder*="Search"]');
-    if (searchInput) return p;
+    if (hasSearchInput(p)) return p;
   }
 
   return null;
 }
 
-/** Find the search input inside the "Search for Assets" dialog */
+/** Find the search input inside the "Search for Assets" dialog (any language) */
 export function findAssetSearchInput(dialog: Element): HTMLInputElement | null {
-  // Look for input with placeholder containing "Search"
+  // Look for input with a search-related placeholder in any supported language
   const inputs = dialog.querySelectorAll('input');
   for (const input of inputs) {
     const placeholder = input.getAttribute('placeholder') || '';
-    if (placeholder.toLowerCase().includes('search')) {
+    if (matchesFlowText(placeholder, 'search')) {
       return input as HTMLInputElement;
     }
   }
@@ -774,8 +774,9 @@ export function getTileState(tile: Element): TileState {
   // ── Signal 5: error text overlay ("failed", "error", "violated") ──
   const tileText = tile.textContent?.toLowerCase() || '';
   if (tileText.includes('generation failed') || tileText.includes('violate') ||
-    tileText.includes('try again') || tileText.includes('unable to generate') ||
-    tileText.includes('blocked')) {
+    matchesFlowText(tileText, 'tryAgain') || tileText.includes('unable to generate') ||
+    tileText.includes('blocked') ||
+    matchesFlowText(tileText, 'generationFailed')) {
     return 'failed';
   }
 
@@ -1243,7 +1244,7 @@ export function findViewSettingsTrigger(): Element | null {
     // Method 1: Look for the hidden span with "View Tile Grid Settings"
     const spans = btn.querySelectorAll('span');
     for (const span of spans) {
-      if (span.textContent?.trim().toLowerCase().includes('view tile grid settings')) {
+      if (matchesFlowText(span.textContent?.trim() || '', 'viewTileGridSettings')) {
         return btn;
       }
     }
@@ -1311,8 +1312,8 @@ export async function getCurrentViewMode(): Promise<'Grid' | 'Batch' | null> {
     const isActive = tab.getAttribute('aria-selected') === 'true' ||
       tab.getAttribute('data-state') === 'active';
     if (isActive) {
-      if (text.includes('grid')) mode = 'Grid';
-      else if (text.includes('batch')) mode = 'Batch';
+      if (matchesFlowText(text, 'grid')) mode = 'Grid';
+      else if (matchesFlowText(text, 'batch')) mode = 'Batch';
     }
   }
 
@@ -1325,8 +1326,8 @@ export async function getCurrentViewMode(): Promise<'Grid' | 'Batch' | null> {
       const isChecked = item.getAttribute('aria-checked') === 'true' ||
         item.getAttribute('data-state') === 'checked';
       if (isChecked) {
-        if (text.includes('grid')) mode = 'Grid';
-        else if (text.includes('batch')) mode = 'Batch';
+        if (matchesFlowText(text, 'grid')) mode = 'Grid';
+        else if (matchesFlowText(text, 'batch')) mode = 'Batch';
       }
     }
   }
@@ -1409,6 +1410,20 @@ export async function switchToViewMode(targetMode: 'Grid' | 'Batch'): Promise<bo
  */
 export function findModeButton(modeName: string): Element | null {
   const lower = modeName.toLowerCase();
+
+  // For Grid/Batch, use multilingual matching (checks all 13 languages)
+  const flowKey = lower === 'grid' ? 'grid' as const : lower === 'batch' ? 'batch' as const : null;
+  if (flowKey) {
+    // Check tabs, menu items, and buttons using all translations
+    const candidates = document.querySelectorAll(
+      'button[role="tab"], [role="menuitem"], [role="menuitemradio"], [role="option"], [data-radix-collection-item]'
+    );
+    for (const el of candidates) {
+      if (!isVisible(el)) continue;
+      const text = el.textContent?.trim() || '';
+      if (matchesFlowText(text, flowKey)) return el;
+    }
+  }
 
   // Primary: role="menuitem" or role="menuitemradio" within the open menu
   const menuItems = document.querySelectorAll(
@@ -1705,7 +1720,7 @@ export function findAllFailedTiles(): FailedTileInfo[] {
     for (const div of allDivs) {
       const text = div.textContent?.trim() || '';
       if (text.length > 20 && (text.toLowerCase().includes('failed') ||
-        text.toLowerCase().includes('try again') ||
+        matchesFlowText(text, 'tryAgain') ||
         text.toLowerCase().includes('violate') ||
         text.toLowerCase().includes('unable') ||
         text.toLowerCase().includes('not been charged'))) {
@@ -1736,7 +1751,7 @@ export function findRetryButtonOnTile(tile: Element): Element | null {
     // Check for "Retry" text in hidden spans
     const spans = btn.querySelectorAll('span');
     for (const span of spans) {
-      if (span.textContent?.trim() === 'Retry') return btn;
+      if (exactMatchFlowText(span.textContent?.trim() || '', 'retryExact')) return btn;
     }
   }
   return null;
@@ -1755,7 +1770,7 @@ export function findReusePromptButtonOnTile(tile: Element): Element | null {
     }
     const spans = btn.querySelectorAll('span');
     for (const span of spans) {
-      if (span.textContent?.trim() === 'Reuse Prompt') return btn;
+      if (exactMatchFlowText(span.textContent?.trim() || '', 'reusePrompt')) return btn;
     }
   }
   return null;
@@ -2049,7 +2064,7 @@ export function isIngredientMenuOpen(): boolean {
   const popups = document.querySelectorAll('[role="dialog"], [role="menu"], [role="presentation"]');
   for (const popup of popups) {
     const text = popup.textContent || '';
-    if (text.includes('Voice') || text.includes('Image') || text.includes('Character')) {
+    if (matchesFlowText(text, 'voice') || matchesFlowText(text, 'image') || matchesFlowText(text, 'character')) {
       if (isVisible(popup)) return true;
     }
   }
