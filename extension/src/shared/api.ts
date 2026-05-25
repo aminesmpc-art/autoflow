@@ -356,11 +356,11 @@ export async function checkCanStartQueue(mode: 'lite' | 'flow' | 'full'): Promis
 }
 
 /** Consume a queue run server-side. Call BEFORE starting the queue. */
-export async function consumeQueueRun(mode: 'lite' | 'flow' | 'full', promptCount: number): Promise<QueueRunCheckResult> {
+export async function consumeQueueRun(mode: 'lite' | 'flow' | 'full', promptCount: number, promptType: 'text' | 'full' = 'text'): Promise<QueueRunCheckResult> {
   try {
     const res = await apiFetch('/api/usage/queue-run', {
       method: 'POST',
-      body: JSON.stringify({ mode, prompt_count: promptCount }),
+      body: JSON.stringify({ mode, prompt_count: promptCount, prompt_type: promptType }),
     });
     const data = await res.json();
     return {

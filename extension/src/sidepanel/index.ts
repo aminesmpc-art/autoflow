@@ -2282,7 +2282,7 @@ async function runQueue(queueId: string) {
   }
 
   // Consume the queue run server-side BEFORE starting
-  const consumeResult = await consumeQueueRun(mode, pendingCount);
+  const consumeResult = await consumeQueueRun(mode, pendingCount, promptType as 'text' | 'full');
   if (!consumeResult.allowed) {
     showQueueLimitDialog(mode, consumeResult);
     state.isRunning = false;
@@ -3394,22 +3394,11 @@ function handlePromptStatusUpdate(data: { queue: QueueObject; promptIndex: numbe
   const progressEl = $('#monitor-progress');
   if (progressEl) progressEl.textContent = `${done} / ${data.queue.prompts.length}`;
 
-  // Track usage only when a prompt ACTUALLY completes (not failed/skipped)
-  // AND only once per prompt (prevents double-counting from duplicate messages)
+  // Prompt usage is pre-consumed server-side at queue start (consume_queue_run).
+  // No per-prompt trackUsage call needed — prevents double-counting.
   if (prompt && prompt.status === 'done') {
-    const key = `${data.queue.id}:${data.promptIndex}`;
-    if (!_trackedPromptUsage.has(key)) {
-      _trackedPromptUsage.add(key);
-      const hasImages = prompt.images && prompt.images.length > 0;
-      const promptType = hasImages ? 'full' : 'text';
-      trackUsage(1, promptType as 'text' | 'full').then(success => {
-        if (!success) {
-          console.warn('[AutoFlow] Failed to track usage for completed prompt');
-        }
-        // Re-check image gate after each completion
-        enforceImageGate();
-      });
-    }
+    // Re-check image gate after each completion
+    enforceImageGate();
   }
 
   updatePromptStatuses(data.queue);
