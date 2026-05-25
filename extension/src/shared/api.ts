@@ -302,32 +302,6 @@ export async function getUpgradeUrl(): Promise<string> {
   return WHOP_CHECKOUT_URL;
 }
 
-// ── Rewards API ──
-
-export async function claimReviewReward(reviewerName: string): Promise<{ status: string; message: string }> {
-  try {
-    const res = await apiFetch('/api/rewards/claim-review', { 
-      method: 'POST',
-      body: JSON.stringify({ reviewer_name: reviewerName })
-    });
-    const data = await res.json();
-    return { status: data.status || 'error', message: data.message || 'Unknown error' };
-  } catch (err) {
-    return { status: 'error', message: 'Network error' };
-  }
-}
-
-export async function getReviewRewardStatus(): Promise<{ status: string; pro_until?: string }> {
-  try {
-    const res = await apiFetch('/api/rewards/review-status');
-    if (!res.ok) return { status: 'none' };
-    const data = await res.json();
-    return { status: data.status || 'none', pro_until: data.pro_until };
-  } catch (err) {
-    return { status: 'none' };
-  }
-}
-
 
 // ── Queue Run Limits ──
 

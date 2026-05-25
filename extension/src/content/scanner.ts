@@ -1136,7 +1136,7 @@ export async function downloadAssetByMenu(locator: string, resolution?: string):
 
   // ── Step 4: Find and click the resolution option in the submenu ──
   const resLabel = resolution || 'Original (720p)';
-  const resKey = (resLabel.match(/(\d{3,4}[pk])/i) || ['720p'])[0].toLowerCase();
+  const resKey = (resLabel.match(/(\d{1,4}[pk])/i) || ['720p'])[0].toLowerCase();
 
   // Re-query all menuitems (submenu items are now in the DOM)
   const allItems = document.querySelectorAll('[role="menuitem"]');
@@ -1154,7 +1154,7 @@ export async function downloadAssetByMenu(locator: string, resolution?: string):
     let itemResText = '';
     for (const span of spans) {
       const t = span.textContent?.trim().toLowerCase() || '';
-      if (/\d{3,4}[pk]/i.test(t) || t === '4k') {
+      if (/\d{1,4}[pk]/i.test(t) || t === '4k' || t === '2k' || t === '1k') {
         itemResText = t;
         break;
       }
@@ -1163,7 +1163,7 @@ export async function downloadAssetByMenu(locator: string, resolution?: string):
     // Also check full text as fallback
     if (!itemResText) {
       const fullText = (item.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
-      if (/\d{3,4}[pk]/i.test(fullText)) {
+      if (/\d{1,4}[pk]/i.test(fullText)) {
         itemResText = fullText;
       }
     }
@@ -1308,7 +1308,7 @@ function findResolutionOption(preferred?: string): Element | null {
   // Extract the key resolution part from the preferred label
   // "Original (720p)" → "720p", "1080p Upscaled" → "1080p", "4K" → "4k"
   const prefRaw = (preferred || '720p').toLowerCase();
-  const prefKey = (prefRaw.match(/(\d{3,4}[pk])/i) || [prefRaw])[0].toLowerCase();
+  const prefKey = (prefRaw.match(/(\d{1,4}[pk])/i) || [prefRaw])[0].toLowerCase();
 
   let bestMatch: Element | null = null;
   let fallback720: Element | null = null;
@@ -1318,7 +1318,7 @@ function findResolutionOption(preferred?: string): Element | null {
     if (!isVisible(el)) continue;
     // Normalise: collapse newlines/whitespace for matching
     const text = (el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
-    if (!/\d{3,4}[pk]/i.test(text) && !text.includes('original')) continue;
+    if (!/\d{1,4}[pk]/i.test(text) && !text.includes('original')) continue;
 
     // Track 720p as safe fallback
     if (text.includes('720p')) fallback720 = el;

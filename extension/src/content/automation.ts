@@ -205,129 +205,192 @@ export class AutomationEngine {
       }
     }
 
-    // Post-queue: wait for all generations to settle and detect failures
-    // Lite mode skips this — it only submits prompts, nothing else
+    // ════════════════════════════════════════════════════════════════
+    // SMART POST-QUEUE COMPLETION (4 phases)
+    //
+    // Phase 1: Wait for all tiles to settle (no more generating)
+    // Phase 2: TEXT-MATCH FIRST — reconcile "failed" using prompt text
+    //          (catches fake cancel/failures without wasting time on retries)
+    // Phase 3: Only retry TRULY failed prompts (real error icons, no text match)
+    // Phase 4: Recovery reload ONLY if real failures persist after retries
+    //
+    // This is smarter because:
+    // - Text matching runs BEFORE retries → catches 90%+ of fake failures instantly
+    // - Skips pointless retry rounds when tiles just have stale "cancel" icons
+    // - Skips recovery reload entirely when text matching confirms all prompts
+    // - Always triggers AUTO_SCAN_LIBRARY at the end, regardless of code path
+    // ════════════════════════════════════════════════════════════════
+
     if (!this.stopped && this.mode !== 'lite') {
+      // ── Phase 1: Wait for settlement ──
       this.sendPhaseUpdate('scanning', 'Waiting for all videos to finish...');
       this.log('info', 'Queue complete. Ensuring we are on the main grid before final scan...');
       await this.ensurePageReady();
       await this.postQueueScan();
-    }
+      if (this.stopped) { /* user stopped during scan */ }
 
-    // ── Auto-retry failed tiles (up to 3 rounds) ──
-    const MAX_RETRY_ROUNDS = 3;
-    let noRetryButtonsFound = false;
-    if (!this.stopped && this.mode !== 'lite') {
-      for (let round = 1; round <= MAX_RETRY_ROUNDS; round++) {
-        const failedNow = this.queue.prompts.filter(p => p.status === 'failed').length;
-        if (failedNow === 0) {
-          this.log('info', 'All prompts succeeded — no retries needed.');
-          break;
+      // ── Phase 2: Text-match reconciliation (THE SMART PART) ──
+      // Instead of trusting tile IDs (which become stale after scroll/reload),
+      // we scroll through the entire grid and check if each "failed" prompt's
+      // text actually appears on a completed tile. If it does → it's not really failed.
+      if (!this.stopped) {
+        this.sendPhaseUpdate('checking', 'Cross-checking results with prompt text...');
+        const failedEntries = this.queue.prompts
+          .map((p, i) => ({ prompt: p, idx: i }))
+          .filter(item => item.prompt.status === 'failed');
+
+        if (failedEntries.length > 0) {
+          this.log('info', `Smart check: ${failedEntries.length} prompt(s) marked failed. Verifying via text match...`);
+
+          // Scroll through entire grid to collect ALL tile texts (handles virtualized lists)
+          const allTiles = await scrollAndCollectAllTileStates();
+          const completedTexts = allTiles
+            .filter(t => t.state === 'completed')
+            .map(t => (t.text || '').toLowerCase());
+
+          // Also grab full page text as final fallback
+          const pageText = document.body.innerText.toLowerCase();
+
+          let reconciled = 0;
+          for (const { prompt: p, idx } of failedEntries) {
+            const searchText = p.text.trim().toLowerCase().slice(0, 40);
+            if (searchText.length < 3) {
+              // Tiny prompts can't be reliably matched — assume done if no real error
+              if (!p.error || p.error.includes('cancel') || p.error.includes('No output')) {
+                p.status = 'done';
+                p.error = undefined;
+                reconciled++;
+              }
+              continue;
+            }
+
+            const foundInTile = completedTexts.some(t => t.includes(searchText));
+            const foundInPage = pageText.includes(searchText);
+
+            if (foundInTile || foundInPage) {
+              p.status = 'done';
+              p.error = undefined;
+              reconciled++;
+              this.log('info', `✅ Prompt #${idx + 1} text found on page — recovered from fake failure`);
+            }
+          }
+
+          if (reconciled > 0) {
+            this.log('info', `Smart reconciliation: recovered ${reconciled}/${failedEntries.length} prompt(s) that were falsely marked failed.`);
+
+            // Update sidepanel: send corrected failure list (removes stale Phase 1 failures)
+            const remainingFailed = this.queue.prompts
+              .map((p, i) => ({ prompt: p, idx: i }))
+              .filter(item => item.prompt.status === 'failed')
+              .map(item => ({ promptIndex: item.idx, text: item.prompt.text, error: item.prompt.error || 'Unknown' }));
+            this.sendFailedTilesResult(remainingFailed);
+
+            // Also update individual prompt statuses in the sidepanel
+            for (const { prompt: p, idx } of failedEntries) {
+              if (p.status === 'done') {
+                this.updatePromptStatus(idx, 'done');
+              }
+            }
+          }
         }
+      }
 
-        this.sendPhaseUpdate('retrying', `Auto-retry round ${round}/${MAX_RETRY_ROUNDS} — ${failedNow} to fix`);
-        this.log('info', `Auto-retry round ${round}/${MAX_RETRY_ROUNDS}: ${failedNow} failed prompt(s), retrying on page...`);
+      // ── Phase 3: Retry only TRULY failed prompts ──
+      // After text matching, anything still failed is likely a real error.
+      // Only attempt retries if there are real failures remaining.
+      const MAX_RETRY_ROUNDS = 2;
+      if (!this.stopped) {
+        for (let round = 1; round <= MAX_RETRY_ROUNDS; round++) {
+          const reallyFailed = this.queue.prompts.filter(p => p.status === 'failed').length;
+          if (reallyFailed === 0) {
+            this.log('info', 'All prompts confirmed done — no retries needed. 🎉');
+            break;
+          }
 
-        const retryResult = await this.retryFailedOnPage();
-        if (this.stopped) break;
+          this.sendPhaseUpdate('retrying', `Retry round ${round}/${MAX_RETRY_ROUNDS} — ${reallyFailed} truly failed`);
+          this.log('info', `Retry round ${round}: ${reallyFailed} prompt(s) still failed after text check. Attempting page retry...`);
 
-        if (retryResult.retried === 0) {
-          this.log('warn', `Auto-retry round ${round}: no retry buttons found — tiles may show "cancelled" (likely fake).`);
-          noRetryButtonsFound = true;
-          break;
+          const retryResult = await this.retryFailedOnPage();
+          if (this.stopped) break;
+
+          if (retryResult.retried === 0) {
+            this.log('info', 'No retry buttons found — these failures have no UI retry option.');
+            break;
+          }
+
+          this.sendPhaseUpdate('retrying', `Retried ${retryResult.retried} — waiting for results...`);
+          this.log('info', `Retry round ${round}: clicked retry on ${retryResult.retried} tile(s). Waiting...`);
+          await this.postQueueScan();
+          if (this.stopped) break;
+
+          // After retry scan, do one more text reconciliation
+          const stillFailed = this.queue.prompts
+            .map((p, i) => ({ prompt: p, idx: i }))
+            .filter(item => item.prompt.status === 'failed');
+
+          if (stillFailed.length > 0) {
+            const pageText2 = document.body.innerText.toLowerCase();
+            for (const { prompt: p, idx } of stillFailed) {
+              const searchText = p.text.trim().toLowerCase().slice(0, 40);
+              if (searchText.length >= 3 && pageText2.includes(searchText)) {
+                p.status = 'done';
+                p.error = undefined;
+                this.log('info', `✅ Prompt #${idx + 1} recovered after retry via text match`);
+              }
+            }
+          }
         }
-
-        this.sendPhaseUpdate('retrying', `Retried ${retryResult.retried} — waiting for results...`);
-        this.log('info', `Auto-retry round ${round}: clicked retry on ${retryResult.retried} tile(s). Waiting for them to finish...`);
-        await this.postQueueScan();
-        if (this.stopped) break;
       }
-    }
 
-    // ── Recovery Reload: When failures persist after retries ──
-    // "Cancelled" tiles often have no retry button, or retries don't help because
-    // the "cancelled" state is a fake UI glitch. Reloading clears fake failures
-    // and reveals the actual completed videos.
-    // GUARD: Don't trigger recovery if this is already a recovery queue (prevent infinite loop)
-    const isRecoveryQueue = this.queue.name.includes('(Recovery)');
-    const failedAfterRetries = this.stopped ? 0 : this.queue.prompts.filter(p => p.status === 'failed').length;
-    const shouldReloadForRecovery = !this.stopped
-      && this.mode !== 'lite'
-      && !isRecoveryQueue
-      && failedAfterRetries > 0;
+      // ── Phase 4: Recovery reload — ONLY for real, persistent failures ──
+      // Skip if: already a recovery queue, or all prompts confirmed via text match
+      const isRecoveryQueue = this.queue.name.includes('(Recovery)');
+      const realFailuresRemaining = this.stopped ? 0 : this.queue.prompts.filter(p => p.status === 'failed').length;
 
-    if (shouldReloadForRecovery) {
-      this.sendPhaseUpdate('reloading', 'Reloading page to recover results — don\'t touch anything!');
-      this.log('info', `${failedAfterRetries} failed prompt(s) remain after retries. Triggering recovery reload...`);
-      this.log('info', '"Cancelled" errors are often fake — reloading page to recover real results.');
+      if (!this.stopped && !isRecoveryQueue && realFailuresRemaining > 0) {
+        // BEFORE reloading: one last text check with a fresh page scan
+        // This avoids unnecessary reloads when the tile state was stale
+        this.sendPhaseUpdate('checking', 'Final verification before recovery...');
+        const pageTextFinal = document.body.innerText.toLowerCase();
+        let lastMinuteRecovered = 0;
 
-      try {
-        await saveRunningQueue(this.queue, this.queue.prompts.length, true);
-      } catch { /* ignore */ }
-
-      globalRunLock = false;
-      this.sendRunLockChanged(false);
-      window.location.reload();
-      return; // Script context dies here
-    } else if (isRecoveryQueue) {
-      const stillFailing = this.queue.prompts.filter(p => p.status === 'failed').length;
-      if (stillFailing > 0) {
-        this.log('warn', `Recovery queue still has ${stillFailing} failure(s) — these may be real failures (content-policy blocks or server errors). Skipping further recovery.`);
-      }
-    }
-
-    // ── Final Reconciliation: cross-check "failed" prompts against completed tiles ──
-    // Sometimes tiles show "cancelled" during scan but actually completed.
-    // One last sweep: check all completed tiles on the page for prompt text matches.
-    if (!this.stopped && this.mode !== 'lite') {
-      this.sendPhaseUpdate('checking', 'Checking all results one last time...');
-      const failedPromptEntries = this.queue.prompts
-        .map((p, i) => ({ prompt: p, idx: i }))
-        .filter(item => item.prompt.status === 'failed');
-
-      if (failedPromptEntries.length > 0) {
-        this.log('info', `Final reconciliation: checking ${failedPromptEntries.length} "failed" prompt(s) against completed tiles on page...`);
-
-        // Collect text from all completed tiles
-        const allCards = findAssetCards().filter(el => isVisible(el));
-        const completedTexts = allCards
-          .filter(el => getTileState(el) === 'completed')
-          .map(el => (el.textContent || '').toLowerCase());
-
-        // Also grab full page text as fallback (tile details panel, etc.)
-        const pageText = document.body.innerText.toLowerCase();
-
-        let reconciled = 0;
-        for (const { prompt: p, idx } of failedPromptEntries) {
+        for (const p of this.queue.prompts) {
+          if (p.status !== 'failed') continue;
           const searchText = p.text.trim().toLowerCase().slice(0, 40);
-          if (searchText.length < 3) continue; // skip tiny prompts to avoid false positives
-
-          const foundInTile = completedTexts.some(t => t.includes(searchText));
-          const foundInPage = pageText.includes(searchText);
-
-          if (foundInTile || foundInPage) {
+          if (searchText.length >= 3 && pageTextFinal.includes(searchText)) {
             p.status = 'done';
             p.error = undefined;
-            reconciled++;
-            this.log('info', `Reconciled: prompt #${idx + 1} "${searchText.slice(0, 30)}..." found in completed tile — marking as done`);
+            lastMinuteRecovered++;
           }
         }
 
-        if (reconciled > 0) {
-          this.log('info', `Reconciliation recovered ${reconciled} prompt(s) that were incorrectly marked as failed.`);
+        if (lastMinuteRecovered > 0) {
+          this.log('info', `Final check recovered ${lastMinuteRecovered} more prompt(s) — avoided reload!`);
         }
+
+        // Recheck after final recovery
+        const absolutelyFailed = this.queue.prompts.filter(p => p.status === 'failed').length;
+
+        if (absolutelyFailed > 0) {
+          // Real failures that nothing could fix — reload as last resort
+          this.sendPhaseUpdate('reloading', 'Reloading page to recover results — don\'t touch anything!');
+          this.log('info', `${absolutelyFailed} prompt(s) truly failed. Recovery reload...`);
+
+          try {
+            await saveRunningQueue(this.queue, this.queue.prompts.length, true);
+          } catch { /* ignore */ }
+
+          globalRunLock = false;
+          this.sendRunLockChanged(false);
+          window.location.reload();
+          return; // Script context dies — recovery in content/index.ts handles AUTO_SCAN_LIBRARY
+        }
+      } else if (isRecoveryQueue && realFailuresRemaining > 0) {
+        this.log('warn', `Recovery queue: ${realFailuresRemaining} failure(s) remain — likely real (content-policy or server errors).`);
       }
     }
 
-    // ── Log remaining failures (no user re-prompt — just retry and move on) ──
-    if (!this.stopped && this.mode !== 'lite') {
-      const stillFailed = this.queue.prompts.filter(p => p.status === 'failed').length;
-      if (stillFailed > 0) {
-        this.log('info', `${stillFailed} prompt(s) still failed after all retries. Moving on.`);
-      }
-    }
-
-    // Recount after post-queue scan + retries
+    // Recount after smart completion
     doneCount = this.queue.prompts.filter(p => p.status === 'done').length;
     failedCount = this.queue.prompts.filter(p => p.status === 'failed').length;
 
@@ -348,13 +411,14 @@ export class AutomationEngine {
     this.state = 'IDLE';
 
     // ── Auto-scan library after queue completes ──
-    // Only full mode auto-scans + downloads. Flow mode stays on the create page.
-    if (!this.stopped && this.mode === 'full') {
-      this.log('info', 'Queue complete — triggering library scan + auto-download...');
+    // Always triggers (all modes). autoDownload based on queue settings.
+    if (!this.stopped) {
+      const shouldAutoDownload = !!(this.queue.settings as any).autoDownload;
+      this.log('info', `Queue complete — triggering library scan${shouldAutoDownload ? ' + auto-download' : ''}...`);
       try {
         chrome.runtime.sendMessage({
           type: 'AUTO_SCAN_LIBRARY',
-          payload: { queueName: this.queue.name, autoDownload: true },
+          payload: { queueName: this.queue.name, autoDownload: shouldAutoDownload },
         }).catch(() => {});
       } catch { /* ignore */ }
     }

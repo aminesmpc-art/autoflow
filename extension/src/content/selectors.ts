@@ -760,10 +760,12 @@ export function getTileState(tile: Element): TileState {
   }
 
   // ── Signal 4: error/warning/failure icons → FAILED ──
+  // NOTE: 'cancel' icon is NOT a failure — it appears on generating tiles
+  // as the "stop generation" button. Only true error icons trigger failure.
   for (const icon of icons) {
     const txt = icon.textContent?.trim() || '';
     if (txt === 'error' || txt === 'error_outline' || txt === 'warning' ||
-      txt === 'report' || txt === 'report_problem' || txt === 'cancel' ||
+      txt === 'report' || txt === 'report_problem' ||
       txt === 'block' || txt === 'dangerous') {
       // Make sure this isn't the ingredient chip cancel icon
       const parent = icon.closest('[data-card-open]');
@@ -1953,11 +1955,11 @@ export async function scrollOutputToTop(): Promise<void> {
  * This handles virtualised lists where off-screen tiles are not in the DOM
  * by scrolling incrementally and collecting tiles at each viewport position.
  */
-export async function scrollAndCollectAllTileStates(): Promise<Array<{ tileId: string; state: TileState }>> {
+export async function scrollAndCollectAllTileStates(): Promise<Array<{ tileId: string; state: TileState; text: string }>> {
   const scroller = findOutputScroller();
 
   // Helper: collect all data-tile-id elements currently in the DOM
-  const collected = new Map<string, { state: TileState; order: number }>();
+  const collected = new Map<string, { state: TileState; order: number; text: string }>();
 
   function collectVisible() {
     const tileEls = document.querySelectorAll('div[data-tile-id]');
@@ -1984,7 +1986,7 @@ export async function scrollAndCollectAllTileStates(): Promise<Array<{ tileId: s
         order = rowIdx * 100 + colIdx;
       }
 
-      collected.set(tileId, { state: getTileState(tile), order });
+      collected.set(tileId, { state: getTileState(tile), order, text: (tile.textContent || '').trim() });
     }
   }
 
@@ -1992,7 +1994,7 @@ export async function scrollAndCollectAllTileStates(): Promise<Array<{ tileId: s
     // No scrollable area — just collect what is visible now
     collectVisible();
     const sorted = Array.from(collected.entries()).sort((a, b) => a[1].order - b[1].order);
-    return sorted.map(([tileId, { state }]) => ({ tileId, state }));
+    return sorted.map(([tileId, { state, text }]) => ({ tileId, state, text }));
   }
 
   // Scroll to top
@@ -2025,7 +2027,7 @@ export async function scrollAndCollectAllTileStates(): Promise<Array<{ tileId: s
 
   // Return sorted by visual order (top-left first)
   const sorted = Array.from(collected.entries()).sort((a, b) => a[1].order - b[1].order);
-  return sorted.map(([tileId, { state }]) => ({ tileId, state }));
+  return sorted.map(([tileId, { state, text }]) => ({ tileId, state, text }));
 }
 
 /**

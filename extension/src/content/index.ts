@@ -314,6 +314,15 @@ if (!(window as any).__autoflow_injected) {
             payload: { queueId: queue.id, status: 'completed' }
           }).catch(() => {});
         } catch { /* ignore */ }
+
+        // Auto-scan library — switch to Library tab, scan and download
+        await sleep(1000);
+        try {
+          chrome.runtime.sendMessage({
+            type: 'AUTO_SCAN_LIBRARY',
+            payload: { queueName: queue.name, autoDownload: !!(queue.settings as any)?.autoDownload },
+          }).catch(() => {});
+        } catch { /* ignore */ }
       }
 
       return;
@@ -719,7 +728,10 @@ async function downloadSelected(payload: {
       });
 
       // Trigger download via Flow's context menu
-      const ok = await downloadAssetByMenu(asset.locator, resolutionLabel);
+      // Images: always download at 1K (original) — upscaling costs Google Flow credits
+      // Videos: use the user's preferred resolution setting
+      const assetRes = asset.mediaType === 'image' ? '1K' : resolutionLabel;
+      const ok = await downloadAssetByMenu(asset.locator, assetRes);
       if (ok) {
         results.push(filename);
         console.log(`[AutoFlow] Download queued: ${filename}`);

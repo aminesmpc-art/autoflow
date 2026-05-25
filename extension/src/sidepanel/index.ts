@@ -1650,6 +1650,12 @@ async function loadSettings() {
     const modeRadios = $$('input[name="automationMode"]') as NodeListOf<HTMLInputElement>;
     modeRadios.forEach(r => { r.checked = r.value === (settings.automationMode ?? 'flow'); });
 
+    // Sync mode quick-select buttons
+    const currentMode = settings.automationMode ?? 'flow';
+    document.querySelectorAll('.af-mode-btn[data-auto-mode]').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-auto-mode') === currentMode);
+    });
+
     // Image generation settings
     ($('#setting-image-model') as HTMLSelectElement).value = settings.imageModel ?? 'Nano Banana Pro';
     // Migrate legacy imageRatio values (e.g. "Landscape (16:9)" → "16:9")
@@ -1947,16 +1953,7 @@ async function refreshQueuesList() {
 
           <div class="af-q-settings-group">
             <div class="af-q-settings-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Behavior</div>
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Mode</span>
-              <div class="af-q-mode-wrap">
-                <select class="af-q-select af-q-setting-val" data-action="update-setting" data-key="automationMode">
-                  <option value="full" ${s.automationMode === 'full' ? 'selected' : ''}>🚀 Full</option>
-                  <option value="flow" ${s.automationMode === 'flow' || !s.automationMode ? 'selected' : ''}>🔄 Flow</option>
-                  <option value="lite" ${s.automationMode === 'lite' ? 'selected' : ''}>⚡ Lite</option>
-                </select>
-              </div>
-            </div>
+
             <div class="af-q-setting-row">
               <span class="af-q-setting-key">Stop on error</span>
               <span class="af-q-setting-val">${s.stopOnError ? '<span class="af-q-on">ON</span>' : '<span class="af-q-off">OFF</span>'}</span>
@@ -1970,6 +1967,25 @@ async function refreshQueuesList() {
               <span class="af-q-setting-val af-q-setting-target">${targetIcon} ${targetLabel}</span>
             </div>
           </div>
+        </div>
+
+        <!-- Mode Selector -->
+        <div class="af-q-mode-section" data-queue-id="${queue.id}">
+          <button class="af-q-mode-card${s.automationMode === 'full' ? ' active' : ''}" data-auto-mode="full">
+            <span class="af-q-mode-card-icon">🚀</span>
+            <span class="af-q-mode-card-label">Full</span>
+            <span class="af-q-mode-card-desc">Creates project, fills all fields automatically</span>
+          </button>
+          <button class="af-q-mode-card${s.automationMode === 'flow' || !s.automationMode ? ' active' : ''}" data-auto-mode="flow">
+            <span class="af-q-mode-card-icon">🔄</span>
+            <span class="af-q-mode-card-label">Flow</span>
+            <span class="af-q-mode-card-desc">Runs inside your current Flow session</span>
+          </button>
+          <button class="af-q-mode-card${s.automationMode === 'lite' ? ' active' : ''}" data-auto-mode="lite">
+            <span class="af-q-mode-card-icon">⚡</span>
+            <span class="af-q-mode-card-label">Lite</span>
+            <span class="af-q-mode-card-desc">Paste prompt only, you handle the rest</span>
+          </button>
         </div>
 
         <div class="af-q-progress-row">
@@ -2028,7 +2044,7 @@ async function refreshQueuesList() {
       </div>
     `;
 
-    // Inline Settings Edit
+    // Inline Settings Edit (dropdowns)
     card.querySelectorAll('.af-q-select[data-action="update-setting"]').forEach(select => {
       select.addEventListener('change', async (e) => {
         const target = e.target as HTMLSelectElement;
@@ -2044,7 +2060,25 @@ async function refreshQueuesList() {
         if (idxToUpdate !== -1) {
           queuesToSave[idxToUpdate] = queue;
           await saveAllQueues(queuesToSave);
-          // no toast here to prevent spamming, it's auto-saved
+        }
+      });
+    });
+
+    // Mode toggle cards
+    card.querySelectorAll('.af-q-mode-card').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const mode = (btn as HTMLElement).getAttribute('data-auto-mode')!;
+        // Update visual state
+        card.querySelectorAll('.af-q-mode-card').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        // Save to queue
+        (queue.settings as any).automationMode = mode;
+        queue.updatedAt = Date.now();
+        const queuesToSave = await getAllQueues();
+        const idxToUpdate = queuesToSave.findIndex(q => q.id === queue.id);
+        if (idxToUpdate !== -1) {
+          queuesToSave[idxToUpdate] = queue;
+          await saveAllQueues(queuesToSave);
         }
       });
     });
@@ -3513,8 +3547,7 @@ function handleQueueSummary(payload: { queueName: string; totalPrompts: number; 
     showFailedSection();
   }
 
-  // Show review modal if applicable
-  checkAndShowReviewModal();
+
 }
 
 /**
@@ -3768,10 +3801,12 @@ async function sendToBackground(msg: Message): Promise<any> {
 // ================================================================
 
 function initAccountTab() {
+  console.log('[AutoFlow] initAccountTab called');
   const btnShowLogin = $('#btn-show-login') as HTMLButtonElement;
   const btnShowRegister = $('#btn-show-register') as HTMLButtonElement;
   const formLogin = $('#form-login') as HTMLFormElement;
   const formRegister = $('#form-register') as HTMLFormElement;
+  console.log('[AutoFlow] formLogin:', !!formLogin, 'formRegister:', !!formRegister);
 
   // Helper to show a styled message in a container
   function showMessage(containerId: string, text: string, type: 'error' | 'success' | 'info') {
@@ -3816,22 +3851,29 @@ function initAccountTab() {
     const password = ($('#login-password') as HTMLInputElement).value;
     const submitBtn = $('#btn-login-submit') as HTMLButtonElement;
 
+    if (!email || !password) {
+      showMessage('login-message', 'Please enter email and password.', 'error');
+      return;
+    }
+
     hideMessage('login-message');
     submitBtn.disabled = true;
     submitBtn.textContent = 'Signing in…';
 
-    const result = await login(email, password);
-
-    if (result.ok) {
-      await showLoggedInState();
-    } else {
-      // Check if it's a verification-needed error (403)
-      if (result.message.toLowerCase().includes('verify')) {
-        pendingEmail = email;
-        showVerifyPendingState(email);
+    try {
+      const result = await login(email, password);
+      if (result.ok) {
+        await showLoggedInState();
       } else {
-        showMessage('login-message', result.message, 'error');
+        if (result.message.toLowerCase().includes('verify')) {
+          pendingEmail = email;
+          showVerifyPendingState(email);
+        } else {
+          showMessage('login-message', result.message, 'error');
+        }
       }
+    } catch (err) {
+      showMessage('login-message', 'Something went wrong. Please try again.', 'error');
     }
 
     submitBtn.disabled = false;
@@ -3970,8 +4012,6 @@ function initAccountTab() {
     window.open(url, '_blank');
   });
 
-  // Initialize Review Reward functionality
-  initReviewReward();
 
   // ── Check initial auth state ──
   checkAuthState();
@@ -4042,11 +4082,7 @@ async function showLoggedInState() {
       const upgradeCta = document.getElementById('upgrade-cta');
       if (upgradeCta) upgradeCta.style.display = 'none';
       
-      // Hide review reward card for Pro users
-      const reviewCta = document.getElementById('review-reward-cta');
-      if (reviewCta) reviewCta.style.display = 'none';
-      const headerBtn = document.getElementById('btn-header-get-pro-free');
-      if (headerBtn) headerBtn.style.display = 'none';
+
     } else {
       badge.textContent = 'Free';
       badge.className = 'af-plan-badge';
@@ -4054,10 +4090,7 @@ async function showLoggedInState() {
       const upgradeCta = document.getElementById('upgrade-cta');
       if (upgradeCta) upgradeCta.style.display = '';
 
-      // Check review reward status for Free users
-      const { getReviewRewardStatus } = await import('../shared/api');
-      const reviewStatus = await getReviewRewardStatus();
-      await updateReviewCardStatus(reviewStatus.status);
+
     }
   } else {
     // API down — try cached profile
@@ -4146,145 +4179,6 @@ async function updateUsageDisplay() {
     } else {
       fullrunHint.textContent = `${usage.full_monthly_remaining} remaining today`;
     }
-  }
-}
-
-// ================================================================
-// REVIEW-FOR-PRO FEATURE
-// ================================================================
-
-let hasShownReviewModalThisSession = false;
-
-async function initReviewReward() {
-  const btnLeaveReviewTab = $('#btn-leave-review-tab');
-  const btnClaimReviewTab = $('#btn-claim-review-tab');
-  const btnLeaveReviewModal = $('#btn-leave-review-modal');
-  const btnClaimReviewModal = $('#btn-claim-review-modal');
-  const btnCloseModal = $('#btn-close-review-modal');
-
-  // When user clicks 'Leave a Review' -> show the 'I Left My Review' button
-  const onLeaveReview = () => {
-    if (btnLeaveReviewTab) btnLeaveReviewTab.style.display = 'none';
-    const claimGroupTab = $('#claim-review-group-tab');
-    if (claimGroupTab) claimGroupTab.style.display = 'flex';
-    if (btnLeaveReviewModal) btnLeaveReviewModal.style.display = 'none';
-    const claimGroupModal = $('#claim-review-group-modal');
-    if (claimGroupModal) claimGroupModal.style.display = 'flex';
-  };
-
-  btnLeaveReviewTab?.addEventListener('click', onLeaveReview);
-  btnLeaveReviewModal?.addEventListener('click', onLeaveReview);
-
-  // When user clicks 'I Left My Review' -> send claim to backend
-  const onClaimReview = async (isModal: boolean) => {
-    const inputEl = $(isModal ? '#reviewer-name-modal' : '#reviewer-name-tab') as HTMLInputElement;
-    const reviewerName = inputEl?.value?.trim();
-    
-    if (!reviewerName) {
-      showToast('Please enter your Chrome Display Name.', 'warning');
-      inputEl?.focus();
-      return;
-    }
-
-    if (btnClaimReviewTab) btnClaimReviewTab.textContent = 'Claiming...';
-    if (btnClaimReviewModal) btnClaimReviewModal.textContent = 'Claiming...';
-
-    const { claimReviewReward } = await import('../shared/api');
-    const result = await claimReviewReward(reviewerName);
-
-    if (result.status === 'error') {
-      showToast(result.message, 'error');
-      if (btnClaimReviewTab) btnClaimReviewTab.textContent = '✓ Submit Claim';
-      if (btnClaimReviewModal) btnClaimReviewModal.textContent = '✓ Submit Claim';
-    } else {
-      showToast('Thank you! Your claim is under review.', 'success');
-      hideReviewModal();
-      await updateReviewCardStatus(result.status);
-    }
-  };
-
-  btnClaimReviewTab?.addEventListener('click', () => onClaimReview(false));
-  btnClaimReviewModal?.addEventListener('click', () => onClaimReview(true));
-
-  btnCloseModal?.addEventListener('click', () => {
-    hideReviewModal();
-  });
-
-  // ── Ultra Family Header Button ──
-  const btnUltraFamily = $('#btn-header-ultra-family');
-  if (btnUltraFamily) {
-    btnUltraFamily.addEventListener('click', () => {
-      const phoneNumber = '212723164437';
-      const message = encodeURIComponent('I want a slot on Google AI Ultra Family.');
-      chrome.tabs.create({ url: `https://wa.me/${phoneNumber}?text=${message}` });
-    });
-  }
-
-  // ── Free Pro Header Button ──
-  const btnHeaderPro = $('#btn-header-get-pro-free');
-  btnHeaderPro?.addEventListener('click', () => {
-    const modal = $('#review-modal');
-    if (modal) modal.style.display = 'flex';
-  });
-}
-
-export async function checkAndShowReviewModal() {
-  // Only show once per session
-  if (hasShownReviewModalThisSession) return;
-  
-  const { isLoggedIn, getProfile, getReviewRewardStatus } = await import('../shared/api');
-  if (!(await isLoggedIn())) return;
-
-  const profile = await getProfile();
-  if (!profile || profile.is_pro_active) return;
-
-  const statusObj = await getReviewRewardStatus();
-  if (statusObj.status !== 'none') return; // Already claimed
-
-  // Show modal
-  const modal = $('#review-modal');
-  if (modal) {
-    modal.style.display = 'flex';
-    hasShownReviewModalThisSession = true;
-  }
-}
-
-function hideReviewModal() {
-  const modal = $('#review-modal');
-  if (modal) modal.style.display = 'none';
-}
-
-export async function updateReviewCardStatus(status: string) {
-  const cta = $('#review-reward-cta');
-  const btnLeave = $('#btn-leave-review-tab');
-  const btnClaim = $('#btn-claim-review-tab');
-  const claimGroup = $('#claim-review-group-tab');
-  const statusMsg = $('#review-status-msg-tab');
-  const headerBtn = $('#btn-header-get-pro-free');
-
-  if (!cta) return;
-
-  if (status === 'none') {
-    cta.style.display = 'block';
-    if (btnLeave) btnLeave.style.display = 'inline-flex';
-    if (btnClaim) btnClaim.style.display = 'none';
-    if (claimGroup) claimGroup.style.display = 'none';
-    if (statusMsg) statusMsg.style.display = 'none';
-    if (headerBtn) headerBtn.style.display = 'inline-flex';
-  } else if (status === 'pending') {
-    cta.style.display = 'block';
-    if (btnLeave) btnLeave.style.display = 'none';
-    if (btnClaim) btnClaim.style.display = 'none';
-    if (claimGroup) claimGroup.style.display = 'none';
-    if (statusMsg) {
-      statusMsg.innerHTML = '⏳ <span style="font-weight: 600; background: linear-gradient(135deg, #e0e7ff, #a5b4fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Your review claim is pending approval.</span>';
-      statusMsg.style.display = 'block';
-    }
-    if (headerBtn) headerBtn.style.display = 'none';
-  } else {
-    // approved, rejected, or error -> hide the card
-    cta.style.display = 'none';
-    if (headerBtn) headerBtn.style.display = 'none';
   }
 }
 
