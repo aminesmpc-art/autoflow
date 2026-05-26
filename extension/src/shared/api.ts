@@ -403,12 +403,19 @@ export async function checkCanStartQueue(mode: 'lite' | 'flow' | 'full'): Promis
   }
 }
 
-/** Consume a queue run server-side. Call BEFORE starting the queue. */
-export async function consumeQueueRun(mode: 'lite' | 'flow' | 'full', promptCount: number, promptType: 'text' | 'full' = 'text'): Promise<QueueRunCheckResult> {
+/** Consume a queue run server-side. Call BEFORE starting the queue.
+ *  Supports mixed queues: sends text_count + full_count separately. */
+export async function consumeQueueRun(mode: 'lite' | 'flow' | 'full', promptCount: number, promptType: 'text' | 'full' = 'text', textCount?: number, fullCount?: number): Promise<QueueRunCheckResult> {
   try {
+    // If per-type counts are provided, send them for accurate mixed-queue tracking
+    const payload: Record<string, unknown> = { mode, prompt_count: promptCount, prompt_type: promptType };
+    if (textCount !== undefined && fullCount !== undefined) {
+      payload.text_count = textCount;
+      payload.full_count = fullCount;
+    }
     const res = await apiFetch('/api/usage/queue-run', {
       method: 'POST',
-      body: JSON.stringify({ mode, prompt_count: promptCount, prompt_type: promptType }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
     return {

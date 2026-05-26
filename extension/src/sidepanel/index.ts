@@ -2222,12 +2222,28 @@ async function runQueue(queueId: string) {
   }
 
   const pendingCount = queue.prompts.filter((p: PromptEntry) => p.status === 'queued').length;
-  // Check multiple sources for images (queue storage, live state, and settings)
-  const hasImagesInQueue = queue.prompts.some((p: PromptEntry) => p.images && p.images.length > 0);
-  const hasImagesInState = state.sharedImages.length > 0 ||
-    [...state.promptImages.values()].some(imgs => imgs.some(Boolean));
+
+  // ── Per-prompt image detection (supports mixed queues) ──
+  // Count how many pending prompts have images vs text-only
   const isFramesMode = queue.settings?.creationType === 'frames';
-  const hasImages = hasImagesInQueue || hasImagesInState || isFramesMode;
+  const hasSharedImages = state.sharedImages.length > 0;
+
+  let fullCount = 0;
+  let textCount = 0;
+  queue.prompts.forEach((p: PromptEntry, idx: number) => {
+    if (p.status !== 'queued') return;
+    // A prompt is "full" if it has its own images, shared images apply, or frames mode
+    const hasOwnImages = p.images && p.images.length > 0;
+    const hasPerPromptImages = state.promptImages.get(idx)?.some(Boolean) || false;
+    if (hasOwnImages || hasPerPromptImages || hasSharedImages || isFramesMode) {
+      fullCount++;
+    } else {
+      textCount++;
+    }
+  });
+
+  // Overall type for quota check: if ANY prompt has images, check full quota
+  const hasImages = fullCount > 0;
   const promptType = hasImages ? 'full' : 'text';
   const quota = await checkCanGenerate(promptType as 'text' | 'full');
 
@@ -2286,8 +2302,8 @@ async function runQueue(queueId: string) {
     showToast(`${modeLabels[originalMode]} limit reached → switched to ${modeLabels[mode]}`, 'warning');
   }
 
-  // Consume the queue run server-side BEFORE starting
-  const consumeResult = await consumeQueueRun(mode, pendingCount, promptType as 'text' | 'full');
+  // Consume the queue run server-side BEFORE starting (with per-type counts for mixed queues)
+  const consumeResult = await consumeQueueRun(mode, pendingCount, promptType as 'text' | 'full', textCount, fullCount);
   if (!consumeResult.allowed) {
     showQueueLimitDialog(mode, consumeResult);
     state.isRunning = false;
