@@ -7,6 +7,17 @@
 // ── Side panel setup — open on icon click ──
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 
+// ── Open changelog when extension updates ──
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === 'update') {
+    const version = chrome.runtime.getManifest().version;
+    chrome.tabs.create({
+      url: `https://www.auto-flow.studio/changelog?v=${version}`,
+      active: false, // open in background so it doesn't interrupt the user
+    });
+  }
+});
+
 import { Message, QueueObject, LogEntry } from '../types';
 import {
   getAllQueues,

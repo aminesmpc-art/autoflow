@@ -116,6 +116,19 @@ export const posts = [
     readTime: "12 min read",
     featured: true,
   },
+  {
+    slug: "how-to-make-money-with-ai-videos",
+    title: "How to Make Money with AI Videos in 2026 (5 Proven Methods)",
+    description:
+      "Learn 5 real ways to earn $500-$5,000/month with AI-generated videos. YouTube Shorts, TikTok, stock footage, freelancing, and faceless channels — with real numbers.",
+    date: "2026-05-26",
+    updated: "2026-05-26",
+    category: "Guide",
+    tags: ["make-money", "ai-video", "youtube", "tiktok", "passive-income", "side-hustle"],
+    image: "/screenshots/create-prompts.png",
+    readTime: "11 min read",
+    featured: true,
+  },
 ];
 
 /** Get all posts, newest first */

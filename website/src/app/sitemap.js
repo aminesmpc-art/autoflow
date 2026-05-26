@@ -31,6 +31,7 @@ export default async function sitemap() {
     '/blog/how-to-make-tiktok-videos-with-ai',
     '/blog/how-to-make-youtube-shorts-with-ai',
     '/blog/best-ai-video-generators-2026',
+    '/blog/how-to-make-money-with-ai-videos',
   ];
 
   const blogSitemaps = blogPosts.map((post) => ({

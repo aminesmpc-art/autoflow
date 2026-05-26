@@ -93,6 +93,16 @@ export const metadata = {
     "best AI video automation tool",
     "free AI video generator Chrome extension",
     "fastest AI video generation",
+    
+    // US-specific monetization terms
+    "make money with AI videos",
+    "AI video side hustle",
+    "how to make money with AI",
+    "AI passive income",
+    "faceless YouTube channel AI",
+    "AI video monetization",
+    "sell AI generated videos",
+    "AI stock footage",
   ],
   authors: [{ name: "AutoFlow" }],
   creator: "AutoFlow",
