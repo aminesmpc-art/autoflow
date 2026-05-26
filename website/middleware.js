@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const locales = ['en', 'ar', 'fr', 'es'];
+const locales = ['en', 'ar', 'fr', 'es', 'de'];
 const defaultLocale = 'en';
 
 // Paths that should NOT be locale-prefixed

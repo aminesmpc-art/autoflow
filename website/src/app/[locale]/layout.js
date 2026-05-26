@@ -34,6 +34,8 @@ export default async function LocaleLayout({ children, params }) {
           <div className="header-actions">
             <div className="lang-switcher">
               <a href="/" className={locale === 'en' ? 'active' : ''}>EN</a>
+              <a href="/es" className={locale === 'es' ? 'active' : ''}>ES</a>
+              <a href="/de" className={locale === 'de' ? 'active' : ''}>DE</a>
               <a href="/ar" className={locale === 'ar' ? 'active' : ''}>AR</a>
               <a href="/fr" className={locale === 'fr' ? 'active' : ''}>FR</a>
             </div>

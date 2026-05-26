@@ -149,6 +149,14 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={inter.variable}>
       <head>
+        {/* ── hreflang tags for geo-targeting ── */}
+        <link rel="alternate" hrefLang="en" href="https://auto-flow.studio/" />
+        <link rel="alternate" hrefLang="es" href="https://auto-flow.studio/es" />
+        <link rel="alternate" hrefLang="de" href="https://auto-flow.studio/de" />
+        <link rel="alternate" hrefLang="fr" href="https://auto-flow.studio/fr" />
+        <link rel="alternate" hrefLang="ar" href="https://auto-flow.studio/ar" />
+        <link rel="alternate" hrefLang="x-default" href="https://auto-flow.studio/" />
+
         {/* ── Google Analytics (GA4) ── */}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-ZJ953YL6EK"
@@ -236,6 +244,8 @@ function Header() {
         <div className="header-actions">
           <div className="lang-switcher">
             <a href="/" className="lang-option active">EN</a>
+            <a href="/es" className="lang-option">ES</a>
+            <a href="/de" className="lang-option">DE</a>
             <a href="/ar" className="lang-option">AR</a>
             <a href="/fr" className="lang-option">FR</a>
           </div>
