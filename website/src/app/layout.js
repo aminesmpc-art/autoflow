@@ -180,6 +180,24 @@ export default function RootLayout({ children }) {
             gtag('config', 'G-ZJ953YL6EK');
           `}
         </Script>
+
+        {/* ── Subscribe with Google (SwG) ── */}
+        <Script
+          src="https://news.google.com/swg/js/v1/swg-basic.js"
+          strategy="afterInteractive"
+        />
+        <Script id="swg-init" strategy="afterInteractive">
+          {`
+            (self.SWG_BASIC = self.SWG_BASIC || []).push(basicSubscriptions => {
+              basicSubscriptions.init({
+                type: "NewsArticle",
+                isPartOfType: ["Product"],
+                isPartOfProductId: "CAow0LrLDA:openaccess",
+                clientOptions: { theme: "light", lang: "en-GB" },
+              });
+            });
+          `}
+        </Script>
       </head>
       <body>
         {/* ── Organization Schema — tells Google who you are ── */}
