@@ -431,3 +431,37 @@ export async function consumeQueueRun(mode: 'lite' | 'flow' | 'full', promptCoun
     return { allowed: false, used: 0, limit: 0, remaining: 0, period: 'day', message: 'Unable to verify limits.' };
   }
 }
+
+
+// ═══════════════════════════════════════════════════════════
+// REVIEW REWARD
+// ═══════════════════════════════════════════════════════════
+
+export interface ReviewRewardResult {
+  status: 'none' | 'pending' | 'approved' | 'rejected' | 'ineligible';
+  message?: string;
+  pro_granted_until?: string;
+}
+
+/** Submit a review reward claim. Backend enforces eligibility (50 text / 20 full in 7 days). */
+export async function claimReviewReward(reviewerName: string): Promise<ReviewRewardResult> {
+  try {
+    const res = await apiFetch('/api/rewards/claim-review', {
+      method: 'POST',
+      body: JSON.stringify({ reviewer_name: reviewerName }),
+    });
+    return await res.json();
+  } catch {
+    return { status: 'none', message: 'Network error' };
+  }
+}
+
+/** Check current review reward status. */
+export async function getReviewRewardStatus(): Promise<ReviewRewardResult> {
+  try {
+    const res = await apiFetch('/api/rewards/review-status', { method: 'GET' });
+    return await res.json();
+  } catch {
+    return { status: 'none' };
+  }
+}

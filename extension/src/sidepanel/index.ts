@@ -46,7 +46,7 @@ import {
   getActiveQueueId,
   savePromptHistory,
 } from '../shared/storage';
-import { login, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl, consumeDownload, checkCanStartQueue, consumeQueueRun, ensureSession } from '../shared/api';
+import { login, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl, consumeDownload, checkCanStartQueue, consumeQueueRun, ensureSession, claimReviewReward, getReviewRewardStatus } from '../shared/api';
 import { applyLanguage, initLanguage } from './i18n';
 
 // ================================================================
@@ -4023,6 +4023,9 @@ function initAccountTab() {
   });
 
 
+  // ── Wire up review reward buttons ──
+  initReviewRewardHandlers();
+
   // ── Check initial auth state ──
   checkAuthState();
 }
@@ -4147,6 +4150,10 @@ async function showLoggedInState() {
   }
 
   await updateUsageDisplay();
+
+  // Check review reward status and show/hide the CTA
+  const isPro = profile?.is_pro_active || false;
+  checkAndShowReviewReward(isPro);
 }
 
 function showLoggedOutState() {
@@ -4222,6 +4229,148 @@ async function updateUsageDisplay() {
     } else {
       fullrunHint.textContent = `${usage.full_monthly_remaining} remaining today`;
     }
+  }
+}
+
+// ================================================================
+// REVIEW REWARD SYSTEM
+// ================================================================
+
+/** Check review reward status and update UI (tab CTA + header button). */
+async function checkAndShowReviewReward(isPro: boolean) {
+  const ctaEl = document.getElementById('review-reward-cta');
+  const headerBtn = document.getElementById('btn-header-get-pro-free');
+  if (!ctaEl) return;
+
+  // Pro users don't need the reward
+  if (isPro) {
+    ctaEl.style.display = 'none';
+    if (headerBtn) headerBtn.style.display = 'none';
+    return;
+  }
+
+  const result = await getReviewRewardStatus();
+
+  if (result.status === 'none') {
+    // No claim yet — show the CTA
+    ctaEl.style.display = '';
+    if (headerBtn) headerBtn.style.display = '';
+    const statusTab = document.getElementById('review-status-msg-tab');
+    if (statusTab) statusTab.style.display = 'none';
+  } else if (result.status === 'pending') {
+    ctaEl.style.display = '';
+    if (headerBtn) headerBtn.style.display = 'none';
+    const statusTab = document.getElementById('review-status-msg-tab');
+    if (statusTab) {
+      statusTab.style.display = '';
+      statusTab.innerHTML = '⏳ <strong>Under review</strong> — we\'ll verify your review and upgrade you shortly!';
+      statusTab.style.color = '#f59e0b';
+    }
+    // Hide the claim group since they already claimed
+    const claimGroup = document.getElementById('claim-review-group-tab');
+    if (claimGroup) claimGroup.style.display = 'none';
+  } else if (result.status === 'approved') {
+    ctaEl.style.display = '';
+    if (headerBtn) headerBtn.style.display = 'none';
+    const statusTab = document.getElementById('review-status-msg-tab');
+    if (statusTab) {
+      statusTab.style.display = '';
+      statusTab.innerHTML = '✅ <strong>Approved!</strong> Your Pro access is active. Thank you!';
+      statusTab.style.color = '#10b981';
+    }
+    const claimGroup = document.getElementById('claim-review-group-tab');
+    if (claimGroup) claimGroup.style.display = 'none';
+  } else if (result.status === 'rejected') {
+    ctaEl.style.display = 'none';
+    if (headerBtn) headerBtn.style.display = 'none';
+  }
+}
+
+/** Handle review claim submission (works for both tab and modal contexts). */
+async function submitReviewClaim(nameInputId: string, statusMsgId: string) {
+  const nameInput = document.getElementById(nameInputId) as HTMLInputElement;
+  const statusMsg = document.getElementById(statusMsgId) as HTMLElement;
+  if (!nameInput || !statusMsg) return;
+
+  const name = nameInput.value.trim();
+  if (!name) {
+    statusMsg.style.display = '';
+    statusMsg.innerHTML = '⚠️ Please enter your Chrome display name.';
+    statusMsg.style.color = '#f59e0b';
+    return;
+  }
+
+  statusMsg.style.display = '';
+  statusMsg.innerHTML = '⏳ Submitting...';
+  statusMsg.style.color = 'var(--text-dim)';
+
+  const result = await claimReviewReward(name);
+
+  if (result.status === 'ineligible') {
+    statusMsg.innerHTML = `❌ ${result.message || 'Not eligible yet. Keep generating!'}`;
+    statusMsg.style.color = '#ef4444';
+  } else if (result.status === 'pending') {
+    statusMsg.innerHTML = '✅ <strong>Submitted!</strong> We\'ll verify your review and upgrade you shortly.';
+    statusMsg.style.color = '#10b981';
+    // Hide the claim group
+    const claimGroupTab = document.getElementById('claim-review-group-tab');
+    if (claimGroupTab) claimGroupTab.style.display = 'none';
+    const claimGroupModal = document.getElementById('claim-review-group-modal');
+    if (claimGroupModal) claimGroupModal.style.display = 'none';
+  } else {
+    statusMsg.innerHTML = `Status: ${result.status}. ${result.message || ''}`;
+    statusMsg.style.color = 'var(--text-dim)';
+  }
+}
+
+/** Wire up all review reward buttons (tab + modal + header). */
+function initReviewRewardHandlers() {
+  // "Leave a Review" button reveals the claim form (tab)
+  const leaveReviewTab = document.getElementById('btn-leave-review-tab');
+  if (leaveReviewTab) {
+    leaveReviewTab.addEventListener('click', () => {
+      const group = document.getElementById('claim-review-group-tab');
+      if (group) group.style.display = 'flex';
+    });
+  }
+
+  // "Leave a Review" button reveals the claim form (modal)
+  const leaveReviewModal = document.getElementById('btn-leave-review-modal');
+  if (leaveReviewModal) {
+    leaveReviewModal.addEventListener('click', () => {
+      const group = document.getElementById('claim-review-group-modal');
+      if (group) group.style.display = 'flex';
+    });
+  }
+
+  // Submit claim button (tab)
+  const claimBtnTab = document.getElementById('btn-claim-review-tab');
+  if (claimBtnTab) {
+    claimBtnTab.addEventListener('click', () => submitReviewClaim('reviewer-name-tab', 'review-status-msg-tab'));
+  }
+
+  // Submit claim button (modal)
+  const claimBtnModal = document.getElementById('btn-claim-review-modal');
+  if (claimBtnModal) {
+    claimBtnModal.addEventListener('click', () => submitReviewClaim('reviewer-name-modal', 'review-status-msg-modal'));
+  }
+
+  // Close modal button
+  const closeModal = document.getElementById('btn-close-review-modal');
+  if (closeModal) {
+    closeModal.addEventListener('click', () => {
+      const modal = document.getElementById('review-modal');
+      if (modal) modal.style.display = 'none';
+    });
+  }
+
+  // Header "Free Pro" button — switch to account tab where the CTA is visible
+  const headerBtn = document.getElementById('btn-header-get-pro-free');
+  if (headerBtn) {
+    headerBtn.addEventListener('click', () => {
+      const accountTab = document.querySelector('[data-tab="account"]') as HTMLElement;
+      if (accountTab) accountTab.click();
+    });
   }
 }
 
