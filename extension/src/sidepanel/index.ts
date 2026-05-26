@@ -2406,8 +2406,14 @@ async function showQueueLimitDialog(mode: string, result: { used: number; limit:
           box-shadow:0 4px 15px rgba(99,102,241,0.3);
           transition:transform 0.15s,box-shadow 0.15s;
         ">Upgrade to Pro →</a>
+        <button id="af-limit-free-pro-btn" style="
+          display:block;width:100%;margin-top:8px;padding:10px;
+          background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);
+          border-radius:10px;color:#fbbf24;font-size:13px;font-weight:600;cursor:pointer;
+          transition:background 0.15s;
+        ">⭐ Get Free Pro — Leave a Review</button>
         <button id="af-limit-dismiss-btn" style="
-          display:block;width:100%;margin-top:10px;padding:10px;
+          display:block;width:100%;margin-top:6px;padding:10px;
           background:transparent;border:1px solid rgba(148,163,184,0.2);
           border-radius:10px;color:#94a3b8;font-size:13px;cursor:pointer;
           transition:background 0.15s;
@@ -2423,10 +2429,25 @@ async function showQueueLimitDialog(mode: string, result: { used: number; limit:
   dialog.querySelector('#af-limit-upgrade-btn')?.addEventListener('click', () => {
     setTimeout(() => dialog.remove(), 500);
   });
+  // "Free Pro" button — close dialog, switch to account tab where the CTA is
+  dialog.querySelector('#af-limit-free-pro-btn')?.addEventListener('click', async () => {
+    dialog.remove();
+    // Force-show the review CTA since they hit the limit
+    const ctaEl = document.getElementById('review-reward-cta');
+    if (ctaEl) ctaEl.style.display = '';
+    // Switch to account tab
+    const accountTab = document.querySelector('[data-tab="account"]') as HTMLElement;
+    if (accountTab) accountTab.click();
+    // Refresh the reward status
+    checkAndShowReviewReward(false);
+  });
   // Click backdrop to close
   dialog.firstElementChild?.addEventListener('click', (e) => {
     if (e.target === dialog.firstElementChild) dialog.remove();
   });
+
+  // Also refresh the account tab reward CTA since user just hit the limit
+  checkAndShowReviewReward(false);
 }
 
 // ================================================================
@@ -4236,28 +4257,41 @@ async function updateUsageDisplay() {
 // REVIEW REWARD SYSTEM
 // ================================================================
 
-/** Check review reward status and update UI (tab CTA + header button). */
+/** Check review reward status and update UI (tab CTA + header button).
+ *  Only shows when user has hit their daily limit — not always visible. */
 async function checkAndShowReviewReward(isPro: boolean) {
   const ctaEl = document.getElementById('review-reward-cta');
   const headerBtn = document.getElementById('btn-header-get-pro-free');
   if (!ctaEl) return;
 
-  // Pro users don't need the reward
+  // Pro users never see the reward CTA
   if (isPro) {
     ctaEl.style.display = 'none';
     if (headerBtn) headerBtn.style.display = 'none';
     return;
   }
 
+  // Check if user has hit their daily limit — only show CTA when they have
+  const usage = await getDailyUsage();
+  const hitTextLimit = usage && !usage.is_pro && usage.text_remaining <= 0;
+  const hitFullLimit = usage && !usage.is_pro && usage.full_remaining <= 0;
+  const hitLimit = hitTextLimit || hitFullLimit;
+
   const result = await getReviewRewardStatus();
 
   if (result.status === 'none') {
-    // No claim yet — show the CTA
-    ctaEl.style.display = '';
-    if (headerBtn) headerBtn.style.display = '';
+    // No claim yet — only show CTA if they hit their limit
+    if (hitLimit) {
+      ctaEl.style.display = '';
+      if (headerBtn) headerBtn.style.display = '';
+    } else {
+      ctaEl.style.display = 'none';
+      if (headerBtn) headerBtn.style.display = 'none';
+    }
     const statusTab = document.getElementById('review-status-msg-tab');
     if (statusTab) statusTab.style.display = 'none';
   } else if (result.status === 'pending') {
+    // Already claimed — always show status
     ctaEl.style.display = '';
     if (headerBtn) headerBtn.style.display = 'none';
     const statusTab = document.getElementById('review-status-msg-tab');
@@ -4266,7 +4300,6 @@ async function checkAndShowReviewReward(isPro: boolean) {
       statusTab.innerHTML = '⏳ <strong>Under review</strong> — we\'ll verify your review and upgrade you shortly!';
       statusTab.style.color = '#f59e0b';
     }
-    // Hide the claim group since they already claimed
     const claimGroup = document.getElementById('claim-review-group-tab');
     if (claimGroup) claimGroup.style.display = 'none';
   } else if (result.status === 'approved') {
