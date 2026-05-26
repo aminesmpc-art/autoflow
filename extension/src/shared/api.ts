@@ -83,6 +83,8 @@ async function refreshAccessToken(refreshToken: string): Promise<boolean> {
 
     if (!res.ok) {
       await clearTokens();
+      // Broadcast session expired so the UI can react (show login screen)
+      broadcastSessionExpired();
       return false;
     }
 
@@ -95,7 +97,52 @@ async function refreshAccessToken(refreshToken: string): Promise<boolean> {
     return true;
   } catch {
     await clearTokens();
+    broadcastSessionExpired();
     return false;
+  }
+}
+
+/** Broadcast that the user's session expired so the UI can show re-login. */
+function broadcastSessionExpired(): void {
+  try {
+    chrome.storage.local.set({ af_session_expired: true });
+  } catch { /* ignore in non-extension contexts */ }
+}
+
+/** Clear the session-expired flag (call after successful login). */
+export async function clearSessionExpired(): Promise<void> {
+  chrome.storage.local.remove('af_session_expired');
+}
+
+/**
+ * Proactive session health check. Call on sidepanel open to detect stale tokens
+ * BEFORE the user tries to do anything.
+ * Returns: 'valid' | 'refreshed' | 'expired' | 'no_session'
+ */
+export async function ensureSession(): Promise<'valid' | 'refreshed' | 'expired' | 'no_session'> {
+  const tokens = await getStoredTokens();
+  if (!tokens?.access) return 'no_session';
+
+  // Try a lightweight API call to check if the access token still works
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/me`, {
+      headers: {
+        'Authorization': `Bearer ${tokens.access}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (res.ok) return 'valid';
+
+    if (res.status === 401 && tokens.refresh) {
+      const refreshed = await refreshAccessToken(tokens.refresh);
+      return refreshed ? 'refreshed' : 'expired';
+    }
+
+    return 'expired';
+  } catch {
+    // Network error — don't invalidate the session, just report
+    return 'valid';
   }
 }
 
@@ -158,6 +205,7 @@ export async function login(email: string, password: string): Promise<{ ok: bool
     }
 
     await storeTokens({ access: data.access, refresh: data.refresh });
+    await clearSessionExpired();
     return { ok: true, message: 'Logged in!' };
   } catch (err) {
     return { ok: false, message: 'Could not reach the server. Check your internet connection.' };

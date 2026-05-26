@@ -46,7 +46,7 @@ import {
   getActiveQueueId,
   savePromptHistory,
 } from '../shared/storage';
-import { login, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl, consumeDownload, checkCanStartQueue, consumeQueueRun } from '../shared/api';
+import { login, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl, consumeDownload, checkCanStartQueue, consumeQueueRun, ensureSession } from '../shared/api';
 import { applyLanguage, initLanguage } from './i18n';
 
 // ================================================================
@@ -4082,13 +4082,46 @@ async function showLoggedInState() {
 
     }
   } else {
-    // API down — try cached profile
-    const { af_cached_profile } = await chrome.storage.local.get('af_cached_profile');
-    if (af_cached_profile) {
-      ($('#account-email') as HTMLElement).textContent = af_cached_profile.email;
-      const badge = $('#account-plan-badge') as HTMLElement;
-      badge.textContent = 'Offline';
-      badge.className = 'af-plan-badge';
+    // Profile fetch failed — check if session is truly expired or just a network issue
+    const sessionStatus = await ensureSession();
+
+    if (sessionStatus === 'expired' || sessionStatus === 'no_session') {
+      // Session is dead — tokens expired, auto-logout and show login screen
+      console.warn('[AutoFlow] Session expired — redirecting to login');
+      await logout();
+      showLoggedOutState();
+      showToast('Session expired — please log in again.', 'warning');
+      return;
+    }
+
+    if (sessionStatus === 'refreshed') {
+      // Token was refreshed — retry loading profile
+      profile = await getProfile();
+      if (profile) {
+        chrome.storage.local.set({ af_cached_profile: profile });
+        ($('#account-email') as HTMLElement).textContent = profile.email;
+        const badge = $('#account-plan-badge') as HTMLElement;
+        if (profile.is_pro_active) {
+          badge.textContent = 'Pro';
+          badge.className = 'af-plan-badge pro';
+          const upgradeCta = document.getElementById('upgrade-cta');
+          if (upgradeCta) upgradeCta.style.display = 'none';
+        } else {
+          badge.textContent = 'Free';
+          badge.className = 'af-plan-badge';
+          const upgradeCta = document.getElementById('upgrade-cta');
+          if (upgradeCta) upgradeCta.style.display = '';
+        }
+      }
+    } else {
+      // Network issue but session is valid — use cached profile
+      const { af_cached_profile } = await chrome.storage.local.get('af_cached_profile');
+      if (af_cached_profile) {
+        ($('#account-email') as HTMLElement).textContent = af_cached_profile.email;
+        const badge = $('#account-plan-badge') as HTMLElement;
+        badge.textContent = 'Offline';
+        badge.className = 'af-plan-badge';
+      }
     }
   }
 
