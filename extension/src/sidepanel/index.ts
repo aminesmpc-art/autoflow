@@ -2222,7 +2222,12 @@ async function runQueue(queueId: string) {
   }
 
   const pendingCount = queue.prompts.filter((p: PromptEntry) => p.status === 'queued').length;
-  const hasImages = queue.prompts.some((p: PromptEntry) => p.images && p.images.length > 0);
+  // Check multiple sources for images (queue storage, live state, and settings)
+  const hasImagesInQueue = queue.prompts.some((p: PromptEntry) => p.images && p.images.length > 0);
+  const hasImagesInState = state.sharedImages.length > 0 ||
+    [...state.promptImages.values()].some(imgs => imgs.some(Boolean));
+  const isFramesMode = queue.settings?.creationType === 'frames';
+  const hasImages = hasImagesInQueue || hasImagesInState || isFramesMode;
   const promptType = hasImages ? 'full' : 'text';
   const quota = await checkCanGenerate(promptType as 'text' | 'full');
 
