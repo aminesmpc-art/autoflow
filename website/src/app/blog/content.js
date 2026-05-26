@@ -77,6 +77,45 @@ export const posts = [
     readTime: "10 min read",
     featured: true,
   },
+  {
+    slug: "how-to-make-tiktok-videos-with-ai",
+    title: "How to Make TikTok Videos with AI in 2026 (Complete Guide)",
+    description:
+      "Learn how to create viral TikTok content using AI video generators. Batch generate dozens of clips, optimize for the algorithm, and post consistently — no camera needed.",
+    date: "2026-05-26",
+    updated: "2026-05-26",
+    category: "Tutorial",
+    tags: ["tiktok", "ai-video", "google-flow", "social-media", "automation"],
+    image: "/screenshots/create-prompts.png",
+    readTime: "8 min read",
+    featured: true,
+  },
+  {
+    slug: "how-to-make-youtube-shorts-with-ai",
+    title: "How to Make YouTube Shorts with AI (& Get Monetized)",
+    description:
+      "Build a monetizable YouTube Shorts channel with AI-generated videos. From prompt writing to batch generation to upload — full pipeline guide for 2026.",
+    date: "2026-05-26",
+    updated: "2026-05-26",
+    category: "Tutorial",
+    tags: ["youtube-shorts", "ai-video", "monetization", "google-flow", "automation"],
+    image: "/screenshots/create-prompts.png",
+    readTime: "9 min read",
+    featured: true,
+  },
+  {
+    slug: "best-ai-video-generators-2026",
+    title: "7 Best AI Video Generators in 2026 (Tested & Ranked)",
+    description:
+      "We tested every major AI video generator — Google Flow, Runway, Kling, Pika, Sora, MiniMax, and Luma. Here's our definitive ranking for 2026.",
+    date: "2026-05-26",
+    updated: "2026-05-26",
+    category: "Comparison",
+    tags: ["ai-video", "comparison", "google-flow", "runway", "sora", "tools"],
+    image: "/screenshots/create-prompts.png",
+    readTime: "12 min read",
+    featured: true,
+  },
 ];
 
 /** Get all posts, newest first */

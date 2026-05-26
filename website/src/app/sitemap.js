@@ -3,7 +3,7 @@ export default async function sitemap() {
   const locales = ['en', 'ar', 'fr'];
   
   // Static localized routes
-  const routes = ['', '/pricing', '/faq', '/blog', '/privacy', '/terms', '/prompts', '/extractor'];
+  const routes = ['', '/pricing', '/faq', '/blog', '/privacy', '/terms', '/prompts', '/extractor', '/changelog'];
   
   const staticSitemaps = routes.map((route) => {
     return {
@@ -27,7 +27,10 @@ export default async function sitemap() {
     '/blog/best-prompts-ai-video-generation',
     '/blog/google-flow-tips-avoid-failed-generations',
     '/blog/construction-asmr-ai-video-complete-guide',
-    '/blog/how-to-recreate-ai-videos-with-extractor-and-autoflow'
+    '/blog/how-to-recreate-ai-videos-with-extractor-and-autoflow',
+    '/blog/how-to-make-tiktok-videos-with-ai',
+    '/blog/how-to-make-youtube-shorts-with-ai',
+    '/blog/best-ai-video-generators-2026',
   ];
 
   const blogSitemaps = blogPosts.map((post) => ({
