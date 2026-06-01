@@ -6,7 +6,7 @@ export const metadata = {
   description:
     "Frequently asked questions about AutoFlow — how it works, installation, Free vs Pro plans, privacy, and more.",
   alternates: {
-    canonical: "https://auto-flow.studio/faq",
+    canonical: "https://www.auto-flow.studio/faq",
   },
 };
 
@@ -83,13 +83,13 @@ export default function FAQPage() {
                 "@type": "ListItem",
                 position: 1,
                 name: "Home",
-                item: "https://auto-flow.studio",
+                item: "https://www.auto-flow.studio",
               },
               {
                 "@type": "ListItem",
                 position: 2,
                 name: "FAQ",
-                item: "https://auto-flow.studio/faq",
+                item: "https://www.auto-flow.studio/faq",
               },
             ],
           }),

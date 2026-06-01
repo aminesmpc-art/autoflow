@@ -11,7 +11,7 @@ export async function generateMetadata({ params }) {
     title: t.privacyPage.title + ' — AutoFlow',
     description: t.footer.privacy,
     alternates: {
-      canonical: `https://auto-flow.studio/${locale}/privacy`,
+      canonical: `https://www.auto-flow.studio/${locale}/privacy`,
     },
   };
 }

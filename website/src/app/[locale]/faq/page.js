@@ -12,7 +12,7 @@ export async function generateMetadata({ params }) {
     title: t.faq.title + ' ' + t.faq.titleGradient + ' — AutoFlow',
     description: t.faq.subtitle,
     alternates: {
-      canonical: `https://auto-flow.studio/${locale}/faq`,
+      canonical: `https://www.auto-flow.studio/${locale}/faq`,
     },
   };
 }

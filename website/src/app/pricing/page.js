@@ -7,12 +7,12 @@ export const metadata = {
   description:
     "AutoFlow pricing plans. Free tier with daily limits or Pro ($9.99/mo) for unlimited AI video generation with Google Flow. No account required to start.",
   alternates: {
-    canonical: "https://auto-flow.studio/pricing",
+    canonical: "https://www.auto-flow.studio/pricing",
   },
   openGraph: {
     title: "AutoFlow Pricing — Free & Pro Plans",
     description: "Start free with daily limits. Upgrade to Pro for unlimited AI video generation, bulk upscale, frame chains, and priority support.",
-    url: "https://auto-flow.studio/pricing",
+    url: "https://www.auto-flow.studio/pricing",
   },
 };
 

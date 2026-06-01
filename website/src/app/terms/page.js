@@ -6,12 +6,12 @@ export const metadata = {
   description:
     "AutoFlow terms of service. Rules and guidelines for using the AutoFlow Chrome extension for Google Flow automation.",
   alternates: {
-    canonical: "https://auto-flow.studio/terms",
+    canonical: "https://www.auto-flow.studio/terms",
   },
   openGraph: {
     title: "Terms of Service — AutoFlow",
     description: "Rules and guidelines for using AutoFlow, the Chrome extension for Google Flow automation.",
-    url: "https://auto-flow.studio/terms",
+    url: "https://www.auto-flow.studio/terms",
   },
 };
 

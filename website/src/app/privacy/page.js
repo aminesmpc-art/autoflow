@@ -5,12 +5,12 @@ export const metadata = {
   title: "Privacy Policy",
   description: "AutoFlow privacy policy. Learn how we handle your data — all processing happens locally in your browser.",
   alternates: {
-    canonical: "https://auto-flow.studio/privacy",
+    canonical: "https://www.auto-flow.studio/privacy",
   },
   openGraph: {
     title: "Privacy Policy — AutoFlow",
     description: "AutoFlow privacy policy. All data stays in your browser. No uploads, no tracking.",
-    url: "https://auto-flow.studio/privacy",
+    url: "https://www.auto-flow.studio/privacy",
   },
 };
 

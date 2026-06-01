@@ -13,7 +13,7 @@ export async function generateMetadata({ params }) {
     title: t.blog.title + ' ' + t.blog.titleGradient + ' — AutoFlow',
     description: t.blog.subtitle,
     alternates: {
-      canonical: `https://auto-flow.studio/${locale}/blog`,
+      canonical: `https://www.auto-flow.studio/${locale}/blog`,
     },
   };
 }

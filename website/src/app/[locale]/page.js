@@ -9,7 +9,7 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }) {
   const { locale } = await params;
   const t = getDictionary(locale);
-  const baseUrl = 'https://auto-flow.studio';
+  const baseUrl = 'https://www.auto-flow.studio';
   const localePath = locale === defaultLocale ? '' : `/${locale}`;
 
   return {
@@ -22,6 +22,7 @@ export async function generateMetadata({ params }) {
         'ar': `${baseUrl}/ar`,
         'fr': `${baseUrl}/fr`,
         'es': `${baseUrl}/es`,
+        'de': `${baseUrl}/de`,
         'x-default': `${baseUrl}`,
       },
     },
@@ -56,7 +57,7 @@ export default async function LocaleHomePage({ params }) {
               { "@type": "Offer", price: "9.99", priceCurrency: "USD", name: "Pro" },
             ],
             description: t.meta.description,
-            url: `https://auto-flow.studio${locale === 'en' ? '' : `/${locale}`}`,
+            url: `https://www.auto-flow.studio${locale === 'en' ? '' : `/${locale}`}`,
           }),
         }}
       />

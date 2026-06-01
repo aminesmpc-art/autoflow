@@ -1,5 +1,5 @@
 export default async function sitemap() {
-  const baseUrl = 'https://auto-flow.studio';
+  const baseUrl = 'https://www.auto-flow.studio';
   const locales = ['ar', 'fr', 'es', 'de'];
   
   // Static routes — English served at root, localized at /{locale}/path

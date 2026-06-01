@@ -166,4 +166,4 @@ export function getCategories() {
 }
 
 /** Base URL */
-export const SITE_URL = "https://auto-flow.studio";
+export const SITE_URL = "https://www.auto-flow.studio";

@@ -11,7 +11,7 @@ export async function generateMetadata({ params }) {
     title: t.termsPage.title + ' — AutoFlow',
     description: t.footer.terms,
     alternates: {
-      canonical: `https://auto-flow.studio/${locale}/terms`,
+      canonical: `https://www.auto-flow.studio/${locale}/terms`,
     },
   };
 }

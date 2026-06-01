@@ -10,7 +10,7 @@ import { AuthProvider } from "../context/AuthContext";
 import AuthButtons from "./AuthButtons";
 
 export const metadata = {
-  metadataBase: new URL("https://auto-flow.studio"),
+  metadataBase: new URL("https://www.auto-flow.studio"),
   title: {
     default: "AutoFlow — Automate Google Flow AI Video Generation | Batch Prompts & Queue Manager",
     template: "%s | AutoFlow — AI Video Automation",
@@ -110,7 +110,7 @@ export const metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://auto-flow.studio",
+    url: "https://www.auto-flow.studio",
     siteName: "AutoFlow",
     title: "AutoFlow — Automate Google Flow AI Video Generation",
     description:
@@ -130,6 +130,16 @@ export const metadata = {
     description:
       "Batch process prompts, smart queues, auto-retry, bulk download. Generate AI videos 10x faster. Free Chrome extension.",
     images: ["/og-image.png"],
+  },
+  alternates: {
+    languages: {
+      "en": "https://www.auto-flow.studio",
+      "ar": "https://www.auto-flow.studio/ar",
+      "fr": "https://www.auto-flow.studio/fr",
+      "es": "https://www.auto-flow.studio/es",
+      "de": "https://www.auto-flow.studio/de",
+      "x-default": "https://www.auto-flow.studio",
+    },
   },
   robots: {
     index: true,
@@ -159,14 +169,6 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={inter.variable}>
       <head>
-        {/* ── hreflang tags for geo-targeting ── */}
-        <link rel="alternate" hrefLang="en" href="https://auto-flow.studio/" />
-        <link rel="alternate" hrefLang="es" href="https://auto-flow.studio/es" />
-        <link rel="alternate" hrefLang="de" href="https://auto-flow.studio/de" />
-        <link rel="alternate" hrefLang="fr" href="https://auto-flow.studio/fr" />
-        <link rel="alternate" hrefLang="ar" href="https://auto-flow.studio/ar" />
-        <link rel="alternate" hrefLang="x-default" href="https://auto-flow.studio/" />
-
         {/* ── Google Analytics (GA4) ── */}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-ZJ953YL6EK"
@@ -208,10 +210,10 @@ export default function RootLayout({ children }) {
               "@context": "https://schema.org",
               "@type": "Organization",
               name: "AutoFlow",
-              url: "https://auto-flow.studio",
+              url: "https://www.auto-flow.studio",
               logo: {
                 "@type": "ImageObject",
-                url: "https://auto-flow.studio/og-image.png"
+                url: "https://www.auto-flow.studio/og-image.png"
               },
               description:
                 "AutoFlow automates Google Flow AI video generation — batch prompts, smart queues, auto-retry, and bulk download.",
@@ -231,10 +233,10 @@ export default function RootLayout({ children }) {
               "@context": "https://schema.org",
               "@type": "WebSite",
               name: "AutoFlow",
-              url: "https://auto-flow.studio",
+              url: "https://www.auto-flow.studio",
               potentialAction: {
                 "@type": "SearchAction",
-                target: "https://auto-flow.studio/faq?q={search_term_string}",
+                target: "https://www.auto-flow.studio/faq?q={search_term_string}",
                 "query-input": "required name=search_term_string",
               },
             }),

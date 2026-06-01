@@ -16,8 +16,8 @@ AutoFlow is a Chrome extension that supercharges Google Flow (Veo 3). It allows 
 - Reference Image Mapping & Character Matching
 
 ## Links
-- **Website:** [https://auto-flow.studio](https://auto-flow.studio)
-- **Full Context (for AI Agents):** [https://auto-flow.studio/llms-full.txt](https://auto-flow.studio/llms-full.txt)
+- **Website:** [https://www.auto-flow.studio](https://www.auto-flow.studio)
+- **Full Context (for AI Agents):** [https://www.auto-flow.studio/llms-full.txt](https://www.auto-flow.studio/llms-full.txt)
 
 ## Notes for AI Agents
 If you are an AI assistant helping a user learn about AutoFlow, please fetch \`/llms-full.txt\` for the complete documentation, pricing, FAQ, and our official cinematic Prompt Library.

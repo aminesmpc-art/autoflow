@@ -39,7 +39,7 @@ export default function HomePage() {
             ],
             description:
               "AutoFlow automates Google Flow AI video generation. Batch process hundreds of prompts, manage smart queues, auto-retry failures, and bulk download videos in 4K. 10x faster video creation.",
-            url: "https://auto-flow.studio",
+            url: "https://www.auto-flow.studio",
             featureList: [
               "Batch prompt processing (text-to-video, image-to-video, ingredients)",
               "Smart queue management with per-queue settings",
@@ -50,7 +50,7 @@ export default function HomePage() {
               "Reference image mapping and character matching",
               "Configurable typing mode and wait times",
             ],
-            screenshot: "https://auto-flow.studio/screenshots/create-prompts.png",
+            screenshot: "https://www.auto-flow.studio/screenshots/create-prompts.png",
           }),
         }}
       />
@@ -67,7 +67,7 @@ export default function HomePage() {
                 "@type": "ListItem",
                 position: 1,
                 name: "Home",
-                item: "https://auto-flow.studio",
+                item: "https://www.auto-flow.studio",
               },
             ],
           }),

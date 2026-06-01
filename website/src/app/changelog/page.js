@@ -5,7 +5,7 @@ export const metadata = {
   description:
     "See what's new in AutoFlow. Latest features, improvements, and bug fixes for the #1 Chrome extension for Google Flow automation.",
   alternates: {
-    canonical: "https://auto-flow.studio/changelog",
+    canonical: "https://www.auto-flow.studio/changelog",
   },
 };
 
@@ -137,13 +137,13 @@ export default function ChangelogPage() {
                 "@type": "ListItem",
                 position: 1,
                 name: "Home",
-                item: "https://auto-flow.studio",
+                item: "https://www.auto-flow.studio",
               },
               {
                 "@type": "ListItem",
                 position: 2,
                 name: "Changelog",
-                item: "https://auto-flow.studio/changelog",
+                item: "https://www.auto-flow.studio/changelog",
               },
             ],
           }),
