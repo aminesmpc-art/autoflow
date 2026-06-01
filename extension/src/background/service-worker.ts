@@ -29,6 +29,7 @@ import {
   getImageBlob,
   getSettings,
 } from '../shared/storage';
+import { consumeDownload } from '../shared/api';
 
 // ================================================================
 // KEEPALIVE SYSTEM — Prevents SW death & tab throttling
@@ -442,6 +443,105 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
 
 
 
+    case 'INSTALL_NETWORK_SNIFFER': {
+      if (!sender.tab?.id) return { error: 'No tab ID' };
+      try {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: sender.tab.id },
+          world: 'MAIN',
+          func: () => {
+            // Guard: don't install twice
+            if ((window as any).__af_interceptor_installed) {
+              return { success: true, alreadyInstalled: true };
+            }
+            (window as any).__af_interceptor_installed = true;
+
+            // ── Key endpoints we piggyback on ──
+            const STATUS_CHECK = 'batchCheckAsyncVideoGenerationStatus';
+            const GENERATE = 'batchAsyncGenerateVideoText';
+
+            /** Post data to content script (local message, zero network traffic) */
+            function relay(type: string, payload: any): void {
+              window.postMessage({ source: 'autoflow-api-interceptor', type, payload }, '*');
+            }
+
+            // ── Stealth patch of window.fetch ──
+            // We intercept ONLY the two endpoints we need. All other calls
+            // pass through with zero overhead (no cloning, no body reading).
+            const _origFetch = window.fetch;
+            const _origToString = _origFetch.toString.bind(_origFetch);
+
+            // Store the last status check URL + request init for active calls
+            let _lastStatusUrl = '';
+            let _lastStatusInit: any = null;
+
+            const patchedFetch = async function (this: any, ...args: any[]) {
+              const url = typeof args[0] === 'string'
+                ? args[0]
+                : (args[0] as Request)?.url || '';
+
+              // Capture status check request info for active re-use
+              if (url.includes(STATUS_CHECK)) {
+                _lastStatusUrl = url;
+                // Clone the init object (headers, body, method) for later replay
+                const init = args[1] as RequestInit | undefined;
+                if (init) {
+                  _lastStatusInit = {
+                    method: init.method || 'POST',
+                    headers: init.headers ? JSON.parse(JSON.stringify(init.headers)) : undefined,
+                    body: init.body,
+                  };
+                }
+              }
+
+              const response = await _origFetch.apply(
+                this, args as [RequestInfo | URL, RequestInit?]
+              );
+
+              // Only intercept our two target endpoints — everything else untouched
+              const isStatus = url.includes(STATUS_CHECK);
+              const isGenerate = url.includes(GENERATE);
+
+              if ((isStatus || isGenerate) && response.ok) {
+                // Clone and read asynchronously — doesn't block the original response
+                response.clone().json().then((data: any) => {
+                  relay(isStatus ? 'STATUS_UPDATE' : 'GENERATION_SUBMITTED', data);
+                }).catch(() => { /* response wasn't JSON — ignore */ });
+              }
+
+              return response;
+            };
+
+            // ── Active status check: allows content script to trigger a fresh poll ──
+            // This makes the SAME call Flow makes, using the captured URL + auth.
+            // The response flows through the interceptor → updates the cache automatically.
+            (window as any).__af_activeCheck = async function (): Promise<boolean> {
+              if (!_lastStatusUrl || !_lastStatusInit) return false;
+              try {
+                await patchedFetch(_lastStatusUrl, _lastStatusInit);
+                return true; // Cache was refreshed via the interceptor relay
+              } catch {
+                return false;
+              }
+            };
+
+            // Make our patched fetch look identical to the original
+            // Prevents detection via fetch.toString() or typeof checks
+            patchedFetch.toString = _origToString;
+            Object.defineProperty(patchedFetch, 'name', { value: 'fetch' });
+            Object.defineProperty(patchedFetch, 'length', { value: _origFetch.length });
+
+            (window as any).fetch = patchedFetch;
+
+            return { success: true };
+          },
+        });
+        return results && results[0] ? results[0].result : { error: 'No result' };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+
     case 'PING':
       return { type: 'PONG' };
 
@@ -530,8 +630,111 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
 
     case 'REPROMPT_NEEDED':
     case 'BATCH_REPROMPT_NEEDED':
+    case 'FAKE_CANCEL_ALERT':
       broadcastToExtension(msg);
       return {};
+
+    case 'VERIFY_MEDIA_URL': {
+      // HEAD request to check if a media URL is actually downloadable
+      const verifyUrl = msg.payload?.url;
+      if (!verifyUrl) return { valid: false };
+      try {
+        const resp = await fetch(verifyUrl, {
+          method: 'HEAD',
+          redirect: 'follow',
+          credentials: 'include',
+        });
+        // Valid if we get 200 and content type looks like media
+        const ct = resp.headers.get('content-type') || '';
+        const valid = resp.ok && (
+          ct.includes('video') ||
+          ct.includes('octet-stream') ||
+          ct.includes('mp4') ||
+          ct.includes('webm') ||
+          ct.includes('application/')  // redirect responses sometimes use generic types
+        );
+        console.log(`[AutoFlow] URL verify: ${resp.status} ct=${ct} valid=${valid}`);
+        return { valid };
+      } catch (err: any) {
+        console.warn(`[AutoFlow] URL verify failed:`, err.message);
+        return { valid: false };
+      }
+    }
+
+    case 'BATCH_API_DOWNLOAD': {
+      // Direct API download — no DOM, no context menu, no library scan
+      // URL pattern: /fx/api/trpc/media.getMediaUrlRedirect?name={mediaId}
+      const items: Array<{ mediaId: string; filename: string }> = msg.payload?.items || [];
+      const queueName = msg.payload?.queueName || 'AutoFlow_download';
+      const results: string[] = [];
+      const errors: string[] = [];
+      const total = items.length;
+
+      console.log(`[AutoFlow] API Download: starting ${total} file(s)...`);
+
+      // Track download count in backend (same as library scan does)
+      try {
+        const dlQuota = await consumeDownload(total);
+        console.log(`[AutoFlow] Download quota: ${dlQuota.remaining} remaining (allowed: ${dlQuota.allowed})`);
+      } catch (e: any) {
+        console.warn('[AutoFlow] consumeDownload failed (proceeding anyway):', e.message);
+      }
+
+      // Broadcast initial state — all files pending
+      broadcastToExtension({
+        type: 'DOWNLOAD_PROGRESS',
+        payload: { items: items.map(i => ({ filename: i.filename, status: 'pending' })), current: 0, total },
+      });
+
+      for (let idx = 0; idx < items.length; idx++) {
+        const item = items[idx];
+
+        // Broadcast: this file is now downloading
+        broadcastToExtension({
+          type: 'DOWNLOAD_PROGRESS',
+          payload: { items: items.map((it, i) => ({
+            filename: it.filename,
+            status: i < idx ? 'done' : i === idx ? 'downloading' : 'pending',
+          })), current: idx + 1, total },
+        });
+
+        try {
+          const url = `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=${item.mediaId}`;
+          const filename = `AutoFlow/${queueName}/${item.filename}`;
+
+          queueDownloadRename(filename);
+
+          const downloadId = await chrome.downloads.download({
+            url,
+            filename,
+            conflictAction: 'uniquify',
+            saveAs: false,
+          });
+
+          ourDownloadIds.add(downloadId);
+          setTimeout(() => ourDownloadIds.delete(downloadId), 60_000);
+
+          results.push(item.filename);
+          console.log(`[AutoFlow] API Download queued: ${item.filename}`);
+        } catch (err: any) {
+          console.error(`[AutoFlow] API Download failed: ${item.filename}`, err);
+          errors.push(`${item.filename}: ${err.message}`);
+        }
+        await sleep(500);
+      }
+
+      // Broadcast final state — all done
+      broadcastToExtension({
+        type: 'DOWNLOAD_PROGRESS',
+        payload: { items: items.map(i => ({
+          filename: i.filename,
+          status: results.includes(i.filename) ? 'done' : 'error',
+        })), current: total, total, complete: true },
+      });
+
+      console.log(`[AutoFlow] API Download complete: ${results.length} ok, ${errors.length} failed`);
+      return { downloaded: results, errors };
+    }
 
     case 'SET_DOWNLOAD_RENAME':
       queueDownloadRename(msg.payload.filename);

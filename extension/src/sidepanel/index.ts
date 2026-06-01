@@ -2310,6 +2310,9 @@ async function runQueue(queueId: string) {
     return;
   }
 
+  // Clear tracking Set for this new queue run (prevents memory leak across runs)
+  _trackedPromptUsage.clear();
+
   // Credits are consumed per-prompt when they actually complete (in handlePromptStatusUpdate).
   showToast(`Starting queue in ${modeLabels[mode]}... (${consumeResult.remaining} run(s) left)`, 'info');
 
@@ -2496,12 +2499,40 @@ function updateMonitorSteps(queue: QueueObject) {
   const total = queue.prompts.length;
   const done = queue.prompts.filter(p => p.status === 'done').length;
   const failed = queue.prompts.filter(p => p.status === 'failed').length;
+  const submitted = queue.prompts.filter(p => p.status === 'submitted').length;
   const finished = done + failed;
   const pct = total > 0 ? Math.round((finished / total) * 100) : 0;
 
-  // Progress bar
-  const fill = document.getElementById('monitor-progress-fill');
-  if (fill) fill.style.width = `${pct}%`;
+  // Progress bar — 3 segments: done (green) + submitted (purple) + failed (red)
+  const donePct = total > 0 ? (done / total) * 100 : 0;
+  const submittedPct = total > 0 ? (submitted / total) * 100 : 0;
+  const failedPct = total > 0 ? (failed / total) * 100 : 0;
+  const doneFill = document.getElementById('monitor-progress-fill');
+  if (doneFill) doneFill.style.width = `${donePct}%`;
+  // Ensure submitted fill element exists
+  let submittedFill = document.getElementById('monitor-progress-submitted');
+  if (!submittedFill) {
+    const bar = document.querySelector('.af-progress-bar');
+    if (bar) {
+      submittedFill = document.createElement('div');
+      submittedFill.id = 'monitor-progress-submitted';
+      submittedFill.className = 'af-progress-fill af-progress-fill--submitted';
+      bar.appendChild(submittedFill);
+    }
+  }
+  if (submittedFill) submittedFill.style.width = `${submittedPct}%`;
+  // Ensure failed fill element exists
+  let failedFill = document.getElementById('monitor-progress-failed');
+  if (!failedFill) {
+    const bar = document.querySelector('.af-progress-bar');
+    if (bar) {
+      failedFill = document.createElement('div');
+      failedFill.id = 'monitor-progress-failed';
+      failedFill.className = 'af-progress-fill af-progress-fill--failed';
+      bar.appendChild(failedFill);
+    }
+  }
+  if (failedFill) failedFill.style.width = `${failedPct}%`;
   const pctEl = document.getElementById('monitor-percent');
   if (pctEl) pctEl.textContent = `${pct}%`;
 
@@ -2514,6 +2545,35 @@ function updateMonitorSteps(queue: QueueObject) {
   if (doneEl) doneEl.textContent = String(done);
   const failedEl = document.getElementById('monitor-failed-count');
   if (failedEl) failedEl.textContent = String(failed);
+  // Add submitted counter dynamically
+  let submittedBadge = document.getElementById('monitor-submitted-count');
+  if (!submittedBadge) {
+    const scoreRow = document.querySelector('.af-monitor-score');
+    const divider = scoreRow?.querySelector('.af-score-divider');
+    if (scoreRow && divider) {
+      const submittedItem = document.createElement('span');
+      submittedItem.className = 'af-score-item af-score--submitted';
+      submittedItem.innerHTML = '📤 <span id="monitor-submitted-count">0</span>';
+      scoreRow.insertBefore(submittedItem, divider);
+      submittedBadge = document.getElementById('monitor-submitted-count');
+    }
+  }
+  if (submittedBadge) submittedBadge.textContent = String(submitted);
+
+  // Credits display — show remaining credits from the queue if available
+  let creditsEl = document.getElementById('monitor-credits');
+  const lastPrompt = queue.prompts.find(p => p.status === 'done' || p.status === 'failed');
+  if (lastPrompt) {
+    if (!creditsEl) {
+      const scoreRow = document.querySelector('.af-monitor-score');
+      if (scoreRow) {
+        creditsEl = document.createElement('span');
+        creditsEl.id = 'monitor-credits';
+        creditsEl.className = 'af-score-credits';
+        scoreRow.appendChild(creditsEl);
+      }
+    }
+  }
 
   // ETA
   const etaEl = document.getElementById('monitor-eta');
@@ -2557,6 +2617,9 @@ function updateMonitorSteps(queue: QueueObject) {
       const text = queue.prompts[currentIdx].text;
       const short = text.length > 45 ? text.substring(0, 45) + '...' : text;
       statusText.textContent = `Creating #${currentIdx + 1}: ${short}`;
+    } else if (submitted > 0) {
+      statusIcon.textContent = '🎬';
+      statusText.textContent = `Waiting for ${submitted} video${submitted > 1 ? 's' : ''} to finish...`;
     } else {
       statusIcon.textContent = '⏳';
       statusText.textContent = 'Starting...';
@@ -2569,8 +2632,22 @@ function updateMonitorSteps(queue: QueueObject) {
     listEl.innerHTML = queue.prompts.map((p, i) => {
       let icon = '○';
       let cls = '';
+      let errorTag = '';
       if (p.status === 'done') { icon = '✅'; cls = 'af-mini-prompt--done'; }
-      else if (p.status === 'failed') { icon = '❌'; cls = 'af-mini-prompt--failed'; }
+      else if (p.status === 'submitted') { icon = '📤'; cls = 'af-mini-prompt--submitted'; }
+      else if (p.status === 'failed') {
+        icon = '❌'; cls = 'af-mini-prompt--failed';
+        // Show compact error reason
+        if (p.error) {
+          let shortErr = p.error;
+          if (shortErr.startsWith('API:')) shortErr = shortErr.replace('API:', '').trim();
+          if (shortErr.includes('Safety') || shortErr.includes('SAFETY')) shortErr = '🛡️ Safety';
+          else if (shortErr.includes('Quota') || shortErr.includes('QUOTA')) shortErr = '💳 Quota';
+          else if (shortErr.includes('Server') || shortErr.includes('SERVER')) shortErr = '🔧 Server';
+          else if (shortErr.length > 25) shortErr = shortErr.substring(0, 25) + '…';
+          errorTag = `<span class="af-mini-error" title="${escapeHtml(p.error)}">${escapeHtml(shortErr)}</span>`;
+        }
+      }
       else if (p.status === 'running') { icon = '<span class="af-mini-spinner">⏳</span>'; cls = 'af-mini-prompt--running'; }
 
       const text = p.text.length > 40 ? p.text.substring(0, 40) + '...' : p.text;
@@ -2578,6 +2655,7 @@ function updateMonitorSteps(queue: QueueObject) {
         <span class="af-mini-icon">${icon}</span>
         <span class="af-mini-num">#${i + 1}</span>
         <span class="af-mini-text">${escapeHtml(text)}</span>
+        ${errorTag}
       </div>`;
     }).join('');
 
@@ -2716,55 +2794,7 @@ function initLibraryTab() {
     showToast(`Saved prompt order (${prompts.length} prompts). Re-scan to apply.`);
   });
 
-  $('#btn-download-selected').addEventListener('click', async () => {
-    const selected = state.scannedAssets.filter(a => a.selected);
-    if (selected.length === 0) {
-      showToast('No assets selected.', 'warning');
-      return;
-    }
-
-    // Server-side download limit check (free users: 20/day)
-    const dlQuota = await consumeDownload(selected.length);
-    if (!dlQuota.allowed) {
-      showToast(dlQuota.message || `Daily download limit reached (${dlQuota.limit}/day). Upgrade for unlimited!`, 'warning');
-      return;
-    }
-
-    showToast(`Downloading ${selected.length} file(s)...`);
-    // Get the current resolution setting based on media type
-    const hasVideo = selected.some(a => a.mediaType === 'video');
-    const resolution = hasVideo
-      ? ($('#setting-video-resolution') as HTMLSelectElement).value
-      : ($('#setting-image-resolution') as HTMLSelectElement).value;
-    // Sort: by promptNumber DESCENDING so P001 downloads LAST
-    // → gets newest timestamp → appears at TOP in Chrome downloads & Explorer
-    const sorted = [...selected].sort((a, b) => {
-      if (a.promptNumber !== b.promptNumber) return b.promptNumber - a.promptNumber;
-      return b.generationNum - a.generationNum;
-    });
-
-    const response = await sendToBackground({
-      type: 'DOWNLOAD_SELECTED',
-      payload: {
-        assets: sorted.map(a => ({
-          locator: a.locator,
-          index: a.index,
-          mediaType: a.mediaType,
-          videoSrc: a.videoSrc,
-          thumbnailUrl: a.thumbnailUrl,
-          promptLabel: a.promptLabel,
-          groupIndex: a.groupIndex,
-          promptNumber: a.promptNumber,
-          generationNum: a.generationNum,
-        })),
-        queueName: 'AutoFlow_' + new Date().toISOString().slice(0, 10),
-        resolution,
-      },
-    });
-    if (response?.downloaded) {
-      showToast(`Downloaded ${response.downloaded.length} file(s).`);
-    }
-  });
+  $('#btn-download-selected').addEventListener('click', () => downloadSelectedAssets());
 
   // ── Retry selected assets ──
   $('#btn-retry-selected').addEventListener('click', async () => {
@@ -3321,6 +3351,12 @@ function initMessageListener() {
       case 'PLAY_NOTIFICATION_SOUND':
         playNotificationChime();
         break;
+      case 'DOWNLOAD_PROGRESS':
+        renderDownloadProgress(msg.payload);
+        break;
+      case 'FAKE_CANCEL_ALERT':
+        handleFakeCancelAlert(msg.payload);
+        break;
     }
   });
 }
@@ -3420,24 +3456,142 @@ function handlePhaseUpdate(data: { phase: string; detail: string }) {
     retrying: '🔄',
     reloading: '🔃',
     checking: '✔️',
+    verifying: '📡',
+    recovering: '🛡️',
+    downloading: '⬇️',
+    done: '✅',
   };
 
   statusIcon.textContent = phaseIcons[data.phase] || '⏳';
   statusText.textContent = data.detail || data.phase;
 }
 
+/**
+ * Show a big, visible, calming toast when Google Flow shows a fake "Cancelled" error.
+ * The user sees Google's scary red error and might panic — this reassures them.
+ */
+function handleFakeCancelAlert(data: { promptIndex: number; attempt: number }) {
+  showToast(
+    `🛡️ Don't panic! Google showed "cancelled" for prompt #${data.promptIndex} — this is a known Google bug, NOT a real error. AutoFlow is auto-retrying right now. Your video will be fine!`,
+    'success',
+    8000  // Stay visible for 8 seconds so user actually reads it
+  );
+}
+
+/**
+ * Render live download progress card during API batch download.
+ * Shows each file with its current status.
+ */
+function renderDownloadProgress(data: {
+  items: Array<{ filename: string; status: 'pending' | 'downloading' | 'done' | 'error' }>;
+  current: number;
+  total: number;
+  complete?: boolean;
+}) {
+  const statusIcons: Record<string, string> = {
+    pending: '⬜',
+    downloading: '⬇️',
+    done: '✅',
+    error: '❌',
+  };
+
+  // Find or create the progress container
+  let container = document.getElementById('api-download-progress');
+  if (!container) {
+    // Insert after the monitor status message
+    const monitorPanel = document.getElementById('monitor-status-msg')?.parentElement;
+    if (!monitorPanel) return;
+
+    container = document.createElement('div');
+    container.id = 'api-download-progress';
+    container.className = 'af-download-progress';
+    monitorPanel.appendChild(container);
+  }
+
+  // Build the progress bar percentage
+  const pct = data.total > 0 ? Math.round((data.current / data.total) * 100) : 0;
+  const doneCount = data.items.filter(i => i.status === 'done').length;
+  const errorCount = data.items.filter(i => i.status === 'error').length;
+
+  // Build file list HTML
+  const fileListHtml = data.items.map(item => {
+    const icon = statusIcons[item.status] || '⬜';
+    const statusClass = item.status === 'downloading' ? 'af-dl-active' :
+                        item.status === 'done' ? 'af-dl-done' :
+                        item.status === 'error' ? 'af-dl-error' : 'af-dl-pending';
+    // Show just the filename (strip P001_G1_ prefix for cleaner display)
+    const displayName = item.filename.replace(/\.mp4$/, '');
+    return `<div class="af-dl-item ${statusClass}">${icon} <span>${displayName}</span></div>`;
+  }).join('');
+
+  // Header
+  const headerText = data.complete
+    ? `📦 Download complete — ${doneCount} file${doneCount !== 1 ? 's' : ''}${errorCount > 0 ? `, ${errorCount} failed` : ''}`
+    : `📥 Downloading ${data.current} / ${data.total}`;
+
+  container.innerHTML = `
+    <div class="af-dl-header">${headerText}</div>
+    <div class="af-dl-bar-track">
+      <div class="af-dl-bar-fill" style="width:${pct}%"></div>
+    </div>
+    <div class="af-dl-list">${fileListHtml}</div>
+  `;
+
+  container.style.display = 'block';
+
+  // Auto-hide after completion
+  if (data.complete) {
+    setTimeout(() => {
+      if (container) {
+        container.style.opacity = '0';
+        setTimeout(() => { if (container) container.style.display = 'none'; }, 500);
+      }
+    }, 8000);
+  }
+}
+
 // Track which prompts have already been counted for usage to prevent double-counting.
 // Key format: "queueId:promptIndex"
 const _trackedPromptUsage = new Set<string>();
 
-function handlePromptStatusUpdate(data: { queue: QueueObject; promptIndex: number }) {
+function handlePromptStatusUpdate(data: { queue: QueueObject; promptIndex: number; credits?: number | null }) {
   const prompt = data.queue.prompts[data.promptIndex];
   const done = data.queue.prompts.filter(p => p.status === 'done').length;
+  const failed = data.queue.prompts.filter(p => p.status === 'failed').length;
+  const total = data.queue.prompts.length;
   const progressEl = $('#monitor-progress');
-  if (progressEl) progressEl.textContent = `${done} / ${data.queue.prompts.length}`;
+  if (progressEl) progressEl.textContent = `${done + failed} / ${total}`;
 
-  // Prompt usage is pre-consumed server-side at queue start (consume_queue_run).
-  // No per-prompt trackUsage call needed — prevents double-counting.
+  // Update credits display if available
+  if (data.credits !== undefined && data.credits !== null) {
+    const creditsEl = document.getElementById('monitor-credits');
+    if (creditsEl) {
+      creditsEl.textContent = `💎 ${data.credits.toLocaleString()}`;
+      creditsEl.title = `Remaining Flow credits: ${data.credits.toLocaleString()}`;
+    }
+  }
+
+  // ── Per-prompt tracking: report REAL completions to backend ──
+  // Track each prompt ONCE when it reaches a final state (done or failed).
+  // This creates individual events so the dashboard shows real progress: 7/10, 8/10...
+  if (prompt && (prompt.status === 'done' || prompt.status === 'failed')) {
+    const trackingKey = `${data.queue.id}:${data.promptIndex}`;
+    if (!_trackedPromptUsage.has(trackingKey)) {
+      _trackedPromptUsage.add(trackingKey);
+      
+      const isFramesMode = data.queue.settings?.creationType === 'frames';
+      const hasSharedImages = state.sharedImages.length > 0;
+      const hasPerPromptImages = state.promptImages.get(data.promptIndex)?.some(Boolean) || false;
+      const hasOwnImages = Array.isArray(prompt.images) && prompt.images.length > 0;
+      
+      const isFull = hasOwnImages || hasPerPromptImages || hasSharedImages || isFramesMode;
+      const promptType = isFull ? 'full' : 'text';
+      
+      trackUsage(1, promptType, prompt.status as 'done' | 'failed').catch(() => {/* non-blocking */});
+      console.log(`[AutoFlow SP] Tracked prompt #${data.promptIndex + 1} → ${prompt.status} (${promptType})`);
+    }
+  }
+
   if (prompt && prompt.status === 'done') {
     // Re-check image gate after each completion
     enforceImageGate();
@@ -3446,7 +3600,7 @@ function handlePromptStatusUpdate(data: { queue: QueueObject; promptIndex: numbe
   updatePromptStatuses(data.queue);
   updateMonitorSteps(data.queue);
 
-  console.log(`[AutoFlow SP] Prompt #${data.promptIndex + 1} → ${prompt?.status}, done ${done}/${data.queue.prompts.length}`);
+  console.log(`[AutoFlow SP] Prompt #${data.promptIndex + 1} → ${prompt?.status}, done ${done}/${total}${failed > 0 ? ` (${failed} failed)` : ''}`);
 }
 
 function updatePromptStatuses(queue: QueueObject) {
@@ -3585,8 +3739,66 @@ function handleQueueSummary(payload: { queueName: string; totalPrompts: number; 
  * Auto-scan library after queue completes.
  * Switches to Library tab and triggers a scan automatically.
  */
-async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownload?: boolean }) {
+/**
+ * Download all currently selected assets. Called by both the
+ * download button click and the auto-download after queue completion.
+ */
+async function downloadSelectedAssets(): Promise<void> {
+  const selected = state.scannedAssets.filter(a => a.selected);
+  if (selected.length === 0) {
+    showToast('No assets selected.', 'warning');
+    return;
+  }
+
+  // Server-side download limit check (free users: 20/day)
+  const dlQuota = await consumeDownload(selected.length);
+  if (!dlQuota.allowed) {
+    showToast(dlQuota.message || `Daily download limit reached (${dlQuota.limit}/day). Upgrade for unlimited!`, 'warning');
+    return;
+  }
+
+  showToast(`Downloading ${selected.length} file(s)...`);
+  // Get the current resolution setting based on media type
+  const hasVideo = selected.some(a => a.mediaType === 'video');
+  const resolution = hasVideo
+    ? ($('#setting-video-resolution') as HTMLSelectElement)?.value || '1080p'
+    : ($('#setting-image-resolution') as HTMLSelectElement)?.value || '4k';
+
+  // Sort: by promptNumber DESCENDING so P001 downloads LAST
+  // → gets newest timestamp → appears at TOP in Chrome downloads & Explorer
+  const sorted = [...selected].sort((a, b) => {
+    if (a.promptNumber !== b.promptNumber) return b.promptNumber - a.promptNumber;
+    return b.generationNum - a.generationNum;
+  });
+
+  const response = await sendToBackground({
+    type: 'DOWNLOAD_SELECTED',
+    payload: {
+      assets: sorted.map(a => ({
+        locator: a.locator,
+        index: a.index,
+        mediaType: a.mediaType,
+        videoSrc: a.videoSrc,
+        thumbnailUrl: a.thumbnailUrl,
+        promptLabel: a.promptLabel,
+        groupIndex: a.groupIndex,
+        promptNumber: a.promptNumber,
+        generationNum: a.generationNum,
+      })),
+      queueName: 'AutoFlow_' + new Date().toISOString().slice(0, 10),
+      resolution,
+    },
+  });
+  if (response?.downloaded) {
+    showToast(`Downloaded ${response.downloaded.length} file(s).`, 'success');
+  } else if (response?.error) {
+    showToast(`Download error: ${response.error}`, 'error');
+  }
+}
+
+async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownload?: boolean; afterReload?: boolean }) {
   const autoDownload = payload?.autoDownload ?? false;
+  const afterReload = payload?.afterReload ?? false;
   showToast(`Queue complete — auto-scanning library${autoDownload ? ' + downloading' : ''}...`, 'info');
 
   // Switch to Library tab
@@ -3595,18 +3807,35 @@ async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownloa
     libraryTab.click();
   }
 
-  // Wait a beat for the UI to switch
-  await new Promise(r => setTimeout(r, 500));
+  // If page is reloading, wait for it to fully load
+  if (afterReload) {
+    showToast('Page reloading — waiting for it to finish...', 'info');
+    await new Promise(r => setTimeout(r, 8000));
+  } else {
+    await new Promise(r => setTimeout(r, 500));
+  }
 
-  // Trigger scan
-  const response = await sendToBackground({ type: 'SCAN_LIBRARY' });
+  // Trigger scan with retry logic (page might still be loading after reload)
+  let response: any = null;
+  const maxRetries = afterReload ? 3 : 1;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    response = await sendToBackground({ type: 'SCAN_LIBRARY' });
+    if (response && !response.error) break;
+
+    if (attempt < maxRetries) {
+      console.log(`[AutoFlow] Scan attempt ${attempt} failed, retrying in 3s...`, response?.error);
+      showToast(`Scan attempt ${attempt} failed — retrying...`, 'info');
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+
   if (response?.error) {
     showToast(`Auto-scan error: ${response.error}`, 'error');
     return;
   }
   state.scannedAssets = response?.assets || [];
   if (state.scannedAssets.length === 0) {
-    showToast('Auto-scan: no assets found.', 'warning');
+    showToast('Auto-scan: no assets found in library.', 'warning');
     return;
   }
 
@@ -3621,7 +3850,6 @@ async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownloa
 
   // Auto-download in FULL mode: select all videos and trigger download
   if (autoDownload) {
-    // Select all video assets
     const videoAssets = state.scannedAssets.filter(a => a.mediaType === 'video');
     if (videoAssets.length === 0) {
       showToast('Auto-download: no videos to download.', 'info');
@@ -3630,17 +3858,9 @@ async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownloa
     videoAssets.forEach(a => a.selected = true);
     renderLibrary();
 
-    // Wait briefly for UI to update
-    await new Promise(r => setTimeout(r, 300));
-
-    // Trigger the download button click programmatically
-    const downloadBtn = document.getElementById('btn-download-selected') as HTMLButtonElement;
-    if (downloadBtn) {
-      showToast(`Auto-downloading ${videoAssets.length} video(s)...`, 'info');
-      downloadBtn.click();
-    } else {
-      showToast('Auto-download: download button not found.', 'error');
-    }
+    // Call download directly — don't rely on the UI button
+    showToast(`Auto-downloading ${videoAssets.length} video(s)...`, 'info');
+    await downloadSelectedAssets();
   }
 }
 

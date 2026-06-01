@@ -76,8 +76,8 @@ export async function addQueue(queue: QueueObject): Promise<void> {
     if (queues.length >= 50) {
       throw new Error('Queue limit reached (50). Please delete old queues first.');
     }
-    if (queue.prompts.length > 500) {
-      throw new Error('Too many prompts (max 500 per queue).');
+    if (queue.prompts.length > 2000) {
+      throw new Error('Too many prompts (max 2000 per queue).');
     }
     queues.unshift(queue);
     await saveAllQueues(queues);

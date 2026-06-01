@@ -37,7 +37,7 @@ export interface DailyUsageResponse {
 }
 
 // ── Prompt Status ──
-export type PromptStatus = 'not-added' | 'queued' | 'running' | 'done' | 'failed';
+export type PromptStatus = 'not-added' | 'queued' | 'running' | 'submitted' | 'done' | 'failed';
 
 // ── Per-prompt image metadata (stored in chrome.storage.local) ──
 export interface ImageMeta {
@@ -60,6 +60,7 @@ export interface PromptEntry {
   error?: string;
   outputFiles: string[];
   tileIds?: string[];   // tile IDs created when this prompt was generated
+  mediaId?: string;     // API media ID for direct server status lookup
   isExtension?: boolean; // True if this prompt extends the previous one in the chain
   baseIndex?: number;    // The index of the base prompt this extends
 }
@@ -204,6 +205,7 @@ export type AutomationState =
   | 'WAIT_FOR_COMPLETE'
   | 'DOWNLOAD_OUTPUTS'
   | 'MARK_DONE'
+  | 'MARK_SUBMITTED'
   | 'MARK_FAILED'
   | 'NEXT'
   | 'PAUSED'
@@ -260,11 +262,49 @@ export type MessageType =
   | 'RESUME_QUEUE_CONFIRMED'
   | 'DISCARD_INTERRUPTED_QUEUE'
   | 'QUEUE_RECOVERY_RESULT'
-  | 'PLAY_NOTIFICATION_SOUND';
+  | 'PLAY_NOTIFICATION_SOUND'
+  | 'INSTALL_NETWORK_SNIFFER'
+  | 'BATCH_API_DOWNLOAD'
+  | 'VERIFY_MEDIA_URL'
+  | 'FAKE_CANCEL_ALERT'
+  | 'DOWNLOAD_PROGRESS';
 
 export interface Message {
   type: MessageType;
   payload?: any;
+}
+
+// ── Flow API types (from aisandbox-pa.googleapis.com) ──
+
+/** Mapped status from Google Flow's mediaGenerationStatus enum. */
+export type FlowGenerationState = 'queued' | 'generating' | 'completed' | 'failed' | 'unknown';
+
+/** Parsed generation status from Google Flow's API. */
+export interface FlowGenerationStatus {
+  /** Media/generation UUID (e.g. "5e32aa45-0db9-4d25-a56d-332db6c42a24") */
+  mediaId: string;
+  /** Project UUID */
+  projectId: string;
+  /** Workflow UUID */
+  workflowId: string;
+  /** Mapped status */
+  state: FlowGenerationState;
+  /** Raw API status string (e.g. "MEDIA_GENERATION_STATUS_SUCCESSFUL") */
+  rawStatus: string;
+  /** Detailed failure reason from API (safety, server error, etc.) */
+  failureReason?: string;
+  /** The prompt text used */
+  promptText: string;
+  /** Model name (e.g. "veo_3_1_t2v_fast_ultra") */
+  modelName: string;
+  /** Video aspect ratio */
+  aspectRatio: string;
+  /** Video duration (e.g. "8s") */
+  duration: string;
+  /** ISO timestamp of creation */
+  createdAt: string;
+  /** Remaining credits after this generation */
+  remainingCredits?: number;
 }
 
 // ── Default settings ──

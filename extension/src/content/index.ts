@@ -10,6 +10,7 @@ import { scanProjectForVideos, previewAsset, retrySingleTile, downloadAssetByMen
 import { sleep, findModelSelectorTrigger, findMenuItem, simulateClick } from './selectors';
 import { DOM_SETTLE_MS } from '../shared/constants';
 import { getRunningQueue, clearRunningQueue } from '../shared/storage';
+import { initApiHelper } from './apiHelper';
 
 // ── Singleton engine ──
 let engine: AutomationEngine | null = null;
@@ -67,6 +68,30 @@ chrome.runtime.onMessage.addListener(_autoflowMessageHandler);
 if (!(window as any).__autoflow_injected) {
   (window as any).__autoflow_injected = true;
   console.log('[AutoFlow] Content script loaded on', window.location.href);
+
+  // ── Deactivate "Agent" mode if it's enabled ──
+  // When Agent is active (aria-pressed="true"), the prompt bar changes and
+  // video settings (model, ratio, etc.) become non-functional.
+  // We click it once to toggle it OFF — not hide it.
+  const deactivateAgent = () => {
+    const agentBtn = document.querySelector('button[aria-pressed="true"]');
+    if (agentBtn) {
+      const text = agentBtn.querySelector('.content')?.textContent?.trim();
+      if (text === 'Agent') {
+        (agentBtn as HTMLElement).click();
+      }
+    }
+  };
+  deactivateAgent();
+  const observer = new MutationObserver(() => deactivateAgent());
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-pressed'] });
+
+  // ── Initialize API helper (interceptor + status cache) ──
+  setTimeout(() => {
+    initApiHelper().then(() => {
+      console.log('[AutoFlow] API helper initialized');
+    }).catch(() => { /* non-critical */ });
+  }, 2000); // Wait 2s for page to stabilize
 } else {
   console.log('[AutoFlow] Content script re-injected, listener refreshed.');
 }
@@ -86,8 +111,8 @@ if (!(window as any).__autoflow_injected) {
       recoveryCancelled = false;
       console.log(`[AutoFlow] Recovery mode: scanning page for "${queue.name}"...`);
 
-      // Wait for Flow to fully load
-      await sleep(6000);
+      // Wait for Flow to fully load (reduced from 6s — fake cancels resolve fast)
+      await sleep(4000);
       if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
 
       // Import tile scanning tools — including scroll collector for virtualized lists
@@ -102,8 +127,8 @@ if (!(window as any).__autoflow_injected) {
           onProjectPage = true;
           break;
         }
-        console.log(`[AutoFlow] Recovery: waiting for project page to load... (${(wait + 1) * 2}s)`);
-        await sleep(2000);
+        console.log(`[AutoFlow] Recovery: waiting for project page to load... (${(wait + 1) * 1.5}s)`);
+        await sleep(1500);
         if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
       }
 
@@ -118,8 +143,8 @@ if (!(window as any).__autoflow_injected) {
       for (let wait = 0; wait < 8; wait++) {
         tilesFound = findAssetCards().filter(el => isVisible(el)).length;
         if (tilesFound > 0) break;
-        console.log(`[AutoFlow] Recovery: waiting for tiles... (${(wait + 1) * 2.5}s)`);
-        await sleep(2500);
+        console.log(`[AutoFlow] Recovery: waiting for tiles... (${(wait + 1) * 1.5}s)`);
+        await sleep(1500);
         if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
       }
 
@@ -143,7 +168,7 @@ if (!(window as any).__autoflow_injected) {
           break;
         }
         console.log(`[AutoFlow] Recovery: waiting... generating: ${generating}, completed: ${completed}, failed: ${failed}, elapsed: ${elapsed}s`);
-        await sleep(15000);
+        await sleep(8000);
       }
 
       // ── CORE LOGIC: Scroll through the ENTIRE virtualized grid ──
@@ -224,51 +249,141 @@ if (!(window as any).__autoflow_injected) {
 
       const totalCompleted = allTileStates.filter(t => t.state === 'completed').length;
       const totalFailed = allTileStates.filter(t => t.state === 'failed').length;
-      console.log(`[AutoFlow] Recovery: found ${allTileStates.length} total tiles (${totalCompleted} completed, ${totalFailed} failed), collected text from ${completedTileTexts.length} completed tiles`);
+
+      // Count how many prompts were actually submitted (not skipped/not-added)
+      const submittedPrompts = queue.prompts.filter(p =>
+        p.status !== 'not-added' && p.status !== 'queued'
+      );
+      console.log(`[AutoFlow] Recovery: found ${allTileStates.length} total tiles (${totalCompleted} completed, ${totalFailed} failed), collected text from ${completedTileTexts.length} completed tiles, ${submittedPrompts.length} prompts were submitted`);
 
       let recovered = 0;
       const trulyFailedPrompts: typeof queue.prompts = [];
 
-      // Check ALL prompts against the collected tile texts
-      for (let i = 0; i < queue.prompts.length; i++) {
-        const p = queue.prompts[i];
+      // ── SMART STRATEGY: Count-first, then text-match ──
+      // If the page has enough completed videos for ALL submitted prompts,
+      // trust the count and mark everything as done. Text matching is unreliable
+      // because Google Flow truncates/reformats tile text.
+      if (totalCompleted >= submittedPrompts.length) {
+        console.log(`[AutoFlow] Recovery: ✅ Page has ${totalCompleted} completed videos for ${submittedPrompts.length} submitted prompts — ALL DONE (count-based)`);
+        for (const p of queue.prompts) {
+          if (p.status !== 'not-added') {
+            if (p.status === 'failed') recovered++;
+            p.status = 'done';
+            p.error = undefined;
+          }
+        }
+      } else {
+        // Not enough completed tiles — need to find which specific prompts are missing.
+        // Use multi-fragment fuzzy matching for better accuracy.
+        console.log(`[AutoFlow] Recovery: ${totalCompleted} completed but ${submittedPrompts.length} submitted — using fuzzy match to find missing...`);
 
-        // Skip prompts that were never started
-        if (p.status === 'not-added' || p.status === 'queued') continue;
+        // Track which tile texts have been "consumed" to avoid double-matching
+        const consumedTileIndices = new Set<number>();
 
-        const searchText = p.text.trim().toLowerCase().slice(0, 40);
+        /**
+         * Fuzzy match: try multiple text fragments from start, middle, and end
+         * of the prompt against each tile text. Google Flow often truncates
+         * the prompt or reformats it, so a single 40-char slice fails.
+         */
+        function fuzzyMatchPrompt(promptText: string, tileTexts: string[]): number {
+          const clean = promptText.trim().toLowerCase();
+          if (clean.length < 4) return -1;
 
-        // Very short prompts — can't reliably match
-        if (searchText.length < 4) {
-          console.log(`[AutoFlow] Recovery: prompt #${i + 1} too short ("${searchText}"), assuming done`);
-          p.status = 'done';
-          p.error = undefined;
-          recovered++;
-          continue;
+          // Generate search fragments from different parts of the prompt
+          const fragments: string[] = [];
+          // Start fragment (first 25 chars — most reliable)
+          fragments.push(clean.slice(0, Math.min(25, clean.length)));
+          // Middle fragment
+          if (clean.length > 60) {
+            const mid = Math.floor(clean.length / 2) - 12;
+            fragments.push(clean.slice(mid, mid + 25));
+          }
+          // Unique keywords: pick the longest word (likely the most unique identifier)
+          const words = clean.split(/\s+/).filter(w => w.length > 5);
+          if (words.length > 0) {
+            words.sort((a, b) => b.length - a.length);
+            fragments.push(words[0]); // longest word
+            if (words.length > 2) fragments.push(words[2]); // third longest
+          }
+
+          // Try matching each fragment against unconsumed tiles
+          for (let ti = 0; ti < tileTexts.length; ti++) {
+            if (consumedTileIndices.has(ti)) continue;
+            const tile = tileTexts[ti];
+            // Match if ANY 2+ fragments hit (reduces false positives)
+            let hits = 0;
+            for (const frag of fragments) {
+              if (tile.includes(frag)) hits++;
+            }
+            if (hits >= 2) return ti;
+            // Single hit with the start fragment is also OK (most reliable)
+            if (hits >= 1 && tile.includes(fragments[0])) return ti;
+          }
+
+          // Last resort: check page text with start fragment
+          if (pageText.includes(fragments[0])) return -2; // special: found on page but not in tile
+
+          return -1; // not found
         }
 
-        // Check completed tile texts (from scrolling through entire grid)
-        const foundInTile = completedTileTexts.some(t => t.includes(searchText));
-        // Fallback: check full page text
-        const foundOnPage = pageText.includes(searchText);
+        for (let i = 0; i < queue.prompts.length; i++) {
+          const p = queue.prompts[i];
+          if (p.status === 'not-added' || p.status === 'queued') continue;
 
-        if (foundInTile || foundOnPage) {
-          if (p.status === 'failed') {
+          // Very short prompts — can't reliably match
+          if (p.text.trim().length < 4) {
+            console.log(`[AutoFlow] Recovery: prompt #${i + 1} too short, assuming done`);
+            p.status = 'done';
+            p.error = undefined;
             recovered++;
-            console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ FOUND — "${searchText.slice(0, 30)}..." → marking done`);
-          } else {
-            console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ confirmed (${p.status})`);
+            continue;
           }
-          p.status = 'done';
-          p.error = undefined;
-        } else {
-          // NOT found anywhere — truly failed
-          p.status = 'queued';
-          p.attempts = 0;
-          p.error = undefined;
-          p.tileIds = [];
-          trulyFailedPrompts.push(p);
-          console.log(`[AutoFlow] Recovery: prompt #${i + 1} ❌ NOT FOUND — "${searchText.slice(0, 30)}..." → will regenerate`);
+
+          const matchIdx = fuzzyMatchPrompt(p.text, completedTileTexts);
+
+          if (matchIdx >= 0) {
+            // Found in a specific tile — consume it so it's not double-matched
+            consumedTileIndices.add(matchIdx);
+            if (p.status === 'failed') {
+              recovered++;
+              console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ FOUND in tile — "${p.text.slice(0, 30)}..." → marking done`);
+            } else {
+              console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ confirmed (${p.status})`);
+            }
+            p.status = 'done';
+            p.error = undefined;
+          } else if (matchIdx === -2) {
+            // Found on page text but not in a specific tile
+            if (p.status === 'failed') recovered++;
+            console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ found on page text — "${p.text.slice(0, 30)}..." → marking done`);
+            p.status = 'done';
+            p.error = undefined;
+          } else {
+            // NOT found anywhere — truly failed
+            p.status = 'queued';
+            p.attempts = 0;
+            p.error = undefined;
+            p.tileIds = [];
+            trulyFailedPrompts.push(p);
+            console.log(`[AutoFlow] Recovery: prompt #${i + 1} ❌ NOT FOUND — "${p.text.slice(0, 30)}..." → will regenerate`);
+          }
+        }
+
+        // ── SAFETY NET: Count-based correction ──
+        // If text matching says N prompts failed but the page has enough completed
+        // videos to cover most of them, trust the count and reduce reprompts.
+        const expectedMissing = submittedPrompts.length - totalCompleted;
+        if (trulyFailedPrompts.length > expectedMissing && expectedMissing >= 0) {
+          const excess = trulyFailedPrompts.length - expectedMissing;
+          console.log(`[AutoFlow] Recovery: text match says ${trulyFailedPrompts.length} missing but count says only ${expectedMissing} missing — removing ${excess} false negatives`);
+          // Keep only the truly missing ones (the last ones added are least likely to exist)
+          for (let x = 0; x < excess; x++) {
+            const rescued = trulyFailedPrompts.shift()!;
+            rescued.status = 'done';
+            rescued.error = undefined;
+            recovered++;
+            console.log(`[AutoFlow] Recovery: prompt "${rescued.text.slice(0, 25)}..." rescued by count-based safety net ✅`);
+          }
         }
       }
 
@@ -315,7 +430,8 @@ if (!(window as any).__autoflow_injected) {
           }).catch(() => {});
         } catch { /* ignore */ }
 
-        // Auto-scan library — switch to Library tab, scan and download
+        // Auto-scan library — download ALL completed videos on the page
+        // This covers the recovered fake-cancelled videos too
         await sleep(1000);
         try {
           chrome.runtime.sendMessage({
@@ -779,3 +895,4 @@ async function refreshModels(): Promise<any> {
 
   return { models };
 }
+

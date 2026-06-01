@@ -34,6 +34,8 @@ async function clearTokens(): Promise<void> {
 
 // ── Core Fetch Wrapper ──
 
+const EXTENSION_VERSION = '3.1';
+
 async function apiFetch(
   path: string,
   options: RequestInit = {},
@@ -45,6 +47,7 @@ async function apiFetch(
   if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
+  headers.set('X-AutoFlow-Version', EXTENSION_VERSION);
   
   // Prevent aggressive browser caching for GET requests
   if (!options.method || options.method.toUpperCase() === 'GET') {
@@ -262,7 +265,7 @@ export async function getDailyUsage(): Promise<DailyUsageResponse | null> {
       flow_limit: data.is_pro_active ? 999 : (data.flow_daily_limit ?? 5),
       flow_remaining: data.is_pro_active ? 999 : (data.flow_remaining_today ?? 5),
       full_monthly_used: data.full_runs_today ?? data.full_runs_this_month ?? 0,
-      full_monthly_limit: data.is_pro_active ? 999 : (data.full_daily_limit ?? 1),
+      full_monthly_limit: data.is_pro_active ? 999 : (data.full_runs_daily_limit ?? data.full_monthly_limit ?? 1),
       full_monthly_remaining: data.is_pro_active ? 999 : (data.full_remaining_today_runs ?? data.full_remaining_this_month ?? 1),
     };
   } catch {
@@ -270,11 +273,11 @@ export async function getDailyUsage(): Promise<DailyUsageResponse | null> {
   }
 }
 
-export async function trackUsage(promptCount: number = 1, promptType: 'text' | 'full' = 'text'): Promise<boolean> {
+export async function trackUsage(promptCount: number = 1, promptType: 'text' | 'full' = 'text', promptStatus: 'done' | 'failed' = 'done'): Promise<boolean> {
   try {
     const res = await apiFetch('/api/usage/consume', {
       method: 'POST',
-      body: JSON.stringify({ prompt_count: promptCount, prompt_type: promptType }),
+      body: JSON.stringify({ prompt_count: promptCount, prompt_type: promptType, status: promptStatus }),
     });
     if (!res.ok) {
       console.warn('[AutoFlow] trackUsage failed:', res.status);
@@ -394,8 +397,8 @@ export async function checkCanStartQueue(mode: 'lite' | 'flow' | 'full'): Promis
         used: usage.full_monthly_used,
         limit: usage.full_monthly_limit,
         remaining: usage.full_monthly_remaining,
-        period: 'month',
-        message: usage.full_monthly_remaining <= 0 ? `Full mode limit reached (${usage.full_monthly_limit}/month). Upgrade to Pro for unlimited.` : undefined,
+        period: 'day',
+        message: usage.full_monthly_remaining <= 0 ? `Full mode limit reached (${usage.full_monthly_limit}/day). Upgrade to Pro for unlimited.` : undefined,
       };
     }
   } catch {
