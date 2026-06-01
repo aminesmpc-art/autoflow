@@ -11,6 +11,25 @@ export const metadata = {
 
 const releases = [
   {
+    version: "3.2",
+    date: "2026-06-01",
+    title: "Premium UI Redesign & Scalability Upgrade",
+    highlights: [
+      "Complete UI overhaul — electric blue glassmorphic design with micro-animations",
+      "Scalable prompt list — scrollable container handles 2,000+ prompts smoothly",
+      "Breathing icon animations on active mode cards for visual feedback",
+      "Animated header accent line with shimmer effect",
+      "Enhanced textarea focus states with multi-layer glow effects",
+    ],
+    improvements: [
+      "Auto-expire system for time-limited Pro access (review rewards)",
+      "Paying subscribers are now protected from accidental downgrades",
+      "Refined tab navigation with sleek active-state underlines",
+      "Compact prompt row design with stronger hover interactions",
+      "Performance-optimized CSS with reduced repaints",
+    ],
+  },
+  {
     version: "2.7",
     date: "2026-05-26",
     title: "Mixed Queue Tracking & Review Rewards",
