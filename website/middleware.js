@@ -23,11 +23,23 @@ const unlocalizedPaths = [
   '/faq',
   '/pricing',
   '/privacy',
-  '/terms'
+  '/terms',
+  '/changelog',
+  '/extractor',
+  '/prompts'
 ];
 
 export function middleware(request) {
   const { pathname } = request.nextUrl;
+  const host = request.headers.get('host') || '';
+
+  // Redirect www → non-www (301 permanent)
+  if (host.startsWith('www.')) {
+    const url = request.nextUrl.clone();
+    url.host = host.replace('www.', '');
+    url.port = '';
+    return NextResponse.redirect(url, 301);
+  }
 
   // Skip public paths
   if (publicPaths.some(p => pathname.startsWith(p))) {
@@ -73,10 +85,11 @@ export function middleware(request) {
     return NextResponse.rewrite(url);
   }
 
-  // For non-English, redirect to locale path
+  // For non-English, rewrite (NOT redirect) to locale path
+  // This avoids confusing Googlebot which crawls with varying Accept-Language headers
   const url = request.nextUrl.clone();
   url.pathname = `/${detectedLocale}${pathname}`;
-  return NextResponse.redirect(url);
+  return NextResponse.rewrite(url);
 }
 
 export const config = {
