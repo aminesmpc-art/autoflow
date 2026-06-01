@@ -31,15 +31,6 @@ const unlocalizedPaths = [
 
 export function middleware(request) {
   const { pathname } = request.nextUrl;
-  const host = request.headers.get('host') || '';
-
-  // Redirect www → non-www (301 permanent)
-  if (host.startsWith('www.')) {
-    const url = request.nextUrl.clone();
-    url.host = host.replace('www.', '');
-    url.port = '';
-    return NextResponse.redirect(url, 301);
-  }
 
   // Skip public paths
   if (publicPaths.some(p => pathname.startsWith(p))) {
