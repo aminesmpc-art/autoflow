@@ -11,6 +11,23 @@ export const metadata = {
 
 const releases = [
   {
+    version: "3.3",
+    date: "2026-06-10",
+    title: "Omni Flash Model & Duration Controls",
+    highlights: [
+      "Omni Flash model support — Google's new high-speed video generation model is now fully integrated",
+      "10-second video clips — available exclusively with Omni Flash for longer, richer generations",
+      "Duration selector on queue cards — change clip length directly from each queue without opening Settings",
+      "Run button on every queue — run any queue instantly, not just the first one in the list",
+    ],
+    improvements: [
+      "Updated model list across Settings and queue cards to match latest Google Flow lineup",
+      "Scheduling UI temporarily removed while being redesigned for a better experience",
+      "Library scanner now correctly detects and labels Omni Flash-generated assets",
+      "Model selector in automation engine recognizes Omni as a new model family",
+    ],
+  },
+  {
     version: "3.2",
     date: "2026-06-01",
     title: "Premium UI Redesign & Scalability Upgrade",
