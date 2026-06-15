@@ -24,13 +24,12 @@ const unlocalizedPaths = [
   '/pricing',
   '/privacy',
   '/terms',
-  '/changelog',
-  '/extractor',
-  '/prompts'
+  '/changelog'
 ];
 
 export function middleware(request) {
   const { pathname } = request.nextUrl;
+  console.log("--> middleware called for pathname:", pathname);
 
   // Skip public paths
   if (publicPaths.some(p => pathname.startsWith(p))) {
@@ -41,6 +40,7 @@ export function middleware(request) {
   // we should REDIRECT them to the clean URL without /en/ to prevent 404s
   if (pathname.startsWith(`/${defaultLocale}/`) || pathname === `/${defaultLocale}`) {
     const cleanPath = pathname.replace(new RegExp(`^/${defaultLocale}`), '') || '/';
+    console.log("--> redirecting from", pathname, "to", cleanPath);
     const url = request.nextUrl.clone();
     url.pathname = cleanPath;
     return NextResponse.redirect(url);
@@ -69,10 +69,12 @@ export function middleware(request) {
   // For English users, serve unlocalized paths and root directly. Otherwise, rewrite to /en.
   if (detectedLocale === defaultLocale) {
     if (pathname === '/' || unlocalizedPaths.some(p => pathname.startsWith(p))) {
+      console.log("--> serving unlocalized or root directly:", pathname);
       return NextResponse.next();
     }
     const url = request.nextUrl.clone();
     url.pathname = `/en${pathname}`;
+    console.log("--> rewriting to", url.pathname);
     return NextResponse.rewrite(url);
   }
 
@@ -80,6 +82,7 @@ export function middleware(request) {
   // This avoids confusing Googlebot which crawls with varying Accept-Language headers
   const url = request.nextUrl.clone();
   url.pathname = `/${detectedLocale}${pathname}`;
+  console.log("--> non-English rewriting to", url.pathname);
   return NextResponse.rewrite(url);
 }
 

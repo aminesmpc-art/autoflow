@@ -79,7 +79,7 @@ export type AutomationMode = 'full' | 'flow' | 'lite';
 // ── Video resolution for downloads ──
 export type VideoResolution = 'Original (720p)' | '1080p Upscaled' | '4K';
 export type ImageResolution = '1K' | '2K' | '4K';
-export type VideoDuration = '6s' | '8s';
+export type VideoDuration = '4s' | '6s' | '8s' | '10s';
 
 // ── Image generation model & ratio ──
 export type ImageModel = 'Nano Banana Pro' | 'Nano Banana 2' | 'Imagen 4';
@@ -145,6 +145,34 @@ export interface QueueObject {
   currentPromptIndex: number;
   createdAt: number;
   updatedAt: number;
+  // ── Scheduling ──
+  chainId?: string;              // ID of the chain this queue belongs to (if any)
+  scheduledAt?: number;          // Legacy: Unix timestamp (ms)
+  scheduleStatus?: 'scheduled' | 'firing' | 'expired' | 'cancelled';
+}
+
+// ── Scheduled Chain (playlist of queues) ──
+export interface ChainResult {
+  queueId: string;
+  queueName: string;
+  status: 'pending' | 'done' | 'failed' | 'skipped';
+  promptsDone: number;
+  promptsFailed: number;
+  promptsTotal: number;
+  startedAt?: number;
+  completedAt?: number;
+}
+
+export interface ScheduledChain {
+  id: string;                    // Unique chain ID
+  queueIds: string[];            // Ordered list of queue IDs to run
+  currentIndex: number;          // Which queue is running now (0-based)
+  scheduledAt: number;           // When to start (Unix ms)
+  waitBetweenSec: number;        // Seconds to wait between queues
+  status: 'scheduled' | 'running' | 'completed' | 'failed' | 'cancelled';
+  startedAt?: number;
+  completedAt?: number;
+  results: ChainResult[];
 }
 
 // ── Tile state as detected by the scanner ──
@@ -267,7 +295,11 @@ export type MessageType =
   | 'BATCH_API_DOWNLOAD'
   | 'VERIFY_MEDIA_URL'
   | 'FAKE_CANCEL_ALERT'
-  | 'DOWNLOAD_PROGRESS';
+  | 'DOWNLOAD_PROGRESS'
+  | 'SCHEDULE_CHAIN'
+  | 'KEEPALIVE_PING'
+  | 'CANCEL_CHAIN'
+  | 'CHAIN_PROGRESS';
 
 export interface Message {
   type: MessageType;
@@ -351,11 +383,11 @@ export const DEFAULT_SETTINGS: QueueSettings = {
 };
 
 export const AVAILABLE_MODELS = [
+  'Omni Flash',
+  'Veo 3.1 - Lite',
   'Veo 3.1 - Fast',
-  'Veo 3.1 - Fast [Lower Priority]',
   'Veo 3.1 - Quality',
-  'Veo 2 - Fast',
-  'Veo 2 - Quality',
+  'Veo 3.1 - Lite [Lower Priority]',
 ];
 
 export const AVAILABLE_VOICES = [

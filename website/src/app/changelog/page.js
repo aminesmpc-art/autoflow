@@ -11,6 +11,20 @@ export const metadata = {
 
 const releases = [
   {
+    version: "3.4",
+    date: "2026-06-14",
+    title: "Zero-Intervention Reliability & CORS Resolution",
+    highlights: [
+      "Safety Policy Failures Classification — automatically identifies policy and safety blocks to instantly skip them without wasting retries",
+      "Exact Failure Reasons — sidepanel's Failed Generations section now displays the specific reason why a prompt failed (e.g. policy violations or server errors) alongside its text",
+      "CORS Redirect Bypass — redesigned network media verification using manual redirect tracking, resolving Chrome extension cross-origin blockages",
+    ],
+    improvements: [
+      "Stuck queue mitigation — 30-second API staleness detector triggers active refreshes and DOM tiebreakers to prevent queue stagnation",
+      "Automated queue-to-download pipeline robustness enhancements",
+    ],
+  },
+  {
     version: "3.3",
     date: "2026-06-10",
     title: "Omni Flash Model & Duration Controls",

@@ -102,7 +102,7 @@ if (!(window as any).__autoflow_injected) {
     const saved = await getRunningQueue();
     if (!saved) return;
 
-    const { queue, currentIndex, recoveryMode } = saved;
+    const { queue, currentIndex, recoveryMode, baselineTileCount } = saved;
 
     if (recoveryMode) {
       // ── RECOVERY MODE: Page was reloaded to clear fake "cancelled" tiles ──
@@ -260,11 +260,14 @@ if (!(window as any).__autoflow_injected) {
       const trulyFailedPrompts: typeof queue.prompts = [];
 
       // ── SMART STRATEGY: Count-first, then text-match ──
-      // If the page has enough completed videos for ALL submitted prompts,
-      // trust the count and mark everything as done. Text matching is unreliable
-      // because Google Flow truncates/reformats tile text.
-      if (totalCompleted >= submittedPrompts.length) {
-        console.log(`[AutoFlow] Recovery: ✅ Page has ${totalCompleted} completed videos for ${submittedPrompts.length} submitted prompts — ALL DONE (count-based)`);
+      // Subtract baseline tiles (from BEFORE the queue started) to avoid
+      // counting old tiles from previous queues as "completed" for this queue.
+      const baseline = baselineTileCount || 0;
+      const effectiveCompleted = Math.max(0, totalCompleted - baseline);
+      console.log(`[AutoFlow] Recovery: ${totalCompleted} total completed - ${baseline} baseline = ${effectiveCompleted} effective completed for this queue`);
+
+      if (effectiveCompleted >= submittedPrompts.length) {
+        console.log(`[AutoFlow] Recovery: ✅ ${effectiveCompleted} effective completed >= ${submittedPrompts.length} submitted — ALL DONE (baseline-adjusted count)`);
         for (const p of queue.prompts) {
           if (p.status !== 'not-added') {
             if (p.status === 'failed') recovered++;
@@ -370,12 +373,12 @@ if (!(window as any).__autoflow_injected) {
         }
 
         // ── SAFETY NET: Count-based correction ──
-        // If text matching says N prompts failed but the page has enough completed
-        // videos to cover most of them, trust the count and reduce reprompts.
-        const expectedMissing = submittedPrompts.length - totalCompleted;
+        // If text matching says N prompts failed but the baseline-adjusted count
+        // shows enough completed videos, trust the count and reduce reprompts.
+        const expectedMissing = submittedPrompts.length - effectiveCompleted;
         if (trulyFailedPrompts.length > expectedMissing && expectedMissing >= 0) {
           const excess = trulyFailedPrompts.length - expectedMissing;
-          console.log(`[AutoFlow] Recovery: text match says ${trulyFailedPrompts.length} missing but count says only ${expectedMissing} missing — removing ${excess} false negatives`);
+          console.log(`[AutoFlow] Recovery: text match says ${trulyFailedPrompts.length} missing but baseline-adjusted count says only ${expectedMissing} missing — removing ${excess} false negatives`);
           // Keep only the truly missing ones (the last ones added are least likely to exist)
           for (let x = 0; x < excess; x++) {
             const rescued = trulyFailedPrompts.shift()!;

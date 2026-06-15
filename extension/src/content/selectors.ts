@@ -208,7 +208,7 @@ export function findModelSelectorTrigger(): Element | null {
   const btns = document.querySelectorAll('button[aria-haspopup="menu"]');
   for (const btn of btns) {
     const text = (btn.textContent || '').toLowerCase();
-    if ((text.includes('veo') || text.includes('imagen') || text.includes('banana')) && isVisible(btn)) {
+    if ((text.includes('veo') || text.includes('imagen') || text.includes('banana') || text.includes('omni')) && isVisible(btn)) {
       // Skip the settings trigger chip (contains media type + generation count like "Video x1")
       if (/x\d/.test(text) && (text.includes('video') || text.includes('image'))) continue;
       return btn;
@@ -773,11 +773,12 @@ export function getTileState(tile: Element): TileState {
     }
   }
 
-  // ── Signal 5: error text overlay ("failed", "error", "violated") ──
+  // ── Signal 5: error text overlay ("failed", "error", "violated", "cancelled") ──
   const tileText = tile.textContent?.toLowerCase() || '';
   if (tileText.includes('generation failed') || tileText.includes('violate') ||
     matchesFlowText(tileText, 'tryAgain') || tileText.includes('unable to generate') ||
     tileText.includes('blocked') ||
+    matchesFlowText(tileText, 'generationCancelled') ||
     matchesFlowText(tileText, 'generationFailed')) {
     return 'failed';
   }
@@ -1723,9 +1724,10 @@ export function findAllFailedTiles(): FailedTileInfo[] {
       const text = div.textContent?.trim() || '';
       if (text.length > 20 && (text.toLowerCase().includes('failed') ||
         matchesFlowText(text, 'tryAgain') ||
+        matchesFlowText(text, 'generationCancelled') ||
+        matchesFlowText(text, 'notCharged') ||
         text.toLowerCase().includes('violate') ||
-        text.toLowerCase().includes('unable') ||
-        text.toLowerCase().includes('not been charged'))) {
+        text.toLowerCase().includes('unable'))) {
         errorText = text;
         break;
       }
@@ -1736,6 +1738,83 @@ export function findAllFailedTiles(): FailedTileInfo[] {
   }
 
   return failed;
+}
+
+/**
+ * Find all failed tiles by scrolling through the entire virtualized grid.
+ * Unlike findAllFailedTiles(), this discovers off-screen tiles that Virtuoso
+ * has removed from the DOM.
+ *
+ * NOTE: Because virtualized tiles are removed when scrolled away, the returned
+ * elements may only be valid at the current scroll position. Callers should
+ * process each tile immediately or re-query by tileId when needed.
+ */
+export async function findAllFailedTilesWithScroll(): Promise<FailedTileInfo[]> {
+  const scroller = findOutputScroller();
+  const collected = new Map<string, FailedTileInfo>();
+
+  function collectVisibleFailed() {
+    const cards = findAssetCards().filter(el => isVisible(el));
+    for (const card of cards) {
+      if (getTileState(card) !== 'failed') continue;
+      const tileId = findTileId(card);
+      if (!tileId || collected.has(tileId)) continue;
+
+      let errorText = '';
+      const textContent = card.textContent?.trim() || '';
+      const allDivs = card.querySelectorAll('div');
+      for (const div of allDivs) {
+        const text = div.textContent?.trim() || '';
+        if (text.length > 20 && (text.toLowerCase().includes('failed') ||
+          matchesFlowText(text, 'tryAgain') ||
+          matchesFlowText(text, 'generationCancelled') ||
+          matchesFlowText(text, 'notCharged') ||
+          text.toLowerCase().includes('violate') ||
+          text.toLowerCase().includes('unable'))) {
+          errorText = text;
+          break;
+        }
+      }
+      if (!errorText) errorText = textContent.substring(0, 200);
+
+      collected.set(tileId, { tileId, errorText, element: card });
+    }
+  }
+
+  if (!scroller) {
+    // No scrollable area — just check visible tiles
+    collectVisibleFailed();
+    return Array.from(collected.values());
+  }
+
+  // Scroll to top
+  scroller.scrollTop = 0;
+  await sleep(600);
+
+  let prevScroll = -1;
+  let stuckCount = 0;
+
+  while (stuckCount < 3) {
+    collectVisibleFailed();
+
+    scroller.scrollBy(0, Math.max(200, scroller.clientHeight * 0.7));
+    await sleep(400);
+
+    if (Math.abs(scroller.scrollTop - prevScroll) < 5) {
+      stuckCount++;
+    } else {
+      stuckCount = 0;
+    }
+    prevScroll = scroller.scrollTop;
+  }
+
+  // Final collection at bottom
+  collectVisibleFailed();
+
+  // Scroll back to top
+  scroller.scrollTop = 0;
+
+  return Array.from(collected.values());
 }
 
 /**

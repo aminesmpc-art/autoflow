@@ -4743,3 +4743,348 @@ button:focus-visible {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
 }
+
+/* ================================================================
+   SCHEDULED QUEUES
+   ================================================================ */
+
+/* Schedule button on queue card */
+.af-q-schedule-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.af-q-schedule-btn:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #7dd3fc;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.15);
+}
+.af-q-schedule-btn:active {
+  transform: scale(0.97);
+}
+
+/* Schedule badge on queue card title */
+.af-q-schedule-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 100px;
+  animation: schedulePulse 3s ease-in-out infinite;
+  white-space: nowrap;
+}
+
+@keyframes schedulePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.15); }
+  50% { box-shadow: 0 0 12px rgba(56, 189, 248, 0.2); }
+}
+
+/* Cancel schedule button */
+.af-q-act-cancel-schedule {
+  color: var(--warning) !important;
+  border-color: rgba(245, 158, 11, 0.2) !important;
+}
+.af-q-act-cancel-schedule:hover {
+  background: rgba(245, 158, 11, 0.12) !important;
+  color: #fbbf24 !important;
+}
+
+/* ── Schedule Modal Overlay ── */
+.af-schedule-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  padding: 16px;
+}
+.af-schedule-overlay.af-schedule-visible {
+  opacity: 1;
+}
+
+/* ── Schedule Modal Card ── */
+.af-schedule-card {
+  width: 100%;
+  max-width: 320px;
+  background: linear-gradient(135deg, rgba(14, 18, 38, 0.95), rgba(20, 26, 50, 0.98));
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5), 0 0 32px rgba(56, 189, 248, 0.08);
+  transform: translateY(20px) scale(0.95);
+  transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.af-schedule-visible .af-schedule-card {
+  transform: translateY(0) scale(1);
+}
+
+.af-schedule-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #e0e7ff;
+  margin-bottom: 4px;
+}
+.af-schedule-header svg {
+  color: #38bdf8;
+}
+
+.af-schedule-queue-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent-bright);
+  margin-top: 12px;
+}
+
+.af-schedule-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.af-schedule-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.af-schedule-input {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: rgba(6, 9, 17, 0.8);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 10px;
+  outline: none;
+  transition: all 0.2s ease;
+  color-scheme: dark;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.af-schedule-input:focus {
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1), 0 0 16px rgba(56, 189, 248, 0.08);
+}
+
+.af-schedule-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 8px 12px;
+  font-size: 10.5px;
+  color: var(--warning);
+  background: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.15);
+  border-radius: 8px;
+  line-height: 1.4;
+}
+.af-schedule-warning svg {
+  flex-shrink: 0;
+  color: var(--warning);
+}
+
+.af-schedule-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.af-schedule-actions .af-btn-primary {
+  background: linear-gradient(135deg, #0ea5e9, #38bdf8);
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
+}
+.af-schedule-actions .af-btn-primary:hover {
+  box-shadow: 0 0 24px rgba(14, 165, 233, 0.4), 0 8px 20px rgba(14, 165, 233, 0.2);
+}
+
+/* ── Chain Queue Checklist ── */
+.af-chain-queue-list {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+.af-chain-queue-list::-webkit-scrollbar {
+  width: 4px;
+}
+.af-chain-queue-list::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.2);
+  border-radius: 4px;
+}
+
+.af-chain-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  user-select: none;
+}
+.af-chain-queue-item:hover {
+  background: rgba(56, 189, 248, 0.06);
+}
+
+.af-chain-checkbox {
+  accent-color: #38bdf8;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.af-chain-queue-name {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-chain-queue-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.af-chain-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 10.5px;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.12);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+.af-chain-info svg {
+  flex-shrink: 0;
+  color: #38bdf8;
+}
+
+/* Pro-locked schedule button */
+.af-q-schedule-locked {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-style: dashed;
+}
+.af-q-schedule-locked:hover {
+  transform: none;
+  box-shadow: none;
+  opacity: 0.65;
+}
+
+/* Chain status badges */
+.af-chain-status {
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.af-chain-done {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.1);
+}
+.af-chain-stopped {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+}
+.af-chain-pending {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+}
+.af-chain-item-done {
+  opacity: 0.5;
+}
+.af-chain-item-done .af-chain-queue-name {
+  text-decoration: line-through;
+}
+
+/* Quick time presets */
+.af-quick-presets {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.af-quick-btn {
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 100px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.af-quick-btn:hover {
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.25);
+  color: #38bdf8;
+}
+.af-quick-btn.active {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.15);
+}
+
+/* Chain order badge */
+.af-chain-order-badge {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0ea5e9, #38bdf8);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}

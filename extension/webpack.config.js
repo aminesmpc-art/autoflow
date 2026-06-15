@@ -41,6 +41,8 @@ module.exports = {
       patterns: [
         { from: 'manifest.json', to: '.' },
         { from: 'sidepanel.html', to: '.' },
+        { from: 'offscreen.html', to: '.' },
+        { from: 'offscreen.js', to: '.' },
         { from: 'icons', to: 'icons', noErrorOnMissing: true },
       ],
     }),

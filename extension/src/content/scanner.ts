@@ -92,8 +92,8 @@ function extractBatchMetadata(card: Element): { modelName: string; createdAt: st
     const text = (el.textContent || '').trim();
     if (!text) continue;
 
-    // Model name detection: "Veo 3.1 - Fast", "Veo 2 - Quality", "Imagen 4", etc.
-    if (!modelName && /^(Veo|Imagen|Nano)\s/i.test(text)) {
+    // Model name detection: "Veo 3.1 - Fast", "Omni Flash", "Imagen 4", etc.
+    if (!modelName && /^(Veo|Imagen|Nano|Omni)\s/i.test(text)) {
       modelName = text;
       continue;
     }
@@ -180,7 +180,7 @@ function extractBatchMetadata(card: Element): { modelName: string; createdAt: st
           text.toLowerCase().includes('not been charged') || text.toLowerCase().includes('try again') ||
           text.toLowerCase().includes('violate our') || text.toLowerCase().includes('violates our') ||
           text.toLowerCase().includes('generating harmful') || text.toLowerCase().includes('content policy') ||
-          /^(Veo|Imagen|Nano)\s/i.test(text) || /^(Created|Edited)\s/i.test(text);
+          /^(Veo|Imagen|Nano|Omni)\s/i.test(text) || /^(Created|Edited)\s/i.test(text);
         if (!isNoise) {
           longestText = text;
         }
@@ -198,8 +198,8 @@ function extractBatchMetadata(card: Element): { modelName: string; createdAt: st
     const ariaEls = card.querySelectorAll('[aria-label]');
     for (const el of ariaEls) {
       const label = el.getAttribute('aria-label') || '';
-      if (/veo|imagen|nano/i.test(label)) {
-        const match = label.match(/(Veo[\s\d.\-\w]+|Imagen[\s\d\w]+|Nano[\s\w]+)/i);
+      if (/veo|imagen|nano|omni/i.test(label)) {
+        const match = label.match(/(Veo[\s\d.\-\w]+|Imagen[\s\d\w]+|Nano[\s\w]+|Omni[\s\w]+)/i);
         if (match) modelName = match[1].trim();
         break;
       }

@@ -61,6 +61,7 @@ import {
   switchToViewMode,
   getTileState,
   findAllFailedTiles,
+  findAllFailedTilesWithScroll,
   findVoiceChip,
   getActiveVoiceName,
   findVoiceTabInDialog,
@@ -214,7 +215,7 @@ export class AutomationEngine {
 
       // Save progress so we can resume after a page reload
       try {
-        await saveRunningQueue(this.queue, i + 1);
+        await saveRunningQueue(this.queue, i + 1, false, this.baselineTileCount);
       } catch { /* ignore storage errors */ }
 
       // Verify page is still usable before next prompt
@@ -241,12 +242,16 @@ export class AutomationEngine {
 
     if (!this.stopped && this.mode !== 'lite') {
       if (this.mode === 'full') {
-        // ── FULL MODE: Skip DOM scan, go straight to API verification ──
-        // In full mode we download via API (mediaIds), not DOM tiles.
-        // No need to scroll through the grid or check tile states.
-        this.sendPhaseUpdate('checking', 'Verifying results with server...');
-        this.log('info', 'Queue complete (full mode). Skipping DOM scan — going straight to API verification...');
+        // ── FULL MODE: Wait for tiles to settle, then verify via API ──
+        // We still need postQueueScan() to wait for all generations to finish
+        // before entering the verify phase. Without it, verifyAndReprompt()
+        // polls 3 min per "still generating" prompt (6 prompts = 18 min wait).
+        // postQueueScan's 30s API stale override catches stuck prompts fast.
+        this.sendPhaseUpdate('scanning', 'Waiting for all videos to finish...');
+        this.log('info', 'Queue complete (full mode). Waiting for tiles to settle...');
+        await this.postQueueScan();
         if (!this.stopped) {
+          this.sendPhaseUpdate('checking', 'Verifying results with server...');
           await this.verifyAndReprompt();
         }
       } else {
@@ -312,23 +317,28 @@ export class AutomationEngine {
 
               if (dlCount > 0) {
                 this.sendPhaseUpdate('done', `Downloaded ${dlCount} video(s) ✅`);
-                // Only clear saved state if no cancelled prompts are queued for post-reload recovery
-                const queuedForRecovery = this.queue!.prompts.filter(p => p.status === 'queued').length;
-                if (queuedForRecovery === 0) {
-                  // Everything downloaded, nothing to recover → clean finish, NO reload needed
-                  try { await clearRunningQueue(); } catch { /* ignore */ }
-                  globalRunLock = false;
-                  this.sendRunLockChanged(false);
-                  this.log('info', 'All videos downloaded via API. Done! ✅');
-                  return;
-                } else {
-                  // Some prompts need post-reload recovery → save & reload
-                  this.log('info', `${queuedForRecovery} cancelled prompt(s) saved for post-reload recovery`);
-                  globalRunLock = false;
-                  this.sendRunLockChanged(false);
-                  window.location.reload();
-                  return;
+                
+                // Mark all prompts with mediaId as 'done' — they were downloaded successfully
+                // This syncs the prompt status with the download result.
+                for (let i = 0; i < this.queue!.prompts.length; i++) {
+                  const p = this.queue!.prompts[i];
+                  if (p.mediaId && p.status !== 'done' && p.status !== 'failed') {
+                    this.updatePromptStatus(i, 'done');
+                  }
                 }
+
+                // Send final queue status so sidepanel updates the counts
+                const finalDone = this.queue!.prompts.filter(p => p.status === 'done').length;
+                const finalFailed = this.queue!.prompts.filter(p => p.status === 'failed').length;
+                const finalSkipped = this.queue!.prompts.length - finalDone - finalFailed;
+                this.sendQueueStatus('completed');
+                this.sendQueueSummary(finalDone, finalFailed, finalSkipped);
+                
+                try { await clearRunningQueue(); } catch { /* ignore */ }
+                globalRunLock = false;
+                this.sendRunLockChanged(false);
+                this.log('info', `All ${dlCount} video(s) downloaded via API. Done! ✅ (${finalDone} done, ${finalFailed} failed)`);
+                return;
               }
             } catch (err: any) {
               this.log('warn', `API download failed: ${err.message} — falling back to library scan`);
@@ -645,17 +655,38 @@ export class AutomationEngine {
         this.state = 'MARK_SUBMITTED';
         prompt.attempts = attempts + 1;
 
-        // Last-chance mediaId capture (API data may have arrived late)
+        // Last-chance mediaId capture with extended polling
+        // The API response may arrive late (server load, backgrounded tab).
+        // Without mediaId, we fall back to fragile text matching.
         if (!prompt.mediaId) {
-          const finalEntries = getNewSubmissions();
-          if (finalEntries.length > 0 && finalEntries[0].mediaId) {
-            prompt.mediaId = finalEntries[0].mediaId;
-            this.log('info', `Prompt #${idx + 1}: late mediaId capture ${finalEntries[0].mediaId.slice(-8)}`);
+          const MEDIA_ID_POLL_MS = 8000;
+          const MEDIA_ID_INTERVAL = 2000;
+          const pollStart = Date.now();
+          while (Date.now() - pollStart < MEDIA_ID_POLL_MS) {
+            const finalEntries = getNewSubmissions();
+            if (finalEntries.length > 0 && finalEntries[0].mediaId) {
+              prompt.mediaId = finalEntries[0].mediaId;
+              this.log('info', `Prompt #${idx + 1}: late mediaId capture ${finalEntries[0].mediaId.slice(-8)} (${Math.round((Date.now() - pollStart) / 1000)}s)`);
+              break;
+            }
+            await sleep(MEDIA_ID_INTERVAL);
+          }
+          // Final attempt: trigger an active API refresh
+          if (!prompt.mediaId) {
+            const refreshed = await activeStatusCheck();
+            if (refreshed) {
+              await sleep(500);
+              const freshEntries = getNewSubmissions();
+              if (freshEntries.length > 0 && freshEntries[0].mediaId) {
+                prompt.mediaId = freshEntries[0].mediaId;
+                this.log('info', `Prompt #${idx + 1}: mediaId captured via active refresh ${freshEntries[0].mediaId.slice(-8)}`);
+              }
+            }
           }
         }
 
         this.updatePromptStatus(idx, 'submitted');
-        this.log('info', `Prompt #${idx + 1} — submitted to Google${prompt.mediaId ? ` [${prompt.mediaId.slice(-8)}]` : ''}, moving to next prompt`);
+        this.log('info', `Prompt #${idx + 1} — submitted to Google${prompt.mediaId ? ` [${prompt.mediaId.slice(-8)}]` : ' (no mediaId)'}, moving to next prompt`);
         return;
 
       } catch (err: any) {
@@ -977,6 +1008,9 @@ export class AutomationEngine {
     await setInputValue(input, prompt.text);
     await sleep(500);
 
+    // Snapshot API cache BEFORE extend Generate (for mediaId capture)
+    onBeforeSubmit();
+
     // Snapshot tile IDs before
     const tileIdsBefore = new Set(getAllTileIds());
 
@@ -1078,6 +1112,11 @@ export class AutomationEngine {
       if (isCacheFresh()) {
         const newEntries = getNewSubmissions();
         const entry = newEntries[0];
+        // Capture mediaId for this extension prompt
+        if (entry && entry.mediaId && !prompt.mediaId) {
+          prompt.mediaId = entry.mediaId;
+          this.log('info', `Extension #${idx + 1}: captured mediaId ${entry.mediaId.slice(-8)}`);
+        }
         if (entry && (entry.state === 'completed' || entry.state === 'failed')) {
           extFinished = true;
           this.log('info', `Extension generation finished via API (${entry.state}).`);
@@ -2919,6 +2958,10 @@ export class AutomationEngine {
     let lastGeneratingCount = -1;
     let staleStartTime = 0;
     let submittedWaitStart = 0; // tracks when we first noticed submitted prompts lingering
+    let domCheckCount = 0; // counter for throttled scroll-aware settlement checks
+    let lastApiGenerating = -1; // track API generating count for staleness
+    let apiStaleStart = 0; // when API generating count stopped changing
+    const API_STALE_OVERRIDE_MS = 30_000; // after 30s of no API change, force DOM check
 
     while (Date.now() - startTime < POST_QUEUE_TIMEOUT_MS) {
       if (this.stopped) return;
@@ -2972,6 +3015,47 @@ export class AutomationEngine {
         // Live upgrade: check submitted prompts against API during wait
         this.upgradeSubmittedFromApi();
 
+        // ── API staleness detection ──
+        // If the API generating count hasn't changed for 30s, the passive cache
+        // is probably stale. Force an active refresh and check DOM as tiebreaker.
+        if (summary.generating === lastApiGenerating) {
+          if (apiStaleStart === 0) apiStaleStart = Date.now();
+          const apiStaleMs = Date.now() - apiStaleStart;
+
+          if (apiStaleMs > API_STALE_OVERRIDE_MS) {
+            this.log('info', `API stuck at ${summary.generating} generating for ${Math.round(apiStaleMs / 1000)}s — forcing active refresh...`);
+            
+            // Force a fresh server call instead of relying on passive cache
+            const refreshed = await activeStatusCheck();
+            if (this.stopped) return;
+            
+            if (refreshed) {
+              // Re-check with fresh data
+              const freshSummary = getQueueSummary();
+              if (freshSummary.allSettled) {
+                this.upgradeSubmittedFromApi();
+                this.log('info', 'Active refresh resolved: all settled ✅');
+                break;
+              }
+              this.log('info', `Active refresh: still ${freshSummary.generating} generating`);
+            }
+
+            // API still says generating — check DOM as tiebreaker
+            const domSettled = await allTilesSettledWithScroll();
+            if (domSettled) {
+              this.log('info', 'API says generating but DOM shows all settled — trusting DOM, moving to verify phase');
+              break;
+            }
+
+            // Neither agreed — reset timer and keep waiting
+            apiStaleStart = Date.now();
+            this.log('info', 'Both API and DOM disagree — continuing to wait...');
+          }
+        } else {
+          lastApiGenerating = summary.generating;
+          apiStaleStart = 0;
+        }
+
         // Log API-based progress periodically
         const elapsed = Date.now() - startTime;
         if (elapsed - lastLogTime > 15000) {
@@ -2993,12 +3077,20 @@ export class AutomationEngine {
         if (this.stopped) return;
       }
 
-      // Quick DOM check without scrolling — just see if visible tiles are settled
-      if (allTilesSettled()) {
-        // One confirmation check
+      // DOM settlement check — use scroll-aware check periodically
+      // to catch off-screen generating tiles in virtualized lists
+      domCheckCount++;
+      const useScrollCheck = domCheckCount % 3 === 0; // full scroll every 3rd cycle (~6s)
+      const settled = useScrollCheck
+        ? await allTilesSettledWithScroll()
+        : allTilesSettled();
+      
+      if (settled) {
+        // One confirmation check (always with scroll to be sure)
         await sleep(2000);
         if (this.stopped) return;
-        if (allTilesSettled()) {
+        const confirmedSettled = await allTilesSettledWithScroll();
+        if (confirmedSettled) {
           const stillSubmitted = this.queue!.prompts.filter(p => p.status === 'submitted').length;
           if (stillSubmitted > 0) {
             if (submittedWaitStart === 0) submittedWaitStart = Date.now();
@@ -3008,7 +3100,7 @@ export class AutomationEngine {
             }
             this.log('info', `Tiles settled but ${stillSubmitted} prompt(s) still 'submitted' — waiting...`);
           } else {
-            this.log('info', 'All tiles have settled (no more generating)');
+            this.log('info', 'All tiles have settled (no more generating) — confirmed via scroll');
             break;
           }
         }
@@ -3454,12 +3546,14 @@ private async detectAndReportFailures(): Promise<void> {
     if (!this.queue) return [];
 
     const items: Array<{ mediaId: string; filename: string }> = [];
+    const isImage = this.queue.settings?.mediaType === 'image';
+    const ext = isImage ? '.png' : '.mp4';
 
     for (let i = 0; i < this.queue.prompts.length; i++) {
       const p = this.queue.prompts[i];
       if (p.status !== 'done' || !p.mediaId) continue;
 
-      // Build filename: P001_G1_short_prompt_slug.mp4
+      // Build filename: P001_G1_short_prompt_slug.mp4 (or .png for images)
       const pNum = String(i + 1).padStart(3, '0');
       const slug = p.text
         .toLowerCase()
@@ -3469,8 +3563,8 @@ private async detectAndReportFailures(): Promise<void> {
         .slice(0, 30)
         .replace(/_+$/, '');
       const filename = slug
-        ? `P${pNum}_G1_${slug}.mp4`
-        : `P${pNum}_G1.mp4`;
+        ? `P${pNum}_G1_${slug}${ext}`
+        : `P${pNum}_G1${ext}`;
 
       items.push({ mediaId: p.mediaId, filename });
     }
@@ -3565,17 +3659,116 @@ private async detectAndReportFailures(): Promise<void> {
             this.updatePromptStatus(i, 'failed', `API: ${apiMatch.rawStatus} [${errorClass}]`);
             this.log('warn', `Prompt #${i + 1}: FAILED ❌ (${errorClass}) — no retry`);
             apiConfirmedFailed++;
+          } else if (errorClass === 'cancelled') {
+            // "Cancelled" is usually a FAKE cancel — video exists after reload.
+            // Check the URL before throwing it away.
+            // Retry up to 3 times because Google's CDN needs a few seconds
+            // to make the video available after "cancellation".
+            if (p.mediaId) {
+              let urlValid = false;
+              for (let urlAttempt = 0; urlAttempt < 3 && !urlValid && !this.stopped; urlAttempt++) {
+                if (urlAttempt > 0) {
+                  this.log('info', `Prompt #${i + 1}: URL check attempt ${urlAttempt + 1}/3 (waiting 5s for CDN)...`);
+                  await sleep(5000);
+                }
+                urlValid = await this.verifyMediaUrl(p.mediaId);
+              }
+              if (urlValid) {
+                this.updatePromptStatus(i, 'done');
+                this.log('info', `Prompt #${i + 1}: CANCELLED but URL valid → fake cancel, video exists ✅`);
+                apiConfirmedDone++;
+              } else {
+                // Real cancel — URL dead after 3 attempts, need to re-submit
+                // (cancelled tiles have NO retry button)
+                cancelledPrompts.push(i);
+                this.log('info', `Prompt #${i + 1}: CANCELLED + URL dead after 3 checks → will re-submit after reload`);
+              }
+            } else {
+              // No mediaId — can't verify, assume fake cancel and save for reload verification
+              cancelledPrompts.push(i);
+              this.log('info', `Prompt #${i + 1}: CANCELLED (no mediaId) — will verify after reload`);
+            }
           } else {
-            // Server/cancelled error — queue for DOM check
+            // Server error — has retry button on the tile, try clicking it
             this.log('info', `Prompt #${i + 1}: API says failed [${errorClass}] — will check DOM for retry button`);
             toRetryViaDom.push(i);
           }
 
         } else if (apiMatch.state === 'generating' || apiMatch.state === 'queued') {
-          // Still generating — mark done (it will finish)
-          this.updatePromptStatus(i, 'done');
-          this.log('info', `Prompt #${i + 1}: still ${apiMatch.state} — marking done`);
-          apiConfirmedDone++;
+          // Still generating — WAIT for it to complete (don't mark done yet!)
+          // BUT check DOM first — the API may be stale while DOM already shows failed/cancelled.
+          const domAlreadySettled = allTilesSettled();
+          if (domAlreadySettled) {
+            // DOM says nothing is generating — API is stale. Skip the wait entirely.
+            this.log('info', `Prompt #${i + 1}: API says "${apiMatch.state}" but DOM already settled — skipping wait, routing to retry`);
+            toRetryViaDom.push(i);
+            continue;
+          }
+
+          this.log('info', `Prompt #${i + 1}: still ${apiMatch.state} — waiting for completion...`);
+          this.sendPhaseUpdate('checking', `Waiting for prompt #${i + 1} to finish generating...`);
+          
+          const MAX_GEN_WAIT_MS = 3 * 60 * 1000; // 3 minutes max (was 10 — too long)
+          const POLL_MS = 10_000; // check every 10 seconds
+          const DOM_TIEBREAK_MS = 30_000; // after 30s, start checking DOM as tiebreaker
+          const genStart = Date.now();
+          let resolved = false;
+
+          while (Date.now() - genStart < MAX_GEN_WAIT_MS && !this.stopped) {
+            await sleep(POLL_MS);
+            
+            // Refresh API cache
+            await activeStatusCheck();
+            
+            // Re-check this prompt
+            let freshMatch: FlowGenerationStatus | null = null;
+            if (p.mediaId) freshMatch = findStatusByMediaId(p.mediaId);
+            if (!freshMatch) freshMatch = findStatusByPromptText(p.text);
+            
+            if (freshMatch && freshMatch.state === 'completed') {
+              this.updatePromptStatus(i, 'done');
+              this.log('info', `Prompt #${i + 1}: generation COMPLETED ✅ (waited ${Math.round((Date.now() - genStart) / 1000)}s)`);
+              apiConfirmedDone++;
+              resolved = true;
+              break;
+            } else if (freshMatch && freshMatch.state === 'failed') {
+              const errorClass = classifyError(freshMatch.rawStatus, freshMatch.failureReason);
+              if (errorClass === 'safety' || errorClass === 'quota') {
+                this.updatePromptStatus(i, 'failed', `API: ${freshMatch.rawStatus}`);
+                apiConfirmedFailed++;
+              } else {
+                toRetryViaDom.push(i);
+              }
+              this.log('warn', `Prompt #${i + 1}: generation FAILED during wait ❌`);
+              resolved = true;
+              break;
+            }
+
+            // ── DOM tiebreaker: if API stuck for 30s+, check screen ──
+            // The API sometimes never updates from "generating" even though
+            // the screen clearly shows "failed" or "cancelled".
+            const waitElapsed = Date.now() - genStart;
+            if (waitElapsed > DOM_TIEBREAK_MS) {
+              const domSettled = allTilesSettled();
+              if (domSettled) {
+                this.log('info', `Prompt #${i + 1}: API stuck on "${freshMatch?.state || 'unknown'}" for ${Math.round(waitElapsed / 1000)}s but DOM shows settled — trusting DOM`);
+                // Route to DOM retry check — it will find the failed tile and click retry
+                toRetryViaDom.push(i);
+                resolved = true;
+                break;
+              }
+            }
+
+            // Still generating — keep waiting
+            this.log('info', `Prompt #${i + 1}: still ${freshMatch?.state || 'unknown'}... (${Math.round((Date.now() - genStart) / 1000)}s elapsed)`);
+          }
+
+          if (!resolved && !this.stopped) {
+            // Timed out but still generating — don't mark done blindly.
+            // Route to post-reload verification where tile scanning can confirm.
+            cancelledPrompts.push(i);
+            this.log('warn', `Prompt #${i + 1}: still generating after ${MAX_GEN_WAIT_MS / 1000}s — will verify after page reload`);
+          }
         }
       } else {
         // No API data at all
@@ -3600,12 +3793,10 @@ private async detectAndReportFailures(): Promise<void> {
     if (toRetryViaDom.length > 0 && !this.stopped) {
       this.sendPhaseUpdate('retrying', `Checking ${toRetryViaDom.length} prompt(s) in DOM...`);
 
-      // Scroll to top — newest tiles (and failed ones) are at the top
-      await scrollOutputToTop();
-      await sleep(1000);
-
-      const failedTiles = findAllFailedTiles();
-      this.log('info', `DOM scan found ${failedTiles.length} failed tile(s) on page`);
+      // Scroll through entire virtualized grid to find ALL failed tiles
+      // (not just visible ones — Virtuoso removes off-screen tiles from DOM)
+      const failedTiles = await findAllFailedTilesWithScroll();
+      this.log('info', `DOM scan (with scroll) found ${failedTiles.length} failed tile(s) on page`);
 
       for (const idx of toRetryViaDom) {
         if (this.stopped) break;
@@ -3655,6 +3846,11 @@ private async detectAndReportFailures(): Promise<void> {
         if (retryBtn) {
           // ── HAS RETRY BUTTON → click it (failed tile, not cancelled) ──
           this.log('info', `Prompt #${idx + 1}: clicking retry button (attempt ${(prompt.attempts || 0) + 1}/3)...`);
+          
+          // Snapshot cache BEFORE retry so we can diff to find only the NEW entry.
+          // Without this, findStatusByPromptText picks up the OLD failed entry
+          // (same prompt text) and thinks the retry immediately failed.
+          onBeforeSubmit();
           simulateClick(retryBtn);
           prompt.attempts = (prompt.attempts || 0) + 1;
           // Mark as submitted so sidepanel counts it in backend (trackUsage)
@@ -3674,19 +3870,27 @@ private async detectAndReportFailures(): Promise<void> {
             if (this.stopped) break;
             await sleep(5000);
 
-            // Check API for the prompt text (new tile = new mediaId)
-            const newApiMatch = findStatusByPromptText(prompt.text);
-            if (newApiMatch) {
-              if (newApiMatch.state === 'completed') {
+            // Check for NEW entries only (entries that appeared AFTER the retry click).
+            // This avoids matching the OLD failed entry with the same prompt text.
+            const newEntries = getNewSubmissions();
+            const newApiMatch = newEntries.length > 0 ? newEntries[0] : null;
+            
+            // Also try the text matcher as fallback (with fixed priority scoring,
+            // it now prefers 'generating' over 'failed' so it should find the right one)
+            const textMatch = !newApiMatch ? findStatusByPromptText(prompt.text) : null;
+            const apiMatch = newApiMatch || textMatch;
+            
+            if (apiMatch) {
+              if (apiMatch.state === 'completed') {
                 // Update mediaId to the new one
-                prompt.mediaId = newApiMatch.mediaId;
+                prompt.mediaId = apiMatch.mediaId;
                 this.updatePromptStatus(idx, 'done');
-                this.log('info', `Prompt #${idx + 1}: retry COMPLETED ✅ (new mediaId: ${newApiMatch.mediaId.slice(-8)})`);
+                this.log('info', `Prompt #${idx + 1}: retry COMPLETED ✅ (new mediaId: ${apiMatch.mediaId.slice(-8)})`);
                 retrySuccess = true;
                 break;
               }
-              if (newApiMatch.state === 'failed') {
-                const ec = classifyError(newApiMatch.rawStatus, newApiMatch.failureReason);
+              if (apiMatch.state === 'failed') {
+                const ec = classifyError(apiMatch.rawStatus, apiMatch.failureReason);
                 if (ec === 'safety' || ec === 'quota') {
                   this.updatePromptStatus(idx, 'failed', `Retry failed: ${ec}`);
                   this.log('warn', `Prompt #${idx + 1}: retry FAILED ❌ (${ec})`);
@@ -3698,16 +3902,18 @@ private async detectAndReportFailures(): Promise<void> {
                 break;
               }
               // Still generating — keep waiting
+              this.log('info', `Prompt #${idx + 1}: retry still ${apiMatch.state}... (${Math.round((Date.now() - retryStart) / 1000)}s)`);
             }
 
             // DOM fallback: check if visible tiles settled
             if (allTilesSettled()) {
               await sleep(2000);
               if (allTilesSettled()) {
-                // Check API one more time
-                const finalCheck = findStatusByPromptText(prompt.text);
-                if (finalCheck?.state === 'completed') {
-                  prompt.mediaId = finalCheck.mediaId;
+                // Check new entries one more time
+                const finalNewEntries = getNewSubmissions();
+                const finalMatch = finalNewEntries.length > 0 ? finalNewEntries[0] : findStatusByPromptText(prompt.text);
+                if (finalMatch?.state === 'completed') {
+                  prompt.mediaId = finalMatch.mediaId;
                   this.updatePromptStatus(idx, 'done');
                   this.log('info', `Prompt #${idx + 1}: retry COMPLETED ✅ (settled)`);
                   retrySuccess = true;
@@ -3729,34 +3935,36 @@ private async detectAndReportFailures(): Promise<void> {
 
         } else {
           // ── NO RETRY BUTTON → cancelled tile ──
-          // Save for post-reload recovery (will re-submit via processPrompt)
-          cancelledPrompts.push(idx);
-          this.log('info', `Prompt #${idx + 1}: cancelled tile (no retry button) — saved for post-reload`);
+          // But the video might actually exist (fake cancel).
+          // Run URL verification before giving up — same logic as Fix 2.
+          if (prompt.mediaId) {
+            let urlValid = false;
+            for (let urlAttempt = 0; urlAttempt < 3 && !urlValid && !this.stopped; urlAttempt++) {
+              if (urlAttempt > 0) {
+                this.log('info', `Prompt #${idx + 1}: URL check attempt ${urlAttempt + 1}/3 (waiting 5s for CDN)...`);
+                await sleep(5000);
+              }
+              urlValid = await this.verifyMediaUrl(prompt.mediaId);
+            }
+            if (urlValid) {
+              this.updatePromptStatus(idx, 'done');
+              this.log('info', `Prompt #${idx + 1}: cancelled tile but URL valid → fake cancel, video exists ✅`);
+            } else {
+              cancelledPrompts.push(idx);
+              this.log('info', `Prompt #${idx + 1}: cancelled tile + URL dead after 3 checks — saved for post-reload`);
+            }
+          } else {
+            cancelledPrompts.push(idx);
+            this.log('info', `Prompt #${idx + 1}: cancelled tile (no mediaId) — saved for post-reload`);
+          }
         }
       }
     }
 
-    // ─── Step 4: Save cancelled prompts for post-reload recovery ───
-    if (cancelledPrompts.length > 0 && !this.stopped) {
-      this.log('info', `${cancelledPrompts.length} cancelled prompt(s) will be re-submitted after reload`);
-      this.sendPhaseUpdate('recovering', `Recovering ${cancelledPrompts.length} cancelled prompt(s) — usually fake, verifying...`);
-      // Mark them as queued with attempt count preserved
-      // IMPORTANT: Keep mediaId! It's a permanent server-side ID needed for API download.
-      // Only clear tileIds (DOM references go stale after reload).
-      for (const idx of cancelledPrompts) {
-        const p = this.queue.prompts[idx];
-        p.status = 'queued';
-        p.error = undefined;
-        // p.mediaId — KEEP IT! Needed for download even after recovery marks it as done.
-        p.tileIds = [];
-        this.updatePromptStatus(idx, 'queued');
-      }
-      // Save queue in recovery mode — post-reload handler will re-submit these
-      try {
-        await saveRunningQueue(this.queue, this.queue.prompts.length, true);
-        this.log('info', 'Saved cancelled prompts for post-reload recovery');
-      } catch { /* ignore */ }
-    }
+
+    // NOTE: Step 4 (save cancelled prompts) is handled AFTER resolveSubmittedViaDom()
+    // below, so all unverified prompts (both DOM-cancelled and unresolved submitted)
+    // are processed together in a single save.
 
     // ─── Final counts ───
     const finalDone = this.queue.prompts.filter(p => p.status === 'done').length;
@@ -3767,9 +3975,35 @@ private async detectAndReportFailures(): Promise<void> {
       `Phase 2 complete: ✅${finalDone} done, ❌${finalFailed} failed, 📋${finalQueued} queued for reload, 📤${finalSubmitted} submitted`
     );
 
-    // Resolve any lingering submitted as done
+    // Resolve any lingering submitted — confirmed ones → done, unverified → reload
     if (finalSubmitted > 0) {
-      this.resolveSubmittedViaDom();
+      const unresolvedIndices = this.resolveSubmittedViaDom();
+      if (unresolvedIndices.length > 0) {
+        // Merge into cancelled prompts for post-reload recovery
+        for (const idx of unresolvedIndices) {
+          if (!cancelledPrompts.includes(idx)) cancelledPrompts.push(idx);
+        }
+        this.log('info', `${unresolvedIndices.length} unresolved submitted prompt(s) added to reload recovery`);
+      }
+    }
+
+    // ─── Step 4b: Save ALL unverified prompts for post-reload recovery ───
+    if (cancelledPrompts.length > 0 && !this.stopped) {
+      this.log('info', `${cancelledPrompts.length} prompt(s) need post-reload verification`);
+      this.sendPhaseUpdate('recovering', `Verifying ${cancelledPrompts.length} prompt(s) after reload...`);
+      for (const idx of cancelledPrompts) {
+        const p = this.queue.prompts[idx];
+        if (p.status !== 'done' && p.status !== 'failed') {
+          p.status = 'queued';
+          p.error = undefined;
+          p.tileIds = [];
+          this.updatePromptStatus(idx, 'queued');
+        }
+      }
+      try {
+        await saveRunningQueue(this.queue, this.queue.prompts.length, true, this.baselineTileCount);
+        this.log('info', 'Saved unverified prompts for post-reload recovery');
+      } catch { /* ignore */ }
     }
 
     // Report failures to sidepanel
@@ -3789,23 +4023,27 @@ private async detectAndReportFailures(): Promise<void> {
    * This happens when a DOM retry creates a new generation that our API
    * interceptor can't track (new entry, different media ID).
    *
-   * Strategy: API first → if no API data, mark as 'done' optimistically.
-   * Why optimistic? Because:
-   * 1. "Cancelled" tiles still show prompt text, so DOM text matching is unreliable
-   * 2. We reload the page before library scan — real videos appear after reload
-   * 3. The library scanner is the final truth — it only downloads real videos
+   * Strategy: API first → if API confirms completed, mark done.
+   * For server errors or no API data, route to post-reload recovery
+   * instead of marking done blindly.
+   *
+   * Returns indices of prompts that need post-reload verification.
    */
-  private resolveSubmittedViaDom(): void {
-    if (!this.queue) return;
+  private resolveSubmittedViaDom(): number[] {
+    if (!this.queue) return [];
 
     let resolved = 0;
+    const needsReload: number[] = [];
 
     for (let i = 0; i < this.queue.prompts.length; i++) {
       const p = this.queue.prompts[i];
       if (p.status !== 'submitted') continue;
 
-      // 1. Try API one last time
-      const apiMatch = findStatusByPromptText(p.text);
+      // 1. Try API one last time (uses improved multi-fragment matching)
+      let apiMatch: FlowGenerationStatus | null = null;
+      if (p.mediaId) apiMatch = findStatusByMediaId(p.mediaId);
+      if (!apiMatch) apiMatch = findStatusByPromptText(p.text);
+
       if (apiMatch?.state === 'completed') {
         this.updatePromptStatus(i, 'done');
         this.log('info', `Prompt #${i + 1}: resolved via API → done ✅`);
@@ -3814,29 +4052,32 @@ private async detectAndReportFailures(): Promise<void> {
       }
       if (apiMatch?.state === 'failed') {
         const errorClass = classifyError(apiMatch.rawStatus, apiMatch.failureReason);
-        // Only mark as hard-failed if safety/quota confirmed
+        // Only mark as hard-failed if safety/quota/cancelled confirmed
         if (errorClass === 'safety' || errorClass === 'quota') {
           this.updatePromptStatus(i, 'failed', `API: ${apiMatch.rawStatus} [${errorClass}]`);
           this.log('warn', `Prompt #${i + 1}: resolved via API → failed ❌ (${errorClass})`);
+          resolved++;
+        } else if (errorClass === 'cancelled') {
+          // Cancelled = no retry button → needs re-submission after reload
+          needsReload.push(i);
+          this.log('info', `Prompt #${i + 1}: cancelled → will re-submit after reload`);
         } else {
-          // Server/unknown failure — likely a fake cancel. Mark as done.
-          // Page reload will reveal the real video if it exists.
-          this.updatePromptStatus(i, 'done');
-          this.log('info', `Prompt #${i + 1}: API says failed [${errorClass}] but likely fake cancel → marking done (reload will verify)`);
+          // Server/unknown failure — route to reload verification
+          // Don't mark done blindly — let the tile scanner confirm after reload
+          needsReload.push(i);
+          this.log('info', `Prompt #${i + 1}: API says failed [${errorClass}] — will verify after reload`);
         }
-        resolved++;
         continue;
       }
 
-      // 2. No API data at all — mark as done optimistically.
-      // The "cancelled" DOM tile is unreliable; after reload the video usually appears.
-      // The library scan after reload is the final validator.
-      this.updatePromptStatus(i, 'done');
-      this.log('info', `Prompt #${i + 1}: no API data → marking done optimistically (reload will verify)`);
-      resolved++;
+      // 2. No API data at all — route to reload verification.
+      // Don't mark done optimistically — the tile scanner will confirm.
+      needsReload.push(i);
+      this.log('info', `Prompt #${i + 1}: no API data — will verify after reload`);
     }
 
-    this.log('info', `resolveSubmittedViaDom: resolved ${resolved} submitted prompt(s)`);
+    this.log('info', `resolveSubmittedViaDom: ${resolved} confirmed, ${needsReload.length} need reload verification`);
+    return needsReload;
   }
 
   /**
@@ -3882,7 +4123,9 @@ private async detectAndReportFailures(): Promise<void> {
         upgraded++;
       } else if (apiMatch.state === 'failed') {
         const errorClass = classifyError(apiMatch.rawStatus, apiMatch.failureReason);
-        // Don't mark server errors as hard-failed — they might be fake cancels
+        // Don't mark server/cancelled errors as hard-failed
+        // Cancelled is usually a FAKE cancel — video exists after reload
+        // Leave as 'submitted' so verifyAndReprompt can URL-check it
         if (errorClass === 'safety' || errorClass === 'quota') {
           const error = `API: ${apiMatch.rawStatus} [${errorClass}]`;
           this.updatePromptStatus(i, 'failed', error);

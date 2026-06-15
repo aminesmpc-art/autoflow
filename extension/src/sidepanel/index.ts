@@ -24,6 +24,7 @@ import {
   ImageModel,
   ImageRatio,
   VideoDuration,
+  ScheduledChain,
 } from '../types';
 import { MAX_IMAGES_PER_PROMPT, MAX_SHARED_IMAGES, MAX_FRAMES_PER_PROMPT } from '../shared/constants';
 import { parsePrompts, validatePrompts, ParsedPromptNode } from '../shared/parser';
@@ -76,6 +77,9 @@ const state: AppState = {
   isRunning: false,
   activeQueueId: null,
 };
+
+// Global Pro status for gating features
+let _isProUser = false;
 
 // ================================================================
 // DOM REFS
@@ -1543,9 +1547,15 @@ function initSettingsTab() {
         select.appendChild(opt);
       }
       showToast(`Found ${response.models.length} models.`, 'success');
+      updateDurationOptions();
     } else {
       showToast(response?.error || 'No models found. Make sure a Flow tab is open.', 'warning');
     }
+  });
+
+  // Model selector → update duration options (10s is Omni Flash-only)
+  ($('#setting-model') as HTMLSelectElement).addEventListener('change', () => {
+    updateDurationOptions();
   });
 
   // Typing mode toggle → show/hide typing speed slider
@@ -1638,7 +1648,8 @@ async function loadSettings() {
     if (orientationDropdown) orientationDropdown.value = settings.orientation ?? 'landscape';
     // Generations
     ($('#setting-generations') as HTMLSelectElement).value = String(settings.generations);
-    // Duration
+    // Duration (update available options first — 10s is Omni Flash-only)
+    updateDurationOptions();
     ($('#setting-duration') as HTMLSelectElement).value = settings.duration ?? '8s';
     // Voice
     const voiceSelect = $('#setting-voice') as HTMLSelectElement | null;
@@ -1864,6 +1875,7 @@ async function refreshQueuesList() {
           <div class="af-q-title-row">
             <span class="af-q-name">${escapeHtml(queue.name)}</span>
             <span class="af-q-badge af-q-badge-${st.cls}">${st.icon} ${st.label}</span>
+
           </div>
           <div class="af-q-time">${timeAgo}</div>
         </div>
@@ -1884,11 +1896,11 @@ async function refreshQueuesList() {
               <span class="af-q-setting-key">Model</span>
               <select class="af-q-select af-q-setting-val" data-action="update-setting" data-key="${isVideo ? 'model' : 'imageModel'}">
                 ${isVideo ? `
+                  <option value="Omni Flash" ${s.model === 'Omni Flash' ? 'selected' : ''}>Omni Flash</option>
                   <option value="Veo 3.1 - Lite" ${s.model === 'Veo 3.1 - Lite' ? 'selected' : ''}>Veo 3.1 - Lite</option>
                   <option value="Veo 3.1 - Fast" ${s.model === 'Veo 3.1 - Fast' ? 'selected' : ''}>Veo 3.1 - Fast</option>
                   <option value="Veo 3.1 - Quality" ${s.model === 'Veo 3.1 - Quality' ? 'selected' : ''}>Veo 3.1 - Quality</option>
                   <option value="Veo 3.1 - Lite [Lower Priority]" ${s.model === 'Veo 3.1 - Lite [Lower Priority]' ? 'selected' : ''}>Veo 3.1 - Lite [LP]</option>
-                  <option value="Veo 3.1 - Fast [Lower Priority]" ${s.model === 'Veo 3.1 - Fast [Lower Priority]' ? 'selected' : ''}>Veo 3.1 - Fast [LP]</option>
                 ` : `
                   <option value="Nano Banana Pro" ${s.imageModel === 'Nano Banana Pro' ? 'selected' : ''}>Nano Banana Pro</option>
                   <option value="Nano Banana 2" ${s.imageModel === 'Nano Banana 2' ? 'selected' : ''}>Nano Banana 2</option>
@@ -1922,6 +1934,16 @@ async function refreshQueuesList() {
             </div>
             ${isVideo ? `
             <div class="af-q-setting-row">
+              <span class="af-q-setting-key">Duration</span>
+              <select class="af-q-select af-q-setting-val" data-action="update-setting" data-key="duration">
+                <option value="4s" ${(s.duration ?? '8s') === '4s' ? 'selected' : ''}>4s</option>
+                <option value="6s" ${(s.duration ?? '8s') === '6s' ? 'selected' : ''}>6s</option>
+                <option value="8s" ${(s.duration ?? '8s') === '8s' ? 'selected' : ''}>8s</option>
+                ${s.model === 'Omni Flash' ? `<option value="10s" ${(s.duration ?? '8s') === '10s' ? 'selected' : ''}>10s</option>` : ''}
+              </select>
+            </div>` : ''}
+            ${isVideo ? `
+            <div class="af-q-setting-row">
               <span class="af-q-setting-key">Voice</span>
               <span class="af-q-setting-val">${escapeHtml(s.voiceIngredient && s.voiceIngredient !== 'none' ? s.voiceIngredient : 'None')}</span>
             </div>` : ''}
@@ -1936,35 +1958,6 @@ async function refreshQueuesList() {
             <div class="af-q-setting-row">
               <span class="af-q-setting-key">Typing Mode</span>
               <span class="af-q-setting-val">${s.typingMode ? `<span class="af-q-on">ON</span> &times;${s.typingSpeedMultiplier}` : '<span class="af-q-off">OFF</span>'}</span>
-            </div>
-          </div>
-
-          <div class="af-q-settings-group">
-            <div class="af-q-settings-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download</div>
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Auto-DL</span>
-              <span class="af-q-setting-val">${autoDownload ? '<span class="af-q-on">ON</span>' : '<span class="af-q-off">OFF</span>'}</span>
-            </div>
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Quality</span>
-              <span class="af-q-setting-val">${escapeHtml(downloadRes)}</span>
-            </div>
-          </div>
-
-          <div class="af-q-settings-group">
-            <div class="af-q-settings-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Behavior</div>
-
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Stop on error</span>
-              <span class="af-q-setting-val">${s.stopOnError ? '<span class="af-q-on">ON</span>' : '<span class="af-q-off">OFF</span>'}</span>
-            </div>
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Language</span>
-              <span class="af-q-setting-val">${escapeHtml(s.language ?? 'English')}</span>
-            </div>
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Target</span>
-              <span class="af-q-setting-val af-q-setting-target">${targetIcon} ${targetLabel}</span>
             </div>
           </div>
         </div>
@@ -2031,11 +2024,12 @@ async function refreshQueuesList() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>
             </button>
           </div>
-          <div class="af-q-actions-right">
+        <div class="af-q-actions-right">
             <button class="af-q-act-btn af-q-act-delete" data-action="delete" title="Delete queue">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
             </button>
-            <button class="af-q-run-btn" data-action="run" ${!queue.runTarget ? 'disabled title="Set run target first"' : ''}>
+
+            <button class="af-q-run-btn" data-action="run">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               Run
             </button>
@@ -2110,9 +2104,11 @@ async function refreshQueuesList() {
       showToast(`Queue "${queue.name}" deleted.`, 'success');
       await refreshQueuesList();
     });
+    // Run button (first queue only)
     card.querySelector('[data-action="run"]')?.addEventListener('click', async () => {
       await runQueue(queue.id);
     });
+
 
     return card;
   };
@@ -3889,9 +3885,9 @@ function handleFailedTilesResult(payload: { failedPrompts: Array<{ promptIndex: 
   section.style.display = 'block';
   countBadge.textContent = `${payload.failedCount} failed`;
 
-  // Build clean copy-paste ready text — just the prompt texts separated by
-  // blank lines, so the user can paste directly into the AutoFlow prompts area.
-  const uniqueTexts: string[] = [];
+  // Build text with error reasons so users see WHY each prompt failed.
+  // Format: "#N — [error reason]\n[prompt text]"
+  const entries: string[] = [];
   const seen = new Set<string>();
   for (const fp of payload.failedPrompts) {
     // Skip unmapped placeholders
@@ -3899,16 +3895,17 @@ function handleFailedTilesResult(payload: { failedPrompts: Array<{ promptIndex: 
     const t = fp.text.trim();
     if (t && !seen.has(t)) {
       seen.add(t);
-      uniqueTexts.push(t);
+      const errorLine = fp.error ? `❌ #${fp.promptIndex + 1} — ${fp.error}` : `❌ #${fp.promptIndex + 1}`;
+      entries.push(`${errorLine}\n${t}`);
     }
   }
-  textarea.value = uniqueTexts.join('\n\n');
+  textarea.value = entries.join('\n\n');
 
   // Enable buttons
   copyBtn.disabled = false;
   retryBtn.disabled = false;
 
-  showToast(`${payload.failedCount} failed generation(s) detected.`);
+  showToast(`${payload.failedCount} failed generation(s) — check "Failed" section for details.`, 'warning', 5000);
 }
 
 function showFailedSection() {
@@ -3924,6 +3921,37 @@ function updateTypingModeVisibility(enabled: boolean) {
   const speedRow = $('#typing-speed-row');
   if (speedRow) {
     speedRow.style.display = enabled ? 'flex' : 'none';
+  }
+}
+
+/**
+ * Show/hide the 10s duration option based on the selected video model.
+ * Only Omni Flash supports 10s clips — all other models max out at 8s.
+ */
+function updateDurationOptions() {
+  const modelSelect = $('#setting-model') as HTMLSelectElement;
+  const durationSelect = $('#setting-duration') as HTMLSelectElement;
+  if (!modelSelect || !durationSelect) return;
+
+  const isOmni = modelSelect.value.toLowerCase().includes('omni');
+  const option10s = durationSelect.querySelector('option[value="10s"]') as HTMLOptionElement | null;
+
+  if (isOmni) {
+    // Ensure 10s option exists
+    if (!option10s) {
+      const opt = document.createElement('option');
+      opt.value = '10s';
+      opt.textContent = '10s';
+      durationSelect.appendChild(opt);
+    }
+  } else {
+    // Remove 10s option if present, fallback to 8s if it was selected
+    if (option10s) {
+      if (durationSelect.value === '10s') {
+        durationSelect.value = '8s';
+      }
+      option10s.remove();
+    }
   }
 }
 
@@ -4394,6 +4422,7 @@ async function showLoggedInState() {
 
   // Check review reward status and show/hide the CTA
   const isPro = profile?.is_pro_active || false;
+  _isProUser = isPro;  // Update global Pro state
   checkAndShowReviewReward(isPro);
 }
 
@@ -4886,6 +4915,227 @@ function closeBatchRepromptPanel(
       payload: { results }
     }).catch(() => {});
   }
+}
+
+// ================================================================
+// SCHEDULE CHAIN MODAL (Pro-only)
+// ================================================================
+
+async function showChainScheduleModal(triggerQueue: QueueObject) {
+  // Remove any existing modal
+  document.getElementById('af-schedule-modal')?.remove();
+
+  // Load all queues to show as selectable list
+  const allQueues = await getAllQueues();
+  // Show all queues that have prompts, oldest first (top = runs first)
+  const availableQueues = allQueues.filter(q => q.prompts.length > 0).reverse();
+
+  if (availableQueues.length === 0) {
+    showToast('No queues available to schedule.', 'warning');
+    return;
+  }
+
+  // Default to 1 hour from now, rounded to next 5 minutes
+  const defaultTime = new Date(Date.now() + 60 * 60 * 1000);
+  defaultTime.setMinutes(Math.ceil(defaultTime.getMinutes() / 5) * 5, 0, 0);
+  const isoLocal = new Date(defaultTime.getTime() - defaultTime.getTimezoneOffset() * 60000)
+    .toISOString().slice(0, 16);
+
+  // Build queue checklist HTML with status indicators
+  const queueListHtml = availableQueues.map((q, i) => {
+    const done = q.prompts.filter(p => p.status === 'done').length;
+    const total = q.prompts.length;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    const isDone = q.status === 'completed' || pct === 100;
+    const isStopped = q.status === 'stopped';
+    const statusBadge = isDone
+      ? `<span class="af-chain-status af-chain-done">✅ Done</span>`
+      : isStopped
+        ? `<span class="af-chain-status af-chain-stopped">🔴 ${pct}%</span>`
+        : `<span class="af-chain-status af-chain-pending">⏳ ${done}/${total}</span>`;
+    return `
+    <label class="af-chain-queue-item${isDone ? ' af-chain-item-done' : ''}" data-queue-id="${q.id}">
+      <input type="checkbox" class="af-chain-checkbox" value="${q.id}" ${q.id === triggerQueue.id ? 'checked' : ''}>
+      <span class="af-chain-order-badge" style="display:${q.id === triggerQueue.id ? 'flex' : 'none'}">1</span>
+      <span class="af-chain-queue-name">${escapeHtml(q.name)}</span>
+      ${statusBadge}
+    </label>`;
+  }).join('');
+
+  const overlay = document.createElement('div');
+  overlay.id = 'af-schedule-modal';
+  overlay.className = 'af-schedule-overlay';
+  overlay.innerHTML = `
+    <div class="af-schedule-card">
+      <div class="af-schedule-header">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span>Schedule Chain</span>
+      </div>
+      <div class="af-schedule-subtitle">Select queues to run in order. Each gets a new project.</div>
+
+      <div class="af-chain-queue-list">
+        ${queueListHtml}
+      </div>
+
+      <div class="af-chain-info">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        <span>Full mode + New Project for each queue</span>
+      </div>
+
+      <label class="af-schedule-label">Start at:</label>
+      <div class="af-quick-presets">
+        <button class="af-quick-btn" data-minutes="0">Now</button>
+        <button class="af-quick-btn" data-minutes="5">5min</button>
+        <button class="af-quick-btn" data-minutes="10">10min</button>
+        <button class="af-quick-btn" data-minutes="30">30min</button>
+        <button class="af-quick-btn" data-minutes="60">1h</button>
+        <button class="af-quick-btn" data-minutes="120">2h</button>
+      </div>
+      <input type="datetime-local" id="af-schedule-datetime" class="af-schedule-input" value="${isoLocal}" />
+
+      <label class="af-schedule-label" style="margin-top:12px">Wait between queues:</label>
+      <select id="af-chain-wait" class="af-schedule-input" style="padding:8px 12px;font-size:13px">
+        <option value="10">10 seconds</option>
+        <option value="30">30 seconds</option>
+        <option value="60" selected>1 minute</option>
+        <option value="120">2 minutes</option>
+        <option value="300">5 minutes</option>
+        <option value="600">10 minutes</option>
+      </select>
+
+      <div class="af-schedule-warning">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        Chrome must be open for scheduled chains to run.
+      </div>
+
+      <div class="af-schedule-actions">
+        <button class="af-btn af-btn-ghost af-btn-sm" id="af-schedule-cancel">Cancel</button>
+        <button class="af-btn af-btn-primary af-btn-sm" id="af-schedule-confirm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          Schedule Chain
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('af-schedule-visible'));
+
+  // Quick preset buttons
+  overlay.querySelectorAll('.af-quick-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const minutes = parseInt((btn as HTMLElement).dataset.minutes || '0');
+      const d = new Date(Date.now() + minutes * 60_000);
+      d.setSeconds(0, 0);
+      const iso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      (document.getElementById('af-schedule-datetime') as HTMLInputElement).value = iso;
+      // Highlight active preset
+      overlay.querySelectorAll('.af-quick-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Update order badges on all checked items
+  const updateOrderBadges = () => {
+    const allItems = overlay.querySelectorAll('.af-chain-queue-item');
+    let order = 1;
+    allItems.forEach(item => {
+      const cb = item.querySelector('.af-chain-checkbox') as HTMLInputElement;
+      const badge = item.querySelector('.af-chain-order-badge') as HTMLElement;
+      if (cb?.checked) {
+        badge.textContent = String(order);
+        badge.style.display = 'flex';
+        order++;
+      } else {
+        badge.style.display = 'none';
+      }
+    });
+  };
+  updateOrderBadges();
+
+  // Auto-set Full mode when a queue is checked + update order
+  overlay.querySelectorAll('.af-chain-checkbox').forEach(cb => {
+    cb.addEventListener('change', async (e) => {
+      updateOrderBadges();
+      const input = e.target as HTMLInputElement;
+      if (!input.checked) return;
+      const qid = input.value;
+      const q = await getQueueById(qid);
+      if (q && (q.settings as any).automationMode !== 'full') {
+        (q.settings as any).automationMode = 'full';
+        q.runTarget = 'newProject';
+        q.updatedAt = Date.now();
+        await updateQueue(q);
+      }
+    });
+  });
+
+  // Close modal
+  const closeModal = () => {
+    overlay.classList.remove('af-schedule-visible');
+    setTimeout(() => overlay.remove(), 200);
+  };
+
+  document.getElementById('af-schedule-cancel')!.addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeModal();
+  });
+
+  // Confirm
+  document.getElementById('af-schedule-confirm')!.addEventListener('click', async () => {
+    // Collect selected queue IDs in order
+    const checkboxes = overlay.querySelectorAll('.af-chain-checkbox:checked') as NodeListOf<HTMLInputElement>;
+    const selectedIds = Array.from(checkboxes).map(cb => cb.value);
+
+    if (selectedIds.length === 0) {
+      showToast('Select at least one queue.', 'warning');
+      return;
+    }
+
+    const input = document.getElementById('af-schedule-datetime') as HTMLInputElement;
+    const selectedTime = new Date(input.value).getTime();
+
+    if (isNaN(selectedTime)) {
+      showToast('Please select a valid date and time.', 'warning');
+      return;
+    }
+
+    // Allow "Now" (within 5 seconds is fine)
+    if (selectedTime <= Date.now() - 5_000) {
+      showToast('Scheduled time must not be in the past.', 'warning');
+      return;
+    }
+
+    // If time is very close ("Now"), set to 5 seconds from now
+    const actualTime = selectedTime <= Date.now() + 10_000 ? Date.now() + 5_000 : selectedTime;
+
+    const waitSelect = document.getElementById('af-chain-wait') as HTMLSelectElement;
+    const waitBetweenSec = parseInt(waitSelect?.value || '60');
+
+    closeModal();
+
+    const result = await sendToBackground({
+      type: 'SCHEDULE_CHAIN',
+      payload: { queueIds: selectedIds, scheduledAt: actualTime, waitBetweenSec },
+    });
+
+    if (result?.success) {
+      const timeStr = new Date(selectedTime).toLocaleString([], {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      });
+      showToast(`\ud83d\udd50 ${selectedIds.length} queue${selectedIds.length > 1 ? 's' : ''} scheduled for ${timeStr}`, 'success');
+      await refreshQueuesList();
+    } else {
+      showToast(result?.error || 'Failed to schedule chain.', 'error');
+    }
+  });
 }
 
 // ================================================================

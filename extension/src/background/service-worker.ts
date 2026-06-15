@@ -18,7 +18,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   }
 });
 
-import { Message, QueueObject, LogEntry } from '../types';
+import { Message, QueueObject, LogEntry, ScheduledChain } from '../types';
 import {
   getAllQueues,
   updateQueue,
@@ -28,8 +28,55 @@ import {
   getQueueById,
   getImageBlob,
   getSettings,
+  addScheduledChain,
+  updateScheduledChain,
+  removeScheduledChain,
+  getActiveChain,
+  getChainByAlarm,
+  getChainById,
 } from '../shared/storage';
 import { consumeDownload } from '../shared/api';
+
+// ================================================================
+// OFFSCREEN DOCUMENT — Keeps SW alive during long operations
+// ================================================================
+// Chrome MV3 kills the service worker after ~30s of inactivity.
+// An offscreen document sends periodic pings to keep the SW alive
+// while we fire scheduled chains (which open tabs, inject scripts, etc).
+
+const OFFSCREEN_URL = 'offscreen.html';
+
+async function ensureOffscreen(): Promise<void> {
+  // Check if offscreen doc already exists
+  const contexts = await (chrome as any).runtime.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT'],
+  }).catch(() => []);
+
+  if (contexts && contexts.length > 0) {
+    console.log('[AutoFlow] Offscreen doc already exists');
+    return;
+  }
+
+  try {
+    await chrome.offscreen.createDocument({
+      url: OFFSCREEN_URL,
+      reasons: [chrome.offscreen.Reason.BLOBS as any],
+      justification: 'Keep service worker alive during chain scheduling',
+    });
+    console.log('[AutoFlow] ✅ Offscreen document created');
+  } catch (err) {
+    console.error('[AutoFlow] ❌ Failed to create offscreen document:', err);
+  }
+}
+
+async function closeOffscreen(): Promise<void> {
+  try {
+    await chrome.offscreen.closeDocument();
+    console.log('[AutoFlow] Offscreen document closed');
+  } catch {
+    // Already closed or never opened — ignore
+  }
+}
 
 // ================================================================
 // KEEPALIVE SYSTEM — Prevents SW death & tab throttling
@@ -108,6 +155,13 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
   if (alarm.name === TAB_PING_ALARM) {
     await tabPingRoutine();
+    return;
+  }
+
+  // ── Scheduled chain alarm ──
+  if (alarm.name.startsWith('af-chain-')) {
+    console.log(`[AutoFlow] 🔔 ALARM FIRED: ${alarm.name} at ${new Date().toLocaleString()}`);
+    await fireScheduledChain(alarm.name);
     return;
   }
 });
@@ -635,28 +689,48 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
       return {};
 
     case 'VERIFY_MEDIA_URL': {
-      // HEAD request to check if a media URL is actually downloadable
+      // Check if a media URL is actually downloadable
+      // Uses redirect: 'manual' to avoid CORS errors — Google's CDN
+      // (flow-content.google) blocks cross-origin requests from extensions.
+      // A 302/307 redirect means the URL is valid (Google gave us a CDN link).
       const verifyUrl = msg.payload?.url;
       if (!verifyUrl) return { valid: false };
       try {
         const resp = await fetch(verifyUrl, {
           method: 'HEAD',
-          redirect: 'follow',
+          redirect: 'manual',  // Don't follow redirect — just check if we get one
           credentials: 'include',
         });
-        // Valid if we get 200 and content type looks like media
-        const ct = resp.headers.get('content-type') || '';
-        const valid = resp.ok && (
-          ct.includes('video') ||
-          ct.includes('octet-stream') ||
-          ct.includes('mp4') ||
-          ct.includes('webm') ||
-          ct.includes('application/')  // redirect responses sometimes use generic types
-        );
-        console.log(`[AutoFlow] URL verify: ${resp.status} ct=${ct} valid=${valid}`);
-        return { valid };
+        // Valid if:
+        // 1. Redirect response (302/307/308) — means Google gave us a valid CDN URL
+        // 2. Direct 200 with media content type
+        if (resp.type === 'opaqueredirect' || (resp.status >= 300 && resp.status < 400)) {
+          console.log(`[AutoFlow] URL verify: redirect detected → valid ✅`);
+          return { valid: true };
+        }
+        if (resp.ok) {
+          const ct = resp.headers.get('content-type') || '';
+          const valid = ct.includes('video') ||
+            ct.includes('image') ||
+            ct.includes('octet-stream') ||
+            ct.includes('mp4') ||
+            ct.includes('webm') ||
+            ct.includes('png') ||
+            ct.includes('jpeg') ||
+            ct.includes('webp') ||
+            ct.includes('application/');
+          console.log(`[AutoFlow] URL verify: ${resp.status} ct=${ct} valid=${valid}`);
+          return { valid };
+        }
+        console.log(`[AutoFlow] URL verify: ${resp.status} → invalid`);
+        return { valid: false };
       } catch (err: any) {
         console.warn(`[AutoFlow] URL verify failed:`, err.message);
+        // CORS error on redirect still means the URL exists — fail-open
+        if (err.message?.includes('CORS') || err.message?.includes('opaque')) {
+          console.log(`[AutoFlow] URL verify: CORS error but URL likely valid → assuming valid`);
+          return { valid: true };
+        }
         return { valid: false };
       }
     }
@@ -744,6 +818,16 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
       // Acknowledged — sound is played by the sidepanel, not the SW
       return {};
 
+    case 'SCHEDULE_CHAIN':
+      return handleScheduleChain(msg.payload);
+
+    case 'KEEPALIVE_PING':
+      // Offscreen doc ping — just acknowledge (resets SW idle timer)
+      return;
+
+    case 'CANCEL_CHAIN':
+      return handleCancelChain(msg.payload);
+
     default:
       return { error: 'Unknown message type' };
   }
@@ -830,8 +914,15 @@ async function handleQueueStatusUpdate(payload: {
     // Stop keepalive when queue finishes
     if (payload.status === 'completed' || payload.status === 'stopped') {
       await stopKeepalive();
-      // Send notification
-      await sendQueueNotification(queue);
+
+      // ── Chain hook: check if this queue is part of a chain ──
+      const chainAdvanced = await advanceChainIfNeeded(queue);
+
+      // Only send individual notification if NOT part of a chain
+      // (chain sends its own summary notification at the end)
+      if (!chainAdvanced) {
+        await sendQueueNotification(queue);
+      }
     }
   });
 }
@@ -960,6 +1051,349 @@ async function startQueueInTab(payload: { queueId: string; tabId?: number }): Pr
     // Release lock after a short delay to prevent rapid re-entry
     setTimeout(() => { _startingQueue = false; }, 2000);
   }
+}
+
+// ================================================================
+// SCHEDULED CHAINS — Smart Queue Playlist System
+// ================================================================
+
+/** Handle SCHEDULE_CHAIN message from sidepanel */
+async function handleScheduleChain(payload: { queueIds: string[]; scheduledAt: number; waitBetweenSec?: number }): Promise<any> {
+  const { queueIds, scheduledAt, waitBetweenSec = 60 } = payload;
+
+  if (!queueIds || queueIds.length === 0) return { error: 'No queues selected' };
+
+  // Validate all queues exist
+  const queueNames: string[] = [];
+  for (const qid of queueIds) {
+    const q = await getQueueById(qid);
+    if (!q) return { error: `Queue not found: ${qid}` };
+    queueNames.push(q.name);
+  }
+
+  // Create chain
+  const chainId = crypto.randomUUID ? crypto.randomUUID() : `chain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const chain: ScheduledChain = {
+    id: chainId,
+    queueIds,
+    currentIndex: 0,
+    scheduledAt,
+    waitBetweenSec,
+    status: 'scheduled',
+    results: queueIds.map((qid, i) => ({
+      queueId: qid,
+      queueName: queueNames[i],
+      status: 'pending' as const,
+      promptsDone: 0,
+      promptsFailed: 0,
+      promptsTotal: 0,
+    })),
+  };
+
+  // Save chain and set alarm
+  await addScheduledChain(chain);
+
+  // Mark each queue with chainId
+  for (const qid of queueIds) {
+    const q = await getQueueById(qid);
+    if (q) {
+      q.chainId = chainId;
+      q.scheduleStatus = 'scheduled';
+      q.scheduledAt = scheduledAt;
+      q.updatedAt = Date.now();
+      await updateQueue(q);
+    }
+  }
+
+  const alarmName = `af-chain-${chainId}`;
+  const delayMs = scheduledAt - Date.now();
+
+  console.log(`[AutoFlow] Chain ${chainId} scheduled: ${queueNames.join(' \u2192 ')}, delay: ${Math.round(delayMs/1000)}s`);
+
+  broadcastToExtension({ type: 'CHAIN_PROGRESS', payload: chain });
+
+  if (delayMs < 30_000) {
+    // ── IMMEDIATE: Use offscreen doc to keep SW alive while firing ──
+    await logEntry('info', `Chain firing NOW (offscreen keepalive)...`);
+    await ensureOffscreen(); // Start keepalive heartbeat
+    try {
+      await fireScheduledChain(alarmName);
+    } finally {
+      await closeOffscreen(); // Clean up
+    }
+    return { success: true, chainId, scheduledAt };
+  } else {
+    // ── FUTURE: Use chrome.alarms for reliable wake-up ──
+    await chrome.alarms.create(alarmName, { when: scheduledAt });
+    await logEntry('info', `Alarm set for ${new Date(scheduledAt).toLocaleString()}`);
+    return { success: true, chainId, scheduledAt };
+  }
+}
+
+/** Handle CANCEL_CHAIN message from sidepanel */
+async function handleCancelChain(payload: { chainId: string }): Promise<any> {
+  const chain = await getChainById(payload.chainId);
+  if (!chain) return { error: 'Chain not found' };
+
+  // Clear alarm
+  chrome.alarms.clear(`af-chain-${chain.id}`);
+
+  // Reset queues
+  for (const qid of chain.queueIds) {
+    const q = await getQueueById(qid);
+    if (q) {
+      q.chainId = undefined;
+      q.scheduledAt = undefined;
+      q.scheduleStatus = 'cancelled';
+      q.updatedAt = Date.now();
+      await updateQueue(q);
+    }
+  }
+
+  // Remove chain
+  chain.status = 'cancelled';
+  await updateScheduledChain(chain);
+  await removeScheduledChain(chain.id);
+
+  await logEntry('info', `Chain cancelled: ${chain.id}`);
+  broadcastToExtension({ type: 'CHAIN_PROGRESS', payload: chain });
+  return { success: true };
+}
+
+/** Ensure we have a Flow tab ready, returns tabId */
+async function ensureFlowTab(): Promise<number> {
+  // Try existing Flow tab first
+  const flowTabs = await chrome.tabs.query({
+    url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
+  });
+
+  if (flowTabs.length > 0 && flowTabs[0].id) {
+    const tabId = flowTabs[0].id;
+    // Navigate to Flow homepage for a fresh project
+    await chrome.tabs.update(tabId, { active: true, url: 'https://labs.google/fx/tools/flow' });
+    // Wait for navigation to complete
+    await waitForTabLoad(tabId, 30_000);
+    await sleep(3000); // Wait for React app
+    return tabId;
+  }
+
+  // Create new tab
+  const newTab = await chrome.tabs.create({ url: 'https://labs.google/fx/tools/flow', active: true });
+  const tabId = newTab.id!;
+  await waitForTabLoad(tabId, 30_000);
+  await sleep(5000); // Extra wait for first load
+  return tabId;
+}
+
+/** Wait for a tab to finish loading */
+function waitForTabLoad(tabId: number, timeoutMs: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const listener = (tid: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+      if (tid === tabId && changeInfo.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }, timeoutMs);
+  });
+}
+
+/** Start a specific queue in the chain on the given tab */
+async function startChainQueue(queue: QueueObject, tabId: number, chain: ScheduledChain): Promise<void> {
+  // Force Full mode + New Project for chain queues
+  (queue.settings as any).automationMode = 'full';
+  queue.runTarget = 'newProject';
+  queue.status = 'running';
+  queue.scheduleStatus = 'firing';
+  queue.updatedAt = Date.now();
+  await updateQueue(queue);
+  await setActiveQueueId(queue.id);
+
+  // Open side panel
+  try { await chrome.sidePanel.open({ tabId }); } catch { /* already open */ }
+
+  // Start keepalive
+  await startKeepalive(tabId);
+
+  // Inject content script and start queue
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'START_QUEUE', payload: { queue } });
+  } catch {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+    await sleep(2000);
+    await chrome.tabs.sendMessage(tabId, { type: 'START_QUEUE', payload: { queue } });
+  }
+
+  broadcastToExtension({ type: 'QUEUE_STATUS_UPDATE', payload: queue });
+  broadcastToExtension({ type: 'CHAIN_PROGRESS', payload: chain });
+}
+
+/** Fire a scheduled chain when its alarm goes off */
+async function fireScheduledChain(alarmName: string): Promise<void> {
+  console.log(`[AutoFlow] \u23f0 Chain alarm fired: ${alarmName}`);
+
+  const chain = await getChainByAlarm(alarmName);
+  if (!chain || chain.status !== 'scheduled') {
+    console.warn(`[AutoFlow] No valid chain for alarm: ${alarmName}`);
+    return;
+  }
+
+  // Check if another queue is already running
+  const activeQueueId = await getActiveQueueId();
+  if (activeQueueId) {
+    // Verify the active queue is ACTUALLY running (not stale)
+    const activeQ = await getQueueById(activeQueueId);
+    if (activeQ && activeQ.status === 'running') {
+      await logEntry('warn', `Chain cannot start — queue "${activeQ.name}" is still running.`);
+      chain.status = 'failed';
+      await updateScheduledChain(chain);
+      try {
+        chrome.notifications.create(`af-chain-conflict-${chain.id}`, {
+          type: 'basic',
+          iconUrl: 'icons/icon128.png',
+          title: 'AutoFlow — Chain Skipped',
+          message: `Scheduled chain could not start because "${activeQ.name}" is still running.`,
+        });
+      } catch { /* */ }
+      return;
+    } else {
+      // Stale activeQueueId — clear it
+      await logEntry('info', `Clearing stale activeQueueId: ${activeQueueId}`);
+      await setActiveQueueId('');
+    }
+  }
+
+  // Start the chain!
+  chain.status = 'running';
+  chain.startedAt = Date.now();
+  chain.currentIndex = 0;
+  await updateScheduledChain(chain);
+
+  await logEntry('info', `\u23f0 Chain started! ${chain.queueIds.length} queues to run.`);
+
+  // Get the first queue
+  const firstQueueId = chain.queueIds[0];
+  const firstQueue = await getQueueById(firstQueueId);
+  if (!firstQueue) {
+    chain.status = 'failed';
+    await updateScheduledChain(chain);
+    return;
+  }
+
+  // Populate result totals
+  for (const result of chain.results) {
+    const q = await getQueueById(result.queueId);
+    if (q) result.promptsTotal = q.prompts.length;
+  }
+  await updateScheduledChain(chain);
+
+  // Get/open Flow tab and start first queue
+  const tabId = await ensureFlowTab();
+  chain.results[0].status = 'pending';
+  chain.results[0].startedAt = Date.now();
+  await updateScheduledChain(chain);
+
+  await startChainQueue(firstQueue, tabId, chain);
+
+  try {
+    chrome.notifications.create(`af-chain-started-${chain.id}`, {
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: 'AutoFlow \u2014 Chain Started',
+      message: `Running ${chain.queueIds.length} queues. First: "${firstQueue.name}"`,
+    });
+  } catch { /* */ }
+}
+
+/**
+ * Called when a queue completes — checks if it's part of a chain and advances.
+ * Returns true if a chain was advanced (so caller knows not to send individual notification).
+ */
+async function advanceChainIfNeeded(completedQueue: QueueObject): Promise<boolean> {
+  if (!completedQueue.chainId) return false;
+
+  const chain = await getChainById(completedQueue.chainId);
+  if (!chain || chain.status !== 'running') return false;
+
+  const idx = chain.currentIndex;
+  const result = chain.results[idx];
+  if (!result) return false;
+
+  // Update result for completed queue
+  const doneCount = completedQueue.prompts.filter(p => p.status === 'done').length;
+  const failedCount = completedQueue.prompts.filter(p => p.status === 'failed').length;
+  result.promptsDone = doneCount;
+  result.promptsFailed = failedCount;
+  result.promptsTotal = completedQueue.prompts.length;
+  result.completedAt = Date.now();
+  result.status = completedQueue.status === 'completed' ? 'done' : 'failed';
+
+  // Clear the active queue ID so the next one can start
+  await setActiveQueueId(null);
+
+  // Is there a next queue?
+  const nextIdx = idx + 1;
+  if (nextIdx < chain.queueIds.length) {
+    // Advance chain
+    chain.currentIndex = nextIdx;
+    await updateScheduledChain(chain);
+
+    await logEntry('info', `\u2705 Chain queue ${idx + 1}/${chain.queueIds.length} done. Starting next...`);
+    broadcastToExtension({ type: 'CHAIN_PROGRESS', payload: chain });
+
+    // Cooldown between queues (user-configurable)
+    const waitMs = (chain.waitBetweenSec || 60) * 1000;
+    await logEntry('info', `Waiting ${chain.waitBetweenSec || 60}s before next queue...`);
+    await sleep(waitMs);
+
+    // Get next queue
+    const nextQueue = await getQueueById(chain.queueIds[nextIdx]);
+    if (!nextQueue) {
+      // Skip missing queue
+      chain.results[nextIdx].status = 'skipped';
+      await updateScheduledChain(chain);
+      // Try the one after that
+      return advanceChainIfNeeded({ ...completedQueue, chainId: chain.id } as any);
+    }
+
+    // Navigate Flow to homepage for fresh project
+    chain.results[nextIdx].startedAt = Date.now();
+    await updateScheduledChain(chain);
+
+    const tabId = await ensureFlowTab();
+    await startChainQueue(nextQueue, tabId, chain);
+    return true;
+  }
+
+  // Chain complete!
+  chain.status = 'completed';
+  chain.completedAt = Date.now();
+  await updateScheduledChain(chain);
+
+  // Build summary
+  const totalDone = chain.results.reduce((s, r) => s + r.promptsDone, 0);
+  const totalFailed = chain.results.reduce((s, r) => s + r.promptsFailed, 0);
+  const elapsed = chain.completedAt - (chain.startedAt || chain.scheduledAt);
+  const mins = Math.round(elapsed / 60_000);
+
+  await logEntry('info', `\u2705 Chain complete! ${chain.queueIds.length} queues, ${totalDone} done, ${totalFailed} failed, ${mins}min total.`);
+  broadcastToExtension({ type: 'CHAIN_PROGRESS', payload: chain });
+
+  // Summary notification
+  try {
+    chrome.notifications.create(`af-chain-done-${chain.id}`, {
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: 'AutoFlow \u2014 All Queues Complete! \ud83c\udf89',
+      message: `${chain.queueIds.length} queues finished in ${mins}min. ${totalDone} prompts done, ${totalFailed} failed.`,
+    });
+  } catch { /* */ }
+
+  return true;
 }
 
 // ── Image blob handler: read directly from IndexedDB (shared storage) ──

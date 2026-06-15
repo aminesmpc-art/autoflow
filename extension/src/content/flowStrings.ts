@@ -347,6 +347,53 @@ export const FLOW_STRINGS = {
     'tente novamente', // PT
     'erneut versuchen',// DE
   ],
+
+  /** "This generation was cancelled" - cancelled tile detection */
+  generationCancelled: [
+    'was cancelled',               // EN
+    'was canceled',                // EN (US spelling)
+    'generation was cancelled',    // EN (full)
+    'a été annulée',               // FR
+    'génération annulée',          // FR
+    'fue cancelada',               // ES
+    'generación cancelada',        // ES
+    'foi cancelada',               // PT
+    'geração cancelada',           // PT
+    'wurde abgebrochen',           // DE
+    'generierung abgebrochen',     // DE
+    'è stata annullata',           // IT
+    'generazione annullata',       // IT
+    'is geannuleerd',              // NL
+    'generatie geannuleerd',       // NL
+    'iptal edildi',                // TR
+    'oluşturma iptal edildi',      // TR
+    'была отменена',               // RU
+    'генерация отменена',          // RU
+    'キャンセルされました',         // JA
+    '취소되었습니다',               // KO
+    '已取消',                      // ZH
+    '生成已取消',                  // ZH
+    'تم إلغاؤها',                 // AR
+  ],
+
+  /** "You were not charged" - appears on cancelled tiles */
+  notCharged: [
+    'not been charged',            // EN
+    'not charged',                 // EN
+    'were not charged',            // EN
+    "n'avez pas été facturé",      // FR
+    'no se te ha cobrado',         // ES
+    'não foi cobrado',             // PT
+    'nicht berechnet',             // DE
+    'non è stato addebitato',      // IT
+    'niet in rekening gebracht',   // NL
+    'ücretlendirilmediniz',        // TR
+    'не было списано',             // RU
+    '課金されていません',          // JA
+    '요금이 청구되지 않았습니다',   // KO
+    '未收费',                      // ZH
+    'لم يتم تحصيل رسوم',         // AR
+  ],
 } as const;
 
 /**

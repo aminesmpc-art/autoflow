@@ -169,18 +169,19 @@ export async function savePromptHistory(entry: PromptHistoryEntry): Promise<void
 }
 
 // ── Running Queue State (for auto-resume after page reload) ──
-export async function saveRunningQueue(queue: QueueObject, currentIndex: number, recoveryMode = false): Promise<void> {
+export async function saveRunningQueue(queue: QueueObject, currentIndex: number, recoveryMode = false, baselineTileCount?: number): Promise<void> {
   await storageSet({
     [KEYS.RUNNING_QUEUE]: {
       queue,
       currentIndex,
       savedAt: Date.now(),
       recoveryMode,
+      baselineTileCount: baselineTileCount ?? 0,
     },
   });
 }
 
-export async function getRunningQueue(): Promise<{ queue: QueueObject; currentIndex: number; savedAt: number; recoveryMode?: boolean } | null> {
+export async function getRunningQueue(): Promise<{ queue: QueueObject; currentIndex: number; savedAt: number; recoveryMode?: boolean; baselineTileCount?: number } | null> {
   const data = await storageGet<any>(KEYS.RUNNING_QUEUE, null);
   if (!data || !data.queue) return null;
   // Expire after 2 hours (queue probably abandoned)
@@ -264,4 +265,61 @@ export async function clearAllImageBlobs(): Promise<void> {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+}
+
+// ================================================================
+// Scheduled Chains (queue playlists)
+// ================================================================
+
+import { ScheduledChain } from '../types';
+
+const CHAINS_KEY = 'autoflow_scheduled_chains';
+
+export async function getScheduledChains(): Promise<ScheduledChain[]> {
+  return storageGet<ScheduledChain[]>(CHAINS_KEY, []);
+}
+
+export async function saveScheduledChains(chains: ScheduledChain[]): Promise<void> {
+  await storageSet({ [CHAINS_KEY]: chains });
+}
+
+export async function getChainById(chainId: string): Promise<ScheduledChain | null> {
+  const chains = await getScheduledChains();
+  return chains.find(c => c.id === chainId) || null;
+}
+
+export async function addScheduledChain(chain: ScheduledChain): Promise<void> {
+  const chains = await getScheduledChains();
+  // Replace if same ID already exists
+  const filtered = chains.filter(c => c.id !== chain.id);
+  filtered.push(chain);
+  await saveScheduledChains(filtered);
+}
+
+export async function updateScheduledChain(chain: ScheduledChain): Promise<void> {
+  const chains = await getScheduledChains();
+  const idx = chains.findIndex(c => c.id === chain.id);
+  if (idx >= 0) {
+    chains[idx] = chain;
+  } else {
+    chains.push(chain);
+  }
+  await saveScheduledChains(chains);
+}
+
+export async function removeScheduledChain(chainId: string): Promise<void> {
+  const chains = await getScheduledChains();
+  await saveScheduledChains(chains.filter(c => c.id !== chainId));
+}
+
+/** Find an active chain (scheduled or running) */
+export async function getActiveChain(): Promise<ScheduledChain | null> {
+  const chains = await getScheduledChains();
+  return chains.find(c => c.status === 'running') || null;
+}
+
+/** Find chain by alarm name */
+export async function getChainByAlarm(alarmName: string): Promise<ScheduledChain | null> {
+  const chainId = alarmName.replace('af-chain-', '');
+  return getChainById(chainId);
 }
