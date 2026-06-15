@@ -3026,7 +3026,11 @@ export class AutomationEngine {
             this.log('info', `API stuck at ${summary.generating} generating for ${Math.round(apiStaleMs / 1000)}s — forcing active refresh...`);
             
             // Force a fresh server call instead of relying on passive cache
-            const refreshed = await activeStatusCheck();
+            const activeMediaIds = (this.queue?.prompts || [])
+              .filter(p => p.status !== 'done' && p.status !== 'queued' && p.status !== 'not-added')
+              .map(p => p.mediaId)
+              .filter(Boolean) as string[];
+            const refreshed = await activeStatusCheck(activeMediaIds);
             if (this.stopped) return;
             
             if (refreshed) {
@@ -3602,8 +3606,12 @@ private async detectAndReportFailures(): Promise<void> {
     this.log('info', '── Phase 2: Smart Verification ──');
 
     // ─── Step 1: Refresh API cache with ONE active call ───
-    this.log('info', 'Making active API status check...');
-    const refreshed = await activeStatusCheck();
+    const activeMediaIds = this.queue.prompts
+      .filter(p => p.status !== 'done' && p.status !== 'queued' && p.status !== 'not-added')
+      .map(p => p.mediaId)
+      .filter(Boolean) as string[];
+    this.log('info', `Making active API status check for ${activeMediaIds.length} media ID(s)...`);
+    const refreshed = await activeStatusCheck(activeMediaIds);
     if (this.stopped) return;
     if (refreshed) {
       this.log('info', 'API cache refreshed with fresh server data');
@@ -3718,7 +3726,11 @@ private async detectAndReportFailures(): Promise<void> {
             await sleep(POLL_MS);
             
             // Refresh API cache
-            await activeStatusCheck();
+            const activeMediaIds = this.queue.prompts
+              .filter(p => p.status !== 'done' && p.status !== 'queued' && p.status !== 'not-added')
+              .map(p => p.mediaId)
+              .filter(Boolean) as string[];
+            await activeStatusCheck(activeMediaIds);
             
             // Re-check this prompt
             let freshMatch: FlowGenerationStatus | null = null;

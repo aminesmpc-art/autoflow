@@ -559,6 +559,40 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
               if ((isStatus || isGenerate) && response.ok) {
                 // Clone and read asynchronously — doesn't block the original response
                 response.clone().json().then((data: any) => {
+                  if (isGenerate && data && Array.isArray(data.media) && _lastStatusInit && _lastStatusInit.body) {
+                    try {
+                      const newIds = data.media.map((m: any) => m.name).filter(Boolean);
+                      if (newIds.length > 0) {
+                        const parsed = JSON.parse(_lastStatusInit.body);
+                        
+                        const appendToStringArrays = (obj: any): boolean => {
+                          let changed = false;
+                          if (!obj || typeof obj !== 'object') return false;
+                          for (const key of Object.keys(obj)) {
+                            const val = obj[key];
+                            if (Array.isArray(val)) {
+                              if (val.length === 0 || typeof val[0] === 'string') {
+                                const unique = new Set([...val, ...newIds]);
+                                obj[key] = Array.from(unique);
+                                changed = true;
+                              }
+                            } else if (typeof val === 'object' && val !== null) {
+                              if (appendToStringArrays(val)) {
+                                changed = true;
+                              }
+                            }
+                          }
+                          return changed;
+                        };
+
+                        if (appendToStringArrays(parsed)) {
+                          _lastStatusInit.body = JSON.stringify(parsed);
+                        }
+                      }
+                    } catch (e) {
+                      // ignore parse/JSON errors
+                    }
+                  }
                   relay(isStatus ? 'STATUS_UPDATE' : 'GENERATION_SUBMITTED', data);
                 }).catch(() => { /* response wasn't JSON — ignore */ });
               }
@@ -569,10 +603,44 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
             // ── Active status check: allows content script to trigger a fresh poll ──
             // This makes the SAME call Flow makes, using the captured URL + auth.
             // The response flows through the interceptor → updates the cache automatically.
-            (window as any).__af_activeCheck = async function (): Promise<boolean> {
+            (window as any).__af_activeCheck = async function (mediaIds?: string[]): Promise<boolean> {
               if (!_lastStatusUrl || !_lastStatusInit) return false;
               try {
-                await patchedFetch(_lastStatusUrl, _lastStatusInit);
+                let init = _lastStatusInit;
+                if (mediaIds && mediaIds.length > 0 && _lastStatusInit.body) {
+                  try {
+                    const parsed = JSON.parse(_lastStatusInit.body);
+                    
+                    const replaceStringArrays = (obj: any): boolean => {
+                      let changed = false;
+                      if (!obj || typeof obj !== 'object') return false;
+                      for (const key of Object.keys(obj)) {
+                        const val = obj[key];
+                        if (Array.isArray(val)) {
+                          if (val.length === 0 || typeof val[0] === 'string') {
+                            obj[key] = mediaIds;
+                            changed = true;
+                          }
+                        } else if (typeof val === 'object' && val !== null) {
+                          if (replaceStringArrays(val)) {
+                            changed = true;
+                          }
+                        }
+                      }
+                      return changed;
+                    };
+
+                    if (replaceStringArrays(parsed)) {
+                      init = {
+                        ..._lastStatusInit,
+                        body: JSON.stringify(parsed)
+                      };
+                    }
+                  } catch (e) {
+                    // fallback to original body
+                  }
+                }
+                await patchedFetch(_lastStatusUrl, init);
                 return true; // Cache was refreshed via the interceptor relay
               } catch {
                 return false;

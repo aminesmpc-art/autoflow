@@ -396,14 +396,15 @@ export function findStatusByMediaId(mediaId: string): FlowGenerationStatus | nul
  * NOTE: This is the ONLY place we make an active API call. One call per
  * verification round — not spammy, just like what Flow does every 5 seconds.
  */
-export async function activeStatusCheck(): Promise<boolean> {
+export async function activeStatusCheck(mediaIds?: string[]): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     // Create a script element to call __af_activeCheck in MAIN world
     const script = document.createElement('script');
+    const idsArg = mediaIds ? JSON.stringify(mediaIds) : 'undefined';
     script.textContent = `
       (async () => {
         const result = typeof window.__af_activeCheck === 'function'
-          ? await window.__af_activeCheck()
+          ? await window.__af_activeCheck(${idsArg})
           : false;
         window.postMessage({
           source: 'autoflow-api-interceptor',
