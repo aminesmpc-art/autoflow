@@ -13,11 +13,11 @@ import MobileBanner from "./MobileBanner";
 export const metadata = {
   metadataBase: new URL("https://www.auto-flow.studio"),
   title: {
-    default: "AutoFlow — Automate Google Flow AI Video Generation | Batch Prompts & Queue Manager",
+    default: "AutoFlow for Google Flow — Batch Prompts & Bulk 4K Veo Video Automation",
     template: "%s | AutoFlow — AI Video Automation",
   },
   description:
-    "AutoFlow Chrome extension automates Google Flow video generation. Batch process hundreds of prompts, smart queue management, auto-retry failures, bulk download in 4K. Generate AI videos 10x faster — text-to-video, image-to-video, and ingredients mode. Free to install.",
+    "AutoFlow automates Google Flow (Veo): batch hundreds of prompts, smart queues, auto-retry, and bulk 4K downloads. Free Chrome extension for AI video creators.",
   keywords: [
     // Brand
     "AutoFlow",
@@ -112,10 +112,10 @@ export const metadata = {
     type: "website",
     locale: "en_US",
     url: "https://www.auto-flow.studio",
-    siteName: "AutoFlow",
-    title: "AutoFlow — Automate Google Flow AI Video Generation",
+    siteName: "AutoFlow for Google Flow",
+    title: "AutoFlow for Google Flow — Batch Prompts & Bulk 4K Veo Video Automation",
     description:
-      "Batch process hundreds of prompts, auto-retry failures, bulk download in 4K. The #1 Chrome extension for Google Flow automation. Free to install.",
+      "AutoFlow automates Google Flow (Veo): batch hundreds of prompts, smart queues, auto-retry, and bulk 4K downloads. Free Chrome extension for AI video creators.",
     images: [
       {
         url: "/og-image.png",
@@ -127,9 +127,9 @@ export const metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "AutoFlow — Automate Google Flow AI Video Generation",
+    title: "AutoFlow for Google Flow — Batch Prompts & Bulk 4K Veo Video Automation",
     description:
-      "Batch process prompts, smart queues, auto-retry, bulk download. Generate AI videos 10x faster. Free Chrome extension.",
+      "AutoFlow automates Google Flow (Veo): batch hundreds of prompts, smart queues, auto-retry, and bulk 4K downloads. Free Chrome extension for AI video creators.",
     images: ["/og-image.png"],
   },
   alternates: {
@@ -212,6 +212,7 @@ export default function RootLayout({ children }) {
               "@context": "https://schema.org",
               "@type": "Organization",
               name: "AutoFlow",
+              alternateName: "AutoFlow for Google Flow",
               url: "https://www.auto-flow.studio",
               logo: {
                 "@type": "ImageObject",
@@ -235,6 +236,7 @@ export default function RootLayout({ children }) {
               "@context": "https://schema.org",
               "@type": "WebSite",
               name: "AutoFlow",
+              alternateName: "AutoFlow for Google Flow",
               url: "https://www.auto-flow.studio",
               potentialAction: {
                 "@type": "SearchAction",

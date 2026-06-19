@@ -9,8 +9,8 @@ export const defaultLocale = 'en';
 const dictionaries = {
   en: {
     meta: {
-      title: 'AutoFlow — Automate Google Flow AI Video Generation',
-      description: 'AutoFlow Chrome extension automates Google Flow video generation. Batch process hundreds of prompts, smart queue management, auto-retry failures, bulk download in 4K.',
+      title: 'AutoFlow for Google Flow — Batch Prompts & Bulk 4K Veo Video Automation',
+      description: 'AutoFlow automates Google Flow (Veo): batch hundreds of prompts, smart queues, auto-retry, and bulk 4K downloads. Free Chrome extension for AI video creators.',
     },
     nav: {
       features: 'Features',

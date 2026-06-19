@@ -11,7 +11,7 @@ export default function HomePage() {
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "SoftwareApplication",
-            name: "AutoFlow",
+            name: "AutoFlow for Google Flow",
             applicationCategory: "BrowserApplication",
             applicationSubCategory: "AI Video Automation",
             operatingSystem: "Chrome",
