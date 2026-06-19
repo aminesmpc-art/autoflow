@@ -7,6 +7,15 @@ export const metadata = {
     "Frequently asked questions about AutoFlow — how it works, installation, Free vs Pro plans, privacy, and more.",
   alternates: {
     canonical: "https://www.auto-flow.studio/faq",
+    languages: {
+      "en": "https://www.auto-flow.studio/faq",
+      "ar": "https://www.auto-flow.studio/ar/faq",
+      "fr": "https://www.auto-flow.studio/fr/faq",
+      "es": "https://www.auto-flow.studio/es/faq",
+      "de": "https://www.auto-flow.studio/de/faq",
+      "it": "https://www.auto-flow.studio/it/faq",
+      "x-default": "https://www.auto-flow.studio/faq",
+    },
   },
 };
 

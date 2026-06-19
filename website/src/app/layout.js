@@ -8,6 +8,7 @@ import MobileMenu from "./MobileMenu";
 import StoreLink from "./StoreLink";
 import { AuthProvider } from "../context/AuthContext";
 import AuthButtons from "./AuthButtons";
+import MobileBanner from "./MobileBanner";
 
 export const metadata = {
   metadataBase: new URL("https://www.auto-flow.studio"),
@@ -138,6 +139,7 @@ export const metadata = {
       "fr": "https://www.auto-flow.studio/fr",
       "es": "https://www.auto-flow.studio/es",
       "de": "https://www.auto-flow.studio/de",
+      "it": "https://www.auto-flow.studio/it",
       "x-default": "https://www.auto-flow.studio",
     },
   },
@@ -247,6 +249,7 @@ export default function RootLayout({ children }) {
           <main>{children}</main>
           <Footer />
         </AuthProvider>
+        <MobileBanner />
         <Analytics />
         <SpeedInsights />
       </body>
@@ -278,6 +281,7 @@ function Header() {
             <a href="/de" className="lang-option">DE</a>
             <a href="/ar" className="lang-option">AR</a>
             <a href="/fr" className="lang-option">FR</a>
+            <a href="/it" className="lang-option">IT</a>
           </div>
           <AuthButtons />
           <StoreLink className="btn btn-primary btn-header">

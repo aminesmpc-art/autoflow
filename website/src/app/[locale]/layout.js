@@ -38,6 +38,7 @@ export default async function LocaleLayout({ children, params }) {
               <a href="/de" className={locale === 'de' ? 'active' : ''}>DE</a>
               <a href="/ar" className={locale === 'ar' ? 'active' : ''}>AR</a>
               <a href="/fr" className={locale === 'fr' ? 'active' : ''}>FR</a>
+              <a href="/it" className={locale === 'it' ? 'active' : ''}>IT</a>
             </div>
             <StoreLink className="btn btn-primary btn-header">
               {t.nav.install}

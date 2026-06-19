@@ -306,3 +306,63 @@ h3 { font-size: clamp(1.5rem, 2vw, 1.8rem); letter-spacing: -0.01em; }
     padding: 0 16px;
   }
 }
+
+/* ── Mobile Banner ── */
+.mobile-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  background: linear-gradient(145deg, #111111 0%, #0A0A0A 100%);
+  border-top: 1px solid var(--border-hover);
+  padding: 24px 20px;
+  text-align: center;
+  animation: slideUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6);
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.mobile-banner-close {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.mobile-banner-icon {
+  font-size: 1.8rem;
+  margin-bottom: 8px;
+}
+
+.mobile-banner-title {
+  font-size: 1rem;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.mobile-banner-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.mobile-banner-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.btn-sm {
+  padding: 10px 20px;
+  font-size: 0.9rem;
+}

@@ -23,11 +23,12 @@ export async function generateMetadata({ params }) {
         'fr': `${baseUrl}/fr`,
         'es': `${baseUrl}/es`,
         'de': `${baseUrl}/de`,
+        'it': `${baseUrl}/it`,
         'x-default': `${baseUrl}`,
       },
     },
     openGraph: {
-      locale: locale === 'en' ? 'en_US' : locale === 'ar' ? 'ar_SA' : locale === 'fr' ? 'fr_FR' : 'es_ES',
+      locale: locale === 'en' ? 'en_US' : locale === 'ar' ? 'ar_SA' : locale === 'fr' ? 'fr_FR' : locale === 'it' ? 'it_IT' : locale === 'de' ? 'de_DE' : 'es_ES',
       url: `${baseUrl}${localePath}`,
     },
   };
