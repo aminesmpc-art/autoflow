@@ -7,11 +7,19 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }) {
   const { locale } = await params;
   const t = getDictionary(locale);
+  const baseUrl = 'https://www.auto-flow.studio';
+
+  const languages = { 'en': `${baseUrl}/terms`, 'x-default': `${baseUrl}/terms` };
+  locales.filter(l => l !== defaultLocale).forEach(l => {
+    languages[l] = `${baseUrl}/${l}/terms`;
+  });
+
   return {
     title: t.termsPage.title + ' — AutoFlow',
     description: t.footer.terms,
     alternates: {
-      canonical: `https://www.auto-flow.studio/${locale}/terms`,
+      canonical: `${baseUrl}/${locale}/terms`,
+      languages,
     },
   };
 }
