@@ -748,10 +748,13 @@ export function getTileState(tile: Element): TileState {
   if (tileTextRaw.includes('generation.') && tileTextRaw.includes('update your settings')) {
     return 'generating';
   }
+  if (tileTextRaw.includes('queued') || tileTextRaw.includes('preparing') || tileTextRaw.includes('creating video') || tileTextRaw.includes('almost finished') || tileTextRaw.includes('is preparing')) {
+    return 'generating';
+  }
 
   // ── Signal 3: loading spinner / circular progress indicator ──
   // Flow may use a material icon 'progress_activity' or a CSS spinner
-  const icons = tile.querySelectorAll('i.google-symbols, i.material-icons, i.material-symbols-outlined');
+  const icons = tile.querySelectorAll('.google-symbols, .material-icons, .material-symbols-outlined, .material-symbols, i.google-symbols, i.material-icons, i.material-symbols-outlined');
   for (const icon of icons) {
     const txt = icon.textContent?.trim() || '';
     if (txt === 'progress_activity' || txt === 'hourglass_empty' || txt === 'pending') {

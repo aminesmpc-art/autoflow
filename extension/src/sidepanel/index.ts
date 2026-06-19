@@ -1523,6 +1523,10 @@ function initSettingsTab() {
     settingsPanel.querySelectorAll('input[type="number"]').forEach(el => el.addEventListener('change', autoSave));
     // Range sliders
     settingsPanel.querySelectorAll('input[type="range"]').forEach(el => el.addEventListener('input', autoSave));
+    // Text & Password inputs (e.g. LLM API Key)
+    settingsPanel.querySelectorAll('input[type="text"], input[type="password"]').forEach(el => {
+      el.addEventListener('input', autoSave);
+    });
   }
 
   // Also auto-save when mode cards change settings
@@ -1627,6 +1631,55 @@ function initSettingsTab() {
       renderPromptList();
     });
   });
+
+  // Test LLM Connection Button
+  const testBtn = $('#btn-test-llm-conn');
+  if (testBtn) {
+    testBtn.addEventListener('click', async () => {
+      const apiKeyInput = $('#setting-llm-api-key') as HTMLInputElement | null;
+      const apiKey = apiKeyInput ? apiKeyInput.value.trim() : '';
+      const modelSelect = $('#setting-llm-model') as HTMLSelectElement | null;
+      const model = modelSelect ? modelSelect.value : 'gemini-1.5-flash';
+      const statusSpan = $('#test-llm-conn-status');
+      
+      if (!apiKey) {
+        if (statusSpan) {
+          statusSpan.textContent = '❌ Please enter an API key';
+          statusSpan.style.color = 'var(--text-error, #f44336)';
+        }
+        return;
+      }
+      
+      if (statusSpan) {
+        statusSpan.textContent = '⏳ Testing connection...';
+        statusSpan.style.color = 'var(--text-muted, #888)';
+      }
+      testBtn.setAttribute('disabled', 'true');
+      
+      try {
+        const response = await sendToBackground({
+          type: 'TEST_LLM_CONNECTION',
+          payload: { apiKey, model }
+        });
+        if (statusSpan) {
+          if (response?.success) {
+            statusSpan.textContent = '✓ Success!';
+            statusSpan.style.color = 'var(--text-success, #4caf50)';
+          } else {
+            statusSpan.textContent = `❌ Failed: ${response?.error || 'Unknown error'}`;
+            statusSpan.style.color = 'var(--text-error, #f44336)';
+          }
+        }
+      } catch (err: any) {
+        if (statusSpan) {
+          statusSpan.textContent = `❌ Error: ${err.message || err}`;
+          statusSpan.style.color = 'var(--text-error, #f44336)';
+        }
+      } finally {
+        testBtn.removeAttribute('disabled');
+      }
+    });
+  }
 }
 
 async function loadSettings() {
@@ -1702,6 +1755,14 @@ async function loadSettings() {
     ($('#setting-notifications') as HTMLInputElement).checked = settings.showNotifications ?? true;
     ($('#setting-notification-sound') as HTMLInputElement).checked = settings.notificationSound ?? false;
 
+    // LLM settings
+    const llmEnabledInput = $('#setting-llm-enabled') as HTMLInputElement | null;
+    if (llmEnabledInput) llmEnabledInput.checked = settings.llmEnabled ?? false;
+    const llmApiKeyInput = $('#setting-llm-api-key') as HTMLInputElement | null;
+    if (llmApiKeyInput) llmApiKeyInput.value = settings.llmApiKey ?? '';
+    const llmModelSelect = $('#setting-llm-model') as HTMLSelectElement | null;
+    if (llmModelSelect) llmModelSelect.value = settings.llmModel ?? 'gemini-1.5-flash';
+
     // Show/hide typing speed based on typing mode
     updateTypingModeVisibility(settings.typingMode ?? false);
   } finally {
@@ -1750,6 +1811,13 @@ function readSettingsFromUI(): QueueSettings {
   const showNotifications = ($('#setting-notifications') as HTMLInputElement).checked;
   const notificationSound = ($('#setting-notification-sound') as HTMLInputElement).checked;
 
+  const llmEnabledInput = $('#setting-llm-enabled') as HTMLInputElement | null;
+  const llmEnabled = llmEnabledInput ? llmEnabledInput.checked : false;
+  const llmApiKeyInput = $('#setting-llm-api-key') as HTMLInputElement | null;
+  const llmApiKey = llmApiKeyInput ? llmApiKeyInput.value.trim() : '';
+  const llmModelSelect = $('#setting-llm-model') as HTMLSelectElement | null;
+  const llmModel = llmModelSelect ? llmModelSelect.value : 'gemini-1.5-flash';
+
   // Compute legacy fields from new fields for backward compat
   const autoDownload = autoDownloadVideos || autoDownloadImages;
   const waitBetweenPromptsSec = waitMinSec;
@@ -1765,6 +1833,7 @@ function readSettingsFromUI(): QueueSettings {
     language,
     showNotifications, notificationSound,
     autoDownload, waitBetweenPromptsSec, inputMethod, typingCharsPerSecond, variableTypingDelay,
+    llmEnabled, llmApiKey, llmModel,
   };
 }
 
@@ -2478,10 +2547,21 @@ async function showRunMonitor(queueId: string) {
     badge.textContent = labels[mode] || '⚡ Flow';
   }
 
+  // API Sniffer badge
+  const apiBadge = document.getElementById('monitor-api-badge');
+  if (apiBadge) {
+    apiBadge.style.display = 'inline-flex';
+    sendToBackground({ type: 'CHECK_API_AVAILABILITY' }).then((res) => {
+      handleApiStatusChanged(!!res?.isAvailable);
+    }).catch(() => {
+      handleApiStatusChanged(false);
+    });
+  }
+
   // Update steps
   updateMonitorSteps(queue);
 
-  // Clear logs (hidden)
+  // Clear logs console
   $('#monitor-logs').innerHTML = '';
 }
 
@@ -2631,6 +2711,22 @@ function updateMonitorSteps(queue: QueueObject) {
       let errorTag = '';
       if (p.status === 'done') { icon = '✅'; cls = 'af-mini-prompt--done'; }
       else if (p.status === 'submitted') { icon = '📤'; cls = 'af-mini-prompt--submitted'; }
+      else if (p.status === 'queued') {
+        const isRetry = (p.attempts || 0) > 0;
+        if (isRetry) {
+          icon = '🔄';
+          cls = 'af-mini-prompt--queued';
+          const isFullMode = (queue.settings as any)?.automationMode === 'full';
+          const titleStr = isFullMode 
+            ? "This prompt's generation was cancelled or failed. It is queued to be retried/regenerated automatically in-place."
+            : "This prompt's generation was cancelled or failed. It is queued to be retried/regenerated automatically after page reload recovery.";
+          errorTag = `<span class="af-mini-error af-status-queued" style="border:none" title="${titleStr}">Queued Retry</span>`;
+        } else {
+          icon = '○';
+          cls = '';
+          errorTag = '';
+        }
+      }
       else if (p.status === 'failed') {
         icon = '❌'; cls = 'af-mini-prompt--failed';
         // Show compact error reason
@@ -2640,6 +2736,7 @@ function updateMonitorSteps(queue: QueueObject) {
           if (shortErr.includes('Safety') || shortErr.includes('SAFETY')) shortErr = '🛡️ Safety';
           else if (shortErr.includes('Quota') || shortErr.includes('QUOTA')) shortErr = '💳 Quota';
           else if (shortErr.includes('Server') || shortErr.includes('SERVER')) shortErr = '🔧 Server';
+          else if (shortErr.includes('Cancel') || shortErr.includes('CANCEL')) shortErr = '🚫 Cancelled';
           else if (shortErr.length > 25) shortErr = shortErr.substring(0, 25) + '…';
           errorTag = `<span class="af-mini-error" title="${escapeHtml(p.error)}">${escapeHtml(shortErr)}</span>`;
         }
@@ -3299,6 +3396,9 @@ function initMessageListener() {
         break;
       case 'QUEUE_STATUS_UPDATE':
         handleQueueStatusUpdate(msg.payload);
+        if (msg.payload.isApiAvailable !== undefined) {
+          handleApiStatusChanged(msg.payload.isApiAvailable);
+        }
         // Auto-close batch edit panel when queue ends
         if (msg.payload.status === 'stopped' || msg.payload.status === 'completed') {
           const failedSection = document.getElementById('failed-section');
@@ -3309,6 +3409,12 @@ function initMessageListener() {
         break;
       case 'PROMPT_STATUS_UPDATE':
         handlePromptStatusUpdate(msg.payload);
+        if (msg.payload.isApiAvailable !== undefined) {
+          handleApiStatusChanged(msg.payload.isApiAvailable);
+        }
+        break;
+      case 'API_STATUS_CHANGED':
+        handleApiStatusChanged(msg.payload.isApiAvailable);
         break;
       case 'QUEUE_PHASE_UPDATE':
         handlePhaseUpdate(msg.payload);
@@ -3398,10 +3504,35 @@ function appendLogToMonitor(entry: LogEntry) {
 
   const line = document.createElement('div');
   line.className = `af-log-line af-log-${entry.level}`;
-  const time = new Date(entry.timestamp).toLocaleTimeString();
-  line.textContent = `[${time}] ${entry.message}`;
+
+  const timeSpan = document.createElement('span');
+  timeSpan.className = 'af-log-time';
+  timeSpan.textContent = `[${new Date(entry.timestamp).toLocaleTimeString()}]`;
+
+  const badgeSpan = document.createElement('span');
+  badgeSpan.className = `af-log-badge af-log-badge--${entry.level}`;
+  badgeSpan.textContent = entry.level.toUpperCase();
+
+  const textSpan = document.createElement('span');
+  textSpan.className = 'af-log-text';
+
+  let msg = escapeHtml(entry.message);
+  msg = msg.replace(/(API)/g, '<span class="af-log-highlight-api">$1</span>');
+  msg = msg.replace(/(DOM)/g, '<span class="af-log-highlight-dom">$1</span>');
+  msg = msg.replace(/(Prompt #\d+)/g, '<span class="af-log-highlight-prompt">$1</span>');
+  textSpan.innerHTML = msg;
+
+  line.appendChild(timeSpan);
+  line.appendChild(badgeSpan);
+  line.appendChild(textSpan);
+
   container.appendChild(line);
   container.scrollTop = container.scrollHeight;
+
+  // Max 250 log entries to keep memory footprint low
+  while (container.childNodes.length > 250) {
+    container.removeChild(container.firstChild!);
+  }
 }
 
 function handleQueueStatusUpdate(queue: QueueObject) {
@@ -5216,5 +5347,28 @@ function handleRecoveryResult(payload: {
       // (since showRepromptDialog removes the previous one)
     }
     showNext();
+  }
+}
+
+function handleApiStatusChanged(status: boolean | 'active' | 'waiting' | 'fallback' | 'checking') {
+  const badge = document.getElementById('monitor-api-badge');
+  if (!badge) return;
+
+  if (status === true || status === 'active') {
+    badge.className = 'af-api-badge af-api-badge--active';
+    badge.textContent = '🟢 API Active';
+    badge.title = 'API connection is active. Capturing generation responses directly.';
+  } else if (status === 'fallback') {
+    badge.className = 'af-api-badge af-api-badge--fallback';
+    badge.textContent = '🔍 DOM Fallback';
+    badge.title = 'API check failed or stale. Scanning visual elements in Google Flow DOM instead.';
+  } else if (status === 'checking') {
+    badge.className = 'af-api-badge af-api-badge--checking';
+    badge.textContent = '⏳ API Checking...';
+    badge.title = 'Running API connection check...';
+  } else {
+    badge.className = 'af-api-badge af-api-badge--waiting';
+    badge.textContent = '⏳ API Passive';
+    badge.title = 'Waiting for API credentials/response interception. Generate or check status to activate.';
   }
 }

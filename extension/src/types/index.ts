@@ -126,6 +126,11 @@ export interface QueueSettings {
   inputMethod: InputMethod;
   typingCharsPerSecond: number;
   variableTypingDelay: boolean;
+
+  // LLM settings
+  llmEnabled?: boolean;
+  llmApiKey?: string;
+  llmModel?: string;
 }
 
 // ── Run target ──
@@ -299,7 +304,13 @@ export type MessageType =
   | 'SCHEDULE_CHAIN'
   | 'KEEPALIVE_PING'
   | 'CANCEL_CHAIN'
-  | 'CHAIN_PROGRESS';
+  | 'CHAIN_PROGRESS'
+  | 'API_STATUS_CHANGED'
+  | 'CHECK_API_AVAILABILITY'
+  | 'CALL_LLM'
+  | 'TEST_LLM_CONNECTION'
+  | 'RUN_ACTIVE_CHECK'
+  | 'CAPTURED_REQUEST_INFO';
 
 export interface Message {
   type: MessageType;
@@ -380,6 +391,11 @@ export const DEFAULT_SETTINGS: QueueSettings = {
   inputMethod: 'paste',
   typingCharsPerSecond: 25,
   variableTypingDelay: true,
+
+  // LLM settings
+  llmEnabled: false,
+  llmApiKey: '',
+  llmModel: 'gemini-1.5-flash',
 };
 
 export const AVAILABLE_MODELS = [

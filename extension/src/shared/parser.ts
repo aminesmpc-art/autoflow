@@ -17,28 +17,14 @@ export interface ParsedPromptNode {
 export function parsePrompts(raw: string): ParsedPromptNode[] {
   if (!raw || !raw.trim()) return [];
   
+  const blocks = raw.split(/\n\s*\n+/).map(b => b.trim()).filter(b => b.length > 0);
   const results: ParsedPromptNode[] = [];
-  const regex = /\[([^\]]*)\]|([^\[\]]+)/gs;
-  let match;
-  
-  while ((match = regex.exec(raw)) !== null) {
-    if (match[1] !== undefined) {
-      // Bracket block: split by blank lines into steps of the chain
-      const innerBlocks = match[1].split(/\n\s*\n+/).map(l => l.trim()).filter(l => l.length > 0);
-      if (innerBlocks.length > 0) {
-        const baseIndex = results.length;
-        results.push({ text: innerBlocks[0], isExtension: false, baseIndex });
-        for (let i = 1; i < innerBlocks.length; i++) {
-          results.push({ text: innerBlocks[i], isExtension: true, baseIndex });
-        }
-      }
-    } else if (match[2] !== undefined) {
-      // Non-bracket block: split by blank lines into individual base prompts
-      const blocks = match[2].split(/\n\s*\n+/).map(b => b.trim()).filter(b => b.length > 0);
-      for (const block of blocks) {
-        results.push({ text: block, isExtension: false, baseIndex: results.length });
-      }
-    }
+  for (let i = 0; i < blocks.length; i++) {
+    results.push({
+      text: blocks[i],
+      isExtension: false,
+      baseIndex: i
+    });
   }
   
   return results;

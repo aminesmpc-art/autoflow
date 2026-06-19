@@ -8,11 +8,11 @@
 import { MAX_IMAGES_PER_PROMPT } from '../shared/constants';
 
 describe('Max images per prompt', () => {
-  test('MAX_IMAGES_PER_PROMPT is 3', () => {
-    expect(MAX_IMAGES_PER_PROMPT).toBe(3);
+  test('MAX_IMAGES_PER_PROMPT is 10', () => {
+    expect(MAX_IMAGES_PER_PROMPT).toBe(10);
   });
 
-  test('enforces max 3 images per prompt', () => {
+  test('enforces max 10 images per prompt', () => {
     const images: string[] = [];
     const addImage = (img: string): boolean => {
       if (images.length >= MAX_IMAGES_PER_PROMPT) return false;
@@ -20,11 +20,11 @@ describe('Max images per prompt', () => {
       return true;
     };
 
-    expect(addImage('img1.png')).toBe(true);
-    expect(addImage('img2.png')).toBe(true);
-    expect(addImage('img3.png')).toBe(true);
-    expect(addImage('img4.png')).toBe(false);
-    expect(images).toHaveLength(3);
+    for (let i = 1; i <= 10; i++) {
+      expect(addImage(`img${i}.png`)).toBe(true);
+    }
+    expect(addImage('img11.png')).toBe(false);
+    expect(images).toHaveLength(10);
   });
 });
 

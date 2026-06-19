@@ -10,7 +10,7 @@ import { scanProjectForVideos, previewAsset, retrySingleTile, downloadAssetByMen
 import { sleep, findModelSelectorTrigger, findMenuItem, simulateClick } from './selectors';
 import { DOM_SETTLE_MS } from '../shared/constants';
 import { getRunningQueue, clearRunningQueue } from '../shared/storage';
-import { initApiHelper } from './apiHelper';
+import { initApiHelper, isApiAvailable } from './apiHelper';
 
 // ── Singleton engine ──
 let engine: AutomationEngine | null = null;
@@ -38,6 +38,24 @@ function stopAntiThrottle() {
     antiThrottleInterval = null;
     console.log('[AutoFlow] Anti-throttle stopped');
   }
+}
+
+function sendPhaseUpdate(phase: string, message: string) {
+  try {
+    chrome.runtime.sendMessage({
+      type: 'QUEUE_PHASE_UPDATE',
+      payload: { phase, message }
+    }).catch(() => {});
+  } catch { /* ignore */ }
+}
+
+function sendPromptStatusUpdate(queueId: string, idx: number, status: string, error?: string, mediaId?: string) {
+  try {
+    chrome.runtime.sendMessage({
+      type: 'PROMPT_STATUS_UPDATE',
+      payload: { queueId, promptIndex: idx, status, error, mediaId }
+    }).catch(() => {});
+  } catch { /* ignore */ }
 }
 
 // ── Handle (re-)injection: always register a fresh listener ──
@@ -82,16 +100,26 @@ if (!(window as any).__autoflow_injected) {
       }
     }
   };
-  deactivateAgent();
-  const observer = new MutationObserver(() => deactivateAgent());
-  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-pressed'] });
+
+  const initDomHooks = () => {
+    deactivateAgent();
+    const observer = new MutationObserver(() => deactivateAgent());
+    if (document.body) {
+      observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-pressed'] });
+    }
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDomHooks);
+  } else {
+    initDomHooks();
+  }
 
   // ── Initialize API helper (interceptor + status cache) ──
-  setTimeout(() => {
-    initApiHelper().then(() => {
-      console.log('[AutoFlow] API helper initialized');
-    }).catch(() => { /* non-critical */ });
-  }, 2000); // Wait 2s for page to stabilize
+  // Initialize immediately without setTimeout to catch the earliest fetch calls at document_start
+  initApiHelper().then(() => {
+    console.log('[AutoFlow] API helper initialized');
+  }).catch(() => { /* non-critical */ });
 } else {
   console.log('[AutoFlow] Content script re-injected, listener refreshed.');
 }
@@ -110,6 +138,19 @@ if (!(window as any).__autoflow_injected) {
       // We DON'T trust the prompt.status from before the reload — tile IDs are stale after refresh.
       recoveryCancelled = false;
       console.log(`[AutoFlow] Recovery mode: scanning page for "${queue.name}"...`);
+      sendPhaseUpdate('scanning', 'Recovery: Waiting for page to load...');
+
+      // Load recovery metadata from chrome.storage.local
+      let hardFailedIndices: number[] = [];
+      try {
+        const storageData = await new Promise<any>((resolve) => {
+          chrome.storage.local.get(['autoflow_hard_failed_indices'], resolve);
+        });
+        hardFailedIndices = storageData?.autoflow_hard_failed_indices || [];
+        console.log(`[AutoFlow] Loaded hard-failed indices:`, hardFailedIndices);
+      } catch (err: any) {
+        console.warn('[AutoFlow] Failed to load hard-failed indices:', err);
+      }
 
       // Wait for Flow to fully load (reduced from 6s — fake cancels resolve fast)
       await sleep(4000);
@@ -128,6 +169,7 @@ if (!(window as any).__autoflow_injected) {
           break;
         }
         console.log(`[AutoFlow] Recovery: waiting for project page to load... (${(wait + 1) * 1.5}s)`);
+        sendPhaseUpdate('scanning', `Recovery: Waiting for project page... (${wait + 1}/15)`);
         await sleep(1500);
         if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
       }
@@ -144,6 +186,7 @@ if (!(window as any).__autoflow_injected) {
         tilesFound = findAssetCards().filter(el => isVisible(el)).length;
         if (tilesFound > 0) break;
         console.log(`[AutoFlow] Recovery: waiting for tiles... (${(wait + 1) * 1.5}s)`);
+        sendPhaseUpdate('scanning', `Recovery: Waiting for tiles... (${wait + 1}/8)`);
         await sleep(1500);
         if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
       }
@@ -156,6 +199,7 @@ if (!(window as any).__autoflow_injected) {
 
       // Wait for any still-generating tiles to settle (up to 5 min)
       console.log(`[AutoFlow] Recovery: ${tilesFound} tile(s) found. Waiting for generating tiles to settle...`);
+      sendPhaseUpdate('scanning', 'Recovery: Waiting for generating tiles to settle...');
       for (let elapsed = 0; elapsed < 300; elapsed += 15) {
         if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
         const cards = findAssetCards().filter(el => isVisible(el));
@@ -168,6 +212,7 @@ if (!(window as any).__autoflow_injected) {
           break;
         }
         console.log(`[AutoFlow] Recovery: waiting... generating: ${generating}, completed: ${completed}, failed: ${failed}, elapsed: ${elapsed}s`);
+        sendPhaseUpdate('scanning', `Recovery: Settling... generating: ${generating}, completed: ${completed}`);
         await sleep(8000);
       }
 
@@ -175,74 +220,13 @@ if (!(window as any).__autoflow_injected) {
       // Flow uses Virtuoso which REMOVES off-screen tiles from the DOM.
       // We MUST scroll through all positions to see every tile.
       console.log('[AutoFlow] Recovery: scrolling through entire grid to collect ALL tile texts...');
+      sendPhaseUpdate('checking', 'Recovery: Scrolling grid to verify all tiles...');
 
-      // Use scrollAndCollectAllTileStates to get every tile's state
+      // Use scrollAndCollectAllTileStates to get every tile's state and text
       const allTileStates = await scrollAndCollectAllTileStates();
-      const completedTileIds = allTileStates
-        .filter(t => t.state === 'completed')
-        .map(t => t.tileId);
-
-      // Now scroll again and collect TEXT from each completed tile
-      // We need to do this because virtualized tiles are only in DOM when scrolled to
-      const completedTileTexts: string[] = [];
-      const scroller = findOutputScroller();
-
-      if (scroller) {
-        scroller.scrollTop = 0;
-        await sleep(600);
-
-        let prevScroll = -1;
-        let stuckCount = 0;
-        const seenIds = new Set<string>();
-
-        while (stuckCount < 3) {
-          // Collect text from all currently visible completed tiles
-          const visibleTiles = document.querySelectorAll('div[data-tile-id]');
-          for (const tile of visibleTiles) {
-            const tileId = (tile as HTMLElement).dataset.tileId || '';
-            if (!tileId || seenIds.has(tileId)) continue;
-            seenIds.add(tileId);
-
-            if (completedTileIds.includes(tileId) || getTileState(tile) === 'completed') {
-              const text = (tile.textContent || '').toLowerCase();
-              if (text.length > 0) completedTileTexts.push(text);
-            }
-          }
-
-          scroller.scrollBy(0, Math.max(200, scroller.clientHeight * 0.7));
-          await sleep(400);
-
-          if (Math.abs(scroller.scrollTop - prevScroll) < 5) {
-            stuckCount++;
-          } else {
-            stuckCount = 0;
-          }
-          prevScroll = scroller.scrollTop;
-        }
-
-        // Final collection at bottom
-        const bottomTiles = document.querySelectorAll('div[data-tile-id]');
-        for (const tile of bottomTiles) {
-          const tileId = (tile as HTMLElement).dataset.tileId || '';
-          if (!tileId || seenIds.has(tileId)) continue;
-          seenIds.add(tileId);
-          if (completedTileIds.includes(tileId) || getTileState(tile) === 'completed') {
-            const text = (tile.textContent || '').toLowerCase();
-            if (text.length > 0) completedTileTexts.push(text);
-          }
-        }
-
-        scroller.scrollTop = 0;
-      } else {
-        // No scroller — collect from visible tiles
-        const visibleTiles = findAssetCards().filter(el => isVisible(el));
-        for (const tile of visibleTiles) {
-          if (getTileState(tile) === 'completed') {
-            const text = (tile.textContent || '').toLowerCase();
-            if (text.length > 0) completedTileTexts.push(text);
-          }
-        }
-      }
+      // Map all tile texts to prevent marking generating/failed-but-present tiles as "missing"
+      const completedTileTexts = allTileStates
+        .map(t => t.text.toLowerCase());
 
       // Also get full page text as final fallback
       const pageText = document.body.innerText.toLowerCase();
@@ -268,17 +252,20 @@ if (!(window as any).__autoflow_injected) {
 
       if (effectiveCompleted >= submittedPrompts.length) {
         console.log(`[AutoFlow] Recovery: ✅ ${effectiveCompleted} effective completed >= ${submittedPrompts.length} submitted — ALL DONE (baseline-adjusted count)`);
-        for (const p of queue.prompts) {
+        for (let i = 0; i < queue.prompts.length; i++) {
+          const p = queue.prompts[i];
           if (p.status !== 'not-added') {
             if (p.status === 'failed') recovered++;
             p.status = 'done';
             p.error = undefined;
+            sendPromptStatusUpdate(queue.id, i, 'done', undefined, p.mediaId);
           }
         }
       } else {
         // Not enough completed tiles — need to find which specific prompts are missing.
         // Use multi-fragment fuzzy matching for better accuracy.
         console.log(`[AutoFlow] Recovery: ${totalCompleted} completed but ${submittedPrompts.length} submitted — using fuzzy match to find missing...`);
+        sendPhaseUpdate('checking', 'Recovery: Matching prompt texts against tiles...');
 
         // Track which tile texts have been "consumed" to avoid double-matching
         const consumedTileIndices = new Set<number>();
@@ -333,12 +320,22 @@ if (!(window as any).__autoflow_injected) {
           const p = queue.prompts[i];
           if (p.status === 'not-added' || p.status === 'queued') continue;
 
+          // If prompt has already hard-failed (reached 3 retries in Phase 1), preserve failed status and skip recovery
+          if (hardFailedIndices.includes(i)) {
+            p.status = 'failed';
+            p.error = 'Failed after 3 retry attempts';
+            console.log(`[AutoFlow] Recovery: prompt #${i + 1} is marked as hard-failed — skipping rescue`);
+            sendPromptStatusUpdate(queue.id, i, 'failed', p.error);
+            continue;
+          }
+
           // Very short prompts — can't reliably match
           if (p.text.trim().length < 4) {
             console.log(`[AutoFlow] Recovery: prompt #${i + 1} too short, assuming done`);
             p.status = 'done';
             p.error = undefined;
             recovered++;
+            sendPromptStatusUpdate(queue.id, i, 'done');
             continue;
           }
 
@@ -355,46 +352,61 @@ if (!(window as any).__autoflow_injected) {
             }
             p.status = 'done';
             p.error = undefined;
+            sendPromptStatusUpdate(queue.id, i, 'done', undefined, p.mediaId);
           } else if (matchIdx === -2) {
             // Found on page text but not in a specific tile
             if (p.status === 'failed') recovered++;
             console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ found on page text — "${p.text.slice(0, 30)}..." → marking done`);
             p.status = 'done';
             p.error = undefined;
+            sendPromptStatusUpdate(queue.id, i, 'done', undefined, p.mediaId);
           } else {
-            // NOT found anywhere — truly failed
+            // NOT found anywhere — truly failed (queued for regeneration)
             p.status = 'queued';
             p.attempts = 0;
             p.error = undefined;
             p.tileIds = [];
             trulyFailedPrompts.push(p);
             console.log(`[AutoFlow] Recovery: prompt #${i + 1} ❌ NOT FOUND — "${p.text.slice(0, 30)}..." → will regenerate`);
+            sendPromptStatusUpdate(queue.id, i, 'queued');
           }
         }
 
         // ── SAFETY NET: Count-based correction ──
-        // If text matching says N prompts failed but the baseline-adjusted count
-        // shows enough completed videos, trust the count and reduce reprompts.
-        const expectedMissing = submittedPrompts.length - effectiveCompleted;
+        // Rescues false-positives where a prompt is incorrectly marked as failed
+        // because the text matcher failed to find its completed video tile.
+        // Exclude hard-failed prompts from expected missing count
+        const hardFailedCount = hardFailedIndices.filter((idx: number) => 
+          submittedPrompts.map(p => queue.prompts.indexOf(p)).includes(idx)
+        ).length;
+        const expectedMissing = Math.max(0, submittedPrompts.length - effectiveCompleted - hardFailedCount);
+        
         if (trulyFailedPrompts.length > expectedMissing && expectedMissing >= 0) {
           const excess = trulyFailedPrompts.length - expectedMissing;
           console.log(`[AutoFlow] Recovery: text match says ${trulyFailedPrompts.length} missing but baseline-adjusted count says only ${expectedMissing} missing — removing ${excess} false negatives`);
-          // Keep only the truly missing ones (the last ones added are least likely to exist)
           for (let x = 0; x < excess; x++) {
             const rescued = trulyFailedPrompts.shift()!;
             rescued.status = 'done';
             rescued.error = undefined;
             recovered++;
             console.log(`[AutoFlow] Recovery: prompt "${rescued.text.slice(0, 25)}..." rescued by count-based safety net ✅`);
+            sendPromptStatusUpdate(queue.id, queue.prompts.indexOf(rescued), 'done', undefined, rescued.mediaId);
           }
         }
       }
 
       console.log(`[AutoFlow] Recovery complete: ${recovered} recovered from fake failures, ${trulyFailedPrompts.length} truly missing`);
-      if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
+      sendPhaseUpdate('checking', `Recovery complete: ${recovered} recovered, ${trulyFailedPrompts.length} missing.`);
+      if (recoveryCancelled) {
+        console.log('[AutoFlow] Recovery cancelled by user.');
+        await clearRunningQueue();
+        await chrome.storage.local.remove(['autoflow_uploaded_assets', 'autoflow_hard_failed_indices']);
+        return;
+      }
 
       // Clear the saved state
       await clearRunningQueue();
+      await chrome.storage.local.remove(['autoflow_uploaded_assets', 'autoflow_hard_failed_indices']);
 
       // Notify sidepanel
       await sleep(500);
@@ -410,22 +422,20 @@ if (!(window as any).__autoflow_injected) {
         }).catch(() => {});
       } catch { /* ignore */ }
 
-      // Only create a recovery queue if there are truly missing prompts
+      // Only restart the queue if there are truly missing prompts
       if (trulyFailedPrompts.length > 0 && !recoveryCancelled) {
         console.log(`[AutoFlow] Regenerating ${trulyFailedPrompts.length} truly missing prompt(s)...`);
+        sendPhaseUpdate('running', `Regenerating ${trulyFailedPrompts.length} missing prompt(s)...`);
 
-        const recoveryQueue: QueueObject = {
-          ...queue,
-          id: queue.id + '_recovery',
-          name: queue.name + ' (Recovery)',
-          prompts: trulyFailedPrompts,
-          status: 'running',
-        };
+        // We update the original queue status and current index, then start it
+        queue.status = 'running';
+        queue.currentPromptIndex = 0;
 
         await sleep(3000);
-        startQueue(recoveryQueue);
+        startQueue(queue, baselineTileCount);
       } else {
         console.log('[AutoFlow] All prompts found on page! No regeneration needed. ✅');
+        sendPhaseUpdate('checking', 'All prompts successfully verified and completed.');
         try {
           chrome.runtime.sendMessage({
             type: 'QUEUE_STATUS_UPDATE',
@@ -550,6 +560,9 @@ async function handleMessage(msg: Message): Promise<any> {
       await clearRunningQueue();
       return { success: true };
 
+    case 'CHECK_API_AVAILABILITY':
+      return { isAvailable: isApiAvailable() };
+
     case 'SCAN_FAILED_TILES':
       if (engine) {
         const result = await engine.scanFailedTiles();
@@ -600,7 +613,7 @@ async function handleMessage(msg: Message): Promise<any> {
   }
 }
 
-async function startQueue(queue: QueueObject): Promise<any> {
+async function startQueue(queue: QueueObject, baselineTileCount?: number): Promise<any> {
   // ── Guard: prevent multiple concurrent engines ──
   // If we already have a running engine, stop it first
   if (engine) {
@@ -621,12 +634,30 @@ async function startQueue(queue: QueueObject): Promise<any> {
   engine = new AutomationEngine();
   startAntiThrottle();  // Fight tab throttling during automation
   // Don't await — run in background so the message can respond
-  engine.start(queue).then(() => {
-    stopAntiThrottle();  // Queue finished — stop self-ping
-  }).catch(err => {
-    console.error('[AutoFlow] Queue error:', err);
-    stopAntiThrottle();
-  });
+  (async () => {
+    try {
+      const storageData = await new Promise<any>((resolve) => {
+        chrome.storage.local.get(['autoflow_uploaded_assets'], resolve);
+      });
+      const uploadedAssetsList = storageData?.autoflow_uploaded_assets || [];
+      if (uploadedAssetsList.length > 0) {
+        for (const asset of uploadedAssetsList) {
+          (engine as any).uploadedAssets.add(asset);
+        }
+        console.log(`[AutoFlow] Restored ${uploadedAssetsList.length} uploaded assets into engine cache.`);
+      }
+    } catch (err: any) {
+      console.warn('[AutoFlow] Failed to restore uploaded assets:', err);
+    }
+
+    try {
+      await engine.start(queue, baselineTileCount);
+    } catch (err) {
+      console.error('[AutoFlow] Queue error:', err);
+    } finally {
+      stopAntiThrottle();  // Queue finished — stop self-ping
+    }
+  })();
   return { success: true };
 }
 
@@ -645,10 +676,22 @@ async function resumeInterruptedQueue(): Promise<any> {
     // Set the resume point
     queue.currentPromptIndex = currentIndex;
 
-    // Mark already-processed prompts so the engine doesn't re-send them
+    // Mark already-processed prompts so the engine doesn't re-send them,
+    // and broadcast the status change so the background script and sidepanel stay in sync.
     for (let i = 0; i < currentIndex; i++) {
-      if (queue.prompts[i].status !== 'failed') {
-        queue.prompts[i].status = 'done';
+      const p = queue.prompts[i];
+      if (p.status !== 'failed' && p.status !== 'done' && p.status !== 'submitted' && p.status !== 'queued' && p.status !== 'not-added') {
+        p.status = 'done';
+        try {
+          chrome.runtime.sendMessage({
+            type: 'PROMPT_STATUS_UPDATE',
+            payload: {
+              queueId: queue.id,
+              promptIndex: i,
+              status: 'done'
+            }
+          }).catch(() => {});
+        } catch { /* ignore */ }
       }
     }
 

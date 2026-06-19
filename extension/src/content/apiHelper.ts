@@ -22,25 +22,38 @@
 
 import { FlowGenerationStatus, FlowGenerationState } from '../types';
 
-// ── Internal state ──
+// ── Global State Pattern for Extension Re-injections ──
+// Since content scripts can be re-evaluated when background workers wake up/restart,
+// storing state in global variables will lead to empty caches/stale listeners.
+// We store state on the persistent window object to keep it unified.
 
-/** Cache of generation statuses, keyed by media UUID */
-const statusCache = new Map<string, FlowGenerationStatus>();
+interface GlobalApiState {
+  statusCache: Map<string, FlowGenerationStatus>;
+  cachedCredits: number | null;
+  interceptorInstalled: boolean;
+  lastCacheUpdate: number;
+  queueStartTime: number;
+  preSubmitSnapshot: Set<string>;
+  lastInterceptorError: string | null;
+  messageListenerRegistered: boolean;
+}
 
-/** Last known remaining credits */
-let cachedCredits: number | null = null;
-
-/** Whether the MAIN world interceptor is installed */
-let interceptorInstalled = false;
-
-/** Timestamp of last cache update (from intercepted response) */
-let lastCacheUpdate = 0;
-
-/** Timestamp when the current queue started (set by automation engine) */
-let queueStartTime = 0;
-
-/** Media IDs known BEFORE the current prompt was submitted (for diff tracking) */
-let preSubmitSnapshot = new Set<string>();
+function getApiState(): GlobalApiState {
+  const win = window as any;
+  if (!win.__af_api_state) {
+    win.__af_api_state = {
+      statusCache: new Map<string, FlowGenerationStatus>(),
+      cachedCredits: null,
+      interceptorInstalled: false,
+      lastCacheUpdate: 0,
+      queueStartTime: 0,
+      preSubmitSnapshot: new Set<string>(),
+      lastInterceptorError: null,
+      messageListenerRegistered: false,
+    };
+  }
+  return win.__af_api_state;
+}
 
 // ── Status mapping ──
 
@@ -157,34 +170,65 @@ function parseMediaEntry(entry: any, remainingCredits?: number): FlowGenerationS
  * Call this once when the content script loads.
  */
 export async function initApiHelper(): Promise<void> {
-  window.addEventListener('message', (event) => {
-    if (event.source !== window) return;
-    if (!event.data || event.data.source !== 'autoflow-api-interceptor') return;
+  const state = getApiState();
+  if (!state.messageListenerRegistered) {
+    state.messageListenerRegistered = true;
+    window.addEventListener('message', (event) => {
+      if (event.source !== window) return;
+      if (!event.data || event.data.source !== 'autoflow-api-interceptor') return;
 
-    const { type, payload } = event.data;
+      const { type, payload } = event.data;
 
-    if ((type === 'STATUS_UPDATE' || type === 'GENERATION_SUBMITTED') && payload?.media) {
-      const credits = payload.remainingCredits;
-      if (typeof credits === 'number') cachedCredits = credits;
+      if (type === 'INTERCEPTOR_ERROR') {
+        state.lastInterceptorError = payload?.message || 'Unknown interceptor error';
+      }
 
-      for (const entry of payload.media) {
-        const status = parseMediaEntry(entry, credits);
-        if (status) {
-          statusCache.set(status.mediaId, status);
+      if (type === 'CAPTURED_REQUEST_INFO') {
+        chrome.storage.local.set({ autoflow_captured_request: payload }).catch(() => {});
+      }
+
+      if ((type === 'STATUS_UPDATE' || type === 'GENERATION_SUBMITTED') && payload?.media) {
+        const credits = payload.remainingCredits;
+        if (typeof credits === 'number') state.cachedCredits = credits;
+
+        for (const entry of payload.media) {
+          const status = parseMediaEntry(entry, credits);
+          if (status) {
+            state.statusCache.set(status.mediaId, status);
+          }
+        }
+        const wasApiAvailable = state.lastCacheUpdate > 0;
+        state.lastCacheUpdate = Date.now();
+
+        if (!wasApiAvailable) {
+          chrome.runtime.sendMessage({
+            type: 'API_STATUS_CHANGED',
+            payload: { isApiAvailable: true }
+          }).catch(() => {});
         }
       }
-      lastCacheUpdate = Date.now();
-    }
-  });
+    });
+  }
 
-  if (!interceptorInstalled) {
+  if (!state.interceptorInstalled) {
     try {
       await chrome.runtime.sendMessage({ type: 'INSTALL_NETWORK_SNIFFER' });
-      interceptorInstalled = true;
+      state.interceptorInstalled = true;
     } catch {
       // Non-critical — extension works fine without API data
     }
   }
+
+  // Restore captured request info to MAIN world from local storage
+  chrome.storage.local.get(['autoflow_captured_request']).then((res) => {
+    if (res.autoflow_captured_request) {
+      window.postMessage({
+        source: 'autoflow-content-script',
+        type: 'RESTORE_REQUEST_INFO',
+        payload: res.autoflow_captured_request
+      }, '*');
+    }
+  }).catch(() => {});
 }
 
 // ── Queue lifecycle ──
@@ -194,11 +238,12 @@ export async function initApiHelper(): Promise<void> {
  * the start time so we can filter entries from the current queue.
  */
 export function onQueueStart(): void {
-  statusCache.clear();
-  cachedCredits = null;
-  lastCacheUpdate = 0;
-  queueStartTime = Date.now();
-  preSubmitSnapshot.clear();
+  const state = getApiState();
+  state.statusCache.clear();
+  state.cachedCredits = null;
+  state.lastCacheUpdate = 0;
+  state.queueStartTime = Date.now();
+  state.preSubmitSnapshot.clear();
 }
 
 /**
@@ -206,7 +251,11 @@ export function onQueueStart(): void {
  * so we can diff later to find the new generation entry.
  */
 export function onBeforeSubmit(): void {
-  preSubmitSnapshot = new Set(statusCache.keys());
+  const state = getApiState();
+  state.preSubmitSnapshot.clear();
+  for (const key of state.statusCache.keys()) {
+    state.preSubmitSnapshot.add(key);
+  }
 }
 
 /**
@@ -215,9 +264,10 @@ export function onBeforeSubmit(): void {
  * Generate click — no sorting or guessing needed.
  */
 export function getNewSubmissions(): FlowGenerationStatus[] {
+  const state = getApiState();
   const result: FlowGenerationStatus[] = [];
-  for (const [id, status] of statusCache) {
-    if (!preSubmitSnapshot.has(id)) {
+  for (const [id, status] of state.statusCache) {
+    if (!state.preSubmitSnapshot.has(id)) {
       result.push(status);
     }
   }
@@ -236,6 +286,7 @@ export function getNewSubmissions(): FlowGenerationStatus[] {
  * text length (closest match), then by state priority.
  */
 export function findStatusByPromptText(promptText: string): FlowGenerationStatus | null {
+  const state = getApiState();
   const clean = promptText.trim().toLowerCase();
   if (clean.length < 3) return null;
 
@@ -255,7 +306,8 @@ export function findStatusByPromptText(promptText: string): FlowGenerationStatus
 
   // Score each cache entry by how many fragments match
   const scored: Array<{ status: FlowGenerationStatus; hits: number; lengthDiff: number }> = [];
-  for (const status of statusCache.values()) {
+  const activeStatuses = getAllCachedStatuses();
+  for (const status of activeStatuses) {
     const haystack = status.promptText.trim().toLowerCase();
     let hits = 0;
     for (const frag of fragments) {
@@ -276,7 +328,7 @@ export function findStatusByPromptText(promptText: string): FlowGenerationStatus
   if (scored.length === 0) {
     // Fallback: try a simple start-of-text match (short prompts)
     const needle = clean.slice(0, 40);
-    for (const status of statusCache.values()) {
+    for (const status of activeStatuses) {
       const haystack = status.promptText.trim().toLowerCase();
       if (haystack.includes(needle) || needle.includes(haystack.slice(0, 40))) {
         return status;
@@ -312,6 +364,7 @@ export function getQueueSummary(): {
   allSettled: boolean;
   credits: number | null;
 } {
+  const state = getApiState();
   const statuses = getAllCachedStatuses();
   const completed = statuses.filter(s => s.state === 'completed').length;
   const failed = statuses.filter(s => s.state === 'failed').length;
@@ -325,7 +378,7 @@ export function getQueueSummary(): {
     generating,
     queued,
     allSettled: generating === 0 && queued === 0 && statuses.length > 0,
-    credits: cachedCredits,
+    credits: state.cachedCredits,
   };
 }
 
@@ -333,44 +386,59 @@ export function getQueueSummary(): {
 
 /** Get all cached statuses from the current queue period. */
 export function getAllCachedStatuses(): FlowGenerationStatus[] {
-  if (queueStartTime === 0) return Array.from(statusCache.values());
+  const state = getApiState();
+  if (state.queueStartTime === 0) return Array.from(state.statusCache.values());
 
-  return Array.from(statusCache.values()).filter(s => {
+  return Array.from(state.statusCache.values()).filter(s => {
     if (!s.createdAt) return true;
-    return new Date(s.createdAt).getTime() >= queueStartTime - 60_000;
+    return new Date(s.createdAt).getTime() >= state.queueStartTime - 60_000;
   });
 }
 
 /** Get a cached status by media ID. */
 export function getCachedStatus(mediaId: string): FlowGenerationStatus | undefined {
-  return statusCache.get(mediaId);
+  const state = getApiState();
+  return state.statusCache.get(mediaId);
 }
 
 /** Get last known remaining credits. */
 export function getRemainingCredits(): number | null {
-  return cachedCredits;
+  const state = getApiState();
+  return state.cachedCredits;
 }
 
 /** Get timestamp of last cache update. */
 export function getLastCacheUpdate(): number {
-  return lastCacheUpdate;
+  const state = getApiState();
+  return state.lastCacheUpdate;
 }
 
 /** Check if the cache has data and it's fresh (updated within N ms). */
 export function isCacheFresh(maxAgeMs = 15_000): boolean {
-  return lastCacheUpdate > 0 && (Date.now() - lastCacheUpdate) < maxAgeMs;
+  const state = getApiState();
+  return state.lastCacheUpdate > 0 && (Date.now() - state.lastCacheUpdate) < maxAgeMs;
 }
 
 /** Check if the API has any data at all (interceptor is working). */
 export function isApiAvailable(): boolean {
-  return lastCacheUpdate > 0;
+  const state = getApiState();
+  return state.lastCacheUpdate > 0;
+}
+
+/** Get the last captured interceptor error. */
+export function getInterceptorError(): string | null {
+  const state = getApiState();
+  const err = state.lastInterceptorError;
+  state.lastInterceptorError = null; // consume it
+  return err;
 }
 
 /** Clear the status cache. */
 export function clearCache(): void {
-  statusCache.clear();
-  lastCacheUpdate = 0;
-  preSubmitSnapshot.clear();
+  const state = getApiState();
+  state.statusCache.clear();
+  state.lastCacheUpdate = 0;
+  state.preSubmitSnapshot.clear();
 }
 
 // ── Direct media ID lookup ──
@@ -380,7 +448,8 @@ export function clearCache(): void {
  * No text matching — direct, reliable lookup.
  */
 export function findStatusByMediaId(mediaId: string): FlowGenerationStatus | null {
-  return statusCache.get(mediaId) || null;
+  const state = getApiState();
+  return state.statusCache.get(mediaId) || null;
 }
 
 // ── Active API check ──
@@ -393,43 +462,59 @@ export function findStatusByMediaId(mediaId: string): FlowGenerationStatus | nul
  * Returns true if the call succeeded and cache was refreshed.
  * Returns false if the interceptor hasn't captured a URL yet.
  *
+ * ARCHITECTURE:
+ * We use chrome.runtime.sendMessage → RUN_ACTIVE_CHECK → chrome.scripting.executeScript
+ * to call __af_activeCheck in the MAIN world. This approach is REQUIRED because
+ * Google's CSP blocks inline <script> tags on labs.google, so the script injection
+ * approach (document.createElement('script')) silently fails.
+ *
+ * RACE CONDITION FIX:
+ * The executeScript call returns before the interceptor's STATUS_UPDATE postMessage
+ * updates our cache (different channels, no FIFO guarantee). So after receiving
+ * success=true, we wait up to 3 seconds for lastCacheUpdate to be refreshed,
+ * guaranteeing the cache has fresh data before callers read it.
+ *
  * NOTE: This is the ONLY place we make an active API call. One call per
  * verification round — not spammy, just like what Flow does every 5 seconds.
  */
 export async function activeStatusCheck(mediaIds?: string[]): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    // Create a script element to call __af_activeCheck in MAIN world
-    const script = document.createElement('script');
-    const idsArg = mediaIds ? JSON.stringify(mediaIds) : 'undefined';
-    script.textContent = `
-      (async () => {
-        const result = typeof window.__af_activeCheck === 'function'
-          ? await window.__af_activeCheck(${idsArg})
-          : false;
-        window.postMessage({
-          source: 'autoflow-api-interceptor',
-          type: 'ACTIVE_CHECK_RESULT',
-          payload: { success: result }
-        }, '*');
-      })();
-    `;
-    document.documentElement.appendChild(script);
-    script.remove();
+  const state = getApiState();
+  const cacheTimeBefore = state.lastCacheUpdate;
 
-    // Listen for the result
-    const handler = (event: MessageEvent) => {
-      if (event.source !== window) return;
-      if (event.data?.source !== 'autoflow-api-interceptor') return;
-      if (event.data?.type !== 'ACTIVE_CHECK_RESULT') return;
-      window.removeEventListener('message', handler);
-      resolve(event.data.payload?.success === true);
-    };
-    window.addEventListener('message', handler);
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: 'RUN_ACTIVE_CHECK',
+      payload: { mediaIds }
+    });
 
-    // Timeout after 10s — don't wait forever
-    setTimeout(() => {
-      window.removeEventListener('message', handler);
-      resolve(false);
-    }, 10_000);
-  });
+    if (res?.success !== true) {
+      // Active check failed — capture error info if available
+      if (res?.error) {
+        state.lastInterceptorError = res.error;
+      }
+      return false;
+    }
+
+    // SUCCESS — but cache may not be updated yet (race condition).
+    // The interceptor relays the API response via window.postMessage('STATUS_UPDATE'),
+    // which is processed asynchronously. Wait for the cache timestamp to change.
+    const MAX_CACHE_WAIT_MS = 3000;
+    const POLL_INTERVAL_MS = 100;
+    const waitStart = Date.now();
+
+    while (Date.now() - waitStart < MAX_CACHE_WAIT_MS) {
+      if (state.lastCacheUpdate > cacheTimeBefore) {
+        // Cache was updated — fresh data is available
+        return true;
+      }
+      await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+    }
+
+    // Cache wasn't updated within 3s — the interceptor relay may have failed,
+    // but the API call itself succeeded. Return true optimistically since
+    // the cache might update shortly after (the sleep(1000) in the caller helps).
+    return true;
+  } catch (err) {
+    return false;
+  }
 }

@@ -110,6 +110,36 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ── SOCIAL PROOF BAR ── */}
+      <section style={{ padding: "60px 0", borderTop: "1px solid rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(255,255,255,0.01)" }}>
+        <div className="container" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "60px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{ display: "flex", gap: "4px" }}>
+              {[1,2,3,4,5].map(i => <span key={i} style={{ color: "#FBBF24", fontSize: "1.4rem" }}>★</span>)}
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>4.9 / 5</div>
+              <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>86 reviews</div>
+            </div>
+          </div>
+          <div style={{ height: "40px", width: "1px", background: "rgba(255,255,255,0.1)" }} />
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontWeight: 700, fontSize: "1.5rem" }}>2,000+</div>
+            <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Active creators</div>
+          </div>
+          <div style={{ height: "40px", width: "1px", background: "rgba(255,255,255,0.1)" }} />
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontWeight: 700, fontSize: "1.5rem" }}>500K+</div>
+            <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Videos generated</div>
+          </div>
+          <div style={{ height: "40px", width: "1px", background: "rgba(255,255,255,0.1)" }} />
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontWeight: 700, fontSize: "1.5rem" }}>6</div>
+            <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Languages</div>
+          </div>
+        </div>
+      </section>
+
       {/* ── BENTO FEATURES GRID ── */}
       <section className="section" id="features" style={{ padding: "120px 0" }}>
         <div className="container">
@@ -242,14 +272,45 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ── RESULTS SHOWCASE ── */}
+      <section className="section" style={{ position: "relative" }}>
+        <div className="container" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "60px", alignItems: "center" }}>
+          <div>
+            <div className="badge" style={{ marginBottom: "24px", background: "rgba(16, 185, 129, 0.1)", color: "var(--success)", borderColor: "rgba(16, 185, 129, 0.2)" }}>Results</div>
+            <h2 style={{ marginBottom: "24px" }}>Set It Up Once,<br /><span className="text-gradient">Generate Endlessly</span></h2>
+            <p className="text-secondary" style={{ fontSize: "1.15rem", marginBottom: "32px", lineHeight: 1.7 }}>
+              While you sleep, AutoFlow processes hundreds of prompts, retries failures, and downloads everything in 4K. Wake up to a folder full of ready-to-publish AI videos.
+            </p>
+            <div style={{ display: "flex", gap: "40px" }}>
+              <div>
+                <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--success)" }}>100%</div>
+                <div style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>Auto-retry success</div>
+              </div>
+              <div>
+                <div style={{ fontSize: "2rem", fontWeight: 800 }}>10x</div>
+                <div style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>Faster than manual</div>
+              </div>
+              <div>
+                <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--primary)" }}>4K</div>
+                <div style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>Auto download</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ borderRadius: "16px", overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(16, 185, 129, 0.1)" }}>
+            <img src="/screenshots/completed-run.webp" alt="AutoFlow completed run — all videos generated successfully" style={{ width: "100%", display: "block" }} />
+          </div>
+        </div>
+      </section>
+
       {/* ── CTA BANNER ── */}
-      <section className="section cta-section">
-        <div className="container">
+      <section className="section cta-section" style={{ position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", inset: 0, backgroundImage: "url(/screenshots/cta-bg.webp)", backgroundSize: "cover", backgroundPosition: "center", opacity: 0.3 }} />
+        <div className="container" style={{ position: "relative", zIndex: 1 }}>
           <div className="cta-card">
             <div className="cta-glow" aria-hidden="true" />
             <h2>Ready to Automate Your Workflow?</h2>
             <p className="text-secondary">
-              Join creators using AutoFlow to generate AI videos 10x faster.
+              Join 2,000+ creators using AutoFlow to generate AI videos 10x faster.
               Free to start — no account required.
             </p>
             <StoreLink className="btn btn-primary btn-lg">

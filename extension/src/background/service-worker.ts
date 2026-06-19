@@ -118,6 +118,14 @@ async function setActiveTabIdStore(tabId: number | null) {
 async function startKeepalive(tabId: number) {
   await setActiveTabIdStore(tabId);
 
+  // Programmatically lock the tab so Chrome doesn't suspend/discard it
+  try {
+    await chrome.tabs.update(tabId, { autoDiscardable: false });
+    console.log(`[AutoFlow] Set autoDiscardable to false for tab ${tabId}`);
+  } catch (err: any) {
+    console.warn(`[AutoFlow] Failed to set autoDiscardable for tab ${tabId}:`, err.message);
+  }
+
   // Alarm to keep SW alive — fires every 24s (minimum for unpacked extensions)
   chrome.alarms.create(KEEPALIVE_ALARM, {
     delayInMinutes: 0.4,
@@ -136,6 +144,16 @@ async function startKeepalive(tabId: number) {
 
 /** Stop keepalive when queue ends */
 async function stopKeepalive() {
+  const tabId = await getActiveTabId();
+  if (tabId) {
+    try {
+      await chrome.tabs.update(tabId, { autoDiscardable: true });
+      console.log(`[AutoFlow] Restored autoDiscardable to true for tab ${tabId}`);
+    } catch (err: any) {
+      console.warn(`[AutoFlow] Failed to restore autoDiscardable for tab ${tabId}:`, err.message);
+    }
+  }
+
   await setActiveTabIdStore(null);
   chrome.alarms.clear(KEEPALIVE_ALARM);
   chrome.alarms.clear(TAB_PING_ALARM);
@@ -307,6 +325,37 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
   switch (msg.type) {
     case 'DOWNLOAD_FILE':
       return handleDownload(msg.payload);
+
+    case 'CALL_LLM':
+      return handleCallLlm(msg.payload);
+
+    case 'TEST_LLM_CONNECTION':
+      return handleTestLlmConnection(msg.payload);
+
+    case 'RUN_ACTIVE_CHECK': {
+      if (!sender.tab?.id) return { success: false, error: 'No tab ID' };
+      try {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: sender.tab.id },
+          world: 'MAIN',
+          func: async (mediaIds?: string[]) => {
+            if (typeof (window as any).__af_activeCheck === 'function') {
+              try {
+                return await (window as any).__af_activeCheck(mediaIds);
+              } catch (e) {
+                return false;
+              }
+            }
+            return false;
+          },
+          args: [msg.payload?.mediaIds]
+        });
+        const success = results && results[0] ? results[0].result === true : false;
+        return { success };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
 
     // DOWNLOAD_VIA_PAGE removed – chrome.downloads.download handles cookies natively
 
@@ -519,6 +568,46 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
               window.postMessage({ source: 'autoflow-api-interceptor', type, payload }, '*');
             }
 
+            // Intercept console.error to capture active check failures and send to content script
+            const _origConsoleError = console.error;
+            console.error = function(this: any, ...errArgs: any[]) {
+              try {
+                const msg = errArgs.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+                if (msg.includes('[AutoFlow Interceptor]')) {
+                  relay('INTERCEPTOR_ERROR', { message: msg });
+                }
+              } catch (e) {}
+              return _origConsoleError.apply(this || console, errArgs as any);
+            };
+
+            function serializeHeaders(headers: any): any {
+              if (!headers) return undefined;
+              if (typeof headers.forEach === 'function') {
+                const obj: any = {};
+                headers.forEach((val: any, key: any) => {
+                  obj[key] = val;
+                });
+                return obj;
+              }
+              if (Array.isArray(headers)) {
+                const obj: any = {};
+                for (const pair of headers) {
+                  if (Array.isArray(pair) && pair.length >= 2) {
+                    obj[pair[0]] = pair[1];
+                  }
+                }
+                return obj;
+              }
+              if (typeof headers === 'object') {
+                try {
+                  return JSON.parse(JSON.stringify(headers));
+                } catch {
+                  return headers;
+                }
+              }
+              return headers;
+            }
+
             // ── Stealth patch of window.fetch ──
             // We intercept ONLY the two endpoints we need. All other calls
             // pass through with zero overhead (no cloning, no body reading).
@@ -528,70 +617,177 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
             // Store the last status check URL + request init for active calls
             let _lastStatusUrl = '';
             let _lastStatusInit: any = null;
+            let _lastGenerateUrl = '';
+            let _lastGenerateInit: any = null;
+
+            const saveRequestInfo = () => {
+              relay('CAPTURED_REQUEST_INFO', {
+                _lastStatusUrl,
+                _lastStatusInit,
+                _lastGenerateUrl,
+                _lastGenerateInit
+              });
+            };
+
+            window.addEventListener('message', (event) => {
+              if (event.source !== window) return;
+              if (event.data?.source === 'autoflow-content-script' && event.data?.type === 'RESTORE_REQUEST_INFO') {
+                const p = event.data.payload;
+                if (p) {
+                  if (p._lastStatusUrl) _lastStatusUrl = p._lastStatusUrl;
+                  if (p._lastStatusInit) _lastStatusInit = p._lastStatusInit;
+                  if (p._lastGenerateUrl) _lastGenerateUrl = p._lastGenerateUrl;
+                  if (p._lastGenerateInit) _lastGenerateInit = p._lastGenerateInit;
+                }
+              }
+            });
 
             const patchedFetch = async function (this: any, ...args: any[]) {
-              const url = typeof args[0] === 'string'
-                ? args[0]
-                : (args[0] as Request)?.url || '';
+              let url = '';
+              if (typeof args[0] === 'string') {
+                url = args[0];
+              } else if (args[0] && typeof args[0] === 'object' && 'href' in args[0]) {
+                url = (args[0] as any).href;
+              } else if (args[0] && typeof args[0] === 'object') {
+                url = (args[0] as Request).url || '';
+              }
 
-              // Capture status check request info for active re-use
-              if (url.includes(STATUS_CHECK)) {
-                _lastStatusUrl = url;
-                // Clone the init object (headers, body, method) for later replay
+              // Capture request info for active status checks / generation fallback
+              const isStatus = url.includes(STATUS_CHECK);
+              const isGenerate = url.includes(GENERATE) || url.includes('batchAsyncGenerateVideoImage');
+
+              if (isStatus || isGenerate) {
+                if (isStatus) _lastStatusUrl = url;
+                if (isGenerate) _lastGenerateUrl = url;
+                saveRequestInfo();
+
+                const firstArg = args[0];
                 const init = args[1] as RequestInit | undefined;
-                if (init) {
-                  _lastStatusInit = {
-                    method: init.method || 'POST',
-                    headers: init.headers ? JSON.parse(JSON.stringify(init.headers)) : undefined,
-                    body: init.body,
-                  };
+                let method = 'POST';
+                let headers: any = undefined;
+                let body: any = undefined;
+
+                if (firstArg && typeof firstArg === 'object' && !(firstArg instanceof URL)) {
+                  // Request object
+                  const req = firstArg as Request;
+                  method = init?.method || req.method || 'POST';
+                  headers = init?.headers || req.headers;
+                  body = init?.body;
+
+                  if (!body) {
+                    try {
+                      // Clone the request to read its body asynchronously
+                      req.clone().text().then((txt) => {
+                        const savedInit = {
+                          method,
+                          headers: serializeHeaders(headers),
+                          body: txt,
+                          credentials: init?.credentials || (firstArg as Request)?.credentials || 'include',
+                          mode: init?.mode || (firstArg as Request)?.mode,
+                          referrer: init?.referrer || (firstArg as Request)?.referrer,
+                        };
+                        if (isStatus) _lastStatusInit = savedInit;
+                        if (isGenerate) _lastGenerateInit = savedInit;
+                        saveRequestInfo();
+                      }).catch(() => {});
+                    } catch (e) {
+                      // ignore clone/text failure
+                    }
+                  } else {
+                    const savedInit = {
+                      method,
+                      headers: serializeHeaders(headers),
+                      body,
+                      credentials: init?.credentials || (firstArg as Request)?.credentials || 'include',
+                      mode: init?.mode || (firstArg as Request)?.mode,
+                      referrer: init?.referrer || (firstArg as Request)?.referrer,
+                    };
+                    if (isStatus) _lastStatusInit = savedInit;
+                    if (isGenerate) _lastGenerateInit = savedInit;
+                    saveRequestInfo();
+                  }
+                } else {
+                  // URL string + Init object
+                  if (init) {
+                    method = init.method || 'POST';
+                    headers = init.headers;
+                    body = init.body;
+                    const savedInit = {
+                      method,
+                      headers: serializeHeaders(headers),
+                      body,
+                      credentials: init.credentials || 'include',
+                      mode: init.mode,
+                      referrer: init.referrer,
+                    };
+                    if (isStatus) _lastStatusInit = savedInit;
+                    if (isGenerate) _lastGenerateInit = savedInit;
+                    saveRequestInfo();
+                  }
                 }
               }
 
+
               const response = await _origFetch.apply(
-                this, args as [RequestInfo | URL, RequestInit?]
+                this || window,
+                args as [RequestInfo | URL, RequestInit?]
               );
 
               // Only intercept our two target endpoints — everything else untouched
-              const isStatus = url.includes(STATUS_CHECK);
-              const isGenerate = url.includes(GENERATE);
-
               if ((isStatus || isGenerate) && response.ok) {
                 // Clone and read asynchronously — doesn't block the original response
                 response.clone().json().then((data: any) => {
-                  if (isGenerate && data && Array.isArray(data.media) && _lastStatusInit && _lastStatusInit.body) {
-                    try {
-                      const newIds = data.media.map((m: any) => m.name).filter(Boolean);
-                      if (newIds.length > 0) {
-                        const parsed = JSON.parse(_lastStatusInit.body);
-                        
-                        const appendToStringArrays = (obj: any): boolean => {
-                          let changed = false;
-                          if (!obj || typeof obj !== 'object') return false;
-                          for (const key of Object.keys(obj)) {
-                            const val = obj[key];
-                            if (Array.isArray(val)) {
-                              if (val.length === 0 || typeof val[0] === 'string') {
-                                const unique = new Set([...val, ...newIds]);
-                                obj[key] = Array.from(unique);
-                                changed = true;
-                              }
-                            } else if (typeof val === 'object' && val !== null) {
-                              if (appendToStringArrays(val)) {
-                                changed = true;
-                              }
-                            }
-                          }
-                          return changed;
-                        };
-
-                        if (appendToStringArrays(parsed)) {
-                          _lastStatusInit.body = JSON.stringify(parsed);
-                        }
-                      }
-                    } catch (e) {
-                      // ignore parse/JSON errors
+                  if (isGenerate && data && Array.isArray(data.media)) {
+                    // Fallback initialize status check URL/Init from generation request
+                    if (!_lastStatusUrl && _lastGenerateUrl) {
+                      _lastStatusUrl = _lastGenerateUrl
+                        .replace('batchAsyncGenerateVideoText', 'batchCheckAsyncVideoGenerationStatus')
+                        .replace('batchAsyncGenerateVideoImage', 'batchCheckAsyncVideoGenerationStatus');
                     }
+                    if (!_lastStatusInit && _lastGenerateInit) {
+                      _lastStatusInit = {
+                        method: 'POST',
+                        headers: _lastGenerateInit.headers,
+                        body: JSON.stringify({ names: [] })
+                      };
+                    }
+
+                    if (_lastStatusInit && _lastStatusInit.body) {
+                      try {
+                        const newIds = data.media.map((m: any) => m.name).filter(Boolean);
+                        if (newIds.length > 0) {
+                          const parsed = JSON.parse(_lastStatusInit.body);
+                          
+                           const appendToStringArrays = (obj: any): boolean => {
+                             let changed = false;
+                             if (!obj || typeof obj !== 'object') return false;
+                             for (const key of Object.keys(obj)) {
+                               const val = obj[key];
+                               if (Array.isArray(val)) {
+                                 const lowKey = key.toLowerCase();
+                                 if (lowKey === 'names' || lowKey === 'medianames' || lowKey === 'media') {
+                                   const unique = new Set([...val, ...newIds]);
+                                   obj[key] = Array.from(unique);
+                                   changed = true;
+                                 }
+                               } else if (typeof val === 'object' && val !== null) {
+                                 if (appendToStringArrays(val)) {
+                                   changed = true;
+                                 }
+                               }
+                             }
+                             return changed;
+                           };
+
+                          if (appendToStringArrays(parsed)) {
+                            _lastStatusInit.body = JSON.stringify(parsed);
+                          }
+                        }
+                      } catch (e) {
+                        // ignore parse/JSON errors
+                      }
+                    }
+                    saveRequestInfo();
                   }
                   relay(isStatus ? 'STATUS_UPDATE' : 'GENERATION_SUBMITTED', data);
                 }).catch(() => { /* response wasn't JSON — ignore */ });
@@ -604,45 +800,79 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
             // This makes the SAME call Flow makes, using the captured URL + auth.
             // The response flows through the interceptor → updates the cache automatically.
             (window as any).__af_activeCheck = async function (mediaIds?: string[]): Promise<boolean> {
-              if (!_lastStatusUrl || !_lastStatusInit) return false;
+              let targetUrl = _lastStatusUrl;
+              let targetInit = _lastStatusInit;
+
+              if (!targetUrl && _lastGenerateUrl) {
+                targetUrl = _lastGenerateUrl
+                  .replace('batchAsyncGenerateVideoText', 'batchCheckAsyncVideoGenerationStatus')
+                  .replace('batchAsyncGenerateVideoImage', 'batchCheckAsyncVideoGenerationStatus');
+              }
+              if (!targetInit && _lastGenerateInit) {
+                targetInit = {
+                  method: 'POST',
+                  headers: _lastGenerateInit.headers,
+                  body: JSON.stringify({ names: mediaIds || [] }),
+                  credentials: _lastGenerateInit.credentials || 'include',
+                  mode: _lastGenerateInit.mode,
+                  referrer: _lastGenerateInit.referrer,
+                };
+              }
+
+              if (!targetUrl || !targetInit) {
+                console.error('[AutoFlow Interceptor] __af_activeCheck error: targetUrl or targetInit not captured yet.', {
+                  hasUrl: !!targetUrl,
+                  hasInit: !!targetInit,
+                  hasGenUrl: !!_lastGenerateUrl,
+                  hasGenInit: !!_lastGenerateInit
+                });
+                return false;
+              }
               try {
-                let init = _lastStatusInit;
-                if (mediaIds && mediaIds.length > 0 && _lastStatusInit.body) {
-                  try {
-                    const parsed = JSON.parse(_lastStatusInit.body);
-                    
-                    const replaceStringArrays = (obj: any): boolean => {
-                      let changed = false;
-                      if (!obj || typeof obj !== 'object') return false;
-                      for (const key of Object.keys(obj)) {
-                        const val = obj[key];
-                        if (Array.isArray(val)) {
-                          if (val.length === 0 || typeof val[0] === 'string') {
-                            obj[key] = mediaIds;
-                            changed = true;
-                          }
-                        } else if (typeof val === 'object' && val !== null) {
-                          if (replaceStringArrays(val)) {
-                            changed = true;
+                let init = { ...targetInit };
+                if (mediaIds && mediaIds.length > 0) {
+                  if (init.body) {
+                    try {
+                      const parsed = JSON.parse(init.body);
+                      const replaceStringArrays = (obj: any): boolean => {
+                        let changed = false;
+                        if (!obj || typeof obj !== 'object') return false;
+                        for (const key of Object.keys(obj)) {
+                          const val = obj[key];
+                          if (Array.isArray(val)) {
+                            if (val.length === 0 || typeof val[0] === 'string') {
+                              obj[key] = mediaIds;
+                              changed = true;
+                            }
+                          } else if (typeof val === 'object' && val !== null) {
+                            if (replaceStringArrays(val)) {
+                              changed = true;
+                            }
                           }
                         }
-                      }
-                      return changed;
-                    };
-
-                    if (replaceStringArrays(parsed)) {
-                      init = {
-                        ..._lastStatusInit,
-                        body: JSON.stringify(parsed)
+                        return changed;
                       };
+
+                      if (replaceStringArrays(parsed)) {
+                        init.body = JSON.stringify(parsed);
+                      } else {
+                        init.body = JSON.stringify({ names: mediaIds });
+                      }
+                    } catch (e) {
+                      init.body = JSON.stringify({ names: mediaIds });
                     }
-                  } catch (e) {
-                    // fallback to original body
+                  } else {
+                    init.body = JSON.stringify({ names: mediaIds });
                   }
                 }
-                await patchedFetch(_lastStatusUrl, init);
+                const response = await patchedFetch(targetUrl, init);
+                if (!response || !response.ok) {
+                  console.error('[AutoFlow Interceptor] __af_activeCheck failed:', response ? response.status : 'No response');
+                  return false;
+                }
                 return true; // Cache was refreshed via the interceptor relay
-              } catch {
+              } catch (err: any) {
+                console.error('[AutoFlow Interceptor] __af_activeCheck error:', err?.message || err);
                 return false;
               }
             };
@@ -742,6 +972,13 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
       broadcastToExtension(msg);
       return {};
 
+    case 'API_STATUS_CHANGED':
+      broadcastToExtension(msg);
+      return { success: true };
+
+    case 'CHECK_API_AVAILABILITY':
+      return forwardToContentScript(msg);
+
     case 'QUEUE_SUMMARY':
       broadcastToExtension(msg);
       return {};
@@ -786,7 +1023,7 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
             ct.includes('png') ||
             ct.includes('jpeg') ||
             ct.includes('webp') ||
-            ct.includes('application/');
+            (ct.includes('application/') && !ct.includes('application/json'));
           console.log(`[AutoFlow] URL verify: ${resp.status} ct=${ct} valid=${valid}`);
           return { valid };
         }
@@ -908,6 +1145,97 @@ const ourDownloadIds = new Set<number>();
 let suppressDownloads = false;
 let suppressTimeout: ReturnType<typeof setTimeout> | null = null;
 
+// ── LLM Call handler ──
+// Performs secure, CORS-free fetch calls to the Gemini API using the stored key
+async function handleCallLlm(payload: { prompt: string; systemPrompt?: string }): Promise<string> {
+  const { prompt, systemPrompt } = payload;
+  const storage = await chrome.storage.local.get(['autoflow_settings']);
+  const settings = storage.autoflow_settings || {};
+  let apiKey = settings.llmApiKey || '';
+  let model = settings.llmModel || 'gemini-1.5-flash';
+  
+  if (!apiKey) {
+    // Default fallback key for 1-time free trial
+    apiKey = 'AIzaSyAxj6Gx1vLkkhulTGifKXde1k3z2gTJAt0';
+    model = 'gemini-1.5-flash';
+  }
+
+  const apiModel = model.startsWith('gemini') ? model : 'gemini-1.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${apiModel}:generateContent?key=${apiKey}`;
+  const body = {
+    contents: [
+      {
+        parts: [
+          {
+            text: systemPrompt ? `${systemPrompt}\n\nUser request: ${prompt}` : prompt
+          }
+        ]
+      }
+    ],
+    generationConfig: {
+      responseMimeType: 'application/json'
+    }
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini API request failed: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    throw new Error('Empty response from Gemini API');
+  }
+  return text.trim();
+}
+
+async function handleTestLlmConnection(payload: { apiKey: string; model: string }): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { apiKey, model } = payload;
+    const apiModel = model.startsWith('gemini') ? model : 'gemini-1.5-flash';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${apiModel}:generateContent?key=${apiKey}`;
+    const body = {
+      contents: [
+        {
+          parts: [{ text: "Hello. Respond with a JSON object containing a hello message." }]
+        }
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json'
+      }
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: `API Error: ${response.status} - ${errorText}` };
+    }
+
+    const data = await response.json();
+    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      return { success: true };
+    } else {
+      return { success: false, error: 'Empty response structure received from Gemini API.' };
+    }
+  } catch (err: any) {
+    return { success: false, error: err.message || String(err) };
+  }
+}
+
 // ── Download handler ──
 // Downloads the file directly. Filename renaming is handled by the
 // onDeterminingFilename listener + queueDownloadRename() mechanism.
@@ -963,6 +1291,7 @@ async function handleQueueStatusUpdate(payload: {
   queueId: string;
   status: string;
   currentPromptIndex?: number;
+  isApiAvailable?: boolean;
 }): Promise<void> {
   return withStorageLock(async () => {
     const queue = await getQueueById(payload.queueId);
@@ -977,7 +1306,10 @@ async function handleQueueStatusUpdate(payload: {
     queue.updatedAt = Date.now();
     await updateQueue(queue);
     console.log(`[AutoFlow BG] Queue status → ${payload.status}, prompt ${payload.currentPromptIndex}, done: ${queue.prompts.filter(p => p.status === 'done').length}/${queue.prompts.length}`);
-    broadcastToExtension({ type: 'QUEUE_STATUS_UPDATE', payload: queue });
+    broadcastToExtension({
+      type: 'QUEUE_STATUS_UPDATE',
+      payload: { ...queue, isApiAvailable: payload.isApiAvailable }
+    });
 
     // Stop keepalive when queue finishes
     if (payload.status === 'completed' || payload.status === 'stopped') {
@@ -1003,6 +1335,7 @@ async function handlePromptStatusUpdate(payload: {
   error?: string;
   outputFiles?: string[];
   attempts?: number;
+  isApiAvailable?: boolean;
 }): Promise<void> {
   return withStorageLock(async () => {
     const queue = await getQueueById(payload.queueId);
@@ -1022,7 +1355,14 @@ async function handlePromptStatusUpdate(payload: {
     queue.updatedAt = Date.now();
     await updateQueue(queue);
     console.log(`[AutoFlow BG] Prompt #${payload.promptIndex + 1} → ${payload.status}, done: ${queue.prompts.filter(p => p.status === 'done').length}/${queue.prompts.length}`);
-    broadcastToExtension({ type: 'PROMPT_STATUS_UPDATE', payload: { queue, promptIndex: payload.promptIndex } });
+    broadcastToExtension({
+      type: 'PROMPT_STATUS_UPDATE',
+      payload: {
+        queue,
+        promptIndex: payload.promptIndex,
+        isApiAvailable: payload.isApiAvailable
+      }
+    });
   });
 }
 

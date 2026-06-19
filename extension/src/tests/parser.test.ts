@@ -15,23 +15,19 @@ describe('parsePrompts', () => {
     ]);
   });
 
-  test('handles bracket chains', () => {
+  test('treats brackets as normal text', () => {
     const raw = 'Base 1\n\n[Chain Base\nChain Ext 1\nChain Ext 2]\n\nBase 2';
     const result = parsePrompts(raw);
-    expect(result).toHaveLength(5);
+    expect(result).toHaveLength(3);
     
     // Base 1
     expect(result[0]).toEqual({ text: 'Base 1', isExtension: false, baseIndex: 0 });
     
-    // Chain Base
-    expect(result[1]).toEqual({ text: 'Chain Base', isExtension: false, baseIndex: 1 });
-    // Chain Ext 1
-    expect(result[2]).toEqual({ text: 'Chain Ext 1', isExtension: true, baseIndex: 1 });
-    // Chain Ext 2
-    expect(result[3]).toEqual({ text: 'Chain Ext 2', isExtension: true, baseIndex: 1 });
+    // Bracket block treated as a single normal node
+    expect(result[1]).toEqual({ text: '[Chain Base\nChain Ext 1\nChain Ext 2]', isExtension: false, baseIndex: 1 });
 
     // Base 2
-    expect(result[4]).toEqual({ text: 'Base 2', isExtension: false, baseIndex: 4 });
+    expect(result[2]).toEqual({ text: 'Base 2', isExtension: false, baseIndex: 2 });
   });
 
   test('returns empty array for empty input', () => {

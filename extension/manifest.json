@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFlow – Video Task Manager for Google Flow",
-  "version": "3.4",
+  "version": "3.6",
   "description": "Automate prompt queues, upscale workflows, and bulk generation for Google Veo on Flow. Third-party tool, not affiliated with Google.",
   "minimum_chrome_version": "114",
   "offline_enabled": false,
@@ -17,7 +17,8 @@
   ],
   "host_permissions": [
     "https://labs.google/*",
-    "https://api.auto-flow.studio/*"
+    "https://api.auto-flow.studio/*",
+    "https://generativelanguage.googleapis.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -26,7 +27,7 @@
     {
       "matches": ["https://labs.google/flow*", "https://labs.google/fx*"],
       "js": ["content.js"],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ],
   "side_panel": {
