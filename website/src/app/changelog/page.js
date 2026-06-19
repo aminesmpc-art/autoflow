@@ -11,6 +11,34 @@ export const metadata = {
 
 const releases = [
   {
+    version: "3.6",
+    date: "2026-06-19",
+    title: "Cancelled Video Rescue & API Verification Fix",
+    highlights: [
+      "Fake Cancel Rescue — cancelled videos that actually exist on Google's CDN are now automatically detected and saved instead of being re-submitted or lost",
+      "CSP-Safe API Checking — rewrote the active status check to work with Google's Content Security Policy, fixing the 'API credentials not captured' timeout that broke verification",
+      "Universal DOM Tiebreaker — when the API cache shows stale 'generating' status but tiles are already settled, the bot now immediately routes to recovery in all modes (previously Full mode was stuck looping)",
+    ],
+    improvements: [
+      "CDN URL verification now runs on both 'no API data' and 'no retry button' paths, catching all fake cancel scenarios",
+      "Race condition fix between API cache updates and status check responses using cache confirmation polling",
+      "Verification rounds resolve in 1–2 rounds instead of looping through all 12 when tiles are already settled",
+    ],
+  },
+  {
+    version: "3.5",
+    date: "2026-06-16",
+    title: "Stuck Wait Loop Fix & Scroll Optimization",
+    highlights: [
+      "Robust Tag-Agnostic Icon Detection — updated generation tile parsing to support new Google Flow span elements, preventing completed items from getting falsely stuck in generating status.",
+      "Grid Scroll Optimization — wait loop now checks settles status directly via DOM and performs scroll confirmations exactly once, eliminating continuous scrolling.",
+      "Recovery Scan Optimization — removed redundant page scrolling blocks from recovery scan, cutting recovery checking time in half.",
+    ],
+    improvements: [
+      "Bundled build optimizations and bumped manifest version to 3.5 for Chrome Web Store publishing.",
+    ],
+  },
+  {
     version: "3.4",
     date: "2026-06-14",
     title: "Zero-Intervention Reliability & CORS Resolution",
