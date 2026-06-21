@@ -415,22 +415,41 @@ export function findExtendGenerateButton(): Element | null {
  *  excluding the "+" (Create) ingredient button and menus.
  */
 export function findFrameButton(label: 'Start' | 'End'): Element | null {
-  // Strategy 0: Find all frame slot buttons.
-  // Frame slots are div[type="button"][aria-haspopup="dialog"] or button[aria-haspopup="dialog"]
-  const slots = Array.from(document.querySelectorAll('div[type="button"][aria-haspopup="dialog"], button[aria-haspopup="dialog"]')).filter(el => {
-    if (!isVisible(el)) return false;
-    const text = (el.textContent || '').trim();
-    // Exclude the "+" ingredient button (contains "Create" text / has add icon)
-    if (text.includes('Create') || el.querySelector('i.google-symbols') && el.querySelector('i.google-symbols')!.textContent?.trim() === 'add_2') {
-      return false;
+  // Strategy 0: Search near the prompt input area to locate both slots relatively
+  const promptInput = findPromptInput();
+  if (promptInput) {
+    let outerContainer = promptInput.parentElement;
+    for (let i = 0; i < 8 && outerContainer; i++) {
+      if (outerContainer.textContent?.includes('End') || outerContainer.querySelector('img')) {
+        break;
+      }
+      outerContainer = outerContainer.parentElement;
     }
-    // Exclude dropdown menus
-    if (el.getAttribute('aria-haspopup') === 'menu') return false;
-    return true;
-  });
 
-  if (slots.length >= 2) {
-    return label === 'Start' ? slots[0] : slots[1];
+    if (outerContainer) {
+      const candidates = Array.from(outerContainer.querySelectorAll('div, button, [role="button"]')).filter(el => {
+        if (!isVisible(el)) return false;
+        // Exclude prompt input itself and its descendants
+        if (promptInput.contains(el) || el === promptInput) return false;
+
+        const text = (el.textContent || '').trim();
+        if (text.includes('Create') || text === 'Agent' || text === '⇆') return false;
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return false;
+
+        // A candidate is a slot if its text is "Start" or "End", or it contains an img/video
+        const isSlot = text === 'Start' || text === 'End' || el.querySelector('img, video') !== null;
+        return isSlot;
+      });
+
+      // Filter to keep only the leaf-most candidate slot wrappers
+      const slots = candidates.filter(c => {
+        return !candidates.some(other => other !== c && c.contains(other));
+      });
+
+      if (slots.length >= 2) {
+        return label === 'Start' ? slots[0] : slots[1];
+      }
+    }
   }
 
   // Strategy 1: div with type="button" and aria-haspopup="dialog" containing exact text
@@ -445,29 +464,6 @@ export function findFrameButton(label: 'Start' | 'End'): Element | null {
   for (const el of haspopup) {
     const text = (el.textContent || '').trim();
     if (text === label && isVisible(el)) return el;
-  }
-
-  // Strategy 3: Search near the prompt input area
-  const promptArea = findPromptInput();
-  if (promptArea) {
-    let container = promptArea.parentElement;
-    for (let i = 0; i < 8 && container; i++) {
-      container = container.parentElement;
-    }
-    if (container) {
-      const allEls = Array.from(container.querySelectorAll('[aria-haspopup="dialog"]')).filter(el => {
-        if (!isVisible(el)) return false;
-        if (el.getAttribute('aria-haspopup') === 'menu') return false;
-        return true;
-      });
-      if (allEls.length >= 2) {
-        return label === 'Start' ? allEls[0] : allEls[1];
-      }
-      for (const el of allEls) {
-        const text = (el.textContent || '').trim();
-        if (text === label) return el;
-      }
-    }
   }
 
   return null;

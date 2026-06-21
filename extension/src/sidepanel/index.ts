@@ -47,7 +47,7 @@ import {
   getActiveQueueId,
   savePromptHistory,
 } from '../shared/storage';
-import { login, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl, consumeDownload, checkCanStartQueue, consumeQueueRun, ensureSession, claimReviewReward, getReviewRewardStatus } from '../shared/api';
+import { login, loginWithGoogle, getGoogleConfig, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl, consumeDownload, checkCanStartQueue, consumeQueueRun, ensureSession, claimReviewReward, getReviewRewardStatus } from '../shared/api';
 import { applyLanguage, initLanguage } from './i18n';
 
 // ================================================================
@@ -4485,6 +4485,87 @@ function initAccountTab() {
 
     submitBtn.disabled = false;
     submitBtn.textContent = 'Sign In';
+  });
+
+  // ── Google Sign-In ──
+  $('#btn-google-auth')?.addEventListener('click', async () => {
+    const googleBtn = $('#btn-google-auth') as HTMLButtonElement;
+    const googleText = $('#google-auth-text') as HTMLElement;
+    const originalHtml = googleBtn.innerHTML;
+
+    googleBtn.disabled = true;
+    googleText.textContent = 'Connecting Google...';
+    hideMessage('login-message');
+    hideMessage('register-message');
+
+    try {
+      // 1. Fetch Client ID from backend
+      const config = await getGoogleConfig();
+      if (!config || !config.client_id) {
+        throw new Error('Google Sign-In is not configured on the server.');
+      }
+
+      // 2. Generate identity redirect URL and start oauth web flow
+      const redirectUri = chrome.identity.getRedirectURL();
+      const clientId = config.client_id;
+      const scopes = ['openid', 'email', 'profile'].join(' ');
+      const responseType = 'id_token';
+      const nonce = Math.random().toString(36).substring(2) + Date.now().toString(36);
+
+      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      authUrl.searchParams.append('client_id', clientId);
+      authUrl.searchParams.append('redirect_uri', redirectUri);
+      authUrl.searchParams.append('response_type', responseType);
+      authUrl.searchParams.append('scope', scopes);
+      authUrl.searchParams.append('nonce', nonce);
+      authUrl.searchParams.append('prompt', 'select_account');
+
+      // 3. Launch Web Auth Flow
+      chrome.identity.launchWebAuthFlow(
+        {
+          url: authUrl.toString(),
+          interactive: true,
+        },
+        async (redirectUrl) => {
+          if (chrome.runtime.lastError || !redirectUrl) {
+            const errMsg = chrome.runtime.lastError?.message || 'Authentication flow cancelled or failed.';
+            console.error('[AutoFlow] Google Auth error:', errMsg);
+            showMessage('login-message', errMsg, 'error');
+            googleBtn.disabled = false;
+            googleBtn.innerHTML = originalHtml;
+            return;
+          }
+
+          try {
+            // 4. Parse the id_token from hash fragment
+            const parsedUrl = new URL(redirectUrl);
+            const params = new URLSearchParams(parsedUrl.hash.substring(1));
+            const idToken = params.get('id_token');
+
+            if (!idToken) {
+              throw new Error('No id_token found in Google response.');
+            }
+
+            // 5. Call backend to verify and authenticate
+            const result = await loginWithGoogle(idToken);
+            if (result.ok) {
+              await showLoggedInState();
+            } else {
+              showMessage('login-message', result.message, 'error');
+            }
+          } catch (err: any) {
+            showMessage('login-message', err?.message || 'Failed to complete Google Sign-In.', 'error');
+          } finally {
+            googleBtn.disabled = false;
+            googleBtn.innerHTML = originalHtml;
+          }
+        }
+      );
+    } catch (err: any) {
+      showMessage('login-message', err?.message || 'Google Auth is currently unavailable. Try email/password.', 'error');
+      googleBtn.disabled = false;
+      googleBtn.innerHTML = originalHtml;
+    }
   });
 
   // ── Register form ──

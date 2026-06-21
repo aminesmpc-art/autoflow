@@ -2443,15 +2443,62 @@ export class AutomationEngine {
       frameSlots.push({ label: 'End', fileIndex: 1 });
     }
 
+    // Phase 1: Upload any missing frame images to the main Flow page first
+    const filesToUpload: Array<{ fileData: any; filename: string }> = [];
+    for (const slot of frameSlots) {
+      const fileData = imageBlobs.files[slot.fileIndex];
+      if (!fileData) continue;
+
+      const ext = fileData.mime.includes('png') ? 'png' : 'jpg';
+      const idSlug = (images[slot.fileIndex].id || '').replace(/-/g, '').slice(0, 8) || `${promptIdx}_${slot.fileIndex}`;
+      const filename = `af_${idSlug}.${ext}`;
+
+      if (!this.uploadedAssets.has(filename)) {
+        filesToUpload.push({ fileData, filename });
+      }
+    }
+
+    if (filesToUpload.length > 0) {
+      this.log('info', `Pasting ${filesToUpload.length} new frame image(s) onto prompt input...`);
+      const promptInput = findPromptInput();
+      if (!promptInput) {
+        this.log('warn', 'Prompt input not found to paste frame images');
+        return false;
+      }
+
+      const dt = new DataTransfer();
+      for (const item of filesToUpload) {
+        const blob = this.base64ToBlob(item.fileData.data, item.fileData.mime);
+        const file = new File([blob], item.filename, { type: item.fileData.mime });
+        dt.items.add(file);
+      }
+
+      if (promptInput instanceof HTMLElement) promptInput.focus();
+      await sleep(200);
+
+      const pasteEvent = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dt,
+      });
+      promptInput.dispatchEvent(pasteEvent);
+      this.log('info', `Pasted ${filesToUpload.length} frame image(s) — waiting 8s for upload...`);
+
+      await sleep(8000);
+
+      // Add to uploaded cache
+      for (const item of filesToUpload) {
+        this.uploadedAssets.add(item.filename);
+      }
+      this.log('info', 'Frame image(s) uploaded successfully.');
+    }
+
+    // Phase 2: Open dialog for each slot, search by name, and click to select/attach
     for (const slot of frameSlots) {
       if (this.stopped) return false;
       const fileData = imageBlobs.files[slot.fileIndex];
-      if (!fileData) {
-        this.log('warn', `No file data for ${slot.label} frame (index ${slot.fileIndex})`);
-        continue;
-      }
+      if (!fileData) continue;
 
-      // Generate identical stable filename structure as ingredients
       const ext = fileData.mime.includes('png') ? 'png' : 'jpg';
       const idSlug = (images[slot.fileIndex].id || '').replace(/-/g, '').slice(0, 8) || `${promptIdx}_${slot.fileIndex}`;
       const filename = `af_${idSlug}.${ext}`;
@@ -2494,29 +2541,32 @@ export class AutomationEngine {
         return false;
       }
 
-      // Focus the search input or the dialog itself to route the paste event
-      const targetInput = dialog.querySelector('input') || dialog;
-      
-      const blob = this.base64ToBlob(fileData.data, fileData.mime);
-      const file = new File([blob], filename, { type: fileData.mime });
-      const dt = new DataTransfer();
-      dt.items.add(file);
-
-      if (targetInput instanceof HTMLElement) {
-        targetInput.focus();
-        await sleep(100);
+      const imageTab = findImageTabInDialog();
+      if (imageTab && imageTab.getAttribute('aria-selected') !== 'true') {
+        const tabStrategies = [
+          () => reactTrigger(imageTab, 'onPointerDown'),
+          () => reactTrigger(imageTab, 'onClick'),
+          () => { simulateClick(imageTab); return true; },
+          () => { nativeClick(imageTab); return true; }
+        ];
+        for (const strat of tabStrategies) {
+          await strat();
+          await sleep(100);
+        }
+        await sleep(200);
       }
 
-      const pasteEvent = new ClipboardEvent('paste', {
-        bubbles: true,
-        cancelable: true,
-        clipboardData: dt,
-      });
-      targetInput.dispatchEvent(pasteEvent);
-      this.log('info', `Pasted frame image "${filename}" into dialog — waiting for upload & attach...`);
+      this.log('info', `Searching for frame asset "${filename}" in dialog...`);
+      const selected = await this.searchAndClickAssetInDialog(dialog, filename);
 
-      // Poll until the image shows up in the frame slot
-      const maxWaitMs = 12000;
+      if (!selected) {
+        this.log('warn', `Failed to select frame image "${filename}" from search results`);
+        await this.dismissDialogs();
+        return false;
+      }
+
+      // Poll until the image shows up in the frame slot to verify attachment
+      const maxWaitMs = 6000;
       const startWait = Date.now();
       let attached = false;
 
@@ -2530,13 +2580,12 @@ export class AutomationEngine {
       }
 
       if (!attached) {
-        this.log('warn', `Timed out waiting for "${slot.label}" frame to show attached image.`);
+        this.log('warn', `Timed out waiting for "${slot.label}" frame to reflect selected image.`);
         await this.dismissDialogs();
         return false;
       }
 
       this.log('info', `Successfully attached ${slot.label} frame: ${filename}`);
-      this.uploadedAssets.add(filename);
       await this.dismissDialogs();
       await sleep(400);
     }

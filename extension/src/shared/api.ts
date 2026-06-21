@@ -215,6 +215,38 @@ export async function login(email: string, password: string): Promise<{ ok: bool
   }
 }
 
+export async function loginWithGoogle(idToken: string): Promise<{ ok: boolean; message: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_token: idToken }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return { ok: false, message: extractError(data, 'Google authentication failed.') };
+    }
+
+    await storeTokens({ access: data.access, refresh: data.refresh });
+    await clearSessionExpired();
+    return { ok: true, message: 'Logged in with Google!' };
+  } catch (err) {
+    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+  }
+}
+
+export async function getGoogleConfig(): Promise<{ client_id: string } | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/google/config`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function logout(): Promise<void> {
   await clearTokens();
 }

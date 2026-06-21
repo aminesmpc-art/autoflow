@@ -14,7 +14,8 @@
     "scripting",
     "alarms",
     "notifications",
-    "webRequest"
+    "webRequest",
+    "identity"
   ],
   "host_permissions": [
     "https://labs.google/*",
