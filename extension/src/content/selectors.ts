@@ -411,8 +411,28 @@ export function findExtendGenerateButton(): Element | null {
  *  (div[type="button"][aria-haspopup="dialog"]) labeled "Start" and "End"
  *  instead of the "+" ingredient button.
  *  Each is a 50×50 square with text "Start" or "End" inside.
+ *  If an image is already attached, the text changes. We match by relative index
+ *  excluding the "+" (Create) ingredient button and menus.
  */
 export function findFrameButton(label: 'Start' | 'End'): Element | null {
+  // Strategy 0: Find all frame slot buttons.
+  // Frame slots are div[type="button"][aria-haspopup="dialog"] or button[aria-haspopup="dialog"]
+  const slots = Array.from(document.querySelectorAll('div[type="button"][aria-haspopup="dialog"], button[aria-haspopup="dialog"]')).filter(el => {
+    if (!isVisible(el)) return false;
+    const text = (el.textContent || '').trim();
+    // Exclude the "+" ingredient button (contains "Create" text / has add icon)
+    if (text.includes('Create') || el.querySelector('i.google-symbols') && el.querySelector('i.google-symbols')!.textContent?.trim() === 'add_2') {
+      return false;
+    }
+    // Exclude dropdown menus
+    if (el.getAttribute('aria-haspopup') === 'menu') return false;
+    return true;
+  });
+
+  if (slots.length >= 2) {
+    return label === 'Start' ? slots[0] : slots[1];
+  }
+
   // Strategy 1: div with type="button" and aria-haspopup="dialog" containing exact text
   const divButtons = document.querySelectorAll('div[type="button"][aria-haspopup="dialog"]');
   for (const div of divButtons) {
@@ -435,16 +455,24 @@ export function findFrameButton(label: 'Start' | 'End'): Element | null {
       container = container.parentElement;
     }
     if (container) {
-      const allEls = container.querySelectorAll('[aria-haspopup="dialog"]');
+      const allEls = Array.from(container.querySelectorAll('[aria-haspopup="dialog"]')).filter(el => {
+        if (!isVisible(el)) return false;
+        if (el.getAttribute('aria-haspopup') === 'menu') return false;
+        return true;
+      });
+      if (allEls.length >= 2) {
+        return label === 'Start' ? allEls[0] : allEls[1];
+      }
       for (const el of allEls) {
         const text = (el.textContent || '').trim();
-        if (text === label && isVisible(el)) return el;
+        if (text === label) return el;
       }
     }
   }
 
   return null;
 }
+
 
 /** Find the "+" ingredient attachment button near the prompt.
  *  In Flow this is <button aria-haspopup="dialog"> containing a
