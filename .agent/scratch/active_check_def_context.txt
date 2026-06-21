@@ -1,0 +1,70 @@
+731:                           if (appendToStringArrays(parsed)) {
+732:                             _lastStatusInit.body = JSON.stringify(parsed);
+733:                           }
+734:                         }
+735:                       } catch (e) {
+736:                         // ignore parse/JSON errors
+737:                       }
+738:                     }
+739:                   }
+740:                   relay(isStatus ? 'STATUS_UPDATE' : 'GENERATION_SUBMITTED', data);
+741:                 }).catch(() => { /* response wasn't JSON — ignore */ });
+742:               }
+743: 
+744:               return response;
+745:             };
+746: 
+747:             // ── Active status check: allows content script to trigger a fresh poll ──
+748:             // This makes the SAME call Flow makes, using the captured URL + auth.
+749:             // The response flows through the interceptor → updates the cache automatically.
+750:             (window as any).__af_activeCheck = async function (mediaIds?: string[]): Promise<boolean> {
+751:               let targetUrl = _lastStatusUrl;
+752:               let targetInit = _lastStatusInit;
+753: 
+754:               if (!targetUrl && _lastGenerateUrl) {
+755:                 targetUrl = _lastGenerateUrl
+756:                   .replace('batchAsyncGenerateVideoText', 'batchCheckAsyncVideoGenerationStatus')
+757:                   .replace('batchAsyncGenerateVideoImage', 'batchCheckAsyncVideoGenerationStatus');
+758:               }
+759:               if (!targetInit && _lastGenerateInit) {
+760:                 targetInit = {
+761:                   method: 'POST',
+762:                   headers: _lastGenerateInit.headers,
+763:                   body: JSON.stringify({ names: mediaIds || [] }),
+764:                   credentials: _lastGenerateInit.credentials || 'include',
+765:                   mode: _lastGenerateInit.mode,
+766:                   referrer: _lastGenerateInit.referrer,
+767:                 };
+768:               }
+769: 
+770:               if (!targetUrl || !targetInit) {
+771:                 console.error('[AutoFlow Interceptor] __af_activeCheck error: targetUrl or targetInit not captured yet.', {
+772:                   hasUrl: !!targetUrl,
+773:                   hasInit: !!targetInit,
+774:                   hasGenUrl: !!_lastGenerateUrl,
+775:                   hasGenInit: !!_lastGenerateInit
+776:                 });
+777:                 return false;
+778:               }
+779:               try {
+780:                 const init = { ...targetInit };
+781:                 if (mediaIds && mediaIds.length > 0) {
+782:                   init.body = JSON.stringify({ names: mediaIds });
+783:                 }
+784:                 await patchedFetch(targetUrl, init);
+785:                 return true; // Cache was refreshed via the interceptor relay
+786:               } catch (err: any) {
+787:                 console.error('[AutoFlow Interceptor] __af_activeCheck error:', err?.message || err);
+788:                 return false;
+789:               }
+790:             };
+791: 
+792:             // Make our patched fetch look identical to the original
+793:             // Prevents detection via fetch.toString() or typeof checks
+794:             patchedFetch.toString = _origToString;
+795:             Object.defineProperty(patchedFetch, 'name', { value: 'fetch' });
+796:             Object.defineProperty(patchedFetch, 'length', { value: _origFetch.length });
+797: 
+798:             (window as any).fetch = patchedFetch;
+799: 
+800:             return { success: true };

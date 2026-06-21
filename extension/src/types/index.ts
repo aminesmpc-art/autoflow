@@ -310,6 +310,7 @@ export type MessageType =
   | 'CALL_LLM'
   | 'TEST_LLM_CONNECTION'
   | 'RUN_ACTIVE_CHECK'
+  | 'IMAGE_API_COMPLETED'
   | 'CAPTURED_REQUEST_INFO';
 
 export interface Message {

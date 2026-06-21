@@ -6,6 +6,7 @@ module.exports = {
   entry: {
     background: './src/background/service-worker.ts',
     content: './src/content/index.ts',
+    'sw-bypass': './src/content/sw-bypass.ts',
     sidepanel: './src/sidepanel/index.ts',
   },
   output: {

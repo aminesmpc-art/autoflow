@@ -35,6 +35,7 @@ import {
   findFileInput,
   triggerFileInputChange,
   findAssetSearchDialog,
+  findAssetResults,
   isGenerating,
   tilesHaveProgress,
   countOutputAssets,
@@ -134,6 +135,19 @@ export class AutomationEngine {
   private repromptResolver: ((result: { text: string; skip: boolean }) => void) | null = null;
   /** Resolver for batch re-prompt — waits for user to edit/skip ALL failed prompts at once */
   private batchRepromptResolver: ((results: Array<{ promptIndex: number; text: string; skip: boolean }>) => void) | null = null;
+  /** Count of webRequest completion signals (status 200) */
+  public imageApiCompletedCount = 0;
+  /** Signal flag for immediate break from wait loop */
+  public imageApiSignal = false;
+
+  /** Called when background detects generation API completed via webRequest */
+  onImageApiCompleted(payload: any): void {
+    this.imageApiSignal = true;
+    if (payload?.statusCode === 200) {
+      this.imageApiCompletedCount++;
+    }
+    console.log('[AutoFlow] [INFO] webRequest: image API completed (status ' + (payload?.statusCode || '?') + ', total: ' + this.imageApiCompletedCount + ')');
+  }
 
   /** Start processing a queue */
   async start(queue: QueueObject, baselineTileCount?: number): Promise<void> {
@@ -261,7 +275,7 @@ export class AutomationEngine {
         // before entering the verify phase. Without it, verifyAndReprompt()
         // polls 3 min per "still generating" prompt (6 prompts = 18 min wait).
         // postQueueScan's 30s API stale override catches stuck prompts fast.
-        this.sendPhaseUpdate('scanning', 'Waiting for all videos to finish...');
+        this.sendPhaseUpdate('scanning', 'Waiting for all generations to finish...');
         this.log('info', 'Queue complete (full mode). Waiting for tiles to settle...');
         await this.postQueueScan();
         if (!this.stopped) {
@@ -270,7 +284,7 @@ export class AutomationEngine {
         }
       } else {
         // ── FLOW MODE: Wait for tiles to settle, then verify ──
-        this.sendPhaseUpdate('scanning', 'Waiting for all videos to finish...');
+        this.sendPhaseUpdate('scanning', 'Waiting for all generations to finish...');
         this.log('info', 'Queue complete. Ensuring we are on the main grid before final scan...');
         await this.ensurePageReady();
         await this.postQueueScan();
@@ -341,12 +355,36 @@ export class AutomationEngine {
       const shouldAutoDownload = !!(this.queue.settings as any).autoDownload;
 
       if (this.mode === 'full') {
-        // ── FULL MODE: Always API download, no DOM needed ──
+        // ── FULL MODE (Images): Reload → library scan → download one by one ──
+        const isImageMode = this.queue!.settings?.mediaType === 'image';
+        if (isImageMode) {
+          this.log('info', `Queue complete (Full Mode, images) — using library scan for downloads...`);
+          this.sendPhaseUpdate('reloading', 'Refreshing page for library scan...');
+          const finalDone = this.queue!.prompts.filter(p => p.status === 'done').length;
+          const finalFailed = this.queue!.prompts.filter(p => p.status === 'failed').length;
+          const finalSkipped = this.queue!.prompts.length - finalDone - finalFailed;
+          this.sendQueueStatus('completed');
+          this.sendQueueSummary(finalDone, finalFailed, finalSkipped);
+          try {
+            await saveRunningQueue(this.queue!, this.queue!.prompts.length, false);
+            chrome.runtime.sendMessage({
+              type: 'AUTO_SCAN_LIBRARY',
+              payload: { queueName: this.queue!.name, autoDownload: shouldAutoDownload, afterReload: true },
+            }).catch(() => {});
+          } catch { /* ignore */ }
+          try { await clearRunningQueue(); } catch { /* ignore */ }
+          globalRunLock = false;
+          this.sendRunLockChanged(false);
+          window.location.reload();
+          return;
+        }
+
+        // ── FULL MODE (Videos): Always API download, no DOM needed ──
         const downloadItems = this.buildApiDownloadItems();
         this.log('info', `API download: ${downloadItems.length} item(s) ready`);
         if (downloadItems.length > 0) {
             this.log('info', `Queue complete — API downloading ${downloadItems.length} video(s) directly...`);
-            this.sendPhaseUpdate('downloading', `Downloading ${downloadItems.length} video(s) via API...`);
+            this.sendPhaseUpdate('downloading', `Downloading ${downloadItems.length} file(s) via API...`);
 
             try {
               const resp = await new Promise<any>((resolve) => {
@@ -363,7 +401,7 @@ export class AutomationEngine {
               this.log('info', `API download result: ${dlCount} downloaded, ${errCount} failed`);
 
               if (dlCount > 0) {
-                this.sendPhaseUpdate('done', `Downloaded ${dlCount} video(s) ✅`);
+                this.sendPhaseUpdate('done', `Downloaded ${dlCount} file(s) ✅`);
                 
                 // Mark all prompts with mediaId as 'done' — they were downloaded successfully
                 // This syncs the prompt status with the download result.
@@ -752,7 +790,10 @@ export class AutomationEngine {
         // Last-chance mediaId capture with extended polling
         // The API response may arrive late (server load, backgrounded tab).
         // Without mediaId, we fall back to fragile text matching.
-        if (!prompt.mediaId) {
+        // NOTE: Skip entirely for images — the interceptor only captures video
+        // API endpoints, so this always fails for images ("Value is unserializable").
+        const isImageQueue = this.queue!.settings.mediaType === 'image';
+        if (!prompt.mediaId && !isImageQueue) {
           const MEDIA_ID_POLL_MS = 8000;
           const MEDIA_ID_INTERVAL = 2000;
           const pollStart = Date.now();
@@ -2217,8 +2258,116 @@ export class AutomationEngine {
   }
 
   /**
+   * Helper to type filename in search and click the corresponding result in the dialog.
+   */
+  private async searchAndClickAssetInDialog(dialog: Element, filename: string): Promise<boolean> {
+    const searchInput = dialog.querySelector(
+      'input[placeholder*="Search"], input[placeholder*="Rechercher"], input[placeholder*="Buscar"], input[placeholder*="Suchen"], input[placeholder*="Cerca"], input[placeholder*="Pesquisar"]'
+    ) as HTMLInputElement;
+
+    if (!searchInput) {
+      this.log('warn', 'Search input not found in dialog');
+      return false;
+    }
+
+    searchInput.focus();
+    searchInput.value = '';
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(100);
+
+    await setInputValue(searchInput, filename);
+    await sleep(800); // Wait for filtering to complete
+
+    let results = findAssetResults(dialog);
+    if (results.length === 0) {
+      await sleep(1000);
+      results = findAssetResults(dialog);
+    }
+
+    if (results.length > 0) {
+      let targetEl = results[0];
+      // Try to find a exact or partial filename match in the result row
+      for (const res of results) {
+        const text = (res.textContent || '').toLowerCase();
+        const img = res.querySelector('img');
+        const alt = (img?.getAttribute('alt') || '').toLowerCase();
+        const fnLower = filename.toLowerCase();
+
+        if (text.includes(fnLower) || alt.includes(fnLower)) {
+          targetEl = res;
+          break;
+        }
+      }
+
+      this.log('info', `Found result row for "${filename}". Clicking to attach...`);
+      simulateClick(targetEl);
+      await sleep(100);
+      nativeClick(targetEl);
+      await sleep(500);
+      return true;
+    }
+
+    // Fallback to Enter key if result elements aren't detectable
+    this.log('warn', `No result elements found for "${filename}", falling back to Enter key`);
+    searchInput.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', code: 'Enter', keyCode: 13,
+      bubbles: true, cancelable: true,
+    }));
+    await sleep(500);
+    return true;
+  }
+
+  /**
+   * Helper to trigger programmatic upload of an asset file inside the dialog.
+   */
+  private async uploadAssetInDialog(dialog: Element, fileData: any, filename: string): Promise<boolean> {
+    let uploadClicked = false;
+    const allBtns = dialog.querySelectorAll('button');
+    for (const btn of allBtns) {
+      const icon = btn.querySelector('i.google-symbols, i.material-icons, .google-symbols');
+      if (icon && icon.textContent?.trim() === 'upload') {
+        nativeClick(btn);
+        uploadClicked = true;
+        break;
+      }
+    }
+
+    if (!uploadClicked) {
+      for (const btn of allBtns) {
+        const btnEl = btn as HTMLElement;
+        if (btnEl.getAttribute('aria-haspopup') === 'menu') continue;
+        if (matchesFlowText(btnEl.getAttribute('aria-label') || '', 'done')) continue;
+        if (!isVisible(btnEl)) continue;
+        const btnText = (btnEl.textContent || '').trim();
+        if (matchesFlowText(btnText, 'recently') || matchesFlowText(btnText, 'done')) continue;
+        nativeClick(btnEl);
+        uploadClicked = true;
+        break;
+      }
+    }
+    await sleep(400);
+
+    const fileInput = findFileInput();
+    if (!fileInput) {
+      this.log('warn', 'No file input found for upload');
+      return false;
+    }
+
+    const blob = this.base64ToBlob(fileData.data, fileData.mime);
+    const file = new File([blob], filename, { type: fileData.mime });
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    fileInput.files = dt.files;
+    triggerFileInputChange(fileInput);
+    
+    this.log('info', `File uploaded: ${filename} — waiting 6s for Flow processing...`);
+    await sleep(6000);
+    return true;
+  }
+
+  /**
    * Search for an asset by filename and attach it.
-   * Flow: Open "+" dialog → type filename → press Enter → image attaches.
+   * Flow: Open "+" dialog → type filename → click/Enter → image attaches.
    */
   private async searchAndSelectAsset(filename: string, addBtn: HTMLElement): Promise<boolean> {
     if (this.stopped) return false;
@@ -2226,12 +2375,10 @@ export class AutomationEngine {
     await this.dismissDialogs();
     await sleep(300);
 
-    // Re-find the add button (prefer fresh DOM lookup)
     const btn = (findIngredientAttachButton() as HTMLElement) || addBtn;
     btn.scrollIntoView({ block: 'center', behavior: 'instant' });
     await sleep(200);
 
-    // Open "+" dialog — simulateClick first, nativeClick as fallback
     let dialog: Element | null = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (this.stopped) return false;
@@ -2251,7 +2398,6 @@ export class AutomationEngine {
       return false;
     }
 
-    // Switch to Image tab if not already active
     const imageTab = findImageTabInDialog();
     if (imageTab && imageTab.getAttribute('aria-selected') !== 'true') {
       const tabStrategies = [
@@ -2267,48 +2413,18 @@ export class AutomationEngine {
       await sleep(200);
     }
 
-    // Find search input, type filename, press Enter
-    const searchInput = document.querySelector('input[placeholder*="Search"], input[placeholder*="Rechercher"], input[placeholder*="Buscar"], input[placeholder*="Suchen"], input[placeholder*="Cerca"], input[placeholder*="Pesquisar"]') as HTMLInputElement;
-    if (!searchInput) {
-      this.log('warn', 'Search input not found in dialog');
-      return false;
-    }
-
-    searchInput.focus();
-    searchInput.value = '';
-    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-    await sleep(100);
-
-    await setInputValue(searchInput, filename);
-    await sleep(100);
-
-    searchInput.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter', code: 'Enter', keyCode: 13,
-      bubbles: true, cancelable: true,
-    }));
-    searchInput.dispatchEvent(new KeyboardEvent('keyup', {
-      key: 'Enter', code: 'Enter', keyCode: 13,
-      bubbles: true, cancelable: true,
-    }));
-
-    this.log('info', `Searched "${filename}" + Enter — attached!`);
-    await sleep(500);
-
-    return true;
+    return this.searchAndClickAssetInDialog(dialog, filename);
   }
 
   /**
    * Attach frame images (Start / End) in Frames creation mode.
    * images[0] → Start frame, images[1] → End frame (optional).
-   * Each slot is a div[type="button"][aria-haspopup="dialog"] with text "Start" or "End".
-   * Clicking it opens the same "Search for Assets" dialog used for ingredients.
    */
   private async attachFrameImages(images: ImageMeta[], promptIdx: number): Promise<boolean> {
     if (images.length === 0) return true;
 
     this.log('info', `Attaching ${images.length} frame image(s) for prompt #${promptIdx + 1}`);
 
-    // Get all image blobs from sidepanel
     let imageBlobs: any;
     try {
       imageBlobs = await this.requestImageBlobs(images);
@@ -2335,23 +2451,27 @@ export class AutomationEngine {
         continue;
       }
 
-      this.log('info', `Clicking "${slot.label}" frame button...`);
+      // Generate identical stable filename structure as ingredients
+      const ext = fileData.mime.includes('png') ? 'png' : 'jpg';
+      const idSlug = (images[slot.fileIndex].id || '').replace(/-/g, '').slice(0, 8) || `${promptIdx}_${slot.fileIndex}`;
+      const filename = `af_${idSlug}.${ext}`;
 
-      // 1. Find and click the frame button (Start or End)
+      this.log('info', `Clicking "${slot.label}" frame button for: ${filename}...`);
+
       const frameBtn = findFrameButton(slot.label);
       if (!frameBtn) {
         this.log('warn', `Cannot find "${slot.label}" frame button`);
         return false;
       }
 
-      // Try simulateClick first (handles Radix pointerdown+mousedown)
+      await this.dismissDialogs();
+      await sleep(200);
+
       simulateClick(frameBtn);
       await humanDelay(400, 700);
 
-      // 2. Wait for the asset search dialog to appear
       let dialog = findAssetSearchDialog();
       if (!dialog) {
-        // Retry with nativeClick
         nativeClick(frameBtn);
         await humanDelay(500, 800);
         dialog = findAssetSearchDialog();
@@ -2361,59 +2481,46 @@ export class AutomationEngine {
         return false;
       }
 
-      // 3. Click upload button inside dialog
-      let uploadClicked = false;
-      const allBtns = dialog.querySelectorAll('button');
-      for (const btn of allBtns) {
-        // Check for Google Symbols icon with "upload" text
-        const icon = btn.querySelector('i.google-symbols, i.material-icons, .google-symbols');
-        if (icon && icon.textContent?.trim() === 'upload') {
-          nativeClick(btn);
-          this.log('info', `Clicked upload button in ${slot.label} dialog`);
-          uploadClicked = true;
-          break;
+      const imageTab = findImageTabInDialog();
+      if (imageTab && imageTab.getAttribute('aria-selected') !== 'true') {
+        const tabStrategies = [
+          () => reactTrigger(imageTab, 'onPointerDown'),
+          () => reactTrigger(imageTab, 'onClick'),
+          () => { simulateClick(imageTab); return true; },
+          () => { nativeClick(imageTab); return true; }
+        ];
+        for (const strat of tabStrategies) {
+          await strat();
+          await sleep(100);
+        }
+        await sleep(200);
+      }
+
+      let selected = false;
+      if (this.uploadedAssets.has(filename)) {
+        this.log('info', `Frame image "${filename}" is already in cache. Searching...`);
+        selected = await this.searchAndClickAssetInDialog(dialog, filename);
+      }
+
+      if (!selected) {
+        this.log('info', `Frame image "${filename}" not in cache/search. Uploading new...`);
+        const uploaded = await this.uploadAssetInDialog(dialog, fileData, filename);
+        if (uploaded) {
+          this.uploadedAssets.add(filename);
+          // Wait briefly, then search and select it
+          selected = await this.searchAndClickAssetInDialog(dialog, filename);
         }
       }
 
-      // Fallback: click the first visible button that isn't a menu trigger
-      if (!uploadClicked) {
-        for (const btn of allBtns) {
-          const btnEl = btn as HTMLElement;
-          if (btnEl.getAttribute('aria-haspopup') === 'menu') continue;
-          if (matchesFlowText(btnEl.getAttribute('aria-label') || '', 'done')) continue;
-          if (!isVisible(btnEl)) continue;
-          const btnText = (btnEl.textContent || '').trim();
-          if (matchesFlowText(btnText, 'recently') || matchesFlowText(btnText, 'done')) continue;
-          nativeClick(btnEl);
-          this.log('info', `Clicked fallback upload button in ${slot.label} dialog`);
-          uploadClicked = true;
-          break;
-        }
-      }
-      await sleep(300);
-
-      // 4. Upload the image via file input
-      const fileInput = findFileInput();
-      if (!fileInput) {
-        this.log('warn', `No file input found for ${slot.label} frame`);
+      if (!selected) {
+        this.log('warn', `Failed to select and attach frame image "${filename}"`);
         await this.dismissDialogs();
         return false;
       }
 
-      const blob = this.base64ToBlob(fileData.data, fileData.mime);
-      const file = new File([blob], fileData.filename, { type: fileData.mime });
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      fileInput.files = dt.files;
-      triggerFileInputChange(fileInput);
-      this.log('info', `Uploaded ${slot.label} frame: ${fileData.filename}`);
-
-      // 5. Wait for the image to be processed/attached
-      await humanDelay(2000, 4000);
-
-      // 6. Dismiss any remaining dialogs
+      this.log('info', `Successfully attached ${slot.label} frame: ${filename}`);
       await this.dismissDialogs();
-      await humanDelay(500, 800);
+      await sleep(400);
     }
 
     this.log('info', `All frame image(s) attached for prompt #${promptIdx + 1}`);
@@ -3201,6 +3308,12 @@ export class AutomationEngine {
         if (confirmedSettled) {
           const stillSubmitted = this.queue!.prompts.filter(p => p.status === 'submitted').length;
           if (stillSubmitted > 0) {
+            // webRequest signal: batchGenerateImages completed — skip timeout
+            if (this.imageApiSignal) {
+              this.imageApiSignal = false;
+              this.log('info', `webRequest confirmed image API done — resolving ${stillSubmitted} submitted prompt(s)`);
+              break;
+            }
             if (submittedWaitStart === 0) submittedWaitStart = Date.now();
             if (Date.now() - submittedWaitStart > SUBMITTED_TIMEOUT_MS) {
               this.log('info', `${stillSubmitted} submitted prompt(s) timed out — passing to verifyAndReprompt`);
@@ -3245,6 +3358,40 @@ export class AutomationEngine {
     // which is more reliable than DOM-based detection.
     // The old detectAndReportFailures() was marking fake cancels as
     // "failed" based on DOM tiles, which verifyAndReprompt then had to undo.
+
+    // ── IMAGE MODE: Upgrade submitted prompts using DOM tile states ──
+    // For images, the API interceptor never captures data (video-only endpoints),
+    // so upgradeSubmittedFromApi() finds nothing. Use DOM tiles instead — they
+    // correctly detect image completion (confirmed in AUTOFLOW15 test).
+    const isImageMode = this.queue!.settings?.mediaType === 'image';
+    if (isImageMode) {
+      let domUpgraded = 0;
+      for (let i = 0; i < this.queue!.prompts.length; i++) {
+        const p = this.queue!.prompts[i];
+        if (p.status !== 'submitted') continue;
+
+        // Check tracked tile IDs from processPrompt
+        if (p.tileIds && p.tileIds.length > 0) {
+          const tileStates = p.tileIds.map(id => getTileStateById(id));
+          const anyCompleted = tileStates.some(s => s === 'completed');
+          const anyGenerating = tileStates.some(s => s === 'generating');
+          const allFailed = tileStates.every(s => s === 'failed');
+
+          if (anyCompleted) {
+            this.updatePromptStatus(i, 'done');
+            this.log('info', `Prompt #${i + 1}: image tile completed (DOM) ✅`);
+            domUpgraded++;
+          } else if (allFailed && !anyGenerating) {
+            this.updatePromptStatus(i, 'failed', 'Image generation failed (DOM)');
+            this.log('warn', `Prompt #${i + 1}: image tile failed (DOM) ❌`);
+            domUpgraded++;
+          }
+        }
+      }
+      if (domUpgraded > 0) {
+        this.log('info', `Image DOM upgrade: ${domUpgraded} prompt(s) resolved via tile states`);
+      }
+    }
 
     const leftoverSubmitted = this.queue!.prompts.filter(p => p.status === 'submitted').length;
     if (leftoverSubmitted > 0) {
@@ -3712,6 +3859,106 @@ private async detectAndReportFailures(): Promise<void> {
     this.sendPhaseUpdate('checking', 'Verifying results with server...');
     this.log('info', '── Phase 2: Smart Verification & Retries ──');
 
+    // ── IMAGE MODE: Resolve submitted prompts ──
+    // Strategy 1: webRequest count (works even in background tabs!)
+    // Strategy 2: DOM scroll (works in foreground tabs)
+    const isImageMode = this.queue!.settings?.mediaType === 'image';
+    if (isImageMode) {
+      const submittedCount = this.queue!.prompts.filter(p => p.status === 'submitted').length;
+      if (submittedCount > 0) {
+        const totalPrompts = this.queue!.prompts.length;
+        const alreadyDone = this.queue!.prompts.filter(p => p.status === 'done').length;
+        const apiCount = this.imageApiCompletedCount;
+
+        this.log('info', `Image verification: ${submittedCount} submitted, ${alreadyDone} done, ${apiCount} webRequest signals received`);
+
+        // ── Strategy 1: webRequest count ──
+        // webRequest fires for EACH generation call. If we have enough 200 signals
+        // to cover all prompts, we can trust the API and mark remaining as done.
+        // This works even when Chrome tab is in the background!
+        if (apiCount >= totalPrompts) {
+          this.log('info', `webRequest signals (${apiCount}) >= total prompts (${totalPrompts}) — trusting API, marking all submitted as done`);
+          for (let i = 0; i < this.queue!.prompts.length; i++) {
+            if (this.queue!.prompts[i].status === 'submitted') {
+              this.updatePromptStatus(i, 'done');
+            }
+          }
+          this.log('info', `All ${submittedCount} submitted prompt(s) resolved via webRequest ✅`);
+          return;
+        }
+
+        // ── Strategy 2: DOM scroll check ──
+        // Scroll through the virtualized list to check all tile states
+        this.log('info', `Scrolling grid to resolve remaining ${submittedCount} submitted prompt(s)...`);
+        this.sendPhaseUpdate('checking', 'Scrolling grid to verify all images...');
+
+        const allTileStates = await scrollAndCollectAllTileStates();
+        let scrollResolved = 0;
+
+        for (let i = 0; i < this.queue!.prompts.length; i++) {
+          const p = this.queue!.prompts[i];
+          if (p.status !== 'submitted') continue;
+
+          if (p.tileIds && p.tileIds.length > 0) {
+            for (const tid of p.tileIds) {
+              const match = allTileStates.find(t => t.tileId === tid);
+              if (match) {
+                if (match.state === 'completed') {
+                  this.updatePromptStatus(i, 'done');
+                  this.log('info', `Prompt #${i + 1}: image completed (scroll) ✅`);
+                  scrollResolved++;
+                } else if (match.state === 'failed') {
+                  this.updatePromptStatus(i, 'failed', 'Image generation failed');
+                  this.log('warn', `Prompt #${i + 1}: image failed (scroll) ❌`);
+                  scrollResolved++;
+                }
+                break;
+              }
+            }
+          }
+        }
+
+        // ── Strategy 3: Count-based fallback ──
+        const stillSubmitted = this.queue!.prompts.filter(p => p.status === 'submitted').length;
+        if (stillSubmitted > 0) {
+          // Check completed tile count vs expected
+          const completedTiles = allTileStates.filter(t => t.state === 'completed').length;
+          const nowDone = this.queue!.prompts.filter(p => p.status === 'done').length;
+          const baseline = this.baselineTileCount || 0;
+          const effectiveCompleted = Math.max(0, completedTiles - baseline);
+
+          if (effectiveCompleted >= nowDone + stillSubmitted) {
+            this.log('info', `Tile count resolve: ${effectiveCompleted} completed tiles — marking ${stillSubmitted} remaining as done`);
+            for (let i = 0; i < this.queue!.prompts.length; i++) {
+              if (this.queue!.prompts[i].status === 'submitted') {
+                this.updatePromptStatus(i, 'done');
+                scrollResolved++;
+              }
+            }
+          } else if (apiCount > 0 && apiCount >= alreadyDone + scrollResolved + stillSubmitted) {
+            // webRequest received enough signals even if tile count doesn't match (background tab)
+            this.log('info', `webRequest fallback: ${apiCount} signals — marking ${stillSubmitted} remaining as done`);
+            for (let i = 0; i < this.queue!.prompts.length; i++) {
+              if (this.queue!.prompts[i].status === 'submitted') {
+                this.updatePromptStatus(i, 'done');
+                scrollResolved++;
+              }
+            }
+          }
+        }
+
+        if (scrollResolved > 0) {
+          this.log('info', `Image verification: ${scrollResolved} prompt(s) resolved`);
+        }
+
+        const remaining = this.queue!.prompts.filter(p => p.status === 'submitted' || p.status === 'failed').length;
+        if (remaining === 0) {
+          this.log('info', 'All image prompts resolved — skipping verification rounds');
+          return;
+        }
+      }
+    }
+
     let round = 0;
     const MAX_ROUNDS = 12;
     const cancelledPrompts: number[] = [];     // prompts saved for reload/recovery
@@ -3848,6 +4095,7 @@ private async detectAndReportFailures(): Promise<void> {
                   } else {
                     if (!cancelledPrompts.includes(i)) cancelledPrompts.push(i);
                     this.log('info', `Prompt #${i + 1}: CANCELLED + URL dead after 2m → will re-submit after reload`);
+                    pendingVerificationCount--;
                   }
                 }
               } else {
@@ -3866,6 +4114,7 @@ private async detectAndReportFailures(): Promise<void> {
                 } else {
                   if (!cancelledPrompts.includes(i)) cancelledPrompts.push(i);
                   this.log('info', `Prompt #${i + 1}: CANCELLED (no mediaId) — will verify after reload`);
+                  pendingVerificationCount--;
                 }
               }
             } else {
@@ -3974,6 +4223,52 @@ private async detectAndReportFailures(): Promise<void> {
           // Before re-submitting or routing to DOM, check if the video actually exists on CDN.
           // This is the most common case for fake cancels: API has no entry but video is available.
           noApiData++;
+
+          // ── IMAGE MODE: Trust DOM tile states instead of re-submitting ──
+          // The API interceptor never captures image generation traffic (video-only endpoints),
+          // so ALL image prompts land here with no API data and no mediaId.
+          // DOM detection works perfectly for images (confirmed: AUTOFLOW15 test saw
+          // "completed: 6" correctly). Trust it instead of destructively re-submitting.
+          const isImageMode = this.queue!.settings?.mediaType === 'image';
+          if (isImageMode) {
+            let resolvedViaDom = false;
+            if (p.tileIds && p.tileIds.length > 0) {
+              const tileStates = p.tileIds.map(id => getTileStateById(id));
+              const anyCompleted = tileStates.some(s => s === 'completed');
+              const allFailed = tileStates.every(s => s === 'failed');
+
+              if (anyCompleted) {
+                this.updatePromptStatus(i, 'done');
+                this.log('info', `Prompt #${i + 1}: image completed (DOM tile check) ✅`);
+                apiConfirmedDone++;
+                pendingVerificationCount--;
+                resolvedViaDom = true;
+              } else if (allFailed) {
+                if ((p.attempts || 0) < 3) {
+                  this.log('info', `Prompt #${i + 1}: image failed (DOM) — re-submitting...`);
+                  p.attempts = (p.attempts || 0) + 1;
+                  await this.processPrompt(p, i);
+                  pendingVerificationCount--;
+                } else {
+                  this.updatePromptStatus(i, 'failed', 'Image generation failed after 3 attempts');
+                  this.log('warn', `Prompt #${i + 1}: image failed after 3 attempts ❌`);
+                  apiConfirmedFailed++;
+                  pendingVerificationCount--;
+                }
+                resolvedViaDom = true;
+              }
+            }
+
+            if (!resolvedViaDom) {
+              // No tileIds or tiles not in DOM — mark done optimistically
+              // (images are fast, if tiles settled in postQueueScan they completed)
+              this.updatePromptStatus(i, 'done');
+              this.log('info', `Prompt #${i + 1}: image — no tile tracking, marking done (tiles settled in scan) ✅`);
+              apiConfirmedDone++;
+              pendingVerificationCount--;
+            }
+            continue;
+          }
 
           if (p.mediaId) {
             this.log('info', `Prompt #${i + 1}: NOT FOUND in API — checking CDN URL for fake cancel rescue...`);
@@ -4099,6 +4394,7 @@ private async detectAndReportFailures(): Promise<void> {
           } else {
             if (!cancelledPrompts.includes(idx)) cancelledPrompts.push(idx);
             this.log('warn', `Prompt #${idx + 1}: no tile found + URL dead — saved for post-reload retry`);
+            pendingVerificationCount--;
           }
           continue;
         }

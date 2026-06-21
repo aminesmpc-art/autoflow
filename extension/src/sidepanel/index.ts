@@ -2567,10 +2567,18 @@ async function showRunMonitor(queueId: string) {
 
 /** Track when monitor started for ETA */
 let _monitorStartTime = 0;
+/** Track current media type for user-facing messages */
+let _currentMediaType: 'video' | 'image' = 'video';
+/** Returns the singular noun for the current media type */
+function getMediaLabel(plural = false): string {
+  const base = _currentMediaType === 'image' ? 'image' : 'video';
+  return plural ? base + 's' : base;
+}
 
 /** Update progress bar, scores, ETA, status, and mini prompt list */
 function updateMonitorSteps(queue: QueueObject) {
   if (_monitorStartTime === 0) _monitorStartTime = Date.now();
+  _currentMediaType = (queue.settings?.mediaType as 'video' | 'image') || 'video';
 
   const total = queue.prompts.length;
   const done = queue.prompts.filter(p => p.status === 'done').length;
@@ -2678,7 +2686,7 @@ function updateMonitorSteps(queue: QueueObject) {
     const currentIdx = queue.prompts.findIndex(p => p.status === 'running');
     if (queue.status === 'completed' && failed === 0) {
       statusIcon.textContent = '🎉';
-      statusText.textContent = done === 1 ? 'Your video is ready!' : `All ${done} videos are ready!`;
+      statusText.textContent = done === 1 ? `Your ${getMediaLabel()} is ready!` : `All ${done} ${getMediaLabel(true)} are ready!`;
     } else if (queue.status === 'completed' && failed > 0) {
       statusIcon.textContent = '⚠️';
       statusText.textContent = `${done} done, ${failed} failed — check results`;
@@ -2695,7 +2703,7 @@ function updateMonitorSteps(queue: QueueObject) {
       statusText.textContent = `Creating #${currentIdx + 1}: ${short}`;
     } else if (submitted > 0) {
       statusIcon.textContent = '🎬';
-      statusText.textContent = `Waiting for ${submitted} video${submitted > 1 ? 's' : ''} to finish...`;
+      statusText.textContent = `Waiting for ${submitted} ${submitted > 1 ? getMediaLabel(true) : getMediaLabel()} to finish...`;
     } else {
       statusIcon.textContent = '⏳';
       statusText.textContent = 'Starting...';
@@ -3345,9 +3353,9 @@ function renderLibrary() {
           if (response?.success) {
             const method = response.method || '';
             if (method.includes('failed')) {
-              showToast('Retrying this single video in place. Please re-scan when finished.');
+              showToast(`Retrying this single ${getMediaLabel()} in place. Please re-scan when finished.`);
             } else {
-              showToast('Generating a new batch of 4 videos. Please re-scan when finished.');
+              showToast(`Generating a new batch of 4 ${getMediaLabel(true)}. Please re-scan when finished.`);
             }
           } else {
             showToast(response?.error || 'Retry failed. Make sure you are on a Flow project page.');
@@ -3498,39 +3506,228 @@ function playNotificationChime() {
   }
 }
 
+/**
+ * Convert a raw engine log message into a user-friendly activity feed entry.
+ * Returns null if the message should be hidden from users (too technical).
+ */
+function humanizeLogMessage(raw: string, level: string): { text: string; icon: string } | null {
+  const m = raw.toLowerCase();
+
+  // ── HIDE: purely technical noise users don't need ──
+  if (m.includes('saved prompt order')) return null;
+  if (m.includes('api helper')) return null;
+  if (m.includes('api interceptor')) return null;
+  if (m.includes('api credentials')) return null;
+  if (m.includes('api not available')) return null;
+  if (m.includes('interceptor error')) return null;
+  if (m.includes('api cache')) return null;
+  if (m.includes('dom scan')) return null;
+  if (m.includes('dom scroll')) return null;
+  if (m.includes('dom check')) return null;
+  if (m.includes('dom settlement')) return null;
+  if (m.includes('dom says')) return null;
+  if (m.includes('dom tiebreaker')) return null;
+  if (m.includes('dom shows')) return null;
+  if (m.includes('dom classif')) return null;
+  if (m.includes('scroll output')) return null;
+  if (m.includes('scrolling grid')) return null;
+  if (m.includes('scroll-aware')) return null;
+  if (m.includes('detail view')) return null;
+  if (m.includes('not in detail')) return null;
+  if (m.includes('in detail view')) return null;
+  if (m.includes('api stuck at')) return null;
+  if (m.includes('active refresh')) return null;
+  if (m.includes('api still says')) return null;
+  if (m.includes('neither agreed')) return null;
+  if (m.includes('both api and dom')) return null;
+  if (m.includes('stale') && !m.includes('prompt')) return null;
+  if (m.includes('passive during retry')) return null;
+  if (m.includes('generating count stuck')) return null;
+  if (m.includes('upgrade') && m.includes('submitted')) return null;
+  if (m.includes('skipping dom retry')) return null;
+  if (m.includes('api confirms video ready')) return null;
+  if (m.includes('api confirms failed')) return null;
+  if (m.includes('post-queue waiting')) return null;
+  if (m.includes('post-queue scan:')) return null;
+  if (m.includes('post-queue settled')) return null;
+  if (m.includes('ensur') && m.includes('toggle')) return null;
+  if (m.includes('baseline tile')) return null;
+  if (m.includes('tiles settled')) return null;
+  if (m.includes('tiles have settled')) return null;
+  if (m.includes('api:') && m.includes('settled')) return null;
+  if (m.includes('api: all generations settled')) return null;
+  if (m.includes('submitted prompt(s) timed out')) return null;
+  if (m.includes('no active/submitted')) return null;
+  if (m.includes('resolvesubmitted')) return null;
+  if (m.includes('resolved via api')) return null;
+  if (m.includes('text]')) return null;
+  if (m.includes('[mediaid]')) return null;
+  if (m.includes('cdn url empty')) return null;
+  if (m.includes('checking if')) return null;
+  if (m.includes('forcing active refresh')) return null;
+  if (m.includes('agent mode')) return null;
+  if (m.includes('deactivat')) return null;
+  if (m.includes('page ready')) return null;
+  if (m.includes('prompt input')) return null;
+  if (m.includes('left over submitted')) return null;
+  if (m.includes('leftover submitted')) return null;
+
+  // ── TRANSLATE: meaningful messages into friendly language ──
+
+  // Queue start
+  const startMatch = raw.match(/Starting queue "(.+)" with (\d+) prompt/i);
+  if (startMatch) return { text: `Starting "${startMatch[1]}" — ${startMatch[2]} prompts to go!`, icon: '🚀' };
+
+  // Automation mode
+  if (m.includes('automation mode:')) {
+    if (m.includes('full')) return { text: 'Full mode — auto-retry + auto-download', icon: '🚀' };
+    if (m.includes('flow')) return { text: 'Flow mode — auto-retry + library scan', icon: '⚡' };
+    if (m.includes('lite')) return { text: 'Lite mode — fast submit only', icon: '🎯' };
+    return null;
+  }
+
+  // Prompt being processed
+  const processingMatch = raw.match(/Processing prompt #(\d+)/i);
+  if (processingMatch) return { text: `Creating ${getMediaLabel()} #${processingMatch[1]}...`, icon: _currentMediaType === 'image' ? '🖼️' : '🎬' };
+
+  // Generation started
+  if (m.includes('generation started') || m.includes('clicked generate')) return { text: `${_currentMediaType === 'image' ? 'Image' : 'Video'} generation started!`, icon: '✨' };
+
+  // Waiting for next prompt
+  const waitMatch = raw.match(/waiting (\d+)s before next/i);
+  if (waitMatch) return { text: `Cooling down ${waitMatch[1]}s before next prompt...`, icon: '⏳' };
+
+  // MediaId captured
+  if (m.includes('captured mediaid') || m.includes('captured new mediaid')) return null;
+
+  // Prompt done
+  const doneMatch = raw.match(/prompt #(\d+).*(confirmed|done|ready|rescued|valid)/i);
+  if (doneMatch) return { text: `${_currentMediaType === 'image' ? 'Image' : 'Video'} #${doneMatch[1]} is ready! ✅`, icon: '✅' };
+
+  // Prompt failed
+  const failedMatch = raw.match(/prompt #(\d+).*(?:failed|exhausted)/i);
+  if (failedMatch && m.includes('❌')) return { text: `${_currentMediaType === 'image' ? 'Image' : 'Video'} #${failedMatch[1]} failed — will be retried`, icon: '❌' };
+
+  // Fake cancel rescued
+  if (m.includes('fake cancel rescued') || m.includes('fake cancel')) {
+    const rescueMatch = raw.match(/prompt #(\d+)/i);
+    return { text: `${_currentMediaType === 'image' ? 'Image' : 'Video'} #${rescueMatch?.[1] || '?'} recovered from false error!`, icon: '🛡️' };
+  }
+
+  // Retry
+  if (m.includes('clicking retry button')) {
+    const retryMatch = raw.match(/prompt #(\d+).*attempt (\d+)/i);
+    if (retryMatch) return { text: `Retrying ${getMediaLabel()} #${retryMatch[1]} (attempt ${retryMatch[2]})`, icon: '🔄' };
+    return { text: 'Retrying failed generation...', icon: '🔄' };
+  }
+
+  // Re-submitting
+  if (m.includes('re-submitting')) {
+    const resubMatch = raw.match(/prompt #(\d+)/i);
+    return { text: `Re-generating ${getMediaLabel()} #${resubMatch?.[1] || '?'}...`, icon: '🔄' };
+  }
+
+  // Verification
+  if (m.includes('verification round')) {
+    const roundMatch = raw.match(/round (\d+)/i);
+    return { text: `Checking results (round ${roundMatch?.[1] || '?'})...`, icon: '🔍' };
+  }
+  if (m.includes('verification round') && m.includes('results:')) return null;
+
+  // Waiting for videos
+  if (m.includes('waiting for') && m.includes('video')) return { text: `Waiting for ${getMediaLabel(true)} to finish...`, icon: '⏳' };
+  if (m.includes('waiting for') && m.includes('retried')) return { text: `Waiting for retried ${getMediaLabel(true)}...`, icon: '⏳' };
+  if (m.includes('waiting for') && m.includes('retry')) return null;
+
+  // Queue complete / summary
+  const summaryMatch = raw.match(/queue "(.+)" finished.*done: (\d+).*failed: (\d+)/i);
+  if (summaryMatch) {
+    const failed = parseInt(summaryMatch[3]);
+    return { text: `Done! ${summaryMatch[2]} ${getMediaLabel(true)} complete${failed > 0 ? `, ${failed} failed` : ''}`, icon: failed > 0 ? '⚠️' : '🎉' };
+  }
+  if (m.includes('queue complete')) return { text: `All ${getMediaLabel(true)} processed!`, icon: '🎉' };
+
+  // Recovery
+  if (m.includes('reloading page')) return { text: 'Refreshing page to verify results...', icon: '🔃' };
+  if (m.includes('recovery scan')) return { text: `Verifying all ${getMediaLabel(true)} after refresh...`, icon: '🔍' };
+
+  // Cancelled prompt
+  if (m.includes('cancelled') && m.includes('will re-submit')) {
+    const cancelMatch = raw.match(/prompt #(\d+)/i);
+    return { text: `${_currentMediaType === 'image' ? 'Image' : 'Video'} #${cancelMatch?.[1] || '?'} was cancelled — will regenerate`, icon: '🔄' };
+  }
+  if (m.includes('cancelled') && m.includes('will verify')) {
+    const verifyMatch = raw.match(/prompt #(\d+)/i);
+    return { text: `${_currentMediaType === 'image' ? 'Image' : 'Video'} #${verifyMatch?.[1] || '?'} needs verification`, icon: '🔍' };
+  }
+
+  // Safety/Quota errors
+  if (m.includes('safety')) return { text: 'A prompt was blocked by content safety filters', icon: '🛡️' };
+  if (m.includes('quota')) return { text: 'Generation quota limit reached', icon: '💳' };
+
+  // Still generating
+  if (m.includes('still generating')) return null;
+  if (m.includes('waiting for') && m.includes('prompt(s)')) return null;
+
+  // Homepage detected
+  if (m.includes('detected flow homepage')) return { text: 'Opening a new Flow project...', icon: '📂' };
+
+  // Settings applied
+  if (m.includes('setting model') || m.includes('applying settings')) return null;
+  if (m.includes('model set to')) return null;
+
+  // Early failure
+  if (m.includes('early failure detected')) {
+    const earlyMatch = raw.match(/prompt #(\d+)/i);
+    return { text: `${_currentMediaType === 'image' ? 'Image' : 'Video'} #${earlyMatch?.[1] || '?'} failed early — handling...`, icon: '⚠️' };
+  }
+
+  // Download progress
+  if (m.includes('downloading') && m.includes('file')) return { text: `Downloading your ${getMediaLabel(true)}...`, icon: '📥' };
+
+  // Library scan
+  if (m.includes('library scan') || m.includes('auto-scan')) return { text: `Scanning your ${getMediaLabel()} library...`, icon: '📚' };
+
+  // Generic fallback for warn/error — show them
+  if (level === 'error') return { text: raw, icon: '🔴' };
+  
+  // Default: hide any remaining technical noise
+  return null;
+}
+
 function appendLogToMonitor(entry: LogEntry) {
   const container = $('#monitor-logs');
   if (!container) return;
 
+  // Transform the raw log into a user-friendly message
+  const friendly = humanizeLogMessage(entry.message, entry.level);
+  if (!friendly) return; // Skip technical noise
+
   const line = document.createElement('div');
-  line.className = `af-log-line af-log-${entry.level}`;
+  line.className = `af-activity-item af-activity-${entry.level}`;
 
-  const timeSpan = document.createElement('span');
-  timeSpan.className = 'af-log-time';
-  timeSpan.textContent = `[${new Date(entry.timestamp).toLocaleTimeString()}]`;
-
-  const badgeSpan = document.createElement('span');
-  badgeSpan.className = `af-log-badge af-log-badge--${entry.level}`;
-  badgeSpan.textContent = entry.level.toUpperCase();
+  const iconSpan = document.createElement('span');
+  iconSpan.className = 'af-activity-icon';
+  iconSpan.textContent = friendly.icon;
 
   const textSpan = document.createElement('span');
-  textSpan.className = 'af-log-text';
+  textSpan.className = 'af-activity-text';
+  textSpan.textContent = friendly.text;
 
-  let msg = escapeHtml(entry.message);
-  msg = msg.replace(/(API)/g, '<span class="af-log-highlight-api">$1</span>');
-  msg = msg.replace(/(DOM)/g, '<span class="af-log-highlight-dom">$1</span>');
-  msg = msg.replace(/(Prompt #\d+)/g, '<span class="af-log-highlight-prompt">$1</span>');
-  textSpan.innerHTML = msg;
+  const timeSpan = document.createElement('span');
+  timeSpan.className = 'af-activity-time';
+  const now = new Date(entry.timestamp);
+  timeSpan.textContent = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-  line.appendChild(timeSpan);
-  line.appendChild(badgeSpan);
+  line.appendChild(iconSpan);
   line.appendChild(textSpan);
+  line.appendChild(timeSpan);
 
   container.appendChild(line);
   container.scrollTop = container.scrollHeight;
 
-  // Max 250 log entries to keep memory footprint low
-  while (container.childNodes.length > 250) {
+  // Max 50 activity entries (users don't need 250 lines of feed)
+  while (container.childNodes.length > 50) {
     container.removeChild(container.firstChild!);
   }
 }
@@ -5366,6 +5563,12 @@ function handleApiStatusChanged(status: boolean | 'active' | 'waiting' | 'fallba
     badge.className = 'af-api-badge af-api-badge--checking';
     badge.textContent = '⏳ API Checking...';
     badge.title = 'Running API connection check...';
+  } else if (_currentMediaType === 'image') {
+    // Images use Google's Service Worker for API calls (invisible to our interceptor).
+    // DOM detection handles everything — show a reassuring badge.
+    badge.className = 'af-api-badge af-api-badge--active';
+    badge.textContent = '🟢 DOM Mode';
+    badge.title = 'Image mode — using visual tile detection (fast & reliable).';
   } else {
     badge.className = 'af-api-badge af-api-badge--waiting';
     badge.textContent = '⏳ API Passive';

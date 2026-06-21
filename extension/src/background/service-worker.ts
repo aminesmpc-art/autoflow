@@ -38,6 +38,40 @@ import {
 import { consumeDownload } from '../shared/api';
 
 // ================================================================
+// WEB REQUEST: Image Generation Detection (Web Worker bypass)
+// ================================================================
+// Google Flow routes batchGenerateImages through a Web Worker, making
+// it invisible to our window.fetch interceptor. chrome.webRequest CAN
+// see these requests (it monitors the browser's network stack).
+// We detect completion and notify the content script to check DOM tiles.
+
+chrome.webRequest.onCompleted.addListener(
+  (details) => {
+    if (details.tabId < 0) return; // ignore non-tab requests
+
+    // Check which endpoint completed
+    const url = details.url;
+    const isGenerate = url.includes('batchAsyncGenerateVideo') ||
+                       url.includes('batchGenerateImages');
+
+    if (!isGenerate) return; // only care about generation endpoints
+
+    // Notify the content script that a generation API call completed
+    chrome.tabs.sendMessage(details.tabId, {
+      type: 'IMAGE_API_COMPLETED',
+      payload: {
+        url: details.url,
+        statusCode: details.statusCode,
+        timestamp: Date.now(),
+      }
+    }).catch(() => {});
+  },
+  {
+    urls: ['*://aisandbox-pa.googleapis.com/*'],
+  }
+);
+
+// ================================================================
 // OFFSCREEN DOCUMENT — Keeps SW alive during long operations
 // ================================================================
 // Chrome MV3 kills the service worker after ~30s of inactivity.
@@ -562,6 +596,7 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
             // ── Key endpoints we piggyback on ──
             const STATUS_CHECK = 'batchCheckAsyncVideoGenerationStatus';
             const GENERATE = 'batchAsyncGenerateVideoText';
+            const IMAGE_GENERATE = 'batchGenerateImages';
 
             /** Post data to content script (local message, zero network traffic) */
             function relay(type: string, payload: any): void {
@@ -611,7 +646,12 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
             // ── Stealth patch of window.fetch ──
             // We intercept ONLY the two endpoints we need. All other calls
             // pass through with zero overhead (no cloning, no body reading).
-            const _origFetch = window.fetch;
+            //
+            // EARLY PROXY SUPPORT:
+            // sw-bypass.ts installs a proxy at document_start and saves the
+            // real fetch as __af_real_fetch. We use THAT as our base so the
+            // interceptor calls the real fetch, not the proxy (avoids loop).
+            const _origFetch = (window as any).__af_real_fetch || window.fetch;
             const _origToString = _origFetch.toString.bind(_origFetch);
 
             // Store the last status check URL + request init for active calls
@@ -654,7 +694,7 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
 
               // Capture request info for active status checks / generation fallback
               const isStatus = url.includes(STATUS_CHECK);
-              const isGenerate = url.includes(GENERATE) || url.includes('batchAsyncGenerateVideoImage');
+              const isGenerate = url.includes(GENERATE) || url.includes('batchAsyncGenerateVideoImage') || url.includes(IMAGE_GENERATE);
 
               if (isStatus || isGenerate) {
                 if (isStatus) _lastStatusUrl = url;
@@ -735,14 +775,18 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
 
               // Only intercept our two target endpoints — everything else untouched
               if ((isStatus || isGenerate) && response.ok) {
-                // Clone and read asynchronously — doesn't block the original response
                 response.clone().json().then((data: any) => {
                   if (isGenerate && data && Array.isArray(data.media)) {
                     // Fallback initialize status check URL/Init from generation request
                     if (!_lastStatusUrl && _lastGenerateUrl) {
-                      _lastStatusUrl = _lastGenerateUrl
-                        .replace('batchAsyncGenerateVideoText', 'batchCheckAsyncVideoGenerationStatus')
-                        .replace('batchAsyncGenerateVideoImage', 'batchCheckAsyncVideoGenerationStatus');
+                      // For video endpoints, derive the status check URL
+                      // For image endpoints (batchGenerateImages), no status URL needed
+                      // (images are synchronous — the generate response IS the final result)
+                      if (!_lastGenerateUrl.includes(IMAGE_GENERATE)) {
+                        _lastStatusUrl = _lastGenerateUrl
+                          .replace('batchAsyncGenerateVideoText', 'batchCheckAsyncVideoGenerationStatus')
+                          .replace('batchAsyncGenerateVideoImage', 'batchCheckAsyncVideoGenerationStatus');
+                      }
                     }
                     if (!_lastStatusInit && _lastGenerateInit) {
                       _lastStatusInit = {
@@ -883,7 +927,17 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
             Object.defineProperty(patchedFetch, 'name', { value: 'fetch' });
             Object.defineProperty(patchedFetch, 'length', { value: _origFetch.length });
 
-            (window as any).fetch = patchedFetch;
+            // UPGRADE PATH: If early proxy exists, upgrade the delegate.
+            // This ensures ALL cached fetch references (including Google's
+            // module-init-time captures) flow through our full interceptor.
+            if ((window as any).__af_early_fetch_installed) {
+              (window as any).__af_patched_fetch = patchedFetch;
+              console.log('[AutoFlow] Interceptor upgraded early proxy — all fetch calls now monitored');
+            } else {
+              // No early proxy — fall back to direct window.fetch override
+              (window as any).fetch = patchedFetch;
+              console.log('[AutoFlow] Interceptor installed (direct mode)');
+            }
 
             return { success: true };
           },

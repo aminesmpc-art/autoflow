@@ -1,0 +1,145 @@
+586:             // ── Stealth patch of window.fetch ──
+587:             // We intercept ONLY the two endpoints we need. All other calls
+588:             // pass through with zero overhead (no cloning, no body reading).
+589:             const _origFetch = window.fetch;
+590:             const _origToString = _origFetch.toString.bind(_origFetch);
+591: 
+592:             // Store the last status check URL + request init for active calls
+593:             let _lastStatusUrl = '';
+594:             let _lastStatusInit: any = null;
+595:             let _lastGenerateUrl = '';
+596:             let _lastGenerateInit: any = null;
+597: 
+598:             const patchedFetch = async function (this: any, ...args: any[]) {
+599:               let url = '';
+600:               if (typeof args[0] === 'string') {
+601:                 url = args[0];
+602:               } else if (args[0] && typeof args[0] === 'object' && 'href' in args[0]) {
+603:                 url = (args[0] as any).href;
+604:               } else if (args[0] && typeof args[0] === 'object') {
+605:                 url = (args[0] as Request).url || '';
+606:               }
+607: 
+608:               // Capture request info for active status checks / generation fallback
+609:               const isStatus = url.includes(STATUS_CHECK);
+610:               const isGenerate = url.includes(GENERATE) || url.includes('batchAsyncGenerateVideoImage');
+611: 
+612:               if (isStatus || isGenerate) {
+613:                 if (isStatus) _lastStatusUrl = url;
+614:                 if (isGenerate) _lastGenerateUrl = url;
+615: 
+616:                 const firstArg = args[0];
+617:                 const init = args[1] as RequestInit | undefined;
+618:                 let method = 'POST';
+619:                 let headers: any = undefined;
+620:                 let body: any = undefined;
+621: 
+622:                 if (firstArg && typeof firstArg === 'object' && !(firstArg instanceof URL)) {
+623:                   // Request object
+624:                   const req = firstArg as Request;
+625:                   method = init?.method || req.method || 'POST';
+626:                   headers = init?.headers || req.headers;
+627:                   body = init?.body;
+628: 
+629:                   if (!body) {
+630:                     try {
+631:                       // Clone the request to read its body asynchronously
+632:                       req.clone().text().then((txt) => {
+633:                         const savedInit = {
+634:                           method,
+635:                           headers: serializeHeaders(headers),
+636:                           body: txt,
+637:                           credentials: init?.credentials || (firstArg as Request)?.credentials || 'include',
+638:                           mode: init?.mode || (firstArg as Request)?.mode,
+639:                           referrer: init?.referrer || (firstArg as Request)?.referrer,
+640:                         };
+641:                         if (isStatus) _lastStatusInit = savedInit;
+642:                         if (isGenerate) _lastGenerateInit = savedInit;
+643:                       }).catch(() => {});
+644:                     } catch (e) {
+645:                       // ignore clone/text failure
+646:                     }
+647:                   } else {
+648:                     const savedInit = {
+649:                       method,
+650:                       headers: serializeHeaders(headers),
+651:                       body,
+652:                       credentials: init?.credentials || (firstArg as Request)?.credentials || 'include',
+653:                       mode: init?.mode || (firstArg as Request)?.mode,
+654:                       referrer: init?.referrer || (firstArg as Request)?.referrer,
+655:                     };
+656:                     if (isStatus) _lastStatusInit = savedInit;
+657:                     if (isGenerate) _lastGenerateInit = savedInit;
+658:                   }
+659:                 } else {
+660:                   // URL string + Init object
+661:                   if (init) {
+662:                     method = init.method || 'POST';
+663:                     headers = init.headers;
+664:                     body = init.body;
+665:                     const savedInit = {
+666:                       method,
+667:                       headers: serializeHeaders(headers),
+668:                       body,
+669:                       credentials: init.credentials || 'include',
+670:                       mode: init.mode,
+671:                       referrer: init.referrer,
+672:                     };
+673:                     if (isStatus) _lastStatusInit = savedInit;
+674:                     if (isGenerate) _lastGenerateInit = savedInit;
+675:                   }
+676:                 }
+677:               }
+678: 
+679: 
+680:               const response = await _origFetch.apply(
+681:                 this || window,
+682:                 args as [RequestInfo | URL, RequestInit?]
+683:               );
+684: 
+685:               // Only intercept our two target endpoints — everything else untouched
+686:               if ((isStatus || isGenerate) && response.ok) {
+687:                 // Clone and read asynchronously — doesn't block the original response
+688:                 response.clone().json().then((data: any) => {
+689:                   if (isGenerate && data && Array.isArray(data.media)) {
+690:                     // Fallback initialize status check URL/Init from generation request
+691:                     if (!_lastStatusUrl && _lastGenerateUrl) {
+692:                       _lastStatusUrl = _lastGenerateUrl
+693:                         .replace('batchAsyncGenerateVideoText', 'batchCheckAsyncVideoGenerationStatus')
+694:                         .replace('batchAsyncGenerateVideoImage', 'batchCheckAsyncVideoGenerationStatus');
+695:                     }
+696:                     if (!_lastStatusInit && _lastGenerateInit) {
+697:                       _lastStatusInit = {
+698:                         method: 'POST',
+699:                         headers: _lastGenerateInit.headers,
+700:                         body: JSON.stringify({ names: [] })
+701:                       };
+702:                     }
+703: 
+704:                     if (_lastStatusInit && _lastStatusInit.body) {
+705:                       try {
+706:                         const newIds = data.media.map((m: any) => m.name).filter(Boolean);
+707:                         if (newIds.length > 0) {
+708:                           const parsed = JSON.parse(_lastStatusInit.body);
+709:                           
+710:                            const appendToStringArrays = (obj: any): boolean => {
+711:                              let changed = false;
+712:                              if (!obj || typeof obj !== 'object') return false;
+713:                              for (const key of Object.keys(obj)) {
+714:                                const val = obj[key];
+715:                                if (Array.isArray(val)) {
+716:                                  const lowKey = key.toLowerCase();
+717:                                  if (lowKey === 'names' || lowKey === 'medianames' || lowKey === 'media') {
+718:                                    const unique = new Set([...val, ...newIds]);
+719:                                    obj[key] = Array.from(unique);
+720:                                    changed = true;
+721:                                  }
+722:                                } else if (typeof val === 'object' && val !== null) {
+723:                                  if (appendToStringArrays(val)) {
+724:                                    changed = true;
+725:                                  }
+726:                                }
+727:                              }
+728:                              return changed;
+729:                            };
+730: 

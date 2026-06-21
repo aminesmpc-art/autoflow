@@ -605,6 +605,16 @@ async function handleMessage(msg: Message): Promise<any> {
       // This would be received if background relays blob data here
       return msg.payload;
 
+    case 'IMAGE_API_COMPLETED': {
+      // Background detected batchGenerateImages completed via webRequest.
+      // Notify the engine so it can immediately resolve submitted prompts.
+      console.log('[AutoFlow] Image API completed (webRequest signal)', msg.payload?.statusCode);
+      if (engine) {
+        (engine as any).onImageApiCompleted?.(msg.payload);
+      }
+      return { success: true };
+    }
+
     case 'PING':
       return { type: 'PONG', runLocked: isRunLocked() };
 
