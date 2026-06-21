@@ -47,7 +47,7 @@ import {
   getActiveQueueId,
   savePromptHistory,
 } from '../shared/storage';
-import { login, loginWithGoogle, getGoogleConfig, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl, consumeDownload, checkCanStartQueue, consumeQueueRun, ensureSession, claimReviewReward, getReviewRewardStatus } from '../shared/api';
+import { login, loginWithGoogle, getGoogleConfig, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl, consumeDownload, checkCanStartQueue, consumeQueueRun, ensureSession, claimReviewReward, getReviewRewardStatus, requestPasswordReset, confirmPasswordReset } from '../shared/api';
 import { applyLanguage, initLanguage } from './i18n';
 
 // ================================================================
@@ -4413,7 +4413,13 @@ function initAccountTab() {
   const btnShowRegister = $('#btn-show-register') as HTMLButtonElement;
   const formLogin = $('#form-login') as HTMLFormElement;
   const formRegister = $('#form-register') as HTMLFormElement;
-  console.log('[AutoFlow] formLogin:', !!formLogin, 'formRegister:', !!formRegister);
+  const formForgotRequest = $('#form-forgot-request') as HTMLFormElement;
+  const formForgotConfirm = $('#form-forgot-confirm') as HTMLFormElement;
+  console.log('[AutoFlow] formLogin:', !!formLogin, 'formRegister:', !!formRegister, 'formForgotRequest:', !!formForgotRequest);
+
+  // Email to use for confirmation step
+  let resetEmail = '';
+
 
   // Helper to show a styled message in a container
   function showMessage(containerId: string, text: string, type: 'error' | 'success' | 'info') {
@@ -4438,6 +4444,8 @@ function initAccountTab() {
     btnShowRegister.classList.remove('active');
     formLogin.style.display = 'flex';
     formRegister.style.display = 'none';
+    formForgotRequest.style.display = 'none';
+    formForgotConfirm.style.display = 'none';
     hideMessage('login-message');
     hideMessage('register-message');
   });
@@ -4447,9 +4455,104 @@ function initAccountTab() {
     btnShowLogin.classList.remove('active');
     formRegister.style.display = 'flex';
     formLogin.style.display = 'none';
+    formForgotRequest.style.display = 'none';
+    formForgotConfirm.style.display = 'none';
     hideMessage('login-message');
     hideMessage('register-message');
   });
+
+  // ── Forgot Password triggers ──
+  $('#link-forgot-password')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    formLogin.style.display = 'none';
+    formRegister.style.display = 'none';
+    formForgotRequest.style.display = 'flex';
+    formForgotConfirm.style.display = 'none';
+    hideMessage('forgot-request-message');
+    
+    // Autofill email from login if present
+    const loginEmailVal = ($('#login-email') as HTMLInputElement)?.value;
+    if (loginEmailVal && ($('#forgot-email') as HTMLInputElement)) {
+      ($('#forgot-email') as HTMLInputElement).value = loginEmailVal;
+    }
+  });
+
+  $('#link-back-to-login')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    formLogin.style.display = 'flex';
+    formForgotRequest.style.display = 'none';
+    hideMessage('login-message');
+  });
+
+  $('#link-back-to-request')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    formForgotRequest.style.display = 'flex';
+    formForgotConfirm.style.display = 'none';
+    hideMessage('forgot-request-message');
+  });
+
+  // ── Forgot Password submit handlers ──
+  formForgotRequest?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = ($('#forgot-email') as HTMLInputElement).value.trim();
+    const btn = $('#btn-forgot-request-submit') as HTMLButtonElement;
+
+    if (!email) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    hideMessage('forgot-request-message');
+
+    const result = await requestPasswordReset(email);
+    if (result.ok) {
+      resetEmail = email;
+      formForgotRequest.style.display = 'none';
+      formForgotConfirm.style.display = 'flex';
+      hideMessage('forgot-confirm-message');
+      showMessage('forgot-confirm-message', result.message, 'success');
+    } else {
+      showMessage('forgot-request-message', result.message, 'error');
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Send Reset Code';
+  });
+
+  formForgotConfirm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = ($('#forgot-code') as HTMLInputElement).value.trim();
+    const newPassword = ($('#forgot-new-password') as HTMLInputElement).value;
+    const confirmPassword = ($('#forgot-confirm-password') as HTMLInputElement).value;
+    const btn = $('#btn-forgot-confirm-submit') as HTMLButtonElement;
+
+    if (!code || !newPassword || !confirmPassword) return;
+
+    if (newPassword !== confirmPassword) {
+      showMessage('forgot-confirm-message', 'Passwords do not match.', 'error');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Resetting…';
+    hideMessage('forgot-confirm-message');
+
+    const result = await confirmPasswordReset(resetEmail, code, newPassword);
+    if (result.ok) {
+      showToast('Password reset successful! Sign in now.', 'success');
+      formForgotConfirm.style.display = 'none';
+      formLogin.style.display = 'flex';
+      // Pre-fill email in login
+      ($('#login-email') as HTMLInputElement).value = resetEmail;
+      hideMessage('login-message');
+      showMessage('login-message', 'Password reset successfully! Sign in below.', 'success');
+    } else {
+      showMessage('forgot-confirm-message', result.message, 'error');
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Reset Password';
+  });
+
 
   // ── Login form ──
   formLogin?.addEventListener('submit', async (e) => {

@@ -500,3 +500,44 @@ export async function getReviewRewardStatus(): Promise<ReviewRewardResult> {
     return { status: 'none' };
   }
 }
+
+// ═══════════════════════════════════════════════════════════
+// PASSWORD RESET
+// ═══════════════════════════════════════════════════════════
+
+/** Request a password reset. Sends a 6-digit code via email. */
+export async function requestPasswordReset(email: string): Promise<{ ok: boolean; message: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/password/reset-request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      return { ok: true, message: data.message || 'Verification code sent.' };
+    }
+    return { ok: false, message: extractError(data, 'Failed to request password reset.') };
+  } catch (err) {
+    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+  }
+}
+
+/** Confirm password reset by providing email, code, and new password. */
+export async function confirmPasswordReset(email: string, code: string, newPassword: string): Promise<{ ok: boolean; message: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/password/reset-confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code, new_password: newPassword }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      return { ok: true, message: data.message || 'Password reset successful.' };
+    }
+    return { ok: false, message: extractError(data, 'Failed to reset password.') };
+  } catch (err) {
+    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+  }
+}
+
