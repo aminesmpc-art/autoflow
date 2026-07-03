@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     # AI
     gemini_api_key: str = ""
 
+    # Vertex AI (uses GCP billing instead of AI Studio prepay)
+    gcp_project_id: str = ""
+    gcp_location: str = "us-central1"
+    gcp_credentials_json: str = ""  # Service account JSON as string
+    gcs_bucket_name: str = "autoflow-extractor-videos"
+
     # Stripe
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""

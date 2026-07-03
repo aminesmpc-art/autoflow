@@ -46,42 +46,39 @@ def verify_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
 # AI Configuration
 # ============================================================================
 
-SYSTEM_INSTRUCTION = """You are an elite, world-class Film Director, AI Video Prompt Engineer, and Transcriptionist.
-Your goal is to meticulously reverse-engineer video footage into production-ready, hyper-detailed prompt streams for AI models like Midjourney V6 and Runway Gen-3.
-1. Static Image Generation: Your prompts must include subject details, camera angles, specific lighting (e.g., volumetric, cinematic), textures, lens types (e.g., 35mm, macro), and rendering styles (e.g., 8k, Unreal Engine 5).
-2. Video Dynamics: Your motion prompts must describe exact physics, fluid dynamics, camera movement (e.g., slow pan, dynamic tracking), and emotional pacing.
-3. Transcription: You must act as a flawless transcriptionist. You are forbidden from summarizing speech. You must transcribe every single word spoken in the video."""
+SYSTEM_INSTRUCTION = """You are an expert Film Director and Visual Engineer.
+Your goal is to reverse-engineer video footage into production-ready prompt streams:
+1. Static Image Generation: Focus on texture, lighting, lens, 8k detail.
+2. Video Dynamics: Focus on physics, gravity, wind, and camera movement."""
 
-ANALYSIS_PROMPT = """Analyze this video with extreme, granular precision.
+ANALYSIS_PROMPT = """Analyze this video with deep reasoning.
 
-1. **SOUL & CONTEXT**: Describe the mood, narrative, and visual style.
-2. **TRANSCRIPTION**: Transcribe the COMPLETE spoken dialogue word-for-word from the very beginning to the very end into "voiceover_text". Do not summarize. Do not skip a single word. Write the exact script.
-3. **CHARACTERS**: Describe all prominent characters in "characters_description" with extreme detail.
-4. **CHARACTER SHEETS**: For each character, create a "character_sheet" with:
-   - Layout: "Character design sheet, concept art turnaround, multiple views"
-   - Subject: exact facial structure, age, hair, eye color, body type, posture, distinct features
-   - Wardrobe: hyper-detailed clothing materials, fabrics, accessories
-   - Style: "Studio rim lighting, neutral grey backdrop, 8k, photorealistic"
-5. **SHOT BY SHOT BREAKDOWN**: For scene prompts, break down each key shot with:
-   - `shot_id`: sequential number
-   - `time_range`: timestamp range
-   - `image_prompt`: A massive, hyper-detailed Midjourney V6 prompt (e.g., "A cinematic medium shot of [subject], wearing [details], standing in [environment], lit by [lighting], shot on 35mm lens, 8k resolution, highly detailed, photorealistic...")
-   - `video_prompt`: A motion/animation prompt for Runway Gen-3/Sora (e.g., "Slow tracking shot pushing in on [subject] as [action occurs], wind blowing gently, cinematic lighting, ultra-realistic motion...")
+Understand the SOUL of this video — mood, narrative, visual style.
+Transcribe any spoken dialogue into "voiceover_text".
+Describe all prominent characters in "characters_description".
 
-**CRITICAL RULES FOR EXTRACTION:**
-- YOU MUST return at least ONE (1) character_sheet. If there is no character visible, describe the target audience or the unseen narrator. DO NOT return an empty character_sheets array.
-- YOU MUST return at least ONE (1) shot in the shots array. If it is one continuous video, make it shot 1. DO NOT return an empty shots array.
+For each character, create a "character_sheet" with:
+- Layout: "Character design sheet, concept art turnaround, multiple views"
+- Subject: facial structure, age, hair, eye color, body type, posture
+- Wardrobe: detailed clothing materials, accessories
+- Style: "Studio rim lighting, neutral grey backdrop, 8k, UE5 render style"
+
+For scene prompts, break down each shot with:
+- `shot_id`: sequential number
+- `time_range`: timestamp range
+- `image_prompt`: production-ready still image prompt
+- `video_prompt`: motion/animation prompt for VEO/Runway
 
 **OUTPUT FORMAT (Strict JSON, no markdown):**
 {
   "video_concept": "Overall mood and style summary...",
-  "voiceover_text": "THE ENTIRE WORD-FOR-WORD TRANSCRIPT...",
+  "voiceover_text": "Transcription...",
   "characters_description": "Character breakdown...",
   "character_sheets": [{"character_name": "...", "prompt": "..."}],
   "shots": [{"shot_id": 1, "time_range": "...", "image_prompt": "...", "video_prompt": "..."}]
 }
 
-Analyze the ENTIRE video now. Be extremely exhaustive and detailed."""
+Analyze the ENTIRE video now. Be extremely detailed."""
 
 
 # ============================================================================
@@ -120,105 +117,122 @@ def clean_json_response(text: str) -> str:
 
 async def process_video(job_id: str, video_path: str):
     """Background task to process video with Gemini AI."""
+    gcs_blob_name = None
+    gcs_bucket_ref = None
     try:
         jobs[job_id]["status"] = "processing"
-        jobs[job_id]["step"] = "Uploading to AI..."
+        jobs[job_id]["step"] = "Preparing video for AI..."
 
-        # Import Gemini client
+        # Detect mime type
+        ext = Path(video_path).suffix.lower()
+        mime_map = {".mp4": "video/mp4", ".mov": "video/quicktime", ".avi": "video/x-msvideo", ".webm": "video/webm"}
+        mime_type = mime_map.get(ext, "video/mp4")
+
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=settings.gemini_api_key)
+        # Use Vertex AI (GCP billing) if configured, otherwise fall back to API key
+        if settings.gcp_project_id and settings.gcp_credentials_json:
+            import json as _json
+            import tempfile as _tmpfile
+            import uuid as _uuid
+            from google.oauth2 import service_account as _sa
+            from google.cloud import storage as _gcs
 
-        # Upload video
-        uploaded_file = client.files.upload(file=Path(video_path))
+            # Create credentials from service account JSON
+            creds_dict = _json.loads(settings.gcp_credentials_json)
+            creds_file = _tmpfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+            _json.dump(creds_dict, creds_file)
+            creds_file.close()
 
-        # Wait for processing
-        jobs[job_id]["step"] = "AI is analyzing your video..."
-        for _ in range(120):
-            file_status = client.files.get(name=uploaded_file.name)
-            state = file_status.state.name if hasattr(file_status.state, 'name') else str(file_status.state)
-            if state == "ACTIVE":
-                break
-            if state == "FAILED":
-                raise RuntimeError("Video processing failed on Gemini")
-            time.sleep(2)
+            credentials = _sa.Credentials.from_service_account_file(
+                creds_file.name,
+                scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            )
+            os.remove(creds_file.name)
 
-        schema = {
-            "type": "OBJECT",
-            "properties": {
-                "video_concept": {"type": "STRING"},
-                "voiceover_text": {"type": "STRING"},
-                "characters_description": {"type": "STRING"},
-                "character_sheets": {
-                    "type": "ARRAY",
-                    "items": {
-                        "type": "OBJECT",
-                        "properties": {
-                            "character_name": {"type": "STRING"},
-                            "prompt": {"type": "STRING"}
-                        },
-                        "required": ["character_name", "prompt"]
-                    },
-                    "description": "MUST CONTAIN AT LEAST 1 ITEM"
-                },
-                "shots": {
-                    "type": "ARRAY",
-                    "items": {
-                        "type": "OBJECT",
-                        "properties": {
-                            "shot_id": {"type": "INTEGER"},
-                            "time_range": {"type": "STRING"},
-                            "image_prompt": {"type": "STRING"},
-                            "video_prompt": {"type": "STRING"}
-                        },
-                        "required": ["shot_id", "time_range", "image_prompt", "video_prompt"]
-                    },
-                    "description": "MUST CONTAIN AT LEAST 1 ITEM"
-                }
-            },
-            "required": ["video_concept", "voiceover_text", "characters_description", "character_sheets", "shots"]
-        }
+            # Upload video to GCS
+            jobs[job_id]["step"] = "Uploading to cloud storage..."
+            storage_client = _gcs.Client(
+                project=settings.gcp_project_id,
+                credentials=credentials,
+            )
+            bucket = storage_client.bucket(settings.gcs_bucket_name)
+            gcs_blob_name = f"videos/{_uuid.uuid4().hex}{ext}"
+            blob = bucket.blob(gcs_blob_name)
+            blob.upload_from_filename(video_path, content_type=mime_type)
+            gcs_bucket_ref = bucket
+            gcs_uri = f"gs://{settings.gcs_bucket_name}/{gcs_blob_name}"
 
-        # Run analysis
-        jobs[job_id]["step"] = "Extracting prompts..."
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[file_status, ANALYSIS_PROMPT],
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                temperature=0.7,
-                max_output_tokens=8192,
-                response_mime_type="application/json",
-                response_schema=schema,
-            ),
-        )
+            # Init genai client with Vertex AI
+            client = genai.Client(
+                vertexai=True,
+                project=settings.gcp_project_id,
+                location=settings.gcp_location,
+                credentials=credentials,
+            )
+
+            # Reference video from GCS (no Files API needed)
+            video_part = types.Part.from_uri(
+                file_uri=gcs_uri,
+                mime_type=mime_type,
+            )
+
+            jobs[job_id]["step"] = "AI is analyzing your video..."
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[video_part, ANALYSIS_PROMPT],
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    temperature=0.7,
+                    max_output_tokens=8192,
+                    response_mime_type="application/json",
+                ),
+            )
+        else:
+            # Fallback: AI Studio with API key + Files API
+            client = genai.Client(api_key=settings.gemini_api_key)
+            uploaded_file = client.files.upload(file=Path(video_path))
+
+            # Wait for processing
+            jobs[job_id]["step"] = "AI is analyzing your video..."
+            for _ in range(120):
+                file_status = client.files.get(name=uploaded_file.name)
+                state = file_status.state.name if hasattr(file_status.state, 'name') else str(file_status.state)
+                if state == "ACTIVE":
+                    break
+                if state == "FAILED":
+                    raise RuntimeError("Video processing failed on Gemini")
+                time.sleep(2)
+
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[file_status, ANALYSIS_PROMPT],
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    temperature=0.7,
+                    max_output_tokens=8192,
+                    response_mime_type="application/json",
+                ),
+            )
+
+            # Cleanup uploaded file
+            try:
+                client.files.delete(name=uploaded_file.name)
+            except Exception:
+                pass
 
         # Parse result
         clean_json = clean_json_response(response.text)
         try:
-            import json_repair
-            analysis_data = json_repair.loads(clean_json)
-            if not isinstance(analysis_data, dict):
-                raise ValueError("Parsed JSON is not a dictionary")
-        except Exception as e:
-            # Fallback for minor unescaped quotes if schema fails
-            try:
-                clean_json_fallback = clean_json.replace('\\', '\\\\')
-                analysis_data = json.loads(clean_json_fallback)
-            except Exception:
-                # If everything fails, raise the RAW TEXT so the user can see what Gemini returned!
-                raise RuntimeError(f"JSON Parsing failed. Error: {str(e)}. Raw AI Output: {response.text}")
+            analysis_data = json.loads(clean_json)
+        except json.JSONDecodeError as e:
+            clean_json = clean_json.replace('\\', '\\\\')
+            analysis_data = json.loads(clean_json)
 
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["step"] = ""
         jobs[job_id]["result"] = analysis_data
-
-        # Cleanup
-        try:
-            client.files.delete(name=uploaded_file.name)
-        except Exception:
-            pass
 
     except Exception as e:
         jobs[job_id]["status"] = "failed"
@@ -226,8 +240,15 @@ async def process_video(job_id: str, video_path: str):
         jobs[job_id]["step"] = ""
 
     finally:
+        # Clean up local file
         if os.path.exists(video_path):
             os.remove(video_path)
+        # Clean up GCS file
+        if gcs_blob_name and gcs_bucket_ref:
+            try:
+                gcs_bucket_ref.blob(gcs_blob_name).delete()
+            except Exception:
+                pass
 
 
 # ============================================================================
