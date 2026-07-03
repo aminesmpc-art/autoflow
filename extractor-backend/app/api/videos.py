@@ -361,6 +361,18 @@ async def process_video_url(job_id: str, url: str):
                 }
             }
 
+            # Route through Residential Proxy if configured
+            proxy_url = os.getenv("PROXY_URL")
+            if proxy_url:
+                proxy_url = proxy_url.strip('"\'')
+                # Foolproof parsing if user pastes raw IP:PORT:USER:PASS format
+                if proxy_url.count(":") == 3 and not proxy_url.startswith("http"):
+                    parts = proxy_url.split(":")
+                    ip, port, user, password = parts[0], parts[1], parts[2], parts[3]
+                    ydl_opts['proxy'] = f"http://{user}:{password}@{ip}:{port}"
+                else:
+                    ydl_opts['proxy'] = proxy_url
+
             # Check for cookies in environment variable to bypass login wall/bot blocks
             cookies_content = os.getenv("YT_DLP_COOKIES")
             if cookies_content:
@@ -398,7 +410,7 @@ async def process_video_url(job_id: str, url: str):
             if "instagram.com" in url.lower():
                 err_msg = (
                     "Instagram sent an empty response. Because Instagram blocks server-side requests, "
-                    "you need to either set a 'RAPIDAPI_KEY' (Pro Fix) or add your browser cookies to the "
+                    "you need to configure a 'PROXY_URL', set a 'RAPIDAPI_KEY' (Pro Fix), or add your browser cookies to the "
                     "'YT_DLP_COOKIES' environment variable in Railway to extract from Instagram links."
                 )
             elif "youtube.com" in url.lower() or "youtu.be" in url.lower():
