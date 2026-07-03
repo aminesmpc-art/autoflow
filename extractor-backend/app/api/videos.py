@@ -263,43 +263,94 @@ async def process_video_url(job_id: str, url: str):
     temp_cookie_file = None
     try:
         jobs[job_id]["status"] = "processing"
-        jobs[job_id]["step"] = "Downloading video from URL..."
-
-        import yt_dlp
-        import asyncio
-
-        ydl_opts = {
-            'format': 'best[ext=mp4]/best',
-            'outtmpl': os.path.join(temp_dir, 'video.%(ext)s'),
-            'noplaylist': True,
-            'quiet': True,
-            'max_filesize': 100 * 1024 * 1024,  # 100MB limit
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-                'Sec-Ch-Ua-Mobile': '?0',
-                'Sec-Ch-Ua-Platform': '"Windows"',
+        
+        # --- 1. PRO FIX: RapidAPI Bypass for Blocked Platforms ---
+        # If the user has configured RAPIDAPI_KEY, we offload Instagram/TikTok downloads
+        # to a proxy API to avoid datacenter IP blocks.
+        rapidapi_key = os.getenv("RAPIDAPI_KEY")
+        rapidapi_host = os.getenv("RAPIDAPI_HOST", "instagram-scraper-api2.p.rapidapi.com")
+        
+        is_blocked_platform = "instagram.com" in url.lower() or "tiktok.com" in url.lower()
+        
+        if rapidapi_key and is_blocked_platform:
+            jobs[job_id]["step"] = "Bypassing block using RapidAPI Proxy..."
+            import httpx
+            import aiofiles
+            
+            headers = {
+                "X-RapidAPI-Key": rapidapi_key,
+                "X-RapidAPI-Host": rapidapi_host
             }
-        }
+            
+            try:
+                async with httpx.AsyncClient() as client:
+                    api_url = f"https://{rapidapi_host}/v1/info"
+                    response = await client.get(api_url, params={"url": url}, headers=headers, timeout=30.0)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        video_url = None
+                        
+                        # Handle common API response schemas
+                        if isinstance(data, dict):
+                            if "video_url" in data:
+                                video_url = data["video_url"]
+                            elif "data" in data and isinstance(data["data"], dict) and "video_url" in data["data"]:
+                                video_url = data["data"]["video_url"]
+                            elif "items" in data and len(data["items"]) > 0:
+                                video_url = data["items"][0].get("video_versions", [{}])[0].get("url")
+                                
+                        if video_url:
+                            jobs[job_id]["step"] = "Downloading proxy payload..."
+                            proxy_video_path = os.path.join(temp_dir, 'video.mp4')
+                            async with client.stream("GET", video_url) as r:
+                                async with aiofiles.open(proxy_video_path, 'wb') as f:
+                                    async for chunk in r.aiter_bytes():
+                                        await f.write(chunk)
+                            video_path = proxy_video_path
+            except Exception as e:
+                print(f"RapidAPI bypass failed, falling back to yt-dlp: {e}")
+                pass
+                
+        # --- 2. Fallback to standard yt-dlp ---
+        if not video_path or not os.path.exists(video_path):
+            jobs[job_id]["step"] = "Downloading video from URL..."
 
-        # Check for cookies in environment variable to bypass login wall/bot blocks
-        cookies_content = os.getenv("YT_DLP_COOKIES")
-        if cookies_content:
-            fd, temp_cookie_file = tempfile.mkstemp(suffix=".txt", prefix="cookies_")
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                f.write(cookies_content)
-            ydl_opts['cookiefile'] = temp_cookie_file
+            import yt_dlp
+            import asyncio
 
-        loop = asyncio.get_event_loop()
+            ydl_opts = {
+                'format': 'best[ext=mp4]/best',
+                'outtmpl': os.path.join(temp_dir, 'video.%(ext)s'),
+                'noplaylist': True,
+                'quiet': True,
+                'max_filesize': 100 * 1024 * 1024,  # 100MB limit
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+                    'Sec-Ch-Ua-Mobile': '?0',
+                    'Sec-Ch-Ua-Platform': '"Windows"',
+                }
+            }
 
-        def _download():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                return ydl.prepare_filename(info)
+            # Check for cookies in environment variable to bypass login wall/bot blocks
+            cookies_content = os.getenv("YT_DLP_COOKIES")
+            if cookies_content:
+                fd, temp_cookie_file = tempfile.mkstemp(suffix=".txt", prefix="cookies_")
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    f.write(cookies_content)
+                ydl_opts['cookiefile'] = temp_cookie_file
 
-        video_path = await loop.run_in_executor(None, _download)
+            loop = asyncio.get_event_loop()
+
+            def _download():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    return ydl.prepare_filename(info)
+
+            video_path = await loop.run_in_executor(None, _download)
 
         if not video_path or not os.path.exists(video_path):
             raise RuntimeError("Failed to download video. Please verify the URL.")
@@ -316,8 +367,8 @@ async def process_video_url(job_id: str, url: str):
             if "instagram.com" in url.lower():
                 err_msg = (
                     "Instagram sent an empty response. Because Instagram blocks server-side requests, "
-                    "you need to add your browser cookies to the 'YT_DLP_COOKIES' environment variable in Railway "
-                    "to extract from Instagram links."
+                    "you need to either set a 'RAPIDAPI_KEY' (Pro Fix) or add your browser cookies to the "
+                    "'YT_DLP_COOKIES' environment variable in Railway to extract from Instagram links."
                 )
             elif "youtube.com" in url.lower() or "youtu.be" in url.lower():
                 err_msg = (
@@ -326,8 +377,8 @@ async def process_video_url(job_id: str, url: str):
                 )
             elif "tiktok.com" in url.lower():
                 err_msg = (
-                    "TikTok blocked the server. Please add your browser cookies to the 'YT_DLP_COOKIES' "
-                    "environment variable in Railway to extract from TikTok links."
+                    "TikTok blocked the server. Please either set a 'RAPIDAPI_KEY' (Pro Fix) or add your "
+                    "browser cookies to the 'YT_DLP_COOKIES' environment variable in Railway to extract from TikTok."
                 )
         
         jobs[job_id]["error"] = err_msg
