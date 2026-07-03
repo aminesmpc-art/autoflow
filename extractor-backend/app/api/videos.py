@@ -369,6 +369,11 @@ async def process_video_url(job_id: str, url: str):
 
         if not video_path or not os.path.exists(video_path):
             raise RuntimeError("Failed to download video. Please verify the URL.")
+            
+        # Verify it's an actual video payload (HTML login walls and JSON errors are very small files)
+        file_size = os.path.getsize(video_path)
+        if file_size < 150 * 1024:  # Less than 150 KB
+            raise RuntimeError("empty media response")
 
         jobs[job_id]["step"] = "Video downloaded. Preparing for analysis..."
         await process_video(job_id, video_path)
