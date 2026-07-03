@@ -260,6 +260,7 @@ async def process_video_url(job_id: str, url: str):
     """Background task to download video from URL and then process it with Gemini AI."""
     temp_dir = tempfile.mkdtemp()
     video_path = None
+    temp_cookie_file = None
     try:
         jobs[job_id]["status"] = "processing"
         jobs[job_id]["step"] = "Downloading video from URL..."
@@ -273,7 +274,23 @@ async def process_video_url(job_id: str, url: str):
             'noplaylist': True,
             'quiet': True,
             'max_filesize': 100 * 1024 * 1024,  # 100MB limit
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+            }
         }
+
+        # Check for cookies in environment variable to bypass login wall/bot blocks
+        cookies_content = os.getenv("YT_DLP_COOKIES")
+        if cookies_content:
+            fd, temp_cookie_file = tempfile.mkstemp(suffix=".txt", prefix="cookies_")
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(cookies_content)
+            ydl_opts['cookiefile'] = temp_cookie_file
 
         loop = asyncio.get_event_loop()
 
@@ -292,9 +309,37 @@ async def process_video_url(job_id: str, url: str):
 
     except Exception as e:
         jobs[job_id]["status"] = "failed"
-        jobs[job_id]["error"] = str(e)
+        
+        err_msg = str(e)
+        # Parse common media block errors to make them user-friendly
+        if any(keyword in err_msg for keyword in ["empty media response", "403", "Sign in", "confirm you are not a bot", "Login required"]):
+            if "instagram.com" in url.lower():
+                err_msg = (
+                    "Instagram sent an empty response. Because Instagram blocks server-side requests, "
+                    "you need to add your browser cookies to the 'YT_DLP_COOKIES' environment variable in Railway "
+                    "to extract from Instagram links."
+                )
+            elif "youtube.com" in url.lower() or "youtu.be" in url.lower():
+                err_msg = (
+                    "YouTube requested bot verification. To extract from YouTube links, please add your "
+                    "browser cookies to the 'YT_DLP_COOKIES' environment variable in Railway."
+                )
+            elif "tiktok.com" in url.lower():
+                err_msg = (
+                    "TikTok blocked the server. Please add your browser cookies to the 'YT_DLP_COOKIES' "
+                    "environment variable in Railway to extract from TikTok links."
+                )
+        
+        jobs[job_id]["error"] = err_msg
         jobs[job_id]["step"] = ""
     finally:
+        # Clean up temporary cookies file if created
+        if temp_cookie_file and os.path.exists(temp_cookie_file):
+            try:
+                os.remove(temp_cookie_file)
+            except Exception:
+                pass
+        # Clean up temporary directory
         try:
             if temp_dir and os.path.exists(temp_dir):
                 import shutil
