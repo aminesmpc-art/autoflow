@@ -299,17 +299,23 @@ async def process_video_url(job_id: str, url: str):
                         
                         # Handle common API response schemas from various RapidAPI providers
                         if isinstance(data, dict):
-                            if "url" in data and data["url"].startswith("http"):
-                                video_url = data["url"]
+                            if "data" in data and isinstance(data["data"], dict):
+                                # Specifically handle the 'Instagram Reels Downloader API' schema
+                                if "medias" in data["data"] and isinstance(data["data"]["medias"], list):
+                                    for media in data["data"]["medias"]:
+                                        if media.get("type") == "video" and "url" in media:
+                                            video_url = media["url"]
+                                            break
+                                elif "video_url" in data["data"]:
+                                    video_url = data["data"]["video_url"]
+                                elif "url" in data["data"] and "instagram.com" not in data["data"]["url"]:
+                                    video_url = data["data"]["url"]
                             elif "video_url" in data:
                                 video_url = data["video_url"]
                             elif "download_url" in data:
                                 video_url = data["download_url"]
-                            elif "data" in data and isinstance(data["data"], dict):
-                                if "video_url" in data["data"]:
-                                    video_url = data["data"]["video_url"]
-                                elif "url" in data["data"]:
-                                    video_url = data["data"]["url"]
+                            elif "url" in data and data["url"].startswith("http") and "instagram.com" not in data["url"]:
+                                video_url = data["url"]
                             elif "items" in data and len(data["items"]) > 0:
                                 video_url = data["items"][0].get("video_versions", [{}])[0].get("url")
                                 
