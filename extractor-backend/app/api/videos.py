@@ -231,9 +231,14 @@ async def process_video(job_id: str, video_path: str):
         clean_json = clean_json_response(response.text)
         try:
             analysis_data = json.loads(clean_json)
-        except json.JSONDecodeError as e:
-            clean_json = clean_json.replace('\\', '\\\\')
-            analysis_data = json.loads(clean_json)
+        except json.JSONDecodeError:
+            try:
+                import json_repair
+                analysis_data = json_repair.loads(clean_json)
+            except Exception as e:
+                # Absolute last resort fallback
+                clean_json = clean_json.replace('\\', '\\\\')
+                analysis_data = json.loads(clean_json)
 
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["step"] = ""
