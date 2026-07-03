@@ -1,6 +1,6 @@
 {
   "name": "autoflow-extension",
-  "version": "3.5",
+  "version": "4.0",
   "description": "AutoFlow – Bulk Video Generator for Google Flow",
   "scripts": {
     "build": "webpack --mode production",

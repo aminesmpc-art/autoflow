@@ -355,7 +355,7 @@ export interface FlowGenerationStatus {
 export const DEFAULT_SETTINGS: QueueSettings = {
   mediaType: 'video',
   creationType: 'ingredients',
-  model: 'Veo 3.1 - Fast',
+  model: 'Veo 3.1 - Quality',
   orientation: 'landscape',
   generations: 1,
   duration: '8s',
@@ -371,9 +371,9 @@ export const DEFAULT_SETTINGS: QueueSettings = {
 
   // Download
   autoDownloadVideos: false,
-  videoResolution: 'Original (720p)',
+  videoResolution: '4K',
   autoDownloadImages: false,
-  imageResolution: '1K',
+  imageResolution: '4K',
 
   // Image generation
   imageModel: 'Nano Banana Pro',

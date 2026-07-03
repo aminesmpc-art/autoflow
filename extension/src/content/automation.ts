@@ -16,7 +16,7 @@ import {
   FlowGenerationStatus,
 } from '../types';
 import { savePromptHistory, saveRunningQueue, clearRunningQueue } from '../shared/storage';
-import { classifyGenerationError, verifyTileStatus } from './llmHelper';
+
 import {
   MAX_RETRIES,
   BACKOFF_BASE_MS,
@@ -697,38 +697,6 @@ export class AutomationEngine {
               } else if (!apiStillActive) {
                 const tileStates = checkTileStates(newTileIds);
                 if (tileStates.failed > 0 && tileStates.generating === 0) {
-                  // Run LLM verification before doing anything destructive
-                  try {
-                    let failedTileText = '';
-                    for (const id of newTileIds) {
-                      if (getTileStateById(id) === 'failed') {
-                        let el = document.querySelector(`#history-step-${CSS.escape(id)}`);
-                        if (!el) {
-                          el = document.querySelector(`div[data-tile-id="${CSS.escape(id)}"]`);
-                        }
-                        if (el) {
-                          failedTileText = el.textContent || '';
-                          break;
-                        }
-                      }
-                    }
-                    if (!failedTileText) {
-                      failedTileText = prompt.text;
-                    }
-                    const verification = await verifyTileStatus(failedTileText);
-                    this.log('info', `Prompt #${idx + 1}: LLM status verification -> "${verification.decision}" (reason: ${verification.reason})`);
-                    if (verification.decision === 'fake_cancel') {
-                      this.log('info', `Prompt #${idx + 1}: LLM classified as fake cancel — ignoring DOM failure and continuing wait...`);
-                      continue;
-                    }
-                    if (verification.decision === 'reload_needed') {
-                      this.log('warn', `Prompt #${idx + 1}: LLM advises reload — reloading page...`);
-                      window.location.reload();
-                      return;
-                    }
-                  } catch (err: any) {
-                    this.log('warn', `LLM status check skipped/failed: ${err.message || err}`);
-                  }
 
                   // Double-check: wait 5 extra seconds and re-check API before trusting DOM
                   // Fake cancels often resolve within seconds
@@ -774,10 +742,15 @@ export class AutomationEngine {
           const thisTileFailed = failedTiles.find(ft => newTileIds.includes(ft.tileId));
           const errorMsg = thisTileFailed?.errorText || 'Generation failed (detected during wait)';
 
-          // Only treat explicit policy/harmful/violation text as safety blocks
+          // Only treat explicit policy/safety text as safety blocks — same keywords
+          // as classifyError() to ensure consistent detection with or without LLM
           const lowerErr = errorMsg.toLowerCase();
-          if (lowerErr.includes('policies') || lowerErr.includes('harmful') ||
-              lowerErr.includes('violat') || lowerErr.includes('safety block')) {
+          if (lowerErr.includes('polic') || lowerErr.includes('harmful') ||
+              lowerErr.includes('violat') || lowerErr.includes('safety') ||
+              lowerErr.includes('blocked') || lowerErr.includes('prohibited') ||
+              lowerErr.includes('prominent') || lowerErr.includes('inappropriate') ||
+              lowerErr.includes('dangerous') || lowerErr.includes('illegal') ||
+              lowerErr.includes('deepfake') || lowerErr.includes('impersonat')) {
             attempts = MAX_RETRIES + 1; // prevent retry — real safety block
           }
           throw new Error(errorMsg);
@@ -834,8 +807,12 @@ export class AutomationEngine {
         const isFakeCancel = errLower.includes('cancelled') || errLower.includes('canceled') ||
           (errLower.includes('generation failed') && !errLower.includes('policies') && !errLower.includes('safety'));
 
-        if (errLower.includes('safety block') || errLower.includes('policies') ||
-            errLower.includes('harmful') || errLower.includes('violat')) {
+        if (errLower.includes('safety') || errLower.includes('polic') ||
+            errLower.includes('harmful') || errLower.includes('violat') ||
+            errLower.includes('blocked') || errLower.includes('prohibited') ||
+            errLower.includes('prominent') || errLower.includes('inappropriate') ||
+            errLower.includes('dangerous') || errLower.includes('illegal') ||
+            errLower.includes('deepfake') || errLower.includes('impersonat')) {
           attempts = MAX_RETRIES + 1; // force skip — real safety block
         } else {
           attempts++;
@@ -2734,13 +2711,22 @@ export class AutomationEngine {
       ? ((promptInput as HTMLInputElement).value || promptInput.textContent || '').trim()
       : '';
 
+    // Helper: read the current prompt input text (re-queries DOM to handle React re-renders)
+    const getPromptText = (): string => {
+      const el = promptInput || findPromptInput();
+      if (!el) return '';
+      return ((el as HTMLInputElement).value || el.textContent || '').trim();
+    };
+
     const clickWorked = async (): Promise<boolean> => {
       // Poll a few times — Flow's UI needs a moment to clear the prompt and start tiles
       for (let attempt = 0; attempt < 4; attempt++) {
-        // Primary signal: prompt was cleared after submit
-        if (promptInput) {
-          const textNow = ((promptInput as HTMLInputElement).value || promptInput.textContent || '').trim();
-          if (promptTextBefore.length > 0 && textNow.length === 0) return true;
+        // Primary signal: prompt text CHANGED after submit.
+        // We can't check for empty because Flow's Slate editor always has
+        // placeholder text ("What do you want to create?") in textContent.
+        if (promptTextBefore.length > 0) {
+          const textNow = getPromptText();
+          if (textNow !== promptTextBefore) return true;
         }
         // Secondary signal: tiles appeared
         if (tilesHaveProgress()) return true;
@@ -2791,7 +2777,18 @@ export class AutomationEngine {
 
     // ═══════════════════════════════════════════════════════════════
     // FALLBACK STRATEGIES (synthetic events — less reliable)
+    // Only run if NO React strategy cleared the prompt. When
+    // "clear prompt on submit" is ON, a cleared input means the
+    // generation was already submitted — clicking again on the empty
+    // input just triggers "Prompt must be provided" error toasts.
     // ═══════════════════════════════════════════════════════════════
+    const currentText = getPromptText();
+    const promptAlreadyCleared = promptTextBefore.length > 0 && currentText !== promptTextBefore;
+
+    if (promptAlreadyCleared) {
+      this.log('info', 'Prompt was cleared by a React strategy — skipping synthetic fallbacks');
+      return;
+    }
 
     // Fallback 1: simulateClick (full pointer→mouse→click chain)
     simulateClick(btn);
@@ -3226,7 +3223,7 @@ export class AutomationEngine {
     const STALE_THRESHOLD_MS = 45_000; // If generating count doesn't change for 45s, assume stale
     const startTime = Date.now();
     let lastLogTime = 0;
-    let lastGeneratingCount = -1;
+    let lastCompletedCount = -1;
     let staleStartTime = 0;
     let submittedWaitStart = 0; // tracks when we first noticed submitted prompts lingering
     let domCheckCount = 0; // counter for throttled scroll-aware settlement checks
@@ -3394,14 +3391,14 @@ export class AutomationEngine {
         }
       }
 
-      // Stale detection: if generating count hasn't changed, track how long
+      // Stale detection: if completed count hasn't changed, track how long
       const snap = snapshotTiles();
-      if (snap.generating !== lastGeneratingCount) {
-        lastGeneratingCount = snap.generating;
+      if (snap.completed !== lastCompletedCount) {
+        lastCompletedCount = snap.completed;
         staleStartTime = Date.now();
       } else if (snap.generating > 0 && Date.now() - staleStartTime > STALE_THRESHOLD_MS) {
         this.log('warn',
-          `Generating count stuck at ${snap.generating} for ${Math.round(STALE_THRESHOLD_MS / 1000)}s — treating as settled`
+          `Completed count stuck at ${snap.completed} while generating > 0 for ${Math.round(STALE_THRESHOLD_MS / 1000)}s — treating as settled`
         );
         break;
       }
@@ -4035,9 +4032,12 @@ private async detectAndReportFailures(): Promise<void> {
       round++;
       this.log('info', `── Verification Round ${round}/${MAX_ROUNDS} ──`);
 
+      // FIX 1: Track which prompts were CDN-polled THIS round to prevent duplicate 2-minute waits
+      const cdnCheckedThisRound = new Set<number>();
+
       // ─── Step 1: Refresh API cache with ONE active call ───
       const activeMediaIds = this.queue.prompts
-        .filter(p => p.status !== 'done' && p.status !== 'queued' && p.status !== 'not-added')
+        .filter(p => p.status !== 'done' && p.status !== 'failed' && p.status !== 'queued' && p.status !== 'not-added')
         .map(p => p.mediaId)
         .filter(Boolean) as string[];
 
@@ -4063,11 +4063,12 @@ private async detectAndReportFailures(): Promise<void> {
       let apiConfirmedFailed = 0;
       let noApiData = 0;
       const toRetryViaDom: number[] = [];       // prompts to retry via DOM retry button
+      let waitingOnGeneration = 0;              // FIX 2: prompts still generating (not actionable)
       let pendingVerificationCount = 0;
 
       for (let i = 0; i < this.queue.prompts.length; i++) {
         const p = this.queue.prompts[i];
-        if (p.status === 'done' || p.status === 'queued' || p.status === 'not-added') continue;
+        if (p.status === 'done' || p.status === 'failed' || p.status === 'queued' || p.status === 'not-added') continue;
         // Skip prompts already confirmed dead and queued for reload recovery.
         // Without this, a dead prompt would re-trigger the 2-minute CDN poll every round.
         if (cancelledPrompts.includes(i)) continue;
@@ -4124,6 +4125,13 @@ private async detectAndReportFailures(): Promise<void> {
               // "Cancelled" is usually a FAKE cancel — video exists eventually.
               // Poll the CDN URL for up to 2 minutes (similar to active waiting)
               if (p.mediaId) {
+                // FIX 1: Skip if we already polled CDN for this prompt in this round
+                if (cdnCheckedThisRound.has(i)) {
+                  this.log('info', `Prompt #${i + 1}: CDN already checked this round — skipping duplicate poll`);
+                  toRetryViaDom.push(i);
+                  pendingVerificationCount--;
+                } else {
+                cdnCheckedThisRound.add(i);
                 this.log('info', `Prompt #${i + 1}: API reported cancelled, polling CDN URL for fake cancel rescue...`);
                 this.sendPhaseUpdate('checking', `Checking if cancelled prompt #${i + 1} exists on CDN...`);
 
@@ -4160,11 +4168,11 @@ private async detectAndReportFailures(): Promise<void> {
                       pendingVerificationCount--;
                     }
                   } else {
-                    if (!cancelledPrompts.includes(i)) cancelledPrompts.push(i);
-                    this.log('info', `Prompt #${i + 1}: CANCELLED + URL dead after 2m → will re-submit after reload`);
-                    pendingVerificationCount--;
+                    this.log('info', `Prompt #${i + 1}: CANCELLED + URL dead after 2m — will check DOM for retry button`);
+                    toRetryViaDom.push(i);
                   }
                 }
+                } // end of cdnCheckedThisRound else
               } else {
                 // No mediaId — can't verify, save for reload verification
                 if (this.mode === 'full') {
@@ -4179,9 +4187,8 @@ private async detectAndReportFailures(): Promise<void> {
                     pendingVerificationCount--;
                   }
                 } else {
-                  if (!cancelledPrompts.includes(i)) cancelledPrompts.push(i);
-                  this.log('info', `Prompt #${i + 1}: CANCELLED (no mediaId) — will verify after reload`);
-                  pendingVerificationCount--;
+                  this.log('info', `Prompt #${i + 1}: CANCELLED (no mediaId) — will check DOM for retry button`);
+                  toRetryViaDom.push(i);
                 }
               }
             } else {
@@ -4209,14 +4216,29 @@ private async detectAndReportFailures(): Promise<void> {
             // This happens when activeStatusCheck fails and we're reading old data.
             let routedToRetry = false;
 
-            // Universal DOM tiebreaker — applies to ALL modes
-            const domAlreadySettled = allTilesSettled();
-            if (domAlreadySettled) {
-              this.log('info', `Prompt #${i + 1}: API says "${apiMatch.state}" but DOM already settled — skipping wait, routing to retry`);
-              toRetryViaDom.push(i);
-              pendingVerificationCount--;
-              routedToRetry = true;
-              continue;
+            // FIX 5: Per-prompt tile check instead of global allTilesSettled().
+            // Check if THIS prompt's specific tiles have settled, not ALL tiles on page.
+            // This prevents one slow prompt from blocking routing for all others.
+            if (p.tileIds && p.tileIds.length > 0) {
+              const promptTileStates = checkTileStates(p.tileIds);
+              const promptTilesSettled = promptTileStates.generating === 0;
+              if (promptTilesSettled && (promptTileStates.failed > 0 || promptTileStates.completed > 0)) {
+                this.log('info', `Prompt #${i + 1}: API says "${apiMatch.state}" but prompt's tiles settled (✓${promptTileStates.completed} ✗${promptTileStates.failed}) — routing to retry`);
+                toRetryViaDom.push(i);
+                pendingVerificationCount--;
+                routedToRetry = true;
+                continue;
+              }
+            } else {
+              // No tileIds — fall back to global check (legacy behavior)
+              const domAlreadySettled = allTilesSettled();
+              if (domAlreadySettled) {
+                this.log('info', `Prompt #${i + 1}: API says "${apiMatch.state}" but DOM already settled — skipping wait, routing to retry`);
+                toRetryViaDom.push(i);
+                pendingVerificationCount--;
+                routedToRetry = true;
+                continue;
+              }
             }
 
             // Specific tile check — look for the actual tile in DOM
@@ -4280,6 +4302,10 @@ private async detectAndReportFailures(): Promise<void> {
                 }
               } else {
                 // Not final round yet — log and let it continue generating in parallel
+                // FIX 2: Count as 'waiting', not 'pending' — so the round can break
+                // if nothing else is actionable
+                waitingOnGeneration++;
+                pendingVerificationCount--;
                 this.log('info', `Prompt #${i + 1}: still ${apiMatch.state}... (Round ${round}/${MAX_ROUNDS})`);
                 this.sendPhaseUpdate('checking', `Waiting for prompt #${i + 1} to finish generating...`);
               }
@@ -4338,6 +4364,11 @@ private async detectAndReportFailures(): Promise<void> {
           }
 
           if (p.mediaId) {
+            // FIX 1: Skip CDN poll if we already checked this prompt in this round
+            if (cdnCheckedThisRound.has(i)) {
+              this.log('info', `Prompt #${i + 1}: CDN already checked this round — skipping duplicate poll`);
+            } else {
+            cdnCheckedThisRound.add(i);
             this.log('info', `Prompt #${i + 1}: NOT FOUND in API — checking CDN URL for fake cancel rescue...`);
             this.sendPhaseUpdate('checking', `Checking if prompt #${i + 1} exists on CDN (no API data)...`);
 
@@ -4362,6 +4393,7 @@ private async detectAndReportFailures(): Promise<void> {
               pendingVerificationCount--;
               continue;
             }
+            } // end of cdnCheckedThisRound else
           }
 
           // URL dead or no mediaId — fall back to re-submission/DOM retry
@@ -4387,12 +4419,18 @@ private async detectAndReportFailures(): Promise<void> {
 
       this.log('info',
         `Verification Round ${round} results: ✅${apiConfirmedDone} confirmed done, ❌${apiConfirmedFailed} failed, ` +
-        `🔄${toRetryViaDom.length} to check DOM, ❓${noApiData} no API data`
+        `🔄${toRetryViaDom.length} to check DOM, ❓${noApiData} no API data, ⏳${waitingOnGeneration} still generating`
       );
 
-      // If nothing to retry via DOM/API and no pending verification, break the rounds loop
+      // FIX 2: Break when nothing is actionable.
+      // If only 'still generating' prompts remain (waitingOnGeneration > 0), the retry wait
+      // loop after Step 3 will handle them. Don't spin 12 rounds doing nothing.
       if (toRetryViaDom.length === 0 && pendingVerificationCount === 0) {
-        this.log('info', 'No active/submitted prompts remaining to verify and no failed prompts to retry.');
+        if (waitingOnGeneration > 0) {
+          this.log('info', `No actionable prompts — ${waitingOnGeneration} still generating, will be checked by retry wait loop.`);
+        } else {
+          this.log('info', 'No active/submitted prompts remaining to verify and no failed prompts to retry.');
+        }
         break;
       }
 
@@ -4407,29 +4445,34 @@ private async detectAndReportFailures(): Promise<void> {
         if (this.stopped) break;
         const prompt = this.queue.prompts[idx];
 
-        // Cooldown: skip prompts retried in the previous round — their generation
-        // is likely still running and we'd just re-click retry on an active tile.
+        // Cooldown: skip prompts retried in the immediately previous round —
+        // their generation is likely still running. The retry wait loop (line ~4574)
+        // handles the actual waiting, so 1 round gap (15s) is sufficient.
         const prevRetryRound = lastRetriedRound.get(idx);
-        if (prevRetryRound && round - prevRetryRound < 2) {
-          this.log('info', `Prompt #${idx + 1}: skipping DOM retry (retried ${round - prevRetryRound} round(s) ago, waiting for result)`);
+        if (prevRetryRound && round - prevRetryRound < 1) {
+          this.log('info', `Prompt #${idx + 1}: skipping DOM retry (retried this round, waiting for result)`);
           continue;
         }
-        const promptNeedle = prompt.text.trim().toLowerCase().slice(0, 40);
 
-        // Find the matching failed tile by prompt text
+        // ── FIX 3: Prioritize tileId matching (exact) over text matching (fragile) ──
         let matchedTile: FailedTileInfo | null = null;
-        for (const ft of failedTiles) {
-          const tileText = ft.element.textContent?.toLowerCase() || '';
-          if (tileText.includes(promptNeedle) || promptNeedle.includes(tileText.slice(0, 40))) {
-            matchedTile = ft;
-            break;
+
+        // Strategy 1 (primary): Match by tileId — reliable, tracked from processPrompt
+        if (prompt.tileIds && prompt.tileIds.length > 0) {
+          for (const ft of failedTiles) {
+            if (prompt.tileIds.includes(ft.tileId)) {
+              matchedTile = ft;
+              break;
+            }
           }
         }
 
-        // Also try matching by tileId
-        if (!matchedTile && prompt.tileIds && prompt.tileIds.length > 0) {
+        // Strategy 2 (fallback): Match by prompt text — use 80 chars instead of 40
+        if (!matchedTile) {
+          const promptNeedle = prompt.text.trim().toLowerCase().slice(0, 80);
           for (const ft of failedTiles) {
-            if (prompt.tileIds.includes(ft.tileId)) {
+            const tileText = ft.element.textContent?.toLowerCase() || '';
+            if (promptNeedle.length > 10 && tileText.includes(promptNeedle)) {
               matchedTile = ft;
               break;
             }
@@ -4447,49 +4490,67 @@ private async detectAndReportFailures(): Promise<void> {
             }
           }
           // Truly missing — tile gone + URL dead
-          if (this.mode === 'full') {
-            if ((prompt.attempts || 0) < 3) {
-              this.log('info', `Prompt #${idx + 1}: tile missing + URL dead (Full Mode) — re-submitting...`);
-              prompt.attempts = (prompt.attempts || 0) + 1;
-              await this.processPrompt(prompt, idx);
-              retriedIndicesInThisRound.push(idx);
-              lastRetriedRound.set(idx, round);
-            } else {
-              this.updatePromptStatus(idx, 'failed', 'Tile missing and exhausted all retry attempts');
-              this.log('warn', `Prompt #${idx + 1}: tile missing + URL dead and exhausted retries ❌`);
-            }
+          if ((prompt.attempts || 0) < 3) {
+            this.log('info', `Prompt #${idx + 1}: tile missing + URL dead — resubmitting from scratch...`);
+            prompt.attempts = (prompt.attempts || 0) + 1;
+            // FIX 4: Clear stale tracking before resubmission
+            prompt.tileIds = [];
+            prompt.mediaId = '';
+            await this.processPrompt(prompt, idx);
+            retriedIndicesInThisRound.push(idx);
+            lastRetriedRound.set(idx, round);
           } else {
-            if (!cancelledPrompts.includes(idx)) cancelledPrompts.push(idx);
-            this.log('warn', `Prompt #${idx + 1}: no tile found + URL dead — saved for post-reload retry`);
-            pendingVerificationCount--;
+            this.updatePromptStatus(idx, 'failed', 'Tile missing and exhausted all retry attempts');
+            this.log('warn', `Prompt #${idx + 1}: tile missing + URL dead and exhausted retries ❌`);
           }
           continue;
         }
 
-        // Found the tile — check if it has a retry button
+        // Found the tile — check if it has a true Retry button (refresh icon)
         let retryBtn = findRetryButtonOnTile(matchedTile.element);
 
-        if (!retryBtn) {
-          // Fallback: If Detail View is open, the button is in the main panel (body), not inside the sidebar card
-          this.log('info', `Prompt #${idx + 1}: No retry button inside tile element. Selecting tile to check Detail View...`);
-          simulateClick(matchedTile.element);
-          await sleep(1500); // wait for Detail View to switch
-          retryBtn = findRetryButtonOnTile(document.body);
+        // DOM-based safety check: if the failed tile mentions policy/safety violations,
+        // don't waste retries — the same prompt will fail again.
+        const tileText = (matchedTile.element.textContent || '').toLowerCase();
+        const isSafetyBlock = tileText.includes('violat') || tileText.includes('polic') ||
+          tileText.includes('safety') || tileText.includes('prominent') ||
+          tileText.includes('inappropriate') || tileText.includes('harmful') ||
+          tileText.includes('blocked') || tileText.includes('prohibited');
+        
+        if (isSafetyBlock) {
+          this.updatePromptStatus(idx, 'failed', 'Safety/policy block (DOM)');
+          this.log('warn', `Prompt #${idx + 1}: DOM tile shows safety/policy violation — skipping retry ❌`);
+          continue;
         }
 
         if (retryBtn) {
+          // Retry button exists — try clicking it
           // Guard: check if we've exhausted retry attempts
           if ((prompt.attempts || 0) >= 3) {
             this.updatePromptStatus(idx, 'failed', 'Failed after 3 retry attempts');
             this.log('warn', `Prompt #${idx + 1}: retry button found but exhausted all 3 attempts ❌`);
             continue;
           }
+          
+          // Mark the old failed tile so the DOM scanner ignores it in future verification rounds
+          matchedTile.element.setAttribute('data-autoflow-retried', 'true');
+          
           // Click retry
           this.log('info', `Prompt #${idx + 1}: clicking retry button (attempt ${(prompt.attempts || 0) + 1}/3)...`);
           onBeforeSubmit();
-          simulateClick(retryBtn);
+          const triggerResult = await reactTrigger(retryBtn, 'onClick');
+          if (!triggerResult.success) {
+            this.log('warn', `Prompt #${idx + 1}: reactTrigger failed on button, falling back to native/simulate click`);
+            nativeClick(retryBtn);
+            simulateClick(retryBtn);
+          }
+
           prompt.attempts = (prompt.attempts || 0) + 1;
           this.updatePromptStatus(idx, 'submitted');
+          
+          // Clear old mediaId so the API verification stops tracking the old failure
+          prompt.mediaId = '';
+
           retriedIndicesInThisRound.push(idx);
           lastRetriedRound.set(idx, round);
           await sleep(4000); // Wait for new tile and API payload to be sniffed
@@ -4535,24 +4596,23 @@ private async detectAndReportFailures(): Promise<void> {
             }
           }
 
-          // URL dead or no mediaId
-          if (this.mode === 'full') {
-            // Full mode: re-submit immediately (same as API cancelled path)
-            if ((prompt.attempts || 0) < 3) {
-              this.log('info', `Prompt #${idx + 1}: cancelled tile + URL dead (Full Mode) — re-submitting immediately...`);
-              prompt.attempts = (prompt.attempts || 0) + 1;
-              await this.processPrompt(prompt, idx);
-              retriedIndicesInThisRound.push(idx);
-              lastRetriedRound.set(idx, round);
-            } else {
-              this.updatePromptStatus(idx, 'failed', 'Cancelled and exhausted all retry attempts (no retry button)');
-              this.log('warn', `Prompt #${idx + 1}: cancelled tile + URL dead and exhausted retry attempts ❌`);
-            }
+          // URL dead or no mediaId — Truly cancelled
+          // Fall back to resubmitting from scratch!
+          this.log('info', `Prompt #${idx + 1}: Tile has no Retry button (cancelled) + URL dead — resubmitting from scratch...`);
+          if ((prompt.attempts || 0) < 3) {
+            prompt.attempts = (prompt.attempts || 0) + 1;
+            // FIX 4: Clear stale tracking before resubmission
+            prompt.tileIds = [];
+            prompt.mediaId = '';
+            await this.processPrompt(prompt, idx);
+            retriedIndicesInThisRound.push(idx);
+            lastRetriedRound.set(idx, round);
           } else {
-            // Flow/Lite mode: save for post-reload recovery
-            if (!cancelledPrompts.includes(idx)) cancelledPrompts.push(idx);
-            this.log('warn', `Prompt #${idx + 1}: cancelled tile + URL dead — scheduling re-submission after reload recovery`);
+            this.updatePromptStatus(idx, 'failed', 'Cancelled and exhausted all retry attempts');
+            this.log('warn', `Prompt #${idx + 1}: exhausted retries ❌`);
           }
+          // Mark the old failed tile so the DOM scanner ignores it in future verification rounds
+          matchedTile.element.setAttribute('data-autoflow-retried', 'true');
         }
       }
 
@@ -4810,17 +4870,7 @@ private async detectAndReportFailures(): Promise<void> {
   }
 
   private async getLlmOrFallbackErrorClass(rawStatus: string, failureReason?: string): Promise<'safety' | 'server' | 'cancelled' | 'quota' | 'unknown'> {
-    try {
-      const errorText = `${rawStatus} ${failureReason || ''}`.trim();
-      const result = await classifyGenerationError(errorText);
-      if (result.classification === 'safety') return 'safety';
-      if (result.classification === 'quota') return 'quota';
-      if (result.classification === 'fake_cancel') return 'cancelled';
-      if (result.classification === 'transient') return 'server';
-      return 'unknown';
-    } catch {
-      return classifyError(rawStatus, failureReason);
-    }
+    return classifyError(rawStatus, failureReason);
   }
 
   // ── Messaging helpers ──

@@ -268,7 +268,7 @@ async def process_video_url(job_id: str, url: str):
         # If the user has configured RAPIDAPI_KEY, we offload Instagram/TikTok downloads
         # to a proxy API to avoid datacenter IP blocks.
         rapidapi_key = os.getenv("RAPIDAPI_KEY")
-        rapidapi_host = os.getenv("RAPIDAPI_HOST", "instagram-scraper-api2.p.rapidapi.com")
+        rapidapi_host = os.getenv("RAPIDAPI_HOST", "instagram-reels-downloader-api.p.rapidapi.com")
         
         is_blocked_platform = "instagram.com" in url.lower() or "tiktok.com" in url.lower()
         
@@ -284,19 +284,32 @@ async def process_video_url(job_id: str, url: str):
             
             try:
                 async with httpx.AsyncClient() as client:
-                    api_url = f"https://{rapidapi_host}/v1/info"
+                    # Endpoint path varies by API. The user's screenshot showed /download
+                    # If users switch APIs, they may need to adjust this endpoint or we can check the host
+                    if "reels-downloader" in rapidapi_host:
+                        api_url = f"https://{rapidapi_host}/download"
+                    else:
+                        api_url = f"https://{rapidapi_host}/v1/info"
+                        
                     response = await client.get(api_url, params={"url": url}, headers=headers, timeout=30.0)
                     
                     if response.status_code == 200:
                         data = response.json()
                         video_url = None
                         
-                        # Handle common API response schemas
+                        # Handle common API response schemas from various RapidAPI providers
                         if isinstance(data, dict):
-                            if "video_url" in data:
+                            if "url" in data and data["url"].startswith("http"):
+                                video_url = data["url"]
+                            elif "video_url" in data:
                                 video_url = data["video_url"]
-                            elif "data" in data and isinstance(data["data"], dict) and "video_url" in data["data"]:
-                                video_url = data["data"]["video_url"]
+                            elif "download_url" in data:
+                                video_url = data["download_url"]
+                            elif "data" in data and isinstance(data["data"], dict):
+                                if "video_url" in data["data"]:
+                                    video_url = data["data"]["video_url"]
+                                elif "url" in data["data"]:
+                                    video_url = data["data"]["url"]
                             elif "items" in data and len(data["items"]) > 0:
                                 video_url = data["items"][0].get("video_versions", [{}])[0].get("url")
                                 
@@ -308,6 +321,8 @@ async def process_video_url(job_id: str, url: str):
                                     async for chunk in r.aiter_bytes():
                                         await f.write(chunk)
                             video_path = proxy_video_path
+                    else:
+                        print(f"RapidAPI returned non-200 status: {response.status_code} - {response.text}")
             except Exception as e:
                 print(f"RapidAPI bypass failed, falling back to yt-dlp: {e}")
                 pass

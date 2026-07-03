@@ -606,9 +606,10 @@ async function handleMessage(msg: Message): Promise<any> {
       return msg.payload;
 
     case 'IMAGE_API_COMPLETED': {
-      // Background detected batchGenerateImages completed via webRequest.
-      // Notify the engine so it can immediately resolve submitted prompts.
-      console.log('[AutoFlow] Image API completed (webRequest signal)', msg.payload?.statusCode);
+      // Background detected a generation API call completed via webRequest.
+      // This fires for BOTH video (batchAsyncGenerateVideo) and image (batchGenerateImages) endpoints.
+      // Only used by image mode verification — video mode ignores the count.
+      console.log('[AutoFlow] Generation API signal (webRequest)', msg.payload?.statusCode);
       if (engine) {
         (engine as any).onImageApiCompleted?.(msg.payload);
       }

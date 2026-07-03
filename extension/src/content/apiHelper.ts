@@ -93,10 +93,14 @@ export function classifyError(rawStatus: string, failureDetail?: string): 'safet
   // Check both the raw status AND the failure detail for keywords
   const combined = ((rawStatus || '') + ' ' + (failureDetail || '')).toUpperCase();
   if (combined.includes('SAFETY') || combined.includes('BLOCKED') ||
-      combined.includes('FILTERED') || combined.includes('POLICY') ||
+      combined.includes('FILTERED') || combined.includes('POLICY') || combined.includes('POLICIES') ||
       combined.includes('REJECTED') || combined.includes('PROHIBITED') ||
       combined.includes('HARMFUL') || combined.includes('VIOLAT') ||
-      combined.includes('CONTENT_FILTER') || combined.includes('NSFW')) {
+      combined.includes('CONTENT_FILTER') || combined.includes('NSFW') ||
+      combined.includes('PROMINENT') || combined.includes('DEEPFAKE') ||
+      combined.includes('INAPPROPRIATE') || combined.includes('IMPERSONAT') ||
+      combined.includes('PERSON') || combined.includes('CELEBRITY') ||
+      combined.includes('DANGEROUS') || combined.includes('ILLEGAL')) {
     return 'safety';
   }
   if (combined.includes('QUOTA') || combined.includes('RATE') || combined.includes('LIMIT') ||

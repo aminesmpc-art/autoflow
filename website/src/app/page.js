@@ -18,8 +18,8 @@ export default function HomePage() {
             browserRequirements: "Google Chrome 100+",
             aggregateRating: {
               "@type": "AggregateRating",
-              ratingValue: "4.9",
-              ratingCount: "86"
+              ratingValue: "4.76",
+              ratingCount: "49"
             },
             offers: [
               {
@@ -89,7 +89,7 @@ export default function HomePage() {
           </h1>
           
           <p className="text-secondary animate-in delay-2" style={{ fontSize: "1.25rem", maxWidth: "600px", margin: "0 auto 48px", lineHeight: 1.7 }}>
-            Paste your prompts, hit run, and walk away. AutoFlow handles the clicking,
+            Paste your prompts, hit run, and walk away. AutoFlow is the ultimate Google Flow automation Chrome extension that handles the clicking,
             waiting, retrying, and downloading — so you can focus on creating.
           </p>
           
@@ -110,33 +110,96 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── SOCIAL PROOF BAR ── */}
-      <section style={{ padding: "60px 0", borderTop: "1px solid rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(255,255,255,0.01)" }}>
-        <div className="container" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "60px", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{ display: "flex", gap: "4px" }}>
-              {[1,2,3,4,5].map(i => <span key={i} style={{ color: "#FBBF24", fontSize: "1.4rem" }}>★</span>)}
-            </div>
+      {/* ── SOCIAL PROOF & RATING SHOWCASE ── */}
+      <section style={{ padding: "80px 0", borderTop: "1px solid rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(255,255,255,0.01)", position: "relative" }}>
+        <div className="container" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "48px", alignItems: "center" }}>
+          
+          {/* Left Column: Overall Metrics & Headline */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "24px", justifyContent: "center" }}>
             <div>
-              <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>4.9 / 5</div>
-              <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>86 reviews</div>
+              <div className="badge" style={{ marginBottom: "16px", borderColor: "rgba(16, 185, 129, 0.2)", background: "rgba(16, 185, 129, 0.05)", color: "var(--success)" }}>
+                ✓ Verified Chrome Web Store Stats
+              </div>
+              <h2 style={{ fontSize: "2.5rem", marginBottom: "16px", background: "var(--gradient-primary)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
+                Loved by Creators
+              </h2>
+              <p className="text-secondary" style={{ fontSize: "1.05rem", lineHeight: 1.6 }}>
+                AutoFlow is trusted by developers, artists, and creators worldwide to automate their video generation pipeline.
+              </p>
+            </div>
+            
+            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+              {/* Rating Card */}
+              <div style={{ flex: "1 1 120px", background: "rgba(255, 92, 0, 0.02)", border: "1px solid rgba(255, 92, 0, 0.15)", borderRadius: "var(--radius-xl)", padding: "24px", textAlign: "center", boxShadow: "0 10px 30px rgba(255, 92, 0, 0.03)" }}>
+                <div style={{ fontSize: "3rem", fontWeight: 900, color: "var(--text-primary)", lineHeight: 1 }}>4.76</div>
+                <div style={{ display: "flex", gap: "2px", justifyContent: "center", margin: "12px 0" }}>
+                  {[1,2,3,4,5].map(i => (
+                    <span key={i} style={{ color: "#FBBF24", fontSize: "1.2rem" }}>
+                      {i <= 4 ? "★" : "⯪"}
+                    </span>
+                  ))}
+                </div>
+                <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Out of 5 stars</div>
+              </div>
+              
+              {/* Total Ratings Card */}
+              <div style={{ flex: "1 1 150px", background: "rgba(255,255,255,0.01)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "var(--radius-xl)", padding: "24px", display: "flex", flexDirection: "column", justifyContent: "center", gap: "8px" }}>
+                <div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--text-primary)" }}>49</div>
+                  <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Total ratings</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--text-primary)" }}>42</div>
+                  <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Ratings with reviews</div>
+                </div>
+              </div>
             </div>
           </div>
-          <div style={{ height: "40px", width: "1px", background: "rgba(255,255,255,0.1)" }} />
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontWeight: 700, fontSize: "1.5rem" }}>2,000+</div>
-            <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Active creators</div>
+
+          {/* Right Column: Rating Breakdown Visualizer */}
+          <div style={{ background: "rgba(10, 10, 10, 0.4)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "var(--radius-xl)", padding: "32px", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              {/* 5 Stars */}
+              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                <span style={{ width: "90px", fontSize: "0.85rem", color: "var(--text-secondary)", fontWeight: 500 }}>Five stars</span>
+                <div style={{ flex: 1, height: "8px", background: "rgba(255,255,255,0.05)", borderRadius: "99px", overflow: "hidden" }}>
+                  <div style={{ width: "94%", height: "100%", background: "var(--gradient-primary)", boxShadow: "0 0 12px rgba(255, 92, 0, 0.5)" }} />
+                </div>
+                <span style={{ width: "40px", textAlign: "right", fontSize: "0.85rem", fontWeight: 700, color: "var(--primary-light)" }}>94%</span>
+              </div>
+              
+              {/* 4 Stars */}
+              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                <span style={{ width: "90px", fontSize: "0.85rem", color: "var(--text-muted)" }}>Four stars</span>
+                <div style={{ flex: 1, height: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "99px" }} />
+                <span style={{ width: "40px", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)" }}>0%</span>
+              </div>
+
+              {/* 3 Stars */}
+              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                <span style={{ width: "90px", fontSize: "0.85rem", color: "var(--text-muted)" }}>Three stars</span>
+                <div style={{ flex: 1, height: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "99px" }} />
+                <span style={{ width: "40px", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)" }}>0%</span>
+              </div>
+
+              {/* 2 Stars */}
+              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                <span style={{ width: "90px", fontSize: "0.85rem", color: "var(--text-muted)" }}>Two stars</span>
+                <div style={{ flex: 1, height: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "99px" }} />
+                <span style={{ width: "40px", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)" }}>0%</span>
+              </div>
+
+              {/* 1 Star */}
+              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                <span style={{ width: "90px", fontSize: "0.85rem", color: "var(--text-secondary)", fontWeight: 500 }}>One star</span>
+                <div style={{ flex: 1, height: "8px", background: "rgba(255,255,255,0.05)", borderRadius: "99px", overflow: "hidden" }}>
+                  <div style={{ width: "6%", height: "100%", background: "rgba(255,255,255,0.2)" }} />
+                </div>
+                <span style={{ width: "40px", textAlign: "right", fontSize: "0.85rem", fontWeight: 700, color: "var(--text-secondary)" }}>6%</span>
+              </div>
+            </div>
           </div>
-          <div style={{ height: "40px", width: "1px", background: "rgba(255,255,255,0.1)" }} />
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontWeight: 700, fontSize: "1.5rem" }}>500K+</div>
-            <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Videos generated</div>
-          </div>
-          <div style={{ height: "40px", width: "1px", background: "rgba(255,255,255,0.1)" }} />
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontWeight: 700, fontSize: "1.5rem" }}>6</div>
-            <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Languages</div>
-          </div>
+          
         </div>
       </section>
 
@@ -155,9 +218,9 @@ export default function HomePage() {
             <div className="bento-card bento-col-12" style={{ minHeight: "450px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "48px", alignItems: "center" }}>
               <div style={{ zIndex: 1 }}>
                 <div className="badge" style={{ marginBottom: "16px", background: "rgba(79, 70, 229, 0.1)", color: "var(--primary-light)", borderColor: "rgba(79, 70, 229, 0.2)" }}>01. Create</div>
-                <h3 style={{ fontSize: "2rem", marginBottom: "20px" }}>Batch Prompt Processing</h3>
+                <h3 style={{ fontSize: "2rem", marginBottom: "20px" }}>Google Flow Batch Generator</h3>
                 <p className="text-secondary" style={{ fontSize: "1.1rem", marginBottom: "24px" }}>
-                  Stop copy-pasting prompts one by one. Paste your entire script — 5, 50, or 500 prompts — into the editor. AutoFlow instantly parses each block into a separate task.
+                  Stop copy-pasting prompts one by one. Paste your entire script — 5, 50, or 500 prompts — into our bulk editor to automate Veo video generation. AutoFlow instantly parses each block into a separate task.
                 </p>
                 <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "12px", color: "var(--text-secondary)" }}>
                   <li style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ color: "var(--success)" }}>✓</span> Auto-detects scene numbers</li>
@@ -200,9 +263,9 @@ export default function HomePage() {
               </div>
               <div style={{ zIndex: 1 }}>
                 <div className="badge" style={{ marginBottom: "16px", background: "rgba(245, 158, 11, 0.1)", color: "var(--warning)", borderColor: "rgba(245, 158, 11, 0.2)" }}>04. Harvest</div>
-                <h3 style={{ fontSize: "2rem", marginBottom: "20px" }}>Batch Download</h3>
+                <h3 style={{ fontSize: "2rem", marginBottom: "20px" }}>How to Download Veo Videos in 4K</h3>
                 <p className="text-secondary" style={{ fontSize: "1.1rem", marginBottom: "24px" }}>
-                  After generation, scan your project to see all videos grouped by prompt. Select your favorites and batch download everything in 4K with a single click.
+                  Wondering how to download Veo videos in 4K easily? After generation, scan your project to see all videos grouped by prompt. Select your favorites and batch download everything in 4K with a single click.
                 </p>
                 <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "12px", color: "var(--text-secondary)" }}>
                   <li style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ color: "var(--warning)" }}>✓</span> Grouped by prompt automatically</li>

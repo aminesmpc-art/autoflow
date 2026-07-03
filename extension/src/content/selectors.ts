@@ -745,6 +745,32 @@ export type TileState = 'generating' | 'completed' | 'failed' | 'empty' | 'unkno
  *  - `'unknown'`    — cannot determine
  */
 export function getTileState(tile: Element): TileState {
+  const icons = tile.querySelectorAll('.google-symbols, .material-icons, .material-symbols-outlined, .material-symbols, i.google-symbols, i.material-icons, i.material-symbols-outlined');
+  const tileTextRaw = tile.textContent?.toLowerCase() || '';
+
+  // ── Signal 4: error/warning/failure icons → FAILED ──
+  // NOTE: 'cancel' icon is NOT a failure — it appears on generating tiles
+  // as the "stop generation" button. Only true error icons trigger failure.
+  for (const icon of icons) {
+    const txt = icon.textContent?.trim() || '';
+    if (txt === 'error' || txt === 'error_outline' || txt === 'warning' ||
+      txt === 'report' || txt === 'report_problem' ||
+      txt === 'block' || txt === 'dangerous') {
+      // Make sure this isn't the ingredient chip cancel icon
+      const parent = icon.closest('[data-card-open]');
+      if (!parent) return 'failed';
+    }
+  }
+
+  // ── Signal 5: error text overlay ("failed", "error", "violated", "cancelled") ──
+  if (tileTextRaw.includes('generation failed') || tileTextRaw.includes('violate') ||
+    matchesFlowText(tileTextRaw, 'tryAgain') || tileTextRaw.includes('unable to generate') ||
+    tileTextRaw.includes('blocked') ||
+    matchesFlowText(tileTextRaw, 'generationCancelled') ||
+    matchesFlowText(tileTextRaw, 'generationFailed')) {
+    return 'failed';
+  }
+
   // ── Signal 1: `--blur-amount` inline style on any descendant ──
   // Flow sets --blur-amount: 80px on a div inside generating tiles.
   // Only non-zero values indicate generation in progress.
@@ -768,7 +794,6 @@ export function getTileState(tile: Element): TileState {
   // ── Signal 2.5: detail view history sidebar generating text ──
   // When chaining extensions, the detail view history sidebar shows a grey box with:
   // "generation. You can update your settings..."
-  const tileTextRaw = tile.textContent?.toLowerCase() || '';
   if (tileTextRaw.includes('generation.') && tileTextRaw.includes('update your settings')) {
     return 'generating';
   }
@@ -778,36 +803,11 @@ export function getTileState(tile: Element): TileState {
 
   // ── Signal 3: loading spinner / circular progress indicator ──
   // Flow may use a material icon 'progress_activity' or a CSS spinner
-  const icons = tile.querySelectorAll('.google-symbols, .material-icons, .material-symbols-outlined, .material-symbols, i.google-symbols, i.material-icons, i.material-symbols-outlined');
   for (const icon of icons) {
     const txt = icon.textContent?.trim() || '';
     if (txt === 'progress_activity' || txt === 'hourglass_empty' || txt === 'pending') {
       return 'generating';
     }
-  }
-
-  // ── Signal 4: error/warning/failure icons → FAILED ──
-  // NOTE: 'cancel' icon is NOT a failure — it appears on generating tiles
-  // as the "stop generation" button. Only true error icons trigger failure.
-  for (const icon of icons) {
-    const txt = icon.textContent?.trim() || '';
-    if (txt === 'error' || txt === 'error_outline' || txt === 'warning' ||
-      txt === 'report' || txt === 'report_problem' ||
-      txt === 'block' || txt === 'dangerous') {
-      // Make sure this isn't the ingredient chip cancel icon
-      const parent = icon.closest('[data-card-open]');
-      if (!parent) return 'failed';
-    }
-  }
-
-  // ── Signal 5: error text overlay ("failed", "error", "violated", "cancelled") ──
-  const tileText = tile.textContent?.toLowerCase() || '';
-  if (tileText.includes('generation failed') || tileText.includes('violate') ||
-    matchesFlowText(tileText, 'tryAgain') || tileText.includes('unable to generate') ||
-    tileText.includes('blocked') ||
-    matchesFlowText(tileText, 'generationCancelled') ||
-    matchesFlowText(tileText, 'generationFailed')) {
-    return 'failed';
   }
 
   // ── Signal 6: play button (play_arrow / play_circle icon) = completed video ──
@@ -1739,6 +1739,7 @@ export function findAllFailedTiles(): FailedTileInfo[] {
   const failed: FailedTileInfo[] = [];
 
   for (const card of cards) {
+    if (card.hasAttribute('data-autoflow-retried')) continue;
     if (getTileState(card) !== 'failed') continue;
 
     const tileId = findTileId(card);
@@ -1783,6 +1784,7 @@ export async function findAllFailedTilesWithScroll(): Promise<FailedTileInfo[]> 
   function collectVisibleFailed() {
     const cards = findAssetCards().filter(el => isVisible(el));
     for (const card of cards) {
+      if (card.hasAttribute('data-autoflow-retried')) continue;
       if (getTileState(card) !== 'failed') continue;
       const tileId = findTileId(card);
       if (!tileId || collected.has(tileId)) continue;

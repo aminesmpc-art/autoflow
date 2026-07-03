@@ -13,6 +13,19 @@
 
 export const posts = [
   {
+    slug: "how-to-download-google-flow-veo-videos-4k",
+    title: "How to Download Google Flow (Veo) Videos in 4K & Automate Runs",
+    description:
+      "Learn how to automate Google Flow video generation, batch-run prompts, and easily download your final Veo generations in high-quality 4K.",
+    date: "2026-06-20",
+    updated: "2026-06-20",
+    category: "Tutorial",
+    tags: ["google-flow", "veo-4k", "download-videos", "automation"],
+    image: "/screenshots/library-results.webp",
+    readTime: "6 min read",
+    featured: true,
+  },
+  {
     slug: "how-to-recreate-ai-videos-with-extractor-and-autoflow",
     title: "How to Reverse-Engineer and Recreate AI Videos using AutoFlow",
     description:

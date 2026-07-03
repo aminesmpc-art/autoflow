@@ -11,6 +11,18 @@ export const metadata = {
 
 const releases = [
   {
+    version: "4.0",
+    date: "2026-06-22",
+    title: "Official v4.0 Production Release",
+    highlights: [
+      "Major version release for the AutoFlow Chrome extension",
+      "Clean zip packaging for Chrome Web Store and direct site downloads",
+    ],
+    improvements: [
+      "Upgraded manifest and package versioning configurations",
+    ],
+  },
+  {
     version: "3.6",
     date: "2026-06-19",
     title: "Cancelled Video Rescue & API Verification Fix",

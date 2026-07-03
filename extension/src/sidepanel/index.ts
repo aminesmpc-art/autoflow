@@ -2285,6 +2285,25 @@ async function runQueue(queueId: string) {
     state.isRunning = false;
     return;
   }
+  // Reset all non-done prompts back to 'queued' for a clean re-run.
+  // Without this, prompts left as 'submitted'/'failed'/'running' from a
+  // previous run would display incorrectly and potentially be skipped.
+  let resetCount = 0;
+  for (const p of queue.prompts) {
+    if (p.status !== 'done' && p.status !== 'queued' && p.status !== 'not-added') {
+      p.status = 'queued' as any;
+      p.error = undefined;
+      p.attempts = 0;
+      p.tileIds = [];
+      p.mediaId = '';
+      resetCount++;
+    }
+  }
+  if (resetCount > 0) {
+    queue.currentPromptIndex = 0;
+    queue.updatedAt = Date.now();
+    await updateQueue(queue);
+  }
 
   const pendingCount = queue.prompts.filter((p: PromptEntry) => p.status === 'queued').length;
 
