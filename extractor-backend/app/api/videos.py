@@ -267,8 +267,8 @@ async def process_video_url(job_id: str, url: str):
         # --- 1. PRO FIX: RapidAPI Bypass for Blocked Platforms ---
         # If the user has configured RAPIDAPI_KEY, we offload Instagram/TikTok downloads
         # to a proxy API to avoid datacenter IP blocks.
-        rapidapi_key = os.getenv("RAPIDAPI_KEY")
-        rapidapi_host = os.getenv("RAPIDAPI_HOST", "instagram-reels-downloader-api.p.rapidapi.com")
+        rapidapi_key = os.getenv("RAPIDAPI_KEY", "").strip("\"'")
+        rapidapi_host = os.getenv("RAPIDAPI_HOST", "instagram-reels-downloader-api.p.rapidapi.com").strip("\"'")
         
         is_blocked_platform = "instagram.com" in url.lower() or "tiktok.com" in url.lower()
         
