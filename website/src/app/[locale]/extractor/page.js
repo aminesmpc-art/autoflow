@@ -8,6 +8,8 @@ export default function ExtractorPage() {
   const { user, token, loading } = useAuth();
   const router = useRouter();
   
+  const [mode, setMode] = useState("upload"); // upload, url
+  const [videoUrl, setVideoUrl] = useState("");
   const [file, setFile] = useState(null);
   const [jobId, setJobId] = useState(null);
   const [status, setStatus] = useState("idle"); // idle, uploading, processing, completed, error
@@ -37,7 +39,8 @@ export default function ExtractorPage() {
   };
 
   const startAnalysis = async () => {
-    if (!file) return;
+    if (mode === "upload" && !file) return;
+    if (mode === "url" && !videoUrl.trim()) return;
 
     setStatus("uploading");
     setStepMessage("Checking plan limits...");
@@ -55,18 +58,30 @@ export default function ExtractorPage() {
         }
       }
 
-      setStepMessage("Uploading video...");
+      let response;
+      if (mode === "upload") {
+        setStepMessage("Uploading video...");
+        const formData = new FormData();
+        formData.append("video", file);
 
-      const formData = new FormData();
-      formData.append("video", file);
-
-      const response = await fetch(`${API_URL}/analyze`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${token}`
-        },
-        body: formData,
-      });
+        response = await fetch(`${API_URL}/analyze`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`
+          },
+          body: formData,
+        });
+      } else {
+        setStepMessage("Submitting video URL...");
+        response = await fetch(`${API_URL}/analyze-url`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ url: videoUrl.trim() }),
+        });
+      }
 
       if (!response.ok) {
         const err = await response.json();
@@ -76,7 +91,7 @@ export default function ExtractorPage() {
       const data = await response.json();
       setJobId(data.job_id);
       setStatus("processing");
-      setStepMessage("Video analysis started. Polling for updates...");
+      setStepMessage(mode === "upload" ? "Video analysis started. Polling for updates..." : "Downloading video on server...");
     } catch (err) {
       setStatus("error");
       setError(err.message);
@@ -109,7 +124,10 @@ export default function ExtractorPage() {
                   "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                  video_name: file.name,
+                  video_name: mode === "upload" ? file.name : (() => {
+                    try { return new URL(videoUrl).hostname; }
+                    catch(e) { return "Video Link"; }
+                  })(),
                   video_concept: data.result.video_concept || "",
                   voiceover_text: data.result.voiceover_text || "",
                   character_sheets: data.result.character_sheets || [],
@@ -161,69 +179,171 @@ export default function ExtractorPage() {
         </div>
 
         <div style={{ maxWidth: "860px", margin: "0 auto" }}>
+          {/* Toggle Tab */}
+          {status === "idle" && user && (
+            <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginBottom: "32px" }}>
+              <button 
+                onClick={() => setMode("upload")}
+                style={{ 
+                  padding: "12px 24px", 
+                  borderRadius: "100px", 
+                  background: mode === "upload" ? "rgba(79, 70, 229, 0.15)" : "transparent",
+                  color: mode === "upload" ? "var(--primary-light)" : "var(--text-secondary)",
+                  border: `1px solid ${mode === "upload" ? "rgba(79, 70, 229, 0.4)" : "rgba(255, 255, 255, 0.05)"}`,
+                  cursor: "pointer",
+                  fontSize: "1rem",
+                  fontWeight: "600",
+                  transition: "all 0.3s ease"
+                }}
+              >
+                📁 Upload Local Video
+              </button>
+              <button 
+                onClick={() => setMode("url")}
+                style={{ 
+                  padding: "12px 24px", 
+                  borderRadius: "100px", 
+                  background: mode === "url" ? "rgba(79, 70, 229, 0.15)" : "transparent",
+                  color: mode === "url" ? "var(--primary-light)" : "var(--text-secondary)",
+                  border: `1px solid ${mode === "url" ? "rgba(79, 70, 229, 0.4)" : "rgba(255, 255, 255, 0.05)"}`,
+                  cursor: "pointer",
+                  fontSize: "1rem",
+                  fontWeight: "600",
+                  transition: "all 0.3s ease"
+                }}
+              >
+                🔗 Paste Video Link
+              </button>
+            </div>
+          )}
+
           {/* --- Upload Zone or Auth CTA --- */}
           {status === "idle" && (
             user ? (
-              <div 
-                className="card-glass animate-in delay-1"
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                style={{ 
-                  textAlign: "center",
-                  cursor: "pointer",
-                  padding: "100px 40px",
-                  border: "2px dashed rgba(79, 70, 229, 0.4)",
-                  background: "linear-gradient(180deg, rgba(79, 70, 229, 0.03) 0%, rgba(0,0,0,0.5) 100%)",
-                  backdropFilter: "blur(20px)",
-                  borderRadius: "32px",
-                  transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
-                  position: "relative",
-                  overflow: "hidden",
-                  boxShadow: "0 20px 40px rgba(0,0,0,0.4)"
-                }}
-                onClick={() => document.getElementById("file-upload").click()}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "var(--primary-light)";
-                  e.currentTarget.style.boxShadow = "0 0 60px rgba(79, 70, 229, 0.3), inset 0 0 30px rgba(79, 70, 229, 0.1)";
-                  e.currentTarget.style.transform = "translateY(-4px)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = "rgba(79, 70, 229, 0.4)";
-                  e.currentTarget.style.boxShadow = "0 20px 40px rgba(0,0,0,0.4)";
-                  e.currentTarget.style.transform = "translateY(0)";
-                }}
-              >
-                <div className="cta-glow" style={{ opacity: 0.5 }}></div>
-                <input 
-                  id="file-upload" 
-                  type="file" 
-                  accept="video/mp4,video/quicktime,video/webm" 
-                  style={{ display: "none" }} 
-                  onChange={handleFileSelect}
-                />
-                {file ? (
-                  <div style={{ position: "relative", zIndex: 1 }}>
-                    <div style={{ fontSize: "4rem", marginBottom: "20px", filter: "drop-shadow(0 0 30px rgba(79, 70, 229, 0.6))" }}>🎥</div>
-                    <h3 style={{ marginBottom: "8px", fontSize: "1.8rem" }}>{file.name}</h3>
-                    <p className="text-secondary" style={{ marginBottom: "32px" }}>{(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to reverse-engineer</p>
-                    <button 
-                      className="btn btn-primary btn-lg" 
-                      onClick={(e) => { e.stopPropagation(); startAnalysis(); }}
-                      style={{ fontSize: "1.2rem", padding: "16px 40px", borderRadius: "100px", boxShadow: "0 10px 30px rgba(79, 70, 229, 0.4)" }}
-                    >
-                      Extract Prompts Now ⚡
-                    </button>
-                  </div>
-                ) : (
+              mode === "upload" ? (
+                <div 
+                  className="card-glass animate-in delay-1"
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  style={{ 
+                    textAlign: "center",
+                    cursor: "pointer",
+                    padding: "100px 40px",
+                    border: "2px dashed rgba(79, 70, 229, 0.4)",
+                    background: "linear-gradient(180deg, rgba(79, 70, 229, 0.03) 0%, rgba(0,0,0,0.5) 100%)",
+                    backdropFilter: "blur(20px)",
+                    borderRadius: "32px",
+                    transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+                    position: "relative",
+                    overflow: "hidden",
+                    boxShadow: "0 20px 40px rgba(0,0,0,0.4)"
+                  }}
+                  onClick={() => document.getElementById("file-upload").click()}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = "var(--primary-light)";
+                    e.currentTarget.style.boxShadow = "0 0 60px rgba(79, 70, 229, 0.3), inset 0 0 30px rgba(79, 70, 229, 0.1)";
+                    e.currentTarget.style.transform = "translateY(-4px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(79, 70, 229, 0.4)";
+                    e.currentTarget.style.boxShadow = "0 20px 40px rgba(0,0,0,0.4)";
+                    e.currentTarget.style.transform = "translateY(0)";
+                  }}
+                >
+                  <div className="cta-glow" style={{ opacity: 0.5 }}></div>
+                  <input 
+                    id="file-upload" 
+                    type="file" 
+                    accept="video/mp4,video/quicktime,video/webm" 
+                    style={{ display: "none" }} 
+                    onChange={handleFileSelect}
+                  />
+                  {file ? (
+                    <div style={{ position: "relative", zIndex: 1 }}>
+                      <div style={{ fontSize: "4rem", marginBottom: "20px", filter: "drop-shadow(0 0 30px rgba(79, 70, 229, 0.6))" }}>🎥</div>
+                      <h3 style={{ marginBottom: "8px", fontSize: "1.8rem" }}>{file.name}</h3>
+                      <p className="text-secondary" style={{ marginBottom: "32px" }}>{(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to reverse-engineer</p>
+                      <button 
+                        className="btn btn-primary btn-lg" 
+                        onClick={(e) => { e.stopPropagation(); startAnalysis(); }}
+                        style={{ fontSize: "1.2rem", padding: "16px 40px", borderRadius: "100px", boxShadow: "0 10px 30px rgba(79, 70, 229, 0.4)" }}
+                      >
+                        Extract Prompts Now ⚡
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ position: "relative", zIndex: 1 }}>
+                      <div style={{ width: "100px", height: "100px", margin: "0 auto 24px", background: "rgba(79, 70, 229, 0.1)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(79, 70, 229, 0.2)", filter: "drop-shadow(0 0 20px rgba(79, 70, 229, 0.4))" }}>
+                        <span style={{ fontSize: "3rem" }}>📥</span>
+                      </div>
+                      <h3 style={{ fontSize: "2rem", marginBottom: "12px", letterSpacing: "-0.02em" }}>Drag & Drop Video Here</h3>
+                      <p className="text-secondary" style={{ fontSize: "1.1rem" }}>or click to browse your computer (Max 500MB)</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div 
+                  className="card-glass animate-in delay-1"
+                  style={{ 
+                    textAlign: "center",
+                    padding: "80px 40px",
+                    background: "linear-gradient(180deg, rgba(79, 70, 229, 0.03) 0%, rgba(0,0,0,0.5) 100%)",
+                    backdropFilter: "blur(20px)",
+                    borderRadius: "32px",
+                    position: "relative",
+                    overflow: "hidden",
+                    boxShadow: "0 20px 40px rgba(0,0,0,0.4)",
+                    border: "1px solid rgba(79, 70, 229, 0.2)"
+                  }}
+                >
+                  <div className="cta-glow" style={{ opacity: 0.3 }}></div>
                   <div style={{ position: "relative", zIndex: 1 }}>
                     <div style={{ width: "100px", height: "100px", margin: "0 auto 24px", background: "rgba(79, 70, 229, 0.1)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(79, 70, 229, 0.2)", filter: "drop-shadow(0 0 20px rgba(79, 70, 229, 0.4))" }}>
-                      <span style={{ fontSize: "3rem" }}>📥</span>
+                      <span style={{ fontSize: "3rem" }}>🔗</span>
                     </div>
-                    <h3 style={{ fontSize: "2rem", marginBottom: "12px", letterSpacing: "-0.02em" }}>Drag & Drop Video Here</h3>
-                    <p className="text-secondary" style={{ fontSize: "1.1rem" }}>or click to browse your computer (Max 500MB)</p>
+                    <h3 style={{ fontSize: "2rem", marginBottom: "12px", letterSpacing: "-0.02em" }}>Paste Video URL</h3>
+                    <p className="text-secondary" style={{ fontSize: "1.1rem", marginBottom: "32px" }}>
+                      Supports YouTube, TikTok, Instagram, Twitter/X, and more
+                    </p>
+                    
+                    <div style={{ display: "flex", gap: "12px", maxWidth: "600px", margin: "0 auto", width: "100%" }}>
+                      <input 
+                        type="text"
+                        placeholder="https://www.youtube.com/watch?v=..."
+                        value={videoUrl}
+                        onChange={(e) => setVideoUrl(e.target.value)}
+                        style={{
+                          flex: 1,
+                          padding: "16px 24px",
+                          borderRadius: "100px",
+                          background: "rgba(0, 0, 0, 0.6)",
+                          border: "1px solid rgba(255, 255, 255, 0.15)",
+                          color: "white",
+                          fontSize: "1rem",
+                          outline: "none",
+                          transition: "all 0.3s ease"
+                        }}
+                        onFocus={(e) => e.target.style.borderColor = "var(--primary-light)"}
+                        onBlur={(e) => e.target.style.borderColor = "rgba(255, 255, 255, 0.15)"}
+                      />
+                      <button 
+                        className="btn btn-primary"
+                        onClick={startAnalysis}
+                        disabled={!videoUrl.trim()}
+                        style={{ 
+                          fontSize: "1.1rem", 
+                          padding: "16px 36px", 
+                          borderRadius: "100px",
+                          boxShadow: "0 10px 30px rgba(79, 70, 229, 0.4)",
+                          whiteSpace: "nowrap"
+                        }}
+                      >
+                        Extract ⚡
+                      </button>
+                    </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )
             ) : (
               <div className="card-glass animate-in delay-1" style={{ padding: "80px 40px", borderRadius: "32px", textAlign: "center", background: "linear-gradient(180deg, rgba(79, 70, 229, 0.05) 0%, rgba(0,0,0,0.5) 100%)", border: "1px solid rgba(79, 70, 229, 0.3)" }}>
                 <div style={{ width: "80px", height: "80px", margin: "0 auto 24px", background: "rgba(79, 70, 229, 0.1)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(79, 70, 229, 0.2)" }}>

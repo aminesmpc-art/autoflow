@@ -92,6 +92,11 @@ class VideoJob(BaseModel):
     result: Optional[dict] = None
 
 
+class AnalyzeUrlRequest(BaseModel):
+    url: str
+
+
+
 class JobStatusResponse(BaseModel):
     job_id: str
     status: str
@@ -251,9 +256,90 @@ async def process_video(job_id: str, video_path: str):
                 pass
 
 
+async def process_video_url(job_id: str, url: str):
+    """Background task to download video from URL and then process it with Gemini AI."""
+    temp_dir = tempfile.mkdtemp()
+    video_path = None
+    try:
+        jobs[job_id]["status"] = "processing"
+        jobs[job_id]["step"] = "Downloading video from URL..."
+
+        import yt_dlp
+        import asyncio
+
+        ydl_opts = {
+            'format': 'best[ext=mp4]/best',
+            'outtmpl': os.path.join(temp_dir, 'video.%(ext)s'),
+            'noplaylist': True,
+            'quiet': True,
+            'max_filesize': 100 * 1024 * 1024,  # 100MB limit
+        }
+
+        loop = asyncio.get_event_loop()
+
+        def _download():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                return ydl.prepare_filename(info)
+
+        video_path = await loop.run_in_executor(None, _download)
+
+        if not video_path or not os.path.exists(video_path):
+            raise RuntimeError("Failed to download video. Please verify the URL.")
+
+        jobs[job_id]["step"] = "Video downloaded. Preparing for analysis..."
+        await process_video(job_id, video_path)
+
+    except Exception as e:
+        jobs[job_id]["status"] = "failed"
+        jobs[job_id]["error"] = str(e)
+        jobs[job_id]["step"] = ""
+    finally:
+        try:
+            if temp_dir and os.path.exists(temp_dir):
+                import shutil
+                shutil.rmtree(temp_dir)
+        except Exception:
+            pass
+
+
 # ============================================================================
 # Endpoints
 # ============================================================================
+
+@router.post("/analyze-url", response_model=VideoJob)
+async def analyze_video_url(
+    background_tasks: BackgroundTasks,
+    request: AnalyzeUrlRequest,
+    user: dict = Depends(verify_jwt),
+):
+    """Analyze a video from URL (YouTube, TikTok, etc.). Returns a job ID for polling."""
+    url = request.url.strip()
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid URL. Must start with http:// or https://",
+        )
+
+    job_id = str(uuid.uuid4())
+
+    jobs[job_id] = {
+        "job_id": job_id,
+        "status": "pending",
+        "step": "Queued...",
+        "result": None,
+        "error": None,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+
+    background_tasks.add_task(process_video_url, job_id, url)
+
+    return VideoJob(
+        job_id=job_id,
+        status="pending",
+        message="Video URL analysis started. Poll /api/videos/status/{job_id} for updates.",
+    )
+
 
 @router.post("/analyze", response_model=VideoJob)
 async def analyze_video(
