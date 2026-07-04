@@ -406,13 +406,22 @@ async def process_video_url(job_id: str, url: str):
         
         err_msg = str(e)
         # Parse common media block errors to make them user-friendly
-        if any(keyword in err_msg for keyword in ["empty media response", "403", "Sign in", "confirm you are not a bot", "Login required"]):
+        if any(keyword in err_msg for keyword in [
+            "empty media response", "403", "Sign in", "confirm you are not a bot", "Login required",
+            "isn't available", "certain audiences", "private", "restricted", "not available",
+        ]):
             if "instagram.com" in url.lower():
-                err_msg = (
-                    "Instagram sent an empty response. Because Instagram blocks server-side requests, "
-                    "you need to configure a 'PROXY_URL', set a 'RAPIDAPI_KEY' (Pro Fix), or add your browser cookies to the "
-                    "'YT_DLP_COOKIES' environment variable in Railway to extract from Instagram links."
-                )
+                if "isn't available" in err_msg or "certain audiences" in err_msg or "private" in err_msg:
+                    err_msg = (
+                        "This Instagram post is restricted — it's either private, age-gated, or limited to certain audiences. "
+                        "Try a different public post, or download the video to your device first and use the 'Upload File' option instead."
+                    )
+                else:
+                    err_msg = (
+                        "Instagram blocked the download. This usually happens because Instagram blocks server-side requests. "
+                        "Try downloading the video to your device first and use the 'Upload File' option, or configure "
+                        "'RAPIDAPI_KEY' / 'PROXY_URL' / 'YT_DLP_COOKIES' in your Railway environment."
+                    )
             elif "youtube.com" in url.lower() or "youtu.be" in url.lower():
                 err_msg = (
                     "YouTube requested bot verification. To extract from YouTube links, please add your "
