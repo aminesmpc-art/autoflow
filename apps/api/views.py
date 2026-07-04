@@ -11,13 +11,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.plans.services import (
     consume_download,
     consume_prompt,
+    consume_queue_run,
     get_entitlement_snapshot,
     grant_reward_credits,
     mark_last_seen,
 )
 from apps.usage.models import UsageEvent
 from apps.users.models import CustomUser
-from apps.users.services import register_user, resend_verification, verify_email
+from apps.users.services import register_user, resend_verification, verify_email, request_password_reset, confirm_password_reset
 from apps.webhooks.models import WebhookEvent
 from apps.webhooks.services import process_whop_webhook
 
@@ -62,6 +63,8 @@ DISPOSABLE_EMAIL_DOMAINS = {
     "mailinator.net", "spamherder.com", "binkmail.com", "bobmail.info",
     "devnullmail.com"
 }
+
+
 
 
 class RegisterView(APIView):
@@ -131,20 +134,21 @@ class LoginView(APIView):
         email = serializer.validated_data["email"].lower()
         password = serializer.validated_data["password"]
 
-        # Check if user exists but is unverified
-        try:
-            user_obj = CustomUser.objects.get(email=email)
-            if not user_obj.is_active:
-                return Response(
-                    {"message": "Please verify your email before logging in."},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-        except CustomUser.DoesNotExist:
-            pass
-
+        # Validate password FIRST — never reveal account existence before auth
         user = authenticate(request, username=email, password=password)
         if user is None:
             cache.set(cache_key, attempts + 1, timeout=300)  # 5 minutes lockout
+            # Check if the account exists but is unverified (only after password
+            # would have matched — authenticate returns None for inactive users too)
+            try:
+                user_obj = CustomUser.objects.get(email=email)
+                if not user_obj.is_active and user_obj.check_password(password):
+                    return Response(
+                        {"message": "Please verify your email before logging in."},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+            except CustomUser.DoesNotExist:
+                pass
             return Response(
                 {"message": "Invalid email or password."},
                 status=status.HTTP_401_UNAUTHORIZED,
@@ -182,7 +186,108 @@ class RefreshTokenView(APIView):
             )
 
 
+class GoogleLoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        token = request.data.get("id_token")
+        if not token:
+            return Response(
+                {"message": "Google ID Token is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            from google.oauth2 import id_token as google_id_token
+            from google.auth.transport import requests as google_requests
+            from apps.plans.models import Profile
+            from django.conf import settings
+
+            # Verify the ID Token
+            client_id = getattr(settings, "GOOGLE_CLIENT_ID", "")
+            id_info = google_id_token.verify_oauth2_token(
+                token,
+                google_requests.Request(),
+                client_id,
+            )
+
+            # Get user email and details
+            email = id_info.get("email").lower()
+            if not email:
+                return Response(
+                    {"message": "Email not found in Google token."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Retrieve or create user
+            try:
+                user = CustomUser.objects.get(email=email)
+                created = False
+            except CustomUser.DoesNotExist:
+                user = CustomUser.objects.create_user(email=email, is_active=True)
+                created = True
+
+            # If user was created, finalize profile and webhooks
+            if created:
+                user.set_unusable_password()
+                user.save(update_fields=["password"])
+                Profile.objects.create(user=user)
+                
+                # Auto-link any pending Whop webhooks
+                try:
+                    from apps.webhooks.services import link_pending_webhooks_for_user
+                    link_pending_webhooks_for_user(user)
+                except Exception as exc:
+                    logger.warning("Failed to auto-link webhooks for Google user %s: %s", email, exc)
+            else:
+                # Self-healing: if the user was inactive, activate them since Google verified the email
+                if not user.is_active:
+                    user.is_active = True
+                    user.save(update_fields=["is_active"])
+                    
+                    # Also try to link pending webhooks just in case
+                    try:
+                        from apps.webhooks.services import link_pending_webhooks_for_user
+                        link_pending_webhooks_for_user(user)
+                    except Exception as exc:
+                        logger.warning("Failed to auto-link webhooks for Google user %s on activation: %s", email, exc)
+
+            # Mark user as last seen and issue SimpleJWT tokens
+            mark_last_seen(user)
+            refresh = RefreshToken.for_user(user)
+
+            return Response({
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+            }, status=status.HTTP_200_OK)
+
+        except ValueError as e:
+            logger.warning("Google token verification failed: %s", str(e))
+            return Response(
+                {"message": "Invalid Google token."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            import traceback
+            logger.error("Google authentication failed: %s\n%s", str(e), traceback.format_exc())
+            return Response(
+                {"message": "Google authentication failed. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class GoogleConfigView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from django.conf import settings
+        return Response({
+            "client_id": getattr(settings, "GOOGLE_CLIENT_ID", "")
+        }, status=status.HTTP_200_OK)
+
+
 class MeView(APIView):
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -256,10 +361,77 @@ class ResendVerificationView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        from django.core.cache import cache
+
         serializer = ResendVerificationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        _, message = resend_verification(serializer.validated_data["email"])
+        email = serializer.validated_data["email"].lower()
+
+        # Rate limit: max 1 resend per email per 2 minutes
+        cache_key = f"resend_rate:{email}"
+        if cache.get(cache_key):
+            return Response(
+                {"message": "Verification email was sent recently. Please wait 2 minutes before requesting again."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        cache.set(cache_key, True, timeout=120)  # 2 minutes
+
+        _, message = resend_verification(email)
         return Response({"message": message})
+
+
+class RequestPasswordResetView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from django.core.cache import cache
+        email = request.data.get("email", "").strip().lower()
+        if not email:
+            return Response({"detail": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Rate limit: max 1 request per email per 60 seconds
+        cache_key = f"pwd_reset_rate:{email}"
+        if cache.get(cache_key):
+            return Response(
+                {"detail": "Please wait 60 seconds before requesting another password reset code."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        cache.set(cache_key, True, timeout=60)
+
+        success, message = request_password_reset(email)
+        if not success:
+            return Response({"detail": message}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({"message": message}, status=status.HTTP_200_OK)
+
+
+class ConfirmPasswordResetView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get("email", "").strip().lower()
+        code = request.data.get("code", "").strip()
+        new_password = request.data.get("new_password", "").strip()
+
+        if not email or not code or not new_password:
+            return Response(
+                {"detail": "Email, verification code, and new password are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Basic password validation
+        if len(new_password) < 8:
+            return Response(
+                {"detail": "Password must be at least 8 characters long."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        success, message = confirm_password_reset(email, code, new_password)
+        if not success:
+            return Response({"detail": message}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({"message": message}, status=status.HTTP_200_OK)
+
 
 
 # ================================================================
@@ -281,23 +453,72 @@ class EntitlementsView(APIView):
 
 
 class ConsumePromptView(APIView):
+    """Track individual prompt completions (smart: updates pending events).
+
+    At queue start, consume_queue_run creates N "pending" events.
+    When the v3.0 extension reports each prompt's real outcome,
+    this endpoint finds the oldest pending event and updates it
+    to "done" or "failed". Old extensions never call this — their
+    pending events remain, still counted on the dashboard.
+    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         prompt_type = request.data.get("prompt_type", "text")
         prompt_count = int(request.data.get("prompt_count", 1))
+        prompt_status = request.data.get("status", "done")  # "done" or "failed"
 
-        results = []
+        from django.utils import timezone as tz
+        from apps.plans.services import (
+            FREE_TEXT_DAILY_LIMIT, FREE_FULL_DAILY_LIMIT,
+            get_or_create_daily_usage, get_reward_credit_balance,
+        )
+
+        today = tz.now().date()
+        usage = get_or_create_daily_usage(request.user, today)
+        profile = request.user.profile
+        updated = 0
+
         for _ in range(prompt_count):
-            result = consume_prompt(request.user, source="extension", prompt_type=prompt_type)
-            results.append(result)
-            if not result["allowed"]:
-                break
+            # Find the oldest "pending" event for this user today and update it
+            pending = UsageEvent.objects.filter(
+                user=request.user,
+                event_type=UsageEvent.EventType.CONSUME_PROMPT,
+                created_at__date=today,
+                metadata__status="pending",
+                metadata__prompt_type=prompt_type,
+            ).order_by("created_at").first()
 
-        # Return the last result (has current remaining counts)
-        final = results[-1]
-        http_status = status.HTTP_200_OK if final["allowed"] else status.HTTP_403_FORBIDDEN
-        return Response(final, status=http_status)
+            if pending:
+                # Update the pending event with the real status
+                pending.metadata["status"] = prompt_status
+                pending.metadata["source"] = "real_completion"
+                pending.save(update_fields=["metadata"])
+                updated += 1
+            else:
+                # No pending event found — create a new one (edge case / standalone)
+                UsageEvent.objects.create(
+                    user=request.user,
+                    event_type=UsageEvent.EventType.CONSUME_PROMPT,
+                    prompt_count=1,
+                    metadata={
+                        "source": "real_completion",
+                        "source_used": "free" if not profile.is_pro else "pro",
+                        "prompt_type": prompt_type,
+                        "status": prompt_status,
+                    },
+                )
+
+        return Response({
+            "allowed": True,
+            "source_used": "tracked",
+            "prompt_type": prompt_type,
+            "status": prompt_status,
+            "updated_pending": updated,
+            "text_remaining_today": max(0, FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used) if not profile.is_pro else 999,
+            "full_remaining_today": max(0, FREE_FULL_DAILY_LIMIT - usage.full_prompts_used) if not profile.is_pro else 999,
+            "reward_credit_balance": get_reward_credit_balance(request.user),
+        })
 
 
 class ConsumeDownloadView(APIView):
@@ -329,6 +550,38 @@ class UsageEventView(APIView):
             metadata=serializer.validated_data.get("metadata", {}),
         )
         return Response({"message": "Event recorded."}, status=status.HTTP_201_CREATED)
+
+
+class ConsumeQueueRunView(APIView):
+    """Check + consume a queue run for a given automation mode (lite/flow/full)."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        mode = request.data.get("mode", "lite")
+        if mode not in ("lite", "flow", "full"):
+            return Response(
+                {"detail": f"Invalid mode: {mode}. Must be lite, flow, or full."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        prompt_count = int(request.data.get("prompt_count", 1))
+        prompt_type = request.data.get("prompt_type", "text")
+        if prompt_type not in ("text", "full"):
+            prompt_type = "text"
+        # Mixed queue support: per-type counts
+        text_count = request.data.get("text_count")
+        full_count = request.data.get("full_count")
+        if text_count is not None and full_count is not None:
+            text_count = int(text_count)
+            full_count = int(full_count)
+        else:
+            text_count = None
+            full_count = None
+        result = consume_queue_run(
+            request.user, mode=mode, prompt_count=prompt_count,
+            prompt_type=prompt_type, text_count=text_count, full_count=full_count,
+        )
+        http_status = status.HTTP_200_OK if result["allowed"] else status.HTTP_403_FORBIDDEN
+        return Response(result, status=http_status)
 
 
 # ================================================================
@@ -368,11 +621,49 @@ class ClaimReviewRewardView(APIView):
 
     def post(self, request):
         from apps.rewards.models import ReviewRewardClaim
+        from .serializers import ClaimReviewRewardSerializer
 
-        # Check if already claimed
-        claim, created = ReviewRewardClaim.objects.get_or_create(
+        serializer = ClaimReviewRewardSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reviewer_name = serializer.validated_data["reviewer_name"]
+
+        # ── Eligibility gate: must have real usage in last 7 days ──
+        # 50+ confirmed text prompts OR 20+ confirmed full (image) prompts
+        from apps.usage.models import UsageEvent
+        from django.utils import timezone
+        from django.db.models import Sum, Q
+        from datetime import timedelta
+
+        seven_days_ago = timezone.now() - timedelta(days=7)
+        events = UsageEvent.objects.filter(
             user=request.user,
+            event_type="consume_prompt",
+            created_at__gte=seven_days_ago,
         )
+        total_confirmed = events.aggregate(s=Sum("prompt_count"))["s"] or 0
+        full_confirmed = events.filter(
+            metadata__prompt_type="full"
+        ).aggregate(s=Sum("prompt_count"))["s"] or 0
+
+        if total_confirmed < 50 and full_confirmed < 20:
+            return Response({
+                "status": "ineligible",
+                "message": f"You need at least 50 prompts or 20 image prompts in the last 7 days to claim a reward. "
+                           f"You have {total_confirmed} text and {full_confirmed} image prompts.",
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        claim = ReviewRewardClaim.objects.filter(user=request.user).first()
+        
+        if not claim:
+            claim = ReviewRewardClaim.objects.create(
+                user=request.user,
+                reviewer_name=reviewer_name
+            )
+        elif claim.status == "pending":
+            # Allow updating the name if it's still pending
+            claim.reviewer_name = reviewer_name
+            claim.save(update_fields=["reviewer_name"])
+
         return Response({
             "status": claim.status,
             "message": "Under review" if claim.status == "pending" else claim.status
@@ -530,121 +821,7 @@ class HealthView(APIView):
         return Response({"status": "ok", "service": "autoflow-backend"})
 
 
-class DiagnosticView(APIView):
-    """Temporary endpoint to debug admin 500 error. Remove after fixing."""
-    permission_classes = [AllowAny]
 
-    def get(self, request):
-        import traceback
-        results = {}
-
-        # Test 1: DB connection
-        try:
-            from django.db import connection
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT 1")
-            results["db_connection"] = "OK"
-        except Exception as e:
-            results["db_connection"] = f"FAIL: {e}"
-
-        # Test 2: Session table
-        try:
-            from django.contrib.sessions.models import Session
-            Session.objects.count()
-            results["session_table"] = "OK"
-        except Exception as e:
-            results["session_table"] = f"FAIL: {e}"
-
-        # Test 3: User exists
-        try:
-            user = CustomUser.objects.filter(is_superuser=True).first()
-            results["superuser"] = f"OK: {user.email}" if user else "FAIL: no superuser found"
-        except Exception as e:
-            results["superuser"] = f"FAIL: {e}"
-
-        # Test 4: Authenticate
-        try:
-            user = authenticate(username="admin@auto-flow.studio", password="AutoFlow2026!")
-            results["auth"] = f"OK: {user}" if user else "FAIL: returned None"
-        except Exception as e:
-            results["auth"] = f"FAIL: {traceback.format_exc()}"
-
-        # Test 5: CSRF settings
-        from django.conf import settings
-        results["csrf_trusted_origins"] = getattr(settings, "CSRF_TRUSTED_ORIGINS", "NOT SET")
-        results["secure_proxy_ssl_header"] = str(getattr(settings, "SECURE_PROXY_SSL_HEADER", "NOT SET"))
-        results["debug"] = settings.DEBUG
-        results["static_root"] = str(getattr(settings, "STATIC_ROOT", "NOT SET"))
-        results["staticfiles_storage"] = str(getattr(settings, "STATICFILES_STORAGE", "NOT SET"))
-
-        # Test 6: Static files manifest
-        try:
-            from django.contrib.staticfiles.storage import staticfiles_storage
-            if hasattr(staticfiles_storage, 'read_manifest'):
-                manifest = staticfiles_storage.read_manifest()
-                results["static_manifest"] = "OK" if manifest else "EMPTY"
-            else:
-                results["static_manifest"] = "N/A (no manifest storage)"
-        except Exception as e:
-            results["static_manifest"] = f"FAIL: {e}"
-
-        # Test 7: Show actual database config
-        db_conf = settings.DATABASES.get("default", {})
-        results["db_engine"] = db_conf.get("ENGINE", "NOT SET")
-        results["db_name"] = db_conf.get("NAME", "NOT SET")
-        results["db_host"] = db_conf.get("HOST", "NOT SET")
-
-        # Test 8: List existing tables
-        try:
-            from django.db import connection
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema = 'public' ORDER BY table_name"
-                )
-                tables = [row[0] for row in cursor.fetchall()]
-            results["existing_tables"] = tables if tables else "NO TABLES FOUND"
-        except Exception as e:
-            results["existing_tables"] = f"FAIL: {e}"
-
-        # Test 9: Email config (no send test - it causes worker timeout)
-        results["email_backend"] = settings.EMAIL_BACKEND
-        results["email_host"] = settings.EMAIL_HOST
-        results["email_port"] = settings.EMAIL_PORT
-        results["email_use_ssl"] = getattr(settings, "EMAIL_USE_SSL", False)
-        results["email_use_tls"] = settings.EMAIL_USE_TLS
-
-        return Response(results)
-
-
-class RunMigrateView(APIView):
-    """Temporary endpoint to trigger migrations. Remove after fixing."""
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        import io
-        from django.core.management import call_command
-
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        try:
-            call_command("migrate", "--noinput", verbosity=2, stdout=stdout, stderr=stderr)
-            call_command("collectstatic", "--noinput", stdout=stdout, stderr=stderr)
-            call_command("ensure_superuser", stdout=stdout, stderr=stderr)
-            return Response({
-                "status": "OK",
-                "stdout": stdout.getvalue(),
-                "stderr": stderr.getvalue(),
-            })
-        except Exception as e:
-            import traceback
-            return Response({
-                "status": "FAIL",
-                "error": str(e),
-                "traceback": traceback.format_exc(),
-                "stdout": stdout.getvalue(),
-                "stderr": stderr.getvalue(),
-            })
 
 # ================================================================
 # EXTRACTIONS

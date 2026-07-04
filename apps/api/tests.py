@@ -15,7 +15,12 @@ from rest_framework.test import APIClient
 from apps.plans.models import PlanType, Profile
 from apps.plans.services import (
     FREE_DAILY_LIMIT,
+    FREE_LITE_DAILY_LIMIT,
+    FREE_FLOW_DAILY_LIMIT,
+    FREE_FULL_DAILY_LIMIT_RUNS,
     consume_prompt,
+    consume_queue_run,
+    can_start_queue,
     get_entitlement_snapshot,
     get_free_remaining,
     get_reward_credit_balance,
@@ -23,8 +28,8 @@ from apps.plans.services import (
 )
 from apps.rewards.models import RewardCreditLedger
 from apps.usage.models import DailyUsage
-from apps.users.models import CustomUser, EmailVerificationToken
-from apps.users.services import create_verification_token, register_user, verify_email
+from apps.users.models import CustomUser, EmailVerificationToken, PasswordResetToken
+from apps.users.services import create_verification_token, register_user, verify_email, request_password_reset, confirm_password_reset
 
 
 # ================================================================
@@ -158,6 +163,10 @@ class EntitlementTests(TestCase):
         self.assertEqual(snapshot["free_daily_limit"], FREE_DAILY_LIMIT)
         self.assertEqual(snapshot["free_remaining_today"], FREE_DAILY_LIMIT)
         self.assertTrue(snapshot["can_run_prompt"])
+        # Queue run limits
+        self.assertEqual(snapshot["lite_remaining_today"], 999)
+        self.assertEqual(snapshot["flow_remaining_today"], FREE_FLOW_DAILY_LIMIT)
+        self.assertEqual(snapshot["full_remaining_this_month"], FREE_FULL_DAILY_LIMIT_RUNS)
 
     def test_free_user_can_consume_prompt(self):
         result = consume_prompt(self.user)
@@ -196,6 +205,72 @@ class EntitlementTests(TestCase):
             result = consume_prompt(self.user)
             self.assertTrue(result["allowed"])
             self.assertEqual(result["source_used"], "pro")
+
+
+# ================================================================
+# QUEUE RUN LIMIT TESTS
+# ================================================================
+
+
+class QueueRunLimitTests(TestCase):
+    """Test per-mode queue run limits for free vs pro users."""
+
+    def setUp(self):
+        self.user = CustomUser.objects.create_user("qtest@example.com", "pass123", is_active=True)
+        self.profile = Profile.objects.create(user=self.user, plan_type=PlanType.FREE)
+
+    def test_free_user_lite_limit(self):
+        """Free user: lite runs are unlimited."""
+        for i in range(10):
+            result = consume_queue_run(self.user, "lite", 5)
+            self.assertTrue(result["allowed"], f"Run {i+1} should be allowed")
+            self.assertEqual(result["remaining"], 999)
+
+    def test_free_user_flow_limit(self):
+        """Free user: 6 flow runs/day, then blocked."""
+        for i in range(FREE_FLOW_DAILY_LIMIT):
+            result = consume_queue_run(self.user, "flow", 5)
+            self.assertTrue(result["allowed"], f"Run {i+1} should be allowed")
+        result = consume_queue_run(self.user, "flow", 5)
+        self.assertFalse(result["allowed"])
+
+    def test_free_user_full_monthly_limit(self):
+        """Free user: 1 full runs/day, then blocked (daily limit runs)."""
+        for i in range(FREE_FULL_DAILY_LIMIT_RUNS):
+            result = consume_queue_run(self.user, "full", 5)
+            self.assertTrue(result["allowed"], f"Run {i+1} should be allowed")
+        result = consume_queue_run(self.user, "full", 5)
+        self.assertFalse(result["allowed"])
+
+    def test_pro_user_unlimited(self):
+        """Pro user: always allowed, no limit."""
+        self.profile.plan_type = PlanType.PRO
+        self.profile.is_pro_active = True
+        self.profile.save()
+        for _ in range(20):
+            result = consume_queue_run(self.user, "lite", 5)
+            self.assertTrue(result["allowed"])
+            self.assertEqual(result["remaining"], 999)
+
+    def test_pro_user_full_mode_no_crash(self):
+        """Pro user: full mode should NOT crash (bug #1 regression)."""
+        self.profile.plan_type = PlanType.PRO
+        self.profile.is_pro_active = True
+        self.profile.save()
+        result = consume_queue_run(self.user, "full", 5)
+        self.assertTrue(result["allowed"])
+
+    def test_can_start_queue_check_only(self):
+        """can_start_queue is read-only — doesn't consume."""
+        result = can_start_queue(self.user, "lite")
+        self.assertTrue(result["allowed"])
+        self.assertEqual(result["remaining"], 999)
+
+    def test_invalid_mode_rejected(self):
+        """Unknown mode returns allowed=False."""
+        result = consume_queue_run(self.user, "turbo", 1)
+        self.assertFalse(result["allowed"])
+        self.assertIn("Unknown", result["message"])
 
 
 class RewardCreditTests(TestCase):
@@ -261,12 +336,31 @@ class APIEndpointTests(TestCase):
         self.assertIn("plan_type", response.data)
         self.assertIn("can_run_prompt", response.data)
         self.assertIn("free_remaining_today", response.data)
+        # Queue run fields
+        self.assertIn("lite_remaining_today", response.data)
+        self.assertIn("flow_remaining_today", response.data)
+        self.assertIn("full_remaining_this_month", response.data)
 
     def test_consume_endpoint(self):
         self._login()
         response = self.client.post("/api/usage/consume")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["allowed"])
+
+    def test_queue_run_endpoint_lite(self):
+        self._login()
+        response = self.client.post("/api/usage/queue-run", {"mode": "lite", "prompt_count": 3})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["allowed"])
+
+    def test_queue_run_endpoint_invalid_mode(self):
+        self._login()
+        response = self.client.post("/api/usage/queue-run", {"mode": "turbo"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_queue_run_endpoint_requires_auth(self):
+        response = self.client.post("/api/usage/queue-run", {"mode": "lite"})
+        self.assertEqual(response.status_code, 401)
 
     def test_usage_events_endpoint(self):
         self._login()
@@ -345,3 +439,162 @@ class WebhookTests(TestCase):
         event = WebhookEvent.objects.first()
         self.assertEqual(event.event_type, "membership.went_valid")
         self.assertTrue(event.processed)
+
+
+class GoogleAuthTests(TestCase):
+    """Test Google authentication views and logic."""
+
+    def setUp(self):
+        self.client = APIClient()
+
+    @override_settings(GOOGLE_CLIENT_ID="mock-client-id-123")
+    def test_google_config_returns_client_id(self):
+        response = self.client.get("/api/auth/google/config")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["client_id"], "mock-client-id-123")
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    @override_settings(GOOGLE_CLIENT_ID="mock-client-id-123")
+    def test_google_login_creates_new_user(self, mock_verify):
+        mock_verify.return_value = {
+            "email": "newgoogle@example.com",
+            "email_verified": True,
+        }
+        
+        response = self.client.post("/api/auth/google", {"id_token": "mock-token-xyz"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access", response.data)
+        
+        # Verify user creation
+        user = CustomUser.objects.get(email="newgoogle@example.com")
+        self.assertTrue(user.is_active)
+        self.assertTrue(hasattr(user, "profile"))
+        self.assertFalse(user.has_usable_password())
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    @override_settings(GOOGLE_CLIENT_ID="mock-client-id-123")
+    def test_google_login_activates_existing_inactive_user(self, mock_verify):
+        # Create an inactive user manually
+        user = CustomUser.objects.create_user("inactive@example.com", "pass123")
+        user.is_active = False
+        user.save()
+        Profile.objects.create(user=user)
+
+        mock_verify.return_value = {
+            "email": "inactive@example.com",
+            "email_verified": True,
+        }
+        
+        response = self.client.post("/api/auth/google", {"id_token": "mock-token-xyz"})
+        self.assertEqual(response.status_code, 200)
+        
+        # Verify status is active now
+        user.refresh_from_db()
+        self.assertTrue(user.is_active)
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    def test_google_login_invalid_token(self, mock_verify):
+        mock_verify.side_effect = ValueError("Invalid token")
+        
+        response = self.client.post("/api/auth/google", {"id_token": "invalid-token-xyz"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Invalid Google token", response.data["message"])
+
+
+class PasswordResetTests(TestCase):
+    """Test password reset flows and verification code validity."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = CustomUser.objects.create_user("user@example.com", "oldpassword123")
+        Profile.objects.create(user=self.user)
+
+    @patch("apps.users.services.send_password_reset_email")
+    def test_request_reset_creates_token_and_sends_email(self, mock_send):
+        success, message = request_password_reset("user@example.com")
+        self.assertTrue(success)
+        self.assertIn("sent", message.lower())
+
+        tokens = PasswordResetToken.objects.filter(user=self.user)
+        self.assertEqual(tokens.count(), 1)
+        token = tokens.first()
+        self.assertEqual(len(token.code), 6)
+        self.assertTrue(token.code.isdigit())
+
+        # Wait for thread to start in test (or call mock verify)
+        mock_send.assert_called_once()
+        self.assertEqual(mock_send.call_args[0][0], self.user)
+
+    def test_request_reset_non_existent_user_returns_generic_message(self):
+        success, message = request_password_reset("unknown@example.com")
+        self.assertTrue(success)
+        self.assertIn("sent", message.lower())
+        self.assertEqual(PasswordResetToken.objects.count(), 0)
+
+    def test_request_reset_google_user_fails(self):
+        google_user = CustomUser.objects.create_user("google@example.com")
+        google_user.set_unusable_password()
+        google_user.save()
+        Profile.objects.create(user=google_user)
+
+        success, message = request_password_reset("google@example.com")
+        self.assertFalse(success)
+        self.assertIn("Google Sign-in", message)
+
+    def test_confirm_reset_updates_password(self):
+        token = PasswordResetToken.objects.create(
+            user=self.user,
+            code="123456",
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+        success, message = confirm_password_reset("user@example.com", "123456", "newpassword999")
+        self.assertTrue(success)
+        self.assertIn("successfully", message.lower())
+
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("newpassword999"))
+        token.refresh_from_db()
+        self.assertIsNotNone(token.used_at)
+
+    def test_confirm_reset_invalid_code_fails(self):
+        PasswordResetToken.objects.create(
+            user=self.user,
+            code="123456",
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+        success, message = confirm_password_reset("user@example.com", "000000", "newpassword999")
+        self.assertFalse(success)
+        self.assertIn("invalid", message.lower())
+
+    def test_confirm_reset_expired_code_fails(self):
+        PasswordResetToken.objects.create(
+            user=self.user,
+            code="123456",
+            expires_at=timezone.now() - timedelta(minutes=1),
+        )
+        success, message = confirm_password_reset("user@example.com", "123456", "newpassword999")
+        self.assertFalse(success)
+        self.assertIn("expired", message.lower())
+
+    @patch("apps.users.services.send_password_reset_email")
+    def test_reset_request_api_endpoint(self, mock_send):
+        response = self.client.post("/api/auth/password/reset-request", {"email": "user@example.com"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("sent", response.data["message"].lower())
+
+    def test_reset_confirm_api_endpoint(self):
+        PasswordResetToken.objects.create(
+            user=self.user,
+            code="123456",
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+        response = self.client.post("/api/auth/password/reset-confirm", {
+            "email": "user@example.com",
+            "code": "123456",
+            "new_password": "newpassword999",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("successfully", response.data["message"].lower())
+
+
+

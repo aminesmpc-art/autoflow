@@ -9,13 +9,13 @@ from datetime import date as date_type
 from datetime import datetime, time
 
 from django.conf import settings
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.db.models import Sum
 from django.utils import timezone
 
 from apps.plans.models import PlanType, Profile
 from apps.rewards.models import CreditStatus, RewardCreditLedger
-from apps.usage.models import DailyUsage, UsageEvent
+from apps.usage.models import DailyUsage, MonthlyUsage, UsageEvent
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 FREE_TEXT_DAILY_LIMIT = getattr(settings, "FREE_TEXT_DAILY_LIMIT", 100)
 FREE_FULL_DAILY_LIMIT = getattr(settings, "FREE_FULL_DAILY_LIMIT", 20)
 FREE_DOWNLOAD_DAILY_LIMIT = getattr(settings, "FREE_DOWNLOAD_DAILY_LIMIT", 20)
+# Queue run limits (per mode)
+FREE_LITE_DAILY_LIMIT = getattr(settings, "FREE_LITE_DAILY_LIMIT", 3)
+FREE_FLOW_DAILY_LIMIT = getattr(settings, "FREE_FLOW_DAILY_LIMIT", 5)
+FREE_FULL_DAILY_LIMIT_RUNS = getattr(settings, "FREE_FULL_DAILY_LIMIT_RUNS", 1)
 # Keep legacy constant for backward compat
 FREE_DAILY_LIMIT = FREE_TEXT_DAILY_LIMIT
 
@@ -33,25 +37,47 @@ FREE_DAILY_LIMIT = FREE_TEXT_DAILY_LIMIT
 def get_or_create_daily_usage(user, target_date: date_type = None) -> DailyUsage:
     """Get or create the DailyUsage row for user+date."""
     target_date = target_date or timezone.now().date()
-    usage, _ = DailyUsage.objects.get_or_create(
-        user=user,
-        date=target_date,
-        defaults={
-            "free_prompts_used": 0,
-            "reward_prompts_used": 0,
-            "total_prompts_used": 0,
-            "text_prompts_used": 0,
-            "full_prompts_used": 0,
-            "downloads_used": 0,
-        },
-    )
-    return usage
+    try:
+        usage, _ = DailyUsage.objects.get_or_create(
+            user=user,
+            date=target_date,
+            defaults={
+                "free_prompts_used": 0,
+                "reward_prompts_used": 0,
+                "total_prompts_used": 0,
+                "text_prompts_used": 0,
+                "full_prompts_used": 0,
+                "extend_prompts_used": 0,
+                "downloads_used": 0,
+                "lite_runs_today": 0,
+                "flow_runs_today": 0,
+                "full_runs_today": 0,
+            },
+        )
+        return usage
+    except IntegrityError:
+        return DailyUsage.objects.get(user=user, date=target_date)
+
+
+def get_or_create_monthly_usage(user, year: int = None, month: int = None) -> MonthlyUsage:
+    """Get or create the MonthlyUsage row for user+year+month."""
+    now = timezone.now()
+    year = year or now.year
+    month = month or now.month
+    try:
+        usage, _ = MonthlyUsage.objects.get_or_create(
+            user=user, year=year, month=month,
+            defaults={"full_runs_used": 0},
+        )
+        return usage
+    except IntegrityError:
+        return MonthlyUsage.objects.get(user=user, year=year, month=month)
 
 
 def get_free_remaining(user, target_date: date_type = None) -> int:
     """How many free text prompts the user has left today."""
     usage = get_or_create_daily_usage(user, target_date)
-    return max(0, FREE_TEXT_DAILY_LIMIT - usage.text_prompts_used)
+    return max(0, FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used)
 
 
 # ── Reward credit helpers ──
@@ -111,11 +137,13 @@ def grant_reward_credits(
 def get_entitlement_snapshot(user) -> dict:
     """Full snapshot of a user's current entitlement state."""
     profile = Profile.objects.select_related("user").get(user=user)
-    today = timezone.now().date()
+    now = timezone.now()
+    today = now.date()
     usage = get_or_create_daily_usage(user, today)
+    monthly = get_or_create_monthly_usage(user, now.year, now.month)
     reward_balance = get_reward_credit_balance(user)
 
-    text_remaining = max(0, FREE_TEXT_DAILY_LIMIT - usage.text_prompts_used)
+    text_remaining = max(0, FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used)
     full_remaining = max(0, FREE_FULL_DAILY_LIMIT - usage.full_prompts_used)
 
     # Reset time: midnight UTC of the next day
@@ -132,6 +160,11 @@ def get_entitlement_snapshot(user) -> dict:
         can_run = True
     elif reward_balance > 0:
         can_run = True
+
+    # Queue run limits
+    lite_remaining = 999  # Lite is unlimited for all users
+    flow_remaining = max(0, FREE_FLOW_DAILY_LIMIT - usage.flow_runs_today)
+    full_daily_remaining = max(0, FREE_FULL_DAILY_LIMIT_RUNS - usage.full_runs_today)
 
     return {
         "plan_type": profile.plan_type,
@@ -156,6 +189,20 @@ def get_entitlement_snapshot(user) -> dict:
         "download_daily_limit": FREE_DOWNLOAD_DAILY_LIMIT,
         "downloads_used_today": usage.downloads_used,
         "downloads_remaining_today": max(0, FREE_DOWNLOAD_DAILY_LIMIT - usage.downloads_used),
+        # Queue run limits (per mode)
+        "lite_runs_today": usage.lite_runs_today,
+        "lite_daily_limit": 0,  # 0 = unlimited
+        "lite_remaining_today": 999,  # Lite is always unlimited
+        "flow_runs_today": usage.flow_runs_today,
+        "flow_daily_limit": FREE_FLOW_DAILY_LIMIT,
+        "flow_remaining_today": flow_remaining if not profile.is_pro else 999,
+        "full_runs_today": usage.full_runs_today,
+        "full_runs_daily_limit": FREE_FULL_DAILY_LIMIT_RUNS,
+        "full_remaining_today_runs": full_daily_remaining if not profile.is_pro else 999,
+        # Legacy monthly fields (keep for backward compat)
+        "full_runs_this_month": monthly.full_runs_used,
+        "full_monthly_limit": FREE_FULL_DAILY_LIMIT_RUNS,
+        "full_remaining_this_month": full_daily_remaining if not profile.is_pro else 999,
     }
 
 
@@ -179,9 +226,9 @@ def can_consume_prompt(user, prompt_type: str = "text") -> tuple[bool, str]:
     today = timezone.now().date()
     usage = get_or_create_daily_usage(user, today)
 
-    # Every prompt counts toward the text (total) limit
-    text_remaining = FREE_TEXT_DAILY_LIMIT - usage.text_prompts_used
-    if text_remaining <= 0:
+    # Every prompt counts toward the free (total) limit
+    free_remaining = FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used
+    if free_remaining <= 0:
         reward_balance = get_reward_credit_balance(user)
         if reward_balance > 0:
             return True, "reward"
@@ -196,95 +243,92 @@ def can_consume_prompt(user, prompt_type: str = "text") -> tuple[bool, str]:
     return True, "free"
 
 
-@transaction.atomic
 def consume_prompt(user, source: str = "extension", prompt_type: str = "text") -> dict:
     """Atomically consume one prompt.
 
-    prompt_type: "text" (text-to-video) or "full" (with images/frames)
+    prompt_type: "text" (text-to-video), "full" (with images/frames), or "extend"
     Returns consumption result dict.
     """
-    profile = Profile.objects.select_for_update().get(user=user)
     today = timezone.now().date()
+    
+    # 1. Ensure the DailyUsage record exists safely outside the transaction lock
+    get_or_create_daily_usage(user, today)
 
-    usage, created = DailyUsage.objects.select_for_update().get_or_create(
-        user=user,
-        date=today,
-        defaults={
-            "free_prompts_used": 0,
-            "reward_prompts_used": 0,
-            "total_prompts_used": 0,
-            "text_prompts_used": 0,
-            "full_prompts_used": 0,
-        },
-    )
+    # 2. Open transaction and lock rows
+    with transaction.atomic():
+        profile = Profile.objects.select_for_update().get(user=user)
+        usage = DailyUsage.objects.select_for_update().get(user=user, date=today)
 
-    source_used = "pro"
-
-    if profile.is_pro:
         source_used = "pro"
-    else:
-        # Every prompt counts toward the text (total) limit
-        text_remaining = FREE_TEXT_DAILY_LIMIT - usage.text_prompts_used
 
-        if text_remaining > 0:
-            # Always increment text_prompts_used (total generations)
-            usage.text_prompts_used += 1
-            # Full prompts ALSO increment full_prompts_used
-            if prompt_type == "full":
-                full_remaining = FREE_FULL_DAILY_LIMIT - usage.full_prompts_used
-                if full_remaining <= 0:
+        if profile.is_pro:
+            source_used = "pro"
+        else:
+            # Every prompt counts toward the free limit
+            free_remaining = FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used
+
+            if free_remaining > 0:
+                if prompt_type == "full":
+                    full_remaining = FREE_FULL_DAILY_LIMIT - usage.full_prompts_used
+                    if full_remaining <= 0:
+                        return {
+                            "allowed": False,
+                            "source_used": None,
+                            "text_remaining_today": max(0, FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used),
+                            "full_remaining_today": 0,
+                            "reward_credit_balance": get_reward_credit_balance(user),
+                            "message": "Daily full-feature prompt limit reached.",
+                        }
+                usage.free_prompts_used += 1
+                source_used = "free"
+            else:
+                reward_balance = get_reward_credit_balance(user)
+                if reward_balance > 0:
+                    RewardCreditLedger.objects.create(
+                        user=user,
+                        amount=-1,
+                        source="prompt_consumption",
+                        status=CreditStatus.COMPLETED,
+                        metadata={"consumed_via": source, "prompt_type": prompt_type},
+                    )
+                    usage.reward_prompts_used += 1
+                    source_used = "reward"
+                else:
                     return {
                         "allowed": False,
                         "source_used": None,
-                        "text_remaining_today": max(0, FREE_TEXT_DAILY_LIMIT - usage.text_prompts_used),
-                        "full_remaining_today": 0,
-                        "reward_credit_balance": get_reward_credit_balance(user),
-                        "message": "Daily full-feature prompt limit reached.",
+                        "text_remaining_today": max(0, FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used),
+                        "full_remaining_today": max(0, FREE_FULL_DAILY_LIMIT - usage.full_prompts_used),
+                        "reward_credit_balance": 0,
+                        "message": f"Daily {prompt_type} prompt limit reached.",
                     }
-                usage.full_prompts_used += 1
-            usage.free_prompts_used += 1
-            source_used = "free"
+
+        if prompt_type == "full":
+            usage.full_prompts_used += 1
+        elif prompt_type == "extend":
+            usage.extend_prompts_used += 1
         else:
-            reward_balance = get_reward_credit_balance(user)
-            if reward_balance > 0:
-                RewardCreditLedger.objects.create(
-                    user=user,
-                    amount=-1,
-                    source="prompt_consumption",
-                    status=CreditStatus.COMPLETED,
-                    metadata={"consumed_via": source, "prompt_type": prompt_type},
-                )
-                usage.reward_prompts_used += 1
-                source_used = "reward"
-            else:
-                return {
-                    "allowed": False,
-                    "source_used": None,
-                    "text_remaining_today": max(0, FREE_TEXT_DAILY_LIMIT - usage.text_prompts_used),
-                    "full_remaining_today": max(0, FREE_FULL_DAILY_LIMIT - usage.full_prompts_used),
-                    "reward_credit_balance": 0,
-                    "message": f"Daily {prompt_type} prompt limit reached.",
-                }
+            usage.text_prompts_used += 1
 
-    usage.total_prompts_used += 1
-    usage.save()
+        usage.total_prompts_used += 1
+        usage.save()
 
-    UsageEvent.objects.create(
-        user=user,
-        event_type=UsageEvent.EventType.CONSUME_PROMPT,
-        prompt_count=1,
-        metadata={"source": source, "source_used": source_used, "prompt_type": prompt_type},
-    )
+        UsageEvent.objects.create(
+            user=user,
+            event_type=UsageEvent.EventType.CONSUME_PROMPT,
+            prompt_count=1,
+            metadata={"source": source, "source_used": source_used, "prompt_type": prompt_type},
+        )
 
-    return {
-        "allowed": True,
-        "source_used": source_used,
-        "prompt_type": prompt_type,
-        "text_remaining_today": max(0, FREE_TEXT_DAILY_LIMIT - usage.text_prompts_used),
-        "full_remaining_today": max(0, FREE_FULL_DAILY_LIMIT - usage.full_prompts_used),
-        "reward_credit_balance": get_reward_credit_balance(user),
-        "message": "Prompt consumed successfully.",
-    }
+        return {
+            "allowed": True,
+            "source_used": source_used,
+            "prompt_type": prompt_type,
+            "text_remaining_today": max(0, FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used) if not profile.is_pro else 999,
+            "full_remaining_today": max(0, FREE_FULL_DAILY_LIMIT - usage.full_prompts_used) if not profile.is_pro else 999,
+            "reward_credit_balance": get_reward_credit_balance(user),
+            "message": "Prompt consumed successfully.",
+        }
 
 
 # ── Profile helpers ──
@@ -320,51 +364,330 @@ def can_download(user, count: int = 1) -> tuple[bool, int]:
     return count <= remaining, remaining
 
 
-@transaction.atomic
 def consume_download(user, count: int = 1) -> dict:
     """Atomically consume download credits. Returns result dict."""
-    profile = Profile.objects.get(user=user)
     today = timezone.now().date()
 
-    usage, _ = DailyUsage.objects.select_for_update().get_or_create(
-        user=user,
-        date=today,
-        defaults={
-            "free_prompts_used": 0,
-            "reward_prompts_used": 0,
-            "total_prompts_used": 0,
-            "text_prompts_used": 0,
-            "full_prompts_used": 0,
-            "downloads_used": 0,
-        },
-    )
+    # 1. Ensure the DailyUsage record exists safely outside the transaction lock
+    get_or_create_daily_usage(user, today)
 
-    if not profile.is_pro:
-        remaining = FREE_DOWNLOAD_DAILY_LIMIT - usage.downloads_used
-        if count > remaining:
-            return {
-                "allowed": False,
-                "downloads_used_today": usage.downloads_used,
-                "downloads_remaining_today": max(0, remaining),
-                "download_daily_limit": FREE_DOWNLOAD_DAILY_LIMIT,
-                "message": f"Daily download limit reached ({FREE_DOWNLOAD_DAILY_LIMIT}/day). Upgrade to Pro for unlimited.",
-            }
+    with transaction.atomic():
+        profile = Profile.objects.get(user=user)
+        usage = DailyUsage.objects.select_for_update().get(user=user, date=today)
 
-    usage.downloads_used += count
-    usage.save()
+        if not profile.is_pro:
+            remaining = FREE_DOWNLOAD_DAILY_LIMIT - usage.downloads_used
+            if count > remaining:
+                return {
+                    "allowed": False,
+                    "downloads_used_today": usage.downloads_used,
+                    "downloads_remaining_today": max(0, remaining),
+                    "download_daily_limit": FREE_DOWNLOAD_DAILY_LIMIT,
+                    "message": f"Daily download limit reached ({FREE_DOWNLOAD_DAILY_LIMIT}/day). Upgrade to Pro for unlimited.",
+                }
 
-    UsageEvent.objects.create(
-        user=user,
-        event_type=UsageEvent.EventType.DOWNLOAD_COMPLETED,
-        prompt_count=count,
-        metadata={"source": "extension", "count": count},
-    )
+        usage.downloads_used += count
+        usage.save()
 
-    new_remaining = max(0, FREE_DOWNLOAD_DAILY_LIMIT - usage.downloads_used) if not profile.is_pro else 999
+        UsageEvent.objects.create(
+            user=user,
+            event_type=UsageEvent.EventType.DOWNLOAD_COMPLETED,
+            prompt_count=count,
+            metadata={"source": "extension", "count": count},
+        )
+
+        new_remaining = max(0, FREE_DOWNLOAD_DAILY_LIMIT - usage.downloads_used) if not profile.is_pro else 999
+        return {
+            "allowed": True,
+            "downloads_used_today": usage.downloads_used,
+            "downloads_remaining_today": new_remaining,
+            "download_daily_limit": FREE_DOWNLOAD_DAILY_LIMIT if not profile.is_pro else 999,
+            "message": f"{count} download(s) recorded.",
+        }
+
+
+# ── Queue run consumption ──
+
+
+_MODE_EVENT_MAP = {
+    "lite": UsageEvent.EventType.QUEUE_RUN_LITE,
+    "flow": UsageEvent.EventType.QUEUE_RUN_FLOW,
+    "full": UsageEvent.EventType.QUEUE_RUN_FULL,
+}
+
+
+def can_start_queue(user, mode: str) -> dict:
+    """Check if user can start a queue in the given mode.
+
+    Returns { allowed, used, limit, remaining, period, message }.
+    """
+    profile = Profile.objects.get(user=user)
+
+    if profile.is_pro:
+        return {
+            "allowed": True,
+            "used": 0,
+            "limit": 999,
+            "remaining": 999,
+            "period": "unlimited",
+            "message": "Pro — unlimited.",
+        }
+
+    now = timezone.now()
+    today = now.date()
+    usage = get_or_create_daily_usage(user, today)
+
+    if mode == "lite":
+        used = usage.lite_runs_today
+        limit = 999
+        remaining = 999
+        period = "unlimited"
+    elif mode == "flow":
+        used = usage.flow_runs_today
+        limit = FREE_FLOW_DAILY_LIMIT
+        remaining = max(0, limit - used)
+        period = "day"
+    elif mode == "full":
+        used = usage.full_runs_today
+        limit = FREE_FULL_DAILY_LIMIT_RUNS
+        remaining = max(0, limit - used)
+        period = "day"
+    else:
+        return {
+            "allowed": False,
+            "used": 0,
+            "limit": 0,
+            "remaining": 0,
+            "period": "day",
+            "message": f"Unknown mode: {mode}",
+        }
+
+    if remaining <= 0:
+        return {
+            "allowed": False,
+            "used": used,
+            "limit": limit,
+            "remaining": 0,
+            "period": period,
+            "message": f"{mode.capitalize()} mode limit reached ({limit}/{period}). Upgrade to Pro for unlimited.",
+        }
+
     return {
         "allowed": True,
-        "downloads_used_today": usage.downloads_used,
-        "downloads_remaining_today": new_remaining,
-        "download_daily_limit": FREE_DOWNLOAD_DAILY_LIMIT if not profile.is_pro else 999,
-        "message": f"{count} download(s) recorded.",
+        "used": used,
+        "limit": limit,
+        "remaining": remaining,
+        "period": period,
+        "message": f"{remaining} {mode} run(s) remaining this {period}.",
     }
+
+
+def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str = "text",
+                      text_count: int = None, full_count: int = None) -> dict:
+    """Atomically record a queue run AND pre-consume prompts for the given mode.
+
+    Supports mixed queues: if text_count and full_count are provided, each type
+    is pre-consumed into the correct bucket. Otherwise falls back to single-type.
+
+    Returns consumption result dict.
+    """
+    now = timezone.now()
+    today = now.date()
+
+    # Ensure rows exist outside the lock
+    get_or_create_daily_usage(user, today)
+    if mode == "full":
+        get_or_create_monthly_usage(user, now.year, now.month)
+
+    with transaction.atomic():
+        profile = Profile.objects.get(user=user)
+        usage = DailyUsage.objects.select_for_update().get(user=user, date=today)
+
+        # For full mode, always fetch monthly (Pro and Free both need it for tracking)
+        monthly = None
+        if mode == "full":
+            monthly = MonthlyUsage.objects.select_for_update().get(
+                user=user, year=now.year, month=now.month
+            )
+
+        # Enforce limits for free users only
+        if not profile.is_pro:
+            # Lite mode is unlimited for all users — no limit check needed
+            if False:  # was: mode == "lite" limit check
+                pass
+            elif mode == "flow" and usage.flow_runs_today >= FREE_FLOW_DAILY_LIMIT:
+                return {
+                    "allowed": False,
+                    "used": usage.flow_runs_today,
+                    "limit": FREE_FLOW_DAILY_LIMIT,
+                    "remaining": 0,
+                    "period": "day",
+                    "message": f"Flow mode limit reached ({FREE_FLOW_DAILY_LIMIT}/day). Upgrade to Pro for unlimited.",
+                }
+            elif mode == "full" and usage.full_runs_today >= FREE_FULL_DAILY_LIMIT_RUNS:
+                return {
+                    "allowed": False,
+                    "used": usage.full_runs_today,
+                    "limit": FREE_FULL_DAILY_LIMIT_RUNS,
+                    "remaining": 0,
+                    "period": "day",
+                    "message": f"Full mode limit reached ({FREE_FULL_DAILY_LIMIT_RUNS}/day). Upgrade to Pro for unlimited.",
+                }
+            elif mode not in ("lite", "flow", "full"):
+                return {
+                    "allowed": False,
+                    "used": 0,
+                    "limit": 0,
+                    "remaining": 0,
+                    "period": "day",
+                    "message": f"Unknown mode: {mode}",
+                }
+
+        # Increment queue run counters (for both Pro and Free — Pro for monitoring)
+        if mode == "lite":
+            usage.lite_runs_today += 1
+        elif mode == "flow":
+            usage.flow_runs_today += 1
+        elif mode == "full":
+            usage.full_runs_today += 1
+            if monthly:
+                monthly.full_runs_used += 1
+                monthly.save()
+
+        # ── Enforce prompt limits server-side ──
+        if not profile.is_pro:
+            free_remaining = FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used
+            if prompt_count > free_remaining:
+                # Cap to whatever is remaining (don't let API callers bypass)
+                prompt_count = max(0, free_remaining)
+                if text_count is not None and full_count is not None:
+                    # Scale down proportionally
+                    total_requested = text_count + full_count
+                    if total_requested > 0 and prompt_count > 0:
+                        ratio = prompt_count / total_requested
+                        text_count = round(text_count * ratio)
+                        full_count = prompt_count - text_count
+                    else:
+                        text_count = 0
+                        full_count = 0
+                if prompt_count <= 0:
+                    return {
+                        "allowed": False,
+                        "used": usage.free_prompts_used,
+                        "limit": FREE_TEXT_DAILY_LIMIT,
+                        "remaining": 0,
+                        "period": "day",
+                        "message": "Daily prompt limit reached. Upgrade to Pro for unlimited.",
+                    }
+
+            # Enforce full-feature limit
+            if full_count is not None and full_count > 0:
+                full_remaining = FREE_FULL_DAILY_LIMIT - usage.full_prompts_used
+                if full_count > full_remaining:
+                    return {
+                        "allowed": False,
+                        "used": usage.full_prompts_used,
+                        "limit": FREE_FULL_DAILY_LIMIT,
+                        "remaining": max(0, full_remaining),
+                        "period": "day",
+                        "message": "Daily full-feature limit reached. Upgrade to Pro for unlimited.",
+                    }
+            elif prompt_type == "full":
+                full_remaining = FREE_FULL_DAILY_LIMIT - usage.full_prompts_used
+                if prompt_count > full_remaining:
+                    prompt_count = max(0, full_remaining)
+                    if prompt_count <= 0:
+                        return {
+                            "allowed": False,
+                            "used": usage.full_prompts_used,
+                            "limit": FREE_FULL_DAILY_LIMIT,
+                            "remaining": 0,
+                            "period": "day",
+                            "message": "Daily full-feature limit reached. Upgrade to Pro for unlimited.",
+                        }
+
+        # ── Pre-consume prompts (charge upfront) ──
+        if text_count is not None and full_count is not None:
+            usage.text_prompts_used += text_count
+            usage.full_prompts_used += full_count
+        elif prompt_type == "full":
+            usage.full_prompts_used += prompt_count
+        else:
+            usage.text_prompts_used += prompt_count
+        usage.free_prompts_used += prompt_count
+        usage.total_prompts_used += prompt_count
+        usage.save()
+
+        # ── Create "pending" per-prompt events ──
+        # These are placeholders. v3.0 extensions will UPDATE them to "done"/"failed"
+        # as each prompt finishes. Old extensions never update them, but the events
+        # still exist — so the dashboard always shows correct counts.
+        import uuid
+        batch_id = str(uuid.uuid4())[:8]  # Link events to this queue run
+
+        if text_count is not None and full_count is not None:
+            for i in range(text_count):
+                UsageEvent.objects.create(
+                    user=user,
+                    event_type=UsageEvent.EventType.CONSUME_PROMPT,
+                    prompt_count=1,
+                    metadata={"source": "queue_run", "source_used": "free" if not profile.is_pro else "pro",
+                              "prompt_type": "text", "status": "pending", "batch_id": batch_id, "seq": i},
+                )
+            for i in range(full_count):
+                UsageEvent.objects.create(
+                    user=user,
+                    event_type=UsageEvent.EventType.CONSUME_PROMPT,
+                    prompt_count=1,
+                    metadata={"source": "queue_run", "source_used": "free" if not profile.is_pro else "pro",
+                              "prompt_type": "full", "status": "pending", "batch_id": batch_id, "seq": text_count + i},
+                )
+        else:
+            for i in range(prompt_count):
+                UsageEvent.objects.create(
+                    user=user,
+                    event_type=UsageEvent.EventType.CONSUME_PROMPT,
+                    prompt_count=1,
+                    metadata={"source": "queue_run", "source_used": "free" if not profile.is_pro else "pro",
+                              "prompt_type": prompt_type, "status": "pending", "batch_id": batch_id, "seq": i},
+                )
+
+        # Log queue run event with per-type breakdown in metadata
+        event_type = _MODE_EVENT_MAP.get(mode, UsageEvent.EventType.QUEUE_STARTED)
+        event_meta = {"source": "extension", "mode": mode, "prompt_count": prompt_count, "prompt_type": prompt_type, "batch_id": batch_id}
+        if text_count is not None and full_count is not None:
+            event_meta["text_count"] = text_count
+            event_meta["full_count"] = full_count
+        UsageEvent.objects.create(
+            user=user,
+            event_type=event_type,
+            prompt_count=prompt_count,
+            metadata=event_meta,
+        )
+
+        # Compute remaining
+        if mode == "lite":
+            used = usage.lite_runs_today
+            limit = 999
+            period = "unlimited"
+        elif mode == "flow":
+            used = usage.flow_runs_today
+            limit = FREE_FLOW_DAILY_LIMIT
+            period = "day"
+        else:  # full
+            used = usage.full_runs_today
+            limit = FREE_FULL_DAILY_LIMIT_RUNS
+            period = "day"
+
+        remaining = 999 if (mode == "lite" or profile.is_pro) else max(0, limit - used)
+
+        return {
+            "allowed": True,
+            "used": used if not profile.is_pro else 0,
+            "limit": limit if not profile.is_pro else 999,
+            "remaining": remaining,
+            "period": period,
+            "message": f"Queue run recorded. {remaining} {mode} run(s) remaining.",
+        }
+
+

@@ -1,4 +1,9 @@
-"""Admin dashboard — rich visual stats with charts, funnels, and analytics."""
+"""Admin dashboard — rich visual stats with charts, funnels, and analytics.
+
+Data philosophy: All prompt counts are derived from confirmed UsageEvent records
+(consume_prompt events), NOT from DailyUsage pre-consumed totals. This ensures
+the admin sees what ACTUALLY happened, not inflated "launch intent" numbers.
+"""
 import json
 from datetime import timedelta
 
@@ -6,10 +11,36 @@ from django.conf import settings
 from django.utils import timezone
 
 
+def _event_prompt_counts(date_filter):
+    """Count SUBMITTED prompts — only done + failed (actually sent to Flow).
+
+    Returns (total, text, full) based on events with status done or failed.
+    Pending events (pre-charged but never sent) are excluded.
+    """
+    from apps.usage.models import UsageEvent
+    from django.db.models import Sum, Q, Count
+
+    qs = UsageEvent.objects.filter(
+        event_type="consume_prompt",
+        **date_filter,
+    ).filter(
+        Q(metadata__status="done") | Q(metadata__status="failed")
+    )
+    total = qs.aggregate(s=Sum("prompt_count"))["s"] or 0
+
+    # Count by prompt_type in metadata
+    full = qs.filter(metadata__prompt_type="full").aggregate(
+        s=Sum("prompt_count")
+    )["s"] or 0
+    text = total - full  # everything else is text
+
+    return total, text, full
+
+
 def dashboard_callback(request, context):
     """Provide chart data, KPI metrics, funnels, and analytics for the dashboard."""
     from apps.plans.models import Profile
-    from apps.usage.models import DailyUsage, UsageEvent
+    from apps.usage.models import DailyUsage, UsageEvent, MonthlyUsage
     from apps.users.models import CustomUser
     from apps.webhooks.models import WebhookEvent
     from apps.extractions.models import SavedExtraction
@@ -34,28 +65,62 @@ def dashboard_callback(request, context):
     pro_pct = round((pro_users / total_users * 100) if total_users else 0)
     free_pct = 100 - pro_pct
 
-    # ── Usage today ──
-    today_agg = DailyUsage.objects.filter(date=today).aggregate(
-        total=Sum("total_prompts_used"),
-        text=Sum("text_prompts_used"),
-        full=Sum("full_prompts_used"),
-        downloads=Sum("downloads_used"),
+    # ── REAL usage today (from confirmed events) ──
+    today_total, today_text, today_full = _event_prompt_counts(
+        {"created_at__date": today}
     )
-    today_total = today_agg["total"] or 0
-    today_text = today_agg["text"] or 0
-    today_full = today_agg["full"] or 0
-    today_downloads = today_agg["downloads"] or 0
+
+    # ── Submitted vs Pending (prompts actually sent to Google Flow) ──
+    today_events_qs = UsageEvent.objects.filter(
+        event_type="consume_prompt", created_at__date=today,
+    )
+    today_done = today_events_qs.filter(
+        metadata__status="done"
+    ).aggregate(s=Sum("prompt_count"))["s"] or 0
+    today_failed = today_events_qs.filter(
+        metadata__status="failed"
+    ).aggregate(s=Sum("prompt_count"))["s"] or 0
+    today_pending = today_events_qs.filter(
+        metadata__status="pending"
+    ).aggregate(s=Sum("prompt_count"))["s"] or 0
+    today_submitted = today_done + today_failed  # actually sent to Flow
+    submission_rate = round((today_submitted / today_total * 100) if today_total > 0 else 0)
+
+    # Downloads from events (real downloads, not pre-consumed)
+    today_downloads = UsageEvent.objects.filter(
+        created_at__date=today,
+        event_type="download_completed",
+    ).aggregate(s=Sum("prompt_count"))["s"] or 0
+
+    # Queue run counts (from DailyUsage — these are accurate since each run = 1 event)
+    today_run_agg = DailyUsage.objects.filter(date=today).aggregate(
+        lite_runs=Sum("lite_runs_today"),
+        flow_runs=Sum("flow_runs_today"),
+    )
+    today_lite_runs = today_run_agg["lite_runs"] or 0
+    today_flow_runs = today_run_agg["flow_runs"] or 0
+
+    # Full runs from monthly (accurate)
+    today_full_runs = MonthlyUsage.objects.filter(
+        year=today.year, month=today.month,
+    ).aggregate(t=Sum("full_runs_used"))["t"] or 0
+
     active_today = DailyUsage.objects.filter(date=today).count()
     total_events = UsageEvent.objects.filter(created_at__date=today).count()
 
-    # ── Yesterday comparison (for trend arrows) ──
+    # Queue runs recorded today (from events)
+    today_queue_run_count = UsageEvent.objects.filter(
+        created_at__date=today,
+        event_type__in=["queue_run_lite", "queue_run_flow", "queue_run_full"],
+    ).count()
+
+    # ── Yesterday comparison (REAL event-based) ──
     yesterday = today - timedelta(days=1)
-    yesterday_agg = DailyUsage.objects.filter(date=yesterday).aggregate(
-        total=Sum("total_prompts_used"),
-        downloads=Sum("downloads_used"),
-    )
-    yesterday_total = yesterday_agg["total"] or 0
-    yesterday_downloads = yesterday_agg["downloads"] or 0
+    yesterday_total, _, _ = _event_prompt_counts({"created_at__date": yesterday})
+    yesterday_downloads = UsageEvent.objects.filter(
+        created_at__date=yesterday,
+        event_type="download_completed",
+    ).aggregate(s=Sum("prompt_count"))["s"] or 0
     yesterday_signups = CustomUser.objects.filter(created_at__date=yesterday).count()
     yesterday_active = DailyUsage.objects.filter(date=yesterday).count()
 
@@ -115,32 +180,49 @@ def dashboard_callback(request, context):
             "pct": retention_pct,
         })
 
-    # ── Power Users (>50% of daily limit used) ──
+    # ── Power Users (event-based — real usage) ──
     from apps.plans.services import FREE_TEXT_DAILY_LIMIT
-    half_limit = FREE_TEXT_DAILY_LIMIT // 2
     power_users_qs = (
-        DailyUsage.objects.filter(date=today, total_prompts_used__gte=half_limit)
-        .select_related("user")
-        .order_by("-total_prompts_used")[:5]
+        UsageEvent.objects.filter(
+            created_at__date=today,
+            event_type="consume_prompt",
+        )
+        .values("user__email", "user__profile__is_pro_active")
+        .annotate(
+            total=Sum("prompt_count"),
+            text_count=Sum("prompt_count", filter=Q(metadata__prompt_type="text") | ~Q(metadata__has_key="prompt_type")),
+            full_count=Sum("prompt_count", filter=Q(metadata__prompt_type="full")),
+        )
+        .order_by("-total")[:5]
     )
     power_users = []
-    for du in power_users_qs:
-        try:
-            is_pro = du.user.profile.is_pro
-        except Exception:
-            is_pro = False
-        usage_pct = min(100, round(du.total_prompts_used / FREE_TEXT_DAILY_LIMIT * 100))
+    for pu in power_users_qs:
+        total_p = pu["total"] or 0
+        usage_pct = min(100, round(total_p / FREE_TEXT_DAILY_LIMIT * 100))
         power_users.append({
-            "email": du.user.email,
-            "total": du.total_prompts_used,
-            "downloads": du.downloads_used,
+            "email": pu["user__email"],
+            "total": total_p,
+            "text": pu["text_count"] or 0,
+            "full": pu["full_count"] or 0,
             "pct": usage_pct,
-            "is_pro": is_pro,
+            "is_pro": pu["user__profile__is_pro_active"] or False,
         })
 
     # ── Revenue Estimate ──
-    pro_price_monthly = 14.99  # Whop subscription price
-    mrr = round(pro_users * pro_price_monthly, 2)
+    # Count linked Whop subscribers (users with whop_membership_id)
+    whop_linked_users = Profile.objects.filter(
+        is_pro_active=True,
+        whop_membership_id__isnull=False,
+    ).exclude(whop_membership_id="").count()
+    # Count unlinked Whop payers (paid on Whop but no AutoFlow account yet)
+    # These are membership.activated events with no linked_user
+    unlinked_whop_payers = WebhookEvent.objects.filter(
+        event_type="membership.activated",
+        linked_user__isnull=True,
+    ).count()
+    whop_paying_users = whop_linked_users + unlinked_whop_payers
+    pro_price_monthly = 10.00  # Whop subscription price
+    mrr = round(whop_paying_users * pro_price_monthly, 2)
     arr = round(mrr * 12, 2)
 
     # ── Event Type Distribution ──
@@ -159,6 +241,9 @@ def dashboard_callback(request, context):
         "download_completed": "#a78bfa",
         "run_aborted": "#f59e0b",
         "reward_granted": "#eab308",
+        "queue_run_lite": "#facc15",
+        "queue_run_flow": "#34d399",
+        "queue_run_full": "#6366f1",
     }
     event_labels = {
         "consume_prompt": "Prompts",
@@ -168,6 +253,9 @@ def dashboard_callback(request, context):
         "download_completed": "Downloads",
         "run_aborted": "Aborted",
         "reward_granted": "Rewards",
+        "queue_run_lite": "Lite Run",
+        "queue_run_flow": "Flow Run",
+        "queue_run_full": "Full Run",
     }
     for ev in event_dist_qs:
         event_distribution.append({
@@ -190,6 +278,9 @@ def dashboard_callback(request, context):
         "download_completed": "⬇️",
         "run_aborted": "⚠️",
         "reward_granted": "🎁",
+        "queue_run_lite": "⚡",
+        "queue_run_flow": "🔄",
+        "queue_run_full": "🚀",
     }
     for ev in recent_events_qs:
         from django.utils.timesince import timesince
@@ -202,25 +293,165 @@ def dashboard_callback(request, context):
             "time_ago": timesince(ev.created_at),
         })
 
-    # ── 7-day usage chart data ──
+    # ── 7-day usage chart data (event-based = REAL) ──
     chart_labels = []
     chart_text = []
     chart_full = []
     chart_total = []
     chart_downloads = []
+    chart_lite_runs = []
+    chart_flow_runs = []
+    chart_full_runs = []
+    chart_active_users = []
     for i in range(6, -1, -1):
         d = today - timedelta(days=i)
         chart_labels.append(d.strftime("%b %d"))
-        agg = DailyUsage.objects.filter(date=d).aggregate(
-            t=Sum("text_prompts_used"),
-            f=Sum("full_prompts_used"),
-            tot=Sum("total_prompts_used"),
-            dl=Sum("downloads_used"),
+
+        # Real prompt counts from events
+        d_total, d_text, d_full = _event_prompt_counts({"created_at__date": d})
+        chart_text.append(d_text)
+        chart_full.append(d_full)
+        chart_total.append(d_total)
+
+        # Downloads from events
+        d_downloads = UsageEvent.objects.filter(
+            created_at__date=d, event_type="download_completed"
+        ).aggregate(s=Sum("prompt_count"))["s"] or 0
+        chart_downloads.append(d_downloads)
+
+        # Queue runs from DailyUsage (accurate — 1 run = 1 increment)
+        run_agg = DailyUsage.objects.filter(date=d).aggregate(
+            lr=Sum("lite_runs_today"),
+            fr=Sum("flow_runs_today"),
         )
-        chart_text.append(agg["t"] or 0)
-        chart_full.append(agg["f"] or 0)
-        chart_total.append(agg["tot"] or 0)
-        chart_downloads.append(agg["dl"] or 0)
+        chart_lite_runs.append(run_agg["lr"] or 0)
+        chart_flow_runs.append(run_agg["fr"] or 0)
+
+        # Full runs from MonthlyUsage for that day's events
+        d_full_runs = UsageEvent.objects.filter(
+            created_at__date=d,
+            event_type="queue_run_full",
+        ).count()
+        chart_full_runs.append(d_full_runs)
+
+        # Active users (users who had any event that day)
+        chart_active_users.append(
+            UsageEvent.objects.filter(
+                created_at__date=d,
+                event_type="consume_prompt",
+            ).values("user").distinct().count()
+        )
+
+    # ── Queue runs chart data ──
+    queue_chart = json.dumps({
+        "labels": chart_labels,
+        "datasets": [
+            {
+                "label": "Lite",
+                "data": chart_lite_runs,
+                "backgroundColor": "#facc15",
+                "borderRadius": 4,
+            },
+            {
+                "label": "Flow",
+                "data": chart_flow_runs,
+                "backgroundColor": "#34d399",
+                "borderRadius": 4,
+            },
+            {
+                "label": "Full",
+                "data": chart_full_runs,
+                "backgroundColor": "#818cf8",
+                "borderRadius": 4,
+            },
+        ],
+    })
+
+    # ── Active users chart data ──
+    active_chart = json.dumps({
+        "labels": chart_labels,
+        "datasets": [
+            {
+                "label": "Active Users",
+                "data": chart_active_users,
+                "borderColor": "#f59e0b",
+                "backgroundColor": "rgba(245, 158, 11, 0.1)",
+                "fill": True,
+                "tension": 0.4,
+                "type": "line",
+                "pointRadius": 5,
+                "pointBackgroundColor": "#f59e0b",
+            },
+        ],
+    })
+
+    # ── Upgrade candidates (event-based — real usage intensity) ──
+    from apps.plans.services import FREE_TEXT_DAILY_LIMIT
+    threshold = int(FREE_TEXT_DAILY_LIMIT * 0.5)  # users who hit 50%+ of limit
+
+    # Get users with high real usage in last 3 days
+    upgrade_candidates_qs = (
+        UsageEvent.objects.filter(
+            created_at__date__gte=today - timedelta(days=3),
+            event_type="consume_prompt",
+        )
+        .exclude(user__profile__is_pro_active=True)
+        .values("user__email")
+        .annotate(
+            total_prompts=Sum("prompt_count"),
+            days_active=Count("created_at__date", distinct=True),
+            total_runs=Count(
+                "id",
+                filter=Q(event_type__in=["queue_run_lite", "queue_run_flow", "queue_run_full"]),
+            ),
+        )
+        .filter(total_prompts__gte=threshold)
+        .order_by("-total_prompts")[:8]
+    )
+    # We also need queue run counts from the same user set
+    upgrade_candidates = []
+    for uc in upgrade_candidates_qs:
+        # Get queue runs separately since they're different event types
+        user_runs = UsageEvent.objects.filter(
+            created_at__date__gte=today - timedelta(days=3),
+            event_type__in=["queue_run_lite", "queue_run_flow", "queue_run_full"],
+            user__email=uc["user__email"],
+        ).count()
+
+        usage_pct = min(100, round(uc["total_prompts"] / (FREE_TEXT_DAILY_LIMIT * uc["days_active"]) * 100))
+        upgrade_candidates.append({
+            "email": uc["user__email"],
+            "days_active": uc["days_active"],
+            "total_prompts": uc["total_prompts"],
+            "total_runs": user_runs,
+            "usage_pct": usage_pct,
+            "heat": "🔥🔥🔥" if usage_pct >= 90 else ("🔥🔥" if usage_pct >= 70 else "🔥"),
+        })
+
+    # ── Hourly activity heatmap (today) ──
+    hourly_events = []
+    for hour in range(24):
+        count = UsageEvent.objects.filter(
+            created_at__date=today,
+            created_at__hour=hour,
+        ).count()
+        hourly_events.append(count)
+    hourly_chart = json.dumps({
+        "labels": [f"{h:02d}" for h in range(24)],
+        "datasets": [{
+            "label": "Events",
+            "data": hourly_events,
+            "backgroundColor": [
+                f"rgba(16,185,129,{max(0.1, min(1.0, c / max(max(hourly_events), 1)))})"
+                for c in hourly_events
+            ],
+            "borderRadius": 3,
+        }],
+    })
+
+    # ── Avg prompts per queue run (real: confirmed prompts / queue runs) ──
+    total_queue_runs = today_queue_run_count
+    avg_prompts_per_run = round(today_total / total_queue_runs, 1) if total_queue_runs > 0 else 0
 
     # ── 7-day signup chart data ──
     signup_labels = []
@@ -232,20 +463,35 @@ def dashboard_callback(request, context):
             CustomUser.objects.filter(created_at__date=d).count()
         )
 
-    # ── Top 5 users today ──
+    # ── Top 5 users today (event-based = REAL) ──
     top_users_qs = (
-        DailyUsage.objects.filter(date=today)
-        .select_related("user")
-        .order_by("-total_prompts_used")[:5]
+        UsageEvent.objects.filter(
+            created_at__date=today,
+            event_type="consume_prompt",
+        )
+        .values("user__email")
+        .annotate(
+            total=Sum("prompt_count"),
+            text=Sum("prompt_count", filter=Q(metadata__prompt_type="text") | ~Q(metadata__has_key="prompt_type")),
+            full=Sum("prompt_count", filter=Q(metadata__prompt_type="full")),
+        )
+        .order_by("-total")[:5]
     )
     top_users = []
-    for du in top_users_qs:
+    for tu in top_users_qs:
+        # Get downloads for this user today
+        dl = UsageEvent.objects.filter(
+            created_at__date=today,
+            event_type="download_completed",
+            user__email=tu["user__email"],
+        ).aggregate(s=Sum("prompt_count"))["s"] or 0
+
         top_users.append({
-            "email": du.user.email,
-            "text": du.text_prompts_used,
-            "full": du.full_prompts_used,
-            "downloads": du.downloads_used,
-            "total": du.total_prompts_used,
+            "email": tu["user__email"],
+            "text": tu["text"] or 0,
+            "full": tu["full"] or 0,
+            "downloads": dl,
+            "total": tu["total"] or 0,
         })
 
     # ── Recent signups ──
@@ -262,9 +508,13 @@ def dashboard_callback(request, context):
             "date": u.created_at.strftime("%b %d, %H:%M"),
         })
 
-    # ── All-time stats ──
-    all_time_prompts = DailyUsage.objects.aggregate(t=Sum("total_prompts_used"))["t"] or 0
-    all_time_downloads = DailyUsage.objects.aggregate(d=Sum("downloads_used"))["d"] or 0
+    # ── All-time stats (event-based for accuracy) ──
+    all_time_prompts = UsageEvent.objects.filter(
+        event_type="consume_prompt"
+    ).aggregate(s=Sum("prompt_count"))["s"] or 0
+    all_time_downloads = UsageEvent.objects.filter(
+        event_type="download_completed"
+    ).aggregate(s=Sum("prompt_count"))["s"] or 0
 
     context.update({
         # KPI cards
@@ -312,6 +562,13 @@ def dashboard_callback(request, context):
                 "icon": "movie",
             },
             {
+                "title": "Queue Runs Today",
+                "metric": today_lite_runs + today_flow_runs + today_full_runs,
+                "footer": f"⚡{today_lite_runs} Lite · 🔄{today_flow_runs} Flow · 🚀{today_full_runs} Full",
+                "highlight": f"~{avg_prompts_per_run} prompts/run" if avg_prompts_per_run > 0 else None,
+                "icon": "play_circle",
+            },
+            {
                 "title": "Pending Webhooks",
                 "metric": pending_webhooks,
                 "footer": "⚠️ Needs attention!" if pending_webhooks else "All processed ✓",
@@ -319,6 +576,15 @@ def dashboard_callback(request, context):
                 "accent": "red" if pending_webhooks else None,
             },
         ],
+        # Submitted prompts (sent to Google Flow)
+        "submitted": {
+            "sent": today_submitted,
+            "done": today_done,
+            "failed": today_failed,
+            "pending": today_pending,
+            "total_charged": today_total,
+            "rate": submission_rate,
+        },
         # Chart data
         "usage_chart": json.dumps({
             "labels": chart_labels,
@@ -407,6 +673,19 @@ def dashboard_callback(request, context):
             "converted_to_pro": marketing_converted_to_pro,
             "conversion_rate": marketing_conversion_rate,
         },
+        # Queue runs by mode (for mode cards)
+        "queue_runs": {
+            "lite": today_lite_runs,
+            "flow": today_flow_runs,
+            "full": today_full_runs,
+            "total": today_lite_runs + today_flow_runs + today_full_runs,
+        },
+        # New analytics
+        "queue_chart": queue_chart,
+        "active_chart": active_chart,
+        "hourly_chart": hourly_chart,
+        "upgrade_candidates": upgrade_candidates,
+        "avg_prompts_per_run": avg_prompts_per_run,
     })
 
     return context
@@ -453,12 +732,13 @@ def badge_callback_extractions(request):
 
 def badge_callback_downloads_today(request):
     """Sidebar badge: downloads today."""
-    from apps.usage.models import DailyUsage
+    from apps.usage.models import UsageEvent
     from django.utils import timezone
     from django.db.models import Sum
-    result = DailyUsage.objects.filter(
-        date=timezone.localdate()
-    ).aggregate(d=Sum("downloads_used"))
+    result = UsageEvent.objects.filter(
+        created_at__date=timezone.localdate(),
+        event_type="download_completed",
+    ).aggregate(d=Sum("prompt_count"))
     count = result["d"] or 0
     return count if count > 0 else None
 
@@ -468,4 +748,3 @@ def badge_callback_pending_claims(request):
     from apps.rewards.models import ReviewRewardClaim
     count = ReviewRewardClaim.objects.filter(status="pending").count()
     return count if count > 0 else None
-

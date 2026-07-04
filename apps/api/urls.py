@@ -9,8 +9,14 @@ urlpatterns = [
     path("auth/login", views.LoginView.as_view(), name="auth-login"),
     path("auth/refresh", views.RefreshTokenView.as_view(), name="auth-refresh"),
     path("auth/me", views.MeView.as_view(), name="auth-me"),
+    path("auth/google", views.GoogleLoginView.as_view(), name="auth-google"),
+    path("auth/google/config", views.GoogleConfigView.as_view(), name="auth-google-config"),
     path("auth/verify-email", views.VerifyEmailView.as_view(), name="auth-verify-email"),
+
     path("auth/resend-verification", views.ResendVerificationView.as_view(), name="auth-resend-verification"),
+    path("auth/password/reset-request", views.RequestPasswordResetView.as_view(), name="auth-password-reset-request"),
+    path("auth/password/reset-confirm", views.ConfirmPasswordResetView.as_view(), name="auth-password-reset-confirm"),
+
 
     # Entitlements
     path("entitlements", views.EntitlementsView.as_view(), name="entitlements"),
@@ -18,6 +24,7 @@ urlpatterns = [
     # Usage
     path("usage/consume", views.ConsumePromptView.as_view(), name="usage-consume"),
     path("usage/download", views.ConsumeDownloadView.as_view(), name="usage-download"),
+    path("usage/queue-run", views.ConsumeQueueRunView.as_view(), name="usage-queue-run"),
     path("usage/events", views.UsageEventView.as_view(), name="usage-events"),
 
     # Rewards
@@ -37,8 +44,4 @@ urlpatterns = [
     path("extractions/check-limit/", views.SavedExtractionCheckLimitView.as_view(), name="extractions-check-limit"),
     path("extractions/", views.SavedExtractionsView.as_view(), name="extractions-list"),
     path("extractions/<int:pk>/", views.SavedExtractionDetailView.as_view(), name="extractions-detail"),
-
-    # Diagnostic (TEMPORARY - remove after fixing admin)
-    path("diagnostic", views.DiagnosticView.as_view(), name="diagnostic"),
-    path("run-migrate", views.RunMigrateView.as_view(), name="run-migrate"),
 ]
