@@ -11,6 +11,22 @@ export const metadata = {
 
 const releases = [
   {
+    version: "4.2",
+    date: "2026-07-04",
+    title: "Instagram Extractor Fix & Smart Retry Engine",
+    highlights: [
+      "Instagram Extractor resilience — restricted and private Instagram posts now return clear, user-friendly error messages instead of raw technical errors",
+      "Smart retry engine — failed generations now click the DOM retry button (up to 3 attempts) instead of re-submitting the entire prompt, saving time and credits",
+      "Whop email mismatch prevention — a visible warning on registration and upgrade buttons reminds users to use the same email on Whop and AutoFlow for automatic Pro activation",
+    ],
+    improvements: [
+      "Increased MAX_RETRIES to 3 with a new VERIFY_MAX_RETRIES constant for finer retry control",
+      "MediaID capture reliability improved during the verification loop",
+      "Backend now categorizes Instagram errors into 'Restricted Content' vs 'Server Block' with actionable guidance",
+      "Upgrade button shows a confirmation alert before redirecting to Whop checkout",
+    ],
+  },
+  {
     version: "4.0",
     date: "2026-06-22",
     title: "Official v4.0 Production Release",
