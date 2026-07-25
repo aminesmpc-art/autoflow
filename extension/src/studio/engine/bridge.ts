@@ -21,6 +21,8 @@ export interface NodeResult {
   imageUrl?: string;
   videoUrl?: string;
   thumbnailUrl?: string;
+  /** Self-contained data URL built by the content script — safe to render here */
+  previewUrl?: string;
 }
 
 type MessageHandler = (msg: any) => void;

@@ -116,6 +116,7 @@ export class WorkflowRunner {
               status: 'done',
               progress: 100,
               resultUrl: result.videoUrl || result.imageUrl || result.thumbnailUrl || '',
+              previewUrl: result.previewUrl || '',
               resultTileId: result.tileId,
             });
 
@@ -209,6 +210,7 @@ export class WorkflowRunner {
             imageUrl: payload.imageUrl,
             videoUrl: payload.videoUrl,
             thumbnailUrl: payload.thumbnailUrl,
+            previewUrl: payload.previewUrl,
           });
         }
       };

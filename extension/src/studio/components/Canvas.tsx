@@ -42,12 +42,16 @@ export default function Canvas() {
     workflow,
     setWorkflowName,
     isRunning,
+    isPaused,
     runProgress,
     saveWorkflow,
     setView,
   } = useStudioStore();
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
+
+  /* Only Generate nodes actually execute — a canvas of prompts alone can't run */
+  const canRun = nodes.some((n) => (n.data as any)?.type === 'generate');
 
   /* Connect bridge on mount */
   useEffect(() => {
@@ -57,9 +61,9 @@ export default function Canvas() {
 
   /* Run/Stop/Pause handlers */
   const handleRun = useCallback(() => {
-    if (isRunning) return;
+    if (isRunning || !canRun) return;
     runner.run(nodes, edges);
-  }, [nodes, edges, isRunning]);
+  }, [nodes, edges, isRunning, canRun]);
 
   const handleStop = useCallback(() => {
     runner.stop();
@@ -184,28 +188,41 @@ export default function Canvas() {
 
       {/* Node Toolbar (Left sidebar) */}
       <div className="studio-toolbar">
-        <button className="studio-toolbar__btn studio-toolbar__btn--add" onClick={addPromptNode} title="Add Prompt">
-          <span className="studio-toolbar__btn-icon">✏️</span>
+        <button className="studio-toolbar__btn studio-toolbar__btn--add" onClick={addPromptNode} aria-label="Add Prompt node">
+          <span className="studio-toolbar__btn-icon" aria-hidden="true">✏️</span>
+          <span className="studio-toolbar__btn-label">Add Prompt</span>
         </button>
-        <button className="studio-toolbar__btn" onClick={addImageNode} title="Add Image">
-          <span className="studio-toolbar__btn-icon">🖼️</span>
+        <button className="studio-toolbar__btn" onClick={addImageNode} aria-label="Add Image node">
+          <span className="studio-toolbar__btn-icon" aria-hidden="true">🖼️</span>
+          <span className="studio-toolbar__btn-label">Add Image</span>
         </button>
-        <button className="studio-toolbar__btn studio-toolbar__btn--primary" onClick={addGenerateNode} title="Add Generate">
-          <span className="studio-toolbar__btn-icon">🎬</span>
+        <button className="studio-toolbar__btn studio-toolbar__btn--primary" onClick={addGenerateNode} aria-label="Add Generate node">
+          <span className="studio-toolbar__btn-icon" aria-hidden="true">🎬</span>
+          <span className="studio-toolbar__btn-label">Add Generate</span>
         </button>
         <div className="studio-toolbar__divider" />
         {isRunning ? (
           <>
-            <button className="studio-toolbar__btn studio-toolbar__btn--pause" onClick={handlePause} title="Pause/Resume">
-              <span className="studio-toolbar__btn-icon">{useStudioStore.getState().isPaused ? '▶' : '⏸'}</span>
+            <button className="studio-toolbar__btn studio-toolbar__btn--pause" onClick={handlePause} aria-label={isPaused ? 'Resume workflow' : 'Pause workflow'}>
+              <span className="studio-toolbar__btn-icon" aria-hidden="true">{isPaused ? '▶' : '⏸'}</span>
+              <span className="studio-toolbar__btn-label">{isPaused ? 'Resume' : 'Pause'}</span>
             </button>
-            <button className="studio-toolbar__btn studio-toolbar__btn--stop" onClick={handleStop} title="Stop Workflow">
-              <span className="studio-toolbar__btn-icon">⏹</span>
+            <button className="studio-toolbar__btn studio-toolbar__btn--stop" onClick={handleStop} aria-label="Stop workflow">
+              <span className="studio-toolbar__btn-icon" aria-hidden="true">⏹</span>
+              <span className="studio-toolbar__btn-label">Stop</span>
             </button>
           </>
         ) : (
-          <button className="studio-toolbar__btn studio-toolbar__btn--run" onClick={handleRun} disabled={nodes.length === 0} title="Run Workflow">
-            <span className="studio-toolbar__btn-icon">▶</span>
+          <button
+            className="studio-toolbar__btn studio-toolbar__btn--run"
+            onClick={handleRun}
+            disabled={!canRun}
+            aria-label="Run workflow"
+          >
+            <span className="studio-toolbar__btn-icon" aria-hidden="true">▶</span>
+            <span className="studio-toolbar__btn-label">
+              {canRun ? 'Run workflow' : 'Add a Generate node to run'}
+            </span>
           </button>
         )}
       </div>

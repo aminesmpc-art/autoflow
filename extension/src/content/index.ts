@@ -138,8 +138,8 @@ if (!(window as any).__autoflow_injected) {
 
     const btn = document.createElement('button');
     btn.id = 'af-open-studio-btn';
-    btn.innerHTML = 'أ¢ع‘طŒ Open Studio';
-    btn.title = 'Open AutoFlow Studio أ¢â‚¬â€‌ Visual Workflow Builder';
+    btn.textContent = '\u26A1 Open Studio';
+    btn.title = 'Open AutoFlow Studio - Visual Workflow Builder';
 
     Object.assign(btn.style, {
       position: 'fixed',
@@ -1243,7 +1243,7 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
 
   // If engine already marked as done (unlikely in lite, but possible)
   if (prompt.status === 'done') {
-    sendStudioResult(nodeId, trackedTileIds[0] || '');
+    await sendStudioResult(nodeId, trackedTileIds[0] || '');
     return;
   }
 
@@ -1282,7 +1282,8 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
       console.log('[AutoFlow Studio] Tile completed!');
       const tileId = trackedTile.getAttribute('data-tile-id') || '';
       const mediaUrl = extractTileMediaUrl(trackedTile);
-      sendStudioResult(nodeId, tileId, mediaUrl);
+      const previewSrc = extractTilePreviewSrc(trackedTile);
+      await sendStudioResult(nodeId, tileId, mediaUrl, previewSrc);
       return;
     }
 
@@ -1384,7 +1385,11 @@ function getStudioTileState(tile: Element): 'completed' | 'generating' | 'failed
 }
 
 
-function sendStudioResult(nodeId: string, tileId: string, mediaUrl?: string): void {
+async function sendStudioResult(nodeId: string, tileId: string, mediaUrl?: string, previewSrc?: string): Promise<void> {
+  // Flow's tile URLs are page-scoped (blob:) or need the page's auth context,
+  // so they cannot be rendered from the chrome-extension:// Studio page.
+  // Convert to a small self-contained data URL here, where fetch still works.
+  const previewUrl = await buildStudioPreview(previewSrc || mediaUrl || '');
   try {
     chrome.runtime.sendMessage({
       type: 'STUDIO_NODE_RESULT',
@@ -1393,9 +1398,53 @@ function sendStudioResult(nodeId: string, tileId: string, mediaUrl?: string): vo
         tileId,
         imageUrl: mediaUrl || '',
         thumbnailUrl: mediaUrl || '',
+        previewUrl,
       },
     }).catch(() => {});
   } catch {}
+}
+
+/**
+ * Fetch a tile's media and re-encode it as a downscaled JPEG data URL.
+ * Returns '' if the media cannot be fetched or decoded — the node then falls
+ * back to showing a "preview unavailable" placeholder rather than a broken image.
+ */
+const PREVIEW_MAX_EDGE = 512;
+
+async function buildStudioPreview(url: string): Promise<string> {
+  if (!url) return '';
+  if (url.startsWith('data:')) return url;
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return '';
+    const blob = await resp.blob();
+    if (blob.type.startsWith('video/')) return ''; // videos use their poster instead
+
+    const bitmap = await createImageBitmap(blob);
+    const scale = Math.min(1, PREVIEW_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+
+    const canvas = new OffscreenCanvas(w, h);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+
+    const out = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.82 });
+    return `data:${out.type};base64,${await blobToRawBase64(out)}`;
+  } catch (e: any) {
+    console.warn(`[AutoFlow Studio] Preview unavailable: ${e?.message || e}`);
+    return '';
+  }
+}
+
+/** Preview source for a tile — prefers a poster/still over a video stream */
+function extractTilePreviewSrc(tile: Element): string {
+  const poster = tile.querySelector('video')?.getAttribute('poster');
+  if (poster) return poster;
+  return findLargestImgSrc(tile);
 }
 
 /** Extract the image or video URL from a completed tile */
@@ -1409,7 +1458,11 @@ function extractTileMediaUrl(tile: Element): string {
     if (video.getAttribute('poster')) return video.getAttribute('poster') || '';
   }
 
-  // Try images (find the largest real one)
+  return findLargestImgSrc(tile);
+}
+
+/** Largest real <img> src inside a tile (skips tiny data: placeholders) */
+function findLargestImgSrc(tile: Element): string {
   const imgs = tile.querySelectorAll('img[src]');
   let bestSrc = '';
   let bestArea = 0;

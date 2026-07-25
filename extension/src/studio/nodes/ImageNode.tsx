@@ -9,6 +9,7 @@ import { useStudioStore } from '../store';
 function ImageNodeComponent({ id, data, selected }: NodeProps) {
   const nodeData = data as any;
   const updateNodeData = useStudioStore((s) => s.updateNodeData);
+  const removeNode = useStudioStore((s) => s.removeNode);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = useCallback(() => {
@@ -42,8 +43,16 @@ function ImageNodeComponent({ id, data, selected }: NodeProps) {
   return (
     <div className={`studio-node studio-node--image ${selected ? 'studio-node--selected' : ''}`}>
       <div className="studio-node__header studio-node__header--image">
-        <span className="studio-node__icon">🖼️</span>
+        <span className="studio-node__icon" aria-hidden="true">🖼️</span>
         <span className="studio-node__title">{nodeData.label || 'Image'}</span>
+        <button
+          className="studio-node__close"
+          onClick={() => removeNode(id)}
+          title="Delete node"
+          aria-label="Delete node"
+        >
+          ×
+        </button>
       </div>
       <div className="studio-node__body">
         {nodeData.imageData ? (

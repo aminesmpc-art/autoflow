@@ -9,6 +9,7 @@ import { useStudioStore } from '../store';
 function PromptNodeComponent({ id, data, selected }: NodeProps) {
   const nodeData = data as any;
   const updateNodeData = useStudioStore((s) => s.updateNodeData);
+  const removeNode = useStudioStore((s) => s.removeNode);
 
   const handleTextChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -22,8 +23,16 @@ function PromptNodeComponent({ id, data, selected }: NodeProps) {
   return (
     <div className={`studio-node studio-node--prompt ${selected ? 'studio-node--selected' : ''}`}>
       <div className="studio-node__header studio-node__header--prompt">
-        <span className="studio-node__icon">✏️</span>
+        <span className="studio-node__icon" aria-hidden="true">✏️</span>
         <span className="studio-node__title">{nodeData.label || 'Prompt'}</span>
+        <button
+          className="studio-node__close"
+          onClick={() => removeNode(id)}
+          title="Delete node"
+          aria-label="Delete node"
+        >
+          ×
+        </button>
       </div>
       <div className="studio-node__body">
         <textarea
