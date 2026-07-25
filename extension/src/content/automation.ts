@@ -19,6 +19,7 @@ import { savePromptHistory, saveRunningQueue, clearRunningQueue } from '../share
 
 import {
   MAX_RETRIES,
+  VERIFY_MAX_RETRIES,
   BACKOFF_BASE_MS,
   GENERATION_TIMEOUT_MS,
   POLL_INTERVAL_MS,
@@ -655,7 +656,33 @@ export class AutomationEngine {
                     throw new Error(`Safety blocked: ${entry.rawStatus}`);
                   }
                   if (errorClass === 'quota') {
-                    // Quota/capacity: stop the entire queue
+                    // Check if this is "unusual activity" vs real quota exhaustion
+                    const combinedMsg = ((entry.rawStatus || '') + ' ' + (entry.failureReason || '')).toLowerCase();
+                    const isUnusualActivity = combinedMsg.includes('unusual') || combinedMsg.includes('inusual');
+                    
+                    if (isUnusualActivity) {
+                      // Smart cooldown: pause 5 minutes then auto-resume
+                      this.log('warn', 'Google detected unusual activity — cooling down for 5 minutes...');
+                      this.sendPhaseUpdate('cooldown', 'Google detected unusual activity. Pausing 5 minutes to cool down...');
+                      chrome.runtime.sendMessage({
+                        type: 'UNUSUAL_ACTIVITY_ALERT',
+                        payload: { promptIndex: idx + 1 },
+                      }).catch(() => {});
+                      for (let cd = 300; cd > 0; cd--) {
+                        if (this.stopped) return;
+                        if (cd % 60 === 0) {
+                          this.sendPhaseUpdate('cooldown', `Cooling down... ${Math.ceil(cd / 60)} minute(s) remaining`);
+                        }
+                        await sleep(1000);
+                      }
+                      this.log('info', 'Cooldown complete — resuming queue');
+                      this.sendPhaseUpdate('running', 'Cooldown complete. Resuming...');
+                      // Don't throw — let the retry logic handle re-submission
+                      earlyFailure = true;
+                      break;
+                    }
+                    
+                    // Real quota exhaustion: stop the entire queue
                     this.log('error', 'Quota/capacity error — stopping queue');
                     this.stopped = true;
                     attempts = MAX_RETRIES + 1;
@@ -2838,10 +2865,13 @@ export class AutomationEngine {
       if (lower.includes('can make mistakes') || lower.includes('double check')) continue;
       if (!errorText) continue;
 
-      // Rate limiting
+      // Rate limiting / unusual activity
       if (lower.includes('too quickly') || lower.includes('queue full') ||
         lower.includes('limit reached') || lower.includes('exhausted') ||
-        lower.includes('quota')) {
+        lower.includes('quota') ||
+        lower.includes('unusual activity') || lower.includes('actividad inusual') ||
+        lower.includes('activité inhabituelle') || lower.includes('ungewöhnliche aktivität') ||
+        lower.includes('attività insolita')) {
         return `Rate limited: ${errorText}`;
       }
 
@@ -4096,20 +4126,14 @@ private async detectAndReportFailures(): Promise<void> {
               this.log('info', `Prompt #${i + 1}: COMPLETED (no mediaId to verify) ✅`);
               apiConfirmedDone++;
               pendingVerificationCount--;
-            } else if ((p.attempts || 0) < 3) {
-              if (this.mode === 'full') {
-                this.log('warn', `Prompt #${i + 1}: API says COMPLETED but URL dead (Full Mode) — re-submitting immediately...`);
-                p.attempts = (p.attempts || 0) + 1;
-                await this.processPrompt(p, i);
-              } else {
-                // URL dead — queue for DOM retry
-                this.log('warn', `Prompt #${i + 1}: API says COMPLETED but URL dead — queue for retry`);
-                toRetryViaDom.push(i);
-              }
+            } else if ((p.attempts || 0) < VERIFY_MAX_RETRIES) {
+              // URL dead — queue for DOM retry (all modes try retry button first)
+              this.log('warn', `Prompt #${i + 1}: API says COMPLETED but URL dead — queue for retry`);
+              toRetryViaDom.push(i);
             } else {
               // Exhausted retries — mark failed
-              this.updatePromptStatus(i, 'failed', 'URL dead after 3 attempts');
-              this.log('warn', `Prompt #${i + 1}: URL dead after 3 attempts ❌`);
+              this.updatePromptStatus(i, 'failed', `URL dead after ${VERIFY_MAX_RETRIES} attempts`);
+              this.log('warn', `Prompt #${i + 1}: URL dead after ${VERIFY_MAX_RETRIES} attempts ❌`);
               apiConfirmedFailed++;
               pendingVerificationCount--;
             }
@@ -4156,57 +4180,40 @@ private async detectAndReportFailures(): Promise<void> {
                   pendingVerificationCount--;
                 } else {
                   // Truly cancelled (URL remained dead after 2 minutes)
-                  if (this.mode === 'full') {
-                    if ((p.attempts || 0) < 3) {
-                      this.log('info', `Prompt #${i + 1}: CANCELLED + URL dead after 2m (Full Mode) — re-submitting immediately...`);
-                      p.attempts = (p.attempts || 0) + 1;
-                      await this.processPrompt(p, i);
-                    } else {
-                      this.updatePromptStatus(i, 'failed', 'Cancelled and exhausted all retry attempts');
-                      this.log('warn', `Prompt #${i + 1}: CANCELLED + URL dead after 2m and exhausted retry attempts ❌`);
-                      apiConfirmedFailed++;
-                      pendingVerificationCount--;
-                    }
-                  } else {
+                  if ((p.attempts || 0) < VERIFY_MAX_RETRIES) {
+                    // All modes: route to DOM retry button first
                     this.log('info', `Prompt #${i + 1}: CANCELLED + URL dead after 2m — will check DOM for retry button`);
                     toRetryViaDom.push(i);
+                  } else {
+                    this.updatePromptStatus(i, 'failed', 'Cancelled and exhausted all retry attempts');
+                    this.log('warn', `Prompt #${i + 1}: CANCELLED + URL dead after 2m and exhausted retry attempts ❌`);
+                    apiConfirmedFailed++;
+                    pendingVerificationCount--;
                   }
                 }
                 } // end of cdnCheckedThisRound else
               } else {
-                // No mediaId — can't verify, save for reload verification
-                if (this.mode === 'full') {
-                  if ((p.attempts || 0) < 3) {
-                    this.log('info', `Prompt #${i + 1}: CANCELLED (no mediaId) (Full Mode) — re-submitting immediately...`);
-                    p.attempts = (p.attempts || 0) + 1;
-                    await this.processPrompt(p, i);
-                  } else {
-                    this.updatePromptStatus(i, 'failed', 'Cancelled and exhausted all retry attempts');
-                    this.log('warn', `Prompt #${i + 1}: CANCELLED (no mediaId) and exhausted retry attempts ❌`);
-                    apiConfirmedFailed++;
-                    pendingVerificationCount--;
-                  }
-                } else {
+                // No mediaId — can't verify, route to DOM retry (all modes)
+                if ((p.attempts || 0) < VERIFY_MAX_RETRIES) {
                   this.log('info', `Prompt #${i + 1}: CANCELLED (no mediaId) — will check DOM for retry button`);
                   toRetryViaDom.push(i);
-                }
-              }
-            } else {
-              // Server error
-              if (this.mode === 'full') {
-                if ((p.attempts || 0) < 3) {
-                  this.log('info', `Prompt #${i + 1}: API says failed [${errorClass}] (Full Mode) — re-submitting immediately...`);
-                  p.attempts = (p.attempts || 0) + 1;
-                  await this.processPrompt(p, i);
                 } else {
-                  this.updatePromptStatus(i, 'failed', `API: failed [${errorClass}] and exhausted all retry attempts`);
-                  this.log('warn', `Prompt #${i + 1}: API says failed [${errorClass}] and exhausted retry attempts ❌`);
+                  this.updatePromptStatus(i, 'failed', 'Cancelled and exhausted all retry attempts');
+                  this.log('warn', `Prompt #${i + 1}: CANCELLED (no mediaId) and exhausted retry attempts ❌`);
                   apiConfirmedFailed++;
                   pendingVerificationCount--;
                 }
-              } else {
+              }
+            } else {
+              // Server error — route to DOM retry (all modes try retry button first)
+              if ((p.attempts || 0) < VERIFY_MAX_RETRIES) {
                 this.log('info', `Prompt #${i + 1}: API says failed [${errorClass}] — will check DOM for retry button`);
                 toRetryViaDom.push(i);
+              } else {
+                this.updatePromptStatus(i, 'failed', `API: failed [${errorClass}] and exhausted all retry attempts`);
+                this.log('warn', `Prompt #${i + 1}: API says failed [${errorClass}] and exhausted retry attempts ❌`);
+                apiConfirmedFailed++;
+                pendingVerificationCount--;
               }
             }
 
@@ -4284,10 +4291,10 @@ private async detectAndReportFailures(): Promise<void> {
               if (round === MAX_ROUNDS) {
                 // Final round timeout!
                 if (this.mode === 'full') {
-                  if ((p.attempts || 0) < 3) {
-                    this.log('warn', `Prompt #${i + 1}: still generating after timeout (Full Mode) — re-submitting immediately...`);
-                    p.attempts = (p.attempts || 0) + 1;
-                    await this.processPrompt(p, i);
+                  if ((p.attempts || 0) < VERIFY_MAX_RETRIES) {
+                    // Route to DOM retry first (may have a retry button)
+                    this.log('warn', `Prompt #${i + 1}: still generating after timeout — routing to DOM retry`);
+                    toRetryViaDom.push(i);
                     pendingVerificationCount--;
                   } else {
                     this.updatePromptStatus(i, 'failed', 'Stuck generating after timeout and exhausted retry attempts');
@@ -4337,14 +4344,14 @@ private async detectAndReportFailures(): Promise<void> {
                 pendingVerificationCount--;
                 resolvedViaDom = true;
               } else if (allFailed) {
-                if ((p.attempts || 0) < 3) {
+                if ((p.attempts || 0) < VERIFY_MAX_RETRIES) {
                   this.log('info', `Prompt #${i + 1}: image failed (DOM) — re-submitting...`);
                   p.attempts = (p.attempts || 0) + 1;
                   await this.processPrompt(p, i);
                   pendingVerificationCount--;
                 } else {
-                  this.updatePromptStatus(i, 'failed', 'Image generation failed after 3 attempts');
-                  this.log('warn', `Prompt #${i + 1}: image failed after 3 attempts ❌`);
+                  this.updatePromptStatus(i, 'failed', `Image generation failed after ${VERIFY_MAX_RETRIES} attempts`);
+                  this.log('warn', `Prompt #${i + 1}: image failed after ${VERIFY_MAX_RETRIES} attempts ❌`);
                   apiConfirmedFailed++;
                   pendingVerificationCount--;
                 }
@@ -4396,21 +4403,14 @@ private async detectAndReportFailures(): Promise<void> {
             } // end of cdnCheckedThisRound else
           }
 
-          // URL dead or no mediaId — fall back to re-submission/DOM retry
-          if ((p.attempts || 0) < 3) {
-            if (this.mode === 'full') {
-              this.log('info', `Prompt #${i + 1}: NOT FOUND in API + URL dead (Full Mode) — re-submitting...`);
-              p.attempts = (p.attempts || 0) + 1;
-              await this.processPrompt(p, i);
-              pendingVerificationCount--;
-            } else {
-              this.log('info', `Prompt #${i + 1}: NOT FOUND in API + URL dead — will check DOM`);
-              toRetryViaDom.push(i);
-              pendingVerificationCount--;
-            }
+          // URL dead or no mediaId — route to DOM retry (all modes try retry button first)
+          if ((p.attempts || 0) < VERIFY_MAX_RETRIES) {
+            this.log('info', `Prompt #${i + 1}: NOT FOUND in API + URL dead — will check DOM for retry button`);
+            toRetryViaDom.push(i);
+            pendingVerificationCount--;
           } else {
-            this.updatePromptStatus(i, 'failed', 'Not found on server after 3 attempts');
-            this.log('warn', `Prompt #${i + 1}: NOT FOUND after 3 attempts ❌`);
+            this.updatePromptStatus(i, 'failed', `Not found on server after ${VERIFY_MAX_RETRIES} attempts`);
+            this.log('warn', `Prompt #${i + 1}: NOT FOUND after ${VERIFY_MAX_RETRIES} attempts ❌`);
             apiConfirmedFailed++;
             pendingVerificationCount--;
           }
@@ -4490,7 +4490,7 @@ private async detectAndReportFailures(): Promise<void> {
             }
           }
           // Truly missing — tile gone + URL dead
-          if ((prompt.attempts || 0) < 3) {
+          if ((prompt.attempts || 0) < VERIFY_MAX_RETRIES) {
             this.log('info', `Prompt #${idx + 1}: tile missing + URL dead — resubmitting from scratch...`);
             prompt.attempts = (prompt.attempts || 0) + 1;
             // FIX 4: Clear stale tracking before resubmission
@@ -4526,9 +4526,9 @@ private async detectAndReportFailures(): Promise<void> {
         if (retryBtn) {
           // Retry button exists — try clicking it
           // Guard: check if we've exhausted retry attempts
-          if ((prompt.attempts || 0) >= 3) {
-            this.updatePromptStatus(idx, 'failed', 'Failed after 3 retry attempts');
-            this.log('warn', `Prompt #${idx + 1}: retry button found but exhausted all 3 attempts ❌`);
+          if ((prompt.attempts || 0) >= VERIFY_MAX_RETRIES) {
+            this.updatePromptStatus(idx, 'failed', `Failed after ${VERIFY_MAX_RETRIES} retry attempts`);
+            this.log('warn', `Prompt #${idx + 1}: retry button found but exhausted all ${VERIFY_MAX_RETRIES} attempts ❌`);
             continue;
           }
           
@@ -4553,19 +4553,30 @@ private async detectAndReportFailures(): Promise<void> {
 
           retriedIndicesInThisRound.push(idx);
           lastRetriedRound.set(idx, round);
-          await sleep(4000); // Wait for new tile and API payload to be sniffed
+          await sleep(6000); // Wait for new tile and API payload to be sniffed
           
-          // Capture new mediaId
-          const newEntries = getNewSubmissions();
-          if (newEntries.length > 0) {
-            const match = newEntries.find(e => 
-              e.promptText.toLowerCase().includes(prompt.text.toLowerCase().slice(0, 30)) ||
-              prompt.text.toLowerCase().includes(e.promptText.toLowerCase().slice(0, 30))
-            );
-            if (match) {
-              prompt.mediaId = match.mediaId;
-              this.log('info', `Prompt #${idx + 1}: captured new mediaId after retry: ${prompt.mediaId}`);
+          // Capture new mediaId — try twice for reliability
+          let newMediaId = '';
+          for (let capture = 0; capture < 2 && !newMediaId; capture++) {
+            const newEntries = getNewSubmissions();
+            if (newEntries.length > 0) {
+              const match = newEntries.find(e => 
+                e.promptText.toLowerCase().includes(prompt.text.toLowerCase().slice(0, 30)) ||
+                prompt.text.toLowerCase().includes(e.promptText.toLowerCase().slice(0, 30))
+              );
+              if (match) {
+                newMediaId = match.mediaId;
+              }
             }
+            if (!newMediaId && capture === 0) {
+              await sleep(3000); // Second chance after 3 more seconds
+            }
+          }
+          if (newMediaId) {
+            prompt.mediaId = newMediaId;
+            this.log('info', `Prompt #${idx + 1}: captured new mediaId after retry: ${newMediaId}`);
+          } else {
+            this.log('warn', `Prompt #${idx + 1}: could not capture mediaId after retry — will verify via DOM`);
           }
         } else {
           // No retry button — cancelled tile.
@@ -4599,7 +4610,7 @@ private async detectAndReportFailures(): Promise<void> {
           // URL dead or no mediaId — Truly cancelled
           // Fall back to resubmitting from scratch!
           this.log('info', `Prompt #${idx + 1}: Tile has no Retry button (cancelled) + URL dead — resubmitting from scratch...`);
-          if ((prompt.attempts || 0) < 3) {
+          if ((prompt.attempts || 0) < VERIFY_MAX_RETRIES) {
             prompt.attempts = (prompt.attempts || 0) + 1;
             // FIX 4: Clear stale tracking before resubmission
             prompt.tileIds = [];
@@ -4715,10 +4726,10 @@ private async detectAndReportFailures(): Promise<void> {
       this.sendPhaseUpdate('recovering', `Verifying ${finalRecoveryIndices.length} prompt(s) after reload...`);
       for (const idx of finalRecoveryIndices) {
         const p = this.queue.prompts[idx];
-        if ((p.attempts || 0) >= 3) {
+        if ((p.attempts || 0) >= VERIFY_MAX_RETRIES) {
           // Exhausted retries — mark hard failed
           p.status = 'failed';
-          p.error = 'Failed after 3 retry attempts';
+          p.error = `Failed after ${VERIFY_MAX_RETRIES} retry attempts`;
           this.updatePromptStatus(idx, 'failed', p.error);
         } else {
           p.status = 'queued';

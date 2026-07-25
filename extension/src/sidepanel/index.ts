@@ -2514,6 +2514,7 @@ async function showQueueLimitDialog(mode: string, result: { used: number; limit:
   // Event listeners
   dialog.querySelector('#af-limit-dismiss-btn')?.addEventListener('click', () => dialog.remove());
   dialog.querySelector('#af-limit-upgrade-btn')?.addEventListener('click', () => {
+    window.alert('IMPORTANT: When paying on Whop, make sure to use the exact same email address you use on AutoFlow. Otherwise, your Pro account will not activate automatically!');
     setTimeout(() => dialog.remove(), 500);
   });
   // "Free Pro" button — close dialog, switch to account tab where the CTA is
@@ -3486,6 +3487,9 @@ function initMessageListener() {
       case 'FAKE_CANCEL_ALERT':
         handleFakeCancelAlert(msg.payload);
         break;
+      case 'UNUSUAL_ACTIVITY_ALERT':
+        handleUnusualActivityAlert(msg.payload);
+        break;
     }
   });
 }
@@ -3682,7 +3686,9 @@ function humanizeLogMessage(raw: string, level: string): { text: string; icon: s
 
   // Safety/Quota errors
   if (m.includes('safety')) return { text: 'A prompt was blocked by content safety filters', icon: '🛡️' };
-  if (m.includes('quota')) return { text: 'Generation quota limit reached', icon: '💳' };
+  if (m.includes('quota') && !m.includes('unusual') && !m.includes('cooldown')) return { text: 'Generation quota limit reached', icon: '💳' };
+  if (m.includes('unusual activity') || m.includes('cooling down')) return { text: 'Google detected unusual activity — pausing to cool down...', icon: '⚠️' };
+  if (m.includes('cooldown complete')) return { text: 'Cooldown complete — resuming queue!', icon: '✅' };
 
   // Still generating
   if (m.includes('still generating')) return null;
@@ -3801,6 +3807,7 @@ function handlePhaseUpdate(data: { phase: string; detail: string }) {
     checking: '✔️',
     verifying: '📡',
     recovering: '🛡️',
+    cooldown: '⚠️',
     downloading: '⬇️',
     done: '✅',
   };
@@ -3818,6 +3825,18 @@ function handleFakeCancelAlert(data: { promptIndex: number; attempt: number }) {
     `🛡️ Don't panic! Google showed "cancelled" for prompt #${data.promptIndex} — this is a known Google bug, NOT a real error. AutoFlow is auto-retrying right now. Your video will be fine!`,
     'success',
     8000  // Stay visible for 8 seconds so user actually reads it
+  );
+}
+
+/**
+ * Show a prominent warning when Google's "unusual activity" detection fires.
+ * Tells the user the queue is pausing to cool down, not crashing.
+ */
+function handleUnusualActivityAlert(data: { promptIndex: number }) {
+  showToast(
+    `⚠️ Google detected unusual activity at prompt #${data.promptIndex}. AutoFlow is pausing for 5 minutes to cool down — your queue will auto-resume. No action needed!`,
+    'warning',
+    15000  // Stay visible for 15 seconds — this is important
   );
 }
 
@@ -4818,6 +4837,9 @@ function initAccountTab() {
 
   // ── Upgrade to Pro button ──
   $('#btn-upgrade-pro')?.addEventListener('click', async () => {
+    // Show an alert reminding them to use the same email on Whop
+    window.alert('IMPORTANT: When paying on Whop, make sure to use the exact same email address you use on AutoFlow. Otherwise, your Pro account will not activate automatically!');
+    
     const url = await getUpgradeUrl();
     window.open(url, '_blank');
   });
@@ -4887,6 +4909,15 @@ async function showLoggedInState() {
     // Show Ultra Family button for signed-in users
     const ultraBtn = document.getElementById('btn-header-ultra-family');
     if (ultraBtn) ultraBtn.style.display = '';
+
+    // Wire "Open Studio" button
+    const studioBtn = document.getElementById('btn-open-studio');
+    if (studioBtn && !(studioBtn as any).__af_studio_wired) {
+      (studioBtn as any).__af_studio_wired = true;
+      studioBtn.addEventListener('click', () => {
+        chrome.runtime.sendMessage({ type: 'OPEN_STUDIO' });
+      });
+    }
     const badge = $('#account-plan-badge') as HTMLElement;
     if (profile.is_pro_active) {
       badge.textContent = 'Pro';

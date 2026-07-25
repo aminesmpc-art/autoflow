@@ -1,5 +1,6 @@
 import Link from "next/link";
 import CopyButton from "./CopyButton";
+import { locales, defaultLocale } from '../../../dictionaries';
 
 const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.auto-flow.studio/api";
 
@@ -20,18 +21,40 @@ async function getExtraction(id) {
 export async function generateMetadata({ params }) {
   const resolvedParams = await params;
   const extraction = await getExtraction(resolvedParams.id);
+  const locale = resolvedParams.locale;
+  const baseUrl = 'https://www.auto-flow.studio';
   
   if (!extraction) {
     return { title: "Prompt Not Found | AutoFlow" };
   }
-  
+
+  const cleanName = extraction.video_name.replace(/\.[^/.]+$/, "");
+  const languages = { 'en': `${baseUrl}/prompts/${resolvedParams.id}`, 'x-default': `${baseUrl}/prompts/${resolvedParams.id}` };
+  locales.filter(l => l !== defaultLocale).forEach(l => {
+    languages[l] = `${baseUrl}/${l}/prompts/${resolvedParams.id}`;
+  });
+
   return {
-    title: `${extraction.video_name.replace(/\.[^/.]+$/, "")} AI Prompts | AutoFlow`,
-    description: `Get exact Midjourney and Runway motion prompts used to create the AI video for ${extraction.video_name}. Reverse engineered by AutoFlow.`,
+    title: `${cleanName} — AI Video Prompts (Image + Motion) | AutoFlow`,
+    description: `Get the exact image prompts, motion prompts, and character designs used to create "${cleanName}". Reverse-engineered by AutoFlow's AI Video Prompt Extractor. Free to copy and use.`,
+    alternates: {
+      canonical: locale === defaultLocale
+        ? `${baseUrl}/prompts/${resolvedParams.id}`
+        : `${baseUrl}/${locale}/prompts/${resolvedParams.id}`,
+      languages,
+    },
     openGraph: {
-      title: `${extraction.video_name} AI Video Prompts`,
+      title: `${cleanName} — AI Video Prompts | AutoFlow`,
       description: extraction.video_concept.substring(0, 160),
-    }
+      url: `${baseUrl}/prompts/${resolvedParams.id}`,
+      siteName: "AutoFlow",
+      type: "article",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${cleanName} AI Prompts | AutoFlow`,
+      description: extraction.video_concept.substring(0, 160),
+    },
   };
 }
 
@@ -55,7 +78,7 @@ export default async function PromptDetailPage({ params }) {
   return (
     <div className="section" style={{ minHeight: "100vh", position: "relative", overflow: "hidden", padding: "120px 0 60px" }}>
       {/* Absolute Ambient Backgrounds */}
-      <div style={{ position: "absolute", top: "-10%", left: "50%", transform: "translateX(-50%)", width: "80vw", height: "80vw", background: "radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, rgba(0,0,0,0) 70%)", zIndex: -1, pointerEvents: "none" }} />
+      <div style={{ position: "absolute", top: "-10%", left: "50%", transform: "translateX(-50%)", width: "80vw", height: "80vw", background: "radial-gradient(circle, rgba(255, 92, 0, 0.08) 0%, rgba(0,0,0,0) 70%)", zIndex: -1, pointerEvents: "none" }} />
       
       <div className="container" style={{ position: "relative", zIndex: 1, maxWidth: "900px" }}>
         <Link href={`${prefix}/prompts`} style={{ display: "inline-flex", alignItems: "center", color: "var(--text-secondary)", textDecoration: "none", marginBottom: "32px", fontSize: "0.95rem" }}>
@@ -63,11 +86,11 @@ export default async function PromptDetailPage({ params }) {
         </Link>
 
         {/* Header / Master Concept */}
-        <div className="card-glass" style={{ padding: "40px", borderRadius: "24px", marginBottom: "32px", border: "1px solid rgba(16, 185, 129, 0.2)", background: "linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, rgba(0,0,0,0.8) 100%)", position: "relative" }}>
-          <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "4px", background: "linear-gradient(90deg, var(--primary) 0%, var(--success) 100%)", opacity: 0.8 }}></div>
+        <div className="card-glass" style={{ padding: "40px", borderRadius: "24px", marginBottom: "32px", border: "1px solid rgba(255, 92, 0, 0.2)", background: "linear-gradient(180deg, rgba(255, 92, 0, 0.05) 0%, rgba(0,0,0,0.8) 100%)", position: "relative" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "4px", background: "linear-gradient(90deg, var(--primary) 0%, var(--accent) 100%)", opacity: 0.8 }}></div>
           
           <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "20px" }}>
-            <span className="badge" style={{ background: "rgba(16, 185, 129, 0.1)", color: "var(--success)", border: "1px solid rgba(16, 185, 129, 0.3)", padding: "4px 12px", borderRadius: "100px", fontSize: "0.75rem", letterSpacing: "1px", textTransform: "uppercase" }}>Master Extraction</span>
+            <span style={{ background: "rgba(255, 92, 0, 0.1)", color: "var(--primary)", border: "1px solid rgba(255, 92, 0, 0.3)", padding: "4px 12px", borderRadius: "100px", fontSize: "0.75rem", letterSpacing: "1px", textTransform: "uppercase" }}>Extracted Prompts</span>
             <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>{new Date(extraction.created_at).toLocaleDateString()}</span>
           </div>
 
@@ -90,21 +113,21 @@ export default async function PromptDetailPage({ params }) {
           {extraction.shots && extraction.shots.length > 0 && (
             <div>
               <h2 style={{ fontSize: "1.8rem", marginBottom: "24px", color: "white", display: "flex", alignItems: "center", gap: "12px" }}>
-                <span style={{ background: "rgba(79, 70, 229, 0.1)", color: "var(--primary-light)", width: "40px", height: "40px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center" }}>🎬</span>
-                Shot Timeline
+                <span style={{ background: "rgba(255, 92, 0, 0.1)", color: "var(--primary)", width: "40px", height: "40px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center" }}>🎬</span>
+                Scene Timeline
               </h2>
               
               <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                 {extraction.shots.map((shot, i) => (
-                  <div key={i} className="card-glass" style={{ padding: "24px", borderRadius: "16px", borderLeft: "4px solid var(--primary-light)" }}>
+                  <div key={i} className="card-glass" style={{ padding: "24px", borderRadius: "16px", borderLeft: "4px solid var(--primary)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
-                      <span style={{ fontSize: "1.2rem", fontWeight: "bold", color: "white" }}>Shot {shot.shot_id}</span>
+                      <span style={{ fontSize: "1.2rem", fontWeight: "bold", color: "white" }}>Scene {shot.shot_id}</span>
                       {shot.timestamp && <span style={{ fontSize: "0.85rem", color: "var(--text-muted)", background: "rgba(255,255,255,0.05)", padding: "2px 8px", borderRadius: "4px" }}>{shot.timestamp}</span>}
                     </div>
 
                     {shot.image_prompt && (
                       <div style={{ marginBottom: "16px" }}>
-                        <div style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: "600" }}>Midjourney Prompt</div>
+                        <div style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: "600" }}>Image Prompt</div>
                         <div style={{ background: "rgba(0,0,0,0.4)", padding: "16px", borderRadius: "12px", fontSize: "0.95rem", color: "rgba(255,255,255,0.9)", position: "relative", border: "1px solid rgba(255,255,255,0.05)" }}>
                           <div style={{ paddingRight: "70px", lineHeight: "1.6" }}>{shot.image_prompt}</div>
                           <CopyButton text={shot.image_prompt} style={{ position: "absolute", top: "12px", right: "12px" }} />
@@ -114,10 +137,10 @@ export default async function PromptDetailPage({ params }) {
 
                     {shot.video_prompt && (
                       <div>
-                        <div style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: "600" }}>Motion Prompt (Runway/Sora/Veo)</div>
-                        <div style={{ background: "rgba(16, 185, 129, 0.05)", padding: "16px", borderRadius: "12px", fontSize: "0.95rem", color: "rgba(255,255,255,0.9)", position: "relative", border: "1px solid rgba(16, 185, 129, 0.1)" }}>
+                        <div style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: "600" }}>Motion Prompt</div>
+                        <div style={{ background: "rgba(255, 92, 0, 0.05)", padding: "16px", borderRadius: "12px", fontSize: "0.95rem", color: "rgba(255,255,255,0.9)", position: "relative", border: "1px solid rgba(255, 92, 0, 0.1)" }}>
                           <div style={{ paddingRight: "70px", lineHeight: "1.6" }}>{shot.video_prompt}</div>
-                          <CopyButton text={shot.video_prompt} style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(16, 185, 129, 0.2)" }} />
+                          <CopyButton text={shot.video_prompt} style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(255, 92, 0, 0.2)" }} />
                         </div>
                       </div>
                     )}
@@ -131,13 +154,13 @@ export default async function PromptDetailPage({ params }) {
           {extraction.character_sheets && extraction.character_sheets.length > 0 && (
             <div>
               <h2 style={{ fontSize: "1.8rem", marginBottom: "24px", color: "white", display: "flex", alignItems: "center", gap: "12px" }}>
-                <span style={{ background: "rgba(236, 72, 153, 0.1)", color: "#ec4899", width: "40px", height: "40px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center" }}>👤</span>
-                Character Sheets
+                <span style={{ background: "rgba(255, 92, 0, 0.1)", color: "var(--primary)", width: "40px", height: "40px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center" }}>👤</span>
+                Character Designs
               </h2>
               
               <div style={{ display: "grid", gap: "16px", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))" }}>
                 {extraction.character_sheets.map((char, i) => (
-                  <div key={i} className="card-glass" style={{ padding: "20px", borderRadius: "16px", border: "1px solid rgba(236, 72, 153, 0.2)" }}>
+                  <div key={i} className="card-glass" style={{ padding: "20px", borderRadius: "16px", border: "1px solid rgba(255, 92, 0, 0.15)" }}>
                     <div style={{ fontSize: "1.2rem", fontWeight: "bold", color: "white", marginBottom: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
                       {char.character_name}
                     </div>
@@ -178,16 +201,16 @@ export default async function PromptDetailPage({ params }) {
           )}
           {/* Export for AutoFlow */}
           {extraction.shots && extraction.shots.length > 0 && (
-            <div style={{ marginTop: "32px", padding: "48px", borderRadius: "32px", border: "1px solid rgba(22, 163, 74, 0.3)", background: "linear-gradient(145deg, rgba(22, 163, 74, 0.05) 0%, rgba(0,0,0,0.8) 100%)", position: "relative", overflow: "hidden" }}>
-              <div style={{ position: "absolute", top: 0, right: 0, width: "300px", height: "300px", background: "radial-gradient(circle, rgba(22, 163, 74, 0.1) 0%, transparent 70%)", pointerEvents: "none" }}></div>
+            <div style={{ marginTop: "32px", padding: "48px", borderRadius: "32px", border: "1px solid rgba(255, 92, 0, 0.3)", background: "linear-gradient(145deg, rgba(255, 92, 0, 0.05) 0%, rgba(0,0,0,0.8) 100%)", position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, right: 0, width: "300px", height: "300px", background: "radial-gradient(circle, rgba(255, 92, 0, 0.1) 0%, transparent 70%)", pointerEvents: "none" }}></div>
               
               <div style={{ position: "relative", zIndex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "16px" }}>
-                  <div style={{ width: "56px", height: "56px", borderRadius: "16px", background: "rgba(22, 163, 74, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.8rem", border: "1px solid rgba(22, 163, 74, 0.2)", boxShadow: "0 0 20px rgba(22, 163, 74, 0.2)" }}>🚀</div>
-                  <h3 style={{ margin: 0, fontSize: "1.8rem", color: "white" }}>Export for <span style={{ color: "#4ade80" }}>AutoFlow Extension</span></h3>
+                  <div style={{ width: "56px", height: "56px", borderRadius: "16px", background: "rgba(255, 92, 0, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.8rem", border: "1px solid rgba(255, 92, 0, 0.2)", boxShadow: "0 0 20px rgba(255, 92, 0, 0.2)" }}>🚀</div>
+                  <h3 style={{ margin: 0, fontSize: "1.8rem", color: "white" }}>Export to <span className="text-gradient">AutoFlow</span></h3>
                 </div>
                 <p className="text-secondary" style={{ marginBottom: "40px", fontSize: "1.1rem", maxWidth: "600px" }}>
-                  Skip the manual copy-pasting. Batch generate these exact scenes simultaneously using the <a href="https://chromewebstore.google.com/detail/autoflow-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc" target="_blank" rel="noopener noreferrer" style={{ color: "#4ade80", textDecoration: "underline", textUnderlineOffset: "4px" }}>AutoFlow Chrome Extension</a>. Not sure how? <a href="/blog/how-to-recreate-ai-videos-with-extractor-and-autoflow" style={{ color: "var(--text-primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}>Read the step-by-step tutorial</a>.
+                  Skip the manual copy-pasting. Batch generate these exact scenes simultaneously using the <a href="https://chromewebstore.google.com/detail/autoflow-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc" target="_blank" rel="noopener noreferrer" style={{ color: "var(--primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}>AutoFlow Chrome Extension</a>. Not sure how? <a href="/blog/how-to-recreate-ai-videos-with-extractor-and-autoflow" style={{ color: "var(--text-primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}>Read the step-by-step tutorial</a>.
                 </p>
 
                 <div style={{ display: "grid", gap: "32px", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
@@ -207,7 +230,7 @@ export default async function PromptDetailPage({ params }) {
                     <CopyButton 
                       text={extraction.shots.map(s => s.video_prompt).filter(Boolean).join("\n\n")} 
                       label="📋 Copy Video Prompts"
-                      style={{ width: "100%", padding: "16px", borderRadius: "12px", background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)", color: "white", fontWeight: "600", fontSize: "1.05rem", boxShadow: "0 10px 20px rgba(22, 163, 74, 0.2)" }} 
+                      style={{ width: "100%", padding: "16px", borderRadius: "12px", background: "linear-gradient(135deg, var(--primary) 0%, #ff8533 100%)", color: "white", fontWeight: "600", fontSize: "1.05rem", boxShadow: "0 10px 20px rgba(255, 92, 0, 0.2)" }} 
                     />
                   </div>
                 </div>
@@ -225,6 +248,36 @@ export default async function PromptDetailPage({ params }) {
             </div>
           )}
         </div>
+
+        {/* JSON-LD Structured Data */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Article",
+              headline: `${extraction.video_name.replace(/\.[^/.]+$/, "")} — AI Video Prompts`,
+              description: extraction.video_concept.substring(0, 200),
+              datePublished: extraction.created_at,
+              publisher: { "@type": "Organization", name: "AutoFlow", url: "https://www.auto-flow.studio" },
+              mainEntityOfPage: `https://www.auto-flow.studio/prompts/${resolvedParams.id}`,
+            }),
+          }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "BreadcrumbList",
+              itemListElement: [
+                { "@type": "ListItem", position: 1, name: "Home", item: "https://www.auto-flow.studio" },
+                { "@type": "ListItem", position: 2, name: "Prompts Gallery", item: "https://www.auto-flow.studio/prompts" },
+                { "@type": "ListItem", position: 3, name: extraction.video_name.replace(/\.[^/.]+$/, ""), item: `https://www.auto-flow.studio/prompts/${resolvedParams.id}` },
+              ],
+            }),
+          }}
+        />
       </div>
     </div>
   );

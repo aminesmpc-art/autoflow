@@ -11,8 +11,8 @@ export default async function sitemap() {
     { path: '/blog', lastmod: '2026-06-19' },
     { path: '/privacy', lastmod: '2026-04-01' },
     { path: '/terms', lastmod: '2026-04-01' },
-    { path: '/prompts', lastmod: '2026-06-19' },
-    { path: '/extractor', lastmod: '2026-06-19' },
+    { path: '/prompts', lastmod: '2026-07-04' },
+    { path: '/extractor', lastmod: '2026-07-04' },
     { path: '/changelog', lastmod: '2026-06-16' },
   ];
   
@@ -26,7 +26,7 @@ export default async function sitemap() {
       url: `${baseUrl}${route}`,
       lastModified: new Date(lastmod),
       changeFrequency: 'weekly',
-      priority: route === '' ? 1.0 : 0.8,
+      priority: route === '' ? 1.0 : route === '/extractor' ? 0.9 : 0.8,
       alternates: {
         languages: alternateLanguages,
       },

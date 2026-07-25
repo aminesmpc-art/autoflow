@@ -104,7 +104,8 @@ export function classifyError(rawStatus: string, failureDetail?: string): 'safet
     return 'safety';
   }
   if (combined.includes('QUOTA') || combined.includes('RATE') || combined.includes('LIMIT') ||
-      combined.includes('CAPACITY') || combined.includes('RESOURCE')) {
+      combined.includes('CAPACITY') || combined.includes('RESOURCE') ||
+      combined.includes('UNUSUAL') || combined.includes('INUSUAL')) {
     return 'quota';
   }
   if (combined.includes('CANCELLED') || combined.includes('CANCELED')) {

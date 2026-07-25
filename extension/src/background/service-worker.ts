@@ -268,6 +268,31 @@ async function tabPingRoutine() {
 // The side panel maintains this port while a queue is running.
 const keepalivePorts = new Set<chrome.runtime.Port>();
 
+// ── Studio port tracking ──
+let _studioPort: chrome.runtime.Port | null = null;
+
+/** Find the active Google Flow tab for Studio to control */
+async function getActiveFlowTabId(): Promise<number | null> {
+  // First check if there's an active queue tab
+  const activeTab = await getActiveTabId();
+  if (activeTab) return activeTab;
+
+  // Otherwise find any Flow tab — match exact patterns from manifest
+  const flowTabs = await chrome.tabs.query({
+    url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
+  });
+  if (flowTabs.length > 0 && flowTabs[0].id) return flowTabs[0].id;
+
+  return null;
+}
+
+/** Forward a message from content script back to Studio window */
+function forwardToStudio(msg: any): void {
+  if (_studioPort) {
+    _studioPort.postMessage(msg);
+  }
+}
+
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === 'af-keepalive') {
     keepalivePorts.add(port);
@@ -280,6 +305,78 @@ chrome.runtime.onConnect.addListener((port) => {
     port.onDisconnect.addListener(() => {
       keepalivePorts.delete(port);
       console.log('[AutoFlow] Keepalive port disconnected');
+    });
+  }
+
+  // ── Studio port — persistent connection from Studio window ──
+  if (port.name === 'studio') {
+    _studioPort = port;
+    console.log('[AutoFlow] Studio port connected');
+
+    port.onMessage.addListener(async (msg: any) => {
+      if (!msg || !msg.type) return;
+
+      // Route Studio messages to the active Flow tab's content script
+      if (msg.type.startsWith('STUDIO_')) {
+        const flowTabId = await getActiveFlowTabId();
+        if (flowTabId) {
+          try {
+            const response = await chrome.tabs.sendMessage(flowTabId, msg);
+            // Forward response back to Studio
+            if (_studioPort) {
+              _studioPort.postMessage(response || { type: 'STUDIO_ACK' });
+            }
+          } catch (err: any) {
+            // Content script not loaded — auto-inject and retry once
+            if (err.message?.includes('Receiving end does not exist')) {
+              console.log('[AutoFlow] Content script not loaded on Flow tab — injecting...');
+              try {
+                await chrome.scripting.executeScript({
+                  target: { tabId: flowTabId },
+                  files: ['content.js'],
+                });
+                // Wait for content script to initialize
+                await new Promise(r => setTimeout(r, 1500));
+                // Retry the message
+                const retryResponse = await chrome.tabs.sendMessage(flowTabId, msg);
+                if (_studioPort) {
+                  _studioPort.postMessage(retryResponse || { type: 'STUDIO_ACK' });
+                }
+              } catch (retryErr: any) {
+                if (_studioPort) {
+                  _studioPort.postMessage({
+                    type: 'STUDIO_NODE_ERROR',
+                    payload: { error: `Flow tab not reachable after re-inject: ${retryErr.message}`, nodeId: msg.payload?.nodeId },
+                  });
+                }
+              }
+            } else {
+              if (_studioPort) {
+                _studioPort.postMessage({
+                  type: 'STUDIO_NODE_ERROR',
+                  payload: { error: `Flow tab error: ${err.message}`, nodeId: msg.payload?.nodeId },
+                });
+              }
+            }
+          }
+        } else {
+          // No Flow tab found
+          if (_studioPort) {
+            _studioPort.postMessage({
+              type: 'STUDIO_NODE_ERROR',
+              payload: {
+                error: 'No Google Flow tab found. Please open labs.google/flow first.',
+                nodeId: msg.payload?.nodeId,
+              },
+            });
+          }
+        }
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      _studioPort = null;
+      console.log('[AutoFlow] Studio port disconnected');
     });
   }
 });
@@ -348,6 +445,14 @@ chrome.tabs.onRemoved.addListener(async (closedTabId) => {
 chrome.runtime.onMessage.addListener((msg: Message, sender, sendResponse) => {
   // Skip self-broadcasts to prevent infinite loops
   if (_broadcasting && !sender.tab) { sendResponse({}); return true; }
+
+  // Forward STUDIO_* messages from content script → Studio window
+  if (msg.type && (msg.type as string).startsWith('STUDIO_') && sender.tab) {
+    forwardToStudio(msg);
+    sendResponse({});
+    return true;
+  }
+
   handleMessage(msg, sender).then(sendResponse).catch(err => {
     console.error('[AutoFlow BG] Error handling message:', err);
     sendResponse({ error: err.message });
@@ -357,6 +462,54 @@ chrome.runtime.onMessage.addListener((msg: Message, sender, sendResponse) => {
 
 async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender): Promise<any> {
   switch (msg.type) {
+    case 'OPEN_STUDIO': {
+      // Open AutoFlow Studio alongside the Flow page (side-by-side)
+      const studioUrl = chrome.runtime.getURL('studio.html');
+
+      // Check if Studio window is already open
+      const existingTabs = await chrome.tabs.query({ url: studioUrl });
+      if (existingTabs.length > 0 && existingTabs[0].windowId) {
+        // Focus existing Studio window
+        await chrome.windows.update(existingTabs[0].windowId, { focused: true });
+        return { tabId: existingTabs[0].id };
+      }
+
+      // Get screen dimensions and current window info
+      const currentWindow = await chrome.windows.getCurrent();
+      const screenWidth = currentWindow.width && currentWindow.left !== undefined
+        ? Math.max(currentWindow.width + currentWindow.left, 1920)
+        : screen?.availWidth || 1920;
+      const screenHeight = currentWindow.height || screen?.availHeight || 1080;
+      const screenTop = currentWindow.top || 0;
+      const screenLeft = currentWindow.left || 0;
+
+      // Calculate side-by-side layout
+      const flowWidth = Math.round(screenWidth * 0.55);    // Flow gets 55%
+      const studioWidth = screenWidth - flowWidth;           // Studio gets 45%
+
+      // Resize current Flow window to left side
+      if (currentWindow.id) {
+        await chrome.windows.update(currentWindow.id, {
+          left: screenLeft,
+          top: screenTop,
+          width: flowWidth,
+          height: screenHeight,
+        });
+      }
+
+      // Open Studio in a new popup window on the right side
+      const studioWindow = await chrome.windows.create({
+        url: studioUrl,
+        type: 'popup',
+        left: screenLeft + flowWidth,
+        top: screenTop,
+        width: studioWidth,
+        height: screenHeight,
+      });
+
+      return { windowId: studioWindow.id, tabId: studioWindow.tabs?.[0]?.id };
+    }
+
     case 'DOWNLOAD_FILE':
       return handleDownload(msg.payload);
 

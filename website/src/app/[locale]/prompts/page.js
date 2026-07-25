@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Head from "next/head";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -33,23 +32,33 @@ export default function PromptsPage() {
 
   return (
     <div className="section" style={{ minHeight: "100vh", position: "relative", overflow: "hidden", padding: "120px 0" }}>
-      {/* Absolute Ambient Backgrounds */}
-      <div style={{ position: "absolute", top: "-10%", left: "50%", transform: "translateX(-50%)", width: "80vw", height: "80vw", background: "radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, rgba(0,0,0,0) 70%)", zIndex: -1, pointerEvents: "none" }} />
+      {/* Ambient Background */}
+      <div style={{ position: "absolute", top: "-10%", left: "50%", transform: "translateX(-50%)", width: "80vw", height: "80vw", background: "radial-gradient(circle, rgba(255, 92, 0, 0.08) 0%, rgba(0,0,0,0) 70%)", zIndex: -1, pointerEvents: "none" }} />
       
       <div className="container" style={{ position: "relative", zIndex: 1 }}>
+        {/* Hero */}
         <div style={{ textAlign: "center", marginBottom: "60px" }}>
-          <span className="badge" style={{ background: "rgba(16, 185, 129, 0.1)", color: "var(--success)", border: "1px solid rgba(16, 185, 129, 0.2)", padding: "6px 16px", borderRadius: "100px", fontSize: "0.85rem", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "24px", display: "inline-block" }}>Community Library</span>
-          <h1 style={{ fontSize: "clamp(2.5rem, 4vw, 4rem)", letterSpacing: "-0.04em", marginBottom: "24px", background: "linear-gradient(135deg, #FFF 0%, #A1A1AA 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-            The <span style={{ color: "var(--success)" }}>Prompts</span> Gallery
+          <div style={{ display: "inline-block", padding: "6px 16px", border: "1px solid var(--primary)", borderRadius: "20px", fontSize: "0.85rem", color: "var(--primary)", marginBottom: "24px", background: "rgba(255,92,0,0.05)", letterSpacing: "1px", textTransform: "uppercase" }}>Community Library</div>
+          <h1 style={{ fontSize: "clamp(2.5rem, 4vw, 4rem)", letterSpacing: "-0.04em", marginBottom: "24px" }}>
+            AI Video <span className="text-gradient">Prompts</span> Gallery
           </h1>
           <p className="text-secondary" style={{ fontSize: "1.2rem", maxWidth: "650px", margin: "0 auto", lineHeight: "1.6" }}>
-            Explore the best AI video prompts reverse-engineered by the AutoFlow community using our Video Extractor.
+            Explore the best AI video prompts reverse-engineered by the AutoFlow community. Copy and use them to recreate stunning videos.
           </p>
+          {/* Supported Platforms */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", justifyContent: "center", marginTop: "24px" }}>
+            {["Runway Gen-3", "OpenAI Sora", "Kling AI", "Midjourney", "Luma", "Google Veo"].map((platform) => (
+              <span key={platform} style={{ padding: "5px 14px", border: "1px solid rgba(255,92,0,0.3)", borderRadius: "20px", fontSize: "0.8rem", color: "var(--text-secondary)", background: "rgba(255,92,0,0.05)" }}>
+                {platform}
+              </span>
+            ))}
+          </div>
         </div>
 
+        {/* Content */}
         {loading ? (
           <div style={{ textAlign: "center", padding: "100px 0" }}>
-            <div style={{ width: "40px", height: "40px", border: "3px solid rgba(16, 185, 129, 0.2)", borderTopColor: "var(--success)", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto" }}></div>
+            <div style={{ width: "40px", height: "40px", border: "3px solid rgba(255,92,0,0.2)", borderTopColor: "var(--primary)", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto" }}></div>
             <p style={{ marginTop: "16px", color: "var(--text-secondary)" }}>Loading community prompts...</p>
           </div>
         ) : error ? (
@@ -58,7 +67,7 @@ export default function PromptsPage() {
           </div>
         ) : prompts.length === 0 ? (
           <div className="card-glass" style={{ textAlign: "center", padding: "80px 20px" }}>
-            <p className="text-secondary" style={{ fontSize: "1.2rem" }}>No prompts extracted yet. Be the first to use the <Link href="/extractor" style={{ color: "var(--primary-light)", textDecoration: "underline" }}>Video Extractor</Link>!</p>
+            <p className="text-secondary" style={{ fontSize: "1.2rem" }}>No prompts extracted yet. Be the first to use the <Link href={`${prefix}/extractor`} style={{ color: "var(--primary)", textDecoration: "underline" }}>Video Extractor</Link>!</p>
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))", gap: "24px", alignItems: "start" }}>
@@ -70,7 +79,7 @@ export default function PromptsPage() {
                     padding: "24px", 
                     borderRadius: "20px", 
                     background: "rgba(10, 10, 10, 0.8)", 
-                    transition: "transform 0.3s ease, box-shadow 0.3s ease", 
+                    transition: "transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease", 
                     border: "1px solid rgba(255,255,255,0.05)", 
                     position: "relative", 
                     overflow: "hidden",
@@ -79,8 +88,8 @@ export default function PromptsPage() {
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = "translateY(-4px)";
-                    e.currentTarget.style.boxShadow = "0 10px 30px rgba(16, 185, 129, 0.1)";
-                    e.currentTarget.style.borderColor = "rgba(16, 185, 129, 0.3)";
+                    e.currentTarget.style.boxShadow = "0 10px 30px rgba(255, 92, 0, 0.1)";
+                    e.currentTarget.style.borderColor = "rgba(255, 92, 0, 0.3)";
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.transform = "translateY(0)";
@@ -88,7 +97,7 @@ export default function PromptsPage() {
                     e.currentTarget.style.borderColor = "rgba(255,255,255,0.05)";
                   }}
                 >
-                  <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "4px", background: "linear-gradient(90deg, var(--primary) 0%, var(--success) 100%)", opacity: 0.8 }}></div>
+                  <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "4px", background: "linear-gradient(90deg, var(--primary) 0%, var(--accent) 100%)", opacity: 0.8 }}></div>
                   
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", marginTop: "8px" }}>
                     <h3 style={{ fontSize: "1.2rem", margin: 0, color: "white", lineHeight: "1.4", overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
@@ -105,10 +114,10 @@ export default function PromptsPage() {
 
                   <div style={{ marginTop: "auto", paddingTop: "16px", borderTop: "1px solid rgba(255,255,255,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ fontSize: "0.85rem", color: "var(--text-muted)", display: "flex", gap: "12px" }}>
-                      <span>🖼️ {extraction.shots ? extraction.shots.length : 0} shots</span>
+                      <span>🎬 {extraction.shots ? extraction.shots.length : 0} scenes</span>
                       <span>👤 {extraction.character_sheets ? extraction.character_sheets.length : 0} characters</span>
                     </span>
-                    <span style={{ fontSize: "0.85rem", color: "var(--success)", fontWeight: "500", display: "flex", alignItems: "center" }}>
+                    <span style={{ fontSize: "0.85rem", color: "var(--primary)", fontWeight: "500", display: "flex", alignItems: "center" }}>
                       View Prompts <span style={{ marginLeft: "4px", fontSize: "1rem" }}>→</span>
                     </span>
                   </div>
@@ -117,6 +126,71 @@ export default function PromptsPage() {
             ))}
           </div>
         )}
+
+        {/* SEO Content Section */}
+        {!loading && (
+          <div style={{ marginTop: "120px", position: "relative" }}>
+            <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "1px", background: "linear-gradient(90deg, transparent, var(--primary), transparent)", opacity: 0.3 }}></div>
+            
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "60px", paddingTop: "80px", textAlign: "left" }}>
+              <div>
+                <h2 style={{ fontSize: "2rem", marginBottom: "20px", letterSpacing: "-0.02em" }}>Free AI Video <span className="text-gradient">Prompt Library</span></h2>
+                <p className="text-secondary" style={{ fontSize: "1.05rem", lineHeight: 1.8 }}>
+                  Our prompt gallery is a growing collection of <strong>reverse-engineered AI video prompts</strong> shared by the AutoFlow community. Every prompt in this library was extracted from a real AI-generated video using our <Link href={`${prefix}/extractor`} style={{ color: "var(--primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}>Video Prompt Extractor</Link>.
+                </p>
+                <p className="text-secondary" style={{ fontSize: "1.05rem", lineHeight: 1.8, marginTop: "12px" }}>
+                  Browse prompts from videos made with <strong>Runway Gen-3, OpenAI Sora, Kling AI, Midjourney, Luma Dream Machine</strong>, and more. Each extraction includes scene-by-scene image prompts, motion prompts, character designs, and voiceover scripts — all free to copy and use.
+                </p>
+              </div>
+              <div className="card-glass" style={{ padding: "36px", borderRadius: "var(--radius-xl)", background: "rgba(10,10,10,0.5)" }}>
+                <h3 style={{ fontSize: "1.3rem", margin: "0 0 20px 0", color: "white" }}>How to Use These Prompts:</h3>
+                <ol style={{ gap: "16px", listStyle: "none", display: "flex", flexDirection: "column", padding: 0, counterReset: "step" }}>
+                  {[
+                    { title: "Browse & pick a video", desc: "Find a prompt set that matches the style you want to recreate." },
+                    { title: "Copy the prompts", desc: "Use the copy buttons to grab image prompts, motion prompts, or both." },
+                    { title: "Generate with AutoFlow", desc: "Paste into the AutoFlow extension to batch-generate all scenes at once on Google Flow." },
+                  ].map((step, i) => (
+                    <li key={i} style={{ display: "flex", gap: "16px", alignItems: "flex-start", color: "var(--text-secondary)" }}>
+                      <span style={{ color: "var(--primary)", fontSize: "1.1rem", fontWeight: 700, background: "rgba(255,92,0,0.1)", width: "32px", height: "32px", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</span>
+                      <div>
+                        <strong style={{ color: "white", display: "block", marginBottom: "2px" }}>{step.title}</strong>
+                        {step.desc}
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* JSON-LD */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "CollectionPage",
+              name: "AI Video Prompts Gallery",
+              description: "Community library of reverse-engineered AI video prompts for Runway, Sora, Midjourney, Kling, Luma, and Google Veo.",
+              url: "https://www.auto-flow.studio/prompts",
+              isPartOf: { "@type": "WebSite", name: "AutoFlow", url: "https://www.auto-flow.studio" },
+            }),
+          }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "BreadcrumbList",
+              itemListElement: [
+                { "@type": "ListItem", position: 1, name: "Home", item: "https://www.auto-flow.studio" },
+                { "@type": "ListItem", position: 2, name: "Prompts Gallery", item: "https://www.auto-flow.studio/prompts" },
+              ],
+            }),
+          }}
+        />
       </div>
       <style>{`
         @keyframes spin { 100% { transform: rotate(360deg); } }

@@ -18,3 +18,4 @@ whenimageisaddtotheprompt.html
 # Local-only skill wiring: .agents/skills is a junction to .agent/skills.
 # Not a portable artifact, so keep it out of git.
 .agents/
+__pycache__/

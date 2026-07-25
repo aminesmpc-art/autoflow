@@ -8,6 +8,7 @@ module.exports = {
     content: './src/content/index.ts',
     'sw-bypass': './src/content/sw-bypass.ts',
     sidepanel: './src/sidepanel/index.ts',
+    studio: './src/studio/index.tsx',
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
@@ -15,12 +16,12 @@ module.exports = {
     clean: true,
   },
   resolve: {
-    extensions: ['.ts', '.js'],
+    extensions: ['.tsx', '.ts', '.js'],
   },
   module: {
     rules: [
       {
-        test: /\.ts$/,
+        test: /\.tsx?$/,
         use: 'ts-loader',
         exclude: /node_modules/,
       },
@@ -45,6 +46,7 @@ module.exports = {
         { from: 'offscreen.html', to: '.' },
         { from: 'offscreen.js', to: '.' },
         { from: 'icons', to: 'icons', noErrorOnMissing: true },
+        { from: 'studio.html', to: '.' },
       ],
     }),
   ],

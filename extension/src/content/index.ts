@@ -1,5 +1,5 @@
 /* ============================================================
-   AutoFlow – Content Script Entry Point
+   AutoFlow أ¢â‚¬â€œ Content Script Entry Point
    Runs on labs.google/flow pages.
    Routes messages to the automation engine and scanner.
    ============================================================ */
@@ -12,13 +12,13 @@ import { DOM_SETTLE_MS } from '../shared/constants';
 import { getRunningQueue, clearRunningQueue } from '../shared/storage';
 import { initApiHelper, isApiAvailable } from './apiHelper';
 
-// ── Singleton engine ──
+// أ¢â€‌â‚¬أ¢â€‌â‚¬ Singleton engine أ¢â€‌â‚¬أ¢â€‌â‚¬
 let engine: AutomationEngine | null = null;
 
-// ── Recovery cancellation flag ──
+// أ¢â€‌â‚¬أ¢â€‌â‚¬ Recovery cancellation flag أ¢â€‌â‚¬أ¢â€‌â‚¬
 let recoveryCancelled = false;
 
-// ── Anti-throttle: periodic self-ping via service worker roundtrip ──
+// أ¢â€‌â‚¬أ¢â€‌â‚¬ Anti-throttle: periodic self-ping via service worker roundtrip أ¢â€‌â‚¬أ¢â€‌â‚¬
 // When Chrome throttles background tabs, setTimeout delays balloon.
 // A message roundtrip to the service worker wakes up the main thread.
 let antiThrottleInterval: ReturnType<typeof setInterval> | null = null;
@@ -26,7 +26,7 @@ let antiThrottleInterval: ReturnType<typeof setInterval> | null = null;
 function startAntiThrottle() {
   if (antiThrottleInterval) return;
   antiThrottleInterval = setInterval(() => {
-    // Round-trip to SW — the act of receiving the response wakes the thread
+    // Round-trip to SW أ¢â‚¬â€‌ the act of receiving the response wakes the thread
     chrome.runtime.sendMessage({ type: 'PING' }).catch(() => {});
   }, 15_000); // every 15 seconds
   console.log('[AutoFlow] Anti-throttle started');
@@ -58,7 +58,7 @@ function sendPromptStatusUpdate(queueId: string, idx: number, status: string, er
   } catch { /* ignore */ }
 }
 
-// ── Handle (re-)injection: always register a fresh listener ──
+// أ¢â€‌â‚¬أ¢â€‌â‚¬ Handle (re-)injection: always register a fresh listener أ¢â€‌â‚¬أ¢â€‌â‚¬
 // When the extension context is invalidated (e.g. extension closed & reopened,
 // extension updated, or service worker restart), the old listener is dead even
 // though `__autoflow_injected` may still be true in the isolated world.
@@ -87,10 +87,20 @@ if (!(window as any).__autoflow_injected) {
   (window as any).__autoflow_injected = true;
   console.log('[AutoFlow] Content script loaded on', window.location.href);
 
-  // ── Deactivate "Agent" mode if it's enabled ──
+  // أ¢â€‌â‚¬أ¢â€‌â‚¬ Force English locale أ¢â€‌â‚¬أ¢â€‌â‚¬
+  // Google Flow changes language based on account/browser settings.
+  // Our selectors depend on English text, so we force ?hl=en.
+  const url = new URL(window.location.href);
+  if (url.hostname === 'labs.google' && url.searchParams.get('hl') !== 'en') {
+    url.searchParams.set('hl', 'en');
+    console.log('[AutoFlow] Redirecting to English locale:', url.toString());
+    window.location.replace(url.toString());
+  }
+
+  // أ¢â€‌â‚¬أ¢â€‌â‚¬ Deactivate "Agent" mode if it's enabled أ¢â€‌â‚¬أ¢â€‌â‚¬
   // When Agent is active (aria-pressed="true"), the prompt bar changes and
   // video settings (model, ratio, etc.) become non-functional.
-  // We click it once to toggle it OFF — not hide it.
+  // We click it once to toggle it OFF أ¢â‚¬â€‌ not hide it.
   const deactivateAgent = () => {
     const agentBtn = document.querySelector('button[aria-pressed="true"]');
     if (agentBtn) {
@@ -115,16 +125,78 @@ if (!(window as any).__autoflow_injected) {
     initDomHooks();
   }
 
-  // ── Initialize API helper (interceptor + status cache) ──
+  // أ¢â€‌â‚¬أ¢â€‌â‚¬ Initialize API helper (interceptor + status cache) أ¢â€‌â‚¬أ¢â€‌â‚¬
   // Initialize immediately without setTimeout to catch the earliest fetch calls at document_start
   initApiHelper().then(() => {
     console.log('[AutoFlow] API helper initialized');
   }).catch(() => { /* non-critical */ });
+
+  // أ¢â€‌â‚¬أ¢â€‌â‚¬ Inject floating "Open Studio" button on the Flow page أ¢â€‌â‚¬أ¢â€‌â‚¬
+  const injectStudioButton = () => {
+    if (document.getElementById('af-open-studio-btn')) return; // already injected
+
+    const btn = document.createElement('button');
+    btn.id = 'af-open-studio-btn';
+    btn.innerHTML = 'أ¢ع‘طŒ Open Studio';
+    btn.title = 'Open AutoFlow Studio أ¢â‚¬â€‌ Visual Workflow Builder';
+
+    Object.assign(btn.style, {
+      position: 'fixed',
+      top: '12px',
+      right: '200px',
+      zIndex: '99999',
+      padding: '8px 20px',
+      background: 'linear-gradient(135deg, #f97316 0%, #ef4444 100%)',
+      color: '#fff',
+      border: 'none',
+      borderRadius: '24px',
+      fontSize: '13px',
+      fontWeight: '700',
+      fontFamily: 'Inter, -apple-system, sans-serif',
+      cursor: 'pointer',
+      boxShadow: '0 2px 12px rgba(249, 115, 22, 0.4), 0 0 0 0 rgba(249, 115, 22, 0)',
+      transition: 'all 0.25s ease',
+      letterSpacing: '0.3px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '4px',
+    });
+
+    // Hover effect
+    btn.addEventListener('mouseenter', () => {
+      btn.style.transform = 'scale(1.05)';
+      btn.style.boxShadow = '0 4px 20px rgba(249, 115, 22, 0.6), 0 0 0 3px rgba(249, 115, 22, 0.2)';
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.transform = 'scale(1)';
+      btn.style.boxShadow = '0 2px 12px rgba(249, 115, 22, 0.4), 0 0 0 0 rgba(249, 115, 22, 0)';
+    });
+
+    btn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'OPEN_STUDIO' });
+    });
+
+    document.body.appendChild(btn);
+    console.log('[AutoFlow] Studio button injected');
+  };
+
+  // Inject once body is ready
+  if (document.body) {
+    injectStudioButton();
+  } else {
+    const obs = new MutationObserver(() => {
+      if (document.body) {
+        obs.disconnect();
+        injectStudioButton();
+      }
+    });
+    obs.observe(document.documentElement, { childList: true });
+  }
 } else {
   console.log('[AutoFlow] Content script re-injected, listener refreshed.');
 }
 
-// ── Post-reload: detect interrupted or recovery queue ──
+// أ¢â€‌â‚¬أ¢â€‌â‚¬ Post-reload: detect interrupted or recovery queue أ¢â€‌â‚¬أ¢â€‌â‚¬
 (async () => {
   try {
     const saved = await getRunningQueue();
@@ -133,9 +205,9 @@ if (!(window as any).__autoflow_injected) {
     const { queue, currentIndex, recoveryMode, baselineTileCount } = saved;
 
     if (recoveryMode) {
-      // ── RECOVERY MODE: Page was reloaded to clear fake "cancelled" tiles ──
+      // أ¢â€‌â‚¬أ¢â€‌â‚¬ RECOVERY MODE: Page was reloaded to clear fake "cancelled" tiles أ¢â€‌â‚¬أ¢â€‌â‚¬
       // The ONLY source of truth is: does a completed video exist on the page for each prompt?
-      // We DON'T trust the prompt.status from before the reload — tile IDs are stale after refresh.
+      // We DON'T trust the prompt.status from before the reload أ¢â‚¬â€‌ tile IDs are stale after refresh.
       recoveryCancelled = false;
       console.log(`[AutoFlow] Recovery mode: scanning page for "${queue.name}"...`);
       sendPhaseUpdate('scanning', 'Recovery: Waiting for page to load...');
@@ -152,11 +224,11 @@ if (!(window as any).__autoflow_injected) {
         console.warn('[AutoFlow] Failed to load hard-failed indices:', err);
       }
 
-      // Wait for Flow to fully load (reduced from 6s — fake cancels resolve fast)
+      // Wait for Flow to fully load (reduced from 6s أ¢â‚¬â€‌ fake cancels resolve fast)
       await sleep(4000);
       if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
 
-      // Import tile scanning tools — including scroll collector for virtualized lists
+      // Import tile scanning tools أ¢â‚¬â€‌ including scroll collector for virtualized lists
       const { findAssetCards, getTileState, isVisible, findPromptInput, findOutputScroller, scrollAndCollectAllTileStates } = await import('./selectors');
 
       // Check if we're on a project page (has prompt input) vs homepage
@@ -208,7 +280,7 @@ if (!(window as any).__autoflow_injected) {
         const failed = cards.filter(el => getTileState(el) === 'failed').length;
 
         if (generating === 0) {
-          console.log(`[AutoFlow] Recovery: tiles settled — ${completed} completed, ${failed} failed (visible)`);
+          console.log(`[AutoFlow] Recovery: tiles settled أ¢â‚¬â€‌ ${completed} completed, ${failed} failed (visible)`);
           break;
         }
         console.log(`[AutoFlow] Recovery: waiting... generating: ${generating}, completed: ${completed}, failed: ${failed}, elapsed: ${elapsed}s`);
@@ -216,7 +288,7 @@ if (!(window as any).__autoflow_injected) {
         await sleep(8000);
       }
 
-      // ── CORE LOGIC: Scroll through the ENTIRE virtualized grid ──
+      // أ¢â€‌â‚¬أ¢â€‌â‚¬ CORE LOGIC: Scroll through the ENTIRE virtualized grid أ¢â€‌â‚¬أ¢â€‌â‚¬
       // Flow uses Virtuoso which REMOVES off-screen tiles from the DOM.
       // We MUST scroll through all positions to see every tile.
       console.log('[AutoFlow] Recovery: scrolling through entire grid to collect ALL tile texts...');
@@ -243,7 +315,7 @@ if (!(window as any).__autoflow_injected) {
       let recovered = 0;
       const trulyFailedPrompts: typeof queue.prompts = [];
 
-      // ── SMART STRATEGY: Count-first, then text-match ──
+      // أ¢â€‌â‚¬أ¢â€‌â‚¬ SMART STRATEGY: Count-first, then text-match أ¢â€‌â‚¬أ¢â€‌â‚¬
       // Subtract baseline tiles (from BEFORE the queue started) to avoid
       // counting old tiles from previous queues as "completed" for this queue.
       const baseline = baselineTileCount || 0;
@@ -251,7 +323,7 @@ if (!(window as any).__autoflow_injected) {
       console.log(`[AutoFlow] Recovery: ${totalCompleted} total completed - ${baseline} baseline = ${effectiveCompleted} effective completed for this queue`);
 
       if (effectiveCompleted >= submittedPrompts.length) {
-        console.log(`[AutoFlow] Recovery: ✅ ${effectiveCompleted} effective completed >= ${submittedPrompts.length} submitted — ALL DONE (baseline-adjusted count)`);
+        console.log(`[AutoFlow] Recovery: أ¢إ“â€¦ ${effectiveCompleted} effective completed >= ${submittedPrompts.length} submitted أ¢â‚¬â€‌ ALL DONE (baseline-adjusted count)`);
         for (let i = 0; i < queue.prompts.length; i++) {
           const p = queue.prompts[i];
           if (p.status !== 'not-added') {
@@ -262,9 +334,9 @@ if (!(window as any).__autoflow_injected) {
           }
         }
       } else {
-        // Not enough completed tiles — need to find which specific prompts are missing.
+        // Not enough completed tiles أ¢â‚¬â€‌ need to find which specific prompts are missing.
         // Use multi-fragment fuzzy matching for better accuracy.
-        console.log(`[AutoFlow] Recovery: ${totalCompleted} completed but ${submittedPrompts.length} submitted — using fuzzy match to find missing...`);
+        console.log(`[AutoFlow] Recovery: ${totalCompleted} completed but ${submittedPrompts.length} submitted أ¢â‚¬â€‌ using fuzzy match to find missing...`);
         sendPhaseUpdate('checking', 'Recovery: Matching prompt texts against tiles...');
 
         // Track which tile texts have been "consumed" to avoid double-matching
@@ -281,7 +353,7 @@ if (!(window as any).__autoflow_injected) {
 
           // Generate search fragments from different parts of the prompt
           const fragments: string[] = [];
-          // Start fragment (first 25 chars — most reliable)
+          // Start fragment (first 25 chars أ¢â‚¬â€‌ most reliable)
           fragments.push(clean.slice(0, Math.min(25, clean.length)));
           // Middle fragment
           if (clean.length > 60) {
@@ -324,12 +396,12 @@ if (!(window as any).__autoflow_injected) {
           if (hardFailedIndices.includes(i)) {
             p.status = 'failed';
             p.error = 'Failed after 3 retry attempts';
-            console.log(`[AutoFlow] Recovery: prompt #${i + 1} is marked as hard-failed — skipping rescue`);
+            console.log(`[AutoFlow] Recovery: prompt #${i + 1} is marked as hard-failed أ¢â‚¬â€‌ skipping rescue`);
             sendPromptStatusUpdate(queue.id, i, 'failed', p.error);
             continue;
           }
 
-          // Very short prompts — can't reliably match
+          // Very short prompts أ¢â‚¬â€‌ can't reliably match
           if (p.text.trim().length < 4) {
             console.log(`[AutoFlow] Recovery: prompt #${i + 1} too short, assuming done`);
             p.status = 'done';
@@ -342,13 +414,13 @@ if (!(window as any).__autoflow_injected) {
           const matchIdx = fuzzyMatchPrompt(p.text, completedTileTexts);
 
           if (matchIdx >= 0) {
-            // Found in a specific tile — consume it so it's not double-matched
+            // Found in a specific tile أ¢â‚¬â€‌ consume it so it's not double-matched
             consumedTileIndices.add(matchIdx);
             if (p.status === 'failed') {
               recovered++;
-              console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ FOUND in tile — "${p.text.slice(0, 30)}..." → marking done`);
+              console.log(`[AutoFlow] Recovery: prompt #${i + 1} أ¢إ“â€¦ FOUND in tile أ¢â‚¬â€‌ "${p.text.slice(0, 30)}..." أ¢â€ â€™ marking done`);
             } else {
-              console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ confirmed (${p.status})`);
+              console.log(`[AutoFlow] Recovery: prompt #${i + 1} أ¢إ“â€¦ confirmed (${p.status})`);
             }
             p.status = 'done';
             p.error = undefined;
@@ -356,23 +428,23 @@ if (!(window as any).__autoflow_injected) {
           } else if (matchIdx === -2) {
             // Found on page text but not in a specific tile
             if (p.status === 'failed') recovered++;
-            console.log(`[AutoFlow] Recovery: prompt #${i + 1} ✅ found on page text — "${p.text.slice(0, 30)}..." → marking done`);
+            console.log(`[AutoFlow] Recovery: prompt #${i + 1} أ¢إ“â€¦ found on page text أ¢â‚¬â€‌ "${p.text.slice(0, 30)}..." أ¢â€ â€™ marking done`);
             p.status = 'done';
             p.error = undefined;
             sendPromptStatusUpdate(queue.id, i, 'done', undefined, p.mediaId);
           } else {
-            // NOT found anywhere — truly failed (queued for regeneration)
+            // NOT found anywhere أ¢â‚¬â€‌ truly failed (queued for regeneration)
             p.status = 'queued';
             p.attempts = 0;
             p.error = undefined;
             p.tileIds = [];
             trulyFailedPrompts.push(p);
-            console.log(`[AutoFlow] Recovery: prompt #${i + 1} ❌ NOT FOUND — "${p.text.slice(0, 30)}..." → will regenerate`);
+            console.log(`[AutoFlow] Recovery: prompt #${i + 1} أ¢â€Œإ’ NOT FOUND أ¢â‚¬â€‌ "${p.text.slice(0, 30)}..." أ¢â€ â€™ will regenerate`);
             sendPromptStatusUpdate(queue.id, i, 'queued');
           }
         }
 
-        // ── SAFETY NET: Count-based correction ──
+        // أ¢â€‌â‚¬أ¢â€‌â‚¬ SAFETY NET: Count-based correction أ¢â€‌â‚¬أ¢â€‌â‚¬
         // Rescues false-positives where a prompt is incorrectly marked as failed
         // because the text matcher failed to find its completed video tile.
         // Exclude hard-failed prompts from expected missing count
@@ -383,13 +455,13 @@ if (!(window as any).__autoflow_injected) {
         
         if (trulyFailedPrompts.length > expectedMissing && expectedMissing >= 0) {
           const excess = trulyFailedPrompts.length - expectedMissing;
-          console.log(`[AutoFlow] Recovery: text match says ${trulyFailedPrompts.length} missing but baseline-adjusted count says only ${expectedMissing} missing — removing ${excess} false negatives`);
+          console.log(`[AutoFlow] Recovery: text match says ${trulyFailedPrompts.length} missing but baseline-adjusted count says only ${expectedMissing} missing أ¢â‚¬â€‌ removing ${excess} false negatives`);
           for (let x = 0; x < excess; x++) {
             const rescued = trulyFailedPrompts.shift()!;
             rescued.status = 'done';
             rescued.error = undefined;
             recovered++;
-            console.log(`[AutoFlow] Recovery: prompt "${rescued.text.slice(0, 25)}..." rescued by count-based safety net ✅`);
+            console.log(`[AutoFlow] Recovery: prompt "${rescued.text.slice(0, 25)}..." rescued by count-based safety net أ¢إ“â€¦`);
             sendPromptStatusUpdate(queue.id, queue.prompts.indexOf(rescued), 'done', undefined, rescued.mediaId);
           }
         }
@@ -434,7 +506,7 @@ if (!(window as any).__autoflow_injected) {
         await sleep(3000);
         startQueue(queue, baselineTileCount);
       } else {
-        console.log('[AutoFlow] All prompts found on page! No regeneration needed. ✅');
+        console.log('[AutoFlow] All prompts found on page! No regeneration needed. أ¢إ“â€¦');
         sendPhaseUpdate('checking', 'All prompts successfully verified and completed.');
         try {
           chrome.runtime.sendMessage({
@@ -443,7 +515,7 @@ if (!(window as any).__autoflow_injected) {
           }).catch(() => {});
         } catch { /* ignore */ }
 
-        // Auto-scan library — download ALL completed videos on the page
+        // Auto-scan library أ¢â‚¬â€‌ download ALL completed videos on the page
         // This covers the recovered fake-cancelled videos too
         await sleep(1000);
         try {
@@ -457,7 +529,7 @@ if (!(window as any).__autoflow_injected) {
       return;
     }
 
-    // ── NORMAL INTERRUPT: Auto-resume if recent, ask user if old ──
+    // أ¢â€‌â‚¬أ¢â€‌â‚¬ NORMAL INTERRUPT: Auto-resume if recent, ask user if old أ¢â€‌â‚¬أ¢â€‌â‚¬
     const remaining = queue.prompts.length - currentIndex;
     if (remaining <= 0) {
       await clearRunningQueue();
@@ -468,7 +540,7 @@ if (!(window as any).__autoflow_injected) {
     const AUTO_RESUME_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
 
     if (ageMs < AUTO_RESUME_THRESHOLD_MS) {
-      // Recent save — Chrome likely auto-refreshed the page. Resume immediately.
+      // Recent save أ¢â‚¬â€‌ Chrome likely auto-refreshed the page. Resume immediately.
       console.log(`[AutoFlow] Page refreshed while queue "${queue.name}" was running (saved ${Math.round(ageMs / 1000)}s ago). Auto-resuming from prompt #${currentIndex + 1}...`);
 
       // Wait for Flow to fully load
@@ -481,7 +553,7 @@ if (!(window as any).__autoflow_injected) {
           payload: {
             timestamp: Date.now(),
             level: 'info',
-            message: `Page refreshed — auto-resuming queue "${queue.name}" from prompt #${currentIndex + 1} (${remaining} remaining)`
+            message: `Page refreshed أ¢â‚¬â€‌ auto-resuming queue "${queue.name}" from prompt #${currentIndex + 1} (${remaining} remaining)`
           }
         }).catch(() => {});
       } catch { /* ignore */ }
@@ -489,8 +561,8 @@ if (!(window as any).__autoflow_injected) {
       return resumeInterruptedQueue();
     }
 
-    // Old save — ask user whether to resume or discard
-    console.log(`[AutoFlow] Detected interrupted queue "${queue.name}" — ${remaining} prompts remaining (from #${currentIndex + 1}), saved ${Math.round(ageMs / 60000)} minutes ago`);
+    // Old save أ¢â‚¬â€‌ ask user whether to resume or discard
+    console.log(`[AutoFlow] Detected interrupted queue "${queue.name}" أ¢â‚¬â€‌ ${remaining} prompts remaining (from #${currentIndex + 1}), saved ${Math.round(ageMs / 60000)} minutes ago`);
 
     await sleep(2000);
     try {
@@ -526,7 +598,7 @@ async function handleMessage(msg: Message): Promise<any> {
       if (engine) {
         engine.stop();
       } else {
-        // Engine is null (page was reloaded) — force-clear the UI
+        // Engine is null (page was reloaded) أ¢â‚¬â€‌ force-clear the UI
         chrome.runtime.sendMessage({
           type: 'QUEUE_STATUS_UPDATE',
           payload: { status: 'stopped' }
@@ -597,7 +669,7 @@ async function handleMessage(msg: Message): Promise<any> {
 
     case 'UPLOAD_IMAGES_TO_FLOW':
     case 'GET_IMAGE_BLOBS':
-      // These are forwarded via background to sidepanel — content script never handles directly
+      // These are forwarded via background to sidepanel أ¢â‚¬â€‌ content script never handles directly
       // Return signal so background knows to ask sidepanel
       return { needsSidepanelRelay: true };
 
@@ -608,7 +680,7 @@ async function handleMessage(msg: Message): Promise<any> {
     case 'IMAGE_API_COMPLETED': {
       // Background detected a generation API call completed via webRequest.
       // This fires for BOTH video (batchAsyncGenerateVideo) and image (batchGenerateImages) endpoints.
-      // Only used by image mode verification — video mode ignores the count.
+      // Only used by image mode verification أ¢â‚¬â€‌ video mode ignores the count.
       console.log('[AutoFlow] Generation API signal (webRequest)', msg.payload?.statusCode);
       if (engine) {
         (engine as any).onImageApiCompleted?.(msg.payload);
@@ -619,13 +691,29 @@ async function handleMessage(msg: Message): Promise<any> {
     case 'PING':
       return { type: 'PONG', runLocked: isRunLocked() };
 
+    // أ¢â€‌â‚¬أ¢â€‌â‚¬ Studio: Execute a single node on Google Flow أ¢â€‌â‚¬أ¢â€‌â‚¬
+    case 'STUDIO_EXECUTE_NODE' as any:
+      return handleStudioExecuteNode(msg.payload);
+
+    case 'STUDIO_STOP' as any:
+      if (engine) engine.stop();
+      return { success: true };
+
+    case 'STUDIO_PAUSE' as any:
+      if (engine) engine.pause();
+      return { success: true };
+
+    case 'STUDIO_RESUME' as any:
+      if (engine) engine.resume();
+      return { success: true };
+
     default:
       return { error: `Unknown message: ${msg.type}` };
   }
 }
 
 async function startQueue(queue: QueueObject, baselineTileCount?: number): Promise<any> {
-  // ── Guard: prevent multiple concurrent engines ──
+  // أ¢â€‌â‚¬أ¢â€‌â‚¬ Guard: prevent multiple concurrent engines أ¢â€‌â‚¬أ¢â€‌â‚¬
   // If we already have a running engine, stop it first
   if (engine) {
     console.warn('[AutoFlow] Stopping previous engine before starting new queue');
@@ -644,7 +732,7 @@ async function startQueue(queue: QueueObject, baselineTileCount?: number): Promi
 
   engine = new AutomationEngine();
   startAntiThrottle();  // Fight tab throttling during automation
-  // Don't await — run in background so the message can respond
+  // Don't await أ¢â‚¬â€‌ run in background so the message can respond
   (async () => {
     try {
       const storageData = await new Promise<any>((resolve) => {
@@ -666,7 +754,7 @@ async function startQueue(queue: QueueObject, baselineTileCount?: number): Promi
     } catch (err) {
       console.error('[AutoFlow] Queue error:', err);
     } finally {
-      stopAntiThrottle();  // Queue finished — stop self-ping
+      stopAntiThrottle();  // Queue finished أ¢â‚¬â€‌ stop self-ping
     }
   })();
   return { success: true };
@@ -737,7 +825,7 @@ async function retrySingleTileHandler(payload: { locator: string; promptLabel: s
 
 /**
  * Sanitise a prompt string into a filesystem-safe slug.
- * Keeps the first ~40 chars, lowercased, trimmed, spaces → underscores.
+ * Keeps the first ~40 chars, lowercased, trimmed, spaces أ¢â€ â€™ underscores.
  */
 function slugify(text: string, maxLen = 40): string {
   return text
@@ -777,7 +865,7 @@ async function upscaleSelected(payload: {
 
   console.log(`[AutoFlow] Upscale-only: triggering ${resolution} for ${payload.assets.length} asset(s)...`);
 
-  // Suppress downloads — Flow's context menu triggers both upscale AND download,
+  // Suppress downloads أ¢â‚¬â€‌ Flow's context menu triggers both upscale AND download,
   // but we only want the upscale. The service worker will cancel any downloads.
   await chrome.runtime.sendMessage({ type: 'SUPPRESS_DOWNLOADS' });
 
@@ -853,12 +941,12 @@ async function downloadSelected(payload: {
   }
 
   if (needsUpscale) {
-    // ══════════════════════════════════════════════════════════
+    // أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯
     // 3-PHASE BATCH DOWNLOAD for 1080p / 4K
     // Phase 1: Trigger upscaling for ALL videos
     // Phase 2: Wait for ALL upscaling to complete
     // Phase 3: Download upscaled videos one by one
-    // ══════════════════════════════════════════════════════════
+    // أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯
 
     console.log(`[AutoFlow] Phase 1: Triggering ${resolutionLabel} upscaling for ${payload.assets.length} asset(s)...`);
     for (const asset of payload.assets) {
@@ -884,24 +972,24 @@ async function downloadSelected(payload: {
     await sleep(2000);
   }
 
-  // ══════════════════════════════════════════════════════════
+  // أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯
   // DOWNLOAD ALL ASSETS via Flow context menu with rename
-  // Always use menu-based download — direct URL download is
+  // Always use menu-based download أ¢â‚¬â€‌ direct URL download is
   // unreliable because videoSrc is often empty for tiles.
-  // ══════════════════════════════════════════════════════════
+  // أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯
   console.log(`[AutoFlow] Downloading ${payload.assets.length} asset(s) via context menu with rename...`);
   for (const asset of payload.assets) {
     try {
       const filename = buildFilename(asset);
 
-      // Queue the rename FIRST — so onDeterminingFilename picks it up
+      // Queue the rename FIRST أ¢â‚¬â€‌ so onDeterminingFilename picks it up
       await chrome.runtime.sendMessage({
         type: 'SET_DOWNLOAD_RENAME',
         payload: { filename },
       });
 
       // Trigger download via Flow's context menu
-      // Images: always download at 1K (original) — upscaling costs Google Flow credits
+      // Images: always download at 1K (original) أ¢â‚¬â€‌ upscaling costs Google Flow credits
       // Videos: use the user's preferred resolution setting
       const assetRes = asset.mediaType === 'image' ? '1K' : resolutionLabel;
       const ok = await downloadAssetByMenu(asset.locator, assetRes);
@@ -953,3 +1041,309 @@ async function refreshModels(): Promise<any> {
   return { models };
 }
 
+
+// -- Studio: Single-node execution via the EXISTING proven engine --
+
+async function handleStudioExecuteNode(payload: any): Promise<any> {
+  const { nodeId, config } = payload || {};
+  if (!nodeId || !config) {
+    return { type: 'STUDIO_NODE_ERROR', payload: { nodeId, error: 'Missing nodeId or config' } };
+  }
+
+  console.log(`[AutoFlow Studio] Executing node ${nodeId}`);
+
+  const mediaType = config.mediaType || 'image';
+  const isImage = mediaType === 'image';
+
+  const queue: any = {
+    id: `studio-${nodeId}-${Date.now()}`,
+    name: 'STUDIO',
+    prompts: [{
+      id: `prompt-${nodeId}`,
+      index: 0,
+      text: config.prompt || '',
+      images: [],
+      status: 'pending',
+      attempts: 0,
+      outputFiles: [],
+    }],
+    settings: {
+      mediaType,
+      creationType: 'ingredients',
+      model: isImage ? 'Veo 3' : (config.model || 'Veo 3'),
+      orientation: (config.aspectRatio === '9:16' || config.aspectRatio === '3:4') ? 'portrait' : 'landscape',
+      generations: 1,
+      duration: '8s',
+      voiceIngredient: 'none',
+      stopOnError: false,
+      automationMode: 'lite',
+      waitMinSec: 1,
+      waitMaxSec: 2,
+      typingMode: false,
+      typingSpeedMultiplier: 1.0,
+      autoDownloadVideos: false,
+      videoResolution: '4K',
+      autoDownloadImages: false,
+      imageResolution: '4K',
+      imageModel: isImage ? (config.model || 'Nano Banana 2') : 'Nano Banana 2',
+      imageRatio: isImage ? (config.aspectRatio || '9:16') : '9:16',
+      language: 'English',
+      showNotifications: false,
+      notificationSound: false,
+      autoDownload: false,
+      waitBetweenPromptsSec: 0,
+      inputMethod: 'paste',
+      typingCharsPerSecond: 25,
+      variableTypingDelay: true,
+    },
+    runTarget: 'currentProject',
+    status: 'pending',
+    currentPromptIndex: 0,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+
+  // Start the queue (non-blocking)
+  const result = await startQueue(queue);
+  if (!result.success) {
+    sendStudioError(nodeId, result.error || 'Failed to start queue');
+    return { success: false };
+  }
+
+  // Return immediately -- do NOT block the message port.
+  // Fire-and-forget poller sends updates via chrome.runtime.sendMessage.
+  pollStudioCompletion(nodeId, queue);
+  return { success: true };
+}
+
+async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
+  const { findAssetCards, isVisible } = await import('./selectors');
+
+  sendStudioProgress(nodeId, 20);
+
+  // ── Phase 1: Wait for engine to finish processing (fill prompt → click generate) ──
+  // Engine in lite mode sets status to 'submitted' once it clicked Generate.
+  for (let wait = 0; wait < 120; wait++) {
+    await sleep(500);
+    const status = queue.prompts[0].status;
+
+    if (status === 'submitted' || status === 'done') break;
+    if (status === 'failed') {
+      sendStudioError(nodeId, queue.prompts[0].error || 'Generation failed');
+      return;
+    }
+  }
+
+  const prompt = queue.prompts[0];
+  if (prompt.status !== 'submitted' && prompt.status !== 'done') {
+    sendStudioError(nodeId, 'Engine did not submit the prompt in time');
+    return;
+  }
+
+  // Engine submitted the prompt — now we have the tile IDs
+  const trackedTileIds: string[] = prompt.tileIds || [];
+  console.log(`[AutoFlow Studio] Engine submitted. Tracking tiles: ${trackedTileIds.join(', ') || 'none'}`);
+  sendStudioProgress(nodeId, 40);
+
+  // If engine already marked as done (unlikely in lite, but possible)
+  if (prompt.status === 'done') {
+    sendStudioResult(nodeId, trackedTileIds[0] || '');
+    return;
+  }
+
+  // ── Phase 2: Track tile using Studio-specific state detection ──
+  // The existing getTileState() checks error icons FIRST which gives
+  // false 'failed' in sidebar/detail view. Studio detector checks
+  // completion signals FIRST: has real image/video → completed.
+  let consecutiveFailed = 0;
+
+  for (let wait = 0; wait < 1200; wait++) {
+    await sleep(1000);
+
+    // Find the tracked tile in DOM
+    let trackedTile: Element | null = null;
+    for (const id of trackedTileIds) {
+      const el = document.querySelector(`[data-tile-id="${id}"]`);
+      if (el && isVisible(el)) { trackedTile = el; break; }
+    }
+
+    // Fallback: find any visible tile card
+    if (!trackedTile) {
+      const allCards = findAssetCards().filter(el => isVisible(el));
+      if (allCards.length > 0) trackedTile = allCards[0];
+    }
+
+    if (!trackedTile) {
+      if (wait % 10 === 0) console.log('[AutoFlow Studio] Tile not in DOM, waiting...');
+      continue;
+    }
+
+    // ── Studio-specific tile state detection ──
+    // Priority: COMPLETED first → GENERATING → FAILED last
+    const state = getStudioTileState(trackedTile);
+
+    if (state === 'completed') {
+      console.log('[AutoFlow Studio] Tile completed!');
+      const tileId = trackedTile.getAttribute('data-tile-id') || '';
+      const mediaUrl = extractTileMediaUrl(trackedTile);
+      sendStudioResult(nodeId, tileId, mediaUrl);
+      return;
+    }
+
+    if (state === 'generating') {
+      consecutiveFailed = 0;
+      const progress = Math.min(95, 40 + Math.floor(wait / 12));
+      if (wait % 5 === 0) sendStudioProgress(nodeId, progress);
+    } else if (state === 'failed') {
+      consecutiveFailed++;
+      if (consecutiveFailed >= 8 && wait > 20) {
+        sendStudioError(nodeId, 'Generation failed — Google Flow marked the tile as failed');
+        return;
+      }
+    } else {
+      consecutiveFailed = 0;
+    }
+  }
+
+  sendStudioError(nodeId, 'Generation timed out after 20 minutes.');
+}
+
+/**
+ * Studio-specific tile state detector.
+ * The original getTileState() checks error icons FIRST — but in the
+ * sidebar/detail view, extra UI elements contain icons that match
+ * error patterns, causing false 'failed' on completed tiles.
+ *
+ * This detector checks in the OPPOSITE order:
+ * 1. COMPLETED: has real image or video? → done
+ * 2. GENERATING: has blur, percentage, or spinner? → still working
+ * 3. FAILED: has explicit failure text? → only then failed
+ */
+function getStudioTileState(tile: Element): 'completed' | 'generating' | 'failed' | 'unknown' {
+  // ── 1. COMPLETED: check for real image or video content ──
+  // Video with src
+  const video = tile.querySelector('video');
+  if (video && (video.src || video.querySelector('source[src]') || video.getAttribute('poster'))) {
+    return 'completed';
+  }
+
+  // Image with real src (not a tiny placeholder)
+  const imgs = tile.querySelectorAll('img[src]');
+  for (const img of imgs) {
+    const src = img.getAttribute('src') || '';
+    // Skip data URIs under 200 chars (tracking pixels / placeholders)
+    if (src.startsWith('data:') && src.length < 200) continue;
+    // Skip tiny invisible images
+    const rect = img.getBoundingClientRect();
+    if (rect.width < 20 || rect.height < 20) continue;
+    // Real image present → completed
+    return 'completed';
+  }
+
+  // Play button icons (completed video)
+  const icons = tile.querySelectorAll('.google-symbols, .material-icons, .material-symbols-outlined, .material-symbols');
+  for (const icon of icons) {
+    const txt = icon.textContent?.trim() || '';
+    if (txt === 'play_arrow' || txt === 'play_circle') return 'completed';
+  }
+
+  // ── 2. GENERATING: blur, percentage, or spinner ──
+  // Blur amount
+  const blurEls = tile.querySelectorAll('[style*="blur-amount"]');
+  for (const el of blurEls) {
+    const val = (el as HTMLElement).style.getPropertyValue('--blur-amount');
+    if (val && parseFloat(val) > 0) return 'generating';
+  }
+
+  // Percentage text (e.g. "36%", "99%")
+  const walker = document.createTreeWalker(tile, NodeFilter.SHOW_TEXT);
+  let textNode: Text | null;
+  while ((textNode = walker.nextNode() as Text | null)) {
+    const t = textNode.textContent?.trim() || '';
+    if (/^\d{1,3}%$/.test(t)) return 'generating';
+  }
+
+  // Spinner icons
+  for (const icon of icons) {
+    const txt = icon.textContent?.trim() || '';
+    if (txt === 'progress_activity' || txt === 'hourglass_empty' || txt === 'pending') {
+      return 'generating';
+    }
+  }
+
+  // Generating text cues
+  const text = tile.textContent?.toLowerCase() || '';
+  if (text.includes('queued') || text.includes('preparing') || text.includes('creating video') ||
+      text.includes('almost finished') || text.includes('is preparing')) {
+    return 'generating';
+  }
+
+  // ── 3. FAILED: only explicit failure text (NOT icons) ──
+  if (text.includes('generation failed') || text.includes('unable to generate') ||
+      text.includes('violat') || text.includes('blocked')) {
+    return 'failed';
+  }
+
+  return 'unknown';
+}
+
+
+function sendStudioResult(nodeId: string, tileId: string, mediaUrl?: string): void {
+  try {
+    chrome.runtime.sendMessage({
+      type: 'STUDIO_NODE_RESULT',
+      payload: {
+        nodeId,
+        tileId,
+        imageUrl: mediaUrl || '',
+        thumbnailUrl: mediaUrl || '',
+      },
+    }).catch(() => {});
+  } catch {}
+}
+
+/** Extract the image or video URL from a completed tile */
+function extractTileMediaUrl(tile: Element): string {
+  // Try video first
+  const video = tile.querySelector('video');
+  if (video) {
+    const source = video.querySelector('source[src]');
+    if (source) return source.getAttribute('src') || '';
+    if (video.src) return video.src;
+    if (video.getAttribute('poster')) return video.getAttribute('poster') || '';
+  }
+
+  // Try images (find the largest real one)
+  const imgs = tile.querySelectorAll('img[src]');
+  let bestSrc = '';
+  let bestArea = 0;
+  for (const img of imgs) {
+    const src = img.getAttribute('src') || '';
+    if (src.startsWith('data:') && src.length < 200) continue;
+    const rect = img.getBoundingClientRect();
+    const area = rect.width * rect.height;
+    if (area > bestArea) {
+      bestArea = area;
+      bestSrc = src;
+    }
+  }
+  return bestSrc;
+}
+
+function sendStudioProgress(nodeId: string, progress: number): void {
+  try {
+    chrome.runtime.sendMessage({
+      type: 'STUDIO_NODE_PROGRESS',
+      payload: { nodeId, progress },
+    }).catch(() => {});
+  } catch {}
+}
+
+function sendStudioError(nodeId: string, error: string): void {
+  try {
+    chrome.runtime.sendMessage({
+      type: 'STUDIO_NODE_ERROR',
+      payload: { nodeId, error },
+    }).catch(() => {});
+  } catch {}
+}

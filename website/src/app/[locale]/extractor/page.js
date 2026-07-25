@@ -162,95 +162,105 @@ export default function ExtractorPage() {
   return (
     <div className="section" style={{ minHeight: "100vh", position: "relative", overflow: "hidden" }}>
       {/* Absolute Ambient Backgrounds */}
-      <div style={{ position: "absolute", top: "-10%", left: "50%", transform: "translateX(-50%)", width: "80vw", height: "80vw", background: "radial-gradient(circle, rgba(79, 70, 229, 0.08) 0%, rgba(0,0,0,0) 70%)", zIndex: -1, pointerEvents: "none" }} />
+      <div style={{ position: "absolute", top: "-10%", left: "50%", transform: "translateX(-50%)", width: "80vw", height: "80vw", background: "radial-gradient(circle, rgba(255, 92, 0, 0.08) 0%, rgba(0,0,0,0) 70%)", zIndex: -1, pointerEvents: "none" }} />
       
       <div className="container" style={{ position: "relative", zIndex: 1 }}>
-        {/* --- Hero Section --- */}
-        <div style={{ padding: "120px 0 60px", textAlign: "center" }}>
+        <div style={{ padding: "100px 0 60px", textAlign: "center", position: "relative" }}>
           <div className="animate-in" style={{ animationDelay: "0.1s" }}>
-            <span className="badge" style={{ background: "rgba(79, 70, 229, 0.1)", color: "var(--primary-light)", border: "1px solid rgba(79, 70, 229, 0.3)", padding: "6px 16px", borderRadius: "100px", fontSize: "0.85rem", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "24px", display: "inline-block", boxShadow: "0 0 20px rgba(79, 70, 229, 0.2)" }}>Pro Max Tool</span>
-            <h1 style={{ fontSize: "clamp(3rem, 5vw, 4.5rem)", letterSpacing: "-0.04em", marginBottom: "24px", background: "linear-gradient(135deg, #FFF 0%, #A1A1AA 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-              Video Prompt <span className="text-gradient">Extractor</span>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "12px", marginBottom: "24px", padding: "8px 16px", border: "1px solid var(--primary)", background: "rgba(255, 92, 0, 0.05)" }}>
+              <div style={{ width: "8px", height: "8px", background: "var(--primary)", animation: "terminal-blink 1s infinite" }}></div>
+              <span className="terminal-text" style={{ fontSize: "0.9rem", letterSpacing: "2px", textTransform: "uppercase", textShadow: "none" }}>AI-Powered Video Analysis</span>
+            </div>
+            <h1 style={{ 
+              fontSize: "clamp(3rem, 6vw, 5rem)", 
+              letterSpacing: "-0.02em", 
+              marginBottom: "24px", 
+              fontWeight: "800",
+              color: "#FFF",
+            }}>
+              Video <span className="text-gradient">Extractor</span>
             </h1>
-            <p className="text-secondary" style={{ fontSize: "1.2rem", maxWidth: "650px", margin: "0 auto", lineHeight: "1.6" }}>
-              Upload any viral AI video to perfectly reverse-engineer its prompts, lighting, and character designs.
+            <p style={{ fontSize: "1.15rem", maxWidth: "650px", margin: "0 auto", lineHeight: "1.7", color: "var(--text-secondary)" }}>
+              Upload any AI-generated video and our AI will extract the exact image prompts, motion prompts, voiceover script, and character descriptions used to create it.
             </p>
+            {/* Supported Platforms */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", justifyContent: "center", marginTop: "28px" }}>
+              {["Runway Gen-3", "OpenAI Sora", "Kling AI", "Midjourney", "Luma", "Pika Labs", "Google Veo"].map((platform) => (
+                <span key={platform} style={{ padding: "6px 16px", border: "1px solid rgba(255,92,0,0.3)", borderRadius: "20px", fontSize: "0.85rem", color: "var(--text-secondary)", background: "rgba(255,92,0,0.05)", letterSpacing: "0.3px" }}>
+                  {platform}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
 
         <div style={{ maxWidth: "860px", margin: "0 auto" }}>
           {/* Toggle Tab */}
-          {status === "idle" && user && (
-            <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginBottom: "32px" }}>
+            <div style={{ display: "flex", gap: "0", justifyContent: "center", marginBottom: "40px" }}>
               <button 
                 onClick={() => setMode("upload")}
                 style={{ 
-                  padding: "12px 24px", 
-                  borderRadius: "100px", 
-                  background: mode === "upload" ? "rgba(79, 70, 229, 0.15)" : "transparent",
-                  color: mode === "upload" ? "var(--primary-light)" : "var(--text-secondary)",
-                  border: `1px solid ${mode === "upload" ? "rgba(79, 70, 229, 0.4)" : "rgba(255, 255, 255, 0.05)"}`,
+                  padding: "14px 32px", 
+                  background: mode === "upload" ? "var(--primary)" : "transparent",
+                  color: mode === "upload" ? "#000" : "var(--text-secondary)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm) 0 0 var(--radius-sm)",
                   cursor: "pointer",
-                  fontSize: "1rem",
+                  fontSize: "0.95rem",
                   fontWeight: "600",
-                  transition: "all 0.3s ease"
+                  transition: "all 0.2s ease"
                 }}
               >
-                📁 Upload Local Video
+                📁 Upload File
               </button>
               <button 
                 onClick={() => setMode("url")}
                 style={{ 
-                  padding: "12px 24px", 
-                  borderRadius: "100px", 
-                  background: mode === "url" ? "rgba(79, 70, 229, 0.15)" : "transparent",
-                  color: mode === "url" ? "var(--primary-light)" : "var(--text-secondary)",
-                  border: `1px solid ${mode === "url" ? "rgba(79, 70, 229, 0.4)" : "rgba(255, 255, 255, 0.05)"}`,
+                  padding: "14px 32px", 
+                  background: mode === "url" ? "var(--primary)" : "transparent",
+                  color: mode === "url" ? "#000" : "var(--text-secondary)",
+                  border: "1px solid var(--border)",
+                  borderLeft: "none",
+                  borderRadius: "0 var(--radius-sm) var(--radius-sm) 0",
                   cursor: "pointer",
-                  fontSize: "1rem",
+                  fontSize: "0.95rem",
                   fontWeight: "600",
-                  transition: "all 0.3s ease"
+                  transition: "all 0.2s ease"
                 }}
               >
-                🔗 Paste Video Link
+                🔗 Paste URL
               </button>
             </div>
-          )}
 
           {/* --- Upload Zone or Auth CTA --- */}
           {status === "idle" && (
             user ? (
               mode === "upload" ? (
                 <div 
-                  className="card-glass animate-in delay-1"
+                  className="cyber-panel animate-in delay-1"
                   onDrop={handleDrop}
                   onDragOver={handleDragOver}
                   style={{ 
                     textAlign: "center",
                     cursor: "pointer",
                     padding: "100px 40px",
-                    border: "2px dashed rgba(79, 70, 229, 0.4)",
-                    background: "linear-gradient(180deg, rgba(79, 70, 229, 0.03) 0%, rgba(0,0,0,0.5) 100%)",
-                    backdropFilter: "blur(20px)",
-                    borderRadius: "32px",
-                    transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
-                    position: "relative",
-                    overflow: "hidden",
-                    boxShadow: "0 20px 40px rgba(0,0,0,0.4)"
+                    transition: "all 0.2s",
                   }}
                   onClick={() => document.getElementById("file-upload").click()}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = "var(--primary-light)";
-                    e.currentTarget.style.boxShadow = "0 0 60px rgba(79, 70, 229, 0.3), inset 0 0 30px rgba(79, 70, 229, 0.1)";
-                    e.currentTarget.style.transform = "translateY(-4px)";
+                    e.currentTarget.style.boxShadow = "0 0 40px rgba(255, 92, 0, 0.2), inset 0 0 40px rgba(255, 92, 0, 0.1)";
+                    e.currentTarget.style.borderColor = "#FFF";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = "rgba(79, 70, 229, 0.4)";
-                    e.currentTarget.style.boxShadow = "0 20px 40px rgba(0,0,0,0.4)";
-                    e.currentTarget.style.transform = "translateY(0)";
+                    e.currentTarget.style.boxShadow = "0 0 20px rgba(255, 92, 0, 0.05), inset 0 0 20px rgba(255, 92, 0, 0.05)";
+                    e.currentTarget.style.borderColor = "var(--primary)";
                   }}
                 >
-                  <div className="cta-glow" style={{ opacity: 0.5 }}></div>
+                  <div style={{ position: "absolute", top: 10, left: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
+                  <div style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
+                  <div style={{ position: "absolute", bottom: 10, left: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
+                  <div style={{ position: "absolute", bottom: 10, right: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
+                  
                   <input 
                     id="file-upload" 
                     type="file" 
@@ -260,196 +270,179 @@ export default function ExtractorPage() {
                   />
                   {file ? (
                     <div style={{ position: "relative", zIndex: 1 }}>
-                      <div style={{ fontSize: "4rem", marginBottom: "20px", filter: "drop-shadow(0 0 30px rgba(79, 70, 229, 0.6))" }}>🎥</div>
-                      <h3 style={{ marginBottom: "8px", fontSize: "1.8rem" }}>{file.name}</h3>
-                      <p className="text-secondary" style={{ marginBottom: "32px" }}>{(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to reverse-engineer</p>
+                      <div className="terminal-text" style={{ fontSize: "4rem", marginBottom: "20px" }}>✅ Ready to Extract</div>
+                      <h3 style={{ marginBottom: "8px", fontSize: "1.8rem", color: "#FFF", fontFamily: "'JetBrains Mono', monospace" }}>{file.name}</h3>
+                      <p className="terminal-text" style={{ marginBottom: "32px", color: "var(--text-secondary)" }}>{(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to analyze</p>
                       <button 
-                        className="btn btn-primary btn-lg" 
+                        className="cyber-btn" 
                         onClick={(e) => { e.stopPropagation(); startAnalysis(); }}
-                        style={{ fontSize: "1.2rem", padding: "16px 40px", borderRadius: "100px", boxShadow: "0 10px 30px rgba(79, 70, 229, 0.4)" }}
+                        style={{ fontSize: "1.2rem", padding: "16px 40px", fontWeight: "700" }}
                       >
-                        Extract Prompts Now ⚡
+                        Extract Prompts
                       </button>
                     </div>
                   ) : (
                     <div style={{ position: "relative", zIndex: 1 }}>
-                      <div style={{ width: "100px", height: "100px", margin: "0 auto 24px", background: "rgba(79, 70, 229, 0.1)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(79, 70, 229, 0.2)", filter: "drop-shadow(0 0 20px rgba(79, 70, 229, 0.4))" }}>
-                        <span style={{ fontSize: "3rem" }}>📥</span>
-                      </div>
-                      <h3 style={{ fontSize: "2rem", marginBottom: "12px", letterSpacing: "-0.02em" }}>Drag & Drop Video Here</h3>
-                      <p className="text-secondary" style={{ fontSize: "1.1rem" }}>or click to browse your computer (Max 500MB)</p>
+                      <div className="terminal-text" style={{ fontSize: "3rem", marginBottom: "24px", animation: "terminal-blink 2s infinite" }}>📤</div>
+                      <h3 style={{ fontSize: "2rem", marginBottom: "12px", fontFamily: "'JetBrains Mono', monospace", color: "#FFF", textTransform: "uppercase" }}>Drop your video here</h3>
+                      <p className="terminal-text" style={{ fontSize: "1.1rem", color: "var(--text-secondary)" }}>Drag & drop or click to browse (Max 500MB)</p>
                     </div>
                   )}
                 </div>
               ) : (
                 <div 
-                  className="card-glass animate-in delay-1"
+                  className="cyber-panel animate-in delay-1"
                   style={{ 
                     textAlign: "center",
                     padding: "80px 40px",
-                    background: "linear-gradient(180deg, rgba(79, 70, 229, 0.03) 0%, rgba(0,0,0,0.5) 100%)",
-                    backdropFilter: "blur(20px)",
-                    borderRadius: "32px",
-                    position: "relative",
-                    overflow: "hidden",
-                    boxShadow: "0 20px 40px rgba(0,0,0,0.4)",
-                    border: "1px solid rgba(79, 70, 229, 0.2)"
                   }}
                 >
-                  <div className="cta-glow" style={{ opacity: 0.3 }}></div>
+                  <div style={{ position: "absolute", top: 10, left: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
+                  <div style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
+                  <div style={{ position: "absolute", bottom: 10, left: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
+                  <div style={{ position: "absolute", bottom: 10, right: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
+                  
                   <div style={{ position: "relative", zIndex: 1 }}>
-                    <div style={{ width: "100px", height: "100px", margin: "0 auto 24px", background: "rgba(79, 70, 229, 0.1)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(79, 70, 229, 0.2)", filter: "drop-shadow(0 0 20px rgba(79, 70, 229, 0.4))" }}>
-                      <span style={{ fontSize: "3rem" }}>🔗</span>
-                    </div>
-                    <h3 style={{ fontSize: "2rem", marginBottom: "12px", letterSpacing: "-0.02em" }}>Paste Video URL</h3>
-                    <p className="text-secondary" style={{ fontSize: "1.1rem", marginBottom: "32px" }}>
-                      Supports YouTube, TikTok, Instagram, Twitter/X, and more
+                    <div className="terminal-text" style={{ fontSize: "3rem", marginBottom: "24px" }}>🔗</div>
+                    <h3 style={{ fontSize: "2rem", marginBottom: "12px", fontFamily: "'JetBrains Mono', monospace", color: "#FFF", textTransform: "uppercase" }}>Paste a video link</h3>
+                    <p className="terminal-text" style={{ fontSize: "1.1rem", marginBottom: "32px", color: "var(--text-secondary)" }}>
+                      Supports YouTube, TikTok, Instagram, Twitter/X
                     </p>
                     
-                    <div style={{ display: "flex", gap: "12px", maxWidth: "600px", margin: "0 auto", width: "100%" }}>
+                    <div style={{ display: "flex", gap: "0", maxWidth: "600px", margin: "0 auto", width: "100%" }}>
                       <input 
                         type="text"
-                        placeholder="https://www.youtube.com/watch?v=..."
+                        placeholder="https://www..."
                         value={videoUrl}
                         onChange={(e) => setVideoUrl(e.target.value)}
+                        className="terminal-text"
                         style={{
                           flex: 1,
                           padding: "16px 24px",
-                          borderRadius: "100px",
-                          background: "rgba(0, 0, 0, 0.6)",
-                          border: "1px solid rgba(255, 255, 255, 0.15)",
-                          color: "white",
+                          background: "#000",
+                          border: "1px solid var(--primary)",
+                          color: "var(--primary)",
                           fontSize: "1rem",
                           outline: "none",
                           transition: "all 0.3s ease"
                         }}
-                        onFocus={(e) => e.target.style.borderColor = "var(--primary-light)"}
-                        onBlur={(e) => e.target.style.borderColor = "rgba(255, 255, 255, 0.15)"}
+                        onFocus={(e) => e.target.style.boxShadow = "inset 0 0 10px rgba(255, 92, 0, 0.2)"}
+                        onBlur={(e) => e.target.style.boxShadow = "none"}
                       />
                       <button 
-                        className="btn btn-primary"
+                        className="cyber-btn"
                         onClick={startAnalysis}
                         disabled={!videoUrl.trim()}
                         style={{ 
                           fontSize: "1.1rem", 
                           padding: "16px 36px", 
-                          borderRadius: "100px",
-                          boxShadow: "0 10px 30px rgba(79, 70, 229, 0.4)",
-                          whiteSpace: "nowrap"
+                          borderLeft: "none",
+                          whiteSpace: "nowrap",
+                          opacity: !videoUrl.trim() ? 0.5 : 1
                         }}
                       >
-                        Extract ⚡
+                        Extract Prompts
                       </button>
                     </div>
                   </div>
                 </div>
               )
             ) : (
-              <div className="card-glass animate-in delay-1" style={{ padding: "80px 40px", borderRadius: "32px", textAlign: "center", background: "linear-gradient(180deg, rgba(79, 70, 229, 0.05) 0%, rgba(0,0,0,0.5) 100%)", border: "1px solid rgba(79, 70, 229, 0.3)" }}>
-                <div style={{ width: "80px", height: "80px", margin: "0 auto 24px", background: "rgba(79, 70, 229, 0.1)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(79, 70, 229, 0.2)" }}>
-                  <span style={{ fontSize: "2.5rem" }}>🔒</span>
-                </div>
-                <h3 style={{ marginBottom: "16px", fontSize: "2rem" }}>Login to Extract Prompts</h3>
-                <p className="text-secondary" style={{ maxWidth: "500px", margin: "0 auto 32px", fontSize: "1.1rem" }}>Create a free account to reverse-engineer viral AI videos and get exact Midjourney and Runway prompts.</p>
+              <div className="cyber-panel animate-in delay-1" style={{ padding: "80px 40px", textAlign: "center" }}>
+                <div className="terminal-text" style={{ fontSize: "3rem", marginBottom: "24px" }}>🔒</div>
+                <h3 style={{ marginBottom: "16px", fontSize: "2rem", fontFamily: "'JetBrains Mono', monospace", color: "#FFF", textTransform: "uppercase" }}>Sign in to get started</h3>
+                <p className="terminal-text" style={{ maxWidth: "500px", margin: "0 auto 32px", fontSize: "1.1rem", color: "var(--text-secondary)" }}>Create a free account to start extracting prompts from any AI video.</p>
                 <div style={{ display: "flex", gap: "16px", justifyContent: "center" }}>
-                  <a href="/login" className="btn btn-primary btn-lg" style={{ borderRadius: "100px", padding: "16px 40px", fontSize: "1.1rem" }}>Login to AutoFlow</a>
-                  <a href="/register" className="btn btn-secondary btn-lg" style={{ borderRadius: "100px", padding: "16px 40px", fontSize: "1.1rem" }}>Create Free Account</a>
+                  <a href="/login" className="cyber-btn" style={{ padding: "16px 40px", fontSize: "1.1rem", textDecoration: "none" }}>Log In</a>
+                  <a href="/register" className="cyber-btn" style={{ padding: "16px 40px", fontSize: "1.1rem", textDecoration: "none", background: "rgba(255, 92, 0, 0.1)" }}>Create Account</a>
                 </div>
               </div>
             )
           )}
 
         {(status === "uploading" || status === "processing") && (
-          <div className="card-glass animate-in" style={{ textAlign: "center", padding: "100px 40px", borderRadius: "32px", position: "relative", overflow: "hidden", background: "linear-gradient(180deg, rgba(10, 10, 10, 0.8) 0%, rgba(3, 3, 3, 0.9) 100%)", border: "1px solid var(--border)" }}>
-            <div className="cta-glow" style={{ animation: "pulse-glow 3s infinite", background: "radial-gradient(circle, rgba(6, 182, 212, 0.3) 0%, transparent 70%)" }}></div>
-            <div style={{ position: "relative", zIndex: 1, maxWidth: "400px", margin: "0 auto" }}>
-              <div style={{ position: "relative", width: "80px", height: "80px", margin: "0 auto 32px" }}>
-                <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, border: "3px solid rgba(79, 70, 229, 0.1)", borderRadius: "50%" }}></div>
-                <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, border: "3px solid transparent", borderTopColor: "var(--accent)", borderRightColor: "var(--primary)", borderRadius: "50%", animation: "spin 1.5s linear infinite" }}></div>
-                <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", fontSize: "1.8rem" }}>🔮</div>
-              </div>
-              <h3 style={{ fontSize: "1.6rem", marginBottom: "12px", color: "white" }}>{stepMessage}</h3>
-              <p className="text-secondary" style={{ fontSize: "1rem" }}>Gemini 1.5 Pro is currently analyzing every frame of your video.</p>
-              
-              {/* Fake Skeleton Progress */}
-              <div style={{ marginTop: "40px", height: "6px", background: "rgba(255,255,255,0.05)", borderRadius: "10px", overflow: "hidden", position: "relative" }}>
-                <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: "40%", background: "var(--gradient-primary)", borderRadius: "10px", animation: "loading-bar 4s ease-in-out infinite" }}></div>
-              </div>
+          <div className="cyber-panel animate-in" style={{ padding: "60px 40px", textAlign: "left" }}>
+            <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "2px", background: "var(--primary)", animation: "scanline 3s linear infinite" }}></div>
+            
+            <div className="terminal-text" style={{ fontSize: "1.2rem", marginBottom: "24px" }}>
+              ⚡ Analyzing your video...
             </div>
-            <style>{`
-              @keyframes spin { 100% { transform: rotate(360deg); } }
-              @keyframes loading-bar { 0% { left: -40%; width: 40%; } 50% { width: 80%; } 100% { left: 100%; width: 40%; } }
-            `}</style>
+            
+            <div style={{ background: "#000", border: "1px solid rgba(255, 92, 0, 0.3)", padding: "24px", fontFamily: "'JetBrains Mono', monospace", color: "var(--primary)", height: "200px", overflow: "hidden", position: "relative", boxShadow: "inset 0 0 20px rgba(0,0,0,1)" }}>
+              <p style={{ margin: "0 0 8px 0" }}>Starting analysis...</p>
+              <p style={{ margin: "0 0 8px 0", opacity: 0.8 }}>Status: {stepMessage}</p>
+              <p style={{ margin: "0 0 8px 0", opacity: 0.6, animation: "cyber-glitch 2s infinite" }}>Analyzing visual elements...</p>
+              <p style={{ margin: "0 0 8px 0", opacity: 0.4 }}>Processing audio track...</p>
+              <p style={{ margin: "0 0 8px 0", opacity: 0.2 }}>Generating prompts...</p>
+              <div style={{ width: "12px", height: "20px", background: "var(--primary)", display: "inline-block", animation: "terminal-blink 1s infinite", verticalAlign: "middle", marginTop: "8px" }}></div>
+            </div>
           </div>
         )}
 
         {status === "error" && (
-          <div className="card-glass animate-in" style={{ padding: "80px 40px", borderRadius: "32px", borderColor: "rgba(245, 158, 11, 0.3)", textAlign: "center", background: "linear-gradient(180deg, rgba(245, 158, 11, 0.05) 0%, rgba(0,0,0,0.5) 100%)" }}>
-            <div style={{ width: "80px", height: "80px", margin: "0 auto 24px", background: "rgba(245, 158, 11, 0.1)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(245, 158, 11, 0.2)" }}>
-              <span style={{ fontSize: "2.5rem" }}>⚠️</span>
-            </div>
-            <h3 style={{ color: "var(--warning)", marginBottom: "16px", fontSize: "1.8rem" }}>Extraction Failed</h3>
-            <p className="text-secondary" style={{ maxWidth: "500px", margin: "0 auto 32px", fontSize: "1.1rem" }}>{error}</p>
-            <button className="btn btn-secondary btn-lg" style={{ borderRadius: "100px" }} onClick={() => { setStatus("idle"); setFile(null); }}>
-              Try Another Video
+          <div className="cyber-panel animate-in" style={{ padding: "80px 40px", borderColor: "var(--accent)", textAlign: "center", boxShadow: "inset 0 0 40px rgba(229, 9, 20, 0.2)" }}>
+            <div className="terminal-text" style={{ fontSize: "3rem", marginBottom: "24px", color: "var(--accent)", textShadow: "0 0 10px var(--accent)" }}>⚠️ Error</div>
+            <h3 style={{ color: "var(--accent)", marginBottom: "16px", fontSize: "1.8rem", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase" }}>Extraction Failed</h3>
+            <p className="terminal-text" style={{ maxWidth: "600px", margin: "0 auto 32px", fontSize: "1rem", color: "var(--text-secondary)" }}>{error}</p>
+            <button className="cyber-btn" style={{ border: "1px solid var(--accent)", color: "var(--accent)", boxShadow: "none" }} onClick={() => { setStatus("idle"); setFile(null); }}>
+              Try Again
             </button>
           </div>
         )}
 
         {status === "completed" && result && (
           <div className="animate-in delay-1">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "40px", paddingBottom: "24px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "40px", paddingBottom: "24px", borderBottom: "1px solid var(--primary)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                <h2 style={{ fontSize: "2.2rem", margin: 0 }}>Extraction <span className="text-gradient">Results</span></h2>
+                <h2 className="terminal-text" style={{ fontSize: "2.2rem", margin: 0, textShadow: "none" }}>Extraction Results</h2>
                 {saveStatus === "saving" && (
-                  <span className="badge" style={{ background: "rgba(245, 158, 11, 0.1)", color: "var(--warning)", border: "1px solid rgba(245, 158, 11, 0.2)", borderRadius: "100px", padding: "4px 12px", fontSize: "0.8rem" }}>
-                    ⏳ Saving to Dashboard...
+                  <span style={{ background: "transparent", color: "var(--warning)", border: "1px solid var(--warning)", padding: "4px 12px", fontSize: "0.8rem", borderRadius: "6px" }}>
+                    Saving...
                   </span>
                 )}
                 {saveStatus === "saved" && (
-                  <span className="badge" style={{ background: "rgba(16, 185, 129, 0.1)", color: "var(--success)", border: "1px solid rgba(16, 185, 129, 0.2)", borderRadius: "100px", padding: "4px 12px", fontSize: "0.8rem" }}>
-                    ✓ Auto-saved to Dashboard
+                  <span style={{ background: "rgba(255,92,0,0.1)", color: "var(--primary)", border: "1px solid var(--primary)", padding: "4px 12px", fontSize: "0.8rem", borderRadius: "6px" }}>
+                    ✓ Saved
                   </span>
                 )}
                 {saveStatus === "error" && (
-                  <span className="badge" style={{ background: "rgba(239, 68, 68, 0.1)", color: "#ef4444", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "100px", padding: "4px 12px", fontSize: "0.8rem" }}>
-                    ⚠️ Failed to auto-save
+                  <span style={{ background: "transparent", color: "var(--accent)", border: "1px solid var(--accent)", padding: "4px 12px", fontSize: "0.8rem", borderRadius: "6px" }}>
+                    Save failed
                   </span>
                 )}
               </div>
-              <button className="btn btn-secondary" style={{ borderRadius: "100px" }} onClick={() => { setStatus("idle"); setFile(null); }}>Extract Another</button>
+              <button className="cyber-btn" style={{ padding: "12px 24px" }} onClick={() => { setStatus("idle"); setFile(null); }}>Extract Another</button>
             </div>
 
             {/* --- Summary Card --- */}
-            <div className="card-glass" style={{ marginBottom: "40px", padding: "32px", borderRadius: "24px", background: "linear-gradient(145deg, rgba(10,10,10,0.9) 0%, rgba(3,3,3,1) 100%)", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+            <div className="cyber-panel" style={{ marginBottom: "40px", padding: "32px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "20px" }}>
-                <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: "rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem" }}>🎬</div>
-                <h3 style={{ margin: 0, fontSize: "1.4rem" }}>Video Concept & Style</h3>
+                <div className="terminal-text" style={{ fontSize: "1.5rem" }}>🎬 Video Concept & Style</div>
               </div>
-              <p style={{ fontSize: "1.1rem", color: "var(--text-secondary)", lineHeight: "1.8" }}>{result.video_concept}</p>
+              <p className="terminal-text" style={{ fontSize: "1.1rem", color: "var(--text-secondary)", lineHeight: "1.8", textShadow: "none" }}>{result.video_concept}</p>
             </div>
 
             {/* --- Teleprompter Voiceover --- */}
             {result.voiceover_text && (
-              <div className="card" style={{ marginBottom: "48px", position: "relative", padding: "0", overflow: "hidden", borderRadius: "24px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                <div style={{ background: "rgba(0,0,0,0.8)", padding: "20px 32px", borderBottom: "1px solid rgba(255,255,255,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="cyber-panel" style={{ marginBottom: "48px", position: "relative", padding: "0" }}>
+                <div style={{ background: "#000", padding: "20px 32px", borderBottom: "1px solid var(--primary)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    <span style={{ fontSize: "1.2rem" }}>🎙️</span>
-                    <h3 style={{ margin: 0, fontSize: "1.1rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)" }}>Voiceover Script</h3>
+                    <h3 className="terminal-text" style={{ margin: 0, fontSize: "1.1rem", textShadow: "none" }}>🎙️ Voiceover Script</h3>
                   </div>
                   <button 
-                    style={{ background: "transparent", border: "none", color: "var(--primary-light)", cursor: "pointer", fontSize: "0.9rem", display: "flex", gap: "8px", alignItems: "center" }}
+                    className="cyber-btn"
+                    style={{ padding: "8px 16px", fontSize: "0.9rem" }}
                     onClick={(e) => {
                       navigator.clipboard.writeText(result.voiceover_text);
-                      e.currentTarget.innerHTML = "<span>✓ Copied</span>";
-                      setTimeout(() => e.currentTarget.innerHTML = "<span>📋 Copy Script</span>", 2000);
+                      e.currentTarget.innerHTML = "✓ Copied!";
+                      setTimeout(() => e.currentTarget.innerHTML = "Copy Script", 2000);
                     }}
                   >
-                    <span>📋 Copy Script</span>
+                    Copy Script
                   </button>
                 </div>
-                <div style={{ padding: "40px", background: "#0a0a0a" }}>
-                  <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "1.2rem", lineHeight: "2", color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>
+                <div style={{ padding: "40px" }}>
+                  <p className="terminal-text" style={{ fontSize: "1.2rem", lineHeight: "2", color: "var(--text-primary)", whiteSpace: "pre-wrap", textShadow: "none" }}>
                     {result.voiceover_text}
                   </p>
                 </div>
@@ -460,39 +453,36 @@ export default function ExtractorPage() {
             {result.character_sheets && (
               <div style={{ marginBottom: "64px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "24px" }}>
-                  <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: "rgba(79, 70, 229, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem", border: "1px solid rgba(79, 70, 229, 0.2)" }}>👤</div>
-                  <h3 style={{ margin: 0, fontSize: "1.6rem" }}>Character Designs</h3>
+                  <h3 className="terminal-text" style={{ margin: 0, fontSize: "1.6rem", textShadow: "none" }}>👤 Character Designs</h3>
                 </div>
                 {result.character_sheets.length > 0 ? (
                   <div className="grid-2" style={{ gap: "24px" }}>
                     {result.character_sheets.map((char, i) => (
-                      <div key={i} className="card-glass" style={{ padding: "32px", display: "flex", flexDirection: "column", borderRadius: "24px" }}>
-                        <h4 style={{ fontSize: "1.2rem", marginBottom: "20px", color: "white", display: "flex", alignItems: "center", gap: "8px" }}>
-                          <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--primary-light)", boxShadow: "0 0 10px var(--primary)" }}></span>
-                          {char.character_name}
+                      <div key={i} className="cyber-panel" style={{ padding: "32px", display: "flex", flexDirection: "column" }}>
+                        <h4 className="terminal-text" style={{ fontSize: "1.2rem", marginBottom: "20px", display: "flex", alignItems: "center", gap: "8px", textShadow: "none" }}>
+                          &gt; {char.character_name}
                         </h4>
                         <div style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column" }}>
-                          <div style={{ padding: "20px", flex: 1, fontSize: "0.95rem", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "12px", color: "var(--text-secondary)", lineHeight: "1.7" }}>
+                          <div className="terminal-text" style={{ padding: "20px", flex: 1, fontSize: "0.95rem", background: "#000", border: "1px solid rgba(255, 92, 0,0.3)", color: "var(--text-secondary)", lineHeight: "1.7", textShadow: "none" }}>
                             {char.prompt}
                           </div>
                           <button 
-                            style={{ position: "absolute", top: "12px", right: "12px", padding: "8px 12px", fontSize: "0.8rem", background: "rgba(255,255,255,0.1)", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", transition: "all 0.2s" }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = "var(--primary)"}
-                            onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
+                            className="cyber-btn"
+                            style={{ position: "absolute", top: "12px", right: "12px", padding: "8px 12px", fontSize: "0.8rem", background: "#000" }}
                             onClick={(e) => {
                               navigator.clipboard.writeText(char.prompt);
-                              e.currentTarget.innerText = "✓ Copied";
-                              setTimeout(() => e.currentTarget.innerText = "Copy", 2000);
+                              e.currentTarget.innerText = "✓ Copied!";
+                              setTimeout(() => e.currentTarget.innerText = "COPY", 2000);
                             }}
                           >
-                            Copy
+                            COPY
                           </button>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-secondary" style={{ fontStyle: "italic", padding: "20px", background: "rgba(255,255,255,0.02)", borderRadius: "12px" }}>No characters detected in this video by the AI.</p>
+                  <p className="terminal-text" style={{ opacity: 0.5, padding: "20px", background: "rgba(255, 92, 0,0.05)", textShadow: "none" }}>No character data found in this video.</p>
                 )}
               </div>
             )}
@@ -501,27 +491,26 @@ export default function ExtractorPage() {
             {result.shots && (
               <div style={{ marginBottom: "60px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "32px" }}>
-                  <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: "rgba(6, 182, 212, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem", border: "1px solid rgba(6, 182, 212, 0.2)" }}>🎞️</div>
-                  <h3 style={{ margin: 0, fontSize: "1.6rem" }}>Scene Breakdown Timeline</h3>
+                  <h3 className="terminal-text" style={{ margin: 0, fontSize: "1.6rem", textShadow: "none" }}>🎞️ Scene Breakdown</h3>
                 </div>
                 {result.shots.length > 0 ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: "32px", position: "relative", paddingLeft: "16px" }}>
                     {/* Glowing vertical timeline line */}
-                    <div style={{ position: "absolute", left: "40px", top: "24px", bottom: "24px", width: "2px", background: "linear-gradient(to bottom, var(--primary) 0%, var(--accent) 100%)", opacity: 0.3, zIndex: 0 }}></div>
+                    <div style={{ position: "absolute", left: "40px", top: "24px", bottom: "24px", width: "1px", background: "var(--primary)", opacity: 0.5, zIndex: 0 }}></div>
                     
                     {result.shots.map((shot, i) => (
                       <div key={i} style={{ position: "relative", zIndex: 1, display: "flex", gap: "32px", width: "100%" }}>
                         {/* Timeline Node */}
-                        <div style={{ width: "48px", height: "48px", borderRadius: "50%", background: "#050505", border: "2px solid var(--primary-light)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", fontSize: "1.2rem", flexShrink: 0, zIndex: 2, boxShadow: "0 0 20px rgba(79, 70, 229, 0.3)" }}>
+                        <div className="terminal-text" style={{ width: "48px", height: "48px", background: "#000", border: "1px solid var(--primary)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", fontSize: "1.2rem", flexShrink: 0, zIndex: 2 }}>
                           {shot.shot_id}
                         </div>
                         
                         {/* Shot Content Card */}
-                        <div className="card-glass" style={{ flex: 1, padding: "32px", borderRadius: "24px", background: "rgba(10,10,10,0.6)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                        <div className="cyber-panel" style={{ flex: 1, padding: "32px" }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
-                            <h4 style={{ margin: 0, fontSize: "1.3rem", color: "white" }}>Shot {shot.shot_id}</h4>
-                            <span className="badge" style={{ background: "rgba(6, 182, 212, 0.1)", color: "var(--accent-light)", border: "1px solid rgba(6, 182, 212, 0.2)", borderRadius: "100px", padding: "6px 16px" }}>
-                              ⏱️ {shot.time_range}
+                            <h4 style={{ margin: 0, fontSize: "1.3rem", color: "white", fontWeight: 700 }}>Scene {shot.shot_id}</h4>
+                            <span className="terminal-text" style={{ background: "rgba(255, 92, 0, 0.1)", border: "1px solid var(--primary)", padding: "6px 16px", textShadow: "none" }}>
+                              {shot.time_range}
                             </span>
                           </div>
                           
@@ -529,18 +518,17 @@ export default function ExtractorPage() {
                             {/* Image Prompt */}
                             <div>
                               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                                <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--accent)" }}></div>
-                                <span style={{ fontSize: "0.85rem", textTransform: "uppercase", color: "var(--text-secondary)", letterSpacing: "1px", fontWeight: "600" }}>Image Prompt (Midjourney)</span>
+                                <div style={{ width: "8px", height: "8px", background: "var(--primary)", animation: "terminal-blink 1.5s infinite" }}></div>
+                                <span className="terminal-text" style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "1px", textShadow: "none" }}>Image Prompt</span>
                               </div>
                               <div style={{ position: "relative" }}>
-                                <div style={{ padding: "20px 60px 20px 20px", background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "12px", color: "var(--text-primary)", fontSize: "0.95rem", lineHeight: "1.6" }}>
+                                <div className="terminal-text" style={{ padding: "20px 60px 20px 20px", background: "#000", border: "1px dashed rgba(255, 92, 0,0.4)", color: "var(--text-primary)", fontSize: "0.95rem", lineHeight: "1.6", textShadow: "none" }}>
                                   {shot.image_prompt}
                                 </div>
                                 <button 
-                                  style={{ position: "absolute", top: "12px", right: "12px", width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.1)", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", transition: "all 0.2s" }}
+                                  className="cyber-btn"
+                                  style={{ position: "absolute", top: "12px", right: "12px", width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center", background: "#000", fontSize: "1.2rem", padding: 0 }}
                                   title="Copy Prompt"
-                                  onMouseEnter={(e) => e.currentTarget.style.background = "var(--primary)"}
-                                  onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
                                   onClick={(e) => {
                                     navigator.clipboard.writeText(shot.image_prompt);
                                     e.currentTarget.innerHTML = "✓";
@@ -556,18 +544,17 @@ export default function ExtractorPage() {
                             {shot.video_prompt && (
                               <div>
                                 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                                  <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--primary-light)" }}></div>
-                                  <span style={{ fontSize: "0.85rem", textTransform: "uppercase", color: "var(--primary-light)", letterSpacing: "1px", fontWeight: "600" }}>Motion Prompt (Runway/Sora)</span>
+                                  <div style={{ width: "8px", height: "8px", background: "var(--primary)" }}></div>
+                                  <span className="terminal-text" style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "1px", textShadow: "none" }}>Video / Motion Prompt</span>
                                 </div>
                                 <div style={{ position: "relative" }}>
-                                  <div style={{ padding: "20px 60px 20px 20px", background: "rgba(79, 70, 229, 0.05)", border: "1px solid rgba(79, 70, 229, 0.2)", borderRadius: "12px", color: "white", fontSize: "0.95rem", lineHeight: "1.6" }}>
+                                  <div className="terminal-text" style={{ padding: "20px 60px 20px 20px", background: "#000", border: "1px solid var(--primary)", color: "white", fontSize: "0.95rem", lineHeight: "1.6", textShadow: "none" }}>
                                     {shot.video_prompt}
                                   </div>
                                   <button 
-                                    style={{ position: "absolute", top: "12px", right: "12px", width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(79, 70, 229, 0.2)", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", transition: "all 0.2s" }}
+                                    className="cyber-btn"
+                                    style={{ position: "absolute", top: "12px", right: "12px", width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--primary)", color: "#000", fontSize: "1.2rem", padding: 0 }}
                                     title="Copy Prompt"
-                                    onMouseEnter={(e) => e.currentTarget.style.background = "var(--primary)"}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = "rgba(79, 70, 229, 0.2)"}
                                     onClick={(e) => {
                                       navigator.clipboard.writeText(shot.video_prompt);
                                       e.currentTarget.innerHTML = "✓";
@@ -585,72 +572,66 @@ export default function ExtractorPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-secondary" style={{ fontStyle: "italic", padding: "20px", background: "rgba(255,255,255,0.02)", borderRadius: "12px" }}>No shots detected in this video by the AI.</p>
+                  <p className="terminal-text" style={{ opacity: 0.5, padding: "20px", background: "rgba(255, 92, 0,0.05)", textShadow: "none" }}>No scene data found in this video.</p>
                 )}
               </div>
             )}
 
             {/* --- Export for AutoFlow --- */}
             {result.shots && result.shots.length > 0 && (
-              <div style={{ marginTop: "60px", padding: "48px", borderRadius: "32px", border: "1px solid rgba(22, 163, 74, 0.3)", background: "linear-gradient(145deg, rgba(22, 163, 74, 0.05) 0%, rgba(0,0,0,0.8) 100%)", position: "relative", overflow: "hidden" }}>
-                {/* Background glow for integration panel */}
-                <div style={{ position: "absolute", top: 0, right: 0, width: "300px", height: "300px", background: "radial-gradient(circle, rgba(22, 163, 74, 0.1) 0%, transparent 70%)", pointerEvents: "none" }}></div>
-                
+              <div className="cyber-panel" style={{ marginTop: "60px", padding: "48px" }}>
                 <div style={{ position: "relative", zIndex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "16px" }}>
-                    <div style={{ width: "56px", height: "56px", borderRadius: "16px", background: "rgba(22, 163, 74, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.8rem", border: "1px solid rgba(22, 163, 74, 0.2)", boxShadow: "0 0 20px rgba(22, 163, 74, 0.2)" }}>🚀</div>
-                    <h3 style={{ margin: 0, fontSize: "1.8rem", color: "white" }}>Export for <span style={{ color: "#4ade80" }}>AutoFlow Extension</span></h3>
+                    <h3 style={{ margin: 0, fontSize: "1.8rem", color: "white", fontWeight: 700 }}>Export to AutoFlow</h3>
                   </div>
-                  <p className="text-secondary" style={{ marginBottom: "40px", fontSize: "1.1rem", maxWidth: "600px" }}>
-                    Skip the manual copy-pasting. Batch generate these exact scenes simultaneously using the <a href="https://chromewebstore.google.com/detail/autoflow-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc" target="_blank" rel="noopener noreferrer" style={{ color: "#4ade80", textDecoration: "underline", textUnderlineOffset: "4px" }}>AutoFlow Chrome Extension</a>. Not sure how? <a href="/blog/how-to-recreate-ai-videos-with-extractor-and-autoflow" style={{ color: "var(--text-primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}>Read the step-by-step tutorial</a>.
+                  <p className="terminal-text" style={{ marginBottom: "40px", fontSize: "1.1rem", maxWidth: "600px", color: "var(--text-secondary)", textShadow: "none" }}>
+                    Copy all prompts at once and batch-generate videos using the <a href="https://chromewebstore.google.com/detail/autoflow-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc" target="_blank" rel="noopener noreferrer" style={{ color: "var(--primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}>AutoFlow Extension</a>.
                   </p>
 
                   <div className="grid-2" style={{ gap: "32px" }}>
-                    <div style={{ padding: "24px", background: "rgba(0,0,0,0.4)", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                      <h4 style={{ fontSize: "1.1rem", marginBottom: "8px", color: "white" }}>1. Image Prompts</h4>
-                      <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "20px" }}>Generates the Midjourney style references.</p>
+                    <div style={{ padding: "24px", background: "#000", border: "1px solid rgba(255, 92, 0,0.3)" }}>
+                      <h4 className="terminal-text" style={{ fontSize: "1.1rem", marginBottom: "8px", color: "white", textShadow: "none" }}>Image Prompts</h4>
+                      <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "20px", textShadow: "none" }}>Copy all image prompts at once.</p>
                       <button 
-                        style={{ width: "100%", padding: "16px", borderRadius: "12px", background: "white", color: "black", fontWeight: "600", fontSize: "1.05rem", border: "none", cursor: "pointer", display: "flex", justifyContent: "center", alignItems: "center", gap: "8px", transition: "transform 0.2s" }}
-                        onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-2px)"}
-                        onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}
+                        className="cyber-btn"
+                        style={{ width: "100%", padding: "16px", background: "#000", color: "white" }}
                         onClick={(e) => {
                           const prompts = result.shots.map(s => s.image_prompt).filter(Boolean).join("\n\n");
                           navigator.clipboard.writeText(prompts);
                           const originalHtml = e.currentTarget.innerHTML;
-                          e.currentTarget.innerHTML = "<span>✓ Copied All Image Prompts!</span>";
+                          e.currentTarget.innerHTML = "✓ Copied!";
                           setTimeout(() => e.currentTarget.innerHTML = originalHtml, 2000);
                         }}
                       >
-                        <span>📋 Copy Image Prompts</span>
+                        Copy All
                       </button>
                     </div>
 
-                    <div style={{ padding: "24px", background: "rgba(0,0,0,0.4)", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                      <h4 style={{ fontSize: "1.1rem", marginBottom: "8px", color: "white" }}>2. Video Prompts</h4>
-                      <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "20px" }}>Generates the Runway/Sora motion generation.</p>
+                    <div style={{ padding: "24px", background: "#000", border: "1px solid var(--primary)" }}>
+                      <h4 className="terminal-text" style={{ fontSize: "1.1rem", marginBottom: "8px", color: "white", textShadow: "none" }}>Video Prompts</h4>
+                      <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "20px", textShadow: "none" }}>Copy all motion prompts at once.</p>
                       <button 
-                        style={{ width: "100%", padding: "16px", borderRadius: "12px", background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)", color: "white", fontWeight: "600", fontSize: "1.05rem", border: "none", cursor: "pointer", display: "flex", justifyContent: "center", alignItems: "center", gap: "8px", transition: "transform 0.2s", boxShadow: "0 10px 20px rgba(22, 163, 74, 0.2)" }}
-                        onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-2px)"}
-                        onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}
+                        className="cyber-btn"
+                        style={{ width: "100%", padding: "16px", background: "var(--primary)", color: "#000" }}
                         onClick={(e) => {
                           const prompts = result.shots.map(s => s.video_prompt).filter(Boolean).join("\n\n");
                           navigator.clipboard.writeText(prompts);
                           const originalHtml = e.currentTarget.innerHTML;
-                          e.currentTarget.innerHTML = "<span>✓ Copied All Video Prompts!</span>";
+                          e.currentTarget.innerHTML = "✓ Copied!";
                           setTimeout(() => e.currentTarget.innerHTML = originalHtml, 2000);
                         }}
                       >
-                        <span>📋 Copy Video Prompts</span>
+                        Copy All
                       </button>
                     </div>
                   </div>
 
-                  <div style={{ marginTop: "32px", padding: "20px 24px", background: "rgba(245, 158, 11, 0.05)", borderLeft: "4px solid var(--warning)", borderRadius: "0 12px 12px 0", display: "flex", gap: "16px", alignItems: "flex-start" }}>
-                    <span style={{ fontSize: "1.5rem", lineHeight: 1 }}>💡</span>
+                  <div style={{ marginTop: "32px", padding: "20px 24px", background: "rgba(255, 92, 0,0.05)", borderLeft: "4px solid var(--primary)", display: "flex", gap: "16px", alignItems: "flex-start" }}>
+                    <span className="terminal-text" style={{ fontSize: "1.5rem", lineHeight: 1 }}>!</span>
                     <div>
-                      <h4 style={{ color: "var(--warning)", margin: "0 0 4px 0", fontSize: "1rem" }}>Auto Character Mapping Pro-Tip</h4>
-                      <p style={{ margin: 0, fontSize: "0.95rem", color: "rgba(255,255,255,0.8)", lineHeight: "1.5" }}>
-                        Want to use the <em>Auto Character Mapping</em> feature in the extension? Ensure that your generated reference images are named <strong>exactly</strong> the same as the character names in your prompts before clicking the Map button!
+                      <h4 className="terminal-text" style={{ color: "var(--primary)", margin: "0 0 4px 0", fontSize: "1rem", textShadow: "none" }}>💡 Pro Tip</h4>
+                      <p className="terminal-text" style={{ margin: 0, fontSize: "0.95rem", color: "rgba(255,255,255,0.8)", lineHeight: "1.5", textShadow: "none" }}>
+                        For best results with AutoFlow's Auto Character Mapping, make sure your reference images match the character descriptions above.
                       </p>
                     </div>
                   </div>
@@ -664,45 +645,159 @@ export default function ExtractorPage() {
         {/* --- SEO Section --- */}
         {status === "idle" && (
           <div style={{ marginTop: "160px", marginBottom: "80px", position: "relative" }}>
-            {/* Top border with gradient glow */}
-            <div style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: "100%", height: "1px", background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent)" }}></div>
-            
-            <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "60px", paddingTop: "80px", textAlign: "left" }}>
+            <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "1px", background: "linear-gradient(90deg, transparent, var(--primary), transparent)", opacity: 0.3 }}></div>
+
+            {/* --- How It Works --- */}
+            <div style={{ paddingTop: "80px", marginBottom: "100px" }}>
+              <div style={{ textAlign: "center", marginBottom: "60px" }}>
+                <div style={{ display: "inline-block", padding: "6px 16px", border: "1px solid var(--primary)", borderRadius: "20px", fontSize: "0.85rem", color: "var(--primary)", marginBottom: "20px", background: "rgba(255,92,0,0.05)" }}>How It Works</div>
+                <h2 style={{ fontSize: "2.4rem", marginBottom: "16px", letterSpacing: "-0.02em" }}>Extract Prompts in <span className="text-gradient">3 Simple Steps</span></h2>
+                <p className="text-secondary" style={{ fontSize: "1.1rem", maxWidth: "600px", margin: "0 auto" }}>No technical skills needed. Upload your video and get results in under 2 minutes.</p>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "32px" }}>
+                {[
+                  { num: "01", icon: "📤", title: "Upload Your Video", desc: "Drag and drop any AI-generated video file (MP4, MOV, WebM) or paste a link from YouTube, TikTok, Instagram, or X." },
+                  { num: "02", icon: "🔍", title: "AI Analyzes Every Frame", desc: "Our advanced vision model deconstructs the video frame-by-frame — identifying lighting, camera angles, character designs, and artistic style." },
+                  { num: "03", icon: "📋", title: "Copy Your Prompts", desc: "Get ready-to-use image prompts, motion prompts, voiceover scripts, and character sheets. One click to copy into any AI tool." },
+                ].map((step) => (
+                  <div key={step.num} className="card-glass" style={{ padding: "40px 32px", borderRadius: "var(--radius-xl)", background: "rgba(10,10,10,0.5)", position: "relative", overflow: "hidden" }}>
+                    <div style={{ position: "absolute", top: "16px", right: "20px", fontSize: "4rem", fontWeight: 900, opacity: 0.06, color: "var(--primary)" }}>{step.num}</div>
+                    <div style={{ fontSize: "2.5rem", marginBottom: "20px" }}>{step.icon}</div>
+                    <h3 style={{ fontSize: "1.3rem", marginBottom: "12px", color: "white" }}>{step.title}</h3>
+                    <p className="text-secondary" style={{ fontSize: "1rem", lineHeight: 1.7 }}>{step.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* --- Feature Grid --- */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "60px", marginBottom: "100px", textAlign: "left" }}>
               <div>
                 <h2 style={{ fontSize: "2.2rem", marginBottom: "24px", letterSpacing: "-0.02em" }}>Reverse-Engineer Any <span className="text-gradient">AI Video</span></h2>
                 <p className="text-secondary" style={{ fontSize: "1.1rem", lineHeight: 1.8 }}>
                   Ever wondered how a stunning AI-generated video was made? Our <strong>Video Prompt Extractor</strong> is the ultimate reverse-engineering tool for AI filmmakers and prompt engineers. Simply upload any MP4 or WebM video generated by tools like <strong>Runway Gen-3, OpenAI Sora, Kling AI, Luma Dream Machine, or Pika Labs</strong>, and our advanced vision models will deconstruct it frame-by-frame.
                 </p>
+                <p className="text-secondary" style={{ fontSize: "1.05rem", lineHeight: 1.8, marginTop: "16px" }}>
+                  Whether you want to <strong>recreate a viral AI video</strong>, learn from the best prompt engineers, or speed up your own video production workflow — AutoFlow's extractor gives you the exact blueprint behind any AI-generated content.
+                </p>
               </div>
-              <div className="card-glass" style={{ padding: "40px", borderRadius: "24px", background: "rgba(10,10,10,0.5)" }}>
-                <h3 style={{ fontSize: "1.4rem", margin: "0 0 24px 0", color: "white" }}>What our Extractor Reveals:</h3>
+              <div className="card-glass" style={{ padding: "40px", borderRadius: "var(--radius-xl)", background: "rgba(10,10,10,0.5)" }}>
+                <h3 style={{ fontSize: "1.4rem", margin: "0 0 24px 0", color: "white" }}>What Our Extractor Reveals:</h3>
                 <ul style={{ gap: "20px", listStyle: "none", display: "flex", flexDirection: "column", padding: 0 }}>
                   <li style={{ display: "flex", gap: "16px", alignItems: "flex-start", color: "var(--text-secondary)" }}>
-                    <span style={{ color: "var(--primary-light)", fontSize: "1.2rem", background: "rgba(79,70,229,0.1)", padding: "4px 8px", borderRadius: "8px" }}>✦</span> 
+                    <span style={{ color: "var(--primary-light)", fontSize: "1.2rem", background: "rgba(255, 92, 0, 0.1)", padding: "4px 8px", borderRadius: "var(--radius-sm)" }}>✦</span> 
                     <div>
-                      <strong style={{ color: "white", display: "block", marginBottom: "4px" }}>Exact Midjourney Image Prompts</strong>
-                      Get the precise text-to-image prompts needed to generate the source frames.
+                      <strong style={{ color: "white", display: "block", marginBottom: "4px" }}>Exact Image Generation Prompts</strong>
+                      Get the precise text-to-image prompts needed to generate the source frames with Midjourney V6, DALL·E 3, or Flux.
                     </div>
                   </li>
                   <li style={{ display: "flex", gap: "16px", alignItems: "flex-start", color: "var(--text-secondary)" }}>
-                    <span style={{ color: "var(--primary-light)", fontSize: "1.2rem", background: "rgba(79,70,229,0.1)", padding: "4px 8px", borderRadius: "8px" }}>✦</span> 
+                    <span style={{ color: "var(--primary-light)", fontSize: "1.2rem", background: "rgba(255, 92, 0, 0.1)", padding: "4px 8px", borderRadius: "var(--radius-sm)" }}>✦</span> 
                     <div>
-                      <strong style={{ color: "white", display: "block", marginBottom: "4px" }}>Motion & Camera Prompts</strong>
-                      Uncover the specific camera movements (pan, tilt, zoom) and motion descriptors.
+                      <strong style={{ color: "white", display: "block", marginBottom: "4px" }}>Motion &amp; Camera Movement Prompts</strong>
+                      Uncover the specific camera movements (pan, tilt, dolly zoom) and motion descriptors used in Runway Gen-3 or Sora.
                     </div>
                   </li>
                   <li style={{ display: "flex", gap: "16px", alignItems: "flex-start", color: "var(--text-secondary)" }}>
-                    <span style={{ color: "var(--primary-light)", fontSize: "1.2rem", background: "rgba(79,70,229,0.1)", padding: "4px 8px", borderRadius: "8px" }}>✦</span> 
+                    <span style={{ color: "var(--primary-light)", fontSize: "1.2rem", background: "rgba(255, 92, 0, 0.1)", padding: "4px 8px", borderRadius: "var(--radius-sm)" }}>✦</span> 
                     <div>
                       <strong style={{ color: "white", display: "block", marginBottom: "4px" }}>Character Design Sheets</strong>
-                      Automatically extract consistent character descriptions and lighting setups.
+                      Automatically extract consistent character descriptions, visual references, and lighting setups for every character.
+                    </div>
+                  </li>
+                  <li style={{ display: "flex", gap: "16px", alignItems: "flex-start", color: "var(--text-secondary)" }}>
+                    <span style={{ color: "var(--primary-light)", fontSize: "1.2rem", background: "rgba(255, 92, 0, 0.1)", padding: "4px 8px", borderRadius: "var(--radius-sm)" }}>✦</span> 
+                    <div>
+                      <strong style={{ color: "white", display: "block", marginBottom: "4px" }}>Voiceover &amp; Narration Scripts</strong>
+                      Extract the full narration text with timing, tone, and delivery notes for easy recreation.
                     </div>
                   </li>
                 </ul>
               </div>
             </div>
+
+            {/* --- FAQ Section --- */}
+            <div style={{ maxWidth: "800px", margin: "0 auto" }}>
+              <div style={{ textAlign: "center", marginBottom: "48px" }}>
+                <h2 style={{ fontSize: "2.2rem", marginBottom: "16px", letterSpacing: "-0.02em" }}>Frequently Asked <span className="text-gradient">Questions</span></h2>
+                <p className="text-secondary" style={{ fontSize: "1.1rem" }}>Everything you need to know about the AI Video Prompt Extractor.</p>
+              </div>
+              {[
+                { q: "Is the AI Video Prompt Extractor free to use?", a: "Yes! You get 3 free extractions per day on the free plan. Need more? Upgrade to Pro for 20 extractions per day. No credit card required to start." },
+                { q: "What video formats are supported?", a: "We support MP4, MOV, and WebM video files up to 500MB. You can also paste a direct link from YouTube, TikTok, Instagram, or X — we'll download and analyze it for you." },
+                { q: "Which AI video generators does it work with?", a: "Our extractor works with videos made by any AI tool — including Runway Gen-3, OpenAI Sora, Kling AI, Luma Dream Machine, Pika Labs, Google Veo, Minimax, and more. It can also analyze traditional footage to generate AI-ready prompts." },
+                { q: "How accurate are the extracted prompts?", a: "Our vision AI analyzes every frame to identify artistic style, lighting, camera angles, character details, and motion patterns. While no extraction is 100% identical to the original, our prompts consistently produce visually similar results when used with the same AI tools." },
+                { q: "Can I extract prompts from YouTube or TikTok videos?", a: "Yes! Switch to 'Paste URL' mode and enter any public video link. We support YouTube, TikTok, Instagram Reels, and X/Twitter videos. The video is downloaded temporarily on our servers for analysis and deleted immediately after." },
+                { q: "What's the difference between image prompts and motion prompts?", a: "Image prompts describe what each frame looks like — the subject, style, lighting, and composition. Motion prompts describe how the camera moves and how elements animate between frames — things like 'slow dolly zoom' or 'pan left with parallax'." },
+              ].map((faq, i) => (
+                <details key={i} style={{ marginBottom: "12px", border: "1px solid rgba(255,92,0,0.15)", borderRadius: "12px", background: "rgba(10,10,10,0.4)", overflow: "hidden" }}>
+                  <summary style={{ padding: "20px 24px", cursor: "pointer", fontSize: "1.1rem", fontWeight: 600, color: "white", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    {faq.q}
+                    <span style={{ color: "var(--primary)", fontSize: "1.4rem", fontWeight: 300, flexShrink: 0, marginLeft: "16px" }}>+</span>
+                  </summary>
+                  <div style={{ padding: "0 24px 20px", color: "var(--text-secondary)", fontSize: "1rem", lineHeight: 1.7 }}>
+                    {faq.a}
+                  </div>
+                </details>
+              ))}
+            </div>
           </div>
         )}
+
+        {/* --- JSON-LD Structured Data --- */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "SoftwareApplication",
+              name: "AutoFlow Video Prompt Extractor",
+              description: "Upload any AI-generated video and extract the exact image prompts, motion prompts, voiceover scripts, and character designs used to create it. Works with Runway, Sora, Kling, Midjourney, Luma, and more.",
+              applicationCategory: "MultimediaApplication",
+              operatingSystem: "Web",
+              offers: {
+                "@type": "Offer",
+                price: "0",
+                priceCurrency: "USD",
+              },
+              creator: {
+                "@type": "Organization",
+                name: "AutoFlow",
+                url: "https://www.auto-flow.studio",
+              },
+            }),
+          }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "FAQPage",
+              mainEntity: [
+                { "@type": "Question", name: "Is the AI Video Prompt Extractor free to use?", acceptedAnswer: { "@type": "Answer", text: "Yes! You get 3 free extractions per day on the free plan. Upgrade to Pro for 20 extractions per day." } },
+                { "@type": "Question", name: "What video formats are supported?", acceptedAnswer: { "@type": "Answer", text: "We support MP4, MOV, and WebM video files up to 500MB. You can also paste a link from YouTube, TikTok, Instagram, or X." } },
+                { "@type": "Question", name: "Which AI video generators does it work with?", acceptedAnswer: { "@type": "Answer", text: "Our extractor works with videos from Runway Gen-3, OpenAI Sora, Kling AI, Luma Dream Machine, Pika Labs, Google Veo, Minimax, and more." } },
+                { "@type": "Question", name: "How accurate are the extracted prompts?", acceptedAnswer: { "@type": "Answer", text: "Our vision AI analyzes every frame to identify style, lighting, camera angles, and motion patterns. Prompts consistently produce visually similar results." } },
+                { "@type": "Question", name: "Can I extract prompts from YouTube or TikTok videos?", acceptedAnswer: { "@type": "Answer", text: "Yes! Switch to Paste URL mode and enter any public video link from YouTube, TikTok, Instagram Reels, or X/Twitter." } },
+                { "@type": "Question", name: "What's the difference between image prompts and motion prompts?", acceptedAnswer: { "@type": "Answer", text: "Image prompts describe what each frame looks like. Motion prompts describe camera movements and element animations between frames." } },
+              ],
+            }),
+          }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "BreadcrumbList",
+              itemListElement: [
+                { "@type": "ListItem", position: 1, name: "Home", item: "https://www.auto-flow.studio" },
+                { "@type": "ListItem", position: 2, name: "Video Prompt Extractor", item: "https://www.auto-flow.studio/extractor" },
+              ],
+            }),
+          }}
+        />
       </div>
     </div>
   );

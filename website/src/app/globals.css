@@ -366,3 +366,85 @@ h3 { font-size: clamp(1.5rem, 2vw, 1.8rem); letter-spacing: -0.01em; }
   padding: 10px 20px;
   font-size: 0.9rem;
 }
+
+/* ── Cybernetic Terminal Animations ── */
+:root {
+  --cyber-green: var(--primary);
+  --cyber-dark: #030303;
+}
+
+@keyframes cyber-glitch {
+  0% { clip-path: inset(10% 0 80% 0); transform: translate(-2px, 2px); }
+  20% { clip-path: inset(80% 0 10% 0); transform: translate(2px, -2px); }
+  40% { clip-path: inset(40% 0 40% 0); transform: translate(2px, 2px); }
+  60% { clip-path: inset(20% 0 60% 0); transform: translate(-2px, -2px); }
+  80% { clip-path: inset(60% 0 20% 0); transform: translate(2px, -2px); }
+  100% { clip-path: inset(50% 0 30% 0); transform: translate(-2px, 2px); }
+}
+
+@keyframes terminal-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+@keyframes type-cursor {
+  0%, 100% { border-color: transparent; }
+  50% { border-color: var(--cyber-green); }
+}
+
+.terminal-text {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--cyber-green);
+  text-shadow: 0 0 8px rgba(255, 92, 0, 0.4);
+}
+
+.cyber-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+.cyber-panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(255, 92, 0, 0.03) 3px,
+    rgba(255, 92, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.cyber-btn {
+  background: transparent;
+  color: var(--cyber-green);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s;
+  box-shadow: 0 0 10px rgba(255, 92, 0, 0.1);
+}
+
+.cyber-btn:hover {
+  background: var(--cyber-green);
+  color: #000;
+  box-shadow: 0 0 20px rgba(255, 92, 0, 0.4);
+}

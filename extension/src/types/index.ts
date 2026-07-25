@@ -300,6 +300,7 @@ export type MessageType =
   | 'BATCH_API_DOWNLOAD'
   | 'VERIFY_MEDIA_URL'
   | 'FAKE_CANCEL_ALERT'
+  | 'UNUSUAL_ACTIVITY_ALERT'
   | 'DOWNLOAD_PROGRESS'
   | 'SCHEDULE_CHAIN'
   | 'KEEPALIVE_PING'
@@ -311,7 +312,8 @@ export type MessageType =
   | 'TEST_LLM_CONNECTION'
   | 'RUN_ACTIVE_CHECK'
   | 'IMAGE_API_COMPLETED'
-  | 'CAPTURED_REQUEST_INFO';
+  | 'CAPTURED_REQUEST_INFO'
+  | 'OPEN_STUDIO';
 
 export interface Message {
   type: MessageType;
@@ -364,8 +366,8 @@ export const DEFAULT_SETTINGS: QueueSettings = {
   automationMode: 'flow',
 
   // Timing
-  waitMinSec: 10,
-  waitMaxSec: 20,
+  waitMinSec: 15,
+  waitMaxSec: 30,
   typingMode: false,
   typingSpeedMultiplier: 1.0,
 
