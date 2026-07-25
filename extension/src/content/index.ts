@@ -4,13 +4,14 @@
    Routes messages to the automation engine and scanner.
    ============================================================ */
 
-import { Message, QueueObject } from '../types';
+import { ImageMeta, Message, QueueObject } from '../types';
 import { AutomationEngine, isRunLocked } from './automation';
 import { scanProjectForVideos, previewAsset, retrySingleTile, downloadAssetByMenu, waitForUpscalingDone, waitForExtendedVideoDownloadDone } from './scanner';
 import { sleep, findModelSelectorTrigger, findMenuItem, simulateClick } from './selectors';
 import { DOM_SETTLE_MS } from '../shared/constants';
 import { getRunningQueue, clearRunningQueue } from '../shared/storage';
 import { initApiHelper, isApiAvailable } from './apiHelper';
+import { registerStudioImage, releaseStudioImages } from './studioImages';
 
 // أ¢â€‌â‚¬أ¢â€‌â‚¬ Singleton engine أ¢â€‌â‚¬أ¢â€‌â‚¬
 let engine: AutomationEngine | null = null;
@@ -1052,6 +1053,17 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
 
   console.log(`[AutoFlow Studio] Executing node ${nodeId}`);
 
+  // ── Resolve reference images (Image nodes + upstream Generate tiles) ──
+  // Registers them in the studio image registry so the automation engine's
+  // requestImageBlobs() can resolve them without touching the sidepanel.
+  let refImages: ImageMeta[];
+  try {
+    refImages = await resolveStudioReferenceImages(config);
+  } catch (e: any) {
+    sendStudioError(nodeId, e.message || 'Failed to resolve reference images');
+    return { success: false };
+  }
+
   const mediaType = config.mediaType || 'image';
   const isImage = mediaType === 'image';
 
@@ -1062,7 +1074,7 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
       id: `prompt-${nodeId}`,
       index: 0,
       text: config.prompt || '',
-      images: [],
+      images: refImages,
       status: 'pending',
       attempts: 0,
       outputFiles: [],
@@ -1106,14 +1118,98 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
   // Start the queue (non-blocking)
   const result = await startQueue(queue);
   if (!result.success) {
+    releaseStudioImages(refImages.map(i => i.id));
     sendStudioError(nodeId, result.error || 'Failed to start queue');
     return { success: false };
   }
 
   // Return immediately -- do NOT block the message port.
   // Fire-and-forget poller sends updates via chrome.runtime.sendMessage.
-  pollStudioCompletion(nodeId, queue);
+  // Reference images stay registered until the node settles (retries re-attach them).
+  pollStudioCompletion(nodeId, queue).finally(() => {
+    releaseStudioImages(refImages.map(i => i.id));
+  });
   return { success: true };
+}
+
+/**
+ * Resolve a Studio node's reference images into ImageMeta entries backed by
+ * the in-memory studio image registry.
+ * - config.referenceImageData: base64 data URLs from Image nodes
+ * - config.referenceImageIds:  tile IDs of upstream Generate results — the
+ *   media URL is read from the tile on the page and fetched to base64.
+ * Throws with a user-readable message if any reference cannot be resolved —
+ * silently dropping a reference produces wrong generations (broken character
+ * consistency) with no visible error, which is worse than failing the node.
+ */
+async function resolveStudioReferenceImages(config: any): Promise<ImageMeta[]> {
+  const metas: ImageMeta[] = [];
+
+  const register = (mime: string, data: string): void => {
+    const id = crypto.randomUUID();
+    const ext = mime.includes('png') ? 'png' : 'jpg';
+    const filename = `studio_${id.slice(0, 8)}.${ext}`;
+    registerStudioImage({ id, filename, mime, data });
+    metas.push({
+      id,
+      filename,
+      mime,
+      size: Math.floor(data.length * 0.75), // approx decoded size
+      sha256: '',
+      lastModified: Date.now(),
+    });
+  };
+
+  const parseDataUrl = (dataUrl: string): { mime: string; data: string } | null => {
+    const m = /^data:([^;,]+);base64,(.+)$/.exec(dataUrl || '');
+    return m ? { mime: m[1], data: m[2] } : null;
+  };
+
+  // Base64 payloads from Image nodes
+  for (const dataUrl of config.referenceImageData || []) {
+    const parsed = parseDataUrl(dataUrl);
+    if (!parsed) {
+      releaseStudioImages(metas.map(i => i.id));
+      throw new Error('Reference image is not a valid base64 data URL');
+    }
+    register(parsed.mime, parsed.data);
+  }
+
+  // Tile IDs from upstream Generate nodes → resolve via the tile on the page
+  for (const tileId of config.referenceImageIds || []) {
+    const tile = document.querySelector(`[data-tile-id="${tileId}"]`);
+    const url = tile ? extractTileMediaUrl(tile) : '';
+    if (!url) {
+      releaseStudioImages(metas.map(i => i.id));
+      throw new Error(`Reference tile ${tileId} not found on the Flow page — cannot pass its image to this node`);
+    }
+    const inline = parseDataUrl(url);
+    if (inline) {
+      register(inline.mime, inline.data);
+      continue;
+    }
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const blob = await resp.blob();
+      register(blob.type || 'image/png', await blobToRawBase64(blob));
+    } catch (e: any) {
+      releaseStudioImages(metas.map(i => i.id));
+      throw new Error(`Could not fetch reference image for tile ${tileId}: ${e.message}`);
+    }
+  }
+
+  return metas;
+}
+
+/** Blob → raw base64 (no data: prefix) */
+function blobToRawBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(((reader.result as string) || '').split(',')[1] || '');
+    reader.onerror = () => reject(new Error('Failed to read image blob'));
+    reader.readAsDataURL(blob);
+  });
 }
 
 async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {

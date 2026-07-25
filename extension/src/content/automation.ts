@@ -16,6 +16,7 @@ import {
   FlowGenerationStatus,
 } from '../types';
 import { savePromptHistory, saveRunningQueue, clearRunningQueue } from '../shared/storage';
+import { getStudioImageFiles } from './studioImages';
 
 import {
   MAX_RETRIES,
@@ -2615,6 +2616,12 @@ export class AutomationEngine {
 
   /** Request image blobs from the sidepanel via background (30s timeout) */
   private requestImageBlobs(images: ImageMeta[]): Promise<any> {
+    // Studio-node references live in the content-script registry, not in
+    // the sidepanel's IndexedDB — resolve them locally when possible.
+    const studioFiles = getStudioImageFiles(images.map(i => i.id));
+    if (studioFiles) {
+      return Promise.resolve({ files: studioFiles });
+    }
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('Image blob request timed out after 30s'));
