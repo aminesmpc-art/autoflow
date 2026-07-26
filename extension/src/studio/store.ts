@@ -66,9 +66,67 @@ interface StudioState {
   setSelectedNode: (nodeId: string | null) => void;
 
   /* Persistence */
-  saveWorkflow: () => Promise<void>;
+  isDirty: boolean;
+  saveState: 'idle' | 'saving' | 'saved' | 'error';
+  saveError: string | null;
+  savedWorkflows: SavedWorkflowMeta[];
+  saveWorkflow: () => Promise<boolean>;
   loadWorkflow: (id: string) => Promise<void>;
   loadLastWorkflow: () => Promise<void>;
+  listWorkflows: () => Promise<SavedWorkflowMeta[]>;
+  deleteWorkflow: (id: string) => Promise<void>;
+  newWorkflow: () => void;
+  exportWorkflow: () => void;
+  importWorkflow: (file: File) => Promise<void>;
+}
+
+export interface SavedWorkflowMeta {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  nodeCount: number;
+}
+
+const STORAGE_PREFIX = 'studio_workflow_';
+
+/**
+ * Runtime fields written by the runner during a run. Changes limited to these
+ * must not mark the workflow dirty or trigger autosave — otherwise every
+ * progress tick would thrash storage and persist mid-run state.
+ */
+const RUNTIME_KEYS = new Set([
+  'status', 'progress', 'previewUrl', 'previewVideoUrl',
+  'resultUrl', 'resultTileId', 'errorMessage',
+]);
+
+/**
+ * Strip run results before persisting.
+ *
+ * Keeps everything the user authored (prompts, uploaded images, model and
+ * ratio settings) and drops everything a run produced. Two reasons: captured
+ * previews are base64 data URLs that would balloon the stored payload, and a
+ * reloaded workflow showing "done" nodes with last week's images is
+ * misleading — it should open ready to run.
+ */
+function stripResults(nodes: Node[]): Node[] {
+  return nodes.map((n) => {
+    const d = n.data as any;
+    if (d?.type !== 'generate') return n;
+    return {
+      ...n,
+      data: {
+        ...d,
+        status: 'idle',
+        progress: 0,
+        previewUrl: '',
+        previewVideoUrl: '',
+        resultUrl: null,
+        resultTileId: null,
+        errorMessage: null,
+      },
+    };
+  });
 }
 
 function generateId(): string {
@@ -123,23 +181,28 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   nodes: [],
   edges: [],
   setNodes: (nodes) => set({ nodes }),
-  setEdges: (edges) => set({ edges }),
+  setEdges: (edges) => { set({ edges }); touch(); },
   onNodesChange: (changes) => {
     // Apply React Flow node changes (position, selection, removal)
     set((s) => ({ nodes: applyNodeChanges(changes, s.nodes) }));
+    // Selection-only changes aren't edits — they'd mark every click dirty
+    if (changes.some((c: any) => c.type !== 'select')) touch();
   },
   onEdgesChange: (changes) => {
     set((s) => ({ edges: applyEdgeChanges(changes, s.edges) }));
+    if (changes.some((c: any) => c.type !== 'select')) touch();
   },
 
   /* ── Node CRUD ── */
-  addNode: (node) => set((s) => ({ nodes: [...s.nodes, node] })),
-  removeNode: (nodeId) =>
+  addNode: (node) => { set((s) => ({ nodes: [...s.nodes, node] })); touch(); },
+  removeNode: (nodeId) => {
     set((s) => ({
       nodes: s.nodes.filter((n) => n.id !== nodeId),
       edges: s.edges.filter((e) => e.source !== nodeId && e.target !== nodeId),
-    })),
-  duplicateNode: (nodeId) =>
+    }));
+    touch();
+  },
+  duplicateNode: (nodeId) => {
     set((s) => {
       const src = s.nodes.find((n) => n.id === nodeId);
       if (!src) return s;
@@ -152,13 +215,18 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         data: { ...src.data, status: 'idle', progress: 0, previewUrl: '', resultUrl: '', resultTileId: null, errorMessage: null },
       };
       return { nodes: [...s.nodes, copy] };
-    }),
-  updateNodeData: (nodeId, data) =>
+    });
+    touch();
+  },
+  updateNodeData: (nodeId, data) => {
     set((s) => ({
       nodes: s.nodes.map((n) =>
         n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n
       ),
-    })),
+    }));
+    // Runner status/progress writes are not user edits
+    if (Object.keys(data).some((k) => !RUNTIME_KEYS.has(k))) touch();
+  },
 
   /* ── Execution ── */
   isRunning: false,
@@ -175,31 +243,68 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   setSelectedNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
   /* ── Persistence ── */
+  isDirty: false,
+  saveState: 'idle',
+  saveError: null,
+  savedWorkflows: [],
+
   saveWorkflow: async () => {
     const { workflow, nodes, edges } = get();
-    const data = { ...workflow, updatedAt: Date.now(), nodes, edges };
+    if (nodes.length === 0) return false; // nothing worth storing
+    set({ saveState: 'saving', saveError: null });
+
+    const data = {
+      ...workflow,
+      updatedAt: Date.now(),
+      nodes: stripResults(nodes),
+      edges,
+    };
     try {
-      await chrome.storage.local.set({ [`studio_workflow_${workflow.id}`]: data });
-      // Also save as the "last opened" workflow
-      await chrome.storage.local.set({ studio_last_workflow_id: workflow.id });
-    } catch (e) {
+      await chrome.storage.local.set({
+        [`${STORAGE_PREFIX}${workflow.id}`]: data,
+        studio_last_workflow_id: workflow.id,
+      });
+      set({
+        isDirty: false,
+        saveState: 'saved',
+        workflow: { ...workflow, updatedAt: data.updatedAt },
+      });
+      get().listWorkflows();
+      setTimeout(() => {
+        if (get().saveState === 'saved') set({ saveState: 'idle' });
+      }, 2000);
+      return true;
+    } catch (e: any) {
+      // Quota is the realistic failure: uploaded reference images are stored
+      // as base64. Surface it instead of the old silent console.error.
+      const quota = /quota/i.test(e?.message || '');
       console.error('[Studio] Failed to save workflow:', e);
+      set({
+        saveState: 'error',
+        saveError: quota
+          ? 'Storage full — delete old workflows in My Workflows'
+          : e?.message || 'Save failed',
+      });
+      return false;
     }
   },
 
   loadWorkflow: async (id) => {
     try {
-      const result = await chrome.storage.local.get(`studio_workflow_${id}`);
-      const data = result[`studio_workflow_${id}`];
-      if (data) {
-        const { nodes, edges } = normalizeWorkflow(data.nodes || [], data.edges || []);
-        set({
-          workflow: { id: data.id, name: data.name, createdAt: data.createdAt, updatedAt: data.updatedAt },
-          nodes,
-          edges,
-          view: 'canvas',
-        });
-      }
+      const key = `${STORAGE_PREFIX}${id}`;
+      const result = await chrome.storage.local.get(key);
+      const data = result[key];
+      if (!data) return;
+      const { nodes, edges } = normalizeWorkflow(data.nodes || [], data.edges || []);
+      set({
+        workflow: { id: data.id, name: data.name, createdAt: data.createdAt, updatedAt: data.updatedAt },
+        nodes,
+        edges,
+        view: 'canvas',
+        isDirty: false,
+        saveState: 'idle',
+      });
+      await chrome.storage.local.set({ studio_last_workflow_id: id });
     } catch (e) {
       console.error('[Studio] Failed to load workflow:', e);
     }
@@ -209,11 +314,124 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     try {
       const result = await chrome.storage.local.get('studio_last_workflow_id');
       const lastId = result.studio_last_workflow_id;
-      if (lastId) {
-        await get().loadWorkflow(lastId);
-      }
+      if (lastId) await get().loadWorkflow(lastId);
     } catch (e) {
       console.error('[Studio] Failed to load last workflow:', e);
     }
   },
+
+  listWorkflows: async () => {
+    try {
+      const all = await chrome.storage.local.get(null);
+      const list: SavedWorkflowMeta[] = Object.keys(all)
+        .filter((k) => k.startsWith(STORAGE_PREFIX))
+        .map((k) => all[k])
+        .filter((w) => w && w.id)
+        .map((w) => ({
+          id: w.id,
+          name: w.name || 'Untitled',
+          createdAt: w.createdAt || 0,
+          updatedAt: w.updatedAt || 0,
+          nodeCount: (w.nodes || []).length,
+        }))
+        .sort((a, b) => b.updatedAt - a.updatedAt);
+      set({ savedWorkflows: list });
+      return list;
+    } catch (e) {
+      console.error('[Studio] Failed to list workflows:', e);
+      return [];
+    }
+  },
+
+  deleteWorkflow: async (id) => {
+    try {
+      await chrome.storage.local.remove(`${STORAGE_PREFIX}${id}`);
+      await get().listWorkflows();
+    } catch (e) {
+      console.error('[Studio] Failed to delete workflow:', e);
+    }
+  },
+
+  newWorkflow: () => {
+    set({
+      workflow: {
+        id: generateId(),
+        name: `New Workflow - ${new Date().toLocaleDateString()}`,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+      nodes: [],
+      edges: [],
+      isDirty: false,
+      saveState: 'idle',
+    });
+  },
+
+  exportWorkflow: () => {
+    const { workflow, nodes, edges } = get();
+    const payload = {
+      autoflowStudio: 1, // format marker so import can reject foreign JSON
+      name: workflow.name,
+      exportedAt: new Date().toISOString(),
+      nodes: stripResults(nodes),
+      edges,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${workflow.name.replace(/[^\w\-]+/g, '_') || 'workflow'}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+
+  importWorkflow: async (file) => {
+    const text = await file.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error('That file is not valid JSON');
+    }
+    if (!Array.isArray(data?.nodes) || !Array.isArray(data?.edges)) {
+      throw new Error('That JSON is not an AutoFlow Studio workflow');
+    }
+    const { nodes, edges } = normalizeWorkflow(data.nodes, data.edges);
+    set({
+      workflow: {
+        id: generateId(), // never overwrite an existing saved workflow
+        name: data.name || file.name.replace(/\.json$/i, ''),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+      nodes,
+      edges,
+      view: 'canvas',
+      isDirty: true,
+      saveState: 'idle',
+    });
+  },
 }));
+
+/* ── Autosave ──
+   Debounced so a burst of drags writes once. Only fires for workflows that
+   have already been saved manually at least once, so scratch canvases don't
+   silently accumulate in storage. */
+let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleAutosave(): void {
+  if (autosaveTimer) clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(async () => {
+    const s = useStudioStore.getState();
+    if (!s.isDirty || s.isRunning || s.nodes.length === 0) return;
+    const known = s.savedWorkflows.some((w) => w.id === s.workflow.id);
+    if (!known) return;
+    await s.saveWorkflow();
+  }, 2000);
+}
+
+/** Mark the workflow edited and queue an autosave */
+function touch(): void {
+  if (!useStudioStore.getState().isDirty) useStudioStore.setState({ isDirty: true });
+  scheduleAutosave();
+}

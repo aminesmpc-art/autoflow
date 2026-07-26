@@ -47,6 +47,10 @@ function CanvasInner() {
     isPaused,
     runProgress,
     saveWorkflow,
+    exportWorkflow,
+    isDirty,
+    saveState,
+    saveError,
     setView,
   } = useStudioStore();
 
@@ -67,6 +71,30 @@ function CanvasInner() {
   useEffect(() => {
     bridge.connect();
     return () => bridge.disconnect();
+  }, []);
+
+  /* Ctrl/Cmd+S saves, as in every other editor */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveWorkflow();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [saveWorkflow]);
+
+  /* Warn before closing with unsaved work. Browsers show their own generic
+     text; returnValue just has to be set. */
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!useStudioStore.getState().isDirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, []);
 
   /* Run/Stop/Pause handlers */
@@ -192,8 +220,24 @@ function CanvasInner() {
           <span className="studio-topbar__stat">
             ⚡ Nodes {nodes.length}
           </span>
-          <button className="studio-topbar__save" onClick={() => saveWorkflow()}>
-            Save
+          <button
+            className="studio-topbar__icon"
+            onClick={() => exportWorkflow()}
+            disabled={nodes.length === 0}
+            title="Export workflow as JSON"
+          >
+            ⭳
+          </button>
+          <button
+            className={`studio-topbar__save ${saveState === 'error' ? 'studio-topbar__save--error' : ''} ${saveState === 'saved' ? 'studio-topbar__save--ok' : ''}`}
+            onClick={() => saveWorkflow()}
+            disabled={nodes.length === 0 || saveState === 'saving'}
+            title={saveError || 'Save workflow (Ctrl+S)'}
+          >
+            {saveState === 'saving' ? 'Saving…'
+              : saveState === 'saved' ? '✓ Saved'
+              : saveState === 'error' ? '⚠ Failed'
+              : isDirty ? '● Save' : 'Save'}
           </button>
         </div>
       </div>

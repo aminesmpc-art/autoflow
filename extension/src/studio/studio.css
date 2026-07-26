@@ -231,6 +231,89 @@
 }
 .studio-gallery__empty-icon { font-size: 30px; opacity: 0.6; }
 .studio-gallery__empty p { margin: 0; font-size: 13px; }
+
+/* ── Saved workflow rows (My Workflows) ── */
+.studio-gallery__saved {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  background: #141416;
+  border: 1px solid #1e1e22;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.studio-gallery__saved:hover {
+  border-color: #f97316;
+  background: #17171a;
+  transform: translateY(-1px);
+}
+.studio-gallery__saved-main { flex: 1; min-width: 0; }
+.studio-gallery__saved-main .studio-gallery__card-name { margin: 0 0 3px; }
+.studio-gallery__saved-meta { font-size: 11px; color: #6b6b73; }
+.studio-gallery__saved-del {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: #6b6b73;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.studio-gallery__saved-del:hover { background: rgba(239, 68, 68, 0.18); color: #ef4444; }
+
+.studio-gallery__btn-ghost {
+  padding: 10px 18px;
+  background: transparent;
+  border: 1px solid #2a2a2e;
+  color: #a1a1ab;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.studio-gallery__btn-ghost:hover { border-color: #f97316; color: #f97316; }
+
+.studio-gallery__actions { display: flex; align-items: center; gap: 10px; }
+
+.studio-gallery__error {
+  margin: 0 32px 8px;
+  padding: 10px 14px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 9px;
+  color: #f87171;
+  font-size: 12px;
+}
+
+/* Save button states */
+.studio-topbar__save:disabled { opacity: 0.45; cursor: default; }
+.studio-topbar__save--ok { border-color: #22c55e !important; color: #22c55e !important; }
+.studio-topbar__save--error { border-color: #ef4444 !important; color: #ef4444 !important; }
+.studio-topbar__icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  background: #1a1a1e;
+  border: 1px solid #2a2a2e;
+  border-radius: 8px;
+  color: #a1a1ab;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.studio-topbar__icon:hover:not(:disabled) { border-color: #f97316; color: #f97316; }
+.studio-topbar__icon:disabled { opacity: 0.4; cursor: default; }
 .studio-gallery__card-meta {
   display: flex;
   align-items: center;

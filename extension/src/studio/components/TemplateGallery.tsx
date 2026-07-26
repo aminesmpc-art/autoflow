@@ -3,17 +3,51 @@
    Templates live in ../templates; this file is presentation only.
    ============================================================ */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStudioStore, normalizeWorkflow } from '../store';
 import { TEMPLATES, CATEGORIES, type Template } from '../templates';
 
 /** Node-chain preview gets noisy past this many dots */
 const MAX_PREVIEW_DOTS = 8;
 
+const relativeTime = (ts: number): string => {
+  if (!ts) return '';
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return days < 30 ? `${days}d ago` : new Date(ts).toLocaleDateString();
+};
+
 export default function TemplateGallery() {
-  const { setView, setNodes, setEdges, setWorkflowName } = useStudioStore();
+  const {
+    setView, setNodes, setEdges, setWorkflowName,
+    savedWorkflows, listWorkflows, loadWorkflow, deleteWorkflow,
+    newWorkflow, importWorkflow,
+  } = useStudioStore();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string>('All');
+  const [importError, setImportError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { listWorkflows(); }, [listWorkflows]);
+
+  const handleImport = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = ''; // allow re-picking the same file
+      if (!file) return;
+      try {
+        setImportError(null);
+        await importWorkflow(file);
+      } catch (err: any) {
+        setImportError(err?.message || 'Could not import that file');
+      }
+    },
+    [importWorkflow]
+  );
 
   const loadTemplate = useCallback(
     (template: Template) => {
@@ -32,11 +66,11 @@ export default function TemplateGallery() {
   );
 
   const startBlank = useCallback(() => {
-    setNodes([]);
-    setEdges([]);
-    setWorkflowName(`New Workflow - ${new Date().toLocaleDateString()}`);
+    // newWorkflow() mints a fresh id, so a blank canvas can't overwrite the
+    // workflow that was open before it.
+    newWorkflow();
     setView('canvas');
-  }, [setView, setNodes, setEdges, setWorkflowName]);
+  }, [newWorkflow, setView]);
 
   /* Search covers the use-case line too — people look for "ad" or
      "consistency", not the template's proper name. */
@@ -63,9 +97,19 @@ export default function TemplateGallery() {
           <span className="studio-gallery__title">AutoFlow Studio</span>
         </div>
         <div className="studio-gallery__actions">
+          <button className="studio-gallery__btn-ghost" onClick={() => fileRef.current?.click()}>
+            ⭱ Import
+          </button>
           <button className="studio-gallery__btn-blank" onClick={startBlank}>
             + Start Blank
           </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            style={{ display: 'none' }}
+            onChange={handleImport}
+          />
         </div>
       </div>
 
@@ -80,6 +124,10 @@ export default function TemplateGallery() {
         />
       </div>
 
+      {importError && (
+        <div className="studio-gallery__error">⚠ {importError}</div>
+      )}
+
       {/* Category Tabs */}
       <div className="studio-gallery__tabs">
         {CATEGORIES.map((cat) => (
@@ -91,9 +139,49 @@ export default function TemplateGallery() {
             {cat}
           </button>
         ))}
+        <button
+          className={`studio-gallery__tab ${category === 'Mine' ? 'studio-gallery__tab--active' : ''}`}
+          onClick={() => setCategory('Mine')}
+        >
+          My Workflows{savedWorkflows.length > 0 && ` (${savedWorkflows.length})`}
+        </button>
       </div>
 
+      {/* Saved workflows */}
+      {category === 'Mine' && (
+        <div className="studio-gallery__grid">
+          {savedWorkflows.map((w) => (
+            <div key={w.id} className="studio-gallery__saved" onClick={() => loadWorkflow(w.id)}>
+              <div className="studio-gallery__saved-main">
+                <h3 className="studio-gallery__card-name">{w.name}</h3>
+                <span className="studio-gallery__saved-meta">
+                  {w.nodeCount} nodes · saved {relativeTime(w.updatedAt)}
+                </span>
+              </div>
+              <button
+                className="studio-gallery__saved-del"
+                title="Delete this workflow"
+                onClick={(e) => {
+                  e.stopPropagation(); // don't also open it
+                  if (confirm(`Delete "${w.name}"? This cannot be undone.`)) deleteWorkflow(w.id);
+                }}
+              >
+                🗑
+              </button>
+            </div>
+          ))}
+          {savedWorkflows.length === 0 && (
+            <div className="studio-gallery__empty">
+              <span className="studio-gallery__empty-icon">💾</span>
+              <p>No saved workflows yet. Build one and hit Save.</p>
+              <button className="studio-gallery__btn-blank" onClick={startBlank}>Start Blank</button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Template Grid */}
+      {category !== 'Mine' && (
       <div className="studio-gallery__grid">
         {visible.map((tpl) => (
           <div
@@ -140,6 +228,7 @@ export default function TemplateGallery() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

@@ -15,7 +15,8 @@
     "alarms",
     "notifications",
     "webRequest",
-    "identity"
+    "identity",
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "https://labs.google/*",
