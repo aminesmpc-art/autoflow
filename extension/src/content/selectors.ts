@@ -1441,8 +1441,13 @@ export async function switchToViewMode(targetMode: 'Grid' | 'Batch'): Promise<bo
 export function findModeButton(modeName: string): Element | null {
   const lower = modeName.toLowerCase();
 
-  // For Grid/Batch, use multilingual matching (checks all 13 languages)
-  const flowKey = lower === 'grid' ? 'grid' as const : lower === 'batch' ? 'batch' as const : null;
+  // Multilingual matching for every label that Flow translates. 'Video' is
+  // the critical one: FR "Vidéo" never matched the English substring path,
+  // which silently left the engine in Image mode on French UIs.
+  const MULTILINGUAL_KEYS = ['grid', 'batch', 'video', 'image', 'ingredients', 'frames'] as const;
+  const flowKey = (MULTILINGUAL_KEYS as readonly string[]).includes(lower)
+    ? (lower as (typeof MULTILINGUAL_KEYS)[number])
+    : null;
   if (flowKey) {
     // Check tabs, menu items, and buttons using all translations
     const candidates = document.querySelectorAll(

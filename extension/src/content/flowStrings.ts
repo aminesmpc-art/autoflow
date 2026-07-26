@@ -305,6 +305,51 @@ export const FLOW_STRINGS = {
     '图片',            // ZH
   ],
 
+  /** "Video" media-type tab in the settings menu.
+      CRITICAL: without this key the engine cannot switch Image->Video on
+      non-English UIs — FR "Vidéo" ≠ EN "video" in a substring match. */
+  video: [
+    'Video',           // EN / DE / IT / TR
+    'Vidéo',           // FR
+    'Vídeo',           // ES / PT
+    'Видео',           // RU
+    '動画',            // JA
+    '동영상',          // KO
+    '영상',            // KO (short form)
+    '视频',            // ZH
+  ],
+
+  /** "Ingredients" creation-type tab (video mode) */
+  ingredients: [
+    'Ingredients',     // EN
+    'Ingrédients',     // FR
+    'Ingredientes',    // ES / PT
+    'Zutaten',         // DE
+    'Ingredienti',     // IT
+    'Malzemeler',      // TR
+    'Ингредиенты',     // RU
+    '素材',            // JA / ZH
+    '材料',            // JA (alt)
+    '재료',            // KO
+    '配料',            // ZH (alt)
+  ],
+
+  /** "Frames" creation-type tab (video mode).
+      NOTE: FR may label this "Images" — deliberately NOT listed, it would
+      collide with the Image media tab. Unmatched locales fall back to the
+      English substring path, same behavior as before this key existed. */
+  frames: [
+    'Frames',          // EN / DE
+    'Cadres',          // FR
+    'Fotogramas',      // ES / PT
+    'Fotogrammi',      // IT
+    'Kareler',         // TR
+    'Кадры',           // RU
+    'フレーム',        // JA
+    '프레임',          // KO
+    '帧',              // ZH
+  ],
+
   character: [
     'Character',       // EN
     'Personnage',      // FR

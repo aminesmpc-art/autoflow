@@ -1971,9 +1971,10 @@ export class AutomationEngine {
     const chipText = (trigger.textContent || '').toLowerCase();
     // For images, the chip shows model name + ratio (e.g. "Nano Banana 2 crop_16_9 x3")
     // — it does NOT contain the word "image". So for image mode, check for the model name instead.
+    // Video check must be multilingual: the FR chip says "Vidéo", not "video".
     const expectMedia = settings.mediaType === 'image'
       ? chipText.includes('banana') || chipText.includes('imagen') || chipText.includes('crop') || chipText.includes(':')
-      : chipText.includes(settings.mediaType);
+      : matchesFlowText(chipText, 'video');
     const expectGen = chipText.includes(`${settings.generations}x`) || chipText.includes(`x${settings.generations}`);
 
     if (!expectMedia || !expectGen) {
