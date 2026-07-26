@@ -84,18 +84,31 @@ export class StudioBridge {
     this.status = 'disconnected';
   }
 
-  /** Send a message to background (which forwards to Flow content script) */
-  send(type: string, payload?: any): void {
+  /** Send a message to background. Returns false if it could not be sent. */
+  send(type: string, payload?: any): boolean {
     if (!this.port) {
       console.warn('[Studio Bridge] Cannot send — not connected');
-      return;
+      return false;
     }
-    this.port.postMessage({ type, payload });
+    try {
+      this.port.postMessage({ type, payload });
+      return true;
+    } catch (err) {
+      // Port died between the null check and the post (SW recycled)
+      console.warn('[Studio Bridge] postMessage failed:', err);
+      this.port = null;
+      this.status = 'disconnected';
+      return false;
+    }
   }
 
-  /** Send EXECUTE_NODE command */
-  executeNode(nodeId: string, config: NodeExecutionConfig): void {
-    this.send('STUDIO_EXECUTE_NODE', { nodeId, config });
+  /**
+   * Send EXECUTE_NODE. Returns false when the message never left — the caller
+   * must fail fast, because a dropped command produces no reply and the node
+   * would otherwise sit until its 10-minute timeout.
+   */
+  executeNode(nodeId: string, config: NodeExecutionConfig): boolean {
+    return this.send('STUDIO_EXECUTE_NODE', { nodeId, config });
   }
 
   /** Send STOP command */

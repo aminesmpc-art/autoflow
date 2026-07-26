@@ -76,15 +76,32 @@ export function topologicalSort(nodes: Node[], edges: Edge[]): ExecutionStep[] {
 
 /**
  * Get the upstream edges for a specific node.
- * Returns which source nodes connect to which input handles.
+ * Returns which source nodes connect to which input handle.
+ *
+ * Values are ARRAYS: Flow accepts several reference images on one node, and
+ * the previous Map<handle, sourceId> silently kept only the last edge — extra
+ * image connections drawn on the canvas were dropped without any warning.
  */
-export function getNodeInputs(nodeId: string, edges: Edge[]): Map<string, string> {
-  // Map: targetHandle → sourceNodeId
-  const inputs = new Map<string, string>();
+export function getNodeInputs(nodeId: string, edges: Edge[]): Map<string, string[]> {
+  const inputs = new Map<string, string[]>();
   for (const edge of edges) {
-    if (edge.target === nodeId) {
-      inputs.set(edge.targetHandle || 'default', edge.source);
+    if (edge.target !== nodeId) continue;
+    const handle = edge.targetHandle || 'default';
+    const list = inputs.get(handle);
+    if (list) {
+      if (!list.includes(edge.source)) list.push(edge.source);
+    } else {
+      inputs.set(handle, [edge.source]);
     }
   }
   return inputs;
+}
+
+/** All upstream node ids feeding this node, across every handle */
+export function getUpstreamNodeIds(nodeId: string, edges: Edge[]): string[] {
+  const ids = new Set<string>();
+  for (const edge of edges) {
+    if (edge.target === nodeId) ids.add(edge.source);
+  }
+  return Array.from(ids);
 }

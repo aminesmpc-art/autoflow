@@ -5,7 +5,7 @@
    ============================================================ */
 
 import type { Node, Edge } from '@xyflow/react';
-import { topologicalSort, getNodeInputs } from './topoSort';
+import { topologicalSort, getNodeInputs, getUpstreamNodeIds } from './topoSort';
 import { bridge, type NodeExecutionConfig, type NodeResult } from './bridge';
 import { useStudioStore } from '../store';
 
@@ -18,6 +18,9 @@ export class WorkflowRunner {
 
   /** Results from each node (nodeId → result) */
   private nodeResults = new Map<string, NodeResult>();
+
+  /** Nodes that failed or were skipped — dependents must not run on partial input */
+  private failedNodes = new Set<string>();
 
   getState(): RunnerState {
     return this.state;
@@ -37,6 +40,7 @@ export class WorkflowRunner {
     this.abortRequested = false;
     this.pauseRequested = false;
     this.nodeResults.clear();
+    this.failedNodes.clear();
     store.setRunning(true);
 
     // Sort nodes in execution order
@@ -108,10 +112,31 @@ export class WorkflowRunner {
           console.log(`[Runner] Image "${nodeData.label}": stored reference`);
           break;
 
-        case 'generate':
+        case 'generate': {
           // Nodes toggled off are skipped without consuming a generation
           if (nodeData.enabled === false) {
             console.log(`[Runner] Generate "${nodeData.label}": skipped (disabled)`);
+            break;
+          }
+
+          // If anything upstream failed, this node's inputs are incomplete.
+          // Running anyway burns a generation and silently produces the wrong
+          // output — e.g. a scene video with no character reference because
+          // the character sheet failed. Skip and say why.
+          const brokenDeps = getUpstreamNodeIds(step.nodeId, edges)
+            .filter((id) => this.failedNodes.has(id));
+          if (brokenDeps.length > 0) {
+            const names = brokenDeps
+              .map((id) => (nodes.find((n) => n.id === id)?.data as any)?.label || id)
+              .join(', ');
+            console.warn(`[Runner] Generate "${nodeData.label}": skipped — upstream failed (${names})`);
+            this.failedNodes.add(step.nodeId);
+            store.updateNodeData(step.nodeId, {
+              status: 'error',
+              errorMessage: `Skipped — upstream node failed: ${names}`,
+            });
+            completedCount++;
+            store.setRunProgress(completedCount, generateSteps.length);
             break;
           }
 
@@ -137,6 +162,9 @@ export class WorkflowRunner {
             console.log(`[Runner] Generate "${nodeData.label}": DONE — tile ${result.tileId}`);
           } catch (err: any) {
             console.error(`[Runner] Generate "${nodeData.label}" FAILED:`, err.message);
+            // Mark failed so dependent nodes skip instead of running with
+            // missing inputs. Independent branches still continue.
+            this.failedNodes.add(step.nodeId);
             store.updateNodeData(step.nodeId, {
               status: 'error',
               errorMessage: err.message || 'Generation failed',
@@ -147,6 +175,7 @@ export class WorkflowRunner {
             store.setRunProgress(completedCount, generateSteps.length);
           }
           break;
+        }
 
         default:
           console.log(`[Runner] Unknown node type "${step.nodeType}" — skipping`);
@@ -166,9 +195,9 @@ export class WorkflowRunner {
     const nodeData = node.data as any;
     const inputs = getNodeInputs(nodeId, edges);
 
-    // Gather prompt from upstream text connection
+    // Gather prompt from upstream text connection(s)
     let prompt = '';
-    const textSourceId = inputs.get('text');
+    const textSourceId = inputs.get('text')?.[0];
     if (textSourceId) {
       const textResult = this.nodeResults.get(textSourceId);
       if (textResult) {
@@ -176,21 +205,31 @@ export class WorkflowRunner {
       }
     }
 
-    // Gather reference images from upstream image connections
+    // Gather reference images from EVERY upstream image connection.
+    // Flow accepts multiple ingredients, and the canvas allows several edges
+    // into image_ref — previously only one survived.
     const referenceImageIds: string[] = [];
     const referenceImageData: string[] = [];
-    const imageRefSourceId = inputs.get('image_ref');
-    if (imageRefSourceId) {
-      const imgResult = this.nodeResults.get(imageRefSourceId);
-      if (imgResult) {
-        if (imgResult.tileId) {
-          // Upstream was a generate node — use its tile ID
-          referenceImageIds.push(imgResult.tileId);
-        } else if (imgResult.imageUrl && imgResult.imageUrl.startsWith('data:')) {
-          // Upstream was an image node — use base64 data
-          referenceImageData.push(imgResult.imageUrl);
-        }
+    for (const srcId of inputs.get('image_ref') || []) {
+      const imgResult = this.nodeResults.get(srcId);
+      if (!imgResult) continue;
+      if (imgResult.imageUrl && imgResult.imageUrl.startsWith('data:')) {
+        // Image node upload, or a ChatGPT result captured as a data URL
+        referenceImageData.push(imgResult.imageUrl);
+      } else if (imgResult.tileId) {
+        // Upstream Flow generate node — reference its tile
+        referenceImageIds.push(imgResult.tileId);
       }
+    }
+
+    // An empty prompt still submits and burns a generation on Flow, so fail
+    // here with something actionable instead of at the far end of the bridge.
+    if (!prompt.trim()) {
+      throw new Error(
+        textSourceId
+          ? 'Connected prompt node is empty — type a prompt before running'
+          : 'No prompt connected — link a Prompt node to the T input'
+      );
     }
 
     const config: NodeExecutionConfig = {
@@ -252,8 +291,12 @@ export class WorkflowRunner {
       bridge.on('STUDIO_NODE_PROGRESS', onProgress);
       bridge.on('STUDIO_NODE_ERROR', onError);
 
-      // Send execution command
-      bridge.executeNode(nodeId, config);
+      // Send execution command — if the port is down the command never
+      // arrives and no reply is coming, so fail now rather than in 10 minutes
+      if (!bridge.executeNode(nodeId, config)) {
+        cleanup();
+        reject(new Error('Lost connection to the extension — reopen Studio and try again'));
+      }
     });
   }
 
