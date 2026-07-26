@@ -720,9 +720,14 @@ async function startQueue(queue: QueueObject, baselineTileCount?: number): Promi
     await sleep(500); // Let DOM settle after stopping
   }
 
-  // De-duplicate rapid START_QUEUE messages (e.g. double-clicks or re-injections)
+  // De-duplicate rapid START_QUEUE messages (e.g. double-clicks or re-injections).
+  // Studio is exempt: its runs are programmatic and sequential, never double
+  // clicks. Swallowing one returned {success:true}, so Studio believed its node
+  // had started and polled the PREVIOUS node's tile — reporting progress for a
+  // generation it never launched.
   const now = Date.now();
-  if ((window as any).__af_lastStartTime && now - (window as any).__af_lastStartTime < 3000) {
+  const isStudioQueue = queue?.name === 'STUDIO';
+  if (!isStudioQueue && (window as any).__af_lastStartTime && now - (window as any).__af_lastStartTime < 3000) {
     console.warn('[AutoFlow] Ignoring duplicate START_QUEUE (received within 3s of last start)');
     return { success: true, deduplicated: true };
   }

@@ -135,6 +135,12 @@ export class AutomationEngine {
   private uploadedAssets = new Set<string>();
   /** Current automation mode */
   private mode: AutomationMode = 'flow';
+
+  /** Did the Image/Video tab actually end up on the requested mode?
+      Unlike ratio or duration this cannot degrade gracefully — generating an
+      image when the user asked for a video is a wasted credit and a broken
+      workflow, so start() aborts rather than continuing on Flow defaults. */
+  private mediaTypeApplied = true;
   /** Resolver for re-prompt dialog — waits for user to edit or skip a failed prompt */
   private repromptResolver: ((result: { text: string; skip: boolean }) => void) | null = null;
   /** Resolver for batch re-prompt — waits for user to edit/skip ALL failed prompts at once */
@@ -199,6 +205,22 @@ export class AutomationEngine {
     await humanDelay(500, 1000);
     const settingsOk = await this.applyAllSettings(this.queue.settings);
     if (this.stopped) {
+      this.sendQueueStatus('stopped');
+      globalRunLock = false;
+      this.sendRunLockChanged(false);
+      return;
+    }
+    if (!this.mediaTypeApplied) {
+      // Everything downstream assumes the right tab is selected: the model
+      // list, the ratio chips and the duration control are all mode-specific.
+      // Continuing here is what produced "video" nodes rendering images.
+      const want = this.queue.settings.mediaType === 'image' ? 'Image' : 'Video';
+      const msg = `Could not switch Flow to ${want} mode — stopped instead of generating the wrong media type. Close any open Flow dialog and try again.`;
+      this.log('error', msg);
+      this.stopped = true;
+      for (let i = 0; i < this.queue.prompts.length; i++) {
+        this.updatePromptStatus(i, 'failed', msg);
+      }
       this.sendQueueStatus('stopped');
       globalRunLock = false;
       this.sendRunLockChanged(false);
@@ -1508,6 +1530,7 @@ export class AutomationEngine {
     // mode, and a silent miss here produced video prompts rendered as images.
     const wantMedia: 'image' | 'video' = settings.mediaType === 'image' ? 'image' : 'video';
     const mediaLabel = wantMedia === 'image' ? 'Image' : 'Video';
+    this.mediaTypeApplied = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
       if (this.stopped) return false;
       if (!isSettingsPanelOpen()) {
@@ -1523,6 +1546,7 @@ export class AutomationEngine {
       }
       if (isTabActive(tab)) {
         this.log('info', `Media: ${mediaLabel} active`);
+        this.mediaTypeApplied = true;
         break;
       }
       simulateClick(tab);
@@ -1531,6 +1555,7 @@ export class AutomationEngine {
       const after = findMediaTypeTab(wantMedia);
       if (after && isTabActive(after)) {
         this.log('info', `Media: ${mediaLabel} confirmed active`);
+        this.mediaTypeApplied = true;
         break;
       }
       this.log('warn', `Media: ${mediaLabel} did not activate (attempt ${attempt}/3)`);
