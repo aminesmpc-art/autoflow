@@ -88,15 +88,11 @@ if (!(window as any).__autoflow_injected) {
   (window as any).__autoflow_injected = true;
   console.log('[AutoFlow] Content script loaded on', window.location.href);
 
-  // أ¢â€‌â‚¬أ¢â€‌â‚¬ Force English locale أ¢â€‌â‚¬أ¢â€‌â‚¬
-  // Google Flow changes language based on account/browser settings.
-  // Our selectors depend on English text, so we force ?hl=en.
-  const url = new URL(window.location.href);
-  if (url.hostname === 'labs.google' && url.searchParams.get('hl') !== 'en') {
-    url.searchParams.set('hl', 'en');
-    console.log('[AutoFlow] Redirecting to English locale:', url.toString());
-    window.location.replace(url.toString());
-  }
+  // NOTE: we used to force ?hl=en here with a location.replace, reloading
+  // every Flow page on first load. The selectors are multilingual now
+  // (selectors.ts matches all supported languages), so the redirect was
+  // pure cost: an extra reload per navigation and a query param Google
+  // often ignored anyway.
 
   // أ¢â€‌â‚¬أ¢â€‌â‚¬ Deactivate "Agent" mode if it's enabled أ¢â€‌â‚¬أ¢â€‌â‚¬
   // When Agent is active (aria-pressed="true"), the prompt bar changes and
