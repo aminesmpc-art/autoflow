@@ -1,0 +1,34 @@
+# Agent/skill scaffolding — tooling, not this project's code
+.agent/
+.agents/
+.claude/
+
+# Build output & deps
+node_modules/
+dist/
+build/
+.next/
+*.min.js
+*.js.map
+
+# Python bytecode / envs
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Binary & media assets (no code to parse)
+store-screenshots/
+website/public/
+extension/icons/
+*.zip
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.mp4
+
+# Data dumps
+*.csv
+test_1000_prompts.txt

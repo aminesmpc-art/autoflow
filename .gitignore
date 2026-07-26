@@ -19,3 +19,6 @@ whenimageisaddtotheprompt.html
 # Not a portable artifact, so keep it out of git.
 .agents/
 __pycache__/
+
+# graphify knowledge-graph output — regenerable from source, ~8 MB
+graphify-out/
