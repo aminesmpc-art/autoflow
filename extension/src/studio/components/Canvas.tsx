@@ -2,13 +2,15 @@
    Canvas — React Flow wrapper for the workflow editor
    ============================================================ */
 
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
-  Controls,
   MiniMap,
   addEdge,
+  useReactFlow,
+  useStore,
   type Connection,
   type OnConnect,
   BackgroundVariant,
@@ -30,7 +32,7 @@ const nodeTypes = {
   generate: GenerateNode,
 };
 
-export default function Canvas() {
+function CanvasInner() {
   const {
     nodes,
     edges,
@@ -49,6 +51,14 @@ export default function Canvas() {
   } = useStudioStore();
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const { zoomIn, zoomOut, fitView } = useReactFlow();
+  const zoomPct = Math.round(useStore((s) => s.transform[2]) * 100);
+  const [showMinimap, setShowMinimap] = useState(true);
+
+  const handleRecenter = useCallback(
+    () => fitView({ padding: 0.25, maxZoom: 1, duration: 300 }),
+    [fitView]
+  );
 
   /* Only Generate nodes actually execute — a canvas of prompts alone can't run */
   const canRun = nodes.some((n) => (n.data as any)?.type === 'generate');
@@ -249,22 +259,26 @@ export default function Canvas() {
           style: { stroke: '#f97316', strokeWidth: 2 },
         }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1a1a1e" />
-        <Controls
-          className="studio-controls"
-          showInteractive={false}
-        />
-        <MiniMap
-          className="studio-minimap"
-          nodeColor={(n) => {
-            const d = n.data as any;
-            if (d?.type === 'prompt') return '#22c55e';
-            if (d?.type === 'image') return '#3b82f6';
-            if (d?.type === 'generate') return '#f97316';
-            return '#666';
-          }}
-          maskColor="rgba(0,0,0,0.7)"
-        />
+        <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#1c1c21" />
+
+        {/* Minimap: small, and only worth showing once the graph outgrows the screen */}
+        {showMinimap && nodes.length > 2 && (
+          <MiniMap
+            className="studio-minimap"
+            pannable
+            zoomable
+            nodeStrokeWidth={0}
+            nodeBorderRadius={3}
+            nodeColor={(n) => {
+              const d = n.data as any;
+              if (d?.type === 'prompt') return '#f97316';
+              if (d?.type === 'image') return '#3b82f6';
+              if (d?.type === 'generate') return '#22c55e';
+              return '#4a4a52';
+            }}
+            maskColor="rgba(8,8,10,0.72)"
+          />
+        )}
 
         {/* Empty state */}
         {nodes.length === 0 && (
@@ -280,17 +294,38 @@ export default function Canvas() {
         )}
       </ReactFlow>
 
-      {/* Bottom: Recenter */}
-      <button
-        className="studio-recenter"
-        onClick={() => {
-          // Handled by React Flow controls, but this is a visual shortcut
-          const fitBtn = document.querySelector('.react-flow__controls-fitview') as HTMLButtonElement;
-          fitBtn?.click();
-        }}
-      >
-        ⊡ Recenter
-      </button>
+      {/* One dock instead of zoom bottom-left + recenter bottom-centre + minimap */}
+      <div className="studio-dock">
+        <button className="studio-dock__btn" onClick={() => zoomOut()} title="Zoom out" aria-label="Zoom out">−</button>
+        <span className="studio-dock__zoom" title="Current zoom">{zoomPct}%</span>
+        <button className="studio-dock__btn" onClick={() => zoomIn()} title="Zoom in" aria-label="Zoom in">+</button>
+        <span className="studio-dock__sep" />
+        <button className="studio-dock__btn studio-dock__btn--wide" onClick={handleRecenter} title="Fit all nodes to view">
+          ⊡ Recenter
+        </button>
+        {nodes.length > 2 && (
+          <>
+            <span className="studio-dock__sep" />
+            <button
+              className={`studio-dock__btn ${showMinimap ? 'studio-dock__btn--on' : ''}`}
+              onClick={() => setShowMinimap((v) => !v)}
+              title={showMinimap ? 'Hide minimap' : 'Show minimap'}
+              aria-label="Toggle minimap"
+            >
+              ▣
+            </button>
+          </>
+        )}
+      </div>
     </div>
+  );
+}
+
+/* useReactFlow/useStore need the provider, so the canvas body is a child of it */
+export default function Canvas() {
+  return (
+    <ReactFlowProvider>
+      <CanvasInner />
+    </ReactFlowProvider>
   );
 }

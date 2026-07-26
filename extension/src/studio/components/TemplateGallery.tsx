@@ -294,8 +294,18 @@ export default function TemplateGallery() {
             className="studio-gallery__card"
             onClick={() => loadTemplate(tpl)}
           >
+            {/* Thumbnail previews the template's real node chain rather than
+                sitting empty around a single oversized emoji */}
             <div className="studio-gallery__card-thumb">
               <span className="studio-gallery__card-emoji">{tpl.thumbnail}</span>
+              <div className="studio-gallery__card-graph" aria-hidden="true">
+                {tpl.nodes.map((n: any, i: number) => (
+                  <span key={n.id || i} className="studio-gallery__card-graph-item">
+                    {i > 0 && <span className="studio-gallery__card-graph-link" />}
+                    <span className={`studio-gallery__card-dot studio-gallery__card-dot--${n.data?.type || 'generate'}`} />
+                  </span>
+                ))}
+              </div>
             </div>
             <div className="studio-gallery__card-info">
               <h3 className="studio-gallery__card-name">{tpl.name}</h3>

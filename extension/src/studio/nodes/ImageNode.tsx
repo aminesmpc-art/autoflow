@@ -56,7 +56,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps) {
       </div>
 
       <div className="sn sn--image">
-        <div className="sn-media sn-media--square">
+        <div className={`sn-media sn-media--square ${!nodeData.imageData ? 'sn-media--empty' : ''}`}>
           {nodeData.imageData ? (
             <>
               <img className="sn-media__img" src={nodeData.imageData} alt={nodeData.imageName || 'Reference'} />
