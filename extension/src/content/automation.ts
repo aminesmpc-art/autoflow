@@ -1506,6 +1506,13 @@ export class AutomationEngine {
     await applyMenuItem(mediaLabel, `Media: ${mediaLabel}`);
     if (this.stopped) return false;
 
+    // Switching Image<->Video re-renders the entire settings menu (different
+    // controls per mode). Close it and let Radix settle — every later lookup
+    // (the model dropdown especially) must see the fresh menu, not stale
+    // pre-switch nodes. applyMenuItem/setModel reopen the panel on demand.
+    await this.closeSettingsPanel();
+    await humanDelay(500, 800);
+
     // 2. Select creation type (Ingredients / Frames) — only for VIDEO mode
     // Image mode in Flow UI doesn't have creation type options
     if (settings.mediaType !== 'image') {
@@ -1976,7 +1983,7 @@ export class AutomationEngine {
     // If they match, settings are still correct â€” no action needed.
   }
 
-  private async setModel(modelName: string, overrideTrigger?: Element | null): Promise<void> {
+  private async setModel(modelName: string, overrideTrigger?: Element | null, isRetry = false): Promise<void> {
     if (this.stopped) return;
 
     // Use override trigger if provided, else use the global settings panel trigger
@@ -1996,6 +2003,16 @@ export class AutomationEngine {
 
     const finalTrigger = overrideTrigger || findModelSelectorTrigger();
     if (!finalTrigger) {
+      if (!isRetry && !overrideTrigger) {
+        // Right after an Image<->Video switch the video-mode dropdown may not
+        // have mounted yet — reopen the settings panel and try once more.
+        // (Never for overrideTrigger callers: their dropdown lives elsewhere,
+        // e.g. the extend-video prompt area, not the settings panel.)
+        this.log('warn', 'Model dropdown not found — reopening settings and retrying');
+        await this.closeSettingsPanel();
+        await humanDelay(500, 800);
+        return this.setModel(modelName, null, true);
+      }
       this.log('warn', 'Model dropdown not found. Using Flow default.');
       return;
     }
@@ -2073,10 +2090,19 @@ export class AutomationEngine {
       }
     }
 
-    // Close dropdown if nothing matched
-    this.log('warn', `Model "${modelName}" not in menu. Using current: ${currentModelRaw}`);
+    // Nothing matched. A stale trigger (clicked a detached pre-switch node)
+    // makes the fallback query scan the MAIN settings menu, whose items never
+    // match a model name — so a full close + reopen fixes far more cases
+    // than re-scanning the same DOM would.
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await humanDelay(200, 400);
+    if (!isRetry && !overrideTrigger) {
+      this.log('warn', `Model "${modelName}" not found in menu — reopening settings and retrying`);
+      await this.closeSettingsPanel();
+      await humanDelay(500, 800);
+      return this.setModel(modelName, null, true);
+    }
+    this.log('warn', `Model "${modelName}" not in menu. Using current: ${currentModelRaw}`);
   }
 
   // ================================================================
