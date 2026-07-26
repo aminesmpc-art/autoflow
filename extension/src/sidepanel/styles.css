@@ -4092,6 +4092,101 @@ button:focus-visible {
   padding: 12px 12px 8px;
 }
 
+/* ── Studio promo ──
+   Warm orange against the panel's indigo mode cards, so it reads as a
+   different kind of action rather than a fifth queue mode. */
+.af-studio-promo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - 24px);
+  margin: 4px 12px 10px;
+  padding: 13px 14px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(249, 115, 22, 0.20) 0%, transparent 60%),
+    rgba(20, 12, 8, 0.55);
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  border-radius: 16px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-primary);
+  font-family: inherit;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: all 0.3s var(--ease);
+}
+.af-studio-promo:hover {
+  border-color: rgba(249, 115, 22, 0.7);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35), 0 0 22px rgba(249, 115, 22, 0.18);
+}
+.af-studio-promo:active { transform: translateY(0); }
+
+.af-studio-promo__icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #f97316 0%, #ef4444 100%);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(249, 115, 22, 0.4);
+}
+
+.af-studio-promo__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.af-studio-promo__title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #fff;
+}
+.af-studio-promo__badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(249, 115, 22, 0.22);
+  color: #fdba74;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+}
+.af-studio-promo__desc {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+.af-studio-promo__cta {
+  flex: 0 0 auto;
+  color: #f97316;
+  display: grid;
+  place-items: center;
+  transition: transform 0.3s var(--ease);
+}
+.af-studio-promo:hover .af-studio-promo__cta { transform: translateX(3px); }
+
+/* Once Studio has been opened, shrink to a quiet launcher row */
+.af-studio-promo.is-compact {
+  padding: 9px 12px;
+  gap: 9px;
+}
+.af-studio-promo.is-compact .af-studio-promo__icon { width: 28px; height: 28px; border-radius: 9px; }
+.af-studio-promo.is-compact .af-studio-promo__icon svg { width: 15px; height: 15px; }
+.af-studio-promo.is-compact .af-studio-promo__desc,
+.af-studio-promo.is-compact .af-studio-promo__badge { display: none; }
+.af-studio-promo.is-compact .af-studio-promo__title { font-size: 12.5px; }
+
+.af-rtl .af-studio-promo { direction: rtl; text-align: right; }
+.af-rtl .af-studio-promo__cta { transform: scaleX(-1); }
+.af-rtl .af-studio-promo:hover .af-studio-promo__cta { transform: scaleX(-1) translateX(3px); }
+
 .af-mode-card {
   display: flex;
   flex-direction: column;

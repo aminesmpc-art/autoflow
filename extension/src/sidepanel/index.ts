@@ -171,6 +171,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initQueuesTab();
   initLibraryTab();
   initAccountTab();
+  initStudioEntry();
   initMessageListener();
 
   await loadSettings();
@@ -229,6 +230,35 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // Track global auth state for tab gating
 let _isAuthenticated = false;
+
+/**
+ * Wire both Studio entry points (header pill + Create-tab promo).
+ *
+ * Runs at init, not in showLoggedInState(): Studio has no auth coupling, and
+ * wiring it there left the header button doing nothing at all for signed-out
+ * users. The promo collapses to a slim launcher after first use, so it sells
+ * the feature once instead of nagging forever.
+ */
+function initStudioEntry() {
+  const open = () => {
+    chrome.runtime.sendMessage({ type: 'OPEN_STUDIO' });
+    chrome.storage.local.set({ studio_opened_once: true }).catch(() => {});
+    promo?.classList.add('is-compact');
+  };
+
+  const promo = document.getElementById('studio-promo');
+  const headerBtn = document.getElementById('btn-open-studio');
+
+  for (const el of [promo, headerBtn]) {
+    if (!el || (el as any).__af_studio_wired) continue;
+    (el as any).__af_studio_wired = true;
+    el.addEventListener('click', open);
+  }
+
+  chrome.storage.local.get('studio_opened_once').then((r) => {
+    if (r?.studio_opened_once) promo?.classList.add('is-compact');
+  }).catch(() => {});
+}
 
 function initTabs() {
   $$('.af-tab').forEach(tab => {
@@ -4910,14 +4940,8 @@ async function showLoggedInState() {
     const ultraBtn = document.getElementById('btn-header-ultra-family');
     if (ultraBtn) ultraBtn.style.display = '';
 
-    // Wire "Open Studio" button
-    const studioBtn = document.getElementById('btn-open-studio');
-    if (studioBtn && !(studioBtn as any).__af_studio_wired) {
-      (studioBtn as any).__af_studio_wired = true;
-      studioBtn.addEventListener('click', () => {
-        chrome.runtime.sendMessage({ type: 'OPEN_STUDIO' });
-      });
-    }
+    // "Open Studio" is wired in initStudioEntry() — it must work signed-out
+    // too, and this function only runs after sign-in.
     const badge = $('#account-plan-badge') as HTMLElement;
     if (profile.is_pro_active) {
       badge.textContent = 'Pro';
