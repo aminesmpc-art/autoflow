@@ -83,9 +83,9 @@ export default function Canvas() {
     (connection: Connection) => {
       setEdges(addEdge({
         ...connection,
-        type: 'smoothstep',
+        type: 'default',
         animated: true,
-        style: { stroke: '#f97316', strokeWidth: 2 },
+        style: { stroke: '#8b5cf6', strokeWidth: 2.5 },
       }, edges));
     },
     [edges, setEdges]
@@ -133,13 +133,15 @@ export default function Canvas() {
       data: {
         type: 'generate',
         label: `Generate ${nodes.filter(n => (n.data as any).type === 'generate').length + 1}`,
-        model: 'omni-flash',
-        mediaType: 'video',
+        model: 'Nano Banana Pro',
+        mediaType: 'image',
         aspectRatio: '9:16',
         duration: '6s',
         creationType: 'ingredients',
+        enabled: true,
         status: 'idle',
         resultUrl: null,
+        previewUrl: '',
         resultTileId: null,
         progress: 0,
         errorMessage: null,

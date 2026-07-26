@@ -684,201 +684,285 @@
   border-radius: 50%;
 }
 
-/* Result Preview */
-.studio-node__result-preview {
+/* ════════════════════════════════════════════════
+   GENERATE NODE — media-dominant card
+   The result is the node: title and platform badge sit
+   outside the card, settings collapse to a bottom strip.
+   ════════════════════════════════════════════════ */
+
+.sn-wrap {
   position: relative;
-  margin: 0 0 10px;
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid #2a2a2e;
-  background:
-    linear-gradient(45deg, #191919 25%, transparent 25%) 0 0 / 16px 16px,
-    linear-gradient(-45deg, #191919 25%, transparent 25%) 0 8px / 16px 16px,
-    #0d0d0f;
+  width: 300px;
+  /* React Flow nodes are shrink-to-fit; without a floor, the aspect-ratio
+     media box clamped by max-height drags the whole card narrower. */
+  min-width: 300px;
 }
-.studio-node__result-preview img {
+
+/* External title above the card */
+.sn-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding-left: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #8b8b95;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sn-label__icon { font-size: 12px; opacity: 0.85; }
+.sn-wrap--selected .sn-label { color: #e5e5e7; }
+
+/* The card */
+.sn {
+  position: relative;
   width: 100%;
-  height: auto;
-  max-height: 260px;
-  object-fit: contain;
+  background: #0f0f12;
+  border: 2px solid #2a2a2e;
+  border-radius: 14px;
+  overflow: visible;
+  transition: border-color 0.2s, box-shadow 0.3s, opacity 0.2s;
+}
+.sn-wrap--selected .sn {
+  border-color: #f97316;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.14);
+}
+
+/* Status rings — mirror the run state at a glance */
+.sn--running {
+  border-color: #a855f7;
+  box-shadow: 0 0 24px rgba(168, 85, 247, 0.35);
+  animation: snPulse 2.2s ease-in-out infinite;
+}
+@keyframes snPulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(168, 85, 247, 0.28); }
+  50%      { box-shadow: 0 0 38px rgba(168, 85, 247, 0.55); }
+}
+.sn--done  { border-color: #22c55e; box-shadow: 0 0 20px rgba(34, 197, 94, 0.22); }
+.sn--error { border-color: #ef4444; box-shadow: 0 0 20px rgba(239, 68, 68, 0.22); }
+
+/* Disabled nodes are visibly inert */
+.sn--disabled { opacity: 0.45; filter: saturate(0.4); }
+
+/* ── Enable/disable toggle ── */
+.sn-toggle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  width: 34px;
+  height: 19px;
+  padding: 2px;
+  background: #3a3a42;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.sn-toggle--on { background: #22c55e; }
+.sn-toggle__knob {
+  display: block;
+  width: 15px;
+  height: 15px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+.sn-toggle--on .sn-toggle__knob { transform: translateX(15px); }
+
+/* ── Media area — takes the shape of the chosen aspect ratio ── */
+.sn-media {
+  position: relative;
+  width: 100%;
+  /* Tall ratios (9:16) would otherwise make the card unusably long.
+     Children are absolutely positioned so clamping the height here never
+     shrinks the box's width — the image crops instead. */
+  max-height: 420px;
+  border-radius: 12px 12px 0 0;
+  overflow: hidden;
+  background:
+    linear-gradient(45deg, #151518 25%, transparent 25%) 0 0 / 18px 18px,
+    linear-gradient(-45deg, #151518 25%, transparent 25%) 0 9px / 18px 18px,
+    #0b0b0d;
+}
+.sn-media__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   display: block;
   cursor: zoom-in;
 }
 
-/* Hover action bar over the preview */
-.studio-node__result-actions {
+/* Placeholder states fill the media area without sizing it */
+.sn-media__state {
   position: absolute;
-  inset: auto 0 0 0;
-  display: flex;
-  gap: 6px;
-  padding: 8px;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.85), transparent);
-  opacity: 0;
-  transition: opacity 0.18s;
-}
-.studio-node__result-preview:hover .studio-node__result-actions { opacity: 1; }
-.studio-node__result-actions button,
-.studio-node__result-actions a {
-  flex: 1;
-  padding: 5px 8px;
-  background: rgba(20, 20, 22, 0.9);
-  border: 1px solid #34343a;
-  border-radius: 6px;
-  color: #e5e5e7;
-  font-size: 10.5px;
-  font-family: inherit;
-  font-weight: 600;
-  text-align: center;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-.studio-node__result-actions button:hover,
-.studio-node__result-actions a:hover {
-  background: #f97316;
-  border-color: #f97316;
-  color: #fff;
-}
-
-/* Result exists but no preview could be captured */
-.studio-node__result-placeholder {
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 20px 12px;
-  margin-bottom: 10px;
-  border: 1px dashed #2a2a2e;
-  border-radius: 10px;
-  background: #0a0a0c;
-  color: #6b6b73;
-  font-size: 11px;
-  text-align: center;
-}
-.studio-node__result-placeholder-icon { font-size: 20px; opacity: 0.6; }
-
-/* Generating animation */
-.studio-node__generating {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 20px 12px;
-  margin-bottom: 10px;
-  border-radius: 10px;
-  background: rgba(234, 179, 8, 0.04);
-  color: #eab308;
-  font-size: 12px;
-}
-.studio-node__spinner {
-  width: 28px;
-  height: 28px;
-  border: 3px solid #1e1e22;
-  border-top-color: #eab308;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-.studio-node__progress-track {
-  width: 100%;
-  height: 4px;
-  background: #1e1e22;
-  border-radius: 2px;
-  overflow: hidden;
-}
-.studio-node__progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #eab308, #f97316);
-  border-radius: 2px;
-  transition: width 0.4s ease;
-}
-.studio-node__generating-label {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-}
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* Pulsing dot next to the "Generating" status chip */
-.studio-node__status-dot {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin-right: 5px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: statusPulse 1.4s ease-in-out infinite;
-}
-@keyframes statusPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
-}
-
-/* Error message */
-.studio-node__error-msg {
-  display: flex;
-  align-items: flex-start;
+  justify-content: center;
   gap: 8px;
-  padding: 10px;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  border-radius: 8px;
-  color: #f87171;
-  font-size: 11.5px;
-  line-height: 1.45;
-  margin-bottom: 10px;
+  padding: 20px;
+  text-align: center;
+  font-size: 12px;
+  color: #7a7a85;
 }
-.studio-node__error-icon { flex-shrink: 0; }
-/* Long engine errors must not stretch the node */
-.studio-node__error-text {
+.sn-media__state small {
+  font-size: 10.5px;
+  color: #55555f;
+  max-width: 240px;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   word-break: break-word;
 }
+.sn-media__state-icon { font-size: 26px; opacity: 0.5; }
+.sn-media__state--running { color: #c084fc; }
+.sn-media__state--error   { color: #f87171; }
+.sn-media__state--error small { color: #b45c5c; }
 
-/* Delete button in node header */
-.studio-node__close {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
+.sn-spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid rgba(168, 85, 247, 0.2);
+  border-top-color: #a855f7;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.sn-progress {
+  width: 70%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.sn-progress__fill {
+  height: 100%;
+  background: linear-gradient(90deg, #a855f7, #f97316);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+/* ── Compact settings strip ── */
+.sn-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px;
+  background: #141418;
+  border-top: 1px solid #232329;
+  border-radius: 0 0 12px 12px;
+}
+.sn-bar__sel {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 6px;
+  background: #1e1e24;
+  border: 1px solid #2c2c34;
+  border-radius: 6px;
+  color: #d4d4d8;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  transition: border-color 0.15s, background 0.15s;
+}
+/* The model name is the long one — let it absorb the spare width */
+.sn-bar__sel--grow { flex: 1 1 auto; }
+.sn-bar__sel:hover { background: #26262e; border-color: #3a3a44; }
+.sn-bar__sel:focus-visible {
+  border-color: #f97316;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2);
+}
+
+/* ── External platform badge ── */
+.sn-platform {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding-left: 2px;
+  font-size: 11px;
+  color: #6b6b73;
+}
+.sn-platform__dot {
+  width: 7px;
+  height: 7px;
+  background: #4285f4;
+  border-radius: 50%;
+}
+
+/* ── Floating action bar (appears on hover/select) ── */
+.sn-actions {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  right: 0;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(24, 24, 28, 0.96);
+  border: 1px solid #2c2c34;
+  border-radius: 9px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.15s, transform 0.15s;
+  z-index: 5;
+}
+.sn-wrap:hover .sn-actions,
+.sn-wrap--selected .sn-actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.sn-actions__btn {
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
   background: transparent;
   border: none;
-  border-radius: 4px;
-  color: #55555d;
-  font-size: 16px;
+  border-radius: 6px;
+  color: #a1a1ab;
+  font-size: 13px;
   line-height: 1;
+  text-decoration: none;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s, background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
-.studio-node:hover .studio-node__close { opacity: 1; }
-.studio-node__close:hover { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.sn-actions__btn:hover { background: #2c2c34; color: #fff; }
+.sn-actions__btn--danger:hover { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
 
-/* Port labels beside input handles */
-.studio-node__port-label {
-  position: absolute;
-  left: 0;
-  transform: translate(-100%, -50%);
-  padding-right: 8px;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: #4a4a52;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s;
-  white-space: nowrap;
+/* ── Ports — large, glyph-labelled, straddling the card edge ── */
+.sn-port {
+  width: 26px !important;
+  height: 26px !important;
+  display: grid !important;
+  place-items: center;
+  border: 2px solid #0f0f12 !important;
+  border-radius: 50% !important;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  transition: transform 0.15s, box-shadow 0.15s;
 }
-.studio-node:hover .studio-node__port-label { opacity: 1; }
-.studio-node__port-label--text { top: 38%; }
-.studio-node__port-label--image { top: 62%; }
-.studio-node:hover .studio-node__port-label--text { color: #f97316; }
-.studio-node:hover .studio-node__port-label--image { color: #3b82f6; }
+.sn-port:hover { transform: scale(1.15); }
+.sn-port__glyph { pointer-events: none; line-height: 1; }
+
+.sn-port--text  { background: #f97316 !important; box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.18); }
+.sn-port--image { background: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18); }
+.sn-port--out   { background: #22c55e !important; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18); }
 
 /* Fullscreen preview */
 .studio-lightbox {
@@ -963,6 +1047,19 @@
 .react-flow__pane:active {
   cursor: grabbing;
 }
+
+/* Our nodes draw their own selection ring — suppress React Flow's default */
+.react-flow__node { font-family: inherit; }
+.react-flow__node.selected,
+.react-flow__node:focus,
+.react-flow__node:focus-visible { outline: none; box-shadow: none; }
+
+/* Edges: brighter, thicker, and clearly directional */
+.react-flow__edge-path { stroke-width: 2.5; }
+.react-flow__edge.selected .react-flow__edge-path { stroke: #f97316; stroke-width: 3.5; }
+.react-flow__edge.animated .react-flow__edge-path { stroke-dasharray: 6 4; }
+/* Connection line while dragging from a port */
+.react-flow__connectionline .react-flow__edge-path { stroke: #f97316; stroke-width: 2.5; stroke-dasharray: 6 4; }
 
 /* Controls */
 .studio-controls {

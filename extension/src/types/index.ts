@@ -409,6 +409,13 @@ export const AVAILABLE_MODELS = [
   'Veo 3.1 - Lite [Lower Priority]',
 ];
 
+/** Image models Flow exposes — must match the names rendered on the page */
+export const AVAILABLE_IMAGE_MODELS: ImageModel[] = [
+  'Nano Banana Pro',
+  'Nano Banana 2',
+  'Imagen 4',
+];
+
 export const AVAILABLE_VOICES = [
   'none',
   'Achernar',

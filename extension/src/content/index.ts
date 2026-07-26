@@ -1082,7 +1082,7 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
     settings: {
       mediaType,
       creationType: 'ingredients',
-      model: isImage ? 'Veo 3' : (config.model || 'Veo 3'),
+      model: isImage ? 'Omni Flash' : (config.model || 'Omni Flash'),
       orientation: (config.aspectRatio === '9:16' || config.aspectRatio === '3:4') ? 'portrait' : 'landscape',
       generations: 1,
       duration: '8s',
@@ -1097,7 +1097,7 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
       videoResolution: '4K',
       autoDownloadImages: false,
       imageResolution: '4K',
-      imageModel: isImage ? (config.model || 'Nano Banana 2') : 'Nano Banana 2',
+      imageModel: isImage ? (config.model || 'Nano Banana Pro') : 'Nano Banana Pro',
       imageRatio: isImage ? (config.aspectRatio || '9:16') : '9:16',
       language: 'English',
       showNotifications: false,

@@ -48,6 +48,7 @@ interface StudioState {
   /* Node CRUD */
   addNode: (node: Node) => void;
   removeNode: (nodeId: string) => void;
+  duplicateNode: (nodeId: string) => void;
   updateNodeData: (nodeId: string, data: Record<string, unknown>) => void;
 
   /* Execution */
@@ -109,6 +110,20 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       nodes: s.nodes.filter((n) => n.id !== nodeId),
       edges: s.edges.filter((e) => e.source !== nodeId && e.target !== nodeId),
     })),
+  duplicateNode: (nodeId) =>
+    set((s) => {
+      const src = s.nodes.find((n) => n.id === nodeId);
+      if (!src) return s;
+      const copy: Node = {
+        ...src,
+        id: `${src.type || 'node'}_${Date.now()}`,
+        position: { x: src.position.x + 60, y: src.position.y + 60 },
+        selected: false,
+        // A copy has not run yet — carry the config, drop the result
+        data: { ...src.data, status: 'idle', progress: 0, previewUrl: '', resultUrl: '', resultTileId: null, errorMessage: null },
+      };
+      return { nodes: [...s.nodes, copy] };
+    }),
   updateNodeData: (nodeId, data) =>
     set((s) => ({
       nodes: s.nodes.map((n) =>

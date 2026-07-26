@@ -50,8 +50,13 @@ export class WorkflowRunner {
       return;
     }
 
-    // Count generate nodes for progress
-    const generateSteps = steps.filter((s) => s.nodeType === 'generate');
+    // Count generate nodes for progress — disabled ones never run, so
+    // counting them would leave the progress bar short of its total.
+    const generateSteps = steps.filter((s) => {
+      if (s.nodeType !== 'generate') return false;
+      const n = nodes.find((x) => x.id === s.nodeId);
+      return (n?.data as any)?.enabled !== false;
+    });
     store.setRunProgress(0, generateSteps.length);
     let completedCount = 0;
 
@@ -104,6 +109,12 @@ export class WorkflowRunner {
           break;
 
         case 'generate':
+          // Nodes toggled off are skipped without consuming a generation
+          if (nodeData.enabled === false) {
+            console.log(`[Runner] Generate "${nodeData.label}": skipped (disabled)`);
+            break;
+          }
+
           // GENERATE nodes — this is where the magic happens
           store.setCurrentNode(step.nodeId);
           store.updateNodeData(step.nodeId, { status: 'running', progress: 0, errorMessage: null });
@@ -183,8 +194,8 @@ export class WorkflowRunner {
 
     const config: NodeExecutionConfig = {
       prompt,
-      model: nodeData.model || 'omni-flash',
-      mediaType: nodeData.mediaType || 'video',
+      model: nodeData.model || (nodeData.mediaType === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),
+      mediaType: nodeData.mediaType || 'image',
       aspectRatio: nodeData.aspectRatio || '9:16',
       duration: nodeData.duration || '6s',
       creationType: nodeData.creationType || 'ingredients',
