@@ -918,6 +918,18 @@
   background: #4285f4;
   border-radius: 50%;
 }
+.sn-platform__dot--chatgpt { background: #10a37f; }
+
+/* Hint text in the settings strip (e.g. ChatGPT's prompt-only mode) */
+.sn-bar__hint {
+  flex: 1;
+  padding: 0 4px;
+  font-size: 10.5px;
+  color: #55555f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* ── Floating action bar (appears on hover/select) ── */
 .sn-actions {

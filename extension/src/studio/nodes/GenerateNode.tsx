@@ -61,8 +61,10 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   );
 
   const status: NodeStatus = nodeData.status || 'idle';
+  const platform: 'flow' | 'chatgpt' = nodeData.platform === 'chatgpt' ? 'chatgpt' : 'flow';
+  const isChatGPT = platform === 'chatgpt';
   const mediaType = nodeData.mediaType || 'image';
-  const isVideo = mediaType === 'video';
+  const isVideo = !isChatGPT && mediaType === 'video';
   const models = isVideo ? VIDEO_MODELS : IMAGE_MODELS;
   const ratios = isVideo ? VIDEO_RATIOS : IMAGE_RATIOS;
   const ratio = nodeData.aspectRatio || '9:16';
@@ -130,8 +132,8 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           {status === 'done' && !previewVideo && !preview && (
             <div className="sn-media__state">
               <span className="sn-media__state-icon">🖼</span>
-              <span>Generated on Flow</span>
-              <small>Preview unavailable</small>
+              <span>Generated on {isChatGPT ? 'ChatGPT' : 'Flow'}</span>
+              <small>{isChatGPT ? 'Prompt submitted — see the ChatGPT tab' : 'Preview unavailable'}</small>
             </div>
           )}
 
@@ -164,24 +166,40 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
 
         {/* ── Compact settings strip ── */}
         <div className="sn-bar">
-          <select className="sn-bar__sel" value={mediaType} onChange={(e) => handleMediaType(e.target.value)} title="Output type">
-            <option value="image">Image</option>
-            <option value="video">Video</option>
+          <select
+            className="sn-bar__sel"
+            value={platform}
+            onChange={(e) => set('platform', e.target.value)}
+            title="Platform"
+          >
+            <option value="flow">Flow</option>
+            <option value="chatgpt">ChatGPT</option>
           </select>
 
-          <select className="sn-bar__sel sn-bar__sel--grow" value={nodeData.model || models[0]} onChange={(e) => set('model', e.target.value)} title="Model">
-            {models.map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
+          {/* ChatGPT v1 is prompt-only: the composer has no model/ratio/duration controls */}
+          {!isChatGPT && (
+            <>
+              <select className="sn-bar__sel" value={mediaType} onChange={(e) => handleMediaType(e.target.value)} title="Output type">
+                <option value="image">Image</option>
+                <option value="video">Video</option>
+              </select>
 
-          {isVideo && (
-            <select className="sn-bar__sel" value={nodeData.duration || '6s'} onChange={(e) => set('duration', e.target.value)} title="Duration">
-              {DURATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
+              <select className="sn-bar__sel sn-bar__sel--grow" value={nodeData.model || models[0]} onChange={(e) => set('model', e.target.value)} title="Model">
+                {models.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+
+              {isVideo && (
+                <select className="sn-bar__sel" value={nodeData.duration || '6s'} onChange={(e) => set('duration', e.target.value)} title="Duration">
+                  {DURATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              )}
+
+              <select className="sn-bar__sel" value={ratio} onChange={(e) => set('aspectRatio', e.target.value)} title="Aspect ratio">
+                {ratios.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </>
           )}
-
-          <select className="sn-bar__sel" value={ratio} onChange={(e) => set('aspectRatio', e.target.value)} title="Aspect ratio">
-            {ratios.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
+          {isChatGPT && <span className="sn-bar__hint">Image · prompt only</span>}
         </div>
 
         {/* ── Handles: large, labelled, outside the edge ── */}
@@ -198,8 +216,8 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
 
       {/* ── External platform badge ── */}
       <div className="sn-platform">
-        <span className="sn-platform__dot" />
-        Google Flow
+        <span className={`sn-platform__dot ${isChatGPT ? 'sn-platform__dot--chatgpt' : ''}`} />
+        {isChatGPT ? 'ChatGPT Images' : 'Google Flow'}
       </div>
 
       {/* Portaled: React Flow transforms nodes, which breaks position:fixed inside them */}

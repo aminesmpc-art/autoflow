@@ -286,6 +286,15 @@ async function getActiveFlowTabId(): Promise<number | null> {
   return null;
 }
 
+/** Find a ChatGPT tab for Studio's ChatGPT platform nodes */
+async function getChatGPTTabId(): Promise<number | null> {
+  const tabs = await chrome.tabs.query({ url: 'https://chatgpt.com/*' });
+  // Prefer the images surface if one is open
+  const imagesTab = tabs.find(t => (t.url || '').includes('/images'));
+  const tab = imagesTab || tabs[0];
+  return tab?.id ?? null;
+}
+
 /** Forward a message from content script back to Studio window */
 function forwardToStudio(msg: any): void {
   if (_studioPort) {
@@ -316,12 +325,17 @@ chrome.runtime.onConnect.addListener((port) => {
     port.onMessage.addListener(async (msg: any) => {
       if (!msg || !msg.type) return;
 
-      // Route Studio messages to the active Flow tab's content script
+      // Route Studio messages to the right platform tab's content script.
+      // The node's config carries the platform; default is Google Flow.
       if (msg.type.startsWith('STUDIO_')) {
-        const flowTabId = await getActiveFlowTabId();
-        if (flowTabId) {
+        const isChatGPT = msg.payload?.config?.platform === 'chatgpt';
+        const tabId = isChatGPT ? await getChatGPTTabId() : await getActiveFlowTabId();
+        const platformName = isChatGPT ? 'ChatGPT' : 'Flow';
+        const injectFile = isChatGPT ? 'chatgpt-content.js' : 'content.js';
+
+        if (tabId) {
           try {
-            const response = await chrome.tabs.sendMessage(flowTabId, msg);
+            const response = await chrome.tabs.sendMessage(tabId, msg);
             // Forward response back to Studio
             if (_studioPort) {
               _studioPort.postMessage(response || { type: 'STUDIO_ACK' });
@@ -329,16 +343,16 @@ chrome.runtime.onConnect.addListener((port) => {
           } catch (err: any) {
             // Content script not loaded — auto-inject and retry once
             if (err.message?.includes('Receiving end does not exist')) {
-              console.log('[AutoFlow] Content script not loaded on Flow tab — injecting...');
+              console.log(`[AutoFlow] Content script not loaded on ${platformName} tab — injecting...`);
               try {
                 await chrome.scripting.executeScript({
-                  target: { tabId: flowTabId },
-                  files: ['content.js'],
+                  target: { tabId },
+                  files: [injectFile],
                 });
                 // Wait for content script to initialize
                 await new Promise(r => setTimeout(r, 1500));
                 // Retry the message
-                const retryResponse = await chrome.tabs.sendMessage(flowTabId, msg);
+                const retryResponse = await chrome.tabs.sendMessage(tabId, msg);
                 if (_studioPort) {
                   _studioPort.postMessage(retryResponse || { type: 'STUDIO_ACK' });
                 }
@@ -346,7 +360,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 if (_studioPort) {
                   _studioPort.postMessage({
                     type: 'STUDIO_NODE_ERROR',
-                    payload: { error: `Flow tab not reachable after re-inject: ${retryErr.message}`, nodeId: msg.payload?.nodeId },
+                    payload: { error: `${platformName} tab not reachable after re-inject: ${retryErr.message}`, nodeId: msg.payload?.nodeId },
                   });
                 }
               }
@@ -354,18 +368,20 @@ chrome.runtime.onConnect.addListener((port) => {
               if (_studioPort) {
                 _studioPort.postMessage({
                   type: 'STUDIO_NODE_ERROR',
-                  payload: { error: `Flow tab error: ${err.message}`, nodeId: msg.payload?.nodeId },
+                  payload: { error: `${platformName} tab error: ${err.message}`, nodeId: msg.payload?.nodeId },
                 });
               }
             }
           }
         } else {
-          // No Flow tab found
+          // No platform tab found
           if (_studioPort) {
             _studioPort.postMessage({
               type: 'STUDIO_NODE_ERROR',
               payload: {
-                error: 'No Google Flow tab found. Please open labs.google/flow first.',
+                error: isChatGPT
+                  ? 'No ChatGPT tab found. Please open chatgpt.com/images first.'
+                  : 'No Google Flow tab found. Please open labs.google/flow first.',
                 nodeId: msg.payload?.nodeId,
               },
             });
