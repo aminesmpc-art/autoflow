@@ -23,6 +23,8 @@ export interface NodeResult {
   thumbnailUrl?: string;
   /** Self-contained data URL built by the content script — safe to render here */
   previewUrl?: string;
+  /** Playable video as a data URL, when the clip was small enough to inline */
+  previewVideoUrl?: string;
 }
 
 type MessageHandler = (msg: any) => void;

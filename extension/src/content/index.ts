@@ -1248,6 +1248,10 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
   // false 'failed' in sidebar/detail view. Studio detector checks
   // completion signals FIRST: has real image/video → completed.
   let consecutiveFailed = 0;
+  // When the engine gave us no tile IDs, we lock onto the first card we see
+  // actually GENERATING. Grabbing just "any visible card" made the poller
+  // adopt an old, already-finished tile and report done instantly.
+  let fallbackTileId: string | null = null;
 
   for (let wait = 0; wait < 1200; wait++) {
     await sleep(1000);
@@ -1259,10 +1263,23 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
       if (el && isVisible(el)) { trackedTile = el; break; }
     }
 
-    // Fallback: find any visible tile card
-    if (!trackedTile) {
+    // Fallback path (no engine tile IDs): follow a tile we saw generating
+    if (!trackedTile && fallbackTileId) {
+      const el = document.querySelector(`[data-tile-id="${fallbackTileId}"]`);
+      if (el && isVisible(el)) trackedTile = el;
+    }
+    if (!trackedTile && trackedTileIds.length === 0) {
       const allCards = findAssetCards().filter(el => isVisible(el));
-      if (allCards.length > 0) trackedTile = allCards[0];
+      const generatingCard = allCards.find(c => getStudioTileState(c) === 'generating');
+      if (generatingCard) {
+        trackedTile = generatingCard;
+        fallbackTileId = generatingCard.getAttribute('data-tile-id') || null;
+        console.log(`[AutoFlow Studio] Locked onto generating tile ${fallbackTileId || '(no id)'}`);
+      } else if (wait > 45 && allCards.length > 0) {
+        // Nothing ever showed as generating — the render may have finished
+        // between submit and our first poll. Last resort: newest card.
+        trackedTile = allCards[0];
+      }
     }
 
     if (!trackedTile) {
@@ -1271,7 +1288,8 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
     }
 
     // ── Studio-specific tile state detection ──
-    // Priority: COMPLETED first → GENERATING → FAILED last
+    // Priority: GENERATING first (a generating tile shows a real blurred
+    // <img> + % badge, which a completion-first check misreads as done)
     const state = getStudioTileState(trackedTile);
 
     if (state === 'completed') {
@@ -1279,14 +1297,18 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
       const tileId = trackedTile.getAttribute('data-tile-id') || '';
       const mediaUrl = extractTileMediaUrl(trackedTile);
       const previewSrc = extractTilePreviewSrc(trackedTile);
-      await sendStudioResult(nodeId, tileId, mediaUrl, previewSrc);
+      await sendStudioResult(nodeId, tileId, mediaUrl, previewSrc, trackedTile);
       return;
     }
 
     if (state === 'generating') {
       consecutiveFailed = 0;
-      const progress = Math.min(95, 40 + Math.floor(wait / 12));
-      if (wait % 5 === 0) sendStudioProgress(nodeId, progress);
+      // Relay Flow's own % badge when present; otherwise a slow synthetic ramp
+      const flowPct = extractTileProgress(trackedTile);
+      const progress = flowPct !== null
+        ? Math.max(5, Math.min(99, flowPct))
+        : Math.min(95, 40 + Math.floor(wait / 12));
+      if (flowPct !== null || wait % 5 === 0) sendStudioProgress(nodeId, progress);
     } else if (state === 'failed') {
       consecutiveFailed++;
       if (consecutiveFailed >= 8 && wait > 20) {
@@ -1313,35 +1335,11 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
  * 3. FAILED: has explicit failure text? → only then failed
  */
 function getStudioTileState(tile: Element): 'completed' | 'generating' | 'failed' | 'unknown' {
-  // ── 1. COMPLETED: check for real image or video content ──
-  // Video with src
-  const video = tile.querySelector('video');
-  if (video && (video.src || video.querySelector('source[src]') || video.getAttribute('poster'))) {
-    return 'completed';
-  }
-
-  // Image with real src (not a tiny placeholder)
-  const imgs = tile.querySelectorAll('img[src]');
-  for (const img of imgs) {
-    const src = img.getAttribute('src') || '';
-    // Skip data URIs under 200 chars (tracking pixels / placeholders)
-    if (src.startsWith('data:') && src.length < 200) continue;
-    // Skip tiny invisible images
-    const rect = img.getBoundingClientRect();
-    if (rect.width < 20 || rect.height < 20) continue;
-    // Real image present → completed
-    return 'completed';
-  }
-
-  // Play button icons (completed video)
-  const icons = tile.querySelectorAll('.google-symbols, .material-icons, .material-symbols-outlined, .material-symbols');
-  for (const icon of icons) {
-    const txt = icon.textContent?.trim() || '';
-    if (txt === 'play_arrow' || txt === 'play_circle') return 'completed';
-  }
-
-  // ── 2. GENERATING: blur, percentage, or spinner ──
-  // Blur amount
+  // ── 1. GENERATING — must be checked BEFORE completion. ──
+  // While Flow generates, the tile shows a blurred preview <img> with a
+  // "24%" badge. That preview is a real image, so any completion check
+  // that runs first declares the tile done at 24% and grabs a blurred,
+  // unusable thumbnail.
   const blurEls = tile.querySelectorAll('[style*="blur-amount"]');
   for (const el of blurEls) {
     const val = (el as HTMLElement).style.getPropertyValue('--blur-amount');
@@ -1349,14 +1347,9 @@ function getStudioTileState(tile: Element): 'completed' | 'generating' | 'failed
   }
 
   // Percentage text (e.g. "36%", "99%")
-  const walker = document.createTreeWalker(tile, NodeFilter.SHOW_TEXT);
-  let textNode: Text | null;
-  while ((textNode = walker.nextNode() as Text | null)) {
-    const t = textNode.textContent?.trim() || '';
-    if (/^\d{1,3}%$/.test(t)) return 'generating';
-  }
+  if (extractTileProgress(tile) !== null) return 'generating';
 
-  // Spinner icons
+  const icons = tile.querySelectorAll('.google-symbols, .material-icons, .material-symbols-outlined, .material-symbols');
   for (const icon of icons) {
     const txt = icon.textContent?.trim() || '';
     if (txt === 'progress_activity' || txt === 'hourglass_empty' || txt === 'pending') {
@@ -1371,6 +1364,29 @@ function getStudioTileState(tile: Element): 'completed' | 'generating' | 'failed
     return 'generating';
   }
 
+  // ── 2. COMPLETED: real image or video content, no generating markers ──
+  const video = tile.querySelector('video');
+  if (video && (video.src || video.querySelector('source[src]') || video.getAttribute('poster'))) {
+    return 'completed';
+  }
+
+  const imgs = tile.querySelectorAll('img[src]');
+  for (const img of imgs) {
+    const src = img.getAttribute('src') || '';
+    // Skip data URIs under 200 chars (tracking pixels / placeholders)
+    if (src.startsWith('data:') && src.length < 200) continue;
+    // Skip tiny invisible images
+    const rect = img.getBoundingClientRect();
+    if (rect.width < 20 || rect.height < 20) continue;
+    return 'completed';
+  }
+
+  // Play button icons (completed video)
+  for (const icon of icons) {
+    const txt = icon.textContent?.trim() || '';
+    if (txt === 'play_arrow' || txt === 'play_circle') return 'completed';
+  }
+
   // ── 3. FAILED: only explicit failure text (NOT icons) ──
   if (text.includes('generation failed') || text.includes('unable to generate') ||
       text.includes('violat') || text.includes('blocked')) {
@@ -1380,12 +1396,43 @@ function getStudioTileState(tile: Element): 'completed' | 'generating' | 'failed
   return 'unknown';
 }
 
+/** Flow's own progress badge ("24%") from a generating tile, or null */
+function extractTileProgress(tile: Element): number | null {
+  const walker = document.createTreeWalker(tile, NodeFilter.SHOW_TEXT);
+  let textNode: Text | null;
+  while ((textNode = walker.nextNode() as Text | null)) {
+    const t = textNode.textContent?.trim() || '';
+    const m = /^(\d{1,3})%$/.exec(t);
+    if (m) return Math.min(100, parseInt(m[1], 10));
+  }
+  return null;
+}
 
-async function sendStudioResult(nodeId: string, tileId: string, mediaUrl?: string, previewSrc?: string): Promise<void> {
+
+async function sendStudioResult(
+  nodeId: string,
+  tileId: string,
+  mediaUrl?: string,
+  previewSrc?: string,
+  tile?: Element | null
+): Promise<void> {
   // Flow's tile URLs are page-scoped (blob:) or need the page's auth context,
   // so they cannot be rendered from the chrome-extension:// Studio page.
-  // Convert to a small self-contained data URL here, where fetch still works.
-  const previewUrl = await buildStudioPreview(previewSrc || mediaUrl || '');
+  // Convert to self-contained data URLs here, where fetch still works.
+  let previewUrl = await buildStudioPreview(previewSrc || mediaUrl || '');
+
+  // Videos rarely carry a poster — grab a frame straight off the <video>
+  const videoEl = tile?.querySelector('video') || null;
+  if (!previewUrl && videoEl) {
+    previewUrl = captureVideoFrame(videoEl);
+  }
+
+  // Ship the playable video itself when it's small enough to travel
+  let previewVideoUrl = '';
+  if (videoEl && mediaUrl) {
+    previewVideoUrl = await buildStudioVideoData(mediaUrl);
+  }
+
   try {
     chrome.runtime.sendMessage({
       type: 'STUDIO_NODE_RESULT',
@@ -1395,9 +1442,51 @@ async function sendStudioResult(nodeId: string, tileId: string, mediaUrl?: strin
         imageUrl: mediaUrl || '',
         thumbnailUrl: mediaUrl || '',
         previewUrl,
+        previewVideoUrl,
       },
     }).catch(() => {});
   } catch {}
+}
+
+/** Draw the current frame of a page <video> to a downscaled JPEG data URL.
+    blob: video sources are same-origin, so the canvas stays untainted. */
+function captureVideoFrame(video: HTMLVideoElement): string {
+  try {
+    if (video.readyState < 2 || !video.videoWidth) return '';
+    const scale = Math.min(1, 512 / Math.max(video.videoWidth, video.videoHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.82);
+  } catch (e: any) {
+    console.warn(`[AutoFlow Studio] Video frame capture failed: ${e?.message || e}`);
+    return '';
+  }
+}
+
+/** Fetch a video URL into a data URL so the Studio page can play it.
+    Capped — oversized clips fall back to the poster frame only. */
+const VIDEO_PREVIEW_MAX_BYTES = 15 * 1024 * 1024;
+
+async function buildStudioVideoData(url: string): Promise<string> {
+  if (!url || url.startsWith('data:')) return url.startsWith('data:video') ? url : '';
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return '';
+    const blob = await resp.blob();
+    if (!blob.type.startsWith('video/')) return '';
+    if (blob.size > VIDEO_PREVIEW_MAX_BYTES) {
+      console.log(`[AutoFlow Studio] Video too large for inline preview (${Math.round(blob.size / 1024 / 1024)}MB)`);
+      return '';
+    }
+    return `data:${blob.type};base64,${await blobToRawBase64(blob)}`;
+  } catch (e: any) {
+    console.warn(`[AutoFlow Studio] Video preview unavailable: ${e?.message || e}`);
+    return '';
+  }
 }
 
 /**

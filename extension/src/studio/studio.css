@@ -1003,6 +1003,24 @@
 /* No result yet — keep the placeholder compact regardless of ratio */
 .sn-media--empty { max-height: 230px; }
 
+/* Inline video player fills the media area like an image would */
+video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
+
+/* "Video — open in Flow" hint when only a still frame came through */
+.sn-media__badge {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 4px 8px;
+  background: rgba(12, 12, 14, 0.85);
+  border: 1px solid #2c2c34;
+  border-radius: 6px;
+  color: #c4c4cc;
+  font-size: 10px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
 .sn-media__change {
   position: absolute;
   right: 8px;

@@ -69,8 +69,9 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   const progress = nodeData.progress || 0;
   const enabled = nodeData.enabled !== false;
 
-  // previewUrl is a self-contained data URL built by the content script.
+  // Self-contained data URLs built by the content script.
   const preview = nodeData.previewUrl || '';
+  const previewVideo = nodeData.previewVideoUrl || '';
 
   return (
     <div className={`sn-wrap ${selected ? 'sn-wrap--selected' : ''}`}>
@@ -103,14 +104,30 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
 
         {/* ── Media area — full ratio only once there's something to show ── */}
         <div
-          className={`sn-media ${!(status === 'done' && preview) ? 'sn-media--empty' : ''}`}
+          className={`sn-media ${!(status === 'done' && (preview || previewVideo)) ? 'sn-media--empty' : ''}`}
           style={{ aspectRatio: ratioToCss(ratio) }}
         >
-          {status === 'done' && preview && (
-            <img className="sn-media__img" src={preview} alt="Generated result" onClick={() => setZoomed(true)} />
+          {status === 'done' && previewVideo && (
+            /* nodrag/nowheel: using the player must not pan or zoom the canvas */
+            <video
+              className="sn-media__img nodrag nowheel"
+              src={previewVideo}
+              poster={preview || undefined}
+              controls
+              loop
+              muted
+              playsInline
+            />
           )}
 
-          {status === 'done' && !preview && (
+          {status === 'done' && !previewVideo && preview && (
+            <>
+              <img className="sn-media__img" src={preview} alt="Generated result" onClick={() => setZoomed(true)} />
+              {isVideo && <span className="sn-media__badge">▶ Video — open in Flow to play</span>}
+            </>
+          )}
+
+          {status === 'done' && !previewVideo && !preview && (
             <div className="sn-media__state">
               <span className="sn-media__state-icon">🖼</span>
               <span>Generated on Flow</span>

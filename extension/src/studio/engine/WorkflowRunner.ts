@@ -128,6 +128,7 @@ export class WorkflowRunner {
               progress: 100,
               resultUrl: result.videoUrl || result.imageUrl || result.thumbnailUrl || '',
               previewUrl: result.previewUrl || '',
+              previewVideoUrl: result.previewVideoUrl || '',
               resultTileId: result.tileId,
             });
 
@@ -222,6 +223,7 @@ export class WorkflowRunner {
             videoUrl: payload.videoUrl,
             thumbnailUrl: payload.thumbnailUrl,
             previewUrl: payload.previewUrl,
+            previewVideoUrl: payload.previewVideoUrl,
           });
         }
       };
