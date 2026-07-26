@@ -1,14 +1,17 @@
 /* ============================================================
-   AutoFlow — ChatGPT Images content script (v1, minimal)
-   Runs on chatgpt.com. One job: receive a Studio node's prompt,
-   type it into the image composer, and submit it.
-
-   v1 deliberately does NOT track the generation result — ChatGPT
-   renders results in a gallery we don't scrape yet. The node
-   reports "submitted" and the user watches the ChatGPT tab.
+   AutoFlow — ChatGPT Images content script (v2)
+   Receives a Studio node's prompt, types it into the composer,
+   submits, then WAITS for the generated image, captures it as a
+   data URL, and returns it — so downstream Flow nodes can use it
+   as a reference/ingredient (character consistency across
+   platforms).
    ============================================================ */
 
 console.log('[AutoFlow ChatGPT] Content script loaded on', location.href);
+
+const GENERATION_TIMEOUT_MS = 6 * 60 * 1000; // ChatGPT image gen can take minutes
+const POLL_MS = 2000;
+const MAX_CAPTURE_BYTES = 15 * 1024 * 1024;
 
 chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
   if (msg?.type === 'PING') { sendResponse({ pong: true }); return true; }
@@ -36,7 +39,6 @@ function isVisible(el: Element): boolean {
 
 /** The prompt composer: ProseMirror div on chat, textarea on some surfaces */
 function findComposer(): HTMLElement | null {
-  // Main chat / images composer (ProseMirror contenteditable)
   const pm = document.querySelector<HTMLElement>('#prompt-textarea');
   if (pm && isVisible(pm)) return pm;
 
@@ -44,11 +46,10 @@ function findComposer(): HTMLElement | null {
     document.querySelectorAll<HTMLElement>('textarea, [contenteditable="true"]')
   ).filter(isVisible);
 
-  // Prefer an input that hints at image prompting ("Describe a new image")
   const hinted = candidates.find((c) => {
     const hint = c.getAttribute('placeholder') || c.getAttribute('aria-label') ||
                  c.getAttribute('data-placeholder') || '';
-    return /describe|image|imagine/i.test(hint);
+    return /describe|image|imagine|ask anything/i.test(hint);
   });
   return hinted || candidates[0] || null;
 }
@@ -74,11 +75,51 @@ function fillComposer(el: HTMLElement, text: string): void {
     el.dispatchEvent(new Event('input', { bubbles: true }));
     return;
   }
-  // ProseMirror: execCommand routes through its input handling
   const sel = window.getSelection();
   sel?.selectAllChildren(el);
   document.execCommand('insertText', false, text);
   el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** True while ChatGPT is still streaming/generating */
+function isGenerating(): boolean {
+  const stop = document.querySelector<HTMLElement>(
+    'button[data-testid="stop-button"], button[aria-label*="stop" i], button[aria-label*="arrêter" i]'
+  );
+  return !!(stop && isVisible(stop));
+}
+
+/**
+ * Candidate result images in the conversation: large, fully loaded,
+ * not avatars/icons. Sorted by document order (last = newest).
+ */
+function collectResultImages(): HTMLImageElement[] {
+  return Array.from(document.querySelectorAll('img')).filter((img) => {
+    const src = img.currentSrc || img.src || '';
+    if (!src) return false;
+    if (src.startsWith('data:') && src.length < 2000) return false; // inline icons
+    const rect = img.getBoundingClientRect();
+    if (rect.width < 180 && rect.height < 180) return false; // avatars, thumbnails
+    return img.complete && img.naturalWidth >= 256 && img.naturalHeight >= 256;
+  });
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve((reader.result as string) || '');
+    reader.onerror = () => reject(new Error('Failed to read image blob'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function captureImage(img: HTMLImageElement): Promise<string> {
+  const src = img.currentSrc || img.src;
+  const resp = await fetch(src);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching image`);
+  const blob = await resp.blob();
+  if (blob.size > MAX_CAPTURE_BYTES) throw new Error(`Image too large to transfer (${Math.round(blob.size / 1e6)} MB)`);
+  return blobToDataUrl(blob);
 }
 
 async function handleExecute(payload: any): Promise<any> {
@@ -92,21 +133,23 @@ async function handleExecute(payload: any): Promise<any> {
   }
 
   console.log(`[AutoFlow ChatGPT] Executing node ${nodeId}`);
-  send('STUDIO_NODE_PROGRESS', { nodeId, progress: 20 });
+  send('STUDIO_NODE_PROGRESS', { nodeId, progress: 10 });
 
   const composer = findComposer();
   if (!composer) {
     send('STUDIO_NODE_ERROR', {
       nodeId,
-      error: 'ChatGPT prompt box not found — open chatgpt.com/images in that tab',
+      error: 'ChatGPT prompt box not found — open chatgpt.com in that tab',
     });
     return { success: false };
   }
 
+  // Snapshot images that already exist so we only accept a NEW one as the result
+  const preexisting = new Set(collectResultImages().map((i) => i.currentSrc || i.src));
+
   fillComposer(composer, prompt);
   await sleep(500);
 
-  // Verify the text actually landed before submitting
   const landed = composer instanceof HTMLTextAreaElement
     ? composer.value.trim()
     : (composer.textContent || '').trim();
@@ -114,8 +157,6 @@ async function handleExecute(payload: any): Promise<any> {
     send('STUDIO_NODE_ERROR', { nodeId, error: 'Could not type into the ChatGPT prompt box' });
     return { success: false };
   }
-
-  send('STUDIO_NODE_PROGRESS', { nodeId, progress: 60 });
 
   const btn = findSendButton();
   if (btn) {
@@ -126,8 +167,75 @@ async function handleExecute(payload: any): Promise<any> {
     }));
   }
 
-  // v1: fire-and-forget — no result scraping on ChatGPT yet
-  await sleep(1200);
-  send('STUDIO_NODE_RESULT', { nodeId, tileId: '', imageUrl: '', thumbnailUrl: '', previewUrl: '' });
+  console.log('[AutoFlow ChatGPT] Prompt submitted — waiting for the image...');
+  send('STUDIO_NODE_PROGRESS', { nodeId, progress: 20 });
+
+  // Return the message channel NOW — the wait can take minutes and Chrome
+  // closes a sendResponse channel long before that. Results travel back via
+  // chrome.runtime.sendMessage, same pattern as the Flow content script.
+  trackGeneration(nodeId, preexisting);
   return { success: true };
+}
+
+/** Fire-and-forget: poll until the generated image appears, then capture it */
+async function trackGeneration(nodeId: string, preexisting: Set<string>): Promise<void> {
+  // Completion = a NEW large image whose src stayed stable across two polls
+  // while ChatGPT is no longer streaming. Progressive previews swap srcs
+  // while rendering, so stability matters as much as presence.
+  const startedAt = Date.now();
+  let stableSrc = '';
+  let stableCount = 0;
+
+  while (Date.now() - startedAt < GENERATION_TIMEOUT_MS) {
+    await sleep(POLL_MS);
+
+    const elapsed = Date.now() - startedAt;
+    const progress = Math.min(90, 20 + Math.floor((elapsed / GENERATION_TIMEOUT_MS) * 90));
+    send('STUDIO_NODE_PROGRESS', { nodeId, progress });
+
+    const fresh = collectResultImages().filter(
+      (i) => !preexisting.has(i.currentSrc || i.src)
+    );
+    if (fresh.length === 0) continue;
+
+    const candidate = fresh[fresh.length - 1];
+    const src = candidate.currentSrc || candidate.src;
+    if (src === stableSrc) {
+      stableCount++;
+    } else {
+      stableSrc = src;
+      stableCount = 0;
+    }
+
+    if (stableCount >= 2 && !isGenerating()) {
+      console.log('[AutoFlow ChatGPT] Image complete — capturing');
+      try {
+        const dataUrl = await captureImage(candidate);
+        send('STUDIO_NODE_RESULT', {
+          nodeId,
+          tileId: '',
+          // data URL in imageUrl → WorkflowRunner passes it downstream as a
+          // reference (referenceImageData) exactly like an Image node's upload
+          imageUrl: dataUrl,
+          thumbnailUrl: dataUrl,
+          previewUrl: dataUrl,
+        });
+        return;
+      } catch (e: any) {
+        // Do NOT report success without the image — a downstream node would
+        // silently generate without its reference (the exact failure class
+        // this workflow feature exists to prevent).
+        send('STUDIO_NODE_ERROR', {
+          nodeId,
+          error: `Image generated but could not be captured: ${e.message}. It is still in the ChatGPT tab.`,
+        });
+        return;
+      }
+    }
+  }
+
+  send('STUDIO_NODE_ERROR', {
+    nodeId,
+    error: 'ChatGPT image did not complete within 6 minutes — check the ChatGPT tab',
+  });
 }
