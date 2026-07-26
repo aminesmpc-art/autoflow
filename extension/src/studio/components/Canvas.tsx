@@ -240,6 +240,8 @@ export default function Canvas() {
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         fitView
+        /* Cap zoom so a 2-node workflow doesn't fill the screen with giant cards */
+        fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{
           type: 'smoothstep',

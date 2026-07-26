@@ -4,7 +4,7 @@
    ============================================================ */
 
 import { useCallback } from 'react';
-import { useStudioStore } from '../store';
+import { useStudioStore, normalizeWorkflow } from '../store';
 import type { Node, Edge } from '@xyflow/react';
 
 /* ── Template Definition ── */
@@ -233,9 +233,12 @@ export default function TemplateGallery() {
 
   const loadTemplate = useCallback(
     (template: Template) => {
-      // Deep clone nodes/edges so each instance is independent
-      const clonedNodes = JSON.parse(JSON.stringify(template.nodes));
-      const clonedEdges = JSON.parse(JSON.stringify(template.edges));
+      // Deep clone nodes/edges so each instance is independent,
+      // then normalize (edge style, model names, missing fields)
+      const { nodes: clonedNodes, edges: clonedEdges } = normalizeWorkflow(
+        JSON.parse(JSON.stringify(template.nodes)),
+        JSON.parse(JSON.stringify(template.edges))
+      );
       setNodes(clonedNodes);
       setEdges(clonedEdges);
       setWorkflowName(template.name);

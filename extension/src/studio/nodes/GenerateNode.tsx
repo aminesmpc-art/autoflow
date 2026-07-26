@@ -101,8 +101,11 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           <span className="sn-toggle__knob" />
         </button>
 
-        {/* ── Media area ── */}
-        <div className="sn-media" style={{ aspectRatio: ratioToCss(ratio) }}>
+        {/* ── Media area — full ratio only once there's something to show ── */}
+        <div
+          className={`sn-media ${!(status === 'done' && preview) ? 'sn-media--empty' : ''}`}
+          style={{ aspectRatio: ratioToCss(ratio) }}
+        >
           {status === 'done' && preview && (
             <img className="sn-media__img" src={preview} alt="Generated result" onClick={() => setZoomed(true)} />
           )}

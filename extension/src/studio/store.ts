@@ -75,6 +75,35 @@ function generateId(): string {
   return `wf_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/* ── Workflow normalization ──
+   Saved workflows and older templates carry stale shapes: slug model
+   names that never match Flow's rendered labels, smoothstep edges from
+   the previous design, and generate nodes missing enabled/previewUrl.
+   Every load path runs through here so old data can't resurrect old bugs. */
+const MODEL_SLUGS: Record<string, string> = {
+  'nano-banana-2': 'Nano Banana Pro',
+  'omni-flash': 'Omni Flash',
+};
+
+export function normalizeWorkflow(nodes: Node[], edges: Edge[]): { nodes: Node[]; edges: Edge[] } {
+  const normNodes = nodes.map((node) => {
+    const d: any = { ...(node.data as any) };
+    if (d.type === 'generate') {
+      if (typeof d.model === 'string' && MODEL_SLUGS[d.model]) d.model = MODEL_SLUGS[d.model];
+      if (d.enabled === undefined) d.enabled = true;
+      if (d.previewUrl === undefined) d.previewUrl = '';
+    }
+    return { ...node, data: d };
+  });
+  const normEdges = edges.map((edge) => ({
+    ...edge,
+    type: 'default',
+    animated: true,
+    style: { stroke: '#8b5cf6', strokeWidth: 2.5 },
+  }));
+  return { nodes: normNodes, edges: normEdges };
+}
+
 export const useStudioStore = create<StudioState>((set, get) => ({
   /* ── Navigation ── */
   view: 'gallery',
@@ -163,10 +192,11 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       const result = await chrome.storage.local.get(`studio_workflow_${id}`);
       const data = result[`studio_workflow_${id}`];
       if (data) {
+        const { nodes, edges } = normalizeWorkflow(data.nodes || [], data.edges || []);
         set({
           workflow: { id: data.id, name: data.name, createdAt: data.createdAt, updatedAt: data.updatedAt },
-          nodes: data.nodes || [],
-          edges: data.edges || [],
+          nodes,
+          edges,
           view: 'canvas',
         });
       }
