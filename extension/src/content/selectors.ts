@@ -1438,8 +1438,82 @@ export async function switchToViewMode(targetMode: 'Grid' | 'Batch'): Promise<bo
  *
  * Returns the matching element, excluding the settings trigger chip itself.
  */
+/**
+ * Visible label of an element, excluding Material Symbols icons.
+ *
+ * Flow renders icons as <i class="google-symbols">play_circle</i>, and the
+ * ligature NAME is real text content. So the Video tab's raw textContent is
+ * "play_circleVideo", and any button holding an image icon contains the word
+ * "image". Substring matching on raw textContent therefore produces false
+ * positives; match on this instead.
+ */
+export function labelText(el: Element): string {
+  const ICON_SEL = '.google-symbols, .material-icons, .material-symbols-outlined, .material-symbols';
+  let out = '';
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) { out += node.textContent || ''; return; }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const e = node as Element;
+    if (e.matches(ICON_SEL)) return; // skip the ligature name
+    for (const child of Array.from(e.childNodes)) walk(child);
+  };
+  walk(el);
+  return out.trim();
+}
+
+/** True when a Radix tab is the selected one */
+export function isTabActive(el: Element): boolean {
+  return el.getAttribute('data-state') === 'active' ||
+         el.getAttribute('aria-selected') === 'true';
+}
+
+/**
+ * Find the Image/Video media-type tab in the prompt-bar settings popover.
+ *
+ * Targeted deliberately rather than via generic text search: the left sidebar
+ * has a "Videos" library filter that appears EARLIER in the DOM than this
+ * popover (a Radix portal). A document-wide text scan returns that filter
+ * first, so the engine clicked "show me videos" instead of "generate video" —
+ * the mode never changed, the model list stayed image-only, and "Omni Flash"
+ * was genuinely absent from the menu it was reading.
+ *
+ * Radix regenerates the instance id (":rt2:") on every render, but the
+ * -trigger-VIDEO / -content-VIDEO suffixes are stable.
+ */
+export function findMediaTypeTab(mediaType: 'image' | 'video'): Element | null {
+  const suffix = mediaType === 'image' ? 'IMAGE' : 'VIDEO';
+
+  for (const sel of [
+    `button[role="tab"][id$="-trigger-${suffix}"]`,
+    `button[role="tab"][aria-controls$="-content-${suffix}"]`,
+  ]) {
+    const el = document.querySelector(sel);
+    if (el && isVisible(el)) return el;
+  }
+
+  // Fallback: text match scoped to the tab slider / tablist — never the
+  // whole document, so the sidebar filter can't win.
+  const tabs = document.querySelectorAll(
+    'button[role="tab"].flow_tab_slider_trigger, [role="tablist"] button[role="tab"]'
+  );
+  const want = mediaType === 'image' ? 'image' : 'video';
+  for (const tab of tabs) {
+    if (!isVisible(tab)) continue;
+    const label = labelText(tab).toLowerCase();
+    // Exact match: "videos" (the library filter) must not satisfy "video"
+    if (label === want || matchesFlowText(label, want)) return tab;
+  }
+  return null;
+}
+
 export function findModeButton(modeName: string): Element | null {
   const lower = modeName.toLowerCase();
+
+  // Media-type tabs have a precise structural selector — use it.
+  if (lower === 'image' || lower === 'video') {
+    const tab = findMediaTypeTab(lower as 'image' | 'video');
+    if (tab) return tab;
+  }
 
   // Multilingual matching for every label that Flow translates. 'Video' is
   // the critical one: FR "Vidéo" never matched the English substring path,
@@ -1455,7 +1529,7 @@ export function findModeButton(modeName: string): Element | null {
     );
     for (const el of candidates) {
       if (!isVisible(el)) continue;
-      const text = el.textContent?.trim() || '';
+      const text = labelText(el);
       if (matchesFlowText(text, flowKey)) return el;
     }
   }
@@ -1465,7 +1539,7 @@ export function findModeButton(modeName: string): Element | null {
     '[role="menuitem"], [role="menuitemradio"], [role="option"], [data-radix-collection-item]'
   );
   for (const item of menuItems) {
-    const text = item.textContent?.trim().toLowerCase() || '';
+    const text = labelText(item).toLowerCase();
     if (text.includes(lower) && isVisible(item)) {
       return item;
     }
@@ -1478,7 +1552,7 @@ export function findModeButton(modeName: string): Element | null {
   if (menuContainer) {
     const btns = menuContainer.querySelectorAll('button, [role="button"]');
     for (const btn of btns) {
-      const text = btn.textContent?.trim().toLowerCase() || '';
+      const text = labelText(btn).toLowerCase();
       if (text.includes(lower) && isVisible(btn)) {
         return btn;
       }
@@ -1488,7 +1562,7 @@ export function findModeButton(modeName: string): Element | null {
   // Tertiary: role="tab" buttons (just in case the UI changes back to tabs)
   const tabs = document.querySelectorAll('button[role="tab"]');
   for (const tab of tabs) {
-    const text = tab.textContent?.trim().toLowerCase() || '';
+    const text = labelText(tab).toLowerCase();
     if (text.includes(lower) && isVisible(tab)) {
       return tab;
     }

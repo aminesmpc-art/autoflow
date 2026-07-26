@@ -62,6 +62,8 @@ import {
   findViewSettingsTrigger,
   isViewSettingsOpen,
   findModeButton,
+  findMediaTypeTab,
+  isTabActive,
   switchToViewMode,
   getTileState,
   getTileStateById,
@@ -1501,9 +1503,41 @@ export class AutomationEngine {
       }
     };
 
-    // 1. Select media type (Video / Image)
-    const mediaLabel = settings.mediaType === 'image' ? 'Image' : 'Video';
-    await applyMenuItem(mediaLabel, `Media: ${mediaLabel}`);
+    // 1. Select media type (Video / Image).
+    // Verified explicitly: every later step depends on being in the right
+    // mode, and a silent miss here produced video prompts rendered as images.
+    const wantMedia: 'image' | 'video' = settings.mediaType === 'image' ? 'image' : 'video';
+    const mediaLabel = wantMedia === 'image' ? 'Image' : 'Video';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (this.stopped) return false;
+      if (!isSettingsPanelOpen()) {
+        await this.openSettingsPanel();
+        await humanDelay(300, 600);
+      }
+      const tab = findMediaTypeTab(wantMedia);
+      if (!tab) {
+        this.log('warn', `Media tab "${mediaLabel}" not found (attempt ${attempt}/3)`);
+        await this.closeSettingsPanel();
+        await humanDelay(400, 700);
+        continue;
+      }
+      if (isTabActive(tab)) {
+        this.log('info', `Media: ${mediaLabel} active`);
+        break;
+      }
+      simulateClick(tab);
+      await humanDelay(500, 900);
+
+      const after = findMediaTypeTab(wantMedia);
+      if (after && isTabActive(after)) {
+        this.log('info', `Media: ${mediaLabel} confirmed active`);
+        break;
+      }
+      this.log('warn', `Media: ${mediaLabel} did not activate (attempt ${attempt}/3)`);
+      if (attempt === 3) {
+        this.log('error', `Could not switch to ${mediaLabel} mode — Flow may render the wrong output type`);
+      }
+    }
     if (this.stopped) return false;
 
     // Switching Image<->Video re-renders the entire settings menu (different
