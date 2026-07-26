@@ -204,9 +204,33 @@
 .studio-gallery__card-desc {
   font-size: 12px;
   color: #888;
-  margin: 0 0 12px;
+  margin: 0 0 8px;
   line-height: 1.4;
 }
+
+/* When to reach for this workflow — the part that makes a template useful
+   rather than decorative. Muted so it reads as a footnote to the title. */
+.studio-gallery__card-use {
+  margin: 0 0 12px;
+  padding-left: 9px;
+  border-left: 2px solid rgba(249, 115, 22, 0.35);
+  font-size: 11px;
+  line-height: 1.45;
+  color: #6f6f79;
+}
+
+.studio-gallery__empty {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 56px 20px;
+  color: #6f6f79;
+  text-align: center;
+}
+.studio-gallery__empty-icon { font-size: 30px; opacity: 0.6; }
+.studio-gallery__empty p { margin: 0; font-size: 13px; }
 .studio-gallery__card-meta {
   display: flex;
   align-items: center;
