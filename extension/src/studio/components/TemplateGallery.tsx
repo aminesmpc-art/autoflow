@@ -36,13 +36,13 @@ const TEMPLATES: Template[] = [
       {
         id: 'p1',
         type: 'prompt',
-        position: { x: 50, y: 150 },
+        position: { x: 40, y: 120 },
         data: { type: 'prompt', label: 'Prompt', text: '' },
       },
       {
         id: 'g1',
         type: 'generate',
-        position: { x: 400, y: 100 },
+        position: { x: 500, y: 60 },
         data: {
           type: 'generate', label: 'Generate Image', model: 'Nano Banana Pro',
           mediaType: 'image', aspectRatio: '9:16', duration: '6s',
@@ -68,13 +68,13 @@ const TEMPLATES: Template[] = [
       {
         id: 'p1',
         type: 'prompt',
-        position: { x: 50, y: 150 },
+        position: { x: 40, y: 120 },
         data: { type: 'prompt', label: 'Scene Prompt', text: '' },
       },
       {
         id: 'g1',
         type: 'generate',
-        position: { x: 400, y: 100 },
+        position: { x: 500, y: 60 },
         data: {
           type: 'generate', label: 'Generate Video', model: 'Omni Flash',
           mediaType: 'video', aspectRatio: '9:16', duration: '6s',
@@ -100,13 +100,13 @@ const TEMPLATES: Template[] = [
       {
         id: 'p_char',
         type: 'prompt',
-        position: { x: 50, y: 80 },
+        position: { x: 40, y: 60 },
         data: { type: 'prompt', label: 'Character Description', text: 'Character design sheet, concept art turnaround, multiple views. ' },
       },
       {
         id: 'g_sheet',
         type: 'generate',
-        position: { x: 400, y: 50 },
+        position: { x: 500, y: 60 },
         data: {
           type: 'generate', label: 'Generate Character Sheet', model: 'Nano Banana Pro',
           mediaType: 'image', aspectRatio: '9:16', duration: '6s',
@@ -118,13 +118,13 @@ const TEMPLATES: Template[] = [
       {
         id: 'p_scene',
         type: 'prompt',
-        position: { x: 50, y: 350 },
+        position: { x: 40, y: 660 },
         data: { type: 'prompt', label: 'Scene Prompt', text: '' },
       },
       {
         id: 'g_video',
         type: 'generate',
-        position: { x: 800, y: 200 },
+        position: { x: 960, y: 360 },
         data: {
           type: 'generate', label: 'Generate Scene Video', model: 'Omni Flash',
           mediaType: 'video', aspectRatio: '9:16', duration: '6s',
@@ -152,13 +152,13 @@ const TEMPLATES: Template[] = [
       {
         id: 'p1',
         type: 'prompt',
-        position: { x: 50, y: 200 },
+        position: { x: 40, y: 300 },
         data: { type: 'prompt', label: 'Shared Prompt', text: '' },
       },
       {
         id: 'g_a',
         type: 'generate',
-        position: { x: 450, y: 50 },
+        position: { x: 500, y: 60 },
         data: {
           type: 'generate', label: 'Model A (Nano Banana)', model: 'Nano Banana Pro',
           mediaType: 'image', aspectRatio: '9:16', duration: '6s',
@@ -170,7 +170,7 @@ const TEMPLATES: Template[] = [
       {
         id: 'g_b',
         type: 'generate',
-        position: { x: 450, y: 350 },
+        position: { x: 500, y: 680 },
         data: {
           type: 'generate', label: 'Model B (Omni Flash)', model: 'Omni Flash',
           mediaType: 'image', aspectRatio: '9:16', duration: '6s',
@@ -197,19 +197,19 @@ const TEMPLATES: Template[] = [
       {
         id: 'img1',
         type: 'image',
-        position: { x: 50, y: 80 },
+        position: { x: 40, y: 60 },
         data: { type: 'image', label: 'Reference Image', imageName: '', imageData: '' },
       },
       {
         id: 'p1',
         type: 'prompt',
-        position: { x: 50, y: 300 },
+        position: { x: 40, y: 620 },
         data: { type: 'prompt', label: 'Scene Description', text: '' },
       },
       {
         id: 'g1',
         type: 'generate',
-        position: { x: 450, y: 150 },
+        position: { x: 500, y: 260 },
         data: {
           type: 'generate', label: 'Generate Video', model: 'Omni Flash',
           mediaType: 'video', aspectRatio: '9:16', duration: '6s',

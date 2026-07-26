@@ -11,6 +11,7 @@ import { sleep, findModelSelectorTrigger, findMenuItem, simulateClick } from './
 import { DOM_SETTLE_MS } from '../shared/constants';
 import { getRunningQueue, clearRunningQueue } from '../shared/storage';
 import { initApiHelper, isApiAvailable } from './apiHelper';
+import { matchesFlowText } from './flowStrings';
 import { registerStudioImage, releaseStudioImages } from './studioImages';
 
 // أ¢â€‌â‚¬أ¢â€‌â‚¬ Singleton engine أ¢â€‌â‚¬أ¢â€‌â‚¬
@@ -1081,7 +1082,9 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
       model: isImage ? 'Omni Flash' : (config.model || 'Omni Flash'),
       orientation: (config.aspectRatio === '9:16' || config.aspectRatio === '3:4') ? 'portrait' : 'landscape',
       generations: 1,
-      duration: '8s',
+      // Honour the node's duration — this was pinned to '8s', so every
+      // Studio video ran 8s no matter what the node's dropdown said.
+      duration: (config.duration || '6s'),
       voiceIngredient: 'none',
       stopOnError: false,
       automationMode: 'lite',
@@ -1312,7 +1315,10 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
     } else if (state === 'failed') {
       consecutiveFailed++;
       if (consecutiveFailed >= 8 && wait > 20) {
-        sendStudioError(nodeId, 'Generation failed — Google Flow marked the tile as failed');
+        // Surface Flow's own wording ("Oops, something went wrong!",
+        // a policy message, …) — "marked as failed" told the user nothing
+        // about whether to retry, reword, or wait.
+        sendStudioError(nodeId, `Flow: ${extractTileErrorText(trackedTile) || 'generation failed'}`);
         return;
       }
     } else {
@@ -1387,13 +1393,36 @@ function getStudioTileState(tile: Element): 'completed' | 'generating' | 'failed
     if (txt === 'play_arrow' || txt === 'play_circle') return 'completed';
   }
 
-  // ── 3. FAILED: only explicit failure text (NOT icons) ──
-  if (text.includes('generation failed') || text.includes('unable to generate') ||
-      text.includes('violat') || text.includes('blocked')) {
+  // ── 3. FAILED: explicit failure text (NOT icons) ──
+  // Must cover what Flow actually renders. "Failed — Oops, something went
+  // wrong!" contains neither "generation failed" nor "unable to generate"
+  // (the words are reversed), so the old check missed the single most common
+  // failure and the node polled it as 'unknown' until the 20-minute timeout.
+  // Mirrors automation.ts's detectGenerationError vocabulary.
+  if (
+    matchesFlowText(text, 'generationFailed') ||
+    matchesFlowText(text, 'tryAgain') ||
+    text.includes('something went wrong') || text.includes('oops') ||
+    text.includes('unable to generate') || text.includes('unavailable') ||
+    text.includes('capacity') ||
+    text.includes('violat') || text.includes('blocked') || text.includes('rejected') ||
+    // Bare "failed" last: it is the broadest, and the generating/completed
+    // checks above have already claimed any tile still in flight.
+    /\bfailed\b/.test(text)
+  ) {
     return 'failed';
   }
 
   return 'unknown';
+}
+
+/** Flow's own failure wording from a failed tile, trimmed for display */
+function extractTileErrorText(tile: Element): string {
+  const raw = (tile.textContent || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  // Drop the leading "Failed" heading so the message isn't "failed — Failed …"
+  const body = raw.replace(/^failed[\s:—-]*/i, '').trim() || raw;
+  return body.length > 160 ? `${body.slice(0, 160)}…` : body;
 }
 
 /** Flow's own progress badge ("24%") from a generating tile, or null */
