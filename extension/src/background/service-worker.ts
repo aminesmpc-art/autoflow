@@ -295,6 +295,50 @@ async function getChatGPTTabId(): Promise<number | null> {
   return tab?.id ?? null;
 }
 
+/** Resolve once the tab reports finished loading, or the timeout elapses */
+function waitForTabComplete(tabId: number, timeoutMs = 30_000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const check = async () => {
+      try {
+        const t = await chrome.tabs.get(tabId);
+        if (t.status === 'complete') return resolve(true);
+      } catch {
+        return resolve(false); // tab closed while we waited
+      }
+      if (Date.now() - started > timeoutMs) return resolve(false);
+      setTimeout(check, 400);
+    };
+    check();
+  });
+}
+
+/**
+ * Get a ChatGPT tab, opening one if the user has none.
+ *
+ * Opened in the background so it doesn't yank the tab the user is watching
+ * Flow in. Background tabs get their timers throttled by Chrome, which would
+ * stall the generation poller — the ChatGPT content script runs its own
+ * anti-throttle ping to compensate.
+ */
+async function ensureChatGPTTab(): Promise<number | null> {
+  const existing = await getChatGPTTabId();
+  if (existing) return existing;
+
+  console.log('[AutoFlow] No ChatGPT tab — opening one');
+  try {
+    const tab = await chrome.tabs.create({ url: 'https://chatgpt.com/images', active: false });
+    if (!tab.id) return null;
+    await waitForTabComplete(tab.id);
+    // The SPA still needs a moment to mount its composer after load
+    await new Promise((r) => setTimeout(r, 2500));
+    return tab.id;
+  } catch (err: any) {
+    console.warn('[AutoFlow] Could not open ChatGPT tab:', err?.message);
+    return null;
+  }
+}
+
 /** Forward a message from content script back to Studio window */
 function forwardToStudio(msg: any): void {
   if (_studioPort) {
@@ -329,7 +373,9 @@ chrome.runtime.onConnect.addListener((port) => {
       // The node's config carries the platform; default is Google Flow.
       if (msg.type.startsWith('STUDIO_')) {
         const isChatGPT = msg.payload?.config?.platform === 'chatgpt';
-        const tabId = isChatGPT ? await getChatGPTTabId() : await getActiveFlowTabId();
+        // ChatGPT tabs are opened on demand; Flow is not, because a Flow run
+        // depends on the user's current project being open in that tab.
+        const tabId = isChatGPT ? await ensureChatGPTTab() : await getActiveFlowTabId();
         const platformName = isChatGPT ? 'ChatGPT' : 'Flow';
         const injectFile = isChatGPT ? 'chatgpt-content.js' : 'content.js';
 
@@ -380,7 +426,7 @@ chrome.runtime.onConnect.addListener((port) => {
               type: 'STUDIO_NODE_ERROR',
               payload: {
                 error: isChatGPT
-                  ? 'No ChatGPT tab found. Please open chatgpt.com/images first.'
+                  ? 'Could not open a ChatGPT tab. Check that chatgpt.com is reachable and you are signed in.'
                   : 'No Google Flow tab found. Please open labs.google/flow first.',
                 nodeId: msg.payload?.nodeId,
               },

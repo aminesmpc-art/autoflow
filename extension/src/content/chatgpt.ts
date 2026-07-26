@@ -26,6 +26,26 @@ function send(type: string, payload: Record<string, unknown>): void {
   try { chrome.runtime.sendMessage({ type, payload }).catch(() => {}); } catch {}
 }
 
+/* Chrome throttles timers in background tabs, and the tab we open for the
+   user is deliberately in the background. A message round-trip to the service
+   worker keeps the main thread awake so the generation poller keeps ticking. */
+let antiThrottle: ReturnType<typeof setInterval> | null = null;
+function startAntiThrottle(): void {
+  if (antiThrottle) return;
+  antiThrottle = setInterval(() => {
+    try { chrome.runtime.sendMessage({ type: 'PING' }).catch(() => {}); } catch {}
+  }, 15_000);
+}
+function stopAntiThrottle(): void {
+  if (antiThrottle) { clearInterval(antiThrottle); antiThrottle = null; }
+}
+
+/** Signed-out tabs render a login wall instead of the composer */
+function looksSignedOut(): boolean {
+  const text = document.body?.innerText?.slice(0, 1500).toLowerCase() || '';
+  return /log in|sign up|create an account|welcome back/.test(text) && !findComposer();
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -135,11 +155,19 @@ async function handleExecute(payload: any): Promise<any> {
   console.log(`[AutoFlow ChatGPT] Executing node ${nodeId}`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 10 });
 
-  const composer = findComposer();
+  // A freshly opened tab may still be mounting, so give the composer a
+  // few seconds to appear before declaring it missing.
+  let composer = findComposer();
+  for (let i = 0; !composer && i < 10; i++) {
+    await sleep(600);
+    composer = findComposer();
+  }
   if (!composer) {
     send('STUDIO_NODE_ERROR', {
       nodeId,
-      error: 'ChatGPT prompt box not found — open chatgpt.com in that tab',
+      error: looksSignedOut()
+        ? 'Not signed in to ChatGPT — sign in on the ChatGPT tab, then run again'
+        : 'ChatGPT prompt box not found on the page',
     });
     return { success: false };
   }
@@ -173,7 +201,8 @@ async function handleExecute(payload: any): Promise<any> {
   // Return the message channel NOW — the wait can take minutes and Chrome
   // closes a sendResponse channel long before that. Results travel back via
   // chrome.runtime.sendMessage, same pattern as the Flow content script.
-  trackGeneration(nodeId, preexisting);
+  startAntiThrottle();
+  trackGeneration(nodeId, preexisting).finally(stopAntiThrottle);
   return { success: true };
 }
 
