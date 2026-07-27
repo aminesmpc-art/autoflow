@@ -310,6 +310,51 @@ export const TEMPLATES: Template[] = [
     ],
     edges: [tEdge('p1', 'g1'), tEdge('p1', 'g2')],
   },
+
+  /* ─────────────── Fashion ─────────────── */
+  {
+    id: 'tpl_outfit_swap',
+    name: 'Outfit Swap → 2 Clips',
+    description: 'Put a new outfit on your photo, then turn it into two short videos.',
+    useCase: 'Mirror-selfie try-on content. Two reference images feed one generation — the person from one, the clothes from the other — then the dressed result drives both clips so the outfit stays identical across them.',
+    category: 'Fashion',
+    difficulty: 'Advanced',
+    nodeCount: 8,
+    thumbnail: '👗',
+    nodes: [
+      imageNode('i1', 'Person Photo', 40, 40),
+      imageNode('i2', 'Outfit Reference', 40, 470),
+      promptNode('p0', 'Try-On Prompt',
+        'IMAGE 01 = the person and the setting. IMAGE 02 = the outfit. ' +
+        'Dress the person from IMAGE 01 in the exact outfit from IMAGE 02 — same garments, ' +
+        'colours, fabric texture and proportions. Keep her face, hair, body, pose, phone and the ' +
+        'original background from IMAGE 01 completely unchanged. Photographic, natural phone-camera ' +
+        'lighting, realistic fabric folds.',
+        40, 900),
+      genNode('g1', { label: 'Try-On Result', mediaType: 'image', aspectRatio: '9:16' }, 520, 300),
+
+      promptNode('p1', 'Clip 1 — Turn',
+        `She slowly turns to show the outfit from the side, phone stays raised for the mirror selfie, ` +
+        `subtle natural movement, no camera shake. ${CONTINUITY}`,
+        1000, 40),
+      genNode('g2', { label: 'Clip 1', mediaType: 'video', aspectRatio: '9:16', duration: '6s' }, 1480, 60),
+
+      promptNode('p2', 'Clip 2 — Detail',
+        `She takes a small step toward the mirror and adjusts the jacket hem, looking down at the ` +
+        `outfit then back up, static camera, natural handheld feel. ${CONTINUITY}`,
+        1000, 560),
+      genNode('g3', { label: 'Clip 2', mediaType: 'video', aspectRatio: '9:16', duration: '6s' }, 1480, 580),
+    ],
+    edges: [
+      // Both references feed the same generation — person from one, clothes from the other
+      iEdge('i1', 'g1', 'image'),
+      iEdge('i2', 'g1', 'image'),
+      tEdge('p0', 'g1'),
+      // The dressed result anchors both clips, so the outfit can't drift between them
+      iEdge('g1', 'g2'), tEdge('p1', 'g2'),
+      iEdge('g1', 'g3'), tEdge('p2', 'g3'),
+    ],
+  },
 ];
 
-export const CATEGORIES = ['All', 'Starter', 'Marketing', 'Character', 'Content', 'Image', 'Utility'] as const;
+export const CATEGORIES = ['All', 'Starter', 'Marketing', 'Character', 'Fashion', 'Content', 'Image', 'Utility'] as const;
