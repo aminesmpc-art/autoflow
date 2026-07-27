@@ -18,7 +18,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { useStudioStore } from '../store';
+import { useStudioStore, FREE_LIMITS } from '../store';
 import { PromptNode } from '../nodes/PromptNode';
 import { ImageNode } from '../nodes/ImageNode';
 import { GenerateNode } from '../nodes/GenerateNode';
@@ -52,7 +52,15 @@ function CanvasInner() {
     saveState,
     saveError,
     setView,
+    isPro,
+    runsUsed,
+    loadEntitlements,
+    recordRun,
+    runBlockedReason,
+    canAddNode,
   } = useStudioStore();
+
+  const [limitMsg, setLimitMsg] = useState<string | null>(null);
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { zoomIn, zoomOut, fitView } = useReactFlow();
@@ -70,8 +78,9 @@ function CanvasInner() {
   /* Connect bridge on mount */
   useEffect(() => {
     bridge.connect();
+    loadEntitlements();
     return () => bridge.disconnect();
-  }, []);
+  }, [loadEntitlements]);
 
   /* Ctrl/Cmd+S saves, as in every other editor */
   useEffect(() => {
@@ -100,8 +109,15 @@ function CanvasInner() {
   /* Run/Stop/Pause handlers */
   const handleRun = useCallback(() => {
     if (isRunning || !canRun) return;
+    const blocked = runBlockedReason();
+    if (blocked) {
+      setLimitMsg(blocked);
+      return;
+    }
+    setLimitMsg(null);
+    recordRun();
     runner.run(nodes, edges);
-  }, [nodes, edges, isRunning, canRun]);
+  }, [nodes, edges, isRunning, canRun, runBlockedReason, recordRun]);
 
   const handleStop = useCallback(() => {
     runner.stop();
@@ -142,7 +158,15 @@ function CanvasInner() {
   }, [setSelectedNode]);
 
   /* Add new nodes from toolbar */
+  /** Free tier caps the canvas size — refuse with a reason, not silently */
+  const guardAdd = useCallback((): boolean => {
+    if (canAddNode()) { setLimitMsg(null); return true; }
+    setLimitMsg(`Free workflows are limited to ${FREE_LIMITS.nodes} nodes. Upgrade to Pro for unlimited.`);
+    return false;
+  }, [canAddNode]);
+
   const addPromptNode = useCallback(() => {
+    if (!guardAdd()) return;
     const id = `prompt_${Date.now()}`;
     addNode({
       id,
@@ -150,9 +174,10 @@ function CanvasInner() {
       position: { x: 100, y: 100 + nodes.length * 50 },
       data: { type: 'prompt', label: `Prompt ${nodes.filter(n => (n.data as any).type === 'prompt').length + 1}`, text: '' },
     });
-  }, [addNode, nodes]);
+  }, [addNode, nodes, guardAdd]);
 
   const addImageNode = useCallback(() => {
+    if (!guardAdd()) return;
     const id = `image_${Date.now()}`;
     addNode({
       id,
@@ -160,9 +185,10 @@ function CanvasInner() {
       position: { x: 100, y: 200 + nodes.length * 50 },
       data: { type: 'image', label: `Image ${nodes.filter(n => (n.data as any).type === 'image').length + 1}`, imageName: '', imageData: '' },
     });
-  }, [addNode, nodes]);
+  }, [addNode, nodes, guardAdd]);
 
   const addGenerateNode = useCallback(() => {
+    if (!guardAdd()) return;
     const id = `generate_${Date.now()}`;
     addNode({
       id,
@@ -185,7 +211,7 @@ function CanvasInner() {
         errorMessage: null,
       },
     });
-  }, [addNode, nodes]);
+  }, [addNode, nodes, guardAdd]);
 
   return (
     <div className="studio-canvas" ref={reactFlowWrapper}>
@@ -217,9 +243,28 @@ function CanvasInner() {
           )}
         </div>
         <div className="studio-topbar__right">
-          <span className="studio-topbar__stat">
-            ⚡ Nodes {nodes.length}
-          </span>
+          {isPro ? (
+            <span className="studio-topbar__stat">
+              ⚡ Nodes {nodes.length} · <span className="studio-topbar__pro">PRO</span>
+            </span>
+          ) : (
+            <>
+              <span className={`studio-topbar__stat ${runsUsed >= FREE_LIMITS.runsPerMonth ? 'studio-topbar__stat--maxed' : ''}`}>
+                Runs {Math.min(runsUsed, FREE_LIMITS.runsPerMonth)}/{FREE_LIMITS.runsPerMonth}
+              </span>
+              <span className={`studio-topbar__stat ${nodes.length >= FREE_LIMITS.nodes ? 'studio-topbar__stat--maxed' : ''}`}>
+                Nodes {nodes.length}/{FREE_LIMITS.nodes}
+              </span>
+              <a
+                className="studio-topbar__upgrade"
+                href="https://auto-flow.studio/pricing"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                ⬆ Upgrade
+              </a>
+            </>
+          )}
           <button
             className="studio-topbar__icon"
             onClick={() => exportWorkflow()}
@@ -241,6 +286,17 @@ function CanvasInner() {
           </button>
         </div>
       </div>
+
+      {/* Limit notice — dismissible, never blocks the canvas */}
+      {limitMsg && (
+        <div className="studio-limit">
+          <span className="studio-limit__text">{limitMsg}</span>
+          <a className="studio-limit__cta" href="https://auto-flow.studio/pricing" target="_blank" rel="noopener noreferrer">
+            Upgrade
+          </a>
+          <button className="studio-limit__close" onClick={() => setLimitMsg(null)} aria-label="Dismiss">×</button>
+        </div>
+      )}
 
       {/* Node Toolbar (Left sidebar) */}
       <div className="studio-toolbar">

@@ -65,6 +65,15 @@ interface StudioState {
   selectedNodeId: string | null;
   setSelectedNode: (nodeId: string | null) => void;
 
+  /* Entitlements */
+  isPro: boolean;
+  runsUsed: number;
+  loadEntitlements: () => Promise<void>;
+  recordRun: () => Promise<void>;
+  /** null when allowed, otherwise a human-readable reason */
+  runBlockedReason: () => string | null;
+  canAddNode: () => boolean;
+
   /* Persistence */
   isDirty: boolean;
   saveState: 'idle' | 'saving' | 'saved' | 'error';
@@ -79,6 +88,12 @@ interface StudioState {
   exportWorkflow: () => void;
   importWorkflow: (file: File) => Promise<void>;
 }
+
+/** Free-tier ceilings. Pro is unlimited. */
+export const FREE_LIMITS = { nodes: 5, runsPerMonth: 15 } as const;
+
+/** Runs are counted per calendar month, keyed so a new month resets itself */
+const runKey = () => `studio_runs_${new Date().toISOString().slice(0, 7)}`;
 
 export interface SavedWorkflowMeta {
   id: string;
@@ -241,6 +256,48 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   /* ── Selection ── */
   selectedNodeId: null,
   setSelectedNode: (nodeId) => set({ selectedNodeId: nodeId }),
+
+  /* ── Entitlements ── */
+  isPro: false,
+  runsUsed: 0,
+
+  loadEntitlements: async () => {
+    try {
+      const key = runKey();
+      const r = await chrome.storage.local.get(['af_cached_profile', key]);
+      set({
+        isPro: !!r?.af_cached_profile?.is_pro_active,
+        runsUsed: r?.[key] || 0,
+      });
+    } catch {
+      // Storage unreadable — leave the previous values rather than
+      // downgrading someone who has already been recognised as Pro.
+    }
+  },
+
+  recordRun: async () => {
+    const key = runKey();
+    const next = get().runsUsed + 1;
+    set({ runsUsed: next });
+    try { await chrome.storage.local.set({ [key]: next }); } catch { /* non-critical */ }
+  },
+
+  runBlockedReason: () => {
+    const { isPro, runsUsed, nodes } = get();
+    if (isPro) return null;
+    if (nodes.length > FREE_LIMITS.nodes) {
+      return `This workflow has ${nodes.length} nodes. Free runs up to ${FREE_LIMITS.nodes} — upgrade to Pro for unlimited.`;
+    }
+    if (runsUsed >= FREE_LIMITS.runsPerMonth) {
+      return `You've used all ${FREE_LIMITS.runsPerMonth} free runs this month. Upgrade to Pro for unlimited runs.`;
+    }
+    return null;
+  },
+
+  canAddNode: () => {
+    const { isPro, nodes } = get();
+    return isPro || nodes.length < FREE_LIMITS.nodes;
+  },
 
   /* ── Persistence ── */
   isDirty: false,
