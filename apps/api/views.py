@@ -591,13 +591,17 @@ class ConsumeStudioRunView(APIView):
     def post(self, request):
         try:
             node_count = max(1, int(request.data.get("node_count", 1)))
+            raw_gen = request.data.get("generate_count")
+            generate_count = None if raw_gen is None else max(0, int(raw_gen))
         except (TypeError, ValueError):
             return Response(
-                {"detail": "node_count must be an integer."},
+                {"detail": "node_count and generate_count must be integers."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         from apps.plans.services import consume_studio_run
-        result = consume_studio_run(request.user, node_count=node_count)
+        result = consume_studio_run(
+            request.user, node_count=node_count, generate_count=generate_count
+        )
         http_status = status.HTTP_200_OK if result["allowed"] else status.HTTP_403_FORBIDDEN
         return Response(result, status=http_status)
 

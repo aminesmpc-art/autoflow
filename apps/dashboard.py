@@ -111,15 +111,22 @@ def dashboard_callback(request, context):
     # is the authoritative monthly counter the limit gate increments.
     from apps.plans.services import FREE_STUDIO_MONTHLY_LIMIT
 
+    # Scope to the per-RUN event. consume_studio_run also emits one
+    # consume_prompt event per generation tagged source=studio, so filtering on
+    # source alone counts prompts as runs.
     studio_today_qs = UsageEvent.objects.filter(
-        created_at__date=today, metadata__source="studio"
+        created_at__date=today,
+        event_type="queue_started",
+        metadata__source="studio",
     )
     studio_runs_today = studio_today_qs.count()
     studio_nodes_today = studio_today_qs.aggregate(s=Sum("prompt_count"))["s"] or 0
     studio_users_today = studio_today_qs.values("user").distinct().count()
     # `yesterday` is defined further down; compute it locally for this trend
     studio_runs_yesterday = UsageEvent.objects.filter(
-        created_at__date=today - timedelta(days=1), metadata__source="studio"
+        created_at__date=today - timedelta(days=1),
+        event_type="queue_started",
+        metadata__source="studio",
     ).count()
 
     studio_month_qs = MonthlyUsage.objects.filter(year=today.year, month=today.month)

@@ -6,6 +6,7 @@
 
 import type { Node, Edge } from '@xyflow/react';
 import { topologicalSort, getNodeInputs, getUpstreamNodeIds } from './topoSort';
+import { trackUsage } from '../../shared/api';
 import { bridge, type NodeExecutionConfig, type NodeResult } from './bridge';
 import { useStudioStore } from '../store';
 
@@ -129,6 +130,10 @@ export class WorkflowRunner {
             const names = brokenDeps
               .map((id) => (nodes.find((n) => n.id === id)?.data as any)?.label || id)
               .join(', ');
+            // Its prompt event stays "pending" on purpose: the server charged
+            // it at run start but it was never sent to Flow, which is exactly
+            // what the dashboard's pending bucket means. Marking it failed
+            // would wrongly count it as submitted.
             console.warn(`[Runner] Generate "${nodeData.label}": skipped — upstream failed (${names})`);
             this.failedNodes.add(step.nodeId);
             store.updateNodeData(step.nodeId, {
@@ -157,6 +162,11 @@ export class WorkflowRunner {
               resultTileId: result.tileId,
             });
 
+            // Settle the pending prompt event the server pre-charged at run
+            // start. Without this the dashboard never counts Studio prompts —
+            // it only tallies events that reached done/failed.
+            trackUsage(1, 'text', 'done').catch(() => { /* non-blocking */ });
+
             completedCount++;
             store.setRunProgress(completedCount, generateSteps.length);
             console.log(`[Runner] Generate "${nodeData.label}": DONE — tile ${result.tileId}`);
@@ -169,6 +179,7 @@ export class WorkflowRunner {
               status: 'error',
               errorMessage: err.message || 'Generation failed',
             });
+            trackUsage(1, 'text', 'failed').catch(() => { /* non-blocking */ });
 
             // Don't abort the whole workflow — skip this node and continue
             completedCount++;

@@ -288,11 +288,16 @@ export interface StudioRunGate {
  * could not happen at all (signed out, offline) — the caller falls back to
  * the client-side limits, which are honest UX but editable by the user.
  */
-export async function consumeStudioRun(nodeCount: number): Promise<StudioRunGate | null> {
+export async function consumeStudioRun(
+  nodeCount: number,
+  generateCount: number
+): Promise<StudioRunGate | null> {
   try {
     const res = await apiFetch('/api/usage/studio-run', {
       method: 'POST',
-      body: JSON.stringify({ node_count: nodeCount }),
+      // node_count gates workflow size; generate_count is what actually gets
+      // submitted to Flow and is charged against the daily prompt allowance.
+      body: JSON.stringify({ node_count: nodeCount, generate_count: generateCount }),
     });
     if (res.status === 401) return null; // not signed in — no server authority
     const data = await res.json();

@@ -33,17 +33,32 @@ class DashboardStudioTests(TestCase):
         self.assertEqual(ctx["studio"]["capped_users"], 0)
 
     def test_counts_runs_nodes_and_users(self):
-        consume_studio_run(self.free, node_count=3)
-        consume_studio_run(self.free, node_count=5)
-        consume_studio_run(self.pro, node_count=4)
+        consume_studio_run(self.free, node_count=3, generate_count=1)
+        consume_studio_run(self.free, node_count=5, generate_count=2)
+        consume_studio_run(self.pro, node_count=4, generate_count=2)
 
         s = self._ctx()["studio"]
+        # Runs must count the per-run event only — consume_studio_run also
+        # emits one consume_prompt event per generation tagged source=studio.
         self.assertEqual(s["runs_today"], 3)
         self.assertEqual(s["nodes_today"], 12)          # 3 + 5 + 4
         self.assertEqual(s["users_today"], 2)
         self.assertEqual(s["runs_month"], 3)
         self.assertEqual(s["users_month"], 2)
         self.assertEqual(s["avg_nodes"], 4.0)           # 12 / 3
+
+    def test_studio_generations_reach_prompts_today(self):
+        """The reported bug: Studio prompts were missing from Prompts Today."""
+        from apps.usage.models import UsageEvent
+        consume_studio_run(self.free, node_count=4, generate_count=3)
+        # Settle them the way the runner does when each node finishes
+        UsageEvent.objects.filter(
+            user=self.free, event_type="consume_prompt"
+        ).update(metadata={"source": "studio", "status": "done", "prompt_type": "text"})
+
+        ctx = self._ctx()
+        prompts_today = [k for k in ctx["kpi"] if k["title"] == "Prompts Today"][0]
+        self.assertEqual(prompts_today["metric"], 3)
 
     def test_capped_counts_free_users_only(self):
         """Pro users blow past the cap; they must not show as upgrade candidates."""

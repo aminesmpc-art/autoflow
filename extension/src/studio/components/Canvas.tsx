@@ -115,7 +115,14 @@ function CanvasInner() {
   const handleRun = useCallback(async () => {
     if (isRunning || !canRun) return;
 
-    const gate = await consumeStudioRun(nodes.length);
+    // Only enabled Generate nodes reach Flow — Prompt/Image nodes just carry
+    // data, so charging for them would over-bill the user.
+    const generateCount = nodes.filter((n) => {
+      const d = n.data as any;
+      return d?.type === 'generate' && d?.enabled !== false;
+    }).length;
+
+    const gate = await consumeStudioRun(nodes.length, generateCount);
     if (gate) {
       if (!gate.allowed) {
         setLimitMsg(gate.message);

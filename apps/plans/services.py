@@ -704,24 +704,40 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
         }
 
 
-def consume_studio_run(user, node_count: int = 1) -> dict:
+def consume_studio_run(user, node_count: int = 1, generate_count: int = None) -> dict:
     """Check + consume a Studio workflow run (monthly allowance).
 
-    Enforces BOTH free-tier caps server-side: runs per month and nodes per
-    workflow. The extension mirrors these limits for instant feedback, but
-    its counters live in chrome.storage where the user can edit them — this
-    is the authoritative gate.
+    Enforces THREE free-tier caps server-side: runs per month, nodes per
+    workflow, and the shared daily prompt allowance. The extension mirrors
+    the first two for instant feedback, but its counters live in
+    chrome.storage where the user can edit them — this is the authoritative
+    gate.
+
+    node_count     — every node on the canvas; gates workflow size.
+    generate_count — only the Generate nodes, i.e. the number of prompts
+                     actually submitted to Flow. These are charged against
+                     the same daily prompt allowance the sidepanel queue
+                     uses, because they cost the user the same generations.
+                     Defaults to node_count when the caller predates this
+                     argument, which over-charges slightly rather than
+                     letting Studio run free.
     """
     now = timezone.now()
+    today = now.date()
+    if generate_count is None:
+        generate_count = node_count
+    generate_count = max(0, int(generate_count))
 
-    # Ensure the row exists outside the lock (mirrors consume_queue_run)
+    # Ensure the rows exist outside the lock (mirrors consume_queue_run)
     get_or_create_monthly_usage(user, now.year, now.month)
+    get_or_create_daily_usage(user, today)
 
     with transaction.atomic():
         profile = Profile.objects.get(user=user)
         monthly = MonthlyUsage.objects.select_for_update().get(
             user=user, year=now.year, month=now.month
         )
+        usage = DailyUsage.objects.select_for_update().get(user=user, date=today)
 
         if not profile.is_pro:
             if node_count > FREE_STUDIO_MAX_NODES:
@@ -745,15 +761,70 @@ def consume_studio_run(user, node_count: int = 1) -> dict:
                                "Upgrade to Pro for unlimited runs.",
                 }
 
+            # Studio generations cost the same daily prompt allowance as the
+            # sidepanel queue. Block rather than part-charge: a workflow run
+            # halfway through its prompts produces broken downstream nodes
+            # (missing reference images), which is worse than not starting.
+            prompts_remaining = FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used
+            if generate_count > prompts_remaining:
+                return {
+                    "allowed": False,
+                    "used": usage.free_prompts_used,
+                    "limit": FREE_TEXT_DAILY_LIMIT,
+                    "remaining": max(0, prompts_remaining),
+                    "period": "day",
+                    "message": (
+                        f"This workflow needs {generate_count} generation(s) but only "
+                        f"{max(0, prompts_remaining)} prompt(s) remain today. "
+                        "Upgrade to Pro for unlimited."
+                    ),
+                }
+
+        # ── Charge the generations against the daily prompt allowance ──
+        # Without this, Studio was a free bypass of the daily prompt limit and
+        # its generations never appeared in "Prompts Today" on the dashboard.
+        if generate_count > 0:
+            usage.text_prompts_used += generate_count
+            usage.free_prompts_used += generate_count
+            usage.total_prompts_used += generate_count
+            usage.save()
+
+            # Per-prompt events, mirroring consume_queue_run. The runner
+            # updates these to done/failed as each node finishes; the
+            # dashboard counts only settled ones.
+            import uuid as _uuid
+            batch_id = str(_uuid.uuid4())[:8]
+            for i in range(generate_count):
+                UsageEvent.objects.create(
+                    user=user,
+                    event_type=UsageEvent.EventType.CONSUME_PROMPT,
+                    prompt_count=1,
+                    metadata={
+                        "source": "studio",
+                        "source_used": "pro" if profile.is_pro else "free",
+                        "prompt_type": "text",
+                        "status": "pending",
+                        "batch_id": batch_id,
+                        "seq": i,
+                    },
+                )
+
         # Count for Pro too — monitoring, not enforcement
         monthly.studio_runs_used += 1
         monthly.save()
 
+        # prompt_count carries node_count here (the dashboard's "Nodes
+        # Executed" sums it); the generations are counted by the
+        # CONSUME_PROMPT events above.
         UsageEvent.objects.create(
             user=user,
             event_type=UsageEvent.EventType.QUEUE_STARTED,
             prompt_count=node_count,
-            metadata={"source": "studio", "node_count": node_count},
+            metadata={
+                "source": "studio",
+                "node_count": node_count,
+                "generate_count": generate_count,
+            },
         )
 
         remaining = 999 if profile.is_pro else max(
