@@ -27,6 +27,11 @@ FREE_DOWNLOAD_DAILY_LIMIT = getattr(settings, "FREE_DOWNLOAD_DAILY_LIMIT", 20)
 FREE_LITE_DAILY_LIMIT = getattr(settings, "FREE_LITE_DAILY_LIMIT", 3)
 FREE_FLOW_DAILY_LIMIT = getattr(settings, "FREE_FLOW_DAILY_LIMIT", 5)
 FREE_FULL_DAILY_LIMIT_RUNS = getattr(settings, "FREE_FULL_DAILY_LIMIT_RUNS", 1)
+# Studio workflow limits (visual builder) — runs per MONTH, plus a node cap.
+# Node count is enforced server-side too: the client-side cap lives in
+# chrome.storage and is trivially editable.
+FREE_STUDIO_MONTHLY_LIMIT = getattr(settings, "FREE_STUDIO_MONTHLY_LIMIT", 15)
+FREE_STUDIO_MAX_NODES = getattr(settings, "FREE_STUDIO_MAX_NODES", 5)
 # Keep legacy constant for backward compat
 FREE_DAILY_LIMIT = FREE_TEXT_DAILY_LIMIT
 
@@ -203,6 +208,14 @@ def get_entitlement_snapshot(user) -> dict:
         "full_runs_this_month": monthly.full_runs_used,
         "full_monthly_limit": FREE_FULL_DAILY_LIMIT_RUNS,
         "full_remaining_this_month": full_daily_remaining if not profile.is_pro else 999,
+        # Studio workflow limits (monthly)
+        "studio_runs_this_month": monthly.studio_runs_used,
+        "studio_monthly_limit": FREE_STUDIO_MONTHLY_LIMIT,
+        "studio_remaining_this_month": (
+            999 if profile.is_pro
+            else max(0, FREE_STUDIO_MONTHLY_LIMIT - monthly.studio_runs_used)
+        ),
+        "studio_max_nodes": 999 if profile.is_pro else FREE_STUDIO_MAX_NODES,
     }
 
 
@@ -688,6 +701,71 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
             "remaining": remaining,
             "period": period,
             "message": f"Queue run recorded. {remaining} {mode} run(s) remaining.",
+        }
+
+
+def consume_studio_run(user, node_count: int = 1) -> dict:
+    """Check + consume a Studio workflow run (monthly allowance).
+
+    Enforces BOTH free-tier caps server-side: runs per month and nodes per
+    workflow. The extension mirrors these limits for instant feedback, but
+    its counters live in chrome.storage where the user can edit them — this
+    is the authoritative gate.
+    """
+    now = timezone.now()
+
+    # Ensure the row exists outside the lock (mirrors consume_queue_run)
+    get_or_create_monthly_usage(user, now.year, now.month)
+
+    with transaction.atomic():
+        profile = Profile.objects.get(user=user)
+        monthly = MonthlyUsage.objects.select_for_update().get(
+            user=user, year=now.year, month=now.month
+        )
+
+        if not profile.is_pro:
+            if node_count > FREE_STUDIO_MAX_NODES:
+                return {
+                    "allowed": False,
+                    "used": monthly.studio_runs_used,
+                    "limit": FREE_STUDIO_MONTHLY_LIMIT,
+                    "remaining": max(0, FREE_STUDIO_MONTHLY_LIMIT - monthly.studio_runs_used),
+                    "period": "month",
+                    "message": f"Free workflows are limited to {FREE_STUDIO_MAX_NODES} nodes "
+                               f"(this one has {node_count}). Upgrade to Pro for unlimited.",
+                }
+            if monthly.studio_runs_used >= FREE_STUDIO_MONTHLY_LIMIT:
+                return {
+                    "allowed": False,
+                    "used": monthly.studio_runs_used,
+                    "limit": FREE_STUDIO_MONTHLY_LIMIT,
+                    "remaining": 0,
+                    "period": "month",
+                    "message": f"Studio limit reached ({FREE_STUDIO_MONTHLY_LIMIT}/month). "
+                               "Upgrade to Pro for unlimited runs.",
+                }
+
+        # Count for Pro too — monitoring, not enforcement
+        monthly.studio_runs_used += 1
+        monthly.save()
+
+        UsageEvent.objects.create(
+            user=user,
+            event_type=UsageEvent.EventType.QUEUE_STARTED,
+            prompt_count=node_count,
+            metadata={"source": "studio", "node_count": node_count},
+        )
+
+        remaining = 999 if profile.is_pro else max(
+            0, FREE_STUDIO_MONTHLY_LIMIT - monthly.studio_runs_used
+        )
+        return {
+            "allowed": True,
+            "used": monthly.studio_runs_used if not profile.is_pro else 0,
+            "limit": FREE_STUDIO_MONTHLY_LIMIT if not profile.is_pro else 999,
+            "remaining": remaining,
+            "period": "month",
+            "message": f"Studio run recorded. {remaining} run(s) remaining this month.",
         }
 
 

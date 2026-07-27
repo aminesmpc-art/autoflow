@@ -18,8 +18,11 @@ from apps.plans.services import (
     FREE_LITE_DAILY_LIMIT,
     FREE_FLOW_DAILY_LIMIT,
     FREE_FULL_DAILY_LIMIT_RUNS,
+    FREE_STUDIO_MONTHLY_LIMIT,
+    FREE_STUDIO_MAX_NODES,
     consume_prompt,
     consume_queue_run,
+    consume_studio_run,
     can_start_queue,
     get_entitlement_snapshot,
     get_free_remaining,
@@ -210,6 +213,57 @@ class EntitlementTests(TestCase):
 # ================================================================
 # QUEUE RUN LIMIT TESTS
 # ================================================================
+
+
+class StudioRunLimitTests(TestCase):
+    """Studio workflow limits: monthly runs + per-workflow node cap."""
+
+    def setUp(self):
+        self.user = CustomUser.objects.create_user("studio@example.com", "pass123", is_active=True)
+        self.profile = Profile.objects.create(user=self.user, plan_type=PlanType.FREE)
+
+    def test_free_monthly_limit(self):
+        for i in range(FREE_STUDIO_MONTHLY_LIMIT):
+            result = consume_studio_run(self.user, node_count=3)
+            self.assertTrue(result["allowed"], f"Run {i+1} should be allowed")
+        result = consume_studio_run(self.user, node_count=3)
+        self.assertFalse(result["allowed"])
+        self.assertIn("limit reached", result["message"].lower())
+
+    def test_free_node_cap(self):
+        result = consume_studio_run(self.user, node_count=FREE_STUDIO_MAX_NODES + 1)
+        self.assertFalse(result["allowed"])
+        self.assertIn("nodes", result["message"].lower())
+        # A blocked run must NOT consume from the allowance
+        self.assertEqual(result["used"], 0)
+
+    def test_node_cap_boundary_allowed(self):
+        result = consume_studio_run(self.user, node_count=FREE_STUDIO_MAX_NODES)
+        self.assertTrue(result["allowed"])
+
+    def test_pro_unlimited_runs_and_nodes(self):
+        self.profile.plan_type = PlanType.PRO
+        self.profile.is_pro_active = True
+        self.profile.save()
+        for _ in range(FREE_STUDIO_MONTHLY_LIMIT + 5):
+            result = consume_studio_run(self.user, node_count=50)
+            self.assertTrue(result["allowed"])
+
+    def test_endpoint_forbidden_when_over(self):
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        for _ in range(FREE_STUDIO_MONTHLY_LIMIT):
+            consume_studio_run(self.user, node_count=2)
+        resp = client.post("/api/usage/studio-run", {"node_count": 2}, format="json")
+        self.assertEqual(resp.status_code, 403)
+        self.assertFalse(resp.json()["allowed"])
+
+    def test_snapshot_includes_studio_fields(self):
+        consume_studio_run(self.user, node_count=2)
+        snap = get_entitlement_snapshot(self.user)
+        self.assertEqual(snap["studio_runs_this_month"], 1)
+        self.assertEqual(snap["studio_monthly_limit"], FREE_STUDIO_MONTHLY_LIMIT)
+        self.assertEqual(snap["studio_remaining_this_month"], FREE_STUDIO_MONTHLY_LIMIT - 1)
 
 
 class QueueRunLimitTests(TestCase):

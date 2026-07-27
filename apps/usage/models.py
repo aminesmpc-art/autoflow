@@ -51,6 +51,7 @@ class MonthlyUsage(models.Model):
     year = models.PositiveIntegerField(db_index=True)
     month = models.PositiveIntegerField(db_index=True, help_text="1-12")
     full_runs_used = models.PositiveIntegerField(default=0, help_text="Full queue runs this month")
+    studio_runs_used = models.PositiveIntegerField(default=0, help_text="Studio workflow runs this month")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

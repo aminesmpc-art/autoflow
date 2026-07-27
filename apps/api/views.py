@@ -584,6 +584,24 @@ class ConsumeQueueRunView(APIView):
         return Response(result, status=http_status)
 
 
+class ConsumeStudioRunView(APIView):
+    """Check + consume a Studio workflow run (monthly allowance, node cap)."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            node_count = max(1, int(request.data.get("node_count", 1)))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "node_count must be an integer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        from apps.plans.services import consume_studio_run
+        result = consume_studio_run(request.user, node_count=node_count)
+        http_status = status.HTTP_200_OK if result["allowed"] else status.HTTP_403_FORBIDDEN
+        return Response(result, status=http_status)
+
+
 # ================================================================
 # REWARDS
 # ================================================================

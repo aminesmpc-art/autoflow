@@ -70,6 +70,8 @@ interface StudioState {
   runsUsed: number;
   loadEntitlements: () => Promise<void>;
   recordRun: () => Promise<void>;
+  /** Sync the display counter from the server's authoritative count */
+  setRunsUsed: (n: number) => void;
   /** null when allowed, otherwise a human-readable reason */
   runBlockedReason: () => string | null;
   canAddNode: () => boolean;
@@ -280,6 +282,11 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     const next = get().runsUsed + 1;
     set({ runsUsed: next });
     try { await chrome.storage.local.set({ [key]: next }); } catch { /* non-critical */ }
+  },
+
+  setRunsUsed: (n) => {
+    set({ runsUsed: n });
+    try { chrome.storage.local.set({ [runKey()]: n }).catch(() => {}); } catch { /* non-critical */ }
   },
 
   runBlockedReason: () => {

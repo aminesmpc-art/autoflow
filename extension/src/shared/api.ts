@@ -275,6 +275,39 @@ export async function getProfile(): Promise<UserProfile | null> {
   }
 }
 
+export interface StudioRunGate {
+  allowed: boolean;
+  used: number;
+  limit: number;
+  remaining: number;
+  message: string;
+}
+
+/**
+ * Server-side gate for a Studio workflow run. Returns null when the check
+ * could not happen at all (signed out, offline) — the caller falls back to
+ * the client-side limits, which are honest UX but editable by the user.
+ */
+export async function consumeStudioRun(nodeCount: number): Promise<StudioRunGate | null> {
+  try {
+    const res = await apiFetch('/api/usage/studio-run', {
+      method: 'POST',
+      body: JSON.stringify({ node_count: nodeCount }),
+    });
+    if (res.status === 401) return null; // not signed in — no server authority
+    const data = await res.json();
+    return {
+      allowed: !!data.allowed,
+      used: data.used ?? 0,
+      limit: data.limit ?? 0,
+      remaining: data.remaining ?? 0,
+      message: data.message || (data.allowed ? '' : 'Studio limit reached.'),
+    };
+  } catch {
+    return null; // network failure — degrade to client-side limits
+  }
+}
+
 export async function getDailyUsage(): Promise<DailyUsageResponse | null> {
   try {
     const res = await apiFetch('/api/entitlements');

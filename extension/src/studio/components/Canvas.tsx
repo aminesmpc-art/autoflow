@@ -19,6 +19,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { useStudioStore, FREE_LIMITS } from '../store';
+import { consumeStudioRun } from '../../shared/api';
 import { PromptNode } from '../nodes/PromptNode';
 import { ImageNode } from '../nodes/ImageNode';
 import { GenerateNode } from '../nodes/GenerateNode';
@@ -56,6 +57,7 @@ function CanvasInner() {
     runsUsed,
     loadEntitlements,
     recordRun,
+    setRunsUsed,
     runBlockedReason,
     canAddNode,
   } = useStudioStore();
@@ -106,18 +108,34 @@ function CanvasInner() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, []);
 
-  /* Run/Stop/Pause handlers */
-  const handleRun = useCallback(() => {
+  /* Run/Stop/Pause handlers.
+     The SERVER is the authority on limits — local counters live in
+     chrome.storage where anyone can edit them. Client-side checks remain as
+     instant feedback and as the only gate for signed-out/offline use. */
+  const handleRun = useCallback(async () => {
     if (isRunning || !canRun) return;
-    const blocked = runBlockedReason();
-    if (blocked) {
-      setLimitMsg(blocked);
-      return;
+
+    const gate = await consumeStudioRun(nodes.length);
+    if (gate) {
+      if (!gate.allowed) {
+        setLimitMsg(gate.message);
+        return;
+      }
+      // Server consumed the run — mirror its count locally for the topbar
+      if (!isPro) setRunsUsed(gate.used);
+    } else {
+      // Signed out or offline — client-side limits are all we have
+      const blocked = runBlockedReason();
+      if (blocked) {
+        setLimitMsg(blocked);
+        return;
+      }
+      recordRun();
     }
+
     setLimitMsg(null);
-    recordRun();
     runner.run(nodes, edges);
-  }, [nodes, edges, isRunning, canRun, runBlockedReason, recordRun]);
+  }, [nodes, edges, isRunning, canRun, isPro, runBlockedReason, recordRun, setRunsUsed]);
 
   const handleStop = useCallback(() => {
     runner.stop();
