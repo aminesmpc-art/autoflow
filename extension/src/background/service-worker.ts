@@ -286,6 +286,47 @@ async function getActiveFlowTabId(): Promise<number | null> {
   return null;
 }
 
+/**
+ * Get a Flow tab for STUDIO, opening the user's last project if none is open.
+ *
+ * Distinct from ensureFlowTab() below, which serves scheduled chain queues and
+ * deliberately navigates to the Flow home for a fresh project. Studio must land
+ * in the project the user was last working in.
+ *
+ * Reopens the exact project URL the content script recorded, because Flow
+ * generates into whichever project is loaded — a blank Flow tab would put the
+ * results somewhere the user isn't looking. Falls back to the Flow home only
+ * when no project has ever been seen.
+ *
+ * Opened ACTIVE, unlike the ChatGPT tab: the automation drives real DOM
+ * interaction (menus, dialogs, drag targets), which is far more reliable in a
+ * rendered tab than one that has never been painted.
+ */
+async function ensureStudioFlowTab(): Promise<number | null> {
+  const existing = await getActiveFlowTabId();
+  if (existing) return existing;
+
+  let url = 'https://labs.google/fx/tools/flow';
+  try {
+    const r = await chrome.storage.local.get('af_last_flow_project');
+    if (r?.af_last_flow_project) url = r.af_last_flow_project;
+  } catch { /* fall back to the Flow home */ }
+
+  console.log('[AutoFlow] No Flow tab — opening', url);
+  try {
+    const tab = await chrome.tabs.create({ url, active: true });
+    if (!tab.id) return null;
+    await waitForTabComplete(tab.id);
+    // Flow is a heavy SPA; give it time to mount before the engine looks for
+    // the prompt box and settings chip.
+    await new Promise((r) => setTimeout(r, 4000));
+    return tab.id;
+  } catch (err: any) {
+    console.warn('[AutoFlow] Could not open Flow tab:', err?.message);
+    return null;
+  }
+}
+
 /** Find a ChatGPT tab for Studio's ChatGPT platform nodes */
 async function getChatGPTTabId(): Promise<number | null> {
   const tabs = await chrome.tabs.query({ url: 'https://chatgpt.com/*' });
@@ -373,9 +414,9 @@ chrome.runtime.onConnect.addListener((port) => {
       // The node's config carries the platform; default is Google Flow.
       if (msg.type.startsWith('STUDIO_')) {
         const isChatGPT = msg.payload?.config?.platform === 'chatgpt';
-        // ChatGPT tabs are opened on demand; Flow is not, because a Flow run
-        // depends on the user's current project being open in that tab.
-        const tabId = isChatGPT ? await ensureChatGPTTab() : await getActiveFlowTabId();
+        // Both platforms open their tab on demand. Flow reopens the user's
+        // last project so generations land where they expect.
+        const tabId = isChatGPT ? await ensureChatGPTTab() : await ensureStudioFlowTab();
         const platformName = isChatGPT ? 'ChatGPT' : 'Flow';
         const injectFile = isChatGPT ? 'chatgpt-content.js' : 'content.js';
 
@@ -427,7 +468,7 @@ chrome.runtime.onConnect.addListener((port) => {
               payload: {
                 error: isChatGPT
                   ? 'Could not open a ChatGPT tab. Check that chatgpt.com is reachable and you are signed in.'
-                  : 'No Google Flow tab found. Please open labs.google/flow first.',
+                  : 'Could not open a Google Flow tab. Check that labs.google is reachable and you are signed in.',
                 nodeId: msg.payload?.nodeId,
               },
             });

@@ -89,6 +89,17 @@ if (!(window as any).__autoflow_injected) {
   (window as any).__autoflow_injected = true;
   console.log('[AutoFlow] Content script loaded on', window.location.href);
 
+  // ── Remember the current Flow project ──
+  // Studio reopens this exact URL when it needs a Flow tab and none is open.
+  // Storing the project (not the Flow home) matters: generations land in
+  // whichever project is loaded, so a blank tab would create them in the
+  // wrong place.
+  try {
+    if (/\/project\//.test(location.href)) {
+      chrome.storage.local.set({ af_last_flow_project: location.href }).catch(() => {});
+    }
+  } catch { /* storage unavailable — non-critical */ }
+
   // NOTE: we used to force ?hl=en here with a location.replace, reloading
   // every Flow page on first load. The selectors are multilingual now
   // (selectors.ts matches all supported languages), so the redirect was
