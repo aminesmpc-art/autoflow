@@ -19,7 +19,9 @@ const IMAGE_MODELS: readonly string[] = AVAILABLE_IMAGE_MODELS;
 
 const IMAGE_RATIOS = ['9:16', '16:9', '1:1', '4:3', '3:4'];
 const VIDEO_RATIOS = ['9:16', '16:9', '1:1'];
-const DURATIONS = ['4s', '6s', '8s'];
+/* Flow offers 10s as well — omitting it meant the longest clip length was
+   simply unreachable from Studio. */
+const DURATIONS = ['4s', '6s', '8s', '10s'];
 
 /** CSS aspect-ratio for the media area, so the node takes the shape of its output */
 function ratioToCss(ratio: string): string {
@@ -184,19 +186,42 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                 <option value="video">Video</option>
               </select>
 
-              <select className="sn-bar__sel sn-bar__sel--grow" value={nodeData.model || models[0]} onChange={(e) => set('model', e.target.value)} title="Model">
-                {models.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
+              {/* Model gets its own labelled row — the names are long and it's
+                  the setting people change most after the prompt. */}
+              <label className="sn-field sn-field--wide" title="Model">
+                <span className="sn-field__label">Model</span>
+                <select
+                  className="sn-bar__sel sn-bar__sel--grow"
+                  value={nodeData.model || models[0]}
+                  onChange={(e) => set('model', e.target.value)}
+                >
+                  {models.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </label>
 
               {isVideo && (
-                <select className="sn-bar__sel" value={nodeData.duration || '6s'} onChange={(e) => set('duration', e.target.value)} title="Duration">
-                  {DURATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
-                </select>
+                <label className="sn-field" title="Clip length">
+                  <span className="sn-field__label">Length</span>
+                  <select
+                    className="sn-bar__sel"
+                    value={nodeData.duration || '6s'}
+                    onChange={(e) => set('duration', e.target.value)}
+                  >
+                    {DURATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </label>
               )}
 
-              <select className="sn-bar__sel" value={ratio} onChange={(e) => set('aspectRatio', e.target.value)} title="Aspect ratio">
-                {ratios.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
+              <label className="sn-field" title="Aspect ratio">
+                <span className="sn-field__label">Ratio</span>
+                <select
+                  className="sn-bar__sel"
+                  value={ratio}
+                  onChange={(e) => set('aspectRatio', e.target.value)}
+                >
+                  {ratios.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </label>
             </>
           )}
           {isChatGPT && <span className="sn-bar__hint">Image · prompt only</span>}

@@ -1040,7 +1040,10 @@
 .sn-bar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  /* Wrap rather than squeeze: video mode shows 5 selects, and forcing them
+     onto one 286px row collapsed the model box to just its chevron. */
+  flex-wrap: wrap;
+  gap: 5px;
   padding: 7px;
   background: #141418;
   border-top: 1px solid #232329;
@@ -1048,7 +1051,8 @@
 }
 .sn-bar__sel {
   flex: 0 0 auto;
-  min-width: 0;
+  /* Never below the width of its own label + chevron */
+  min-width: 58px;
   max-width: 100%;
   padding: 5px 6px;
   background: #1e1e24;
@@ -1063,8 +1067,32 @@
   text-overflow: ellipsis;
   transition: border-color 0.15s, background 0.15s;
 }
-/* The model name is the long one — let it absorb the spare width */
-.sn-bar__sel--grow { flex: 1 1 auto; }
+/* Model names are the long ones ("Veo 3.1 - Lite [Lower Priority]"), so give
+   this one a real basis and let it take a full row when it needs to. */
+.sn-bar__sel--grow { flex: 1 1 130px; min-width: 118px; width: 100%; }
+
+/* Labelled control: a bare row of dropdowns gave no clue what each one set */
+.sn-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.sn-field__label {
+  padding-left: 2px;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #55555f;
+}
+/* .sn-field is a COLUMN flex container, so a flex-basis meant for the row
+   (--grow) would apply to height and stretch the select to 130px tall.
+   Reset it here and let width do the work instead. */
+.sn-field .sn-bar__sel { width: 100%; flex: 0 0 auto; }
+/* Model takes its own full-width row — long names need the space */
+.sn-field--wide { flex: 1 1 100%; }
 .sn-bar__sel:hover { background: #26262e; border-color: #3a3a44; }
 .sn-bar__sel:focus-visible {
   border-color: #f97316;
