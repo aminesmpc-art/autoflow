@@ -1461,13 +1461,16 @@ async function handleCallLlm(payload: { prompt: string; systemPrompt?: string })
   const { prompt, systemPrompt } = payload;
   const storage = await chrome.storage.local.get(['autoflow_settings']);
   const settings = storage.autoflow_settings || {};
-  let apiKey = settings.llmApiKey || '';
-  let model = settings.llmModel || 'gemini-1.5-flash';
-  
+  const apiKey = settings.llmApiKey || '';
+  const model = settings.llmModel || 'gemini-1.5-flash';
+
+  // No embedded fallback key. A shared key shipped inside the extension is
+  // readable by anyone who unzips it, so it cannot stay secret — the user
+  // supplies their own (free from Google AI Studio) or the feature is off.
   if (!apiKey) {
-    // Default fallback key for 1-time free trial
-    apiKey = 'AIzaSyAxj6Gx1vLkkhulTGifKXde1k3z2gTJAt0';
-    model = 'gemini-1.5-flash';
+    throw new Error(
+      'No Gemini API key set. Add a free key in Settings → AI Assist to enable this feature.'
+    );
   }
 
   const apiModel = model.startsWith('gemini') ? model : 'gemini-1.5-flash';

@@ -172,6 +172,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   initLibraryTab();
   initAccountTab();
   initStudioEntry();
+  // Single source of truth for the displayed version
+  const verEl = document.getElementById('af-version');
+  if (verEl) verEl.textContent = `v${chrome.runtime.getManifest().version}`;
   initMessageListener();
 
   await loadSettings();
