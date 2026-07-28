@@ -153,7 +153,7 @@ export const TEMPLATES: Template[] = [
     nodeCount: 3,
     thumbnail: '📦',
     nodes: [
-      imageNode('i1', 'Product Photo', 40, 60),
+      imageNode('i1', 'Product Photo', 40, 60, 'product'),
       promptNode('p1', 'Ad Prompt',
         'The product on a clean marble surface, soft studio light, slow 180° turntable rotation, subtle glossy reflection, premium commercial look. Keep the product shape, colour and label exactly as in the reference.',
         40, 430),
@@ -171,7 +171,7 @@ export const TEMPLATES: Template[] = [
     nodeCount: 5,
     thumbnail: '🛍️',
     nodes: [
-      imageNode('i1', 'Product Photo', 40, 60),
+      imageNode('i1', 'Product Photo', 40, 60, 'product'),
       promptNode('p1', 'Lifestyle Scene',
         'A person holding the product in a sunlit kitchen, casual morning atmosphere, natural window light, shot on a phone camera, realistic skin texture. Keep the product exactly as in the reference — same shape, colour and label.',
         40, 430),
@@ -328,8 +328,8 @@ export const TEMPLATES: Template[] = [
     nodeCount: 8,
     thumbnail: '👗',
     nodes: [
-      imageNode('i1', 'Person Photo', 40, 40),
-      imageNode('i2', 'Outfit Reference', 40, 470),
+      imageNode('i1', 'Person Photo', 40, 40, 'person'),
+      imageNode('i2', 'Outfit Reference', 40, 470, 'outfit'),
       promptNode('p0', 'Try-On Prompt',
         'IMAGE 01 = the person and the setting. IMAGE 02 = the outfit. ' +
         'Dress the person from IMAGE 01 in the exact outfit from IMAGE 02 — same garments, ' +
@@ -371,9 +371,10 @@ export const TEMPLATES: Template[] = [
     nodeCount: 7,
     thumbnail: '🔒',
     nodes: [
-      imageNode('i1', 'Face Reference', 40, 40),
-      imageNode('i2', 'Outfit Sheet', 40, 470),
-      imageNode('i3', 'Scene / Location', 40, 900),
+      // Hints match the IMAGE 01/02/03 roles the prompt below refers to
+      imageNode('i1', 'Face Reference', 40, 40, 'face'),
+      imageNode('i2', 'Outfit Sheet', 40, 470, 'outfit'),
+      imageNode('i3', 'Scene / Location', 40, 900, 'scene'),
       promptNode('p0', 'Master Composition',
         '# MASTER REFERENCE COMPOSITION — IDENTITY LOCK + OUTFIT LOCK + SCENE LOCK\n\n' +
         'IMAGE 01 = IDENTITY. Use this face only: same bone structure, eyes, brows, nose, lips, ' +
