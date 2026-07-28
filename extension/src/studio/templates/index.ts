@@ -355,6 +355,51 @@ export const TEMPLATES: Template[] = [
       iEdge('g1', 'g3'), tEdge('p2', 'g3'),
     ],
   },
+  {
+    id: 'tpl_triple_lock',
+    name: 'Triple Lock: Face + Outfit + Scene',
+    description: 'Three references, each locking one thing — who, what they wear, where they are.',
+    useCase: 'The most controlled composite Studio can do. Separating identity, wardrobe and location into their own references stops the model trading one off against another — the usual failure where a new outfit quietly changes the face.',
+    category: 'Fashion',
+    difficulty: 'Advanced',
+    nodeCount: 7,
+    thumbnail: '🔒',
+    nodes: [
+      imageNode('i1', 'Face Reference', 40, 40),
+      imageNode('i2', 'Outfit Sheet', 40, 470),
+      imageNode('i3', 'Scene / Location', 40, 900),
+      promptNode('p0', 'Master Composition',
+        '# MASTER REFERENCE COMPOSITION — IDENTITY LOCK + OUTFIT LOCK + SCENE LOCK\n\n' +
+        'IMAGE 01 = IDENTITY. Use this face only: same bone structure, eyes, brows, nose, lips, ' +
+        'skin tone and hair. Do not beautify, slim, age or restyle the face.\n\n' +
+        'IMAGE 02 = OUTFIT. Reproduce every garment and accessory exactly as shown — cut, colour, ' +
+        'print placement, fabric, footwear and bag. No substitutions.\n\n' +
+        'IMAGE 03 = SCENE. Place her in this exact location, matching its perspective, lighting ' +
+        'direction, colour temperature and depth of field.\n\n' +
+        'OUTPUT: full-body shot of the IMAGE 01 person wearing the IMAGE 02 outfit inside the ' +
+        'IMAGE 03 scene. Photographic, natural light, sharp on the subject.',
+        40, 1330),
+      genNode('g1', { label: 'Composite Still', mediaType: 'image', aspectRatio: '9:16' }, 520, 420),
+
+      promptNode('p1', 'Motion Prompt',
+        '# REFERENCE SETUP\n' +
+        'Use the reference image as the ONLY visual source for the person, outfit and location.\n\n' +
+        'She walks forward naturally, weight shifting between steps, hair and fabric moving with ' +
+        'her. Camera static at eye level. Same face, same outfit, same location — do not restyle, ' +
+        'recolour or reset anything.',
+        1000, 900),
+      genNode('g2', { label: 'Scene Clip', mediaType: 'video', aspectRatio: '9:16', duration: '6s' }, 1000, 380),
+    ],
+    edges: [
+      // Three references into ONE generation — each locks a different axis
+      iEdge('i1', 'g1', 'image'),
+      iEdge('i2', 'g1', 'image'),
+      iEdge('i3', 'g1', 'image'),
+      tEdge('p0', 'g1'),
+      // Stage 2 uses only the composite, so nothing can drift back
+      iEdge('g1', 'g2'), tEdge('p1', 'g2'),
+    ],
+  },
 ];
 
 export const CATEGORIES = ['All', 'Starter', 'Marketing', 'Character', 'Fashion', 'Content', 'Image', 'Utility'] as const;
