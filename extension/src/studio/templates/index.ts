@@ -36,11 +36,17 @@ const promptNode = (id: string, label: string, text: string, x: number, y: numbe
   data: { type: 'prompt', label, text },
 });
 
-const imageNode = (id: string, label: string, x: number, y: number): Node => ({
+/**
+ * Image nodes ship EMPTY on purpose — the user drops in their own reference.
+ * `hint` becomes the node's name field so the canvas says what belongs here
+ * (a face vs a flat-lay vs a room), which matters when a template wants three
+ * or four references that are not interchangeable.
+ */
+const imageNode = (id: string, label: string, x: number, y: number, hint = ''): Node => ({
   id,
   type: 'image',
   position: { x, y },
-  data: { type: 'image', label, imageName: '', imageData: '' },
+  data: { type: 'image', label, imageName: hint, imageData: '' },
 });
 
 interface GenOpts {
@@ -398,6 +404,62 @@ export const TEMPLATES: Template[] = [
       tEdge('p0', 'g1'),
       // Stage 2 uses only the composite, so nothing can drift back
       iEdge('g1', 'g2'), tEdge('p1', 'g2'),
+    ],
+  },
+  {
+    id: 'tpl_product_ugc',
+    name: 'Product UGC: Model × Product',
+    description: 'Put a consistent model in your product photo, then two clips of her using it.',
+    useCase: 'Selling a physical product with UGC-style content. The product photo is a reference like any other, so the item keeps its real shape, colour and hardware instead of being re-imagined — the usual failure in product prompts.',
+    category: 'Marketing',
+    difficulty: 'Advanced',
+    nodeCount: 9,
+    thumbnail: '🪑',
+    nodes: [
+      imageNode('i1', 'Face Reference', 40, 40, 'face'),
+      imageNode('i2', 'Outfit Reference', 40, 470, 'outfit'),
+      imageNode('i3', 'Product Photo', 40, 900, 'product'),
+      promptNode('p0', 'Master Composition',
+        '# ROLE ORDER — read the references in this exact order\n\n' +
+        'IMAGE 01 = FACE. Facial identity source only. Same bone structure, eyes, brows, nose, ' +
+        'lips, skin tone and hair. Do not beautify, slim or restyle the face.\n\n' +
+        'IMAGE 02 = OUTFIT. Wardrobe source only. Reproduce each garment exactly — cut, colour, ' +
+        'knit texture, layering and footwear. Ignore the body and background of this image.\n\n' +
+        'IMAGE 03 = PRODUCT + SETTING. The product must match this photo exactly: same silhouette, ' +
+        'upholstery colour, stitching, armrests, base and castors. Keep the room, window light and ' +
+        'desk as shown. Do not redesign the product.\n\n' +
+        'OUTPUT: the IMAGE 01 woman, wearing the IMAGE 02 outfit, seated naturally in the IMAGE 03 ' +
+        'product within that room. Full body visible, photographic, daylight from the window.',
+        40, 1330),
+      genNode('g1', { label: 'Composite Still', mediaType: 'image', aspectRatio: '9:16' }, 520, 430),
+
+      promptNode('p1', 'Clip 1 — Working',
+        '# REFERENCE SETUP\nUse the reference image as the ONLY source for the woman, her outfit, ' +
+        'the product and the room.\n\n' +
+        'She settles back into the chair and types on the laptop, small natural shifts of weight, ' +
+        'the chair rocking slightly. Static camera at desk height. Same face, same outfit, same ' +
+        'product — do not restyle or recolour anything.',
+        1000, 900),
+      genNode('g2', { label: 'Clip 1', mediaType: 'video', aspectRatio: '9:16', duration: '6s' }, 1480, 200),
+
+      promptNode('p2', 'Clip 2 — Product Detail',
+        '# REFERENCE SETUP\nUse the reference image as the ONLY source for the woman, her outfit, ' +
+        'the product and the room.\n\n' +
+        'Slow push in past her shoulder onto the chair\'s backrest and armrest, showing the ' +
+        'upholstery texture and stitching, she leans back into frame. Same face, same outfit, same ' +
+        'product — no redesign.',
+        1000, 1400),
+      genNode('g3', { label: 'Clip 2', mediaType: 'video', aspectRatio: '9:16', duration: '6s' }, 1480, 720),
+    ],
+    edges: [
+      // Face, outfit and product each stay in their own lane
+      iEdge('i1', 'g1', 'image'),
+      iEdge('i2', 'g1', 'image'),
+      iEdge('i3', 'g1', 'image'),
+      tEdge('p0', 'g1'),
+      // Both clips inherit the approved composite
+      iEdge('g1', 'g2'), tEdge('p1', 'g2'),
+      iEdge('g1', 'g3'), tEdge('p2', 'g3'),
     ],
   },
 ];
