@@ -1225,15 +1225,32 @@ export function countTilesWithMedia(): number {
  * NOTE: Flow changed from "x1" to "1x" format in May 2026 update.
  */
 export function findSettingsPanelTrigger(): Element | null {
-  const btns = document.querySelectorAll('button[aria-haspopup="menu"]');
-  for (const btn of btns) {
-    const text = btn.textContent?.toLowerCase() || '';
-    // Match both old "x1" and new "1x" formats
-    if ((/x\d/.test(text) || /\dx/.test(text)) && isVisible(btn)) {
-      return btn;
-    }
+  /**
+   * The generation-count token, e.g. "x1" or "1x".
+   *
+   * Word boundaries are load-bearing. The old test was /x\d/ || /\dx/, which
+   * also matched image DIMENSIONS like "1376x768" — and those only appear on
+   * the page once a generation has produced tiles. That made this function
+   * return a tile's menu button instead of the prompt-bar chip, but ONLY after
+   * something had been generated. openSettingsPanel() then clicked the tile
+   * menu, the real settings popover never opened, and the Image→Video switch
+   * failed with "Media tab not found".
+   */
+  const isCountChip = (t: string) => /\bx\d+\b/.test(t) || /\b\d+x\b/.test(t);
+
+  const candidates = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'))
+    .filter((b) => isVisible(b) && isCountChip(labelText(b).toLowerCase()));
+  if (candidates.length === 0) return null;
+
+  // Prefer the chip that lives in the prompt bar, so a stray match elsewhere
+  // on the page can never win regardless of DOM order.
+  const input = findPromptInput();
+  if (input && candidates.length > 1) {
+    const bar = input.closest('form') || input.parentElement?.parentElement?.parentElement;
+    const inBar = bar && candidates.find((b) => bar.contains(b));
+    if (inBar) return inBar;
   }
-  return null;
+  return candidates[0];
 }
 
 /**

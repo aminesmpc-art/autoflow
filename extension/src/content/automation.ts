@@ -1539,7 +1539,16 @@ export class AutomationEngine {
       }
       const tab = findMediaTypeTab(wantMedia);
       if (!tab) {
-        this.log('warn', `Media tab "${mediaLabel}" not found (attempt ${attempt}/3)`);
+        // Name the element we opened, so a wrong-button pick is visible in the
+        // log instead of showing up as an unexplained "tab not found".
+        const trig = findSettingsPanelTrigger();
+        const trigDesc = trig
+          ? `"${(trig.textContent || '').trim().slice(0, 40)}"`
+          : '(no trigger found)';
+        this.log('warn',
+          `Media tab "${mediaLabel}" not found (attempt ${attempt}/3). ` +
+          `Settings trigger was ${trigDesc} — if that is not the prompt-bar chip, ` +
+          `the wrong button was opened.`);
         await this.closeSettingsPanel();
         await humanDelay(400, 700);
         continue;
