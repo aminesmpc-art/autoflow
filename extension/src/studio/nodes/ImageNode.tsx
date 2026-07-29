@@ -4,9 +4,10 @@
    action bar, media-dominant card with a bottom name strip.
    ============================================================ */
 
-import { memo, useCallback, useRef } from 'react';
+import { memo, useCallback, useRef, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useStudioStore } from '../store';
+import { Lightbox } from '../components/Lightbox';
 
 function ImageNodeComponent({ id, data, selected }: NodeProps) {
   const nodeData = data as any;
@@ -14,6 +15,10 @@ function ImageNodeComponent({ id, data, selected }: NodeProps) {
   const removeNode = useStudioStore((s) => s.removeNode);
   const duplicateNode = useStudioStore((s) => s.duplicateNode);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [zoomed, setZoomed] = useState(false);
+  // Box takes the image's own ratio once known, so nothing is letterboxed
+  // or cropped. Falls back to square while empty.
+  const [ratio, setRatio] = useState<string | null>(null);
 
   const handleUpload = useCallback(() => {
     fileInputRef.current?.click();
@@ -56,10 +61,25 @@ function ImageNodeComponent({ id, data, selected }: NodeProps) {
       </div>
 
       <div className="sn sn--image">
-        <div className={`sn-media sn-media--square ${!nodeData.imageData ? 'sn-media--empty' : ''}`}>
+        <div
+          className={`sn-media ${!nodeData.imageData ? 'sn-media--square sn-media--empty' : ''}`}
+          style={nodeData.imageData ? { aspectRatio: ratio || '1 / 1' } : undefined}
+        >
           {nodeData.imageData ? (
             <>
-              <img className="sn-media__img" src={nodeData.imageData} alt={nodeData.imageName || 'Reference'} />
+              <img
+                className="sn-media__img sn-media__img--zoom"
+                src={nodeData.imageData}
+                alt={nodeData.imageName || 'Reference'}
+                onLoad={(e) => {
+                  const el = e.currentTarget;
+                  if (el.naturalWidth && el.naturalHeight) {
+                    setRatio(`${el.naturalWidth} / ${el.naturalHeight}`);
+                  }
+                }}
+                onClick={() => setZoomed(true)}
+                title="Click to view full size"
+              />
               <button className="sn-media__change" onClick={handleUpload}>Change</button>
             </>
           ) : (
@@ -92,6 +112,15 @@ function ImageNodeComponent({ id, data, selected }: NodeProps) {
           <span className="sn-port__glyph">🖼</span>
         </Handle>
       </div>
+
+      {zoomed && nodeData.imageData && (
+        <Lightbox
+          src={nodeData.imageData}
+          kind="image"
+          alt={nodeData.imageName || 'Reference image'}
+          onClose={() => setZoomed(false)}
+        />
+      )}
     </div>
   );
 }

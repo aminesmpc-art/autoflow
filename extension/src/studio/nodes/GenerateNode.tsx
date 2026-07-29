@@ -6,8 +6,8 @@
    ============================================================ */
 
 import { memo, useCallback, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Lightbox } from '../components/Lightbox';
 import { useStudioStore } from '../store';
 import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS } from '../../types';
 
@@ -112,21 +112,30 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           style={{ aspectRatio: ratioToCss(ratio) }}
         >
           {status === 'done' && previewVideo && (
-            /* nodrag/nowheel: using the player must not pan or zoom the canvas */
-            <video
-              className="sn-media__img nodrag nowheel"
-              src={previewVideo}
-              poster={preview || undefined}
-              controls
-              loop
-              muted
-              playsInline
-            />
+            <>
+              {/* nodrag/nowheel: using the player must not pan or zoom the canvas */}
+              <video
+                className="sn-media__img nodrag nowheel"
+                src={previewVideo}
+                poster={preview || undefined}
+                controls
+                loop
+                muted
+                playsInline
+              />
+              {/* The player owns clicks, so full-size needs its own control */}
+              <button
+                className="sn-media__expand"
+                onClick={() => setZoomed(true)}
+                title="View full size"
+                aria-label="View full size"
+              >⤢</button>
+            </>
           )}
 
           {status === 'done' && !previewVideo && preview && (
             <>
-              <img className="sn-media__img" src={preview} alt="Generated result" onClick={() => setZoomed(true)} />
+              <img className="sn-media__img sn-media__img--zoom" src={preview} alt="Generated result" onClick={() => setZoomed(true)} title="Click to view full size" />
               {isVideo && <span className="sn-media__badge">▶ Video — open in Flow to play</span>}
             </>
           )}
@@ -245,13 +254,15 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
         {isChatGPT ? 'ChatGPT Images' : 'Google Flow'}
       </div>
 
-      {/* Portaled: React Flow transforms nodes, which breaks position:fixed inside them */}
-      {zoomed && preview && createPortal(
-        <div className="studio-lightbox" onClick={() => setZoomed(false)} role="dialog">
-          <img src={preview} alt="Generated result, full size" onClick={(e) => e.stopPropagation()} />
-          <button className="studio-lightbox__close" onClick={() => setZoomed(false)} aria-label="Close">×</button>
-        </div>,
-        document.body
+      {/* Prefer the video when there is one — previously only the still could
+          be opened, so a generated clip had no full-size view at all. */}
+      {zoomed && (previewVideo || preview) && (
+        <Lightbox
+          src={previewVideo || preview}
+          kind={previewVideo ? 'video' : 'image'}
+          alt="Generated result, full size"
+          onClose={() => setZoomed(false)}
+        />
       )}
     </div>
   );
