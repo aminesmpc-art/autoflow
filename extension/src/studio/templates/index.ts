@@ -463,6 +463,83 @@ export const TEMPLATES: Template[] = [
       iEdge('g1', 'g3'), tEdge('p2', 'g3'),
     ],
   },
+  {
+    id: 'tpl_exercise_series',
+    name: 'Exercise Series: 1 Mascot → 4 Clips',
+    description: 'One character reference becomes four storyboards, then four 10-second vertical clips.',
+    useCase: 'Faceless fitness and how-to channels. Four parallel branches from a single style reference, so a whole series shares one look — and storyboarding before animating means you approve the movement while it is still cheap to change.',
+    category: 'Content',
+    difficulty: 'Advanced',
+    nodeCount: 17,
+    thumbnail: '💪',
+    nodes: [
+      imageNode('i1', 'Character / Style Reference', 40, 40, 'style guide'),
+
+      // ── Stage 1: one storyboard sheet per exercise ──
+      ...([
+        ['pu', 'Push-Up', 'one full push-up repetition',
+          'FRAME 01 — high plank, arms extended, body in a straight line\n' +
+          'FRAME 02 — lowering, elbows tracking back at 45°\n' +
+          'FRAME 03 — bottom position, chest just above the floor\n' +
+          'FRAME 04 — pressing back up to the start'],
+        ['sq', 'Squat', 'one full bodyweight squat',
+          'FRAME 01 — standing, feet shoulder-width\n' +
+          'FRAME 02 — descending, hips travelling back\n' +
+          'FRAME 03 — bottom position, thighs parallel to the floor\n' +
+          'FRAME 04 — driving up through the heels'],
+        ['pl', 'Plank', 'a forearm plank hold',
+          'FRAME 01 — setting up on forearms and toes\n' +
+          'FRAME 02 — braced hold, straight line head to heels\n' +
+          'FRAME 03 — same hold seen from a low front angle\n' +
+          'FRAME 04 — controlled release to the knees'],
+        ['su', 'Sit-Up', 'one full sit-up repetition',
+          'FRAME 01 — lying back, knees bent, hands at the temples\n' +
+          'FRAME 02 — curling up, shoulder blades leaving the floor\n' +
+          'FRAME 03 — top position, torso close to the thighs\n' +
+          'FRAME 04 — lowering back down under control'],
+      ] as const).flatMap(([k, name, motion, frames], i) => {
+        const y = i * 560;
+        return [
+          promptNode(`p_${k}`, `${name} — Storyboard`,
+            'Use the attached reference image as the visual style guide.\n\n' +
+            '# COMMON STYLE CONSTANTS — identical in every frame\n' +
+            '• Same character: faceless golden-yellow figure, heavy black outlines, flat vector\n' +
+            '  shading, dark grey shorts, one dark grey arm sleeve\n' +
+            '• Same dark neutral background and lighting\n' +
+            '• Same body proportions and muscle definition — do not restyle or re-anatomise\n\n' +
+            `# OUTPUT — a 2x2 storyboard grid of ${motion}, labelled FRAME 01 to FRAME 04\n` +
+            frames + '\n\n' +
+            'Tint the muscles doing the work in a brighter yellow in each frame. Keep the four ' +
+            'panels the same scale and camera distance so they read as one sequence.',
+            40, 460 + y),
+          genNode(`g_${k}`, { label: `${name} Storyboard`, mediaType: 'image', aspectRatio: '9:16' },
+            520, 40 + y),
+
+          // ── Stage 2: animate that sheet ──
+          promptNode(`v_${k}`, `${name} — Motion`,
+            'Create a 10-second vertical animated clip from the uploaded storyboard.\n\n' +
+            'Follow FRAME 01 → 04 in order as the motion path, looping smoothly back to the start. ' +
+            'Keep the character exactly as shown — same golden-yellow figure, black outlines, flat ' +
+            'vector style, dark shorts and sleeve, same background. Continuous motion, no morphing, ' +
+            'no style drift, no camera cuts. Vertical 9:16 framing.',
+            1000, 460 + y),
+          genNode(`gv_${k}`, {
+            label: `${name} Clip`, mediaType: 'video', aspectRatio: '9:16',
+            // 10s clips are an Omni Flash capability
+            duration: '10s', model: 'Omni Flash',
+          }, 1480, 40 + y),
+        ];
+      }),
+    ],
+    edges: (['pu', 'sq', 'pl', 'su'] as const).flatMap((k) => [
+      // The one reference feeds every branch, so the series shares a look
+      iEdge('i1', `g_${k}`, 'image'),
+      tEdge(`p_${k}`, `g_${k}`),
+      // Each approved sheet drives its own clip
+      iEdge(`g_${k}`, `gv_${k}`),
+      tEdge(`v_${k}`, `gv_${k}`),
+    ]),
+  },
 ];
 
 export const CATEGORIES = ['All', 'Starter', 'Marketing', 'Character', 'Fashion', 'Content', 'Image', 'Utility'] as const;
