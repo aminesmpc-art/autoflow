@@ -1238,8 +1238,24 @@ export function findSettingsPanelTrigger(): Element | null {
    */
   const isCountChip = (t: string) => /\bx\d+\b/.test(t) || /\b\d+x\b/.test(t);
 
-  const candidates = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'))
-    .filter((b) => isVisible(b) && isCountChip(labelText(b).toLowerCase()));
+  const menus = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'))
+    .filter(isVisible);
+
+  /**
+   * Primary, structural test: the settings chip is the only menu button that
+   * renders an aspect-ratio icon — a Material ligature named crop_9_16 /
+   * crop_16_9 / crop_1_1. That holds regardless of interface language and
+   * regardless of how the chip's text is formatted, which is what text
+   * matching kept getting wrong.
+   */
+  const byRatioIcon = menus.find((b) =>
+    Array.from(b.querySelectorAll('.google-symbols, .material-icons, .material-symbols-outlined, .material-symbols'))
+      .some((i) => /^crop[_-]/i.test((i.textContent || '').trim()))
+  );
+  if (byRatioIcon) return byRatioIcon;
+
+  // Fallback: the generation-count token ("x1" / "1x").
+  const candidates = menus.filter((b) => isCountChip(labelText(b).toLowerCase()));
   if (candidates.length === 0) return null;
 
   // Prefer the chip that lives in the prompt bar, so a stray match elsewhere
@@ -1466,16 +1482,19 @@ export async function switchToViewMode(targetMode: 'Grid' | 'Batch'): Promise<bo
  */
 export function labelText(el: Element): string {
   const ICON_SEL = '.google-symbols, .material-icons, .material-symbols-outlined, .material-symbols';
-  let out = '';
+  const parts: string[] = [];
   const walk = (node: Node) => {
-    if (node.nodeType === Node.TEXT_NODE) { out += node.textContent || ''; return; }
+    if (node.nodeType === Node.TEXT_NODE) { parts.push(node.textContent || ''); return; }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const e = node as Element;
-    if (e.matches(ICON_SEL)) return; // skip the ligature name
+    // Removing an icon must SEPARATE its neighbours, not fuse them. The chip is
+    // "Video · 6s" <i>crop_9_16</i> "x1"; concatenating gave "6sx1", where the
+    // count token no longer has a word boundary and stopped being recognised.
+    if (e.matches(ICON_SEL)) { parts.push(' '); return; }
     for (const child of Array.from(e.childNodes)) walk(child);
   };
   walk(el);
-  return out.trim();
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
 }
 
 /** True when a Radix tab is the selected one */
