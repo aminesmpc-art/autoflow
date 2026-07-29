@@ -1450,19 +1450,54 @@ export class AutomationEngine {
     return false;
   }
 
-  /** Close the settings panel (Escape or click outside) */
+  /**
+   * Close the settings panel.
+   *
+   * The panel was being left open over the prompt bar. Three reasons, all here:
+   *  - The guard returned early on isSettingsPanelOpen() alone, which reads the
+   *    chip's aria-expanded. When Radix's state and that attribute disagree,
+   *    a visually-open panel was treated as closed and never dismissed.
+   *  - Escape was dispatched on document.body; Radix's dismissable layer
+   *    listens on the document.
+   *  - document.body.click() fires only a click event, but Radix dismisses on
+   *    pointerdown OUTSIDE, so the fallback never actually did anything.
+   */
   private async closeSettingsPanel(): Promise<void> {
-    if (!isSettingsPanelOpen() || this.stopped) return;
-    // Escape key to close Radix popover
-    document.body.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Escape', code: 'Escape', bubbles: true, cancelable: true,
-    }));
-    await humanDelay(200, 400);
-    // If still open, click the body to dismiss
-    if (isSettingsPanelOpen()) {
-      document.body.click();
-      await humanDelay(200, 400);
+    if (this.stopped) return;
+
+    // Same specific test used to detect opening: the chip's own state, or the
+    // media tabs being mounted (they only exist inside this panel).
+    const isOpen = () =>
+      isSettingsPanelOpen() ||
+      !!(findMediaTypeTab('video') || findMediaTypeTab('image'));
+
+    if (!isOpen()) return;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (this.stopped) return;
+
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', code: 'Escape', bubbles: true, cancelable: true,
+      }));
+      await humanDelay(200, 350);
+      if (!isOpen()) return;
+
+      // Press outside the layer. body is never inside the portal content, so
+      // Radix treats this as an outside interaction and dismisses.
+      for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+        const Ctor = type.startsWith('pointer') && typeof PointerEvent !== 'undefined'
+          ? PointerEvent : MouseEvent;
+        document.body.dispatchEvent(new Ctor(type, {
+          bubbles: true, cancelable: true, clientX: 4, clientY: 4,
+        } as any));
+      }
+      await humanDelay(200, 350);
+      if (!isOpen()) return;
     }
+
+    this.log('warn',
+      'Settings panel would not close — it may cover the prompt bar. ' +
+      'Continuing, but prompt entry could be blocked.');
   }
 
   /**
