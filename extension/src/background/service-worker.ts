@@ -417,6 +417,20 @@ chrome.runtime.onConnect.addListener((port) => {
         // Both platforms open their tab on demand. Flow reopens the user's
         // last project so generations land where they expect.
         const tabId = isChatGPT ? await ensureChatGPTTab() : await ensureStudioFlowTab();
+
+        /**
+         * Arm the keepalive for the duration of a Studio node.
+         *
+         * The sidepanel queue has always done this; Studio was built later and
+         * never did, so a Studio run had nothing holding the service worker
+         * alive. A 10-second video generation easily outlasts Chrome's idle
+         * timeout, the SW gets recycled, the Studio port dies, and the next
+         * node fails with "Lost connection to the extension". It also stops
+         * Chrome discarding the Flow tab mid-generation.
+         */
+        if (msg.type === 'STUDIO_EXECUTE_NODE' && tabId && !isChatGPT) {
+          try { await startKeepalive(tabId); } catch { /* non-critical */ }
+        }
         const platformName = isChatGPT ? 'ChatGPT' : 'Flow';
         const injectFile = isChatGPT ? 'chatgpt-content.js' : 'content.js';
 
@@ -480,6 +494,11 @@ chrome.runtime.onConnect.addListener((port) => {
     port.onDisconnect.addListener(() => {
       _studioPort = null;
       console.log('[AutoFlow] Studio port disconnected');
+      // Release the keepalive armed for Studio nodes — but not if a sidepanel
+      // queue is still running, since that armed it for itself.
+      getActiveQueueId().then((queueId) => {
+        if (!queueId) stopKeepalive().catch(() => {});
+      }).catch(() => {});
     });
   }
 });

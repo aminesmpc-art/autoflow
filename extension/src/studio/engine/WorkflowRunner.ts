@@ -255,12 +255,33 @@ export class WorkflowRunner {
       referenceImageData: referenceImageData.length > 0 ? referenceImageData : undefined,
     };
 
+    /**
+     * Give up only AFTER the content script has, never before.
+     *
+     * The content script tracks a tile for 20 minutes; this side used to give
+     * up at 10, so a slow generation was failed here while it was still being
+     * watched — and still running on Flow. Images finish in about a minute and
+     * never reached it, which is why only video nodes saw
+     * "Generation timed out after 10 minutes".
+     *
+     * Video gets the full budget plus a margin; images need far less, so a
+     * genuinely stuck image node still fails reasonably fast.
+     */
+    const isVideoNode = config.mediaType === 'video';
+    const timeoutMs = isVideoNode ? 22 * 60 * 1000 : 8 * 60 * 1000;
+    const timeoutLabel = isVideoNode ? '22 minutes' : '8 minutes';
+
     // Send to Flow via bridge
     return new Promise<NodeResult>((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
-        reject(new Error('Generation timed out after 10 minutes'));
-      }, 10 * 60 * 1000); // 10 min timeout
+        // The tile may well be finishing on Flow — say so instead of implying
+        // the generation itself failed.
+        reject(new Error(
+          `No result after ${timeoutLabel}. The generation may still be running — ` +
+          `check the Flow tab before re-running this node.`
+        ));
+      }, timeoutMs);
 
       const onResult = (payload: any) => {
         if (payload.nodeId !== nodeId) return;

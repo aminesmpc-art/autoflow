@@ -1342,7 +1342,10 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
     }
   }
 
-  sendStudioError(nodeId, 'Generation timed out after 20 minutes.');
+  // Stopped watching, which is not the same as the generation having failed.
+  sendStudioError(nodeId,
+    'Stopped tracking after 20 minutes. The generation may still be running — ' +
+    'check the Flow tab before re-running this node.');
 }
 
 /**
