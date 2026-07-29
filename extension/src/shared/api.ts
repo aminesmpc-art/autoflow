@@ -34,7 +34,7 @@ async function clearTokens(): Promise<void> {
 
 // ── Core Fetch Wrapper ──
 
-const EXTENSION_VERSION = '5.0';
+const EXTENSION_VERSION = '5.1';
 
 async function apiFetch(
   path: string,

@@ -11,6 +11,26 @@ export const metadata = {
 
 const releases = [
   {
+    version: "5.1",
+    date: "2026-07-29",
+    title: "Studio Reliability & Full-Size Viewer",
+    highlights: [
+      "Multi-step workflows now run all the way through — previously only the first generation succeeded and every node after it failed to switch between Image and Video mode",
+      "Long video generations survive — Studio now keeps the extension awake during a run, so 10-second clips no longer lose their connection partway through a series",
+      "Full-size viewer — click any reference or result to open it at full size, videos included, with playback controls",
+      "Exercise Series template — one character reference becomes four exercise storyboards and four 10-second vertical clips, with the mascot reference included",
+      "Two more templates: Triple Lock (separate face, outfit and scene references) and Product UGC (put a model in your own product photo)",
+    ],
+    improvements: [
+      "Reference images and results are no longer cropped in the node — a tall portrait previously had 45% of itself cut off, including the subject's head",
+      "The Flow settings panel now closes reliably after each step instead of staying open over the prompt box",
+      "A generation that takes longer than expected no longer reports as failed — it says the work may still be running so you don't re-run it needlessly",
+      "Video nodes get a longer completion window than image nodes, matching how long each actually takes",
+      "Every template's reference slots are now labelled with their role (face, outfit, scene, product)",
+      "Template gallery search and category filters work; previously they were decorative",
+    ],
+  },
+  {
     version: "5.0",
     date: "2026-07-29",
     title: "AutoFlow Studio — Visual Workflow Builder",
