@@ -160,6 +160,50 @@ const MODEL_SLUGS: Record<string, string> = {
   'omni-flash': 'Omni Flash',
 };
 
+/**
+ * Turn bundled asset paths into data URLs.
+ *
+ * Templates can ship a reference image as a packaged file rather than inline
+ * base64, which keeps the JS bundle small. The reference pipeline needs a data
+ * URL (that is what gets registered and uploaded to Flow), so resolve here at
+ * load time. Failures are swallowed: the node simply stays empty and the user
+ * can upload their own, which is better than refusing to open the template.
+ */
+export async function resolveAssets(nodes: Node[]): Promise<Node[]> {
+  const pending = nodes.filter((n) => {
+    const d = n.data as any;
+    return d?.type === 'image' && d.assetPath && !d.imageData;
+  });
+  if (pending.length === 0) return nodes;
+
+  const resolved = new Map<string, string>();
+  await Promise.all(pending.map(async (n) => {
+    const p = (n.data as any).assetPath as string;
+    if (resolved.has(p)) return;
+    try {
+      const res = await fetch(chrome.runtime.getURL(p));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const dataUrl = await new Promise<string>((ok, no) => {
+        const r = new FileReader();
+        r.onloadend = () => ok((r.result as string) || '');
+        r.onerror = () => no(new Error('read failed'));
+        r.readAsDataURL(blob);
+      });
+      resolved.set(p, dataUrl);
+    } catch (e) {
+      console.warn(`[Studio] Could not load bundled asset ${p}:`, e);
+    }
+  }));
+
+  return nodes.map((n) => {
+    const d = n.data as any;
+    const url = d?.assetPath && resolved.get(d.assetPath);
+    if (!url) return n;
+    return { ...n, data: { ...d, imageData: url, imageName: d.imageName || 'reference' } };
+  });
+}
+
 export function normalizeWorkflow(nodes: Node[], edges: Edge[]): { nodes: Node[]; edges: Edge[] } {
   const normNodes = nodes.map((node) => {
     const d: any = { ...(node.data as any) };

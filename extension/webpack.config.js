@@ -48,6 +48,8 @@ module.exports = {
         { from: 'offscreen.js', to: '.' },
         { from: 'icons', to: 'icons', noErrorOnMissing: true },
         { from: 'studio.html', to: '.' },
+        // Bundled template reference images, resolved to data URLs on load
+        { from: 'assets', to: 'assets', noErrorOnMissing: true },
       ],
     }),
   ],

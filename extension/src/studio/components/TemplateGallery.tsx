@@ -4,7 +4,7 @@
    ============================================================ */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useStudioStore, normalizeWorkflow } from '../store';
+import { useStudioStore, normalizeWorkflow, resolveAssets } from '../store';
 import { TEMPLATES, CATEGORIES, type Template } from '../templates';
 
 /** Node-chain preview gets noisy past this many dots */
@@ -50,17 +50,22 @@ export default function TemplateGallery() {
   );
 
   const loadTemplate = useCallback(
-    (template: Template) => {
+    async (template: Template) => {
       // Deep clone nodes/edges so each instance is independent,
       // then normalize (edge style, model names, missing fields)
       const { nodes: clonedNodes, edges: clonedEdges } = normalizeWorkflow(
         JSON.parse(JSON.stringify(template.nodes)),
         JSON.parse(JSON.stringify(template.edges))
       );
+      // Open the canvas immediately; bundled reference images fill in a moment
+      // later so a slow asset read never delays the click.
       setNodes(clonedNodes);
       setEdges(clonedEdges);
       setWorkflowName(template.name);
       setView('canvas');
+
+      const withAssets = await resolveAssets(clonedNodes);
+      if (withAssets !== clonedNodes) setNodes(withAssets);
     },
     [setView, setNodes, setEdges, setWorkflowName]
   );

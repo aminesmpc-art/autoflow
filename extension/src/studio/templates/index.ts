@@ -42,11 +42,16 @@ const promptNode = (id: string, label: string, text: string, x: number, y: numbe
  * (a face vs a flat-lay vs a room), which matters when a template wants three
  * or four references that are not interchangeable.
  */
-const imageNode = (id: string, label: string, x: number, y: number, hint = ''): Node => ({
+const imageNode = (
+  id: string, label: string, x: number, y: number, hint = '', assetPath = ''
+): Node => ({
   id,
   type: 'image',
   position: { x, y },
-  data: { type: 'image', label, imageName: hint, imageData: '' },
+  // assetPath points at a file bundled under extension/assets/. resolveAssets()
+  // in the store turns it into a data URL at load time, so the base64 never
+  // sits in the JS bundle. Empty = the user supplies their own reference.
+  data: { type: 'image', label, imageName: hint, imageData: '', assetPath },
 });
 
 interface GenOpts {
@@ -473,7 +478,8 @@ export const TEMPLATES: Template[] = [
     nodeCount: 17,
     thumbnail: '💪',
     nodes: [
-      imageNode('i1', 'Character / Style Reference', 40, 40, 'style guide'),
+      imageNode('i1', 'Character / Style Reference', 40, 40, 'mascot',
+        'assets/templates/fitness-mascot.jpg'),
 
       // ── Stage 1: one storyboard sheet per exercise ──
       ...([
