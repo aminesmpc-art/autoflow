@@ -1419,27 +1419,30 @@ export class AutomationEngine {
     return false;
   }
 
-  /** Poll until the settings panel is confirmed open or timeout */
+  /**
+   * Poll until the settings panel is confirmed open, or timeout.
+   *
+   * Only two signals are trusted, and both are specific to THIS panel:
+   *   1. the settings chip reporting aria-expanded / data-state="open"
+   *   2. the media-type tabs actually existing in the DOM
+   *
+   * The previous version also returned true for any visible [role="menu"] or
+   * [data-radix-popper-content-wrapper], or for ANY button[role="tab"] on the
+   * page. Once a generation produces tiles, Flow has other Radix popovers and
+   * tab strips mounted, so those checks reported "open" while the settings
+   * panel was shut — the caller then looked for the media tabs, found nothing,
+   * and the run failed. It worked for the first node only because the page had
+   * no other menus yet.
+   */
   private async waitForSettingsPanel(timeoutMs: number): Promise<boolean> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       if (this.stopped) return false;
-      // Check 1: trigger has aria-expanded="true" or data-state="open"
       if (isSettingsPanelOpen()) return true;
-      // Check 2: Radix menu content appeared (settings is a dropdown menu, not tabs)
-      const menuContent = document.querySelector(
-        '[role="menu"], [data-radix-menu-content], [data-radix-popper-content-wrapper]'
-      );
-      if (menuContent && isVisible(menuContent)) {
-        this.log('info', 'Found Radix menu content in DOM');
-        return true;
-      }
-      // Check 3: menu items or tabs appeared (Radix lazy-mounts them)
-      const items = document.querySelectorAll(
-        '[role="menuitem"], [role="menuitemradio"], button[role="tab"]'
-      );
-      if (items.length > 0) {
-        this.log('info', `Found ${items.length} menu item(s)/tab(s) — panel is mounted`);
+      // The tabs live inside this panel, so their presence IS the panel.
+      const tab = findMediaTypeTab('video') || findMediaTypeTab('image');
+      if (tab && isVisible(tab)) {
+        this.log('info', 'Media-type tabs mounted — settings panel is open');
         return true;
       }
       await sleep(100);
@@ -1541,14 +1544,15 @@ export class AutomationEngine {
       if (!tab) {
         // Name the element we opened, so a wrong-button pick is visible in the
         // log instead of showing up as an unexplained "tab not found".
+        // Report every link in the chain, so a failure identifies its own cause
         const trig = findSettingsPanelTrigger();
-        const trigDesc = trig
-          ? `"${(trig.textContent || '').trim().slice(0, 40)}"`
-          : '(no trigger found)';
+        const menuBtns = document.querySelectorAll('button[aria-haspopup="menu"]').length;
+        const anyTabs = document.querySelectorAll('button[role="tab"]').length;
         this.log('warn',
           `Media tab "${mediaLabel}" not found (attempt ${attempt}/3). ` +
-          `Settings trigger was ${trigDesc} — if that is not the prompt-bar chip, ` +
-          `the wrong button was opened.`);
+          `chip=${trig ? `"${(trig.textContent || '').trim().slice(0, 40)}"` : 'NOT FOUND'} ` +
+          `panelOpen=${isSettingsPanelOpen()} ` +
+          `menuButtons=${menuBtns} roleTabs=${anyTabs}`);
         await this.closeSettingsPanel();
         await humanDelay(400, 700);
         continue;
