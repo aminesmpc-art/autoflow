@@ -11,6 +11,30 @@ export const metadata = {
 
 const releases = [
   {
+    version: "5.0",
+    date: "2026-07-29",
+    title: "AutoFlow Studio — Visual Workflow Builder",
+    highlights: [
+      "AutoFlow Studio — build workflows on a canvas instead of a list. Connect a prompt to a generation, feed that result into the next one, and run the whole chain in a single click",
+      "12 ready-made workflows with working example prompts — UGC product ads, character sheets, virtual try-on, B-roll packs and more, so there is nothing to write before your first run",
+      "Character consistency — generate a character sheet once, then reuse it as a reference so the same face carries across every shot",
+      "Multi-reference generation — lock face, outfit and scene with separate reference images, so a new outfit no longer quietly changes the face",
+      "ChatGPT workflows — design an image on ChatGPT, then animate it on Google Flow in the same run",
+      "Save, reload, import and export workflows, with autosave so closing the window no longer loses work",
+    ],
+    improvements: [
+      "Reference images now reach the generator — image connections drawn on the canvas were previously ignored, so character references had no effect",
+      "Generated results now preview inside each node instead of showing a broken thumbnail",
+      "Model lists corrected — the picker offered names that do not exist on Flow (\"Veo 3\", \"Imagen 4 Ultra\"), which silently fell back to whichever model was already selected",
+      "10-second clips selectable on every video node",
+      "Image → Video switching made reliable in multi-step workflows; the run now stops with a clear message rather than generating the wrong media type",
+      "Studio opens your Flow project, or a ChatGPT tab, automatically when one is not already open",
+      "Removed the forced page reload that hit every Google Flow visit",
+      "Free plan includes 15 Studio runs per month and workflows up to 5 nodes; Pro is unlimited",
+      "No API key is embedded in the extension any more — AI Assist now uses your own free Gemini key",
+    ],
+  },
+  {
     version: "4.2",
     date: "2026-07-04",
     title: "Instagram Extractor Fix & Smart Retry Engine",
