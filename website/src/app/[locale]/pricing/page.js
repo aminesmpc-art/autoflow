@@ -63,12 +63,14 @@ export default async function LocalePricingPage({ params }) {
               <ul className="pricing-features">
                 {t.pricing.pro.features.map((f, i) => <li key={i}>{f}</li>)}
               </ul>
-              <a
-                href="https://whop.com/checkout/plan_fxMVMOmbFPcp4"
-                target="_blank"
-                rel="noopener noreferrer nofollow"
-                className="btn btn-primary"
-              >
+              {/*
+                Goes to our own checkout, not straight to Whop: Whop's hosted
+                page leaves the email editable, and an address that isn't the
+                buyer's AutoFlow one leaves the payment unmatchable. Visitors
+                with no session land on the sign-in prompt, which is the point
+                — an account has to exist for the webhook to attach to.
+              */}
+              <a href="/checkout" className="btn btn-primary">
                 {t.pricing.pro.btn}
               </a>
             </div>

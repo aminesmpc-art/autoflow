@@ -64,12 +64,14 @@ export default function PricingPage() {
                 <li>Frame chain mode</li>
                 <li>Priority support</li>
               </ul>
-              <a
-                href="https://whop.com/checkout/plan_fxMVMOmbFPcp4"
-                target="_blank"
-                rel="noopener noreferrer nofollow"
-                className="btn btn-primary"
-              >
+              {/*
+                Goes to our own checkout, not straight to Whop: Whop's hosted
+                page leaves the email editable, and an address that isn't the
+                buyer's AutoFlow one leaves the payment unmatchable. Visitors
+                with no session land on the sign-in prompt, which is the point
+                — an account has to exist for the webhook to attach to.
+              */}
+              <a href="/checkout" className="btn btn-primary">
                 Upgrade to Pro
               </a>
             </div>
