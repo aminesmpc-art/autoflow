@@ -47,7 +47,7 @@ import {
   getActiveQueueId,
   savePromptHistory,
 } from '../shared/storage';
-import { login, loginWithGoogle, getGoogleConfig, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeUrl, consumeDownload, checkCanStartQueue, consumeQueueRun, ensureSession, claimReviewReward, getReviewRewardStatus, requestPasswordReset, confirmPasswordReset } from '../shared/api';
+import { login, loginWithGoogle, getGoogleConfig, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeTarget, consumeDownload, checkCanStartQueue, consumeQueueRun, ensureSession, claimReviewReward, getReviewRewardStatus, requestPasswordReset, confirmPasswordReset } from '../shared/api';
 import { applyLanguage, initLanguage } from './i18n';
 
 // ================================================================
@@ -2479,7 +2479,7 @@ async function showQueueLimitDialog(mode: string, result: { used: number; limit:
   const modeLabel = modeLabels[mode] || mode;
   const periodLabel = result.period === 'month' ? 'this month' : 'today';
 
-  const upgradeUrl = await getUpgradeUrl();
+  const { url: upgradeUrl, email: upgradeEmail } = await getUpgradeTarget();
 
   const dialog = document.createElement('div');
   dialog.id = 'af-queue-limit-dialog';
@@ -2546,8 +2546,16 @@ async function showQueueLimitDialog(mode: string, result: { used: number; limit:
 
   // Event listeners
   dialog.querySelector('#af-limit-dismiss-btn')?.addEventListener('click', () => dialog.remove());
-  dialog.querySelector('#af-limit-upgrade-btn')?.addEventListener('click', () => {
-    window.alert('IMPORTANT: When paying on Whop, make sure to use the exact same email address you use on AutoFlow. Otherwise, your Pro account will not activate automatically!');
+  dialog.querySelector('#af-limit-upgrade-btn')?.addEventListener('click', (ev) => {
+    // Signed out: the anchor would open a blank checkout whose payment could
+    // never be matched to an account. Send them to sign in instead.
+    if (!upgradeEmail) {
+      ev.preventDefault();
+      dialog.remove();
+      showToast('Sign in first so your Pro activates automatically', 'error', 5000);
+      (document.querySelector('[data-tab="account"]') as HTMLElement | null)?.click();
+      return;
+    }
     setTimeout(() => dialog.remove(), 500);
   });
   // "Free Pro" button — close dialog, switch to account tab where the CTA is
@@ -4870,10 +4878,22 @@ function initAccountTab() {
 
   // ── Upgrade to Pro button ──
   $('#btn-upgrade-pro')?.addEventListener('click', async () => {
-    // Show an alert reminding them to use the same email on Whop
-    window.alert('IMPORTANT: When paying on Whop, make sure to use the exact same email address you use on AutoFlow. Otherwise, your Pro account will not activate automatically!');
-    
-    const url = await getUpgradeUrl();
+    const { url, email } = await getUpgradeTarget();
+
+    // Paying while signed out is how subscriptions get stranded: the webhook
+    // arrives with an email that has no AutoFlow account to attach to, and it
+    // sits unprocessed until they happen to register with the same address.
+    if (!email) {
+      showToast('Sign in first so your Pro activates automatically', 'error', 5000);
+      const accountTab = document.querySelector('[data-tab="account"]') as HTMLElement | null;
+      accountTab?.click();
+      $('#account-logged-out')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    // Checkout is prefilled with this address, so no warning dialog is needed —
+    // just say which account is getting the upgrade.
+    showToast(`Checkout opened for ${email}`, 'info', 5000);
     window.open(url, '_blank');
   });
 

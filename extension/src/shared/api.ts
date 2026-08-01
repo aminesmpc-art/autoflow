@@ -6,7 +6,9 @@
 import { AuthTokens, UserProfile, DailyUsageResponse } from '../types';
 
 const API_BASE = 'https://api.auto-flow.studio';
-const WHOP_CHECKOUT_URL = 'https://whop.com/checkout/plan_fxMVMOmbFPcp4';
+// Our own page, which embeds Whop's checkout widget with the email locked.
+// See getUpgradeTarget() for why we don't link straight to whop.com.
+const CHECKOUT_PAGE_URL = 'https://www.auto-flow.studio/checkout';
 
 // ── Token Storage ──
 
@@ -414,13 +416,42 @@ export async function consumeDownload(count: number = 1): Promise<{ allowed: boo
   }
 }
 
-/** Get Whop checkout URL, optionally prefilled with user's email. */
-export async function getUpgradeUrl(): Promise<string> {
+export interface UpgradeTarget {
+  url: string;
+  /** The account email the checkout is prefilled with, or null if signed out. */
+  email: string | null;
+}
+
+/**
+ * Checkout, locked to the signed-in account's email.
+ *
+ * This goes to our own page rather than whop.com because Whop's hosted
+ * checkout only *prefills* the address — it stays editable, and any address
+ * other than the AutoFlow one strands the payment, since webhooks are matched
+ * back to accounts by email. Our page embeds Whop's checkout widget with
+ * `disable-email`, which the hosted page has no equivalent for.
+ *
+ * The email travels in the URL *fragment*: fragments are never sent to the
+ * server, so it stays out of request logs and Referer headers.
+ *
+ * When signed out there is no email and, worse, no account for the webhook to
+ * ever attach to — callers must send the user to sign in rather than open a
+ * checkout at all.
+ */
+export async function getUpgradeTarget(): Promise<UpgradeTarget> {
   const profile = await getProfile();
-  if (profile?.email) {
-    return `${WHOP_CHECKOUT_URL}?d=${encodeURIComponent(profile.email)}`;
-  }
-  return WHOP_CHECKOUT_URL;
+  const email = profile?.email || null;
+  return {
+    url: email
+      ? `${CHECKOUT_PAGE_URL}#email=${encodeURIComponent(email)}`
+      : CHECKOUT_PAGE_URL,
+    email,
+  };
+}
+
+/** Get Whop checkout URL, prefilled with the user's email when signed in. */
+export async function getUpgradeUrl(): Promise<string> {
+  return (await getUpgradeTarget()).url;
 }
 
 

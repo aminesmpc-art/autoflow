@@ -14,7 +14,14 @@ const publicPaths = [
   '/robots.txt',
   '/sitemap.xml',
   '/llms.txt',
-  '/llms-full.txt'
+  '/llms-full.txt',
+  // Apple Pay domain verification reads
+  // /.well-known/apple-developer-merchantid-domain-association at the bare
+  // path. Locale-prefixing it would 404 and verification would fail.
+  '/.well-known',
+  // One checkout page for every language — never locale-prefixed, so the
+  // extension can link to a single stable URL regardless of browser language.
+  '/checkout'
 ];
 
 // Paths that are English-only and exist outside of [locale]
