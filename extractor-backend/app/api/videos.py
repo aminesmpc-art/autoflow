@@ -13,10 +13,10 @@ from typing import Optional
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks, status, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, BackgroundTasks, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.config import get_settings
 
@@ -81,6 +81,72 @@ For scene prompts, break down each shot with:
 Analyze the ENTIRE video now. Be extremely detailed."""
 
 
+# Visual direction appended to the base prompt. "faithful" is the default and
+# adds nothing, so the extraction keeps matching the source video unless the
+# user deliberately asks for a different look.
+STYLE_DIRECTIVES = {
+    "faithful": "",
+    "cinematic": (
+        "Render every image_prompt in a cinematic film style: anamorphic framing, "
+        "motivated practical lighting, shallow depth of field, filmic colour grade."
+    ),
+    "photorealistic": (
+        "Render every image_prompt as photorealistic capture: real camera and lens "
+        "language, natural light, believable skin and material detail. No illustration."
+    ),
+    "illustrated": (
+        "Render every image_prompt as stylised 2D illustration: clean linework, "
+        "flat shapes, deliberate colour palette. Not photographic."
+    ),
+    "anime": (
+        "Render every image_prompt in modern anime style: cel shading, expressive "
+        "faces, detailed backgrounds, high-contrast key light."
+    ),
+    "3d": (
+        "Render every image_prompt as a polished 3D render: subsurface scattering, "
+        "soft global illumination, physically based materials, UE5/Octane look."
+    ),
+}
+
+
+def build_analysis_prompt(options: Optional["ExtractionOptions"] = None) -> str:
+    """Compose the Gemini prompt from the caller's extraction options.
+
+    The base prompt is left intact and directives are appended, so the JSON
+    contract the frontend depends on never changes shape — only the content
+    of the fields does. Unknown or default options add nothing at all.
+    """
+    if options is None:
+        return ANALYSIS_PROMPT
+
+    extra = []
+
+    if options.shot_count:
+        extra.append(
+            f"Break the video into approximately {options.shot_count} shots. "
+            f"Merge or split scenes as needed to land near that number."
+        )
+
+    if options.language and options.language != "auto":
+        extra.append(
+            f"Write voiceover_text in {options.language}. If the spoken audio is in "
+            f"another language, translate it rather than transcribing verbatim."
+        )
+
+    directive = STYLE_DIRECTIVES.get(options.style or "faithful", "")
+    if directive:
+        extra.append(directive)
+
+    if not options.character_sheets:
+        # Keep the key so the response shape stays stable for the frontend.
+        extra.append('Skip character sheets entirely: return "character_sheets": [].')
+
+    if not extra:
+        return ANALYSIS_PROMPT
+
+    return ANALYSIS_PROMPT + "\n\n**ADDITIONAL DIRECTION:**\n- " + "\n- ".join(extra)
+
+
 # ============================================================================
 # Schemas
 # ============================================================================
@@ -92,8 +158,39 @@ class VideoJob(BaseModel):
     result: Optional[dict] = None
 
 
+class ExtractionOptions(BaseModel):
+    """Caller-supplied direction for the analysis.
+
+    Every field is optional and the defaults reproduce the previous behaviour
+    exactly, so an old client that sends nothing gets the same result it
+    always did.
+    """
+
+    # Bounded: the value goes into a prompt, and an absurd number would either
+    # blow the output token budget or produce nonsense.
+    shot_count: Optional[int] = Field(default=None, ge=1, le=40)
+    language: str = "auto"
+    style: str = "faithful"
+    character_sheets: bool = True
+
+    @field_validator("style")
+    @classmethod
+    def known_style(cls, v: str) -> str:
+        # Fall back rather than 400 — an unknown style should not fail a paid
+        # extraction the user already waited on.
+        return v if v in STYLE_DIRECTIVES else "faithful"
+
+    @field_validator("language")
+    @classmethod
+    def sane_language(cls, v: str) -> str:
+        v = (v or "auto").strip()
+        # Goes straight into a prompt; keep it short and free of injection room.
+        return v[:32] if v else "auto"
+
+
 class AnalyzeUrlRequest(BaseModel):
     url: str
+    options: Optional[ExtractionOptions] = None
 
 
 
@@ -120,10 +217,11 @@ def clean_json_response(text: str) -> str:
     return text.strip()
 
 
-async def process_video(job_id: str, video_path: str):
+async def process_video(job_id: str, video_path: str, options: Optional[ExtractionOptions] = None):
     """Background task to process video with Gemini AI."""
     gcs_blob_name = None
     gcs_bucket_ref = None
+    analysis_prompt = build_analysis_prompt(options)
     try:
         jobs[job_id]["status"] = "processing"
         jobs[job_id]["step"] = "Preparing video for AI..."
@@ -186,7 +284,7 @@ async def process_video(job_id: str, video_path: str):
             jobs[job_id]["step"] = "AI is analyzing your video..."
             response = client.models.generate_content(
                 model="gemini-2.5-flash",
-                contents=[video_part, ANALYSIS_PROMPT],
+                contents=[video_part, analysis_prompt],
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION,
                     temperature=0.7,
@@ -212,7 +310,7 @@ async def process_video(job_id: str, video_path: str):
 
             response = client.models.generate_content(
                 model="gemini-2.5-flash",
-                contents=[file_status, ANALYSIS_PROMPT],
+                contents=[file_status, analysis_prompt],
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION,
                     temperature=0.7,
@@ -261,7 +359,7 @@ async def process_video(job_id: str, video_path: str):
                 pass
 
 
-async def process_video_url(job_id: str, url: str):
+async def process_video_url(job_id: str, url: str, options: Optional[ExtractionOptions] = None):
     """Background task to download video from URL and then process it with Gemini AI."""
     temp_dir = tempfile.mkdtemp()
     video_path = None
@@ -399,7 +497,7 @@ async def process_video_url(job_id: str, url: str):
             raise RuntimeError("empty media response")
 
         jobs[job_id]["step"] = "Video downloaded. Preparing for analysis..."
-        await process_video(job_id, video_path)
+        await process_video(job_id, video_path, options)
 
     except Exception as e:
         jobs[job_id]["status"] = "failed"
@@ -480,7 +578,7 @@ async def analyze_video_url(
         "created_at": datetime.utcnow().isoformat(),
     }
 
-    background_tasks.add_task(process_video_url, job_id, url)
+    background_tasks.add_task(process_video_url, job_id, url, request.options)
 
     return VideoJob(
         job_id=job_id,
@@ -493,9 +591,21 @@ async def analyze_video_url(
 async def analyze_video(
     background_tasks: BackgroundTasks,
     video: UploadFile = File(...),
+    # Multipart can't carry a nested JSON body alongside the file, so options
+    # arrive as a JSON string in a form field.
+    options: Optional[str] = Form(default=None),
     user: dict = Depends(verify_jwt),
 ):
     """Upload and analyze a video to extract AI prompts. Returns a job ID for polling."""
+
+    # Malformed options must not cost the user their upload — fall back to
+    # defaults, which is exactly the behaviour before options existed.
+    parsed_options: Optional[ExtractionOptions] = None
+    if options:
+        try:
+            parsed_options = ExtractionOptions(**json.loads(options))
+        except Exception:
+            parsed_options = None
 
     # Validate file type
     if video.content_type not in settings.allowed_video_types:
@@ -531,7 +641,7 @@ async def analyze_video(
     }
 
     # Start background processing
-    background_tasks.add_task(process_video, job_id, video_path)
+    background_tasks.add_task(process_video, job_id, video_path, parsed_options)
 
     return VideoJob(
         job_id=job_id,

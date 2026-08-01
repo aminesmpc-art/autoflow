@@ -3,6 +3,81 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import { useRouter } from "next/navigation";
+import {
+  STUDIO_OPTIONS,
+  DEFAULT_STUDIO_OPTS,
+  buildStudioWorkflow,
+  downloadStudioWorkflow,
+} from "./studioWorkflow";
+
+/* Extraction options. Mirrors ExtractionOptions in
+   extractor-backend/app/api/videos.py — the engine validates and falls back on
+   anything it doesn't recognise, so an older engine simply ignores these. */
+const EXTRACT_LANGUAGES = [
+  ["auto", "Same as video"],
+  ["English", "English"],
+  ["French", "French"],
+  ["Spanish", "Spanish"],
+  ["German", "German"],
+  ["Italian", "Italian"],
+  ["Arabic", "Arabic"],
+  ["Portuguese", "Portuguese"],
+];
+
+const EXTRACT_STYLES = [
+  ["faithful", "Match the video"],
+  ["cinematic", "Cinematic"],
+  ["photorealistic", "Photorealistic"],
+  ["illustrated", "Illustrated"],
+  ["anime", "Anime"],
+  ["3d", "3D render"],
+];
+
+const DEFAULT_EXTRACT_OPTS = {
+  shotCount: "auto",
+  language: "auto",
+  style: "faithful",
+  characterSheets: true,
+};
+
+/** Send only what the user actually changed; null means "engine defaults". */
+function buildExtractionOptions(o) {
+  const body = {};
+  if (o.shotCount !== "auto") body.shot_count = Number(o.shotCount);
+  if (o.language !== "auto") body.language = o.language;
+  if (o.style !== "faithful") body.style = o.style;
+  if (!o.characterSheets) body.character_sheets = false;
+  return Object.keys(body).length ? body : null;
+}
+
+/* Field styles for the Studio options grid. The select carries an explicit
+   width and height rather than a flex basis — inside a column flex, a basis
+   resolves against the cross axis and silently becomes the height. */
+const studioFieldStyle = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "6px",
+  minWidth: 0,
+};
+
+const studioLabelStyle = {
+  fontSize: "0.75rem",
+  textTransform: "uppercase",
+  letterSpacing: "1px",
+  color: "var(--text-secondary)",
+  fontFamily: "inherit",
+};
+
+const studioSelectStyle = {
+  width: "100%",
+  height: "44px",
+  padding: "0 12px",
+  background: "#000",
+  color: "white",
+  border: "1px solid rgba(255, 92, 0, 0.4)",
+  fontSize: "0.9rem",
+  cursor: "pointer",
+};
 
 export default function ExtractorPage() {
   const { user, token, loading } = useAuth();
@@ -17,6 +92,25 @@ export default function ExtractorPage() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [saveStatus, setSaveStatus] = useState("idle");
+  const [studioOpts, setStudioOpts] = useState(DEFAULT_STUDIO_OPTS);
+  const [studioSent, setStudioSent] = useState(false);
+  const [extractOpts, setExtractOpts] = useState(DEFAULT_EXTRACT_OPTS);
+  const [showExtractOpts, setShowExtractOpts] = useState(false);
+
+  const setExtractOpt = (key, value) =>
+    setExtractOpts((prev) => ({ ...prev, [key]: value }));
+
+  const setStudioOpt = (key, value) =>
+    setStudioOpts((prev) => ({ ...prev, [key]: value }));
+
+  // Built on every render so the counts below always match the current options.
+  // Cheap — a handful of shots, no I/O.
+  const studioPreview =
+    result?.shots?.length ? buildStudioWorkflow(result, studioOpts) : null;
+  const studioGenCount =
+    studioPreview?.nodes.filter((n) => n.data.type === "generate").length ?? 0;
+  const studioBuildsImages = studioOpts.chain !== "videos";
+  const studioBuildsVideos = studioOpts.chain !== "images";
 
   const API_URL = process.env.NEXT_PUBLIC_EXTRACTOR_API_URL || "https://api.auto-flow.studio/api/videos";
   const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.auto-flow.studio/api";
@@ -58,11 +152,18 @@ export default function ExtractorPage() {
         }
       }
 
+      // Only send what differs from the engine's defaults, so an untouched
+      // form produces exactly the same extraction it always did.
+      const options = buildExtractionOptions(extractOpts);
+
       let response;
       if (mode === "upload") {
         setStepMessage("Uploading video...");
         const formData = new FormData();
         formData.append("video", file);
+        // Multipart can't nest JSON next to the file — the API reads this
+        // field as a JSON string.
+        if (options) formData.append("options", JSON.stringify(options));
 
         response = await fetch(`${API_URL}/analyze`, {
           method: "POST",
@@ -79,7 +180,7 @@ export default function ExtractorPage() {
             "Authorization": `Bearer ${token}`,
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({ url: videoUrl.trim() }),
+          body: JSON.stringify({ url: videoUrl.trim(), ...(options ? { options } : {}) }),
         });
       }
 
@@ -360,6 +461,105 @@ export default function ExtractorPage() {
             )
           )}
 
+        {/* ── Extraction options ──
+            Collapsed by default: the defaults reproduce the original
+            behaviour exactly, so most people never need to open this. */}
+        {user && (status === "idle" || status === "error") && (
+          <div className="cyber-panel animate-in" style={{ marginTop: "24px", padding: "0", overflow: "hidden" }}>
+            <button
+              onClick={() => setShowExtractOpts((v) => !v)}
+              className="terminal-text"
+              style={{
+                width: "100%", padding: "20px 28px", background: "transparent",
+                border: "none", color: "var(--primary)", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                fontSize: "0.95rem", textTransform: "uppercase", letterSpacing: "1px",
+                textShadow: "none", fontFamily: "inherit",
+              }}
+              aria-expanded={showExtractOpts}
+            >
+              <span>⚙ Extraction options</span>
+              <span>{showExtractOpts ? "−" : "+"}</span>
+            </button>
+
+            {showExtractOpts && (
+              <div style={{ padding: "0 28px 28px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "16px" }}>
+                  <label style={studioFieldStyle}>
+                    <span style={studioLabelStyle}>Number of shots</span>
+                    <select
+                      value={extractOpts.shotCount}
+                      onChange={(e) => setExtractOpt("shotCount", e.target.value)}
+                      style={studioSelectStyle}
+                    >
+                      <option value="auto">Auto</option>
+                      {[3, 4, 5, 6, 8, 10, 12, 16, 20].map((n) => (
+                        <option key={n} value={n}>{n} shots</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label style={studioFieldStyle}>
+                    <span style={studioLabelStyle}>Voiceover language</span>
+                    <select
+                      value={extractOpts.language}
+                      onChange={(e) => setExtractOpt("language", e.target.value)}
+                      style={studioSelectStyle}
+                    >
+                      {EXTRACT_LANGUAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </label>
+
+                  <label style={studioFieldStyle}>
+                    <span style={studioLabelStyle}>Visual style</span>
+                    <select
+                      value={extractOpts.style}
+                      onChange={(e) => setExtractOpt("style", e.target.value)}
+                      style={studioSelectStyle}
+                    >
+                      {EXTRACT_STYLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </label>
+
+                  <label style={{ ...studioFieldStyle, justifyContent: "flex-end" }}>
+                    <span style={studioLabelStyle}>Character sheets</span>
+                    <button
+                      type="button"
+                      onClick={() => setExtractOpt("characterSheets", !extractOpts.characterSheets)}
+                      className="terminal-text"
+                      style={{
+                        ...studioSelectStyle,
+                        textAlign: "left",
+                        color: extractOpts.characterSheets ? "var(--primary)" : "var(--text-secondary)",
+                        textShadow: "none",
+                        fontFamily: "inherit",
+                      }}
+                      aria-pressed={extractOpts.characterSheets}
+                    >
+                      {extractOpts.characterSheets ? "✓ Included" : "✗ Skipped"}
+                    </button>
+                  </label>
+                </div>
+
+                {buildExtractionOptions(extractOpts) && (
+                  <button
+                    onClick={() => setExtractOpts(DEFAULT_EXTRACT_OPTS)}
+                    className="terminal-text"
+                    style={{
+                      marginTop: "16px", background: "transparent", border: "none",
+                      color: "var(--text-secondary)", cursor: "pointer", padding: 0,
+                      fontSize: "0.85rem", textDecoration: "underline",
+                      textUnderlineOffset: "4px", textShadow: "none", fontFamily: "inherit",
+                    }}
+                  >
+                    Reset to defaults
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {(status === "uploading" || status === "processing") && (
           <div className="cyber-panel animate-in" style={{ padding: "60px 40px", textAlign: "left" }}>
             <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "2px", background: "var(--primary)", animation: "scanline 3s linear infinite" }}></div>
@@ -624,6 +824,129 @@ export default function ExtractorPage() {
                         Copy All
                       </button>
                     </div>
+                  </div>
+
+                  {/* ── Send to Studio ──
+                      A .json in Studio's own export format. Studio already
+                      imports that shape, so this needs no extension update. */}
+                  <div style={{ marginTop: "32px", padding: "28px", background: "#000", border: "1px solid var(--primary)" }}>
+                    <h4 className="terminal-text" style={{ fontSize: "1.2rem", margin: "0 0 8px 0", color: "white", textShadow: "none" }}>
+                      ⚡ Build an AutoFlow Studio Workflow
+                    </h4>
+                    <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--text-secondary)", margin: "0 0 24px 0", textShadow: "none" }}>
+                      Every shot becomes real nodes with its prompts already wired in — no copy-pasting, nothing left to rebuild by hand.
+                    </p>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+                      <label style={studioFieldStyle}>
+                        <span style={studioLabelStyle}>Build</span>
+                        <select
+                          value={studioOpts.chain}
+                          onChange={(e) => setStudioOpt("chain", e.target.value)}
+                          style={studioSelectStyle}
+                        >
+                          <option value="image_to_video">Still → Clip</option>
+                          <option value="images">Stills only</option>
+                          <option value="videos">Clips only</option>
+                        </select>
+                      </label>
+
+                      {studioBuildsImages && (
+                        <label style={studioFieldStyle}>
+                          <span style={studioLabelStyle}>Image model</span>
+                          <select
+                            value={studioOpts.imageModel}
+                            onChange={(e) => setStudioOpt("imageModel", e.target.value)}
+                            style={studioSelectStyle}
+                          >
+                            {STUDIO_OPTIONS.imageModels.map((m) => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                        </label>
+                      )}
+
+                      {studioBuildsVideos && (
+                        <label style={studioFieldStyle}>
+                          <span style={studioLabelStyle}>Video model</span>
+                          <select
+                            value={studioOpts.videoModel}
+                            onChange={(e) => setStudioOpt("videoModel", e.target.value)}
+                            style={studioSelectStyle}
+                          >
+                            {STUDIO_OPTIONS.videoModels.map((m) => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                        </label>
+                      )}
+
+                      <label style={studioFieldStyle}>
+                        <span style={studioLabelStyle}>Aspect ratio</span>
+                        <select
+                          value={studioOpts.aspectRatio}
+                          onChange={(e) => setStudioOpt("aspectRatio", e.target.value)}
+                          style={studioSelectStyle}
+                        >
+                          {(studioBuildsImages ? STUDIO_OPTIONS.imageRatios : STUDIO_OPTIONS.videoRatios)
+                            .map((r) => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                      </label>
+
+                      {studioBuildsVideos && (
+                        <label style={studioFieldStyle}>
+                          <span style={studioLabelStyle}>Clip length</span>
+                          <select
+                            value={studioOpts.duration}
+                            onChange={(e) => setStudioOpt("duration", e.target.value)}
+                            style={studioSelectStyle}
+                          >
+                            {STUDIO_OPTIONS.durations.map((d) => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </label>
+                      )}
+
+                      <label style={studioFieldStyle}>
+                        <span style={studioLabelStyle}>Platform</span>
+                        <select
+                          value={studioOpts.platform}
+                          onChange={(e) => setStudioOpt("platform", e.target.value)}
+                          style={studioSelectStyle}
+                        >
+                          <option value="flow">Google Flow</option>
+                          <option value="chatgpt">ChatGPT</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    {studioBuildsVideos && !STUDIO_OPTIONS.videoRatios.includes(studioOpts.aspectRatio) && (
+                      <p className="terminal-text" style={{ fontSize: "0.85rem", color: "var(--primary)", margin: "0 0 16px 0", textShadow: "none" }}>
+                        Flow only offers {STUDIO_OPTIONS.videoRatios.join(", ")} for video — clips will use 9:16.
+                      </p>
+                    )}
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
+                      <button
+                        className="cyber-btn"
+                        style={{ padding: "16px 32px", background: "var(--primary)", color: "#000", fontWeight: 700 }}
+                        disabled={!studioPreview || studioPreview.nodes.length === 0}
+                        onClick={() => {
+                          downloadStudioWorkflow(
+                            result,
+                            studioOpts,
+                            (result.video_name || "Extracted Workflow")
+                          );
+                          setStudioSent(true);
+                        }}
+                      >
+                        ↓ Download Workflow
+                      </button>
+                      <span className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--text-secondary)", textShadow: "none" }}>
+                        {studioPreview?.nodes.length ?? 0} nodes · {studioGenCount} generation{studioGenCount === 1 ? "" : "s"}
+                      </span>
+                    </div>
+
+                    {studioSent && (
+                      <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--primary)", marginTop: "20px", marginBottom: 0, textShadow: "none" }}>
+                        ✓ Saved. In the extension open <strong>Studio → Import</strong> and pick the file.
+                      </p>
+                    )}
                   </div>
 
                   <div style={{ marginTop: "32px", padding: "20px 24px", background: "rgba(255, 92, 0,0.05)", borderLeft: "4px solid var(--primary)", display: "flex", gap: "16px", alignItems: "flex-start" }}>
