@@ -11,6 +11,19 @@ export const metadata = {
 
 const releases = [
   {
+    version: "5.2",
+    date: "2026-08-01",
+    title: "Pro Activates Every Time",
+    highlights: [
+      "Upgrading to Pro now opens checkout with your AutoFlow email already filled in and locked. The field used to arrive empty, so the browser could autofill a different address — and paying under an address that wasn't your AutoFlow one meant Pro never switched on",
+      "Subscribed before creating an AutoFlow account? Your account is now created the moment payment clears, with Pro already active, and you get an email with a code to set your password. Previously that subscription had nothing to attach itself to and simply sat unused",
+    ],
+    improvements: [
+      "Choosing Upgrade while signed out now takes you to sign-in instead of straight to a payment form, so a purchase can't end up belonging to nobody",
+      "The Upgrade button on the pricing page goes through the same protected checkout as the extension",
+    ],
+  },
+  {
     version: "5.1",
     date: "2026-07-29",
     title: "Studio Reliability & Full-Size Viewer",
