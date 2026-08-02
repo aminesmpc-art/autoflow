@@ -92,8 +92,10 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
 
       {/* ── External title ── */}
       <div className="sn-label">
-        <span className="sn-label__icon" aria-hidden="true">{isVideo ? '🎞' : '🖼'}</span>
-        <span className="sn-label__text">{nodeData.label || 'Flow — Image/Video Generate'}</span>
+        <span className="sn-label__icon" aria-hidden="true">{isText ? '💬' : isVideo ? '🎞' : '🖼'}</span>
+        <span className="sn-label__text">
+          {nodeData.label || (isText ? 'Ask AI' : 'Flow — Image/Video Generate')}
+        </span>
       </div>
 
       {/* ── The card ── */}
@@ -109,9 +111,12 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
         </button>
 
         {/* ── Media area — full ratio only once there's something to show ── */}
+        {/* Text has no aspect ratio — a 9:16 box of empty space reads as a
+            broken image node. Give it a compact panel that grows with the
+            answer instead. */}
         <div
           className={`sn-media ${!(status === 'done' && (preview || previewVideo)) ? 'sn-media--empty' : ''}`}
-          style={{ aspectRatio: ratioToCss(ratio) }}
+          style={isText ? { minHeight: 120, maxHeight: 260 } : { aspectRatio: ratioToCss(ratio) }}
         >
           {status === 'done' && previewVideo && (
             <>
@@ -193,8 +198,12 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
 
           {status === 'idle' && (
             <div className="sn-media__state sn-media__state--idle">
-              <span className="sn-media__state-icon">{isVideo ? '🎞' : '🖼'}</span>
-              <small>Connect a prompt, then Run</small>
+              <span className="sn-media__state-icon">{isText ? '💬' : isVideo ? '🎞' : '🖼'}</span>
+              <small>
+                {isText
+                  ? 'Connect what to ask, then Run — the answer feeds the next node'
+                  : 'Connect a prompt, then Run'}
+              </small>
             </div>
           )}
         </div>

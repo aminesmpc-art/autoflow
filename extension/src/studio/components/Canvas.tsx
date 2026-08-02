@@ -277,6 +277,43 @@ function CanvasInner() {
     });
   }, [addNode, nodes, guardAdd]);
 
+  /**
+   * A generate node preconfigured to ask ChatGPT for text.
+   *
+   * Same node type underneath — it reuses the whole execution path — but
+   * reaching it by adding a Generate node and changing two dropdowns meant
+   * nobody found it. As its own button it is a thing you can add.
+   */
+  const addAskNode = useCallback(() => {
+    if (!guardAdd()) return;
+    const id = `ask_${Date.now()}`;
+    addNode({
+      id,
+      type: 'generate',
+      position: { x: 300, y: 250 + nodes.length * 50 },
+      data: {
+        type: 'generate',
+        label: `Ask AI ${nodes.filter((n) => {
+          const d = n.data as any;
+          return d.type === 'generate' && d.mediaType === 'text';
+        }).length + 1}`,
+        platform: 'chatgpt',
+        mediaType: 'text',
+        model: '',
+        aspectRatio: '9:16',
+        creationType: 'ingredients',
+        enabled: true,
+        status: 'idle',
+        resultUrl: null,
+        previewUrl: '',
+        resultTileId: null,
+        resultText: '',
+        progress: 0,
+        errorMessage: null,
+      },
+    });
+  }, [addNode, nodes, guardAdd]);
+
   return (
     <div className="studio-canvas" ref={reactFlowWrapper}>
       {/* Top Bar */}
@@ -371,6 +408,10 @@ function CanvasInner() {
         <button className="studio-toolbar__btn" onClick={addImageNode} aria-label="Add Image node">
           <span className="studio-toolbar__btn-icon" aria-hidden="true">🖼️</span>
           <span className="studio-toolbar__btn-label">Add Image</span>
+        </button>
+        <button className="studio-toolbar__btn" onClick={addAskNode} aria-label="Add Ask AI node">
+          <span className="studio-toolbar__btn-icon" aria-hidden="true">💬</span>
+          <span className="studio-toolbar__btn-label">Add Ask AI</span>
         </button>
         <button className="studio-toolbar__btn studio-toolbar__btn--primary" onClick={addGenerateNode} aria-label="Add Generate node">
           <span className="studio-toolbar__btn-icon" aria-hidden="true">🎬</span>
