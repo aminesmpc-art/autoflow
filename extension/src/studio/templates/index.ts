@@ -110,6 +110,54 @@ const CONTINUITY =
   'Same character as the reference: identical face, hairstyle, outfit, ' +
   'body proportions, colour palette and art style. Do not restyle or reset the character.';
 
+/* ── ASMR styrofoam carving ──
+   Repeated in every clip so the workshop, the hands and the audio character
+   don't drift between steps. The subject line names a concrete example because
+   the reference slot ships empty and a template has to be runnable as-is. */
+const STYROFOAM_STYLE =
+  '# SUBJECT\n' +
+  'Carve the subject in the attached reference image — match its shape, proportions ' +
+  'and details closely. If no reference is attached, carve a sitting fox.\n\n' +
+  '# CONSTANTS — identical in every clip\n' +
+  '• Top-down and macro close-ups only. Hands visible, never a face.\n' +
+  '• Same warm workshop lighting, same wooden bench, same neutral background.\n' +
+  '• Photoreal materials: white foam grain, static-clinging dust, blade marks.\n' +
+  '• ASMR audio led by the tools — blade shearing foam, dry crumbling, sanding grit.\n' +
+  '• Unhurried, steady hands. One continuous take, no cuts, no time-lapse.\n' +
+  '• Vertical 9:16, high detail.';
+
+/** [key, label, what happens in the clip — ending with the state it hands on] */
+const STYROFOAM_STAGES = [
+  ['cut', 'Measuring & Cutting',
+    'Hands measure a white styrofoam sheet with a steel ruler, mark cut lines in pencil, ' +
+    'then draw a utility knife through the foam in slow even passes. Linger on the blade ' +
+    'parting the surface and the crumbs dropping away.\n' +
+    'END ON: several clean rectangular blocks squared up in a neat stack.'],
+  ['bond', 'Stacking & Bonding',
+    'White glue is spread across each block face, the blocks are pressed together one by ' +
+    'one and squared into a single tall cube. Show the glue squeezing out at the seams and ' +
+    'hands holding steady pressure.\n' +
+    'END ON: one solid bonded cube resting on the bench, seams barely visible.'],
+  ['outline', 'Outline Sketching',
+    'A black marker draws the subject\'s outline onto the cube, then the block is rotated ' +
+    'so the profile and front views are sketched on the adjacent faces as carving guides.\n' +
+    'END ON: the cube fully outlined on every face, marker set down beside it.'],
+  ['rough', 'Rough Carving',
+    'A long craft knife shears away the waste in broad confident strips that curl off and ' +
+    'fall to the bench. The silhouette emerges from the block; the surface stays faceted ' +
+    'and unfinished.\n' +
+    'END ON: the rough three-dimensional form clearly readable, offcuts piled around it.'],
+  ['detail', 'Fine Detailing',
+    'A scalpel cuts fine texture into the surface, fine-grit sandpaper rounds every edge, ' +
+    'and a soft brush sweeps the dust clear. Small deliberate strokes, frequent pauses to ' +
+    'turn the piece and check it.\n' +
+    'END ON: the finished sculpture, smooth and detailed, bench swept clean.'],
+  ['reveal', 'Final Reveal',
+    'The camera pulls back from macro to a full view and orbits the finished sculpture once, ' +
+    'slowly. Warm key light rakes across the carved texture. No hands in frame.\n' +
+    'END ON: the completed piece centred and still, held for the last beat.'],
+] as const;
+
 export const TEMPLATES: Template[] = [
   /* ─────────────── Starters ─────────────── */
   {
@@ -545,6 +593,49 @@ export const TEMPLATES: Template[] = [
       iEdge(`g_${k}`, `gv_${k}`),
       tEdge(`v_${k}`, `gv_${k}`),
     ]),
+  },
+  {
+    id: 'tpl_styrofoam_asmr',
+    name: 'ASMR Styrofoam Carving: 6-Clip Chain',
+    description: 'One reference photo becomes a six-clip carving sequence, each clip continuing where the last one ended.',
+    useCase:
+      'ASMR and satisfying-craft channels. This is the format people usually build by hand — generate a clip, screenshot its last frame, upload it as the next clip\'s first frame, repeat five times. Studio passes each clip\'s closing frame to the next node automatically, so the block genuinely progresses from raw foam to finished sculpture in one run.',
+    category: 'Content',
+    difficulty: 'Advanced',
+    nodeCount: 13,
+    thumbnail: '🔨',
+    nodes: [
+      imageNode('i1', 'Subject Reference', 40, 300, 'what to carve'),
+
+      ...(STYROFOAM_STAGES).flatMap(([key, label, body], i) => {
+        const x = 520 + i * 480;
+        return [
+          promptNode(`p_${key}`, `${i + 1}. ${label}`,
+            body + '\n\n' + STYROFOAM_STYLE,
+            i === 0 ? 40 : x - 480, 700),
+          genNode(`g_${key}`, {
+            label: `${i + 1}. ${label}`,
+            mediaType: 'video',
+            aspectRatio: '9:16',
+            // Long takes are what makes this format satisfying, and 10s is an
+            // Omni Flash capability.
+            duration: '10s',
+            model: 'Omni Flash',
+          }, x, 200),
+        ];
+      }),
+    ],
+    edges: STYROFOAM_STAGES.flatMap(([key], i) => {
+      const prev = STYROFOAM_STAGES[i - 1];
+      return [
+        tEdge(`p_${key}`, `g_${key}`),
+        // Clip 1 starts from the user's photo; every later clip starts from the
+        // frame the previous clip ended on.
+        i === 0
+          ? iEdge('i1', `g_${key}`, 'image')
+          : iEdge(`g_${prev[0]}`, `g_${key}`),
+      ];
+    }),
   },
 ];
 

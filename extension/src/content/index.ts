@@ -1498,8 +1498,9 @@ async function sendStudioResult(
    */
   let referenceUrl = stills.reference;
   if (!referenceUrl && videoEl) {
-    // A video result animating into the next shot: its frame is the reference.
-    referenceUrl = captureVideoFrame(videoEl);
+    // A clip feeding the next clip: hand over where it ENDED, not where it
+    // began, or every step in a chain restarts from the same state.
+    referenceUrl = await captureVideoEndFrame(videoEl);
   }
 
   try {
@@ -1534,6 +1535,49 @@ function captureVideoFrame(video: HTMLVideoElement): string {
   } catch (e: any) {
     console.warn(`[AutoFlow Studio] Video frame capture failed: ${e?.message || e}`);
     return '';
+  }
+}
+
+/**
+ * Capture the LAST frame of a page <video>.
+ *
+ * Chained workflows hand one clip's ending to the next clip as its opening
+ * frame — that handoff is the whole continuity technique. After a generation
+ * the element sits at time 0, so capturing "the current frame" would pass the
+ * clip's *start* downstream and the subject would reset on every clip instead
+ * of progressing. Seeks to the end, captures, then puts the playhead back so
+ * the tile on the page looks untouched.
+ */
+async function captureVideoEndFrame(video: HTMLVideoElement): Promise<string> {
+  const duration = video.duration;
+  if (!isFinite(duration) || duration <= 0) return captureVideoFrame(video);
+
+  const original = video.currentTime;
+  // A hair before the end: seeking exactly to duration can land past the last
+  // decodable frame and draw blank.
+  const target = Math.max(0, duration - 0.05);
+
+  try {
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        video.removeEventListener('seeked', finish);
+        resolve();
+      };
+      // Never hang a run on a video that refuses to seek — take whatever
+      // frame is showing instead.
+      const timer = setTimeout(finish, 2000);
+      video.addEventListener('seeked', finish);
+      video.currentTime = target;
+    });
+    return captureVideoFrame(video);
+  } catch {
+    return captureVideoFrame(video);
+  } finally {
+    try { video.currentTime = original; } catch { /* leave it wherever it is */ }
   }
 }
 
