@@ -96,6 +96,32 @@ export default function ExtractorPage() {
   const [studioSent, setStudioSent] = useState(false);
   const [extractOpts, setExtractOpts] = useState(DEFAULT_EXTRACT_OPTS);
   const [showExtractOpts, setShowExtractOpts] = useState(false);
+  const [savedId, setSavedId] = useState(null);
+  const [isPublished, setIsPublished] = useState(false);
+  const [publishBusy, setPublishBusy] = useState(false);
+
+  /** Publishing is opt-in: extractions save privately, and this is the only
+      thing that puts one in the public gallery. */
+  const togglePublished = async () => {
+    if (!savedId || publishBusy) return;
+    const next = !isPublished;
+    setPublishBusy(true);
+    try {
+      const res = await fetch(`${DJANGO_API_URL}/extractions/${savedId}/`, {
+        method: "PATCH",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ is_public: next }),
+      });
+      if (res.ok) setIsPublished(next);
+    } catch (e) {
+      /* leave the toggle where it was; the extraction itself is unaffected */
+    } finally {
+      setPublishBusy(false);
+    }
+  };
 
   const setExtractOpt = (key, value) =>
     setExtractOpts((prev) => ({ ...prev, [key]: value }));
@@ -237,6 +263,12 @@ export default function ExtractorPage() {
               });
               if (saveResponse.ok) {
                 setSaveStatus("saved");
+                // Keep the id so the user can choose to publish it. Saved
+                // extractions are private until they say otherwise.
+                try {
+                  const saved = await saveResponse.json();
+                  if (saved?.id) setSavedId(saved.id);
+                } catch (e) { /* id is a nice-to-have, not required */ }
               } else {
                 setSaveStatus("error");
               }
@@ -611,8 +643,44 @@ export default function ExtractorPage() {
                   </span>
                 )}
               </div>
-              <button className="cyber-btn" style={{ padding: "12px 24px" }} onClick={() => { setStatus("idle"); setFile(null); }}>Extract Another</button>
+              <button className="cyber-btn" style={{ padding: "12px 24px" }} onClick={() => { setStatus("idle"); setFile(null); setSavedId(null); setIsPublished(false); setStudioSent(false); }}>Extract Another</button>
             </div>
+
+            {/* ── Privacy ──
+                Extractions save privately. This is the only thing that puts
+                one in the public gallery, and it says so plainly, because the
+                gallery is indexed by search engines. */}
+            {savedId && (
+              <div
+                className="cyber-panel"
+                style={{ marginBottom: "40px", padding: "24px 28px", display: "flex", gap: "20px", alignItems: "center", flexWrap: "wrap", justifyContent: "space-between" }}
+              >
+                <div style={{ maxWidth: "560px" }}>
+                  <h4 className="terminal-text" style={{ margin: "0 0 6px 0", fontSize: "1rem", color: "white", textShadow: "none" }}>
+                    {isPublished ? "🌐 Listed in the public gallery" : "🔒 Private to your account"}
+                  </h4>
+                  <p className="terminal-text" style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.5, textShadow: "none" }}>
+                    {isPublished
+                      ? "Anyone can view these prompts on the Prompts page, and search engines may index them."
+                      : "Only you can see this extraction. Publish it to share the prompts on the Prompts page."}
+                  </p>
+                </div>
+                <button
+                  className="cyber-btn"
+                  onClick={togglePublished}
+                  disabled={publishBusy}
+                  style={{
+                    padding: "14px 28px", whiteSpace: "nowrap",
+                    background: isPublished ? "#000" : "var(--primary)",
+                    color: isPublished ? "var(--primary)" : "#000",
+                    opacity: publishBusy ? 0.6 : 1,
+                  }}
+                  aria-pressed={isPublished}
+                >
+                  {publishBusy ? "..." : isPublished ? "Make Private" : "Publish to Gallery"}
+                </button>
+              </div>
+            )}
 
             {/* --- Summary Card --- */}
             <div className="cyber-panel" style={{ marginBottom: "40px", padding: "32px" }}>

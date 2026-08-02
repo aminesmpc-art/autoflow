@@ -549,6 +549,44 @@ async def process_video_url(job_id: str, url: str, options: Optional[ExtractionO
             pass
 
 
+async def enforce_extraction_limit(authorization: Optional[str]) -> None:
+    """Ask Django whether this caller may start another extraction.
+
+    The browser checks the quota before uploading, but nothing stopped a direct
+    call to this service — and this is where the Gemini bill is incurred, so the
+    check belongs here too.
+
+    Fails OPEN on any transport problem. A blip talking to Django must not block
+    a paying customer from the thing they paid for; the worst case is one extra
+    extraction, which Django's own create endpoint still refuses to save.
+    """
+    if not settings.enforce_extraction_limits or not authorization:
+        return
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                f"{settings.django_api_url.rstrip('/')}/extractions/check-limit/",
+                headers={"Authorization": authorization},
+            )
+        if resp.status_code != 200:
+            return  # can't tell — let it through
+        state = resp.json()
+    except Exception:
+        return  # fail open
+
+    if state.get("allowed") is False:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"You have reached your limit of {state.get('limit')} extractions "
+                f"per {state.get('period')}."
+            ),
+        )
+
+
 # ============================================================================
 # Endpoints
 # ============================================================================
@@ -558,8 +596,11 @@ async def analyze_video_url(
     background_tasks: BackgroundTasks,
     request: AnalyzeUrlRequest,
     user: dict = Depends(verify_jwt),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
     """Analyze a video from URL (YouTube, TikTok, etc.). Returns a job ID for polling."""
+    await enforce_extraction_limit(f"Bearer {credentials.credentials}")
+
     url = request.url.strip()
     if not url.startswith(("http://", "https://")):
         raise HTTPException(
@@ -595,8 +636,13 @@ async def analyze_video(
     # arrive as a JSON string in a form field.
     options: Optional[str] = Form(default=None),
     user: dict = Depends(verify_jwt),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
     """Upload and analyze a video to extract AI prompts. Returns a job ID for polling."""
+
+    # Before reading the upload into memory — no point accepting 500MB from
+    # someone who is over quota.
+    await enforce_extraction_limit(f"Bearer {credentials.credentials}")
 
     # Malformed options must not cost the user their upload — fall back to
     # defaults, which is exactly the behaviour before options existed.

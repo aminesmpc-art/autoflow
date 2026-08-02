@@ -13,7 +13,18 @@ class SavedExtraction(models.Model):
     voiceover_text = models.TextField(blank=True, null=True, help_text="Extracted voiceover script.")
     character_sheets = models.JSONField(default=list, blank=True, help_text="List of character designs.")
     shots = models.JSONField(default=list, blank=True, help_text="Timeline of shots and prompts.")
-    
+
+    # Extractions are saved automatically the moment an analysis finishes, so
+    # publishing has to be opt-in: the public gallery and the sitemap read this
+    # flag, and before it existed every saved extraction — including the
+    # transcript of whatever the user uploaded — was served to anyone and
+    # submitted to Google for indexing.
+    is_public = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Show this extraction in the public prompt gallery.",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

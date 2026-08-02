@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "insecure-dev-key-change-me"
     jwt_algorithm: str = "HS256"
 
+    # Django API — the authority on extraction quotas. This service is where
+    # the expensive Gemini call happens, so it has to ask before starting one;
+    # the browser's pre-flight check is advisory only.
+    django_api_url: str = "https://api.auto-flow.studio/api"
+    enforce_extraction_limits: bool = True
+
     # Limits
     max_video_size_mb: int = 500
     allowed_video_types: list[str] = [
