@@ -9,7 +9,12 @@
 
 console.log('[AutoFlow ChatGPT] Content script loaded on', location.href);
 
+import { cleanAssistantReply, looksLikeUsablePrompt } from './chatgptReply';
+
 const GENERATION_TIMEOUT_MS = 6 * 60 * 1000; // ChatGPT image gen can take minutes
+// Writing a prompt is a chat round-trip, not a render — a node that hangs here
+// should surface quickly rather than stalling a workflow for six minutes.
+const TEXT_TIMEOUT_MS = 90 * 1000;
 const POLL_MS = 2000;
 const MAX_CAPTURE_BYTES = 15 * 1024 * 1024;
 
@@ -172,8 +177,13 @@ async function handleExecute(payload: any): Promise<any> {
     return { success: false };
   }
 
-  // Snapshot images that already exist so we only accept a NEW one as the result
+  const wantsText = config?.mediaType === 'text';
+
+  // Snapshot what's already on screen so only a NEW result counts. For text
+  // that means the reply currently showing, which is still there while ours
+  // is being written.
   const preexisting = new Set(collectResultImages().map((i) => i.currentSrc || i.src));
+  const priorReply = wantsText ? readLatestReply().trim() : '';
 
   fillComposer(composer, prompt);
   await sleep(500);
@@ -195,14 +205,17 @@ async function handleExecute(payload: any): Promise<any> {
     }));
   }
 
-  console.log('[AutoFlow ChatGPT] Prompt submitted — waiting for the image...');
+  console.log(`[AutoFlow ChatGPT] Prompt submitted — waiting for the ${wantsText ? 'reply' : 'image'}...`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 20 });
 
   // Return the message channel NOW — the wait can take minutes and Chrome
   // closes a sendResponse channel long before that. Results travel back via
   // chrome.runtime.sendMessage, same pattern as the Flow content script.
   startAntiThrottle();
-  trackGeneration(nodeId, preexisting).finally(stopAntiThrottle);
+  const work = wantsText
+    ? trackTextReply(nodeId, priorReply)
+    : trackGeneration(nodeId, preexisting);
+  work.finally(stopAntiThrottle);
   return { success: true };
 }
 
@@ -266,5 +279,80 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
   send('STUDIO_NODE_ERROR', {
     nodeId,
     error: 'ChatGPT image did not complete within 6 minutes — check the ChatGPT tab',
+  });
+}
+
+/**
+ * The newest assistant turn's text.
+ *
+ * Found structurally rather than by class name: ChatGPT's styling churns
+ * constantly, but the message role attribute has been stable and is what their
+ * own accessibility tree relies on. Falls back to the last article element,
+ * which is the shape the conversation has had through several redesigns.
+ */
+function readLatestReply(): string {
+  const byRole = document.querySelectorAll('[data-message-author-role="assistant"]');
+  if (byRole.length) {
+    return (byRole[byRole.length - 1] as HTMLElement).innerText || '';
+  }
+  const articles = document.querySelectorAll('article');
+  if (articles.length) {
+    return (articles[articles.length - 1] as HTMLElement).innerText || '';
+  }
+  return '';
+}
+
+/**
+ * Fire-and-forget: wait for the written answer, then hand it back as text.
+ *
+ * Completion needs two signals, not one. The stop button disappearing says
+ * streaming ended, but the text can still be settling; requiring the content
+ * to be byte-identical across consecutive polls avoids capturing a sentence
+ * mid-render — the same trick the image path uses for swapping srcs.
+ */
+async function trackTextReply(nodeId: string, priorReply: string): Promise<void> {
+  const startedAt = Date.now();
+  let lastSeen = '';
+  let stableCount = 0;
+
+  while (Date.now() - startedAt < TEXT_TIMEOUT_MS) {
+    await sleep(POLL_MS);
+
+    const elapsed = Date.now() - startedAt;
+    send('STUDIO_NODE_PROGRESS', {
+      nodeId,
+      progress: Math.min(90, 20 + Math.floor((elapsed / TEXT_TIMEOUT_MS) * 90)),
+    });
+
+    const current = readLatestReply().trim();
+    // Unchanged from before we asked means our answer hasn't started yet.
+    if (!current || current === priorReply) continue;
+
+    if (current === lastSeen) {
+      stableCount++;
+    } else {
+      lastSeen = current;
+      stableCount = 0;
+    }
+
+    if (stableCount >= 2 && !isGenerating()) {
+      const cleaned = cleanAssistantReply(current);
+      if (!looksLikeUsablePrompt(cleaned)) {
+        // Usually ChatGPT asking a clarifying question instead of answering.
+        send('STUDIO_NODE_ERROR', {
+          nodeId,
+          error: 'ChatGPT replied but not with a usable prompt — check the ChatGPT tab',
+        });
+        return;
+      }
+      console.log(`[AutoFlow ChatGPT] Reply captured (${cleaned.length} chars)`);
+      send('STUDIO_NODE_RESULT', { nodeId, tileId: '', text: cleaned });
+      return;
+    }
+  }
+
+  send('STUDIO_NODE_ERROR', {
+    nodeId,
+    error: 'ChatGPT did not finish answering in time — check the ChatGPT tab',
   });
 }

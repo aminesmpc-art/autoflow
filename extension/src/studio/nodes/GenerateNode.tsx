@@ -67,6 +67,8 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   const isChatGPT = platform === 'chatgpt';
   const mediaType = nodeData.mediaType || 'image';
   const isVideo = !isChatGPT && mediaType === 'video';
+  /* Text output only makes sense on ChatGPT — Flow has no chat to answer. */
+  const isText = isChatGPT && mediaType === 'text';
   const models = isVideo ? VIDEO_MODELS : IMAGE_MODELS;
   const ratios = isVideo ? VIDEO_RATIOS : IMAGE_RATIOS;
   const ratio = nodeData.aspectRatio || '9:16';
@@ -140,7 +142,15 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
             </>
           )}
 
-          {status === 'done' && !previewVideo && !preview && (
+          {/* A written prompt is the result here, so show it — it is the thing
+              the next node will run, and worth reading before it does. */}
+          {status === 'done' && isText && nodeData.resultText && (
+            <div className="sn-reply" title={nodeData.resultText}>
+              {nodeData.resultText}
+            </div>
+          )}
+
+          {status === 'done' && !isText && !previewVideo && !preview && (
             <div className="sn-media__state">
               <span className="sn-media__state-icon">🖼</span>
               <span>Generated on {isChatGPT ? 'ChatGPT' : 'Flow'}</span>
@@ -151,7 +161,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           {status === 'running' && (
             <div className="sn-media__state sn-media__state--running">
               <div className="sn-spinner" />
-              <span>Generating {isVideo ? 'video' : 'image'}…</span>
+              <span>{isText ? 'Asking ChatGPT…' : `Generating ${isVideo ? 'video' : 'image'}…`}</span>
               <div className="sn-progress">
                 <div className="sn-progress__fill" style={{ width: `${progress}%` }} />
               </div>
@@ -201,7 +211,21 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
             <option value="chatgpt">ChatGPT</option>
           </select>
 
-          {/* ChatGPT v1 is prompt-only: the composer has no model/ratio/duration controls */}
+          {/* ChatGPT can either draw or write. Asking it to write turns this
+              node into a prompt writer whose answer feeds the next node. */}
+          {isChatGPT && (
+            <select
+              className="sn-bar__sel"
+              value={mediaType === 'text' ? 'text' : 'image'}
+              onChange={(e) => set('mediaType', e.target.value)}
+              title="Ask ChatGPT for an image, or for a written prompt"
+            >
+              <option value="image">Image</option>
+              <option value="text">Text</option>
+            </select>
+          )}
+
+          {/* Flow exposes model/ratio/duration; the ChatGPT composer has none */}
           {!isChatGPT && (
             <>
               <select className="sn-bar__sel" value={mediaType} onChange={(e) => handleMediaType(e.target.value)} title="Output type">
@@ -247,25 +271,41 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               </label>
             </>
           )}
-          {isChatGPT && <span className="sn-bar__hint">Image · prompt only</span>}
+          {isChatGPT && (
+            <span className="sn-bar__hint">
+              {isText ? 'Writes a prompt · needs a ChatGPT tab' : 'Image · prompt only'}
+            </span>
+          )}
         </div>
 
         {/* ── Handles: large, labelled, outside the edge ── */}
         <Handle type="target" position={Position.Left} id="text" className="sn-port sn-port--text" style={{ top: '38%' }}>
           <span className="sn-port__glyph">T</span>
         </Handle>
-        <Handle type="target" position={Position.Left} id="image_ref" className="sn-port sn-port--image" style={{ top: '62%' }}>
-          <span className="sn-port__glyph">🖼</span>
-        </Handle>
-        <Handle type="source" position={Position.Right} id="result" className="sn-port sn-port--out" style={{ top: '50%' }}>
-          <span className="sn-port__glyph">→</span>
-        </Handle>
+        {/* A prompt writer takes no reference image — hiding the port keeps it
+            from being wired to something it would silently ignore. */}
+        {!isText && (
+          <Handle type="target" position={Position.Left} id="image_ref" className="sn-port sn-port--image" style={{ top: '62%' }}>
+            <span className="sn-port__glyph">🖼</span>
+          </Handle>
+        )}
+        {/* Text answers leave on the text port so they land on the next node's
+            T input; media leaves on result, which carries the reference. */}
+        {isText ? (
+          <Handle type="source" position={Position.Right} id="text" className="sn-port sn-port--text" style={{ top: '50%' }}>
+            <span className="sn-port__glyph">T</span>
+          </Handle>
+        ) : (
+          <Handle type="source" position={Position.Right} id="result" className="sn-port sn-port--out" style={{ top: '50%' }}>
+            <span className="sn-port__glyph">→</span>
+          </Handle>
+        )}
       </div>
 
       {/* ── External platform badge ── */}
       <div className="sn-platform">
         <span className={`sn-platform__dot ${isChatGPT ? 'sn-platform__dot--chatgpt' : ''}`} />
-        {isChatGPT ? 'ChatGPT Images' : 'Google Flow'}
+        {isChatGPT ? (isText ? 'ChatGPT Writer' : 'ChatGPT Images') : 'Google Flow'}
       </div>
 
       {/* Prefer the video when there is one — previously only the still could

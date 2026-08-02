@@ -114,7 +114,7 @@ const STORAGE_PREFIX = 'studio_workflow_';
  */
 const RUNTIME_KEYS = new Set([
   'status', 'progress', 'previewUrl', 'previewVideoUrl',
-  'resultUrl', 'resultTileId', 'errorMessage',
+  'resultUrl', 'resultTileId', 'errorMessage', 'resultText',
 ]);
 
 /**
@@ -140,6 +140,7 @@ function stripResults(nodes: Node[]): Node[] {
         previewVideoUrl: '',
         resultUrl: null,
         resultTileId: null,
+        resultText: '',
         errorMessage: null,
       },
     };

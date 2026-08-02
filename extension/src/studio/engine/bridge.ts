@@ -8,7 +8,9 @@ export type BridgeStatus = 'disconnected' | 'connecting' | 'connected';
 export interface NodeExecutionConfig {
   prompt: string;
   model: string;
-  mediaType: 'image' | 'video';
+  /** 'text' asks ChatGPT for a written answer instead of an image — the reply
+      becomes the prompt for a downstream node. ChatGPT only. */
+  mediaType: 'image' | 'video' | 'text';
   aspectRatio: string;
   duration?: string;
   creationType: 'ingredients' | 'frames';
@@ -33,6 +35,8 @@ export interface NodeResult {
    * Flow DOM later, which failed once the grid had recycled it.
    */
   referenceUrl?: string;
+  /** ChatGPT's written reply, when the node asked for text rather than media. */
+  text?: string;
 }
 
 type MessageHandler = (msg: any) => void;

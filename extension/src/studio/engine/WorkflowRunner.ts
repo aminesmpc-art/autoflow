@@ -256,7 +256,15 @@ export class WorkflowRunner {
 
             try {
               const result = await this.executeGenerateNode(step.nodeId, node, edges);
-              this.nodeResults.set(step.nodeId, result);
+
+              if (nodeData.mediaType === 'text') {
+                // A written answer, not media. Stored the same way a Prompt
+                // node stores its text, so a downstream node's T input reads
+                // it with no special handling.
+                this.nodeResults.set(step.nodeId, { tileId: '', imageUrl: result.text || '' });
+              } else {
+                this.nodeResults.set(step.nodeId, result);
+              }
               this.failedNodes.delete(step.nodeId);
 
               store.updateNodeData(step.nodeId, {
@@ -266,6 +274,8 @@ export class WorkflowRunner {
                 previewUrl: result.previewUrl || '',
                 previewVideoUrl: result.previewVideoUrl || '',
                 resultTileId: result.tileId,
+                // Shown on the node so the written prompt is reviewable.
+                resultText: result.text || '',
                 errorMessage: null,
               });
 
@@ -397,8 +407,11 @@ export class WorkflowRunner {
      * genuinely stuck image node still fails reasonably fast.
      */
     const isVideoNode = config.mediaType === 'video';
-    const timeoutMs = isVideoNode ? 22 * 60 * 1000 : 8 * 60 * 1000;
-    const timeoutLabel = isVideoNode ? '22 minutes' : '8 minutes';
+    // Asking ChatGPT for text is a chat round-trip, so it fails fast rather
+    // than holding a workflow open for minutes.
+    const isTextNode = config.mediaType === 'text';
+    const timeoutMs = isTextNode ? 2 * 60 * 1000 : isVideoNode ? 22 * 60 * 1000 : 8 * 60 * 1000;
+    const timeoutLabel = isTextNode ? '2 minutes' : isVideoNode ? '22 minutes' : '8 minutes';
 
     // Send to Flow via bridge
     return new Promise<NodeResult>((resolve, reject) => {
@@ -426,6 +439,7 @@ export class WorkflowRunner {
             previewUrl: payload.previewUrl,
             previewVideoUrl: payload.previewVideoUrl,
             referenceUrl: payload.referenceUrl,
+            text: payload.text,
           });
         }
       };
