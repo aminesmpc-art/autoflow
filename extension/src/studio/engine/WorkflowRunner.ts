@@ -5,12 +5,59 @@
    ============================================================ */
 
 import type { Node, Edge } from '@xyflow/react';
-import { topologicalSort, getNodeInputs, getUpstreamNodeIds } from './topoSort';
+import {
+  topologicalSort,
+  getNodeInputs,
+  getUpstreamNodeIds,
+  getDownstreamNodeIds,
+} from './topoSort';
 import { trackUsage } from '../../shared/api';
 import { bridge, type NodeExecutionConfig, type NodeResult } from './bridge';
 import { useStudioStore } from '../store';
 
 export type RunnerState = 'idle' | 'running' | 'paused' | 'stopped' | 'done' | 'error';
+
+/** One extra attempt. Enough to ride out a blip, few enough that a node which
+    is genuinely broken fails while the user is still watching. */
+const MAX_AUTO_RETRIES = 1;
+const AUTO_RETRY_DELAY_MS = 2500;
+
+/**
+ * Whether a failure is worth another attempt on its own.
+ *
+ * Deliberately narrow. Two kinds of error must never be auto-retried:
+ *
+ * - A timeout. The generation may still be running on Flow, so resubmitting
+ *   spends a second one and leaves the user with two clips they pay for.
+ * - Anything caused by the workflow itself (empty prompt, nothing connected).
+ *   Those fail identically forever, and each attempt costs a prompt.
+ */
+export function isTransientFailure(message: string): boolean {
+  const m = message || '';
+
+  // "No result after 22 minutes" — may still be generating.
+  if (/no result after/i.test(m)) return false;
+  // Authoring problems, not transport problems.
+  if (/prompt node is empty|no prompt connected|upstream node failed/i.test(m)) return false;
+
+  return [
+    /lost connection/i,
+    /not found on the flow page/i,
+    /could not fetch reference image/i,
+    /failed to fetch/i,
+    /network|econn|timed? out fetching/i,
+    /http 5\d\d/i,
+  ].some((p) => p.test(m));
+}
+
+export interface RunOptions {
+  /**
+   * Restrict the run to these generate nodes, keeping results already held for
+   * everything else. Used by retry so successful clips are not regenerated —
+   * each one costs minutes and a prompt.
+   */
+  only?: Set<string>;
+}
 
 export class WorkflowRunner {
   private state: RunnerState = 'idle';
@@ -33,15 +80,57 @@ export class WorkflowRunner {
    * - Skips non-generate nodes (prompt/image just pass data)
    * - Executes generate nodes sequentially on Flow
    */
-  async run(nodes: Node[], edges: Edge[]): Promise<void> {
+  /**
+   * Which generate nodes a retry has to run.
+   *
+   * A failed node alone is not enough: everything downstream was skipped
+   * because of it, so those have to run too. And a retried node needs its
+   * upstream results — after a Studio reload this runner holds none, so those
+   * generations are pulled back in rather than failing on missing input again.
+   */
+  planRetry(requestedIds: string[], nodes: Node[], edges: Edge[]): Set<string> {
+    const nodeById = new Map(nodes.map((n) => [n.id, n]));
+    const isRunnable = (id: string) => {
+      const d = nodeById.get(id)?.data as any;
+      return d?.type === 'generate' && d?.enabled !== false;
+    };
+
+    const set = new Set<string>();
+    for (const id of requestedIds) {
+      if (isRunnable(id)) set.add(id);
+      for (const down of getDownstreamNodeIds(id, edges)) {
+        if (isRunnable(down)) set.add(down);
+      }
+    }
+
+    const queue = [...set];
+    while (queue.length) {
+      const current = queue.pop()!;
+      for (const up of getUpstreamNodeIds(current, edges)) {
+        if (!isRunnable(up) || set.has(up) || this.nodeResults.has(up)) continue;
+        set.add(up);
+        queue.push(up);
+      }
+    }
+    return set;
+  }
+
+  async run(nodes: Node[], edges: Edge[], opts: RunOptions = {}): Promise<void> {
     const store = useStudioStore.getState();
+    const only = opts.only;
 
     // Reset
     this.state = 'running';
     this.abortRequested = false;
     this.pauseRequested = false;
-    this.nodeResults.clear();
-    this.failedNodes.clear();
+    if (only) {
+      // Keep what already succeeded; just clear the failure marks on the nodes
+      // being retried so they are allowed to run again.
+      for (const id of only) this.failedNodes.delete(id);
+    } else {
+      this.nodeResults.clear();
+      this.failedNodes.clear();
+    }
     store.setRunning(true);
 
     // Sort nodes in execution order
@@ -59,6 +148,7 @@ export class WorkflowRunner {
     // counting them would leave the progress bar short of its total.
     const generateSteps = steps.filter((s) => {
       if (s.nodeType !== 'generate') return false;
+      if (only && !only.has(s.nodeId)) return false;
       const n = nodes.find((x) => x.id === s.nodeId);
       return (n?.data as any)?.enabled !== false;
     });
@@ -120,6 +210,12 @@ export class WorkflowRunner {
             break;
           }
 
+          // Targeted retry: anything outside the set keeps its existing result
+          // and its node stays exactly as the user left it.
+          if (only && !only.has(step.nodeId)) {
+            break;
+          }
+
           // If anything upstream failed, this node's inputs are incomplete.
           // Running anyway burns a generation and silently produces the wrong
           // output — e.g. a scene video with no character reference because
@@ -149,42 +245,69 @@ export class WorkflowRunner {
           store.setCurrentNode(step.nodeId);
           store.updateNodeData(step.nodeId, { status: 'running', progress: 0, errorMessage: null });
 
-          try {
-            const result = await this.executeGenerateNode(step.nodeId, node, edges);
-            this.nodeResults.set(step.nodeId, result);
+          /* Attempt loop. Usage is settled exactly once per node, at its final
+             outcome — an internal retry is our recovery, not a second prompt
+             the user should be billed a second time for. */
+          let succeeded = false;
+          let lastError = 'Generation failed';
 
-            store.updateNodeData(step.nodeId, {
-              status: 'done',
-              progress: 100,
-              resultUrl: result.videoUrl || result.imageUrl || result.thumbnailUrl || '',
-              previewUrl: result.previewUrl || '',
-              previewVideoUrl: result.previewVideoUrl || '',
-              resultTileId: result.tileId,
-            });
+          for (let attempt = 0; attempt <= MAX_AUTO_RETRIES; attempt++) {
+            if (this.abortRequested) break;
 
+            try {
+              const result = await this.executeGenerateNode(step.nodeId, node, edges);
+              this.nodeResults.set(step.nodeId, result);
+              this.failedNodes.delete(step.nodeId);
+
+              store.updateNodeData(step.nodeId, {
+                status: 'done',
+                progress: 100,
+                resultUrl: result.videoUrl || result.imageUrl || result.thumbnailUrl || '',
+                previewUrl: result.previewUrl || '',
+                previewVideoUrl: result.previewVideoUrl || '',
+                resultTileId: result.tileId,
+                errorMessage: null,
+              });
+
+              succeeded = true;
+              console.log(
+                `[Runner] Generate "${nodeData.label}": DONE — tile ${result.tileId}` +
+                (attempt > 0 ? ` (attempt ${attempt + 1})` : '')
+              );
+              break;
+            } catch (err: any) {
+              lastError = err?.message || 'Generation failed';
+              const canRetry = attempt < MAX_AUTO_RETRIES && isTransientFailure(lastError);
+              console.error(
+                `[Runner] Generate "${nodeData.label}" attempt ${attempt + 1} failed:`,
+                lastError, canRetry ? '— retrying' : '— giving up'
+              );
+              if (!canRetry) break;
+
+              store.updateNodeData(step.nodeId, { progress: 0 });
+              await this.sleep(AUTO_RETRY_DELAY_MS);
+            }
+          }
+
+          if (succeeded) {
             // Settle the pending prompt event the server pre-charged at run
             // start. Without this the dashboard never counts Studio prompts —
             // it only tallies events that reached done/failed.
             trackUsage(1, 'text', 'done').catch(() => { /* non-blocking */ });
-
-            completedCount++;
-            store.setRunProgress(completedCount, generateSteps.length);
-            console.log(`[Runner] Generate "${nodeData.label}": DONE — tile ${result.tileId}`);
-          } catch (err: any) {
-            console.error(`[Runner] Generate "${nodeData.label}" FAILED:`, err.message);
+          } else {
             // Mark failed so dependent nodes skip instead of running with
             // missing inputs. Independent branches still continue.
             this.failedNodes.add(step.nodeId);
             store.updateNodeData(step.nodeId, {
               status: 'error',
-              errorMessage: err.message || 'Generation failed',
+              errorMessage: lastError,
             });
             trackUsage(1, 'text', 'failed').catch(() => { /* non-blocking */ });
-
-            // Don't abort the whole workflow — skip this node and continue
-            completedCount++;
-            store.setRunProgress(completedCount, generateSteps.length);
           }
+
+          // Don't abort the whole workflow — move on to the next node
+          completedCount++;
+          store.setRunProgress(completedCount, generateSteps.length);
           break;
         }
 
@@ -224,11 +347,17 @@ export class WorkflowRunner {
     for (const srcId of inputs.get('image_ref') || []) {
       const imgResult = this.nodeResults.get(srcId);
       if (!imgResult) continue;
-      if (imgResult.imageUrl && imgResult.imageUrl.startsWith('data:')) {
+      if (imgResult.referenceUrl && imgResult.referenceUrl.startsWith('data:')) {
+        // Captured when the upstream node finished, so it cannot go missing.
+        // Preferred over the tile id: resolving a tile from the DOM minutes
+        // later failed whenever Flow's grid had recycled it.
+        referenceImageData.push(imgResult.referenceUrl);
+      } else if (imgResult.imageUrl && imgResult.imageUrl.startsWith('data:')) {
         // Image node upload, or a ChatGPT result captured as a data URL
         referenceImageData.push(imgResult.imageUrl);
       } else if (imgResult.tileId) {
-        // Upstream Flow generate node — reference its tile
+        // Fallback for results captured before referenceUrl existed, or when
+        // the capture itself failed.
         referenceImageIds.push(imgResult.tileId);
       }
     }
@@ -296,6 +425,7 @@ export class WorkflowRunner {
             thumbnailUrl: payload.thumbnailUrl,
             previewUrl: payload.previewUrl,
             previewVideoUrl: payload.previewVideoUrl,
+            referenceUrl: payload.referenceUrl,
           });
         }
       };

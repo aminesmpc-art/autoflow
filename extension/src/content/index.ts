@@ -1467,7 +1467,8 @@ async function sendStudioResult(
   // Flow's tile URLs are page-scoped (blob:) or need the page's auth context,
   // so they cannot be rendered from the chrome-extension:// Studio page.
   // Convert to self-contained data URLs here, where fetch still works.
-  let previewUrl = await buildStudioPreview(previewSrc || mediaUrl || '');
+  const stills = await buildStudioStills(previewSrc || mediaUrl || '');
+  let previewUrl = stills.preview;
 
   // Videos rarely carry a poster — grab a frame straight off the <video>
   const videoEl = tile?.querySelector('video') || null;
@@ -1481,6 +1482,26 @@ async function sendStudioResult(
     previewVideoUrl = await buildStudioVideoData(mediaUrl);
   }
 
+  /**
+   * Capture the still a downstream node will use as its reference, NOW.
+   *
+   * Downstream nodes used to reference this result by tile id and look the tile
+   * up in the DOM at the moment they ran, minutes later. Flow's media grid
+   * lazy-renders and recycles tiles as it grows, so by the time a late node ran
+   * the tile it needed was often no longer in the document — and the node failed
+   * with "reference tile not found" even though the image existed. The longer
+   * the workflow, the likelier that got.
+   *
+   * Right here the tile has just been produced and is definitely present, so
+   * the bytes are always available. Bigger than the canvas thumbnail because
+   * this one is fed back into a generation, where resolution matters.
+   */
+  let referenceUrl = stills.reference;
+  if (!referenceUrl && videoEl) {
+    // A video result animating into the next shot: its frame is the reference.
+    referenceUrl = captureVideoFrame(videoEl);
+  }
+
   try {
     chrome.runtime.sendMessage({
       type: 'STUDIO_NODE_RESULT',
@@ -1491,6 +1512,7 @@ async function sendStudioResult(
         thumbnailUrl: mediaUrl || '',
         previewUrl,
         previewVideoUrl,
+        referenceUrl,
       },
     }).catch(() => {});
   } catch {}
@@ -1543,33 +1565,53 @@ async function buildStudioVideoData(url: string): Promise<string> {
  * back to showing a "preview unavailable" placeholder rather than a broken image.
  */
 const PREVIEW_MAX_EDGE = 512;
+/* Reference stills are fed back into a generation rather than shown in a node,
+   so they keep far more detail than the canvas thumbnail. ~1536px JPEG lands
+   around 200-400KB, and these live only in runner memory — stripResults()
+   keeps run output out of saved workflows. */
+const REFERENCE_MAX_EDGE = 1536;
 
-async function buildStudioPreview(url: string): Promise<string> {
-  if (!url) return '';
-  if (url.startsWith('data:')) return url;
+/**
+ * Build both stills a completed node needs, from a single fetch and decode.
+ *
+ * `preview` is the small thumbnail the canvas shows; `reference` is the larger
+ * still a downstream node feeds back into Flow. Producing them together matters
+ * because this runs after every generation — encoding twice from one bitmap is
+ * cheap, downloading the image twice is not.
+ */
+async function buildStudioStills(url: string): Promise<{ preview: string; reference: string }> {
+  const none = { preview: '', reference: '' };
+  if (!url) return none;
+  if (url.startsWith('data:')) return { preview: url, reference: url };
 
   try {
     const resp = await fetch(url);
-    if (!resp.ok) return '';
+    if (!resp.ok) return none;
     const blob = await resp.blob();
-    if (blob.type.startsWith('video/')) return ''; // videos use their poster instead
+    if (blob.type.startsWith('video/')) return none; // videos use their poster instead
 
     const bitmap = await createImageBitmap(blob);
-    const scale = Math.min(1, PREVIEW_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
-    const w = Math.max(1, Math.round(bitmap.width * scale));
-    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const longest = Math.max(bitmap.width, bitmap.height);
 
-    const canvas = new OffscreenCanvas(w, h);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return '';
-    ctx.drawImage(bitmap, 0, 0, w, h);
+    const encode = async (maxEdge: number, quality: number): Promise<string> => {
+      const scale = Math.min(1, maxEdge / longest);
+      const w = Math.max(1, Math.round(bitmap.width * scale));
+      const h = Math.max(1, Math.round(bitmap.height * scale));
+      const canvas = new OffscreenCanvas(w, h);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return '';
+      ctx.drawImage(bitmap, 0, 0, w, h);
+      const out = await canvas.convertToBlob({ type: 'image/jpeg', quality });
+      return `data:${out.type};base64,${await blobToRawBase64(out)}`;
+    };
+
+    const preview = await encode(PREVIEW_MAX_EDGE, 0.82);
+    const reference = await encode(REFERENCE_MAX_EDGE, 0.9);
     bitmap.close();
-
-    const out = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.82 });
-    return `data:${out.type};base64,${await blobToRawBase64(out)}`;
+    return { preview, reference };
   } catch (e: any) {
     console.warn(`[AutoFlow Studio] Preview unavailable: ${e?.message || e}`);
-    return '';
+    return none;
   }
 }
 

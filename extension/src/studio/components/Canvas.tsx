@@ -144,6 +144,45 @@ function CanvasInner() {
     runner.run(nodes, edges);
   }, [nodes, edges, isRunning, canRun, isPro, runBlockedReason, recordRun, setRunsUsed]);
 
+  /* Nodes the user can retry — anything a run left in error. */
+  const failedNodeIds = nodes
+    .filter((n) => {
+      const d = n.data as any;
+      return d?.type === 'generate' && d?.status === 'error';
+    })
+    .map((n) => n.id);
+
+  /**
+   * Re-run only what failed, plus whatever was skipped because of it.
+   *
+   * Deliberately does NOT consume another Studio run. Re-running the whole
+   * workflow to recover from one failure meant re-generating clips that had
+   * already succeeded — minutes each, and a prompt each. The retried
+   * generations are still counted individually through trackUsage, so the work
+   * is paid for; what is not charged again is the run itself.
+   */
+  const handleRetry = useCallback(async (ids?: string[]) => {
+    if (isRunning) return;
+    const requested = ids && ids.length ? ids : failedNodeIds;
+    if (!requested.length) return;
+
+    const only = runner.planRetry(requested, nodes, edges);
+    if (!only.size) return;
+
+    setLimitMsg(null);
+    runner.run(nodes, edges, { only });
+  }, [nodes, edges, isRunning, failedNodeIds]);
+
+  /* Let a node's own Retry button reach the same path as the toolbar. */
+  useEffect(() => {
+    const onRetryNode = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (id) handleRetry([id]);
+    };
+    window.addEventListener('studio:retry-node', onRetryNode as EventListener);
+    return () => window.removeEventListener('studio:retry-node', onRetryNode as EventListener);
+  }, [handleRetry]);
+
   const handleStop = useCallback(() => {
     runner.stop();
   }, []);
@@ -350,17 +389,34 @@ function CanvasInner() {
             </button>
           </>
         ) : (
-          <button
-            className="studio-toolbar__btn studio-toolbar__btn--run"
-            onClick={handleRun}
-            disabled={!canRun}
-            aria-label="Run workflow"
-          >
-            <span className="studio-toolbar__btn-icon" aria-hidden="true">▶</span>
-            <span className="studio-toolbar__btn-label">
-              {canRun ? 'Run workflow' : 'Add a Generate node to run'}
-            </span>
-          </button>
+          <>
+            <button
+              className="studio-toolbar__btn studio-toolbar__btn--run"
+              onClick={handleRun}
+              disabled={!canRun}
+              aria-label="Run workflow"
+            >
+              <span className="studio-toolbar__btn-icon" aria-hidden="true">▶</span>
+              <span className="studio-toolbar__btn-label">
+                {canRun ? 'Run workflow' : 'Add a Generate node to run'}
+              </span>
+            </button>
+            {/* Recovering from a failure shouldn't mean paying for the clips
+                that already worked. */}
+            {failedNodeIds.length > 0 && (
+              <button
+                className="studio-toolbar__btn studio-toolbar__btn--retry"
+                onClick={() => handleRetry()}
+                aria-label={`Retry ${failedNodeIds.length} failed node${failedNodeIds.length === 1 ? '' : 's'}`}
+                title="Re-runs only the failed nodes and anything skipped because of them"
+              >
+                <span className="studio-toolbar__btn-icon" aria-hidden="true">↻</span>
+                <span className="studio-toolbar__btn-label">
+                  Retry failed ({failedNodeIds.length})
+                </span>
+              </button>
+            )}
+          </>
         )}
       </div>
 

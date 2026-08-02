@@ -105,3 +105,24 @@ export function getUpstreamNodeIds(nodeId: string, edges: Edge[]): string[] {
   }
   return Array.from(ids);
 }
+
+/**
+ * Every node reachable downstream of `nodeId`, transitively.
+ *
+ * Retrying a failed node is only useful together with everything that was
+ * skipped because of it — those are exactly its descendants.
+ */
+export function getDownstreamNodeIds(nodeId: string, edges: Edge[]): string[] {
+  const out = new Set<string>();
+  const stack = [nodeId];
+  while (stack.length) {
+    const current = stack.pop()!;
+    for (const edge of edges) {
+      if (edge.source === current && !out.has(edge.target)) {
+        out.add(edge.target);
+        stack.push(edge.target);
+      }
+    }
+  }
+  return Array.from(out);
+}

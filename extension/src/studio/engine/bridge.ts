@@ -27,6 +27,12 @@ export interface NodeResult {
   previewUrl?: string;
   /** Playable video as a data URL, when the clip was small enough to inline */
   previewVideoUrl?: string;
+  /**
+   * The result captured as a reference-grade data URL the moment it was
+   * produced. Downstream nodes use this instead of looking the tile up in the
+   * Flow DOM later, which failed once the grid had recycled it.
+   */
+  referenceUrl?: string;
 }
 
 type MessageHandler = (msg: any) => void;

@@ -164,6 +164,20 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               <span className="sn-media__state-icon">⚠</span>
               <span>Generation failed</span>
               <small title={nodeData.errorMessage}>{nodeData.errorMessage}</small>
+              {/* Retry this node and whatever was skipped below it, without
+                  re-running the clips that already succeeded. Dispatched as an
+                  event so the node needs no wiring to the runner. */}
+              <button
+                type="button"
+                className="sn-retry-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.dispatchEvent(new CustomEvent('studio:retry-node', { detail: id }));
+                }}
+                title="Re-run just this node and anything skipped because of it"
+              >
+                ↻ Retry
+              </button>
             </div>
           )}
 

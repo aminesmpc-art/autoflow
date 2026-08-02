@@ -608,6 +608,15 @@
 .studio-toolbar__btn--stop:hover {
   background: rgba(239, 68, 68, 0.3);
 }
+/* Retry sits next to Run and only appears when something failed, so it reads
+   as the obvious next action rather than competing with Run. */
+.studio-toolbar__btn--retry {
+  background: rgba(234, 179, 8, 0.18);
+  border-color: rgba(234, 179, 8, 0.45);
+}
+.studio-toolbar__btn--retry:hover {
+  background: rgba(234, 179, 8, 0.34);
+}
 .studio-toolbar__btn-icon {
   font-size: 18px;
 }
@@ -1039,6 +1048,24 @@
 .sn-media__state--running { color: #c084fc; }
 .sn-media__state--error   { color: #f87171; }
 .sn-media__state--error small { color: #b45c5c; }
+
+/* Retry, on the failed node itself — the fastest path from "this one broke"
+   to "try just this one again". */
+.sn-retry-btn {
+  margin-top: 10px;
+  padding: 6px 14px;
+  background: rgba(234, 179, 8, 0.18);
+  border: 1px solid rgba(234, 179, 8, 0.5);
+  border-radius: 8px;
+  color: #fbbf24;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.sn-retry-btn:hover {
+  background: rgba(234, 179, 8, 0.34);
+}
 
 .sn-spinner {
   width: 30px;
