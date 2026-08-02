@@ -117,11 +117,16 @@ const CONTINUITY =
 const STYROFOAM_STYLE =
   '# SUBJECT\n' +
   'Carve the subject in the attached reference image — match its shape, proportions ' +
-  'and details closely. If no reference is attached, carve a sitting fox.\n\n' +
+  'and details closely. If no reference is attached, carve a seated lion. This format ' +
+  'reads best with animals that have a strong silhouette.\n\n' +
   '# CONSTANTS — identical in every clip\n' +
-  '• Top-down and macro close-ups only. Hands visible, never a face.\n' +
-  '• Same warm workshop lighting, same wooden bench, same neutral background.\n' +
-  '• Photoreal materials: white foam grain, static-clinging dust, blade marks.\n' +
+  '• Macro close-ups at bench level, three-quarter view, so the form stays readable. ' +
+  'Top-down only while measuring and cutting flat stock.\n' +
+  '• Hands and forearms visible, never a face.\n' +
+  '• Same warm workshop lighting, same worn wooden bench, tools and a jar of brushes ' +
+  'soft and out of focus behind.\n' +
+  '• Photoreal materials: white foam grain, static-clinging dust, blade marks, ' +
+  'loose crumbs and offcuts scattered across the bench.\n' +
   '• ASMR audio led by the tools — blade shearing foam, dry crumbling, sanding grit.\n' +
   '• Unhurried, steady hands. One continuous take, no cuts, no time-lapse.\n' +
   '• Vertical 9:16, high detail.';
@@ -144,14 +149,15 @@ const STYROFOAM_STAGES = [
     'END ON: the cube fully outlined on every face, marker set down beside it.'],
   ['rough', 'Rough Carving',
     'A long craft knife shears away the waste in broad confident strips that curl off and ' +
-    'fall to the bench. The silhouette emerges from the block; the surface stays faceted ' +
+    'fall to the bench. Shot three-quarter on at bench level so the silhouette reads as it ' +
+    'emerges — head, limbs and stance becoming recognisable while the surface stays faceted ' +
     'and unfinished.\n' +
     'END ON: the rough three-dimensional form clearly readable, offcuts piled around it.'],
   ['detail', 'Fine Detailing',
-    'A scalpel cuts fine texture into the surface, fine-grit sandpaper rounds every edge, ' +
-    'and a soft brush sweeps the dust clear. Small deliberate strokes, frequent pauses to ' +
-    'turn the piece and check it.\n' +
-    'END ON: the finished sculpture, smooth and detailed, bench swept clean.'],
+    'A scalpel cuts the fine features — face, eyes, fur or hide texture — in small deliberate ' +
+    'strokes, fine-grit sandpaper rounds every edge, and a soft brush sweeps the dust clear. ' +
+    'The hand turns the piece between passes to check it from each side.\n' +
+    'END ON: the finished sculpture, smooth and sharply detailed, bench swept clean.'],
   ['reveal', 'Final Reveal',
     'The camera pulls back from macro to a full view and orbits the finished sculpture once, ' +
     'slowly. Warm key light rakes across the carved texture. No hands in frame.\n' +
