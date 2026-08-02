@@ -56,7 +56,8 @@ const imageNode = (
 
 interface GenOpts {
   label: string;
-  mediaType?: 'image' | 'video';
+  /** 'text' asks ChatGPT to write the prompt for the node downstream of it. */
+  mediaType?: 'image' | 'video' | 'text';
   model?: string;
   aspectRatio?: string;
   duration?: string;
@@ -72,7 +73,9 @@ const genNode = (id: string, o: GenOpts, x: number, y: number): Node => ({
     label: o.label,
     platform: o.platform || 'flow',
     mediaType: o.mediaType || 'image',
-    model: o.model || (o.mediaType === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),
+    model: o.mediaType === 'text'
+      ? ''
+      : o.model || (o.mediaType === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),
     aspectRatio: o.aspectRatio || '9:16',
     duration: o.duration || '6s',
     creationType: 'ingredients',
@@ -85,6 +88,10 @@ const genNode = (id: string, o: GenOpts, x: number, y: number): Node => ({
     errorMessage: null,
   },
 });
+
+/** An Ask AI node — ChatGPT writing text, so no model or ratio applies. */
+const askNode = (id: string, label: string, x: number, y: number): Node =>
+  genNode(id, { label, mediaType: 'text', platform: 'chatgpt' }, x, y);
 
 /** text edge (orange) */
 const tEdge = (source: string, target: string): Edge => ({
@@ -163,6 +170,35 @@ const STYROFOAM_STAGES = [
     'slowly. Warm key light rakes across the carved texture. No hands in frame.\n' +
     'END ON: the completed piece centred and still, held for the last beat.'],
 ] as const;
+
+/* ── Water wipeout ──
+   Written for an Ask AI node, so two things matter more than usual: the answer
+   must be ONLY the prompt (anything conversational gets rendered as if it were
+   part of the shot), and it must differ from the previous answers, since all
+   four asks run as consecutive turns in one ChatGPT conversation. */
+const POOL_FAILS_BRIEF =
+  'Write ONE prompt for a 10-second vertical AI video. Output only the prompt ' +
+  'itself — no title, no explanation, no preamble, no quotes, no markdown.\n\n' +
+  '# THE SHOT\n' +
+  'A single contestant attempting a floating obstacle course over water, filmed ' +
+  'by a friend on a modern phone. One continuous handheld take, no cuts. The ' +
+  'contestant\'s face stays visible. It ends in one unexpected wipeout.\n\n' +
+  '# MUST READ AS A REAL PHONE VIDEO\n' +
+  '• Handheld from the poolside, slight micro-shake, imperfect framing, a touch ' +
+  'of autofocus hunting.\n' +
+  '• Never drone, tripod, gimbal, stabiliser or cinematic camera moves.\n' +
+  '• The person filming is never seen — no hands, shadow or reflection.\n' +
+  '• Natural sound only: splashes, wet slaps on inflatables, shouting, laughing, ' +
+  'pool ambience. No music, no narration.\n' +
+  '• Nothing glossy — not an advert, not influencer content, not a film.\n\n' +
+  '# VARY IT\n' +
+  'Pick a different location, contestant and obstacle order than any prompt you ' +
+  'have already written in this conversation, and end on a different wipeout. ' +
+  'Obstacles to draw from: floating pads, balance beam, rolling log, rope swing, ' +
+  'tilting platform, rotating arm, slippery ramp, foam wall.\n\n' +
+  '# BEAT-BY-BEAT\n' +
+  'Describe the ten seconds in order — the approach, two or three obstacles, then ' +
+  'the fall. Keep it under 150 words.';
 
 export const TEMPLATES: Template[] = [
   /* ─────────────── Starters ─────────────── */
@@ -642,6 +678,40 @@ export const TEMPLATES: Template[] = [
           : iEdge(`g_${prev[0]}`, `g_${key}`),
       ];
     }),
+  },
+  {
+    id: 'tpl_pool_fails',
+    name: 'Water Wipeouts: 4 Written by AI',
+    description: 'ChatGPT writes four different wipeout prompts, Flow renders all four — a different set every run.',
+    useCase:
+      'Faceless fail and satisfying channels, where the format never changes but the clip has to. One brief fans out to four Ask AI nodes, and because they run as consecutive turns in the same ChatGPT conversation each one is told to differ from the last — so a single Run gives four unrelated wipeouts. Needs a signed-in ChatGPT tab; clips are 10s, which is Flow\'s longest.',
+    category: 'Content',
+    difficulty: 'Advanced',
+    nodeCount: 9,
+    thumbnail: '🌊',
+    nodes: [
+      promptNode('brief', 'The Brief', POOL_FAILS_BRIEF, 40, 300),
+
+      ...([1, 2, 3, 4] as const).flatMap((n, i) => {
+        const y = i * 420;
+        return [
+          askNode(`ask${n}`, `Write Clip ${n}`, 560, y),
+          genNode(`clip${n}`, {
+            label: `Clip ${n}`,
+            mediaType: 'video',
+            aspectRatio: '9:16',
+            duration: '10s',
+            model: 'Omni Flash',
+          }, 1040, y),
+        ];
+      }),
+    ],
+    edges: ([1, 2, 3, 4] as const).flatMap((n) => [
+      // One brief drives every branch — edit it once to change all four.
+      tEdge('brief', `ask${n}`),
+      // ChatGPT's answer becomes the clip's prompt.
+      tEdge(`ask${n}`, `clip${n}`),
+    ]),
   },
 ];
 

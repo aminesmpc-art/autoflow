@@ -61,11 +61,19 @@ describe('templates', () => {
       for (const n of tpl.nodes) {
         const d = n.data as any;
         if (d.type !== 'generate') continue;
+        expect(['flow', 'chatgpt']).toContain(d.platform);
+
+        // Ask AI nodes produce text, so model/ratio/duration don't apply.
+        if (d.mediaType === 'text') {
+          expect(d.platform).toBe('chatgpt');
+          expect(d.model).toBe('');
+          continue;
+        }
+
         const isVideo = d.mediaType === 'video';
         expect(isVideo ? AVAILABLE_MODELS : AVAILABLE_IMAGE_MODELS).toContain(d.model);
         expect(isVideo ? VIDEO_RATIOS : IMAGE_RATIOS).toContain(d.aspectRatio);
         if (isVideo) expect(DURATIONS).toContain(d.duration);
-        expect(['flow', 'chatgpt']).toContain(d.platform);
       }
     });
 
@@ -90,6 +98,66 @@ describe('templates', () => {
         expect(e.sourceHandle).toBe(expected);
       }
     });
+  });
+});
+
+describe('AI-written water wipeouts', () => {
+  const tpl = TEMPLATES.find((t) => t.id === 'tpl_pool_fails')!;
+  const dataOf = (id: string) => tpl.nodes.find((n) => n.id === id)!.data as any;
+
+  it('exists', () => {
+    expect(tpl).toBeDefined();
+  });
+
+  it('is one brief, four writers, four clips', () => {
+    const asks = tpl.nodes.filter((n) => (n.data as any).mediaType === 'text');
+    const clips = tpl.nodes.filter((n) => (n.data as any).mediaType === 'video');
+    expect(tpl.nodes.filter((n) => (n.data as any).type === 'prompt')).toHaveLength(1);
+    expect(asks).toHaveLength(4);
+    expect(clips).toHaveLength(4);
+  });
+
+  it('routes the brief into every writer, and each answer into its own clip', () => {
+    for (const n of [1, 2, 3, 4]) {
+      expect(tpl.edges).toEqual(expect.arrayContaining([
+        expect.objectContaining({ source: 'brief', target: `ask${n}`, targetHandle: 'text' }),
+        expect.objectContaining({ source: `ask${n}`, target: `clip${n}`, targetHandle: 'text' }),
+      ]));
+    }
+  });
+
+  it('does not cross the wires between branches', () => {
+    // clip2 must be fed by ask2 and nothing else, or two clips render the same prompt.
+    for (const n of [1, 2, 3, 4]) {
+      const feeders = tpl.edges.filter((e) => e.target === `clip${n}`).map((e) => e.source);
+      expect(feeders).toEqual([`ask${n}`]);
+    }
+  });
+
+  it('asks ChatGPT for text and Flow for video', () => {
+    for (const n of [1, 2, 3, 4]) {
+      expect(dataOf(`ask${n}`).platform).toBe('chatgpt');
+      expect(dataOf(`ask${n}`).mediaType).toBe('text');
+      expect(dataOf(`clip${n}`).platform).toBe('flow');
+      expect(dataOf(`clip${n}`).duration).toBe('10s');
+      expect(dataOf(`clip${n}`).aspectRatio).toBe('9:16');
+    }
+  });
+
+  it('tells ChatGPT to return only the prompt', () => {
+    // Any preamble gets rendered by Flow as if it were part of the shot.
+    const brief = dataOf('brief').text as string;
+    expect(brief).toMatch(/only the prompt/i);
+    expect(brief).toMatch(/no explanation/i);
+  });
+
+  it('tells ChatGPT to differ from its previous answers', () => {
+    // All four run in one conversation, so this is what makes them unlike.
+    expect(dataOf('brief').text).toMatch(/already written in this conversation/i);
+  });
+
+  it('has no image references — nothing here starts from a photo', () => {
+    expect(tpl.edges.every((e) => e.targetHandle === 'text')).toBe(true);
   });
 });
 
