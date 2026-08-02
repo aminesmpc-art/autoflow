@@ -13,6 +13,7 @@ import { getRunningQueue, clearRunningQueue } from '../shared/storage';
 import { initApiHelper, isApiAvailable } from './apiHelper';
 import { matchesFlowText } from './flowStrings';
 import { registerStudioImage, releaseStudioImages } from './studioImages';
+import { pickReferenceStill } from './studioFrames';
 
 // أ¢â€‌â‚¬أ¢â€‌â‚¬ Singleton engine أ¢â€‌â‚¬أ¢â€‌â‚¬
 let engine: AutomationEngine | null = null;
@@ -1493,15 +1494,13 @@ async function sendStudioResult(
    * the workflow, the likelier that got.
    *
    * Right here the tile has just been produced and is definitely present, so
-   * the bytes are always available. Bigger than the canvas thumbnail because
-   * this one is fed back into a generation, where resolution matters.
+   * the bytes are always available. For a clip that means seeking to its last
+   * frame; see pickReferenceStill for why the poster must not win.
    */
-  let referenceUrl = stills.reference;
-  if (!referenceUrl && videoEl) {
-    // A clip feeding the next clip: hand over where it ENDED, not where it
-    // began, or every step in a chain restarts from the same state.
-    referenceUrl = await captureVideoEndFrame(videoEl);
-  }
+  const referenceUrl = pickReferenceStill({
+    endFrame: videoEl ? await captureVideoEndFrame(videoEl) : '',
+    posterStill: stills.reference,
+  });
 
   try {
     chrome.runtime.sendMessage({
