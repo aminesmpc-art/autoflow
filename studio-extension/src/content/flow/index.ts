@@ -1233,9 +1233,27 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
 
   sendStudioProgress(nodeId, 20);
 
-  // ── Phase 1: Wait for engine to finish processing (fill prompt → click generate) ──
-  // Engine in lite mode sets status to 'submitted' once it clicked Generate.
-  for (let wait = 0; wait < 120; wait++) {
+  /* ── Phase 1: wait for the engine to submit (settings → images → prompt → Generate) ──
+   *
+   * Waits on the engine making PROGRESS, not on a stopwatch.
+   *
+   * This used to allow a flat 60 seconds. clickGenerate alone is allowed 60s
+   * waiting for Flow to re-enable the Generate button after it finishes
+   * processing an uploaded image — so any node carrying a reference image
+   * blew the budget while the engine was still working correctly, and the
+   * node failed with "did not submit the prompt in time" having done nothing
+   * wrong. Attaching an image made it near-certain.
+   *
+   * An outer wait shorter than the inner work it supervises is the same fault
+   * that failed long videos, where the runner gave up at 10 minutes on a tile
+   * the content script tracks for 20. Deriving the limit from progress rather
+   * than from a guess is what stops it coming back a third time.
+   */
+  const STALL_LIMIT_MS = 90_000;   // no state change at all — genuinely hung
+  const ABSOLUTE_LIMIT_MS = 6 * 60_000; // backstop: an engine cycling forever
+
+  const submitStart = Date.now();
+  while (Date.now() - submitStart < ABSOLUTE_LIMIT_MS) {
     await sleep(500);
     const status = queue.prompts[0].status;
 
@@ -1244,11 +1262,27 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
       sendStudioError(nodeId, queue.prompts[0].error || 'Generation failed');
       return;
     }
+
+    // Still moving through its steps? Then it is working, however slowly.
+    if (engine && engine.getStateAge() < STALL_LIMIT_MS) continue;
+    if (!engine) break; // engine gone — fall through to the status check below
+
+    sendStudioError(
+      nodeId,
+      `Engine stalled at ${engine.getState()} for ${Math.round(engine.getStateAge() / 1000)}s ` +
+      `without submitting. Check the Flow tab.`
+    );
+    return;
   }
 
   const prompt = queue.prompts[0];
   if (prompt.status !== 'submitted' && prompt.status !== 'done') {
-    sendStudioError(nodeId, 'Engine did not submit the prompt in time');
+    sendStudioError(
+      nodeId,
+      engine
+        ? `Engine did not submit the prompt — last step was ${engine.getState()}.`
+        : 'Engine did not submit the prompt in time'
+    );
     return;
   }
 
@@ -1273,7 +1307,19 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
   // adopt an old, already-finished tile and report done instantly.
   let fallbackTileId: string | null = null;
 
-  for (let wait = 0; wait < 1200; wait++) {
+  /* How long to watch the tile, by media type.
+   *
+   * Must stay INSIDE the runner's budget for the same node — 22 minutes for
+   * video, 8 for an image. Whichever side gives up first writes the error the
+   * user reads, and this side is the one that knows which tile it was watching
+   * and what state it was in. A flat 20 minutes here was longer than the
+   * runner allows an image, so a slow image was failed by the runner with a
+   * vague message while this poller was still watching it happen.
+   */
+  const isVideoNode = queue?.settings?.mediaType === 'video';
+  const watchSeconds = isVideoNode ? 1200 : 360; // 20 min vs 6 min
+
+  for (let wait = 0; wait < watchSeconds; wait++) {
     await sleep(1000);
 
     // Find the tracked tile in DOM
@@ -1344,9 +1390,10 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
   }
 
   // Stopped watching, which is not the same as the generation having failed.
+  // The number comes from watchSeconds so the message cannot drift from it.
   sendStudioError(nodeId,
-    'Stopped tracking after 20 minutes. The generation may still be running — ' +
-    'check the Flow tab before re-running this node.');
+    `Stopped tracking after ${Math.round(watchSeconds / 60)} minutes. The generation may ` +
+    'still be running — check the Flow tab before re-running this node.');
 }
 
 /**

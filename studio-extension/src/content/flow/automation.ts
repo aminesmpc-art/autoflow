@@ -126,7 +126,38 @@ export function isRunLocked(): boolean {
 
 export class AutomationEngine {
   private queue: QueueObject | null = null;
-  private state: AutomationState = 'IDLE';
+
+  /**
+   * What the engine is doing, and when that last changed.
+   *
+   * An accessor rather than a plain field so every existing `this.state = …`
+   * records a heartbeat without being touched. Callers can then tell "slow but
+   * progressing" from "hung", instead of guessing with a flat deadline — and a
+   * flat deadline shorter than the engine's own internal waits fails work that
+   * was going to succeed, which is exactly what happened to Studio nodes
+   * carrying an image.
+   */
+  private _state: AutomationState = 'IDLE';
+  private stateChangedAt = Date.now();
+
+  private get state(): AutomationState {
+    return this._state;
+  }
+
+  private set state(next: AutomationState) {
+    if (next !== this._state) this.stateChangedAt = Date.now();
+    this._state = next;
+  }
+
+  /** Current step, for a caller waiting on this engine. */
+  getState(): AutomationState {
+    return this._state;
+  }
+
+  /** How long it has sat in that step. Growing without bound means hung. */
+  getStateAge(): number {
+    return Date.now() - this.stateChangedAt;
+  }
   private paused = false;
   private stopped = false;
   private currentPromptIdx = 0;
