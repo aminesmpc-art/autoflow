@@ -135,6 +135,83 @@ export function findPromptInput(): HTMLTextAreaElement | HTMLInputElement | HTML
  *  hidden "Create" text but uses icon "add_2" and has aria-haspopup="dialog".
  *  We must differentiate the two.
  */
+/**
+ * Every plausible submit button, best guess first.
+ *
+ * findGenerateButton returns one and the caller commits to it. When Flow
+ * redesigned its composer the icon-font match stopped matching — the submit
+ * control is now a circular SVG arrow — so the search fell through to "last
+ * button in the container" and clicked whatever that happened to be. Clicking
+ * the wrong thing looks exactly like clicking nothing.
+ *
+ * Handing back a ranked list lets the caller click, check, and move on.
+ */
+export function findGenerateButtonCandidates(): Element[] {
+  const out: Element[] = [];
+  const add = (el: Element | null | undefined) => {
+    if (el && isVisible(el) && !out.includes(el)) out.push(el);
+  };
+
+  const usable = Array.from(document.querySelectorAll('button')).filter(
+    (b) => isVisible(b) && !b.getAttribute('aria-haspopup') && b.getAttribute('role') !== 'tab'
+  );
+
+  // 1. Icon font glyph — how Flow used to render it.
+  for (const btn of usable) {
+    const icons = btn.querySelectorAll('i.google-symbols, i.material-icons, i.material-symbols, .google-symbols');
+    for (const icon of icons) {
+      const name = (icon.textContent || '').trim().toLowerCase();
+      if (name === 'arrow_forward' || name === 'send' || name === 'arrow_upward') add(btn);
+    }
+  }
+
+  // 2. SVG arrow — how it renders now. Matched on the path data rather than a
+  //    class, since utility classes change with every restyle.
+  for (const btn of usable) {
+    const svg = btn.querySelector('svg');
+    if (!svg) continue;
+    const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+    const d = Array.from(svg.querySelectorAll('path')).map((p) => p.getAttribute('d') || '').join(' ');
+    const looksLikeArrow = /arrow|send|submit/.test(label) || /M[\d.\s]*[hl]/i.test(d);
+    // An icon-only button sitting at the end of the composer with no text.
+    if (looksLikeArrow && !(btn.textContent || '').trim()) add(btn);
+  }
+
+  // 3. Explicit labels, in the languages Flow ships.
+  for (const btn of usable) {
+    const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+    if (/send|generate|submit|run|envoyer|générer/.test(label)) add(btn);
+  }
+
+  // 4. Last resort: the final button in the prompt's container, which is what
+  //    the old code always fell back to.
+  const promptInput = findPromptInput();
+  if (promptInput) {
+    let container: HTMLElement | null = promptInput.parentElement;
+    for (let i = 0; i < 5 && container; i++) container = container.parentElement;
+    if (container) {
+      const inside = usable.filter((b) => container!.contains(b));
+      if (inside.length) add(inside[inside.length - 1]);
+    }
+  }
+
+  return out;
+}
+
+/** Short description of a button, for logs that have to be read from a screenshot. */
+export function describeButton(el: Element): string {
+  const label = el.getAttribute('aria-label');
+  const text = (el.textContent || '').trim().slice(0, 20);
+  const icon = el.querySelector('i, svg')?.tagName?.toLowerCase();
+  return [
+    el.tagName.toLowerCase(),
+    label ? `aria="${label}"` : null,
+    text ? `text="${text}"` : null,
+    icon ? `icon=${icon}` : null,
+    (el as HTMLButtonElement).disabled ? 'disabled' : null,
+  ].filter(Boolean).join(' ');
+}
+
 export function findGenerateButton(): Element | null {
   // Strategy 1: Find button containing the arrow_forward icon text
   const buttons = document.querySelectorAll('button');

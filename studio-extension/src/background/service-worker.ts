@@ -248,7 +248,147 @@ async function mainWorldPaste(tabId: number, elId: string, text: string): Promis
   return result?.result ?? { success: false, error: 'No result from page' };
 }
 
+/**
+ * Fire a React synthetic handler from inside the page.
+ *
+ * Flow's submit button is a React component whose handler checks isTrusted,
+ * so a synthetic click dispatched from a content script is ignored. This
+ * reaches the component's own onPointerDown/onClick in the MAIN world.
+ *
+ * Ported verbatim from the AutoFlow worker rather than retyped: it walks
+ * React's internal fibre props, and small differences would fail silently in
+ * ways indistinguishable from a click that simply did nothing.
+ */
+async function reactTriggerInPage(tabId: number, payload: any): Promise<any> {
+try {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: tabId },
+          world: 'MAIN',
+          func: (elId: string, handlerName: string, isKey: boolean, keyVal: string) => {
+            const targetEl = document.getElementById(elId);
+            if (!targetEl) return { found: false, success: false, error: 'Element not found by ID' };
+            
+            let current: HTMLElement | null = targetEl;
+            let foundProps = null;
+            let keysDump = '';
+
+            for (let depth = 0; depth < 10 && current; depth++) {
+              let props: any = null;
+              try {
+                const keys = Object.getOwnPropertyNames(current);
+                const propsKey = keys.find(k => k.startsWith('__reactProps$') || k.startsWith('__reactEventHandlers$'));
+                if (propsKey) {
+                  props = (current as any)[propsKey];
+                } else {
+                  const fiberKey = keys.find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
+                  if (fiberKey) {
+                    const fiber = (current as any)[fiberKey];
+                    props = fiber ? (fiber.memoizedProps || fiber.pendingProps) : null;
+                  }
+                }
+                
+                if (!props && depth === 0) {
+                  keysDump = keys.join(',').substring(0, 500);
+                }
+
+                if (props && typeof props[handlerName] === 'function') {
+                  foundProps = props;
+                  break;
+                }
+              } catch(e) {}
+              current = current.parentElement;
+            }
+
+            if (!foundProps) {
+              return { found: false, success: false, error: 'No React props found. Keys: ' + keysDump };
+            }
+
+            try {
+              // Helper: wrap a real event in a Proxy so .isTrusted returns true.
+              // This passes instanceof checks AND spoofs the trusted flag.
+              function trustedProxy<T extends Event>(evt: T): T {
+                return new Proxy(evt, {
+                  get(target, prop, receiver) {
+                    if (prop === 'isTrusted') return true;
+                    const value = Reflect.get(target, prop, receiver);
+                    return typeof value === 'function' ? value.bind(target) : value;
+                  }
+                }) as T;
+              }
+
+              if (isKey) {
+                const rawNative = new KeyboardEvent('keydown', {
+                  key: keyVal, code: keyVal === 'Enter' ? 'Enter' : keyVal,
+                  keyCode: 13, bubbles: true, cancelable: true,
+                });
+                const fakeEvent = {
+                  type: 'keydown',
+                  isTrusted: true,
+                  key: keyVal,
+                  code: keyVal === 'Enter' ? 'Enter' : keyVal,
+                  keyCode: keyVal === 'Enter' ? 13 : 0,
+                  which: keyVal === 'Enter' ? 13 : 0,
+                  charCode: 0,
+                  target: targetEl, currentTarget: current,
+                  ctrlKey: false, metaKey: false, shiftKey: false, altKey: false,
+                  repeat: false, isComposing: false, bubbles: true, cancelable: true,
+                  nativeEvent: trustedProxy(rawNative),
+                  preventDefault: () => { }, stopPropagation: () => { },
+                  isPropagationStopped: () => false, isDefaultPrevented: () => false,
+                  persist: () => { },
+                };
+                foundProps[handlerName](fakeEvent);
+              } else {
+                const rect = targetEl.getBoundingClientRect();
+                const x = rect.left + rect.width / 2;
+                const y = rect.top + rect.height / 2;
+                const rawNative = new MouseEvent(
+                  handlerName.replace(/^on/, '').toLowerCase(),
+                  { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, detail: 1 },
+                );
+                const fakeEvent = {
+                  type: handlerName.replace(/^on/, '').toLowerCase(),
+                  isTrusted: true,
+                  target: targetEl, currentTarget: current,
+                  clientX: x, clientY: y, screenX: x, screenY: y,
+                  pageX: x + window.scrollX, pageY: y + window.scrollY,
+                  button: 0, buttons: 1, detail: 1,
+                  ctrlKey: false, metaKey: false, shiftKey: false, altKey: false,
+                  isPrimary: true, pointerId: 1, pointerType: 'mouse', bubbles: true, cancelable: true,
+                  nativeEvent: trustedProxy(rawNative),
+                  preventDefault: () => { }, stopPropagation: () => { },
+                  isPropagationStopped: () => false, isDefaultPrevented: () => false,
+                  persist: () => { },
+                };
+                foundProps[handlerName](fakeEvent);
+              }
+              return { found: true, success: true };
+            } catch (e: any) {
+              return { found: true, success: false, error: String(e) };
+            }
+          },
+          args: [payload.elId, payload.handlerName, payload.isKey, payload.keyVal]
+        });
+        return results && results[0] ? results[0].result : { error: 'No result from script execution' };
+      } catch (err: any) {
+        return { found: false, success: false, error: err.message };
+      }
+    }
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // Flow's React submit handlers ignore untrusted synthetic events.
+  if (msg?.type === 'REACT_TRIGGER') {
+    const tabId = sender.tab?.id;
+    if (!tabId) {
+      sendResponse({ found: false, success: false, error: 'No tab ID' });
+      return false;
+    }
+    reactTriggerInPage(tabId, msg.payload)
+      .then(sendResponse)
+      .catch((e) => sendResponse({ found: false, success: false, error: e?.message || String(e) }));
+    return true; // async
+  }
+
   // The prompt box cannot be filled without this — see mainWorldPaste.
   if (msg?.type === 'MAIN_WORLD_PASTE') {
     const tabId = sender.tab?.id;
