@@ -375,6 +375,9 @@ try {
       }
     }
 
+/** Types already reported, so one noisy caller cannot flood the console. */
+const reportedUnhandled = new Set<string>();
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Flow's React submit handlers ignore untrusted synthetic events.
   if (msg?.type === 'REACT_TRIGGER') {
@@ -452,6 +455,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse(status);
     })();
     return true;
+  }
+
+  /* ── Anything else ──
+   *
+   * The engine is copied from an extension whose worker answers 34 message
+   * types; this one answers a handful, because Studio does not use the queue,
+   * downloads or the sidepanel. The rest arriving here is expected.
+   *
+   * What is not acceptable is answering them with silence. Every bug in this
+   * extension so far has been a missing handler: the content script asked, no
+   * branch matched, sendResponse was never called, and the caller could not
+   * distinguish "no handler" from "did not work". MAIN_WORLD_PASTE left the
+   * prompt box empty that way; REACT_TRIGGER left Generate unclicked.
+   *
+   * So unknown messages now get an explicit answer and are named in the log
+   * once each. A future gap shows up as a line in the console instead of a
+   * feature that quietly does nothing.
+   */
+  if (typeof msg?.type === 'string') {
+    if (!reportedUnhandled.has(msg.type)) {
+      reportedUnhandled.add(msg.type);
+      console.warn(
+        `[Studio] No handler for "${msg.type}". Harmless if it belongs to the ` +
+        `queue or downloads; a bug if Studio needs it.`
+      );
+    }
+    sendResponse({ unhandled: true, type: msg.type });
+    return false;
   }
 
   return false;
