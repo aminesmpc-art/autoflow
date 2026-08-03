@@ -1,125 +1,239 @@
-/* Side panel — control surface for a run you are watching happen elsewhere.
-   Deliberately narrow-first: Chrome panels open around 320-400px. */
+/* Side panel — the control surface for a run happening in another tab.
+   Chrome opens panels around 320-400px, so everything is built narrow-first
+   and nothing relies on horizontal room. */
 
-* { box-sizing: border-box; }
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --bg: #0a0a0c;
+  --card: #131317;
+  --line: #212127;
+  --text: #e8e8ea;
+  --muted: #7b7b85;
+  --accent: #8b5cf6;
+  --accent-2: #6366f1;
+  --good: #22c55e;
+  --bad: #f87171;
+}
 
 body {
   margin: 0;
-  padding: 14px;
-  background: #0a0a0c;
-  color: #e5e5e7;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 13px;
-  line-height: 1.5;
+  padding: 14px 14px 20px;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
+/* ── Header ── */
 .sp-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   margin-bottom: 14px;
 }
-.sp-brand { display: flex; align-items: center; gap: 10px; }
-.sp-brand__mark {
-  width: 30px; height: 30px; border-radius: 9px;
-  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+.sp-mark {
+  width: 32px; height: 32px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
   display: grid; place-items: center;
-  color: #fff; font-size: 13px;
+  font-size: 12px; color: #fff;
+  flex-shrink: 0;
 }
-.sp-brand__name { font-weight: 700; letter-spacing: -0.2px; }
-.sp-brand__sub { font-size: 11px; color: #6b7280; }
-
+.sp-head__text { min-width: 0; flex: 1; }
+.sp-head__name { font-weight: 650; letter-spacing: -0.2px; }
+.sp-head__sub {
+  font-size: 11px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .sp-badge {
   padding: 3px 9px; border-radius: 999px;
-  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  background: rgba(123,123,133,0.16); color: var(--muted);
+  flex-shrink: 0;
 }
-.sp-badge--free { background: rgba(148,163,184,0.15); color: #94a3b8; }
-.sp-badge--pro  { background: rgba(139,92,246,0.18); color: #c4b5fd; }
+.sp-badge--pro {
+  background: linear-gradient(135deg, rgba(139,92,246,0.25), rgba(99,102,241,0.25));
+  color: #c9b8ff;
+}
 
+/* ── Run ──
+   Leads the panel and changes shape when live, so a glance tells you whether
+   anything is happening without reading a word. */
+.sp-run {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--card);
+  transition: border-color 0.25s, background 0.25s;
+}
+.sp-run:has(#run-live:not([hidden])) {
+  border-color: rgba(139,92,246,0.45);
+  background: linear-gradient(160deg, rgba(139,92,246,0.10), var(--card) 60%);
+}
+
+.sp-run__idle { text-align: center; padding: 10px 0 6px; }
+.sp-run__idle-icon { font-size: 20px; color: #33333c; line-height: 1; }
+.sp-run__idle-text { margin-top: 8px; font-weight: 600; color: #9a9aa4; }
+.sp-run__idle-hint { margin-top: 3px; font-size: 11.5px; color: var(--muted); }
+
+.sp-run__top {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 10px;
+}
+.sp-run__node {
+  font-weight: 650; flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sp-run__elapsed {
+  font-size: 11px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.sp-run__pulse {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: sp-pulse 1.6s ease-in-out infinite;
+}
+@keyframes sp-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(139,92,246,0.5); }
+  50% { opacity: 0.55; box-shadow: 0 0 0 5px rgba(139,92,246,0); }
+}
+.sp-run__meta {
+  display: flex; justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Bars ── */
+.sp-bar {
+  height: 6px; border-radius: 999px;
+  background: #1e1e24; overflow: hidden;
+}
+.sp-bar--thin { height: 4px; }
+.sp-bar__fill {
+  height: 100%; width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.35s ease;
+}
+.sp-bar__fill--full { background: linear-gradient(90deg, #f59e0b, var(--bad)); }
+
+/* ── Buttons ── */
+.sp-btn {
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font: inherit; font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s, background 0.15s, border-color 0.15s;
+}
+.sp-btn--wide { width: 100%; }
+.sp-btn:hover:not(:disabled) { filter: brightness(1.14); }
+.sp-btn:active:not(:disabled) { transform: translateY(0.5px); }
+.sp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.sp-btn--primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  margin: 12px 0;
+  box-shadow: 0 4px 14px rgba(99,102,241,0.22);
+}
+.sp-btn--ghost { background: transparent; border-color: #2b2b33; color: #c3c3cc; }
+.sp-btn--ghost:hover { background: #1a1a20; }
+.sp-btn--danger {
+  background: rgba(248,113,113,0.12);
+  border-color: rgba(248,113,113,0.35);
+  color: #fca5a5;
+}
+.sp-row { display: flex; gap: 8px; margin-top: 12px; }
+.sp-row .sp-btn { flex: 1; }
+
+/* ── Cards ── */
 .sp-card {
-  background: #131317;
-  border: 1px solid #1f1f24;
-  border-radius: 12px;
-  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 13px;
   margin-top: 12px;
 }
 .sp-card__title {
-  font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px;
-  color: #6b7280; margin-bottom: 8px;
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.8px;
+  color: var(--muted); margin-bottom: 9px;
 }
 
-.sp-btn {
-  width: 100%;
-  padding: 10px 12px;
+/* ── Platforms ──
+   Rows are buttons: the panel that tells you a tab is missing may as well
+   open it. */
+.sp-plat { list-style: none; margin: 0; padding: 0; }
+.sp-plat li {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 8px;
+  margin: 0 -8px;
   border-radius: 9px;
-  border: 1px solid transparent;
-  font-size: 13px; font-weight: 600;
   cursor: pointer;
-  font-family: inherit;
-  transition: filter 0.15s, background 0.15s;
+  transition: background 0.15s;
 }
-.sp-btn:hover:not(:disabled) { filter: brightness(1.12); }
-.sp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.sp-btn--primary { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; }
-.sp-btn--ghost { background: transparent; border-color: #2a2a31; color: #cbd5e1; }
-.sp-btn--danger { background: rgba(239,68,68,0.14); border-color: rgba(239,68,68,0.4); color: #fca5a5; }
+.sp-plat li:hover, .sp-plat li:focus-visible { background: #1a1a20; outline: none; }
+.sp-plat__name { flex: 1; min-width: 0; }
+.sp-plat__state { font-size: 11px; color: var(--muted); }
+.sp-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #3a3a43; flex-shrink: 0;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.sp-plat li.is-open .sp-dot {
+  background: var(--good);
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.14);
+}
+.sp-plat li.is-open .sp-plat__state { color: var(--good); }
 
-.sp-row { display: flex; gap: 8px; margin-top: 10px; }
-
+/* ── Account ── */
 .sp-input {
   width: 100%;
   padding: 9px 11px;
   margin-bottom: 8px;
-  background: #0a0a0c;
-  border: 1px solid #2a2a31;
-  border-radius: 9px;
-  color: #e5e5e7;
-  font-size: 13px;
-  font-family: inherit;
+  background: #0d0d10;
+  border: 1px solid #2b2b33;
+  border-radius: 10px;
+  color: var(--text);
+  font: inherit;
 }
-.sp-input:focus { outline: none; border-color: #6366f1; }
+.sp-input::placeholder { color: #55555f; }
+.sp-input:focus {
+  outline: none;
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.14);
+}
 
-.sp-muted { color: #6b7280; }
-.sp-small { font-size: 11px; margin: 8px 0 0; }
+.sp-acct { display: flex; align-items: center; gap: 9px; }
+.sp-avatar {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  display: grid; place-items: center;
+  font-size: 11px; font-weight: 700; color: #fff;
+  text-transform: uppercase; flex-shrink: 0;
+}
+.sp-acct__email {
+  font-weight: 550; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sp-usage { margin: 12px 0; }
+.sp-usage__row {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--muted); margin-bottom: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sp-note { margin: 8px 0 0; font-size: 11px; color: var(--muted); }
 .sp-error {
-  margin-top: 8px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 0 8px 8px 0;
+  border-left: 2px solid rgba(248,113,113,0.55);
+  background: rgba(248,113,113,0.08);
   color: #fca5a5;
-  font-size: 12px;
-  background: rgba(239,68,68,0.08);
-  border-left: 2px solid rgba(239,68,68,0.5);
-  padding: 7px 9px;
-  border-radius: 0 7px 7px 0;
+  font-size: 11.5px;
   word-break: break-word;
 }
-
-/* Run */
-.sp-run__node { font-weight: 600; margin-bottom: 8px; word-break: break-word; }
-.sp-bar { height: 6px; background: #1f1f24; border-radius: 999px; overflow: hidden; }
-.sp-bar__fill {
-  height: 100%; width: 0;
-  background: linear-gradient(90deg, #8b5cf6, #6366f1);
-  transition: width 0.3s ease;
-}
-.sp-run__meta {
-  display: flex; justify-content: space-between;
-  font-size: 11px; color: #6b7280; margin-top: 6px;
-}
-
-/* Platforms */
-.sp-plat { list-style: none; margin: 0; padding: 0; }
-.sp-plat li {
-  display: flex; align-items: center; gap: 8px;
-  padding: 5px 0;
-}
-.sp-plat__state { margin-left: auto; font-size: 11px; color: #6b7280; }
-.sp-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: #3f3f46;
-  flex-shrink: 0;
-}
-.sp-plat li.is-open .sp-dot { background: #22c55e; }
-.sp-plat li.is-open .sp-plat__state { color: #22c55e; }
-
-/* Account */
-.sp-acct__email { font-weight: 600; word-break: break-all; }
-.sp-acct__usage { color: #6b7280; font-size: 12px; margin: 4px 0 10px; }

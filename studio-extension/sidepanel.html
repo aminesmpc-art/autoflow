@@ -8,42 +8,65 @@
 </head>
 <body>
   <header class="sp-head">
-    <div class="sp-brand">
-      <span class="sp-brand__mark">▶</span>
-      <div>
-        <div class="sp-brand__name">AutoFlow Studio</div>
-        <div class="sp-brand__sub">Node workflows</div>
-      </div>
+    <span class="sp-mark">▶</span>
+    <div class="sp-head__text">
+      <div class="sp-head__name">AutoFlow Studio</div>
+      <div class="sp-head__sub" id="head-sub">Node workflows</div>
     </div>
-    <span id="plan-badge" class="sp-badge sp-badge--free" hidden>Free</span>
+    <span id="plan-badge" class="sp-badge" hidden>Free</span>
   </header>
 
-  <button id="open-studio" class="sp-btn sp-btn--primary">Open Studio canvas</button>
+  <!-- ── Run ──
+       The reason the panel exists: during a run the canvas is behind the
+       platform tab, so this is the only view of what is happening. It leads,
+       and grows into the live state rather than sitting in a uniform card. -->
+  <section class="sp-run" id="run-card">
+    <div id="run-idle" class="sp-run__idle">
+      <div class="sp-run__idle-icon">◇</div>
+      <div class="sp-run__idle-text">Nothing running</div>
+      <div class="sp-run__idle-hint" id="run-idle-hint">Open the canvas to build or run a workflow.</div>
+    </div>
 
-  <!-- Run status: the reason this panel exists. While a workflow runs the
-       canvas is in a tab you are not looking at. -->
-  <section class="sp-card" id="run-card">
-    <div class="sp-card__title">Run</div>
-    <div id="run-idle" class="sp-muted">Nothing running.</div>
     <div id="run-live" hidden>
-      <div class="sp-run__node" id="run-node">—</div>
+      <div class="sp-run__top">
+        <span class="sp-run__pulse"></span>
+        <span class="sp-run__node" id="run-node">—</span>
+        <span class="sp-run__elapsed" id="run-elapsed">0:00</span>
+      </div>
       <div class="sp-bar"><div class="sp-bar__fill" id="run-bar"></div></div>
-      <div class="sp-run__meta"><span id="run-count">0 / 0</span><span id="run-pct">0%</span></div>
+      <div class="sp-run__meta">
+        <span id="run-count">0 / 0</span>
+        <span id="run-pct">0%</span>
+      </div>
       <div class="sp-row">
         <button id="btn-pause" class="sp-btn sp-btn--ghost">Pause</button>
         <button id="btn-stop" class="sp-btn sp-btn--danger">Stop</button>
       </div>
     </div>
+
     <div id="run-error" class="sp-error" hidden></div>
   </section>
 
-  <!-- Whether the sites a node needs are actually open, checked before a run
-       rather than discovered by a node failing three minutes in. -->
+  <button id="open-studio" class="sp-btn sp-btn--primary sp-btn--wide">
+    Open Studio canvas
+  </button>
+
+  <!-- Whether the sites a run needs are open, checked before a node finds out
+       three minutes in. Rows are clickable so it is also the fix, not just the
+       diagnosis. -->
   <section class="sp-card">
     <div class="sp-card__title">Platforms</div>
     <ul class="sp-plat" id="plat-list">
-      <li data-plat="flow"><span class="sp-dot"></span>Google Flow<span class="sp-plat__state">—</span></li>
-      <li data-plat="chatgpt"><span class="sp-dot"></span>ChatGPT<span class="sp-plat__state">—</span></li>
+      <li data-plat="flow" tabindex="0" role="button">
+        <span class="sp-dot"></span>
+        <span class="sp-plat__name">Google Flow</span>
+        <span class="sp-plat__state">—</span>
+      </li>
+      <li data-plat="chatgpt" tabindex="0" role="button">
+        <span class="sp-dot"></span>
+        <span class="sp-plat__name">ChatGPT</span>
+        <span class="sp-plat__state">—</span>
+      </li>
     </ul>
   </section>
 
@@ -53,15 +76,24 @@
     <div id="acct-out">
       <input id="email" class="sp-input" type="email" placeholder="you@example.com" autocomplete="username" />
       <input id="password" class="sp-input" type="password" placeholder="Password" autocomplete="current-password" />
-      <button id="btn-login" class="sp-btn sp-btn--primary">Sign in</button>
-      <p class="sp-muted sp-small">Uses your AutoFlow account — runs and limits are shared.</p>
+      <button id="btn-login" class="sp-btn sp-btn--primary sp-btn--wide">Sign in</button>
+      <p class="sp-note">Your AutoFlow account — runs and limits are shared.</p>
       <p id="auth-error" class="sp-error" hidden></p>
     </div>
 
     <div id="acct-in" hidden>
-      <div class="sp-acct__email" id="acct-email">—</div>
-      <div class="sp-acct__usage" id="acct-usage">—</div>
-      <button id="btn-logout" class="sp-btn sp-btn--ghost">Sign out</button>
+      <div class="sp-acct">
+        <span class="sp-avatar" id="acct-initial">·</span>
+        <span class="sp-acct__email" id="acct-email">—</span>
+      </div>
+      <div class="sp-usage" id="usage-block">
+        <div class="sp-usage__row">
+          <span id="usage-label">Studio runs</span>
+          <span id="usage-count">—</span>
+        </div>
+        <div class="sp-bar sp-bar--thin"><div class="sp-bar__fill" id="usage-bar"></div></div>
+      </div>
+      <button id="btn-logout" class="sp-btn sp-btn--ghost sp-btn--wide">Sign out</button>
     </div>
   </section>
 

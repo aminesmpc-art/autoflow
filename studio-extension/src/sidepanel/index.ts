@@ -51,28 +51,52 @@ interface RunSnapshot {
   lastError: string;
 }
 
+let runStartedAt: number | null = null;
+
+/** mm:ss — a run has no total, so elapsed is the honest number to show. */
+function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
 function renderRun(s: Partial<RunSnapshot>): void {
   const live = !!s.running;
   $('run-idle').hidden = live;
   $('run-live').hidden = !live;
 
-  if (live) {
+  if (!live) {
+    runStartedAt = null;
+    $('run-idle-hint').textContent = s.studioOpen
+      ? 'Canvas is open — press Run there to start.'
+      : 'Open the canvas to build or run a workflow.';
+  } else {
+    // Started when we first saw it running; the worker's snapshot has no
+    // start time and inventing one on every tick would reset the clock.
+    if (runStartedAt === null) runStartedAt = Date.now();
+
     $('run-node').textContent = s.nodeLabel || 'Working…';
     const pct = Math.max(0, Math.min(100, s.progress || 0));
     ($('run-bar') as HTMLElement).style.width = `${pct}%`;
     $('run-pct').textContent = `${pct}%`;
     $('run-count').textContent = `${s.done ?? 0} / ${s.total ?? 0}`;
     ($('btn-pause') as HTMLButtonElement).textContent = s.paused ? 'Resume' : 'Pause';
-  } else {
-    $('run-idle').textContent = s.studioOpen
-      ? 'Nothing running.'
-      : 'Studio is closed — open the canvas to build or run a workflow.';
+    $('head-sub').textContent = s.paused ? 'Paused' : 'Running';
   }
+
+  if (!live) $('head-sub').textContent = 'Node workflows';
 
   const err = $('run-error');
   err.hidden = !s.lastError;
   if (s.lastError) err.textContent = s.lastError;
 }
+
+/** Ticks independently of worker updates, which only arrive on state changes. */
+setInterval(() => {
+  if (runStartedAt === null) return;
+  try {
+    $('run-elapsed').textContent = formatElapsed(Date.now() - runStartedAt);
+  } catch { /* panel closing */ }
+}, 1000);
 
 async function refreshRun(): Promise<void> {
   try {
@@ -149,12 +173,49 @@ async function refreshAccount(): Promise<void> {
   }
 
   $('acct-email').textContent = profile.email;
+  $('acct-initial').textContent = (profile.email || '?').charAt(0);
+
+  const pro = !!profile.is_pro_active;
   badge.hidden = false;
-  badge.textContent = profile.is_pro_active ? 'Pro' : 'Free';
-  badge.className = `sp-badge ${profile.is_pro_active ? 'sp-badge--pro' : 'sp-badge--free'}`;
-  $('acct-usage').textContent = profile.is_pro_active
-    ? 'Unlimited Studio runs'
-    : 'Free plan — 15 Studio runs a month';
+  badge.textContent = pro ? 'Pro' : 'Free';
+  badge.className = `sp-badge ${pro ? 'sp-badge--pro' : ''}`;
+
+  await renderUsage(pro);
+}
+
+/**
+ * Studio runs used this month.
+ *
+ * Read from the same storage key the canvas writes, so the panel does not
+ * need its own count and cannot disagree with the number shown there. The
+ * server remains the authority — this is a display of what we last saw.
+ */
+const runKey = () => `studio_runs_${new Date().toISOString().slice(0, 7)}`;
+const FREE_RUNS_PER_MONTH = 15;
+
+async function renderUsage(isPro: boolean): Promise<void> {
+  const bar = $('usage-bar') as HTMLElement;
+
+  if (isPro) {
+    $('usage-label').textContent = 'Studio runs';
+    $('usage-count').textContent = 'Unlimited';
+    bar.style.width = '100%';
+    bar.classList.remove('sp-bar__fill--full');
+    return;
+  }
+
+  let used = 0;
+  try {
+    const key = runKey();
+    used = (await chrome.storage.local.get(key))?.[key] || 0;
+  } catch { /* show zero rather than nothing */ }
+
+  const pct = Math.min(100, Math.round((used / FREE_RUNS_PER_MONTH) * 100));
+  $('usage-label').textContent = 'Studio runs this month';
+  $('usage-count').textContent = `${used} / ${FREE_RUNS_PER_MONTH}`;
+  bar.style.width = `${pct}%`;
+  // Turns warm as it runs out, so the limit is not a surprise at run time.
+  bar.classList.toggle('sp-bar__fill--full', used >= FREE_RUNS_PER_MONTH - 3);
 }
 
 /* ── Wiring ── */
@@ -172,6 +233,21 @@ function wire(): void {
       err.textContent = res.error || 'Could not reach Studio';
     }
   };
+  // A row that reports a missing tab may as well open it.
+  for (const li of Array.from(document.querySelectorAll<HTMLLIElement>('#plat-list li'))) {
+    const open = () => {
+      const url = li.dataset.plat === 'chatgpt'
+        ? 'https://chatgpt.com/'
+        : 'https://labs.google/fx/tools/flow';
+      chrome.tabs.create({ url }).catch(() => {});
+    };
+    li.addEventListener('click', open);
+    li.addEventListener('keydown', (e) => {
+      const key = (e as KeyboardEvent).key;
+      if (key === 'Enter' || key === ' ') { e.preventDefault(); open(); }
+    });
+  }
+
   $('btn-pause').addEventListener('click', () => control('pause'));
   $('btn-stop').addEventListener('click', () => control('stop'));
 
