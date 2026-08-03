@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoFlow Studio</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header class="sp-head">
+    <div class="sp-brand">
+      <span class="sp-brand__mark">▶</span>
+      <div>
+        <div class="sp-brand__name">AutoFlow Studio</div>
+        <div class="sp-brand__sub">Node workflows</div>
+      </div>
+    </div>
+    <span id="plan-badge" class="sp-badge sp-badge--free" hidden>Free</span>
+  </header>
+
+  <button id="open-studio" class="sp-btn sp-btn--primary">Open Studio canvas</button>
+
+  <!-- Run status: the reason this panel exists. While a workflow runs the
+       canvas is in a tab you are not looking at. -->
+  <section class="sp-card" id="run-card">
+    <div class="sp-card__title">Run</div>
+    <div id="run-idle" class="sp-muted">Nothing running.</div>
+    <div id="run-live" hidden>
+      <div class="sp-run__node" id="run-node">—</div>
+      <div class="sp-bar"><div class="sp-bar__fill" id="run-bar"></div></div>
+      <div class="sp-run__meta"><span id="run-count">0 / 0</span><span id="run-pct">0%</span></div>
+      <div class="sp-row">
+        <button id="btn-pause" class="sp-btn sp-btn--ghost">Pause</button>
+        <button id="btn-stop" class="sp-btn sp-btn--danger">Stop</button>
+      </div>
+    </div>
+    <div id="run-error" class="sp-error" hidden></div>
+  </section>
+
+  <!-- Whether the sites a node needs are actually open, checked before a run
+       rather than discovered by a node failing three minutes in. -->
+  <section class="sp-card">
+    <div class="sp-card__title">Platforms</div>
+    <ul class="sp-plat" id="plat-list">
+      <li data-plat="flow"><span class="sp-dot"></span>Google Flow<span class="sp-plat__state">—</span></li>
+      <li data-plat="chatgpt"><span class="sp-dot"></span>ChatGPT<span class="sp-plat__state">—</span></li>
+    </ul>
+  </section>
+
+  <section class="sp-card">
+    <div class="sp-card__title">Account</div>
+
+    <div id="acct-out">
+      <input id="email" class="sp-input" type="email" placeholder="you@example.com" autocomplete="username" />
+      <input id="password" class="sp-input" type="password" placeholder="Password" autocomplete="current-password" />
+      <button id="btn-login" class="sp-btn sp-btn--primary">Sign in</button>
+      <p class="sp-muted sp-small">Uses your AutoFlow account — runs and limits are shared.</p>
+      <p id="auth-error" class="sp-error" hidden></p>
+    </div>
+
+    <div id="acct-in" hidden>
+      <div class="sp-acct__email" id="acct-email">—</div>
+      <div class="sp-acct__usage" id="acct-usage">—</div>
+      <button id="btn-logout" class="sp-btn sp-btn--ghost">Sign out</button>
+    </div>
+  </section>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

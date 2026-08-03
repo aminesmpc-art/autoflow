@@ -14,6 +14,42 @@ type Platform = 'flow' | 'chatgpt' | 'grok';
 /** The Studio window's long-lived port. Null whenever Studio is closed. */
 let studioPort: chrome.runtime.Port | null = null;
 
+/* ── Run state ──
+   The canvas lives in a tab the user is usually not looking at: while a
+   workflow runs they are watching Flow generate. The side panel is what they
+   can see, so the worker keeps a snapshot of the run as messages pass through
+   and hands it to the panel. Nothing here drives execution — it only observes.
+*/
+export interface RunSnapshot {
+  studioOpen: boolean;
+  running: boolean;
+  paused: boolean;
+  nodeLabel: string;
+  progress: number;
+  done: number;
+  total: number;
+  lastError: string;
+  updatedAt: number;
+}
+
+const runState: RunSnapshot = {
+  studioOpen: false,
+  running: false,
+  paused: false,
+  nodeLabel: '',
+  progress: 0,
+  done: 0,
+  total: 0,
+  lastError: '',
+  updatedAt: Date.now(),
+};
+
+function patchRunState(patch: Partial<RunSnapshot>): void {
+  Object.assign(runState, patch, { updatedAt: Date.now() });
+  // The panel may not be open; a failed send is normal and not an error.
+  chrome.runtime.sendMessage({ type: 'PANEL_RUN_STATE', payload: runState }).catch(() => {});
+}
+
 /* ── Keepalive ──
    A video generation easily outlasts Chrome's idle timeout for a service
    worker. If the worker is recycled mid-run the port dies and the next node
@@ -107,10 +143,17 @@ chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'studio') return;
 
   studioPort = port;
+  patchRunState({ studioOpen: true });
   console.log('[Studio] connected');
 
   port.onMessage.addListener(async (msg: any) => {
     if (!msg?.type?.startsWith?.('STUDIO_')) return;
+
+    // Studio reports its own run lifecycle so the panel can show it.
+    if (msg.type === 'STUDIO_RUN_STATE') {
+      patchRunState(msg.payload || {});
+      return;
+    }
 
     const platform: Platform = msg.payload?.config?.platform || 'flow';
     const cfg = PLATFORMS[platform] || PLATFORMS.flow;
@@ -150,25 +193,74 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => {
     studioPort = null;
     stopKeepalive().catch(() => {});
+    // Closing the canvas ends the run as far as anyone can observe it.
+    patchRunState({ studioOpen: false, running: false, paused: false, nodeLabel: '' });
     console.log('[Studio] disconnected');
   });
 });
 
-/* Results arrive from the content script as one-off messages; forward them to
-   whichever Studio window is listening. */
-chrome.runtime.onMessage.addListener((msg, sender) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // Results arrive from a content script; forward them to the Studio window.
   if (msg?.type?.startsWith?.('STUDIO_') && sender.tab) {
     replyToStudio(msg);
+    // Progress is worth surfacing in the panel too — it is the only place the
+    // user can see a run without switching tabs.
+    if (msg.type === 'STUDIO_NODE_PROGRESS') {
+      patchRunState({ progress: msg.payload?.progress || 0 });
+    } else if (msg.type === 'STUDIO_NODE_ERROR') {
+      patchRunState({ lastError: msg.payload?.error || 'Generation failed' });
+    }
+    return false;
   }
+
+  // ── Panel ──
+  if (msg?.type === 'PANEL_GET_STATE') {
+    sendResponse(runState);
+    return false;
+  }
+
+  if (msg?.type === 'PANEL_OPEN_STUDIO') {
+    openStudio().catch(() => {});
+    return false;
+  }
+
+  if (msg?.type === 'PANEL_CONTROL') {
+    // The runner lives in the Studio window, so control is a request, not a
+    // command — if Studio is closed there is nothing running to control.
+    if (!studioPort) {
+      sendResponse({ ok: false, error: 'Studio is not open' });
+      return false;
+    }
+    replyToStudio({ type: 'STUDIO_CONTROL', payload: { action: msg.action } });
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (msg?.type === 'PANEL_PLATFORM_STATUS') {
+    // Answering needs a query, so keep the channel open.
+    (async () => {
+      const status: Record<string, boolean> = {};
+      for (const [key, cfg] of Object.entries(PLATFORMS)) {
+        try {
+          status[key] = (await chrome.tabs.query({ url: cfg.match })).length > 0;
+        } catch {
+          status[key] = false;
+        }
+      }
+      sendResponse(status);
+    })();
+    return true;
+  }
+
   return false;
 });
 
 /* ── Opening Studio ──
-   No sidepanel here: Studio is the whole product, so the toolbar button opens
-   it, and an already-open tab is focused rather than duplicated. */
+   The canvas is a full tab; the toolbar button opens the side panel, which is
+   what you can still see once you switch to the Flow tab to watch a run. */
 const STUDIO_URL = chrome.runtime.getURL('studio.html');
 
-chrome.action.onClicked.addListener(async () => {
+async function openStudio(): Promise<void> {
   const open = await chrome.tabs.query({ url: STUDIO_URL });
   if (open.length && open[0].id != null) {
     await chrome.tabs.update(open[0].id, { active: true });
@@ -176,4 +268,8 @@ chrome.action.onClicked.addListener(async () => {
     return;
   }
   await chrome.tabs.create({ url: STUDIO_URL });
-});
+}
+
+chrome.sidePanel
+  .setPanelBehavior({ openPanelOnActionClick: true })
+  .catch(() => { /* older Chrome — the panel still opens from the puzzle menu */ });

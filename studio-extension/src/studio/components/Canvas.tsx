@@ -173,6 +173,24 @@ function CanvasInner() {
     runner.run(nodes, edges, { only });
   }, [nodes, edges, isRunning, failedNodeIds]);
 
+  /* Control from the side panel.
+     The runner lives here, in the Studio window — the panel can only ask, and
+     the worker relays. Stop and pause are exactly what someone watching a run
+     from the Flow tab needs to reach without switching back. */
+  useEffect(() => {
+    const onControl = (payload: any) => {
+      const store = useStudioStore.getState();
+      if (payload?.action === 'stop') {
+        runner.stop();
+      } else if (payload?.action === 'pause') {
+        if (store.isPaused) runner.resume();
+        else runner.pause();
+      }
+    };
+    bridge.on('STUDIO_CONTROL', onControl);
+    return () => bridge.off('STUDIO_CONTROL', onControl);
+  }, []);
+
   /* Let a node's own Retry button reach the same path as the toolbar. */
   useEffect(() => {
     const onRetryNode = (e: Event) => {

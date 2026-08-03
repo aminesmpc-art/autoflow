@@ -155,6 +155,19 @@ export class WorkflowRunner {
     store.setRunProgress(0, generateSteps.length);
     let completedCount = 0;
 
+    /* Report the run to the side panel. During a run the user is watching the
+       platform tab, not this canvas, so the panel is the only place they can
+       see what is happening or stop it. */
+    const report = (patch: Record<string, unknown>) =>
+      bridge.send('STUDIO_RUN_STATE', {
+        running: true,
+        paused: this.pauseRequested,
+        done: completedCount,
+        total: generateSteps.length,
+        ...patch,
+      });
+    report({ nodeLabel: 'Starting…', progress: 0, lastError: '' });
+
     console.log(`[Runner] Starting workflow: ${steps.length} total, ${generateSteps.length} generate nodes`);
 
     // Walk through each step
@@ -244,6 +257,7 @@ export class WorkflowRunner {
           // GENERATE nodes — this is where the magic happens
           store.setCurrentNode(step.nodeId);
           store.updateNodeData(step.nodeId, { status: 'running', progress: 0, errorMessage: null });
+          report({ nodeLabel: nodeData.label || 'Generating', progress: 0 });
 
           /* Attempt loop. Usage is settled exactly once per node, at its final
              outcome — an internal retry is our recovery, not a second prompt
@@ -327,6 +341,7 @@ export class WorkflowRunner {
     }
 
     // Finished
+    report({ running: false, paused: false, nodeLabel: '', progress: 0 });
     store.setCurrentNode(null);
     store.setRunning(false);
     store.setPaused(false);

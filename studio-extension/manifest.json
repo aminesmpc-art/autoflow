@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "AutoFlow Studio \u2014 Node Workflows for AI Video",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Build node workflows that drive Google Veo, ChatGPT and Grok from one canvas. Third-party tool, not affiliated with Google, OpenAI or xAI.",
   "minimum_chrome_version": "114",
   "offline_enabled": false,
   "homepage_url": "https://auto-flow.studio",
   "permissions": [
+    "sidePanel",
     "storage",
     "activeTab",
     "scripting",
@@ -23,7 +24,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Open AutoFlow Studio",
+    "default_title": "AutoFlow Studio",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -78,5 +79,8 @@
         "https://chatgpt.com/*"
       ]
     }
-  ]
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
 }
