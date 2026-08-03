@@ -260,6 +260,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
    what you can still see once you switch to the Flow tab to watch a run. */
 const STUDIO_URL = chrome.runtime.getURL('studio.html');
 
+/**
+ * Open the canvas in a window of its own.
+ *
+ * Not a tab. A workflow runs on labs.google or chatgpt.com, so the canvas and
+ * the thing it is driving need to be visible at the same time — as a tab in
+ * the same window they hide each other and you spend the run switching back
+ * and forth. A popup window also drops the tab strip and address bar, which
+ * the canvas has no use for.
+ *
+ * An already-open canvas is focused rather than duplicated, whichever window
+ * it ended up in.
+ */
 async function openStudio(): Promise<void> {
   const open = await chrome.tabs.query({ url: STUDIO_URL });
   if (open.length && open[0].id != null) {
@@ -267,7 +279,31 @@ async function openStudio(): Promise<void> {
     if (open[0].windowId != null) await chrome.windows.update(open[0].windowId, { focused: true });
     return;
   }
-  await chrome.tabs.create({ url: STUDIO_URL });
+
+  // Sized off the current window, since the worker cannot see the screen
+  // without an extra permission. Clamped so it is neither cramped nor larger
+  // than the display it opens on.
+  let width = 1360;
+  let height = 900;
+  let left: number | undefined;
+  let top: number | undefined;
+  try {
+    const current = await chrome.windows.getCurrent();
+    width = Math.min(1500, Math.max(1024, (current.width ?? width) - 120));
+    height = Math.min(1000, Math.max(680, (current.height ?? height) - 60));
+    // Offset a little so it does not land exactly on top of the window the
+    // user just clicked from.
+    left = (current.left ?? 0) + 60;
+    top = (current.top ?? 0) + 40;
+  } catch { /* defaults are fine */ }
+
+  try {
+    await chrome.windows.create({ url: STUDIO_URL, type: 'popup', width, height, left, top, focused: true });
+  } catch {
+    // Popup windows can be refused (some window managers, locked-down
+    // policies). A tab is worse than a window but far better than nothing.
+    await chrome.tabs.create({ url: STUDIO_URL });
+  }
 }
 
 /**
