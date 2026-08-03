@@ -1,4 +1,77 @@
 {
   "_comment": "Hashes of UPSTREAM engine files at the moment their copy here was last reviewed. Run `npm run check:drift` to see what has moved; `-- --accept` to record after porting. Populated as each file is copied in milestone 2.",
-  "files": {}
+  "files": {
+    "src/content/chatgpt/chatgptReply.ts": {
+      "from": "../extension/src/content/chatgptReply.ts",
+      "upstreamSha": "50da2d9747208ef2"
+    },
+    "src/content/chatgpt/index.ts": {
+      "from": "../extension/src/content/chatgpt.ts",
+      "upstreamSha": "eee2b71aa49e98c1"
+    },
+    "src/content/flow/apiHelper.ts": {
+      "from": "../extension/src/content/apiHelper.ts",
+      "upstreamSha": "909fd5d37e29d466"
+    },
+    "src/content/flow/automation.ts": {
+      "from": "../extension/src/content/automation.ts",
+      "upstreamSha": "afe7a0c91f23aee7"
+    },
+    "src/content/flow/flowStrings.ts": {
+      "from": "../extension/src/content/flowStrings.ts",
+      "upstreamSha": "f31a639b5d0fd431"
+    },
+    "src/content/flow/index.ts": {
+      "from": "../extension/src/content/index.ts",
+      "upstreamSha": "e72a2c2862c70ed0"
+    },
+    "src/content/flow/llmHelper.ts": {
+      "from": "../extension/src/content/llmHelper.ts",
+      "upstreamSha": "39239c030d3820cf"
+    },
+    "src/content/flow/scanner.ts": {
+      "from": "../extension/src/content/scanner.ts",
+      "upstreamSha": "bc5b4c23b68ad5f6"
+    },
+    "src/content/flow/selectors.ts": {
+      "from": "../extension/src/content/selectors.ts",
+      "upstreamSha": "e88a78246969fc03"
+    },
+    "src/content/flow/studioFrames.ts": {
+      "from": "../extension/src/content/studioFrames.ts",
+      "upstreamSha": "5eba6b9291925c5a"
+    },
+    "src/content/flow/studioImages.ts": {
+      "from": "../extension/src/content/studioImages.ts",
+      "upstreamSha": "d0bf12ba1a032793"
+    },
+    "src/content/flow/sw-bypass.ts": {
+      "from": "../extension/src/content/sw-bypass.ts",
+      "upstreamSha": "228bdeda3cc1f9b8"
+    },
+    "src/shared/api.ts": {
+      "from": "../extension/src/shared/api.ts",
+      "upstreamSha": "2b992beefba87dc3"
+    },
+    "src/shared/constants.ts": {
+      "from": "../extension/src/shared/constants.ts",
+      "upstreamSha": "1f621af107bd6369"
+    },
+    "src/shared/crypto.ts": {
+      "from": "../extension/src/shared/crypto.ts",
+      "upstreamSha": "2d5c49253c4ba028"
+    },
+    "src/shared/parser.ts": {
+      "from": "../extension/src/shared/parser.ts",
+      "upstreamSha": "8e6d91fdb9f1b248"
+    },
+    "src/shared/storage.ts": {
+      "from": "../extension/src/shared/storage.ts",
+      "upstreamSha": "52028a564a40776e"
+    },
+    "src/types/index.ts": {
+      "from": "../extension/src/types/index.ts",
+      "upstreamSha": "68866f46d69ed15b"
+    }
+  }
 }

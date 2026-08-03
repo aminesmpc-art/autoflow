@@ -12,7 +12,7 @@ module.exports = {
     background: './src/background/service-worker.ts',
     'flow-content': './src/content/flow/index.ts',
     'chatgpt-content': './src/content/chatgpt/index.ts',
-    'grok-content': './src/content/grok/index.ts',
+    // grok-content lands with the Grok adapter (milestone 8)
     'sw-bypass': './src/content/flow/sw-bypass.ts',
     studio: './src/studio/index.tsx',
   },
