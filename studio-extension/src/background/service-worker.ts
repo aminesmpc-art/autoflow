@@ -270,6 +270,35 @@ async function openStudio(): Promise<void> {
   await chrome.tabs.create({ url: STUDIO_URL });
 }
 
-chrome.sidePanel
-  .setPanelBehavior({ openPanelOnActionClick: true })
-  .catch(() => { /* older Chrome — the panel still opens from the puzzle menu */ });
+/**
+ * Make the toolbar button open the side panel.
+ *
+ * Asked for on both install and every worker start: the worker is
+ * event-driven, and a setting that only ever ran once can be missed.
+ */
+function enablePanelOnClick(): void {
+  chrome.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch(() => { /* older Chrome — the onClicked fallback below covers it */ });
+}
+chrome.runtime.onInstalled.addListener(enablePanelOnClick);
+enablePanelOnClick();
+
+/**
+ * Fallback so the button is never dead.
+ *
+ * Chrome does not fire onClicked while openPanelOnActionClick is active, so
+ * this only runs when that never took — and without it the button did nothing
+ * at all: no popup, no handler, nothing. Opening the panel here works because
+ * a click is the user gesture sidePanel.open() requires; if even that fails,
+ * fall back to the canvas so something always happens.
+ */
+chrome.action.onClicked.addListener(async (tab) => {
+  try {
+    if (tab?.windowId != null) {
+      await chrome.sidePanel.open({ windowId: tab.windowId });
+      return;
+    }
+  } catch { /* fall through to the canvas */ }
+  await openStudio();
+});
