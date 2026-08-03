@@ -20,7 +20,15 @@ export interface Template {
   category: string;
   difficulty: 'Easy' | 'Medium' | 'Advanced';
   nodeCount: number;
+  /** Emoji shown on the card, and the fallback when there is no artwork. */
   thumbnail: string;
+  /**
+   * Optional artwork for the card, as a path under extension/assets/.
+   * Webpack copies that folder verbatim, and studio.html sits beside it, so
+   * the relative path resolves without going through the asset resolver the
+   * image nodes use.
+   */
+  thumbnailImage?: string;
   /** One-line note on when to reach for this workflow */
   useCase: string;
   nodes: Node[];
@@ -689,6 +697,7 @@ export const TEMPLATES: Template[] = [
     difficulty: 'Advanced',
     nodeCount: 9,
     thumbnail: '🌊',
+    thumbnailImage: 'assets/templates/water-wipeout.svg',
     nodes: [
       promptNode('brief', 'The Brief', POOL_FAILS_BRIEF, 40, 300),
 

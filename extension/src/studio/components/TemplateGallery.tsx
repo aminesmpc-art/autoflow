@@ -198,7 +198,24 @@ export default function TemplateGallery() {
             {/* Thumbnail previews the template's real node chain rather than
                 sitting empty around a single oversized emoji */}
             <div className="studio-gallery__card-thumb">
-              <span className="studio-gallery__card-emoji">{tpl.thumbnail}</span>
+              {tpl.thumbnailImage ? (
+                <img
+                  className="studio-gallery__card-art"
+                  src={tpl.thumbnailImage}
+                  alt=""
+                  aria-hidden="true"
+                  /* Deliberately not lazy. Inside the gallery's scroll
+                     container the browser kept deferring it indefinitely, so
+                     the card rendered blank; the artwork is a few KB and there
+                     is nothing to save. */
+                  /* An artwork file that goes missing must not leave a broken
+                     icon where the card's identity should be — fall back to
+                     the emoji that every template still carries. */
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                />
+              ) : (
+                <span className="studio-gallery__card-emoji">{tpl.thumbnail}</span>
+              )}
               <div className="studio-gallery__card-graph" aria-hidden="true">
                 {tpl.nodes.slice(0, MAX_PREVIEW_DOTS).map((n: any, i: number) => (
                   <span key={n.id || i} className="studio-gallery__card-graph-item">

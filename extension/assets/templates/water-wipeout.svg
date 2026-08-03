@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="A figure falling from a floating mat into a pool">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e3a5f"/>
+      <stop offset="1" stop-color="#2d5a87"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#0e7490"/>
+    </linearGradient>
+    <linearGradient id="mat" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fde047"/>
+      <stop offset="1" stop-color="#eab308"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="360" fill="url(#sky)"/>
+
+  <!-- Poolside deck and palms, kept as silhouettes so nothing reads as a person -->
+  <rect y="120" width="640" height="46" fill="#0f2740"/>
+  <g fill="#0b1f33">
+    <circle cx="72" cy="96" r="26"/><rect x="68" y="96" width="8" height="28"/>
+    <circle cx="560" cy="88" r="30"/><rect x="556" y="88" width="8" height="36"/>
+    <circle cx="612" cy="104" r="20"/><rect x="608" y="104" width="7" height="22"/>
+  </g>
+
+  <!-- Pool -->
+  <rect y="166" width="640" height="194" fill="url(#water)"/>
+  <g stroke="#a5f3fc" stroke-width="3" stroke-linecap="round" opacity="0.45" fill="none">
+    <path d="M40 214 q28 -12 56 0 t56 0"/>
+    <path d="M470 246 q28 -12 56 0 t56 0"/>
+    <path d="M80 300 q28 -12 56 0 t56 0"/>
+  </g>
+
+  <!-- Floating mat, tilted as it flips -->
+  <g transform="rotate(-14 250 226)">
+    <rect x="150" y="208" width="200" height="34" rx="17" fill="url(#mat)"/>
+    <rect x="150" y="208" width="200" height="12" rx="6" fill="#fef9c3" opacity="0.6"/>
+  </g>
+
+  <!-- The wipeout: an abstract figure, no face -->
+  <g fill="#f8fafc">
+    <circle cx="392" cy="150" r="21"/>
+    <rect x="376" y="176" width="34" height="58" rx="17" transform="rotate(24 393 205)"/>
+    <rect x="352" y="196" width="15" height="52" rx="7" transform="rotate(58 359 222)"/>
+    <rect x="416" y="192" width="15" height="50" rx="7" transform="rotate(-38 423 217)"/>
+    <rect x="398" y="228" width="16" height="54" rx="8" transform="rotate(16 406 255)"/>
+  </g>
+
+  <!-- Splash -->
+  <g fill="#ffffff">
+    <ellipse cx="400" cy="286" rx="86" ry="26" opacity="0.92"/>
+    <path d="M330 284 q-18 -46 -6 -76 q20 34 20 74 z" opacity="0.85"/>
+    <path d="M470 282 q22 -42 12 -74 q-24 32 -26 72 z" opacity="0.85"/>
+    <path d="M376 268 q-8 -58 6 -88 q14 40 8 88 z" opacity="0.75"/>
+    <circle cx="300" cy="218" r="9" opacity="0.8"/>
+    <circle cx="508" cy="234" r="11" opacity="0.8"/>
+    <circle cx="342" cy="182" r="7" opacity="0.7"/>
+    <circle cx="466" cy="196" r="6" opacity="0.7"/>
+  </g>
+</svg>
