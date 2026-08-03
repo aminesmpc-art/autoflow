@@ -1,0 +1,4 @@
+{
+  "_comment": "Hashes of UPSTREAM engine files at the moment their copy here was last reviewed. Run `npm run check:drift` to see what has moved; `-- --accept` to record after porting. Populated as each file is copied in milestone 2.",
+  "files": {}
+}
