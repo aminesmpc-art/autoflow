@@ -1150,21 +1150,43 @@ function isolatedWorldSlatePaste(el: HTMLElement, text: string): void {
  *  For Slate.js editors we use clipboard paste events to avoid
  *  breaking Slate's internal DOM model.
  */
-/** Whatever the editor currently holds, however it stores it. */
+/**
+ * What the editor actually holds — excluding its placeholder.
+ *
+ * textContent alone counts the placeholder, so an empty box reported
+ * "What do you want to create?" as 27 characters of content and the fill was
+ * declared a success. Slate marks its placeholder with data-slate-placeholder;
+ * other editors use data-placeholder or hide it from assistive tech.
+ */
 export function readInputText(el: HTMLElement): string {
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
     return el.value || '';
   }
-  return (el.textContent || '').trim();
+
+  const clone = el.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll(
+    '[data-slate-placeholder], [data-placeholder], [aria-hidden="true"], .placeholder'
+  ).forEach((n) => n.remove());
+  return (clone.textContent || '').trim();
 }
 
-/** Did enough of the text land to call this a success? */
+/**
+ * Did enough of the text land to call this a success?
+ *
+ * Proportional, with no ceiling. It used to be
+ * `Math.min(text.length * 0.6, 20)`, which caps the requirement at 20
+ * characters — so any 20 characters counted as a 223-character prompt having
+ * arrived, and the leftover placeholder sailed through it.
+ *
+ * Still not an exact match: editors collapse whitespace and turn fragments
+ * into chips, so a proportion of the length is the honest test.
+ */
 function textLanded(el: HTMLElement, text: string): boolean {
+  const want = text.trim();
+  if (!want) return true;
   const got = readInputText(el);
   if (!got) return false;
-  // Editors normalise whitespace and can turn fragments into chips, so compare
-  // length rather than demanding an exact match.
-  return got.length >= Math.min(text.trim().length * 0.6, 20);
+  return got.length >= Math.max(4, Math.floor(want.length * 0.6));
 }
 
 /**

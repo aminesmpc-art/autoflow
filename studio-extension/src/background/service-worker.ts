@@ -199,7 +199,69 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+/**
+ * Paste into a Slate editor from the MAIN world.
+ *
+ * Slate reads clipboard data only from events created in the same JavaScript
+ * world, and a content script lives in the isolated one — so a DataTransfer
+ * built there is invisible to it and the paste silently does nothing. The only
+ * way in is to run the paste inside the page itself.
+ *
+ * This has to live in the worker because chrome.scripting is not available to
+ * a content script. Missing it was why the prompt box stayed empty: the
+ * content script asked, nothing answered, and slatePaste could not tell the
+ * difference between "pasted" and "no handler".
+ */
+async function mainWorldPaste(tabId: number, elId: string, text: string): Promise<any> {
+  const [result] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: (id: string, value: string) => {
+      const el = document.getElementById(id);
+      if (!el) return { success: false, error: 'Element not found' };
+
+      el.focus();
+      const selection = window.getSelection();
+      if (selection) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+
+      // Built here, in the page's world, so Slate can actually read it.
+      const dt = new DataTransfer();
+      dt.setData('text/plain', value);
+
+      el.dispatchEvent(new InputEvent('beforeinput', {
+        bubbles: true, cancelable: true, inputType: 'insertFromPaste', dataTransfer: dt,
+      } as InputEventInit));
+      el.dispatchEvent(new ClipboardEvent('paste', {
+        bubbles: true, cancelable: true, clipboardData: dt,
+      }));
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+
+      return { success: true, text: (el.textContent || '').slice(0, 50) };
+    },
+    args: [elId, text],
+  });
+  return result?.result ?? { success: false, error: 'No result from page' };
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // The prompt box cannot be filled without this — see mainWorldPaste.
+  if (msg?.type === 'MAIN_WORLD_PASTE') {
+    const tabId = sender.tab?.id;
+    if (!tabId) {
+      sendResponse({ error: 'No tab ID' });
+      return false;
+    }
+    mainWorldPaste(tabId, msg.payload?.elId, msg.payload?.text)
+      .then(sendResponse)
+      .catch((e) => sendResponse({ error: e?.message || String(e) }));
+    return true; // async
+  }
+
   // Results arrive from a content script; forward them to the Studio window.
   if (msg?.type?.startsWith?.('STUDIO_') && sender.tab) {
     replyToStudio(msg);

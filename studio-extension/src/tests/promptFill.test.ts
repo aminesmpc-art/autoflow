@@ -98,3 +98,35 @@ describe('prompt fill ladder', () => {
     expect(editor.text).toBe(short);
   });
 });
+
+/* The two defects the "box now holds 27" log exposed. */
+describe('verifying the box', () => {
+  const PLACEHOLDER = 'What do you want to create?'; // 27 chars, as Flow shows
+  const landed = (gotLength: number, wantLength: number) =>
+    gotLength >= Math.max(4, Math.floor(wantLength * 0.6));
+
+  it('does not accept a leftover placeholder as a filled box', () => {
+    // The regression: Math.min(want * 0.6, 20) capped the requirement at 20,
+    // so 27 characters of placeholder passed for a 223-character prompt.
+    expect(landed(PLACEHOLDER.length, 223)).toBe(false);
+  });
+
+  it('accepts a genuinely filled box', () => {
+    expect(landed(223, 223)).toBe(true);
+    expect(landed(140, 223)).toBe(true); // whitespace collapsed
+  });
+
+  it('rejects a box holding only a fragment', () => {
+    expect(landed(60, 223)).toBe(false);
+  });
+
+  it('still works for very short prompts', () => {
+    expect(landed(9, 9)).toBe(true);   // "A red car"
+    expect(landed(0, 9)).toBe(false);
+  });
+
+  it('has no ceiling — the requirement grows with the prompt', () => {
+    // The exact shape of the bug: a fixed cap makes long prompts trivially pass.
+    expect(landed(25, 500)).toBe(false);
+  });
+});

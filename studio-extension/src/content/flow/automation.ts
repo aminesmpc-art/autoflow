@@ -2864,11 +2864,13 @@ export class AutomationEngine {
      * only evidence available and it was wrong, which is what made this take
      * so long to find.
      */
+    /* Proportional, matching textLanded — a box still showing its placeholder
+       is not a filled box, and "not empty" was too weak a test to notice. */
     const landed = readInputText(input as HTMLElement);
-    if (!landed) {
+    if (landed.length < Math.max(4, Math.floor(text.trim().length * 0.6))) {
       throw new Error(
-        'Prompt box stayed empty after filling it. Flow may have changed its ' +
-        'prompt box, or the page was still loading.'
+        `Prompt box holds ${landed.length} of ${text.trim().length} characters after ` +
+        'filling it. Flow may have changed its prompt box, or the page was still loading.'
       );
     }
 
