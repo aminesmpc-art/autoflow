@@ -1150,42 +1150,110 @@ function isolatedWorldSlatePaste(el: HTMLElement, text: string): void {
  *  For Slate.js editors we use clipboard paste events to avoid
  *  breaking Slate's internal DOM model.
  */
-export async function setInputValue(el: HTMLElement, text: string): Promise<void> {
+/** Whatever the editor currently holds, however it stores it. */
+export function readInputText(el: HTMLElement): string {
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
-    // Use native input setter to trigger React/Angular change detection
-    const nativeSetter = Object.getOwnPropertyDescriptor(
-      el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
-      'value'
-    )?.set;
-    if (nativeSetter) {
-      nativeSetter.call(el, text);
-    } else {
-      el.value = text;
-    }
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-  } else if (el.getAttribute('contenteditable') === 'true') {
-    el.focus();
+    return el.value || '';
+  }
+  return (el.textContent || '').trim();
+}
 
-    // Select all existing content using the Selection API
+/** Did enough of the text land to call this a success? */
+function textLanded(el: HTMLElement, text: string): boolean {
+  const got = readInputText(el);
+  if (!got) return false;
+  // Editors normalise whitespace and can turn fragments into chips, so compare
+  // length rather than demanding an exact match.
+  return got.length >= Math.min(text.trim().length * 0.6, 20);
+}
+
+/**
+ * Put text into Flow's prompt box, and make sure it actually arrived.
+ *
+ * Previously this picked one strategy by sniffing the element and returned
+ * without looking. When Flow redesigned its composer the chosen strategy
+ * silently did nothing: the engine logged "Prompt filled (223 chars)", the box
+ * stayed empty, Flow kept Generate disabled because there was no prompt, and
+ * the run sat waiting for a button that was never going to enable. A fill that
+ * cannot fail is worse than one that throws.
+ *
+ * Now every strategy is tried in turn until the text is visibly in the box,
+ * and if none work it throws so the node reports something true.
+ */
+export async function setInputValue(el: HTMLElement, text: string): Promise<void> {
+  const isField = el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement;
+
+  const selectAll = () => {
+    el.focus();
+    if (isField) {
+      (el as HTMLInputElement).select();
+      return;
+    }
     const selection = window.getSelection();
     const range = document.createRange();
     range.selectNodeContents(el);
     selection?.removeAllRanges();
     selection?.addRange(range);
+  };
 
-    // For Slate.js we MUST NOT use document.execCommand('insertText') — it
-    // mutates the DOM directly and desynchronises Slate's virtual model,
-    // causing "Cannot resolve a Slate node from DOM" crashes.
-    // Instead, simulate a clipboard paste that Slate handles natively.
+  /* Ordered by how faithfully each imitates a real user for the editor in
+     question — not by preference. Slate first when it is Slate, because
+     execCommand desynchronises Slate's model and crashes it with "Cannot
+     resolve a Slate node from DOM". */
+  const strategies: Array<[string, () => void | Promise<void>]> = [];
+
+  if (isField) {
+    strategies.push(['native setter', () => {
+      const proto = el instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) setter.call(el, text);
+      else (el as HTMLInputElement).value = text;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }]);
+  } else {
     if (el.hasAttribute('data-slate-editor')) {
-      await slatePaste(el, text);
-    } else {
-      // Non-Slate contenteditable: execCommand is fine
+      strategies.push(['slate paste', () => slatePaste(el, text)]);
+    }
+    strategies.push(['paste event', () => {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', text);
+      el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+    }]);
+    strategies.push(['beforeinput', () => {
+      // What a real keystroke produces; modern editors listen for it even when
+      // they ignore synthetic paste.
+      el.dispatchEvent(new InputEvent('beforeinput', {
+        bubbles: true, cancelable: true, inputType: 'insertText', data: text,
+      }));
+    }]);
+    strategies.push(['execCommand', () => {
       document.execCommand('insertText', false, text);
+    }]);
+  }
+
+  const attempted: string[] = [];
+  for (const [name, run] of strategies) {
+    selectAll();
+    try {
+      await run();
+    } catch {
+      // A strategy the editor rejects outright — try the next one.
     }
     el.dispatchEvent(new Event('input', { bubbles: true }));
+    // Editors apply asynchronously; give the model a tick to catch up.
+    await new Promise((r) => setTimeout(r, 120));
+
+    attempted.push(name);
+    if (textLanded(el, text)) return;
   }
+
+  throw new Error(
+    `Could not type the prompt into Flow — tried ${attempted.join(', ')}. ` +
+    `Flow's prompt box may have changed.`
+  );
 }
 
 /** Find aspect ratio selector and click option */

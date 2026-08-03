@@ -50,6 +50,7 @@ import {
   reactKeyTrigger,
   humanDelay,
   setInputValue,
+  readInputText,
   simulateTyping,
   findIngredientChips,
   queryButtonByText,
@@ -2854,7 +2855,24 @@ export class AutomationEngine {
       await setInputValue(input as HTMLElement, text);
     }
 
-    this.log('info', `Prompt filled (${text.length} chars, method=${method})`);
+    /* Confirm it is really in the box.
+     *
+     * This log used to fire unconditionally, so a fill that quietly did
+     * nothing still read "Prompt filled (223 chars)". Flow then kept Generate
+     * disabled — correctly, there was no prompt — and the run spent its whole
+     * budget waiting for a button that could never enable. The log was the
+     * only evidence available and it was wrong, which is what made this take
+     * so long to find.
+     */
+    const landed = readInputText(input as HTMLElement);
+    if (!landed) {
+      throw new Error(
+        'Prompt box stayed empty after filling it. Flow may have changed its ' +
+        'prompt box, or the page was still loading.'
+      );
+    }
+
+    this.log('info', `Prompt filled (${text.length} chars, method=${method}, box now holds ${landed.length})`);
     await humanDelay(400, 800);
   }
 

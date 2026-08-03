@@ -13,7 +13,30 @@
 import './sidepanel.css';
 import { login, logout, isLoggedIn, getProfile } from '../shared/api';
 
-const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+/**
+ * Element by id, loudly.
+ *
+ * Returning null here meant a single renamed id threw deep inside wiring and
+ * killed the rest of init — leaving the panel showing its static HTML with no
+ * hint anything had gone wrong. A side panel has no visible console, so a
+ * silent failure looks exactly like a working panel with nothing to report.
+ */
+const $ = <T extends HTMLElement>(id: string): T => {
+  const el = document.getElementById(id);
+  if (!el) throw new Error(`Side panel is missing #${id}`);
+  return el as T;
+};
+
+/** Surface a failure in the panel itself — there is nowhere else to see it. */
+function showFatal(err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error('[Studio panel]', err);
+  const box = document.createElement('div');
+  box.className = 'sp-error';
+  box.style.margin = '12px 0';
+  box.textContent = `Panel error: ${message}`;
+  document.body.prepend(box);
+}
 
 /* ── Run status ── */
 
@@ -70,9 +93,27 @@ chrome.runtime.onMessage.addListener((msg) => {
    three minutes in. */
 async function refreshPlatforms(): Promise<void> {
   let status: Record<string, boolean> = {};
+  let reachedWorker = true;
   try {
     status = (await chrome.runtime.sendMessage({ type: 'PANEL_PLATFORM_STATUS' })) || {};
-  } catch { /* leave everything unknown */ }
+  } catch {
+    // A worker that failed to start makes every button in here do nothing.
+    // Say so, rather than showing dashes that look like "still loading".
+    reachedWorker = false;
+  }
+
+  if (!reachedWorker) {
+    for (const li of Array.from(document.querySelectorAll<HTMLLIElement>('#plat-list li'))) {
+      li.classList.remove('is-open');
+      const state = li.querySelector('.sp-plat__state');
+      if (state) state.textContent = 'no worker';
+    }
+    const err = $('run-error');
+    err.hidden = false;
+    err.textContent =
+      'Background worker is not responding — reload the extension in chrome://extensions.';
+    return;
+  }
 
   for (const li of Array.from(document.querySelectorAll<HTMLLIElement>('#plat-list li'))) {
     const key = li.dataset.plat || '';
@@ -175,10 +216,27 @@ function wire(): void {
   }
 }
 
-wire();
-refreshRun();
-refreshAccount();
-refreshPlatforms();
+/* Each step is independent: one failing must not take the others with it, and
+   whatever fails has to be visible in the panel rather than only in a console
+   nobody opens. */
+function boot(): void {
+  const steps: Array<[string, () => unknown]> = [
+    ['wiring', wire],
+    ['run status', refreshRun],
+    ['account', refreshAccount],
+    ['platforms', refreshPlatforms],
+  ];
+  for (const [name, step] of steps) {
+    try {
+      const result = step();
+      if (result instanceof Promise) result.catch((e) => showFatal(new Error(`${name}: ${e?.message || e}`)));
+    } catch (e: any) {
+      showFatal(new Error(`${name}: ${e?.message || e}`));
+    }
+  }
+}
+
+boot();
 
 // Tabs open and close without telling us; a slow poll keeps the dots honest.
-setInterval(refreshPlatforms, 5000);
+setInterval(() => { refreshPlatforms().catch(() => {}); }, 5000);
