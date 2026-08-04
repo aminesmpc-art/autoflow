@@ -1575,3 +1575,47 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
 .react-flow__edge-path {
   stroke-width: 2;
 }
+
+/* ── Last Frame node ──
+   Deliberately smaller than a generate node: it produces nothing and costs
+   nothing, it only reveals what the clip above is handing on. */
+.fn-wrap { position: relative; width: 220px; }
+.fn-wrap--selected .fn { border-color: #a855f7; }
+
+.fn {
+  position: relative;
+  background: #131317;
+  border: 1px solid #26262c;
+  border-radius: 14px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.fn-media {
+  background: #0a0a0c;
+  min-height: 96px;
+  display: grid;
+  place-items: center;
+}
+.fn-media__img {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: zoom-in;
+}
+
+.fn-empty {
+  padding: 18px 14px;
+  text-align: center;
+  color: #6b7280;
+}
+.fn-empty__icon { display: block; font-size: 18px; margin-bottom: 6px; opacity: 0.7; }
+.fn-empty small { font-size: 11px; line-height: 1.45; }
+
+.fn-caption {
+  padding: 7px 10px;
+  font-size: 10.5px;
+  color: #7b7b85;
+  border-top: 1px solid #1e1e24;
+  text-align: center;
+}

@@ -23,6 +23,7 @@ import { consumeStudioRun } from '../../shared/api';
 import { PromptNode } from '../nodes/PromptNode';
 import { ImageNode } from '../nodes/ImageNode';
 import { GenerateNode } from '../nodes/GenerateNode';
+import { FrameNode } from '../nodes/FrameNode';
 import { runner } from '../engine/WorkflowRunner';
 import { bridge } from '../engine/bridge';
 
@@ -31,6 +32,7 @@ const nodeTypes = {
   prompt: PromptNode,
   image: ImageNode,
   generate: GenerateNode,
+  frame: FrameNode,
 };
 
 function CanvasInner() {
@@ -306,6 +308,22 @@ function CanvasInner() {
     });
   }, [addNode, nodes, guardAdd]);
 
+  /** Shows the last frame of the clip feeding it, and passes it on. */
+  const addFrameNode = useCallback(() => {
+    if (!guardAdd()) return;
+    const id = `frame_${Date.now()}`;
+    addNode({
+      id,
+      type: 'frame',
+      position: { x: 380, y: 420 + nodes.length * 50 },
+      data: {
+        type: 'frame',
+        label: `Last Frame ${nodes.filter((n) => (n.data as any).type === 'frame').length + 1}`,
+        frameUrl: '',
+      },
+    });
+  }, [addNode, nodes, guardAdd]);
+
   /**
    * A generate node preconfigured to ask ChatGPT for text.
    *
@@ -437,6 +455,10 @@ function CanvasInner() {
         <button className="studio-toolbar__btn" onClick={addImageNode} aria-label="Add Image node">
           <span className="studio-toolbar__btn-icon" aria-hidden="true">🖼️</span>
           <span className="studio-toolbar__btn-label">Add Image</span>
+        </button>
+        <button className="studio-toolbar__btn" onClick={addFrameNode} aria-label="Add Last Frame node">
+          <span className="studio-toolbar__btn-icon" aria-hidden="true">🎞</span>
+          <span className="studio-toolbar__btn-label">Add Last Frame</span>
         </button>
         <button className="studio-toolbar__btn" onClick={addAskNode} aria-label="Add Ask AI node">
           <span className="studio-toolbar__btn-icon" aria-hidden="true">💬</span>

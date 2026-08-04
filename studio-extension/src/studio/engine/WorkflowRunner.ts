@@ -226,6 +226,30 @@ export class WorkflowRunner {
           console.log(`[Runner] Image "${nodeData.label}": stored reference`);
           break;
 
+        case 'frame': {
+          /* The end frame of the clip above, surfaced as an image.
+             Nothing is captured here — the content script already grabbed it
+             when that clip finished, because the tile was certain to exist at
+             that moment and may be recycled later. This node only makes the
+             frame visible and reusable. */
+          const source = getNodeInputs(step.nodeId, edges).get('image_ref')?.[0];
+          const upstream = source ? this.nodeResults.get(source) : undefined;
+          const frameUrl = upstream?.referenceUrl || '';
+
+          this.nodeResults.set(step.nodeId, { tileId: '', imageUrl: frameUrl });
+          store.updateNodeData(step.nodeId, { frameUrl });
+
+          if (!frameUrl) {
+            // Not fatal: a downstream node will fail with its own clear
+            // message about a missing reference rather than generating
+            // silently without one.
+            console.warn(`[Runner] Frame "${nodeData.label}": upstream produced no capturable frame`);
+          } else {
+            console.log(`[Runner] Frame "${nodeData.label}": captured ${Math.round(frameUrl.length / 1024)}KB`);
+          }
+          break;
+        }
+
         case 'generate': {
           // Nodes toggled off are skipped without consuming a generation
           if (nodeData.enabled === false) {
