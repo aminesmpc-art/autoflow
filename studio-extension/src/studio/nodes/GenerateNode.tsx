@@ -291,13 +291,13 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
         <Handle type="target" position={Position.Left} id="text" className="sn-port sn-port--text" style={{ top: '38%' }}>
           <span className="sn-port__glyph">T</span>
         </Handle>
-        {/* A prompt writer takes no reference image — hiding the port keeps it
-            from being wired to something it would silently ignore. */}
-        {!isText && (
-          <Handle type="target" position={Position.Left} id="image_ref" className="sn-port sn-port--image" style={{ top: '62%' }}>
-            <span className="sn-port__glyph">🖼</span>
-          </Handle>
-        )}
+        {/* Prompt writers take references too, now that the ChatGPT script
+            actually uploads them. Showing this frame to Ask AI and asking what
+            happens next is the reason to want a prompt writer at all — it was
+            hidden only while an attached image would have been dropped. */}
+        <Handle type="target" position={Position.Left} id="image_ref" className="sn-port sn-port--image" style={{ top: '62%' }}>
+          <span className="sn-port__glyph">🖼</span>
+        </Handle>
         {/* Text answers leave on the text port so they land on the next node's
             T input; media leaves on result, which carries the reference. */}
         {isText ? (

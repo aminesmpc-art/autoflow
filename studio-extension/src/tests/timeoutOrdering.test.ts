@@ -25,7 +25,7 @@
 const RUNNER = {
   video: 22 * 60_000,
   image: 8 * 60_000,
-  text: 2 * 60_000,
+  text: 3 * 60_000,
 };
 
 /** Content scripts — inner. */
@@ -34,6 +34,11 @@ const CONTENT = {
   flowImageWatch: 360 * 1000,  // pollStudioCompletion, image
   chatgptImage: 6 * 60_000,
   chatgptText: 90 * 1000,
+  /* Spent BEFORE the question is asked, out of the same outer budget — a
+     ChatGPT node wired to a reference uploads first, then waits for the
+     answer. Counting only one of the two is how the text node ended up with
+     150s of work under a 120s supervisor. */
+  chatgptUpload: 45 * 1000,
 };
 
 /** Steps the engine may spend BEFORE it can report "submitted". */
@@ -64,6 +69,17 @@ describe('inner layers give up before outer layers', () => {
 
   it('chatgpt text: content script before runner', () => {
     expect(CONTENT.chatgptText).toBeLessThan(RUNNER.text);
+  });
+
+  it('chatgpt text: upload AND reply together still fit', () => {
+    // The regression: adding a 60s upload wait left 90s of reply under a
+    // 120s runner budget, so the supervisor expired mid-answer and blamed
+    // the model for a slow upload.
+    expect(CONTENT.chatgptUpload + CONTENT.chatgptText).toBeLessThan(RUNNER.text);
+  });
+
+  it('chatgpt image: upload AND generation together still fit', () => {
+    expect(CONTENT.chatgptUpload + CONTENT.chatgptImage).toBeLessThan(RUNNER.image);
   });
 });
 

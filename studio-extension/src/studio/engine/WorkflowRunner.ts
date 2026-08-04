@@ -483,8 +483,12 @@ export class WorkflowRunner {
     // Asking ChatGPT for text is a chat round-trip, so it fails fast rather
     // than holding a workflow open for minutes.
     const isTextNode = config.mediaType === 'text';
-    const timeoutMs = isTextNode ? 2 * 60 * 1000 : isVideoNode ? 22 * 60 * 1000 : 8 * 60 * 1000;
-    const timeoutLabel = isTextNode ? '2 minutes' : isVideoNode ? '22 minutes' : '8 minutes';
+    /* 3 minutes, not 2: a ChatGPT node can now spend up to 45s uploading
+       reference images before it even asks the question, and the old budget
+       left the reply only 30s of headroom — the outer wait would have expired
+       first and blamed the model for a slow upload. */
+    const timeoutMs = isTextNode ? 3 * 60 * 1000 : isVideoNode ? 22 * 60 * 1000 : 8 * 60 * 1000;
+    const timeoutLabel = isTextNode ? '3 minutes' : isVideoNode ? '22 minutes' : '8 minutes';
 
     // Send to Flow via bridge
     return new Promise<NodeResult>((resolve, reject) => {

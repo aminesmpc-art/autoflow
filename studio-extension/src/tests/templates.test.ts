@@ -20,10 +20,10 @@ const PORTS: Record<string, { in: string[]; out: string[] }> = {
   prompt: { in: [], out: ['text'] },
   image: { in: [], out: ['image'] },
   frame: { in: ['image_ref'], out: ['image'] },
-  // A generate node's ports depend on what it makes: a prompt writer takes no
-  // reference image and emits text, everything else emits a result.
+  // A generate node's ports depend on what it makes: a prompt writer emits
+  // text, everything else emits a result. Both take reference images.
   generate: { in: ['text', 'image_ref'], out: ['result'] },
-  'generate:text': { in: ['text'], out: ['text'] },
+  'generate:text': { in: ['text', 'image_ref'], out: ['text'] },
 };
 
 const portsFor = (node: any) => {

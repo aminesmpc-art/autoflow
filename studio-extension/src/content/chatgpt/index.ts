@@ -17,11 +17,24 @@ const GENERATION_TIMEOUT_MS = 6 * 60 * 1000; // ChatGPT image gen can take minut
 const TEXT_TIMEOUT_MS = 90 * 1000;
 const POLL_MS = 2000;
 const MAX_CAPTURE_BYTES = 15 * 1024 * 1024;
+// Uploading happens before the question is even asked, so this is spent out of
+// the same budget as the answer — see waitForAttachments.
+const UPLOAD_TIMEOUT_MS = 45 * 1000;
 
 chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
   if (msg?.type === 'PING') { sendResponse({ pong: true }); return true; }
   if (msg?.type === 'STUDIO_EXECUTE_NODE') {
-    handleExecute(msg.payload).then(sendResponse);
+    handleExecute(msg.payload)
+      .catch((e: any) => {
+        // Without this the promise rejects, sendResponse is never called, and
+        // the node sits at "running" until the run is stopped by hand — a
+        // thrown error becoming a hang is strictly worse than an error.
+        const error = `ChatGPT step failed: ${e?.message || e}`;
+        console.error('[AutoFlow ChatGPT]', e);
+        send('STUDIO_NODE_ERROR', { nodeId: msg.payload?.nodeId, error });
+        return { success: false };
+      })
+      .then(sendResponse);
     return true; // async
   }
   return false;
@@ -106,6 +119,195 @@ function fillComposer(el: HTMLElement, text: string): void {
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+/* ── Reference images ──
+   A ChatGPT node wired to an image node or a Last Frame was typing its prompt
+   and sending, with the reference silently dropped: the whole point of wiring
+   it — "make this character do X" — never reached the model. The route below
+   is the one already proven against Flow in content/flow/automation.ts: build
+   a File, assign it to the page's own file input, then push React into
+   noticing. Nothing here reports success it has not seen on screen. */
+
+/** data: URL → File, without a fetch (which CSP can block on chatgpt.com). */
+function dataUrlToFile(dataUrl: string, filename: string): File {
+  const comma = dataUrl.indexOf(',');
+  const header = dataUrl.slice(0, comma);
+  const mime = /data:([^;,]+)/.exec(header)?.[1] || 'image/png';
+  const body = dataUrl.slice(comma + 1);
+
+  const binary = header.includes(';base64') ? atob(body) : decodeURIComponent(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+  const ext = mime.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+  return new File([bytes], `${filename}.${ext}`, { type: mime });
+}
+
+/**
+ * ChatGPT's own upload input.
+ *
+ * It is usually already in the DOM but hidden; on some surfaces it is only
+ * mounted once the attach menu opens. Ours is never a candidate — we don't
+ * inject one — so any file input on the page belongs to ChatGPT.
+ */
+function findFileInput(): HTMLInputElement | null {
+  const byAccept = document.querySelector<HTMLInputElement>('input[type="file"][accept*="image"]');
+  if (byAccept) return byAccept;
+  return document.querySelector<HTMLInputElement>('input[type="file"]');
+}
+
+/** Open the attach menu, for the case where the input mounts on demand. */
+async function revealFileInput(): Promise<HTMLInputElement | null> {
+  const existing = findFileInput();
+  if (existing) return existing;
+
+  const attach = Array.from(document.querySelectorAll<HTMLElement>('button')).find((b) => {
+    const label = `${b.getAttribute('aria-label') || ''} ${b.getAttribute('data-testid') || ''}`;
+    return /attach|upload|plus|add.?file|photo/i.test(label) && isVisible(b);
+  });
+  if (!attach) return null;
+
+  attach.click();
+  for (let i = 0; i < 10; i++) {
+    await sleep(300);
+    const input = findFileInput();
+    if (input) {
+      // Leave the menu as we found it — an open popover swallows the click on
+      // the send button later.
+      document.body.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', code: 'Escape', bubbles: true,
+      }));
+      return input;
+    }
+  }
+  return null;
+}
+
+/**
+ * React tracks file inputs through its own synthetic system, so a bare
+ * dispatched change event often reaches nothing. Same three-way approach the
+ * Flow path uses: the element's React props, then its fibre's, then native
+ * events for anything still listening the ordinary way.
+ */
+function triggerFileInputChange(input: HTMLInputElement): void {
+  const synthetic = {
+    target: input,
+    currentTarget: input,
+    type: 'change',
+    bubbles: true,
+    preventDefault: () => {},
+    stopPropagation: () => {},
+    isPropagationStopped: () => false,
+    isDefaultPrevented: () => false,
+    persist: () => {},
+    nativeEvent: new Event('change', { bubbles: true }),
+  };
+
+  const propsKey = Object.keys(input).find((k) => k.startsWith('__reactProps$'));
+  const props = propsKey ? (input as any)[propsKey] : null;
+  if (typeof props?.onChange === 'function') {
+    try { props.onChange(synthetic); } catch { /* try the next route */ }
+  }
+
+  const fiberKey = Object.keys(input).find((k) => k.startsWith('__reactFiber$'));
+  if (fiberKey) {
+    let fiber: any = (input as any)[fiberKey];
+    for (let i = 0; i < 15 && fiber; i++) {
+      if (typeof fiber.memoizedProps?.onChange === 'function') {
+        try { fiber.memoizedProps.onChange(synthetic); } catch { /* fall through */ }
+        break;
+      }
+      fiber = fiber.return;
+    }
+  }
+
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** The composer's surrounding form — where attachment thumbnails appear. */
+function composerRegion(): HTMLElement {
+  const composer = findComposer();
+  return (composer?.closest('form') as HTMLElement)
+    || (composer?.parentElement?.parentElement as HTMLElement)
+    || document.body;
+}
+
+/** Images inside the composer — attachment previews, not conversation results. */
+function attachmentCount(): number {
+  return composerRegion().querySelectorAll('img').length;
+}
+
+/**
+ * Wait until the attachments are visibly on the composer and finished
+ * uploading.
+ *
+ * Submitting mid-upload is the failure that matters: ChatGPT sends the text
+ * alone and answers without ever seeing the image, which reads as a working
+ * run producing a wrong result. Two signals, because either alone lies — a
+ * thumbnail appears the instant the file is picked, and the send button is
+ * briefly enabled before upload starts.
+ */
+async function waitForAttachments(baseline: number, expected: number): Promise<boolean> {
+  // 45s, chosen against the runner's outer budgets rather than by feel: a text
+  // node has 3 minutes total and its reply alone may take 90s. See
+  // tests/timeoutOrdering.test.ts, which pins the sum.
+  const deadline = Date.now() + UPLOAD_TIMEOUT_MS;
+  let stable = 0;
+
+  while (Date.now() < deadline) {
+    await sleep(500);
+    const arrived = attachmentCount() - baseline;
+    const sendReady = (() => {
+      const btn = findSendButton() as HTMLButtonElement | null;
+      return !!btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true';
+    })();
+
+    if (arrived >= expected && sendReady && !isGenerating()) {
+      // Two consecutive clean polls: an upload that finishes between them
+      // would otherwise let a half-attached file through.
+      if (++stable >= 2) return true;
+    } else {
+      stable = 0;
+    }
+  }
+  return false;
+}
+
+/**
+ * Put the reference images on the composer.
+ *
+ * Returns an error message, or null when the attachments are confirmed
+ * on screen. Never returns null on a guess — a silent miss here produces an
+ * answer about an image ChatGPT never received, which looks like success.
+ */
+async function attachReferences(dataUrls: string[]): Promise<string | null> {
+  const input = await revealFileInput();
+  if (!input) {
+    return 'Could not find ChatGPT\'s file upload — the reference image was not sent';
+  }
+
+  let files: File[];
+  try {
+    files = dataUrls.map((url, i) => dataUrlToFile(url, `reference-${i + 1}`));
+  } catch (e: any) {
+    return `Reference image could not be decoded: ${e.message}`;
+  }
+
+  const baseline = attachmentCount();
+
+  const dt = new DataTransfer();
+  for (const f of files) dt.items.add(f);
+  input.files = dt.files;
+  triggerFileInputChange(input);
+
+  if (!(await waitForAttachments(baseline, files.length))) {
+    return files.length > 1
+      ? `Only some of the ${files.length} reference images finished uploading to ChatGPT`
+      : 'Reference image did not finish uploading to ChatGPT';
+  }
+  return null;
+}
+
 /** True while ChatGPT is still streaming/generating */
 function isGenerating(): boolean {
   const stop = document.querySelector<HTMLElement>(
@@ -184,6 +386,37 @@ async function handleExecute(payload: any): Promise<any> {
   // is being written.
   const preexisting = new Set(collectResultImages().map((i) => i.currentSrc || i.src));
   const priorReply = wantsText ? readLatestReply().trim() : '';
+
+  /* Attach references before typing.
+     Order matters: uploading can re-render the composer, and a prompt typed
+     first would be wiped by that re-render — the text is re-read below either
+     way, but attaching first avoids the retype entirely. */
+  const references: string[] = (config?.referenceImageData || [])
+    .filter((d: unknown): d is string => typeof d === 'string' && d.startsWith('data:'));
+
+  // Flow tile ids mean nothing here — they name a tile in another site's grid.
+  // A node wired for a reference that arrived in that form has no reference at
+  // all, and saying so beats answering about an image ChatGPT never saw.
+  if (!references.length && (config?.referenceImageIds || []).length) {
+    send('STUDIO_NODE_ERROR', {
+      nodeId,
+      error: 'Reference image could not be sent to ChatGPT — the upstream node produced a Flow tile, not an image file',
+    });
+    return { success: false };
+  }
+
+  if (references.length) {
+    const failure = await attachReferences(references);
+    if (failure) {
+      send('STUDIO_NODE_ERROR', { nodeId, error: failure });
+      return { success: false };
+    }
+    console.log(`[AutoFlow ChatGPT] ${references.length} reference image(s) attached`);
+    send('STUDIO_NODE_PROGRESS', { nodeId, progress: 15 });
+    // The upload re-renders the composer, so the element found earlier may be
+    // detached. Re-find it rather than typing into a node no longer on screen.
+    composer = findComposer() || composer;
+  }
 
   fillComposer(composer, prompt);
   await sleep(500);
