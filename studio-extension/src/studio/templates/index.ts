@@ -269,35 +269,36 @@ const CAR_STYLE =
   'body lines and colour. Do not restyle or substitute a different car.\n' +
   'Vertical 9:16.';
 
-/* The one node the user edits. Everything downstream is derived from the line
-   at the top, so changing the car is changing four words — no photo to find,
-   no rights to worry about, and the reference is generated at the angle and
-   lighting the carve clips actually need rather than whatever a stock shot
-   happened to be. Written for an Ask AI node, so the two rules that matter
-   are: answer with ONLY the prompt, and be specific enough that the render
-   is that exact car and not a generic one. */
+/* The one node the user edits — and it goes straight to the image model.
+
+   This used to route through ChatGPT to write the sheet prompt first, which
+   was a mistake twice over.
+
+   It was slow: a full chat round-trip and a tab switch before the first pixel,
+   on top of a run that is already four video generations long.
+
+   And it was wrong. The line reading "↑ Change this line to any car" was
+   written at the user, but ChatGPT is not able to tell the difference — asked
+   for a BMW M3 E46 it duly changed the line to any car and returned a Nissan
+   Skyline R34. Nothing in a prompt can be addressed to someone other than the
+   model reading it. The editing hint now lives in the node's label, where the
+   model never sees it.
+
+   Dropping the middle step lost nothing: the image model knows what an E46
+   looks like far better than a paragraph describing one, so having a text
+   model enumerate the headlights first was ceremony. */
 const CAR_BRIEF =
-  'CAR: BMW M3 E46, 2003, Laguna Seca Blue\n' +
-  '↑ Change this line to any car. Everything else stays as it is.\n\n' +
-  'Write ONE image-generation prompt for a reference sheet of exactly that ' +
-  'car. Output only the prompt itself — no title, no explanation, no preamble, ' +
-  'no quotes, no markdown.\n\n' +
-  '# THE SHEET\n' +
-  'A single image showing the car from three angles on one plain mid-grey ' +
-  'backdrop: three-quarter front on the left, dead-side profile in the centre, ' +
-  'three-quarter rear on the right. Even, neutral studio lighting. The whole ' +
-  'car in frame each time, wheels straight, no cropping.\n\n' +
-  '# BE SPECIFIC TO THIS MODEL\n' +
-  'Name the details that make it recognisably this exact generation and trim: ' +
-  'headlight and tail-light shape, grille and kidney design, bumper and skirt ' +
-  'lines, bonnet bulge, mirror style, wheel design and spoke count, badge ' +
-  'placement, exhaust layout, roofline and glasshouse shape. Name the paint ' +
-  'colour precisely. A prompt that would suit any car of that class is wrong.\n\n' +
-  '# LOOK\n' +
+  'Reference sheet of a BMW M3 E46, 2003, Laguna Seca Blue.\n\n' +
+  'One image on a plain mid-grey studio backdrop showing three views of that ' +
+  'exact car: three-quarter front on the left, dead-side profile in the ' +
+  'centre, three-quarter rear on the right. Even neutral studio lighting. The ' +
+  'whole car in frame in every view, wheels straight, no cropping.\n\n' +
+  'Render the real production car of that exact year and trim, with its own ' +
+  'headlights, grille, bumpers, mirrors, wheels, badges and exhaust layout, in ' +
+  'that exact paint colour. Do not substitute another model and do not restyle ' +
+  'it.\n\n' +
   'Ultra photorealistic product photography, 8K, sharp throughout, accurate ' +
-  'panel reflections. No people, no background, no text, no watermarks, no ' +
-  'motion, no styling effects.\n\n' +
-  'Keep it under 150 words.';
+  'panel reflections. No people, no background detail, no text, no watermarks.';
 
 /** [key, label, the ten seconds — ending on the state the next clip inherits] */
 const CAR_STAGES = [
@@ -905,26 +906,27 @@ export const TEMPLATES: Template[] = [
   {
     id: 'tpl_miniature_car',
     name: 'Miniature Car: Carve → Match Cut',
-    description: 'Type a car name. ChatGPT writes the reference sheet, then four clips carve it and match-cut to the real one.',
+    description: 'Name a car. Flow draws the reference sheet, then four clips carve it and match-cut to the real one.',
     useCase:
-      'The build-up-and-reveal format, where the whole video is a setup for the last two seconds. You type one line — "BMW M3 E46, 2003, Laguna Seca Blue" — and ChatGPT writes the reference-sheet prompt, Flow renders the sheet, and the carve chain works from that. No photo to source, and the reference comes out at the angles and lighting the carve clips need rather than whatever a stock shot happened to be. The Last Frame nodes matter more here than anywhere: the match cut only lands if the miniature the reveal inherits is exactly the one the previous clip finished, so the handoff sits on the canvas where you can check it before spending a generation. Needs a signed-in ChatGPT tab. Editing note from the format — post the reveal first as the hook, then the build.',
+      'The build-up-and-reveal format, where the whole video is a setup for the last two seconds. Change the first line of the first node to any car — "BMW M3 E46, 2003, Laguna Seca Blue" — and it renders a three-view reference sheet, then carves it, details it, paints it and reveals it full size. No photo to source, and the sheet comes out at the angles and lighting the carve clips need rather than whatever a stock shot happened to be. The Last Frame nodes matter more here than anywhere: the match cut only lands if the miniature the reveal inherits is exactly the one the previous clip finished, so the handoff sits on the canvas where you can check it before spending a generation. Editing note from the format — post the reveal first as the hook, then the build.',
     category: 'Content',
     difficulty: 'Advanced',
-    nodeCount: 14,
+    nodeCount: 13,
     thumbnail: '🚗',
     thumbnailImage: 'assets/templates/miniature-car.svg',
     nodes: [
-      promptNode('p_car', 'Which Car', CAR_BRIEF, 40, 260),
-      askNode('ask_sheet', 'Write the Sheet Prompt', 480, 260),
+      // The label carries the editing hint; the prompt text cannot, because
+      // everything in it is read by a model as an instruction to itself.
+      promptNode('p_car', 'Which Car — edit line 1', CAR_BRIEF, 40, 260),
       genNode('g_sheet', {
         label: 'Car Reference Sheet',
         mediaType: 'image',
         aspectRatio: '16:9',
         model: 'Nano Banana Pro',
-      }, 900, 220),
+      }, 560, 220),
 
       ...CAR_STAGES.flatMap(([key, label, body], i) => {
-        const x = 1440 + i * 620;
+        const x = 1100 + i * 620;
         const out: Node[] = [
           promptNode(`p_${key}`, label, body + '\n\n' + CAR_STYLE, x - 260, 780),
           genNode(`g_${key}`, {
@@ -942,9 +944,8 @@ export const TEMPLATES: Template[] = [
       }),
     ],
     edges: [
-      // One line of text becomes a prompt, becomes the sheet every clip works from.
-      tEdge('p_car', 'ask_sheet'),
-      tEdge('ask_sheet', 'g_sheet'),
+      // Straight to the image model — no text model in between to reinterpret it.
+      tEdge('p_car', 'g_sheet'),
     ].concat(CAR_STAGES.flatMap(([key], i) => {
       const prev = CAR_STAGES[i - 1];
       const out = [

@@ -98,6 +98,20 @@ describe.each(TEMPLATES.map((t) => [t.name, t] as const))('%s', (_name, tpl) => 
     }
   });
 
+  it('addresses only the model in its prompt text', () => {
+    /* A prompt has one reader, and it is not the user. The car template
+       carried "↑ Change this line to any car" as a hint for whoever opened
+       it; ChatGPT could not tell it was not being spoken to, and asked for a
+       BMW M3 E46 it duly changed the line to any car and returned a Nissan
+       Skyline R34. Editing hints belong in node labels, which are shown on
+       the canvas and sent nowhere. */
+    for (const n of tpl.nodes.filter((n) => n.type === 'prompt')) {
+      const text: string = (n.data as any).text || '';
+      const aimedAtTheUser = /(change|edit|replace|swap) (this|the) (line|text)|↑ ?change|paste your|type your/i.test(text);
+      expect({ node: n.id, aimedAtTheUser }).toEqual({ node: n.id, aimedAtTheUser: false });
+    }
+  });
+
   it('gives every Last Frame node a clip to take a frame from', () => {
     for (const n of tpl.nodes.filter((n) => n.type === 'frame')) {
       const incoming = tpl.edges.filter((e) => e.target === n.id);
@@ -147,13 +161,15 @@ describe('Miniature Car', () => {
     expect(tpl.nodes.filter((n) => n.type === 'image')).toHaveLength(0);
   });
 
-  it('routes the car name through ChatGPT into the sheet', () => {
+  it('sends the car straight to the image model', () => {
+    // It used to go through ChatGPT to have the sheet prompt written. That
+    // cost a chat round-trip before the first pixel, and bought nothing the
+    // image model did not already know about the car.
     const from = (id: string) => tpl.edges.filter((e) => e.source === id).map((e) => e.target);
-    expect(from('p_car')).toContain('ask_sheet');
-    expect(from('ask_sheet')).toContain('g_sheet');
-    expect((byId.get('ask_sheet')!.data as any).mediaType).toBe('text');
-    expect((byId.get('ask_sheet')!.data as any).platform).toBe('chatgpt');
+    expect(from('p_car')).toEqual(['g_sheet']);
+    expect(tpl.nodes.some((n) => (n.data as any).platform === 'chatgpt')).toBe(false);
   });
+
 
   it('starts the carve from the generated sheet, not from a later clip', () => {
     const intoFirstClip = tpl.edges.filter(
@@ -167,9 +183,9 @@ describe('Miniature Car', () => {
 
   it('chains the four clips through three visible frames', () => {
     const count = (type: string) => tpl.nodes.filter((n) => n.type === type).length;
-    // 4 carve clips + the sheet + the Ask AI node all count as 'generate'.
+    // 4 carve clips + the reference sheet.
     expect({ generate: count('generate'), frames: count('frame') })
-      .toEqual({ generate: 6, frames: 3 });
+      .toEqual({ generate: 5, frames: 3 });
     // The reveal ends the chain, so it feeds no frame.
     expect(tpl.edges.some((e) => e.source === 'g_reveal' && e.targetHandle === 'image_ref'))
       .toBe(false);
