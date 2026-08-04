@@ -216,6 +216,62 @@ const POOL_FAILS_BRIEF =
   'Describe the ten seconds in order — the approach, two or three obstacles, then ' +
   'the fall. Keep it under 150 words.';
 
+/* ── Kids animation ──
+   Deliberately, explicitly stylised. Two reasons, and they point the same way.
+
+   The channels that work in this niche are animated — a mascot children
+   recognise and come back for. Photoreal footage of children is the version
+   that gets demonetised, age-restricted or pulled outright under the rules
+   YouTube and TikTok enforce hardest around synthetic minors, and it is not
+   something this template will help anyone make. Every prompt below names the
+   render style as cartoon and keeps real children out of frame.
+
+   Repeated verbatim in every scene, exactly like CONTINUITY above — it is what
+   stops the mascot drifting between scene 1 and scene 4. */
+const KIDS_STYLE =
+  'Render style: bright 3D cartoon animation, the look of a modern preschool ' +
+  'series. Soft rounded shapes, thick clean outlines, saturated primary colours, ' +
+  'gentle even lighting, no harsh shadows. Toy-like and clearly illustrated — ' +
+  'never photorealistic, never live action, and no real children in frame.\n' +
+  'Same character as the reference: identical face, body proportions, colour ' +
+  'palette and outfit. Do not restyle or redesign the character.\n' +
+  'Friendly and calm. No peril, no scares, no chase, no loud sudden motion.';
+
+const KIDS_CHARACTER =
+  'Character design sheet for a preschool cartoon mascot, on a plain pale ' +
+  'background.\n\n' +
+  'A cheerful young fox cub standing upright, wearing a small yellow explorer ' +
+  'backpack and a red scarf. Big friendly eyes, round soft body, short limbs, ' +
+  'warm orange fur with a cream chest and tail tip. Waving with one paw.\n\n' +
+  'Bright 3D cartoon animation style — soft rounded shapes, thick clean ' +
+  'outlines, saturated colours, even lighting. Toy-like, clearly illustrated, ' +
+  'never photorealistic.\n\n' +
+  'Full body, head to toe, centred, facing the camera.';
+
+/** [key, label, what happens in the 8 seconds] — one idea per scene. */
+const KIDS_SCENES = [
+  ['hello', '1. Hello',
+   'The character walks into a sunny meadow, stops in the centre, waves at the ' +
+   'camera and hops once on the spot with both arms up. Wide friendly framing, ' +
+   'the whole body in shot, camera still at the character\'s eye level.\n' +
+   'Cheerful ukulele and light percussion, birdsong underneath.'],
+  ['count', '2. Counting',
+   'The character points one paw at three big floating numbered balloons — 1, 2, ' +
+   '3 — touching each in turn, and each one bobs and glows as it is touched. ' +
+   'The character looks back at the camera and claps.\n' +
+   'Same meadow, same music. Slow clear beats so a child can follow along.'],
+  ['colour', '3. Colours',
+   'Three oversized shapes sit in the grass — a red ball, a blue cube, a yellow ' +
+   'star. The character walks to each one, pats it, and holds it up to the ' +
+   'camera before setting it down.\n' +
+   'Same meadow, same music. Unhurried, one object at a time.'],
+  ['wave', '4. Goodbye',
+   'The character waves goodbye with both paws, turns and walks away down a ' +
+   'winding path toward a low hill, then turns back for one last wave before ' +
+   'the camera settles.\n' +
+   'Music resolves and softens. Warm late-afternoon light.'],
+] as const;
+
 export const TEMPLATES: Template[] = [
   /* ─────────────── Starters ─────────────── */
   {
@@ -705,6 +761,51 @@ export const TEMPLATES: Template[] = [
       }
       return out;
     }),
+  },
+  {
+    id: 'tpl_kids_episode',
+    name: 'Kids Cartoon: 1 Mascot → 4 Scenes',
+    description: 'Design a cartoon mascot once, then hold it across a four-scene episode.',
+    useCase:
+      'Preschool and educational channels, where the format rests on children recognising the same character every episode — and where holding one design across four scenes by hand is the part that actually takes the time. The first node draws the mascot; every scene after it references that single design rather than the scene before, so a wobble in one clip cannot propagate. Deliberately animated: photoreal footage of children is what gets a kids channel age-restricted or pulled.',
+    category: 'Content',
+    difficulty: 'Medium',
+    nodeCount: 10,
+    thumbnail: '🦊',
+    nodes: [
+      promptNode('p_char', 'Mascot Design', KIDS_CHARACTER, 40, 300),
+      genNode('g_char', {
+        label: 'Mascot Design Sheet',
+        mediaType: 'image',
+        aspectRatio: '1:1',
+        model: 'Nano Banana Pro',
+      }, 560, 260),
+
+      ...KIDS_SCENES.flatMap(([key, label, body], i) => {
+        const y = i * 460;
+        return [
+          promptNode(`p_${key}`, label, body + '\n\n' + KIDS_STYLE, 1060, y + 40),
+          genNode(`g_${key}`, {
+            label,
+            mediaType: 'video',
+            aspectRatio: '16:9',
+            // 8s reads as a scene rather than a clip, and four of them cut
+            // together into roughly half a minute of episode.
+            duration: '8s',
+            model: 'Omni Flash',
+          }, 1580, y),
+        ];
+      }),
+    ],
+    edges: [
+      tEdge('p_char', 'g_char'),
+    ].concat(KIDS_SCENES.flatMap(([key]) => [
+      tEdge(`p_${key}`, `g_${key}`),
+      /* Every scene references the design sheet, not the scene before it.
+         Chaining would carry a drifted face forward into everything after it;
+         this way one bad scene stays one bad scene, and retries on its own. */
+      iEdge('g_char', `g_${key}`),
+    ])),
   },
   {
     id: 'tpl_pool_fails',
