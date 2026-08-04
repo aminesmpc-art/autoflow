@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 128" width="320" height="128" role="img" aria-label="Carved wooden car becoming a real car">
+  <!-- The format in one frame: raw block on the left, carved model in the
+       middle, the real car emerging on the right. Read at 128px behind a
+       scrim, so it is built from silhouettes rather than detail. -->
+  <defs>
+    <linearGradient id="bench" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#20150f"/>
+      <stop offset="1" stop-color="#0b0705"/>
+    </linearGradient>
+    <linearGradient id="walnut" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9a6134"/>
+      <stop offset="1" stop-color="#5d3819"/>
+    </linearGradient>
+    <linearGradient id="lacquer" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e8ecf2"/>
+      <stop offset="0.45" stop-color="#9aa7b8"/>
+      <stop offset="1" stop-color="#39424f"/>
+    </linearGradient>
+    <linearGradient id="key" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffb257" stop-opacity="0.5"/>
+      <stop offset="0.6" stop-color="#ffb257" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="1" y1="0" x2="0" y2="0">
+      <stop offset="0" stop-color="#5ec8ff" stop-opacity="0.5"/>
+      <stop offset="0.6" stop-color="#5ec8ff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="320" height="128" fill="url(#bench)"/>
+  <rect width="320" height="128" fill="url(#key)"/>
+  <rect width="320" height="128" fill="url(#rim)"/>
+
+  <!-- Bench surface -->
+  <rect x="0" y="96" width="320" height="32" fill="#2a1a11"/>
+  <rect x="0" y="96" width="320" height="2" fill="#6b4526" opacity="0.7"/>
+
+  <!-- 1. Raw block, chisel marks -->
+  <g>
+    <path d="M18 60h52v36H18z" fill="url(#walnut)"/>
+    <path d="M18 60h52v6H18z" fill="#b3763f" opacity="0.8"/>
+    <g stroke="#3d2410" stroke-opacity="0.55" stroke-width="2">
+      <path d="M26 68l8 8M40 64l10 10M56 70l8 8M30 84l9 8"/>
+    </g>
+    <!-- shavings -->
+    <g fill="#c08a4d" opacity="0.65">
+      <path d="M8 94q6-7 13-3-5 5-13 3z"/>
+      <path d="M74 95q7-6 13-1-6 4-13 1z"/>
+    </g>
+  </g>
+
+  <!-- 2. Carved miniature, bare wood -->
+  <g transform="translate(114 52)">
+    <path d="M6 30q4-14 16-16h22q13 2 18 16l4 8q1 6-5 6H7q-6 0-6-6z" fill="url(#walnut)"/>
+    <path d="M17 16q4-8 11-9h14q8 1 11 9z" fill="#c79256" opacity="0.55"/>
+    <circle cx="16" cy="44" r="7" fill="#2b1a0d"/>
+    <circle cx="50" cy="44" r="7" fill="#2b1a0d"/>
+    <circle cx="16" cy="44" r="3" fill="#7d5228"/>
+    <circle cx="50" cy="44" r="3" fill="#7d5228"/>
+  </g>
+
+  <!-- Match-cut seam: the moment the scale changes -->
+  <g>
+    <rect x="204" y="0" width="2" height="128" fill="#ffd9a0" opacity="0.35"/>
+    <rect x="203" y="0" width="4" height="128" fill="#ffd9a0" opacity="0.12"/>
+  </g>
+
+  <!-- 3. The real car, lacquered, larger, wet asphalt -->
+  <g transform="translate(216 40)">
+    <path d="M4 44q5-20 22-23h34q19 3 26 23l6 11q2 8-7 8H8q-9 0-8-8z" fill="url(#lacquer)"/>
+    <path d="M22 22q6-11 16-12h20q11 1 16 12z" fill="#cfe3f5" opacity="0.6"/>
+    <!-- headlight, the thing the camera pushes into -->
+    <ellipse cx="90" cy="44" rx="7" ry="5" fill="#fffbe8"/>
+    <ellipse cx="90" cy="44" rx="14" ry="9" fill="#fffbe8" opacity="0.18"/>
+    <circle cx="22" cy="62" r="10" fill="#12151a"/>
+    <circle cx="70" cy="62" r="10" fill="#12151a"/>
+    <circle cx="22" cy="62" r="4.5" fill="#7f8b9c"/>
+    <circle cx="70" cy="62" r="4.5" fill="#7f8b9c"/>
+    <!-- reflection on wet ground -->
+    <path d="M6 74h84l-8 10H14z" fill="#9aa7b8" opacity="0.18"/>
+  </g>
+</svg>

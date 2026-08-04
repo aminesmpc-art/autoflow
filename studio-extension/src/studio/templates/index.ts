@@ -248,6 +248,61 @@ const KIDS_CHARACTER =
   'never photorealistic.\n\n' +
   'Full body, head to toe, centred, facing the camera.';
 
+/* ── Miniature car build ──
+   Same chain shape as the styrofoam carve, with one difference that changes
+   the whole format: the last clip is a match cut. Three clips build a wooden
+   miniature, the fourth holds the finished model in frame and becomes the real
+   car in the same camera move. The payoff only lands if the miniature the
+   fourth clip inherits is the exact one the third clip finished — which is
+   what the Last Frame nodes make visible instead of hoped-for. */
+const CAR_STYLE =
+  '# LOOK — identical in every clip\n' +
+  'Ultra photorealistic, 8K HDR, ray-traced reflections, shallow depth of field.\n' +
+  'Macro cinematography at bench level, slow deliberate camera moves on a slider. ' +
+  'No handheld, no shake, no whip pans.\n' +
+  'Same dark walnut workbench, same warm key light raking from the left, same ' +
+  'cool rim light picking out the edges. Background falls off to near black.\n' +
+  'Hands and forearms only — sleeves rolled, never a face.\n' +
+  'Audio led by the material: blade on grain, brush bristles, the tick of small ' +
+  'parts set down. No music, no narration.\n' +
+  'Same vehicle as the reference throughout: identical model, proportions, ' +
+  'body lines and colour. Do not restyle or substitute a different car.\n' +
+  'Vertical 9:16.';
+
+/** [key, label, the ten seconds — ending on the state the next clip inherits] */
+const CAR_STAGES = [
+  ['block', '1. Rough Carving',
+   'A solid block of walnut is clamped on the bench. A chisel and mallet drive ' +
+   'away the waste in confident strokes, shavings curling off and settling on ' +
+   'the wood. The silhouette of the car emerges — roofline, bonnet, wheel ' +
+   'arches — while every surface stays faceted and raw.\n' +
+   'END ON: the rough car form, unmistakably the right vehicle, tool marks ' +
+   'everywhere, shavings banked around it.'],
+  ['detail', '2. Precision Detailing',
+   'Fine rasps, needle files and a scalpel cut the details in: door shut lines, ' +
+   'grille slats, mirror stems, the lip of each wheel arch. Fine-grit paper ' +
+   'follows and the surface goes from faceted to glass-smooth. A soft brush ' +
+   'clears the dust between passes.\n' +
+   'END ON: the bare wooden model, perfectly smooth and fully detailed, ' +
+   'unpainted, bench swept clean.'],
+  ['finish', '3. Paint & Assembly',
+   'Thin coats of automotive lacquer go on and flash off to a deep mirror ' +
+   'finish. Then the small parts: chrome trim pressed into the shut lines, ' +
+   'badges set with tweezers, clear lenses seated into the headlights, rubber ' +
+   'tyres pushed onto machined rims.\n' +
+   'END ON: the finished miniature, glossy and complete, reflecting the bench ' +
+   'light — a perfect scale model of the reference car.'],
+  ['reveal', '4. Match Cut to Real',
+   'The camera pushes slowly along the finished miniature toward its headlight. ' +
+   'As the frame fills with the reflection, the scale changes without a cut — ' +
+   'the same headlight, the same body line, the same paint, now full size. The ' +
+   'camera keeps pulling back to reveal the real car on wet asphalt at blue ' +
+   'hour, workshop lights streaking across the panels.\n' +
+   'One continuous move. The transition happens mid-shot, never on a cut, and ' +
+   'the car must be identical either side of it.\n' +
+   'END ON: the full-size car, static and centred, held for the last beat.'],
+] as const;
+
 /* ── AI toddler, photoreal ──
    The 100M-view format: a small child meeting something for the first time,
    shot like a parent's phone video. It lives or dies on the child being the
@@ -812,6 +867,56 @@ export const TEMPLATES: Template[] = [
       ];
       // Each clip feeds its own Last Frame, except the reveal, which ends it.
       if (i < STYROFOAM_STAGES.length - 1) {
+        out.push(iEdge(`g_${key}`, `f_${key}`));
+      }
+      return out;
+    }),
+  },
+  {
+    id: 'tpl_miniature_car',
+    name: 'Miniature Car: Carve → Match Cut',
+    description: 'Four clips carve a wooden model of your car, then match-cut to the real one.',
+    useCase:
+      'The build-up-and-reveal format, where the whole video is a setup for the last two seconds. Drop in any car photo and the chain carves it in walnut, details it, paints it, then pushes into the headlight and comes out full size. The Last Frame nodes matter more here than anywhere: the match cut only lands if the miniature the reveal inherits is exactly the one the previous clip finished, so the handoff is on the canvas where you can check it before spending a generation. Editing note from the format — post the reveal first as the hook, then the build.',
+    category: 'Content',
+    difficulty: 'Advanced',
+    nodeCount: 12,
+    thumbnail: '🚗',
+    thumbnailImage: 'assets/templates/miniature-car.svg',
+    nodes: [
+      imageNode('i1', 'Car Reference', 40, 300, 'the car to carve'),
+
+      ...CAR_STAGES.flatMap(([key, label, body], i) => {
+        const x = 560 + i * 620;
+        const out: Node[] = [
+          promptNode(`p_${key}`, label, body + '\n\n' + CAR_STYLE, x - 260, 780),
+          genNode(`g_${key}`, {
+            label,
+            mediaType: 'video',
+            aspectRatio: '9:16',
+            duration: '10s',
+            model: 'Omni Flash',
+          }, x, 200),
+        ];
+        if (i < CAR_STAGES.length - 1) {
+          out.push(frameNode(`f_${key}`, 'Ends on →', x + 340, 250));
+        }
+        return out;
+      }),
+    ],
+    edges: CAR_STAGES.flatMap(([key], i) => {
+      const prev = CAR_STAGES[i - 1];
+      const out = [
+        tEdge(`p_${key}`, `g_${key}`),
+        /* Clip 1 works from the user's car photo. Every clip after it starts
+           from the previous clip's closing frame, which is what keeps one
+           continuous object across four generations — and is the entire
+           reason the match cut at the end reads as the same car. */
+        i === 0
+          ? iEdge('i1', `g_${key}`, 'image')
+          : iEdge(`f_${prev[0]}`, `g_${key}`, 'image'),
+      ];
+      if (i < CAR_STAGES.length - 1) {
         out.push(iEdge(`g_${key}`, `f_${key}`));
       }
       return out;
