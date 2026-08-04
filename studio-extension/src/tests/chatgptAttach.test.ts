@@ -272,6 +272,68 @@ describe('ChatGPT reference upload', () => {
     expect(errorsFrom(h)).toEqual([]);
   }, 20_000);
 
+  /* Reported from a real run: the canvas showed the uploaded product photo as
+     the "generated" scene, and handed it to the video node as its reference.
+     The upload had worked perfectly — the capture picked the wrong image. */
+  it('captures what ChatGPT drew, not the reference we uploaded', async () => {
+    const h = buildHarness();
+
+    /** A conversation image, sized past the result thresholds. */
+    const addImage = (parent: HTMLElement, src: string) => {
+      const img = document.createElement('img');
+      img.src = src;
+      Object.defineProperty(img, 'complete', { value: true });
+      Object.defineProperty(img, 'naturalWidth', { value: 1024 });
+      Object.defineProperty(img, 'naturalHeight', { value: 1024 });
+      (img as any).getBoundingClientRect = () => ({
+        width: 400, height: 400, top: 0, left: 0, bottom: 400, right: 400, x: 0, y: 0, toJSON() {},
+      });
+      parent.append(img);
+      return img;
+    };
+
+    const turn = (role: string) => {
+      const el = document.createElement('div');
+      el.setAttribute('data-message-author-role', role);
+      document.body.append(el);
+      return el;
+    };
+
+    // The uploaded reference echoes back inside the user's own turn — larger
+    // than the eventual result, and on screen several seconds sooner.
+    h.fileInput.addEventListener('change', () => {
+      setTimeout(() => {
+        addImage(h.form, 'blob:composer-thumb');
+        addImage(turn('user'), 'https://files.example/uploaded-product.png');
+      }, 100);
+    });
+
+    /* Then ChatGPT answers with the image we actually want — after a delay
+       long enough for the uploaded one to sit still for several polls, which
+       is what a real 30-60s generation looks like. Answer too soon and the
+       old code stumbles onto the right image by accident, and the test
+       proves nothing. */
+    setTimeout(() => addImage(turn('assistant'), 'https://files.example/generated-scene.png'), 14_000);
+
+    (globalThis as any).fetch = (url: string) => Promise.resolve({
+      ok: true,
+      blob: () => Promise.resolve(new Blob([url], { type: 'image/png' })),
+    });
+
+    await h.execute({
+      nodeId: 'n1',
+      config: { prompt: 'person holding the product', mediaType: 'image', referenceImageData: [RED_PNG] },
+    });
+    await new Promise((r) => setTimeout(r, 24_000));
+
+    const result = h.sent.find((m) => m.type === 'STUDIO_NODE_RESULT');
+    expect(result).toBeDefined();
+    // The blob body is the URL, so the data URL says which image was captured.
+    const captured = Buffer.from(result.payload.imageUrl.split(',')[1], 'base64').toString();
+    expect(captured).toBe('https://files.example/generated-scene.png');
+    expect(captured).not.toContain('uploaded-product');
+  }, 60_000);
+
   it('uploads for a prompt-writer node too', async () => {
     const h = buildHarness();
     autoAcceptUploads(h);

@@ -317,18 +317,51 @@ function isGenerating(): boolean {
 }
 
 /**
- * Candidate result images in the conversation: large, fully loaded,
- * not avatars/icons. Sorted by document order (last = newest).
+ * Candidate result images: what ChatGPT drew, not what we handed it.
+ *
+ * Uploading a reference broke every test this used to apply. The uploaded
+ * image lands in the conversation as part of the user's own turn — same size
+ * as a result, fully loaded, and there several seconds earlier — so "largest",
+ * "newest" and "not previously seen" all select it. Studio then showed the
+ * product photo as the generated scene and passed it downstream as the
+ * reference for the video, which is how a run completes green with the wrong
+ * image in it.
+ *
+ * Scoping to assistant turns is the only thing that actually separates them.
+ * That attribute is what ChatGPT's own accessibility tree uses and is already
+ * what readLatestReply() depends on.
  */
 function collectResultImages(): HTMLImageElement[] {
-  return Array.from(document.querySelectorAll('img')).filter((img) => {
+  const assistantTurns = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-message-author-role="assistant"]')
+  );
+  const roots: ParentNode[] = assistantTurns.length ? assistantTurns : [document];
+  const composer = composerRegion();
+
+  const usable = (img: HTMLImageElement): boolean => {
     const src = img.currentSrc || img.src || '';
     if (!src) return false;
     if (src.startsWith('data:') && src.length < 2000) return false; // inline icons
+    // Composer thumbnails are attachments waiting to be sent, never results.
+    if (composer.contains(img)) return false;
+    // Without role attributes to scope by, at least refuse the user's own turn.
+    if (!assistantTurns.length && img.closest('[data-message-author-role="user"]')) return false;
     const rect = img.getBoundingClientRect();
     if (rect.width < 180 && rect.height < 180) return false; // avatars, thumbnails
     return img.complete && img.naturalWidth >= 256 && img.naturalHeight >= 256;
-  });
+  };
+
+  // Document order across turns, so the last one is still the newest.
+  const seen = new Set<HTMLImageElement>();
+  const out: HTMLImageElement[] = [];
+  for (const root of roots) {
+    for (const img of Array.from(root.querySelectorAll('img'))) {
+      if (seen.has(img) || !usable(img)) continue;
+      seen.add(img);
+      out.push(img);
+    }
+  }
+  return out;
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
