@@ -725,6 +725,79 @@ export function findAssetResults(dialog: Element): Element[] {
  *  Skips our injected af-bot-* inputs to avoid confusion.
  *  Flow's native input has a styled-component class like sc-a40aa0db-0.
  */
+/**
+ * Flow's "not enough credits" notice, if it is on screen.
+ *
+ * Worth its own detector because of what it costs to miss. Flow accepts the
+ * click, shows this, and never creates a tile — so the poller waits out its
+ * full budget (22 minutes for video) for something that was refused in the
+ * first second, then the runner moves to the next node and does it again.
+ * An overnight queue can spend hours discovering the same fact repeatedly.
+ *
+ * Two signals required, because either alone is a false positive waiting to
+ * happen: the word for credits appears in ordinary billing UI all over the
+ * page, and an upgrade button sits in Flow's chrome permanently. Only a
+ * visible element carrying both, small enough to be a notice rather than the
+ * page, counts.
+ */
+export function findCreditsExhaustedNotice(): HTMLElement | null {
+  /* Anchored on the Upgrade button and walked upward, rather than queried by
+     role. Flow's notice is a popover with no role we can rely on — guessing at
+     one would make this silently stop working the next time the component
+     changes, which is the failure mode it exists to prevent. Every version of
+     this notice has an upgrade button in it. */
+  const buttons = Array.from(document.querySelectorAll<HTMLElement>('button, a'))
+    .filter((b) => matchesFlowText(b.innerText || b.textContent || '', 'upgrade'));
+
+  for (const btn of buttons) {
+    let el: HTMLElement | null = btn.parentElement;
+    for (let depth = 0; depth < 5 && el; depth++, el = el.parentElement) {
+      if (!isVisible(el)) continue;
+
+      // A notice, not the whole app. The one in the report is ~220x160; a
+      // pricing page mentions credits and upgrading too, and matching it
+      // would abort a run that was working.
+      const rect = el.getBoundingClientRect();
+      if (rect.height > 420 || rect.width > 620) continue;
+
+      const text = (el.innerText || el.textContent || '').trim();
+      if (!matchesFlowText(text, 'credits')) continue;
+
+      /* Third signal, because a persistent header chip reading
+         "1,240 credits · Upgrade" satisfies both of the others. A refusal is
+         a sentence, and it carries an error glyph; a balance is neither.
+         The glyph is checked first since it survives translation, and the
+         length test covers a notice rendered with an SVG icon instead. */
+      const hasErrorGlyph = Array.from(el.querySelectorAll('*')).some((n) => {
+        const t = (n.textContent || '').trim().toLowerCase();
+        return t === 'error' || t === 'error_outline' || t === 'warning' || t === 'report';
+      });
+      /* Measured on the message, not the whole notice. Button labels are the
+         one part guaranteed present in both a refusal and a balance chip, so
+         counting them makes a chip with a wordy CTA look like a sentence. */
+      const stripped = el.cloneNode(true) as HTMLElement;
+      for (const cta of Array.from(stripped.querySelectorAll('button, a'))) cta.remove();
+      const message = (stripped.textContent || '').trim();
+
+      /* A refusal is a sentence; a balance is a number and a noun. The
+         thresholds only have to separate those two, so they sit well below
+         the shortest real refusal (~35 Latin, ~25 CJK) and well above the
+         longest plausible balance ("1,240 credits" is 13).
+
+         Character counts are not comparable across scripts — the same message
+         is ~130 characters in English and under 30 in Japanese — so one
+         threshold would either miss every CJK notice or match a Latin chip.
+
+         Erring toward detection on purpose. A false negative is the bug this
+         exists to fix: 22 minutes per node, silently. A false positive stops
+         the run with a message saying exactly why, and costs one rerun. */
+      const dense = /[　-鿿가-힯]/.test(message);
+      if (hasErrorGlyph || message.length >= (dense ? 14 : 25)) return el;
+    }
+  }
+  return null;
+}
+
 export function findFileInput(): HTMLInputElement | null {
   // Priority 1: Flow's file input accepting images (has SC class, no af-bot id)
   const imgInputs = document.querySelectorAll('input[type="file"][accept*="image"]');

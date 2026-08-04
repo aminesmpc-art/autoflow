@@ -50,6 +50,27 @@ export function isTransientFailure(message: string): boolean {
   ].some((p) => p.test(m));
 }
 
+/**
+ * Whether a failure makes every remaining node pointless.
+ *
+ * Distinct from isTransientFailure, which asks "try this node again?". This
+ * asks "is there any reason to keep going at all?" — and for a quota that is
+ * gone, or an account that is not signed in, the honest answer is no. Every
+ * later node would fail identically, each after its own multi-minute wait.
+ *
+ * Deliberately short. Anything not listed keeps the old behaviour of failing
+ * one node and letting independent branches continue, because stopping a run
+ * that could have finished is its own kind of expensive.
+ */
+export function isRunFatal(message: string): boolean {
+  const m = message || '';
+  return [
+    /out of credits/i,
+    /not enough .*credits/i,
+    /sign(ed)? in|not signed in|logged out/i,
+  ].some((p) => p.test(m));
+}
+
 export interface RunOptions {
   /**
    * Restrict the run to these generate nodes, keeping results already held for
@@ -361,6 +382,29 @@ export class WorkflowRunner {
               errorMessage: lastError,
             });
             trackUsage(1, 'text', 'failed').catch(() => { /* non-blocking */ });
+          }
+
+          /* Some failures are the workflow's, and the run should carry on to
+             the branches that do not depend on them. Running out of credits is
+             not one of those: the next node has exactly as many credits as
+             this one, so continuing means watching every remaining node fail
+             the same way — and a video node that never starts still holds the
+             runner for its full 22-minute budget first. On a six-node overnight
+             queue that is over an hour of waiting to be told the same thing
+             six times. Stop, and say why. */
+          if (!succeeded && isRunFatal(lastError)) {
+            console.error(`[Runner] Stopping the run: ${lastError}`);
+            this.abortRequested = true;
+            report({ nodeLabel: '', progress: 0, lastError });
+            for (const later of generateSteps) {
+              if (later.nodeId === step.nodeId || this.nodeResults.has(later.nodeId)) continue;
+              if (this.failedNodes.has(later.nodeId)) continue;
+              store.updateNodeData(later.nodeId, {
+                status: 'idle',
+                progress: 0,
+                errorMessage: 'Not run — the run stopped before reaching this node',
+              });
+            }
           }
 
           // Don't abort the whole workflow — move on to the next node

@@ -30,6 +30,7 @@ import {
   sleep,
   findPromptInput,
   findGenerateButton,
+  findCreditsExhaustedNotice,
   findModelSelectorTrigger,
   findMenuItem,
   findIngredientAttachButton,
@@ -2937,9 +2938,26 @@ export class AutomationEngine {
       return ((el as HTMLInputElement).value || el.textContent || '').trim();
     };
 
+    /* Out of credits is not a click that failed — it is a click that will
+       never work, and every fallback below would raise the same notice again.
+       Thrown rather than returned so it leaves clickGenerate immediately;
+       the message is what WorkflowRunner matches on to stop the whole run,
+       since the next node has exactly as many credits as this one. */
+    const throwIfOutOfCredits = (): void => {
+      if (!findCreditsExhaustedNotice()) return;
+      throw new Error(
+        'Google Flow is out of credits — the generation was refused before it started. ' +
+        'Top up or wait for your quota to reset, then run again.'
+      );
+    };
+
+    // A notice still up from a previous attempt means we are already out.
+    throwIfOutOfCredits();
+
     const clickWorked = async (): Promise<boolean> => {
       // Poll a few times — Flow's UI needs a moment to clear the prompt and start tiles
       for (let attempt = 0; attempt < 4; attempt++) {
+        throwIfOutOfCredits();
         // Primary signal: prompt text CHANGED after submit.
         // We can't check for empty because Flow's Slate editor always has
         // placeholder text ("What do you want to create?") in textContent.
