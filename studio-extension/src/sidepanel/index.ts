@@ -172,6 +172,14 @@ async function refreshAccount(): Promise<void> {
     return;
   }
 
+  /* Cache it where the canvas looks.
+     Storage is per-extension, so signing in here is the only thing that can
+     tell Studio this account is Pro — without it the canvas shows Free
+     limits and an Upgrade button to someone who already paid. */
+  try {
+    await chrome.storage.local.set({ af_cached_profile: profile });
+  } catch { /* the canvas fetches for itself too */ }
+
   $('acct-email').textContent = profile.email;
   $('acct-initial').textContent = (profile.email || '?').charAt(0);
 
@@ -281,6 +289,8 @@ function wire(): void {
 
   $('btn-logout').addEventListener('click', async () => {
     await logout();
+    // Otherwise the canvas keeps granting Pro to a signed-out browser.
+    try { await chrome.storage.local.remove('af_cached_profile'); } catch { /* best effort */ }
     await refreshAccount();
   });
 

@@ -308,17 +308,42 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   isPro: false,
   runsUsed: 0,
 
+  /**
+   * Work out whether this account is Pro.
+   *
+   * Cache first so the topbar does not flash "Free" on every open, then ask
+   * the server, which is the authority, and write the answer back.
+   *
+   * The fetch is the important half. This used to read af_cached_profile and
+   * stop — a key the AutoFlow sidepanel writes and nothing in this extension
+   * ever does. Storage is per-extension, so the cache was always empty here
+   * and a paying customer was shown Free limits, an Upgrade button, and a cap
+   * of 5 nodes no matter what they had paid for.
+   */
   loadEntitlements: async () => {
+    const key = runKey();
+
     try {
-      const key = runKey();
       const r = await chrome.storage.local.get(['af_cached_profile', key]);
       set({
-        isPro: !!r?.af_cached_profile?.is_pro_active,
         runsUsed: r?.[key] || 0,
+        // Only trust the cache upward. Absent cache means unknown, not free.
+        ...(r?.af_cached_profile ? { isPro: !!r.af_cached_profile.is_pro_active } : {}),
       });
     } catch {
-      // Storage unreadable — leave the previous values rather than
-      // downgrading someone who has already been recognised as Pro.
+      // Storage unreadable — keep whatever we already had rather than
+      // downgrading someone already recognised as Pro.
+    }
+
+    try {
+      const { getProfile } = await import('../shared/api');
+      const profile = await getProfile();
+      if (profile) {
+        set({ isPro: !!profile.is_pro_active });
+        await chrome.storage.local.set({ af_cached_profile: profile });
+      }
+    } catch {
+      // Offline or signed out — the cached value stands.
     }
   },
 

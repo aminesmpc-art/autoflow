@@ -84,6 +84,17 @@ function CanvasInner() {
     return () => bridge.disconnect();
   }, [loadEntitlements]);
 
+  /* Signing in happens in the side panel, which the canvas cannot see.
+     Without this, someone who signs in with the canvas already open keeps
+     looking at Free limits until they reopen it. */
+  useEffect(() => {
+    const onChange = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+      if (area === 'local' && changes.af_cached_profile) loadEntitlements();
+    };
+    chrome.storage.onChanged.addListener(onChange);
+    return () => chrome.storage.onChanged.removeListener(onChange);
+  }, [loadEntitlements]);
+
   /* Ctrl/Cmd+S saves, as in every other editor */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
