@@ -134,6 +134,48 @@ describe('card artwork', () => {
   });
 });
 
+/* The car template's whole promise is "type a name, get a video". That rests
+   on there being nothing to upload and on the carve starting from the sheet
+   ChatGPT's prompt produced — both easy to undo by accident. */
+describe('Miniature Car', () => {
+  const tpl = TEMPLATES.find((t) => t.id === 'tpl_miniature_car')!;
+  const byId = new Map(tpl.nodes.map((n) => [n.id, n]));
+
+  it('asks the user for nothing but text', () => {
+    // An image node here would be an empty upload slot the user has to fill,
+    // which is the thing this template exists to remove.
+    expect(tpl.nodes.filter((n) => n.type === 'image')).toHaveLength(0);
+  });
+
+  it('routes the car name through ChatGPT into the sheet', () => {
+    const from = (id: string) => tpl.edges.filter((e) => e.source === id).map((e) => e.target);
+    expect(from('p_car')).toContain('ask_sheet');
+    expect(from('ask_sheet')).toContain('g_sheet');
+    expect((byId.get('ask_sheet')!.data as any).mediaType).toBe('text');
+    expect((byId.get('ask_sheet')!.data as any).platform).toBe('chatgpt');
+  });
+
+  it('starts the carve from the generated sheet, not from a later clip', () => {
+    const intoFirstClip = tpl.edges.filter(
+      (e) => e.target === 'g_block' && e.targetHandle === 'image_ref');
+    expect(intoFirstClip).toHaveLength(1);
+    expect(intoFirstClip[0].source).toBe('g_sheet');
+    // From a generate node the reference leaves on `result`; wiring it as
+    // `image` would be a dead edge React Flow drops on render.
+    expect(intoFirstClip[0].sourceHandle).toBe('result');
+  });
+
+  it('chains the four clips through three visible frames', () => {
+    const count = (type: string) => tpl.nodes.filter((n) => n.type === type).length;
+    // 4 carve clips + the sheet + the Ask AI node all count as 'generate'.
+    expect({ generate: count('generate'), frames: count('frame') })
+      .toEqual({ generate: 6, frames: 3 });
+    // The reveal ends the chain, so it feeds no frame.
+    expect(tpl.edges.some((e) => e.source === 'g_reveal' && e.targetHandle === 'image_ref'))
+      .toBe(false);
+  });
+});
+
 /* The styrofoam chain is the reason the frame node exists, so its shape is
    pinned rather than left to the generic rules above. */
 describe('ASMR styrofoam carving', () => {

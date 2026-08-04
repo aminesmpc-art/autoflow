@@ -269,6 +269,36 @@ const CAR_STYLE =
   'body lines and colour. Do not restyle or substitute a different car.\n' +
   'Vertical 9:16.';
 
+/* The one node the user edits. Everything downstream is derived from the line
+   at the top, so changing the car is changing four words — no photo to find,
+   no rights to worry about, and the reference is generated at the angle and
+   lighting the carve clips actually need rather than whatever a stock shot
+   happened to be. Written for an Ask AI node, so the two rules that matter
+   are: answer with ONLY the prompt, and be specific enough that the render
+   is that exact car and not a generic one. */
+const CAR_BRIEF =
+  'CAR: BMW M3 E46, 2003, Laguna Seca Blue\n' +
+  '↑ Change this line to any car. Everything else stays as it is.\n\n' +
+  'Write ONE image-generation prompt for a reference sheet of exactly that ' +
+  'car. Output only the prompt itself — no title, no explanation, no preamble, ' +
+  'no quotes, no markdown.\n\n' +
+  '# THE SHEET\n' +
+  'A single image showing the car from three angles on one plain mid-grey ' +
+  'backdrop: three-quarter front on the left, dead-side profile in the centre, ' +
+  'three-quarter rear on the right. Even, neutral studio lighting. The whole ' +
+  'car in frame each time, wheels straight, no cropping.\n\n' +
+  '# BE SPECIFIC TO THIS MODEL\n' +
+  'Name the details that make it recognisably this exact generation and trim: ' +
+  'headlight and tail-light shape, grille and kidney design, bumper and skirt ' +
+  'lines, bonnet bulge, mirror style, wheel design and spoke count, badge ' +
+  'placement, exhaust layout, roofline and glasshouse shape. Name the paint ' +
+  'colour precisely. A prompt that would suit any car of that class is wrong.\n\n' +
+  '# LOOK\n' +
+  'Ultra photorealistic product photography, 8K, sharp throughout, accurate ' +
+  'panel reflections. No people, no background, no text, no watermarks, no ' +
+  'motion, no styling effects.\n\n' +
+  'Keep it under 150 words.';
+
 /** [key, label, the ten seconds — ending on the state the next clip inherits] */
 const CAR_STAGES = [
   ['block', '1. Rough Carving',
@@ -875,19 +905,26 @@ export const TEMPLATES: Template[] = [
   {
     id: 'tpl_miniature_car',
     name: 'Miniature Car: Carve → Match Cut',
-    description: 'Four clips carve a wooden model of your car, then match-cut to the real one.',
+    description: 'Type a car name. ChatGPT writes the reference sheet, then four clips carve it and match-cut to the real one.',
     useCase:
-      'The build-up-and-reveal format, where the whole video is a setup for the last two seconds. Drop in any car photo and the chain carves it in walnut, details it, paints it, then pushes into the headlight and comes out full size. The Last Frame nodes matter more here than anywhere: the match cut only lands if the miniature the reveal inherits is exactly the one the previous clip finished, so the handoff is on the canvas where you can check it before spending a generation. Editing note from the format — post the reveal first as the hook, then the build.',
+      'The build-up-and-reveal format, where the whole video is a setup for the last two seconds. You type one line — "BMW M3 E46, 2003, Laguna Seca Blue" — and ChatGPT writes the reference-sheet prompt, Flow renders the sheet, and the carve chain works from that. No photo to source, and the reference comes out at the angles and lighting the carve clips need rather than whatever a stock shot happened to be. The Last Frame nodes matter more here than anywhere: the match cut only lands if the miniature the reveal inherits is exactly the one the previous clip finished, so the handoff sits on the canvas where you can check it before spending a generation. Needs a signed-in ChatGPT tab. Editing note from the format — post the reveal first as the hook, then the build.',
     category: 'Content',
     difficulty: 'Advanced',
-    nodeCount: 12,
+    nodeCount: 14,
     thumbnail: '🚗',
     thumbnailImage: 'assets/templates/miniature-car.svg',
     nodes: [
-      imageNode('i1', 'Car Reference', 40, 300, 'the car to carve'),
+      promptNode('p_car', 'Which Car', CAR_BRIEF, 40, 260),
+      askNode('ask_sheet', 'Write the Sheet Prompt', 480, 260),
+      genNode('g_sheet', {
+        label: 'Car Reference Sheet',
+        mediaType: 'image',
+        aspectRatio: '16:9',
+        model: 'Nano Banana Pro',
+      }, 900, 220),
 
       ...CAR_STAGES.flatMap(([key, label, body], i) => {
-        const x = 560 + i * 620;
+        const x = 1440 + i * 620;
         const out: Node[] = [
           promptNode(`p_${key}`, label, body + '\n\n' + CAR_STYLE, x - 260, 780),
           genNode(`g_${key}`, {
@@ -904,23 +941,27 @@ export const TEMPLATES: Template[] = [
         return out;
       }),
     ],
-    edges: CAR_STAGES.flatMap(([key], i) => {
+    edges: [
+      // One line of text becomes a prompt, becomes the sheet every clip works from.
+      tEdge('p_car', 'ask_sheet'),
+      tEdge('ask_sheet', 'g_sheet'),
+    ].concat(CAR_STAGES.flatMap(([key], i) => {
       const prev = CAR_STAGES[i - 1];
       const out = [
         tEdge(`p_${key}`, `g_${key}`),
-        /* Clip 1 works from the user's car photo. Every clip after it starts
-           from the previous clip's closing frame, which is what keeps one
-           continuous object across four generations — and is the entire
+        /* Clip 1 works from the generated reference sheet. Every clip after it
+           starts from the previous clip's closing frame, which is what keeps
+           one continuous object across four generations — and is the entire
            reason the match cut at the end reads as the same car. */
         i === 0
-          ? iEdge('i1', `g_${key}`, 'image')
+          ? iEdge('g_sheet', `g_${key}`)
           : iEdge(`f_${prev[0]}`, `g_${key}`, 'image'),
       ];
       if (i < CAR_STAGES.length - 1) {
         out.push(iEdge(`g_${key}`, `f_${key}`));
       }
       return out;
-    }),
+    })),
   },
   {
     id: 'tpl_ai_baby_firsts',
