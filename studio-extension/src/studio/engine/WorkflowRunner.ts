@@ -152,6 +152,16 @@ export class WorkflowRunner {
       const n = nodes.find((x) => x.id === s.nodeId);
       return (n?.data as any)?.enabled !== false;
     });
+    /* Clear what the last attempt left on screen.
+     *
+     * Retrying cleared the internal failure marks but not the node data, so a
+     * downstream node kept showing "Skipped — upstream node failed" while the
+     * upstream node was visibly regenerating above it. The run looked like it
+     * had already failed before it reached them. */
+    for (const step of generateSteps) {
+      store.updateNodeData(step.nodeId, { status: 'idle', progress: 0, errorMessage: null });
+    }
+
     store.setRunProgress(0, generateSteps.length);
     let completedCount = 0;
 
