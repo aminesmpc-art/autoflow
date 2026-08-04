@@ -97,6 +97,14 @@ const genNode = (id: string, o: GenOpts, x: number, y: number): Node => ({
   },
 });
 
+/** A Last Frame node — surfaces the still one clip hands to the next. */
+const frameNode = (id: string, label: string, x: number, y: number): Node => ({
+  id,
+  type: 'frame',
+  position: { x, y },
+  data: { type: 'frame', label, frameUrl: '' },
+});
+
 /** An Ask AI node — ChatGPT writing text, so no model or ratio applies. */
 const askNode = (id: string, label: string, x: number, y: number): Node =>
   genNode(id, { label, mediaType: 'text', platform: 'chatgpt' }, x, y);
@@ -647,22 +655,22 @@ export const TEMPLATES: Template[] = [
   {
     id: 'tpl_styrofoam_asmr',
     name: 'ASMR Styrofoam Carving: 6-Clip Chain',
-    description: 'One reference photo becomes a six-clip carving sequence, each clip continuing where the last one ended.',
+    description: 'One reference photo becomes a six-clip carving sequence, with every handoff frame shown on the canvas.',
     useCase:
       'ASMR and satisfying-craft channels. This is the format people usually build by hand — generate a clip, screenshot its last frame, upload it as the next clip\'s first frame, repeat five times. Studio passes each clip\'s closing frame to the next node automatically, so the block genuinely progresses from raw foam to finished sculpture in one run.',
     category: 'Content',
     difficulty: 'Advanced',
-    nodeCount: 13,
+    nodeCount: 18,
     thumbnail: '🔨',
     nodes: [
       imageNode('i1', 'Subject Reference', 40, 300, 'what to carve'),
 
       ...(STYROFOAM_STAGES).flatMap(([key, label, body], i) => {
-        const x = 520 + i * 480;
-        return [
+        const x = 560 + i * 620;
+        const out: Node[] = [
           promptNode(`p_${key}`, `${i + 1}. ${label}`,
             body + '\n\n' + STYROFOAM_STYLE,
-            i === 0 ? 40 : x - 480, 700),
+            x - 260, 780),
           genNode(`g_${key}`, {
             label: `${i + 1}. ${label}`,
             mediaType: 'video',
@@ -673,18 +681,29 @@ export const TEMPLATES: Template[] = [
             model: 'Omni Flash',
           }, x, 200),
         ];
+        // A Last Frame between each pair, so the handoff this format depends
+        // on is something you can look at rather than infer from the result.
+        if (i < STYROFOAM_STAGES.length - 1) {
+          out.push(frameNode(`f_${key}`, 'Ends on →', x + 340, 250));
+        }
+        return out;
       }),
     ],
     edges: STYROFOAM_STAGES.flatMap(([key], i) => {
       const prev = STYROFOAM_STAGES[i - 1];
-      return [
+      const out = [
         tEdge(`p_${key}`, `g_${key}`),
-        // Clip 1 starts from the user's photo; every later clip starts from the
-        // frame the previous clip ended on.
+        // Clip 1 starts from the user's photo; every later clip starts from
+        // the Last Frame node showing where the previous clip ended.
         i === 0
           ? iEdge('i1', `g_${key}`, 'image')
-          : iEdge(`g_${prev[0]}`, `g_${key}`),
+          : iEdge(`f_${prev[0]}`, `g_${key}`, 'image'),
       ];
+      // Each clip feeds its own Last Frame, except the reveal, which ends it.
+      if (i < STYROFOAM_STAGES.length - 1) {
+        out.push(iEdge(`g_${key}`, `f_${key}`));
+      }
+      return out;
     }),
   },
   {

@@ -421,6 +421,30 @@ export class WorkflowRunner {
       }
     }
 
+    /* A broken link in a chain must not generate anyway.
+       The styrofoam template depends on every clip starting from the previous
+       one's last frame. If a capture came back empty, this node would generate
+       regardless — same prompt, no continuity — and the only symptom would be
+       a clip that quietly restarts the sculpture halfway through a six-clip
+       sequence. Burn nothing, and name the link that broke.
+
+       Scoped to frame and generate sources on purpose: an image node left
+       empty is the user's choice — several templates ship with blank slots and
+       prompts written to work without one — whereas a frame or a clip that
+       produced nothing is a failure that already happened upstream. */
+    if (!referenceImageIds.length && !referenceImageData.length) {
+      const allNodes = useStudioStore.getState().nodes;
+      const broken = (inputs.get('image_ref') || [])
+        .map((id) => allNodes.find((n) => n.id === id))
+        .filter((n) => n && (n.type === 'frame' || n.type === 'generate'));
+      if (broken.length) {
+        const names = broken.map((n) => (n!.data as any)?.label || n!.id);
+        throw new Error(
+          `Nothing to continue from — ${names.join(', ')} produced no usable frame`
+        );
+      }
+    }
+
     // An empty prompt still submits and burns a generation on Flow, so fail
     // here with something actionable instead of at the far end of the bridge.
     if (!prompt.trim()) {
