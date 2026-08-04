@@ -224,17 +224,27 @@ function triggerFileInputChange(input: HTMLInputElement): void {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-/** The composer's surrounding form — where attachment thumbnails appear. */
-function composerRegion(): HTMLElement {
+/**
+ * The composer's surrounding form — where attachment thumbnails appear.
+ *
+ * Returns null rather than falling back to document.body. Callers use this to
+ * exclude composer images from results, and a body-shaped "composer" excludes
+ * every image on the page: the poller then finds nothing, forever, and the
+ * node sits at "Generating…" until it times out six minutes later. Better to
+ * exclude nothing than everything.
+ */
+function composerRegion(): HTMLElement | null {
   const composer = findComposer();
-  return (composer?.closest('form') as HTMLElement)
-    || (composer?.parentElement?.parentElement as HTMLElement)
-    || document.body;
+  if (!composer) return null;
+  const form = composer.closest('form') as HTMLElement | null;
+  if (form && form !== document.body) return form;
+  const near = composer.parentElement?.parentElement as HTMLElement | null;
+  return near && near !== document.body && near !== document.documentElement ? near : null;
 }
 
 /** Images inside the composer — attachment previews, not conversation results. */
 function attachmentCount(): number {
-  return composerRegion().querySelectorAll('img').length;
+  return (composerRegion() || document.body).querySelectorAll('img').length;
 }
 
 /**
@@ -332,10 +342,6 @@ function isGenerating(): boolean {
  * what readLatestReply() depends on.
  */
 function collectResultImages(): HTMLImageElement[] {
-  const assistantTurns = Array.from(
-    document.querySelectorAll<HTMLElement>('[data-message-author-role="assistant"]')
-  );
-  const roots: ParentNode[] = assistantTurns.length ? assistantTurns : [document];
   const composer = composerRegion();
 
   const usable = (img: HTMLImageElement): boolean => {
@@ -343,25 +349,42 @@ function collectResultImages(): HTMLImageElement[] {
     if (!src) return false;
     if (src.startsWith('data:') && src.length < 2000) return false; // inline icons
     // Composer thumbnails are attachments waiting to be sent, never results.
-    if (composer.contains(img)) return false;
-    // Without role attributes to scope by, at least refuse the user's own turn.
-    if (!assistantTurns.length && img.closest('[data-message-author-role="user"]')) return false;
+    if (composer && composer.contains(img)) return false;
+    // The uploaded reference echoes back inside the user's turn, at result size.
+    if (img.closest('[data-message-author-role="user"]')) return false;
     const rect = img.getBoundingClientRect();
     if (rect.width < 180 && rect.height < 180) return false; // avatars, thumbnails
     return img.complete && img.naturalWidth >= 256 && img.naturalHeight >= 256;
   };
 
-  // Document order across turns, so the last one is still the newest.
-  const seen = new Set<HTMLImageElement>();
-  const out: HTMLImageElement[] = [];
-  for (const root of roots) {
-    for (const img of Array.from(root.querySelectorAll('img'))) {
-      if (seen.has(img) || !usable(img)) continue;
-      seen.add(img);
-      out.push(img);
+  const gather = (roots: ParentNode[]): HTMLImageElement[] => {
+    const seen = new Set<HTMLImageElement>();
+    const out: HTMLImageElement[] = [];
+    for (const root of roots) {
+      for (const img of Array.from(root.querySelectorAll('img'))) {
+        if (seen.has(img) || !usable(img)) continue;
+        seen.add(img);
+        out.push(img); // document order, so the last one is the newest
+      }
     }
-  }
-  return out;
+    return out;
+  };
+
+  /* Assistant turns first, because that is the cleanest separation between
+     what ChatGPT drew and what we handed it.
+
+     But only as a preference. Requiring it meant that if a result rendered
+     anywhere other than inside a message element — a different surface, a
+     changed attribute, an image-generation card mounted beside the turn — the
+     poller found nothing at all and the node sat at "Generating…" until it
+     timed out, with the finished image plainly on screen the whole time.
+     Falling back to the whole page still excludes the user's own turn and the
+     composer, which is what actually kept the wrong image out. */
+  const assistantTurns = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-message-author-role="assistant"]')
+  );
+  const scoped = assistantTurns.length ? gather(assistantTurns) : [];
+  return scoped.length ? scoped : gather([document]);
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -493,6 +516,7 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
   const startedAt = Date.now();
   let stableSrc = '';
   let stableCount = 0;
+  let explained = false;
 
   while (Date.now() - startedAt < GENERATION_TIMEOUT_MS) {
     await sleep(POLL_MS);
@@ -504,7 +528,27 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
     const fresh = collectResultImages().filter(
       (i) => !preexisting.has(i.currentSrc || i.src)
     );
-    if (fresh.length === 0) continue;
+    if (fresh.length === 0) {
+      /* Say why, once, well before the six-minute timeout.
+         "Still generating" and "the image is right there and I cannot see it"
+         look identical from the outside — a progress bar climbing on a timer.
+         This turns the second one into a line in the console naming which
+         filter ate it, instead of a node that hangs and then blames ChatGPT. */
+      if (!explained && elapsed > 45_000 && !isGenerating()) {
+        explained = true;
+        const all = Array.from(document.querySelectorAll('img'));
+        const bigEnough = all.filter((i) =>
+          i.complete && i.naturalWidth >= 256 && i.naturalHeight >= 256);
+        console.warn(
+          '[AutoFlow ChatGPT] No result found yet and nothing is streaming. ' +
+          `Page has ${all.length} images, ${bigEnough.length} at result size; ` +
+          `${document.querySelectorAll('[data-message-author-role="assistant"]').length} assistant turns; ` +
+          `composer region ${composerRegion() ? 'identified' : 'NOT identified'}. ` +
+          'If the image is visible on screen, one of those filters is wrong.'
+        );
+      }
+      continue;
+    }
 
     const candidate = fresh[fresh.length - 1];
     const src = candidate.currentSrc || candidate.src;

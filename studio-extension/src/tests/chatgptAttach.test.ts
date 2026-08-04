@@ -334,6 +334,84 @@ describe('ChatGPT reference upload', () => {
     expect(captured).not.toContain('uploaded-product');
   }, 60_000);
 
+  /* Reported from a real run: ChatGPT drew the reference sheet, it was on
+     screen, and the node sat at "Generating…" until it gave up. Scoping
+     results to assistant turns had turned "I cannot tell which image" into
+     "I cannot see any image", which is the worse of the two. */
+  it('captures a result that renders outside an assistant turn', async () => {
+    const h = buildHarness();
+
+    const img = document.createElement('img');
+    img.src = 'https://files.example/reference-sheet.png';
+    Object.defineProperty(img, 'complete', { value: true });
+    Object.defineProperty(img, 'naturalWidth', { value: 1536 });
+    Object.defineProperty(img, 'naturalHeight', { value: 1024 });
+    (img as any).getBoundingClientRect = () => ({
+      width: 600, height: 400, top: 0, left: 0, bottom: 400, right: 600, x: 0, y: 0, toJSON() {},
+    });
+
+    /* Assistant turns exist — this is a normal conversation — but the image
+       is not inside one. That is the discriminating case: with no turns at
+       all the old code already fell back to the whole document, so a test
+       without them would pass either way and prove nothing. */
+    const reply = document.createElement('div');
+    reply.setAttribute('data-message-author-role', 'assistant');
+    reply.textContent = 'Here is the reference sheet.';
+    document.body.append(reply);
+
+    // The image-generation card, mounted beside the turn rather than in it.
+    const card = document.createElement('div');
+    document.body.append(card);
+    setTimeout(() => card.append(img), 2500);
+
+    (globalThis as any).fetch = (url: string) => Promise.resolve({
+      ok: true,
+      blob: () => Promise.resolve(new Blob([url], { type: 'image/png' })),
+    });
+
+    await h.execute({
+      nodeId: 'n1',
+      config: { prompt: 'reference sheet of a BMW M3 E46', mediaType: 'image' },
+    });
+    await new Promise((r) => setTimeout(r, 12_000));
+
+    const result = h.sent.find((m) => m.type === 'STUDIO_NODE_RESULT');
+    expect(result).toBeDefined();
+    const captured = Buffer.from(result.payload.imageUrl.split(',')[1], 'base64').toString();
+    expect(captured).toBe('https://files.example/reference-sheet.png');
+  }, 30_000);
+
+  it('does not treat the whole page as the composer', async () => {
+    /* composerRegion() used to fall back to document.body when it could not
+       find the composer's form. Results are filtered by "not inside the
+       composer", so that fallback excluded every image on the page and the
+       poller could never succeed. */
+    const h = buildHarness();
+    // Strip the form, leaving the composer with no identifiable region.
+    h.composer.remove();
+    document.body.append(h.composer);
+
+    const img = document.createElement('img');
+    img.src = 'https://files.example/result.png';
+    Object.defineProperty(img, 'complete', { value: true });
+    Object.defineProperty(img, 'naturalWidth', { value: 1024 });
+    Object.defineProperty(img, 'naturalHeight', { value: 1024 });
+    (img as any).getBoundingClientRect = () => ({
+      width: 500, height: 500, top: 0, left: 0, bottom: 500, right: 500, x: 0, y: 0, toJSON() {},
+    });
+    setTimeout(() => document.body.append(img), 2500);
+
+    (globalThis as any).fetch = (url: string) => Promise.resolve({
+      ok: true,
+      blob: () => Promise.resolve(new Blob([url], { type: 'image/png' })),
+    });
+
+    await h.execute({ nodeId: 'n1', config: { prompt: 'draw something', mediaType: 'image' } });
+    await new Promise((r) => setTimeout(r, 12_000));
+
+    expect(h.sent.find((m) => m.type === 'STUDIO_NODE_RESULT')).toBeDefined();
+  }, 30_000);
+
   it('uploads for a prompt-writer node too', async () => {
     const h = buildHarness();
     autoAcceptUploads(h);
