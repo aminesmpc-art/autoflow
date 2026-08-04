@@ -248,6 +248,61 @@ const KIDS_CHARACTER =
   'never photorealistic.\n\n' +
   'Full body, head to toe, centred, facing the camera.';
 
+/* ── AI toddler, photoreal ──
+   The 100M-view format: a small child meeting something for the first time,
+   shot like a parent's phone video. It lives or dies on the child being the
+   SAME child every clip, which is why this one starts by generating a design
+   sheet instead of taking an upload.
+
+   That is a deliberate choice, not a limitation. Generating the character
+   means it is fictional and yours — consistent across a whole channel, and
+   nobody's actual kid. Feeding a real child's photo into this would produce
+   synthetic video of an identifiable minor, which is a different thing
+   entirely and not what the template is for. */
+const BABY_STYLE =
+  'Shot on a modern phone by a parent standing close. Handheld with slight ' +
+  'natural micro-shake, one continuous take, no cuts. Natural available light.\n' +
+  'Same child as the reference: identical face, hair, skin tone and outfit. ' +
+  'Do not restyle, age up or redesign the child.\n' +
+  'An adult\'s hands support the child and stay in frame; the adult\'s face is ' +
+  'never shown.\n' +
+  'Natural sound only — the child, ambience, a parent laughing off-camera. ' +
+  'No music, no narration, no captions.\n' +
+  'Warm and safe throughout. The child is happy and secure the whole time: no ' +
+  'distress, no crying, no danger, nothing that could read as harm.\n' +
+  'Vertical 9:16.';
+
+const BABY_CHARACTER =
+  'Character reference sheet: one photorealistic toddler, about 18 months old, ' +
+  'standing against a plain light grey backdrop.\n\n' +
+  'Round cheeks, dark curly hair, big brown eyes, a wide open smile. Wearing a ' +
+  'plain white t-shirt and soft grey shorts, barefoot.\n\n' +
+  'Neutral even studio lighting, sharp focus, full body head to toe, facing the ' +
+  'camera. Natural skin texture. No props, no background detail.\n\n' +
+  'This is an original fictional character, not any real person.';
+
+/** [key, label, the eight seconds] — each is a first encounter, which is the
+    beat the format is actually built on. */
+const BABY_CLIPS = [
+  ['fish', '1. Fish Spa',
+   'The child sits on the rim of a shallow fish-spa tank in a bright shopping ' +
+   'mall, held under the arms by an adult, and lowers both feet into the water. ' +
+   'Small fish swarm toward the toes. The child jolts, then bursts out laughing ' +
+   'and kicks once, splashing.\n' +
+   'Camera at the child\'s level, close enough to hold the face and the water in ' +
+   'the same frame.'],
+  ['sand', '2. First Sand',
+   'The child stands at the edge of dry beach sand at golden hour, supported by ' +
+   'an adult\'s hands, and lifts one foot away the instant it touches. Tries ' +
+   'again, then plants both feet and grins down at them, curling the toes.\n' +
+   'Low camera, warm backlight, sea blurred behind.'],
+  ['ice', '3. First Ice Cream',
+   'The child, in a high chair at an outdoor cafe, takes a first lick of vanilla ' +
+   'ice cream from a cone held by an adult. Freezes at the cold, blinks, then ' +
+   'leans straight back in for more, ice cream on the nose.\n' +
+   'Close framing on the face, dappled shade, street sounds behind.'],
+] as const;
+
 /** [key, label, what happens in the 8 seconds] — one idea per scene. */
 const KIDS_SCENES = [
   ['hello', '1. Hello',
@@ -761,6 +816,50 @@ export const TEMPLATES: Template[] = [
       }
       return out;
     }),
+  },
+  {
+    id: 'tpl_ai_baby_firsts',
+    name: 'AI Toddler: 1 Character → 3 Firsts',
+    description: 'Generate one toddler, then film three first-time reactions with the same child.',
+    useCase:
+      'The reaction-video format that runs on Shorts, Reels and TikTok. The whole thing rests on it being the same child every clip — a face that changes between videos reads as three unrelated accounts, and matching one by hand across a posting schedule is the work. Node one generates the character, every clip references that sheet, so the child stays fixed and is fictional rather than anyone\'s actual kid. Clips are 8s at 9:16.',
+    category: 'Content',
+    difficulty: 'Medium',
+    nodeCount: 8,
+    thumbnail: '👶',
+    thumbnailImage: 'assets/templates/ai-baby.svg',
+    nodes: [
+      promptNode('p_kid', 'Character Design', BABY_CHARACTER, 40, 300),
+      genNode('g_kid', {
+        label: 'Character Sheet',
+        mediaType: 'image',
+        aspectRatio: '1:1',
+        model: 'Nano Banana Pro',
+      }, 560, 260),
+
+      ...BABY_CLIPS.flatMap(([key, label, body], i) => {
+        const y = i * 460;
+        return [
+          promptNode(`p_${key}`, label, body + '\n\n' + BABY_STYLE, 1060, y + 40),
+          genNode(`g_${key}`, {
+            label,
+            mediaType: 'video',
+            aspectRatio: '9:16',
+            duration: '8s',
+            model: 'Omni Flash',
+          }, 1580, y),
+        ];
+      }),
+    ],
+    edges: [
+      tEdge('p_kid', 'g_kid'),
+    ].concat(BABY_CLIPS.flatMap(([key]) => [
+      tEdge(`p_${key}`, `g_${key}`),
+      /* Every clip references the character sheet, never the clip before it.
+         Chaining would carry a drifted face into everything downstream, and on
+         this format a face that drifts is the format failing. */
+      iEdge('g_kid', `g_${key}`),
+    ])),
   },
   {
     id: 'tpl_kids_episode',

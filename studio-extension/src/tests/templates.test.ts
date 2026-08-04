@@ -13,6 +13,10 @@
    the point: the failure shows up here rather than as a dead wire.
    ============================================================ */
 
+/// <reference types="node" />
+import { existsSync } from 'fs';
+import { join } from 'path';
+
 import { TEMPLATES } from '../studio/templates';
 
 /** Ports each node type actually renders, keyed by node type. */
@@ -104,6 +108,28 @@ describe.each(TEMPLATES.map((t) => [t.name, t] as const))('%s', (_name, tpl) => 
       expect({ node: n.id, sourceType: from?.type }).toEqual({ node: n.id, sourceType: 'generate' });
       expect({ node: n.id, media: (from?.data as any)?.mediaType })
         .toEqual({ node: n.id, media: 'video' });
+    }
+  });
+});
+
+/* Card artwork fails silently in both directions: a missing file falls back to
+   the emoji, and the copy plugin runs with noErrorOnMissing so the build stays
+   green. Water Wipeouts shipped pointing at a file nobody had created and the
+   card quietly showed 🌊 instead. */
+describe('card artwork', () => {
+  const withArt = TEMPLATES.filter((t) => t.thumbnailImage);
+
+  it('points every thumbnailImage at a file that exists', () => {
+    for (const tpl of withArt) {
+      const path = join(__dirname, '../../', tpl.thumbnailImage!);
+      expect({ template: tpl.id, art: tpl.thumbnailImage, present: existsSync(path) })
+        .toEqual({ template: tpl.id, art: tpl.thumbnailImage, present: true });
+    }
+  });
+
+  it('keeps artwork under assets/, which is the only folder webpack copies', () => {
+    for (const tpl of withArt) {
+      expect(tpl.thumbnailImage).toMatch(/^assets\//);
     }
   });
 });
