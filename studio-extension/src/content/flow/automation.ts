@@ -31,6 +31,9 @@ import {
   findPromptInput,
   findGenerateButton,
   findCreditsExhaustedNotice,
+  findFlowAlertIndicator,
+  readFlowAlertMessage,
+  readsAsCreditsExhausted,
   findModelSelectorTrigger,
   findMenuItem,
   findIngredientAttachButton,
@@ -2943,21 +2946,36 @@ export class AutomationEngine {
        Thrown rather than returned so it leaves clickGenerate immediately;
        the message is what WorkflowRunner matches on to stop the whole run,
        since the next node has exactly as many credits as this one. */
-    const throwIfOutOfCredits = (): void => {
-      if (!findCreditsExhaustedNotice()) return;
+    const throwIfOutOfCredits = async (): Promise<void> => {
+      // Cheapest first: if the popover already happens to be open, read it.
+      let message = findCreditsExhaustedNotice()
+        ? (findCreditsExhaustedNotice()!.innerText || '')
+        : '';
+
+      /* Otherwise go by the orange sphere, which is the only part visible
+         during a run, and open it to find out what it is actually complaining
+         about. The icon alone means "Flow is unhappy", which is not the same
+         as "no credits" — aborting on that would kill runs over unrelated
+         warnings. */
+      if (!message && findFlowAlertIndicator()) {
+        message = await readFlowAlertMessage();
+        if (message) this.log('warn', `Flow alert on screen: ${message.slice(0, 160)}`);
+      }
+
+      if (!readsAsCreditsExhausted(message)) return;
       throw new Error(
         'Google Flow is out of credits — the generation was refused before it started. ' +
         'Top up or wait for your quota to reset, then run again.'
       );
     };
 
-    // A notice still up from a previous attempt means we are already out.
-    throwIfOutOfCredits();
+    // An alert already showing means we are out before we even click.
+    await throwIfOutOfCredits();
 
     const clickWorked = async (): Promise<boolean> => {
       // Poll a few times — Flow's UI needs a moment to clear the prompt and start tiles
       for (let attempt = 0; attempt < 4; attempt++) {
-        throwIfOutOfCredits();
+        await throwIfOutOfCredits();
         // Primary signal: prompt text CHANGED after submit.
         // We can't check for empty because Flow's Slate editor always has
         // placeholder text ("What do you want to create?") in textContent.

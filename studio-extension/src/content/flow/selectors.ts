@@ -740,6 +740,73 @@ export function findAssetResults(dialog: Element): Element[] {
  * visible element carrying both, small enough to be a notice rather than the
  * page, counts.
  */
+/**
+ * The orange alert sphere Flow puts beside the generation settings.
+ *
+ * This is the signal that actually exists while a run is happening. The
+ * message explaining it lives in a popover that is `data-state="closed"`
+ * until someone hovers the icon — closed Radix popovers render no content at
+ * all, so a detector that only reads the message finds nothing, ever, during
+ * automation. Nobody hovers anything during a run.
+ *
+ * Matched on the icon's own filename rather than a class, because every class
+ * on it is a generated styled-components hash that changes on any rebuild.
+ */
+export function findFlowAlertIndicator(): HTMLElement | null {
+  const icon = document.querySelector<HTMLElement>('img[src*="flow_alert"]');
+  if (!icon || !isVisible(icon)) return null;
+  // The wrapper is what carries the popover trigger; the img ignores clicks.
+  return (icon.closest('[data-state]') as HTMLElement) || icon.parentElement || icon;
+}
+
+/**
+ * Open the alert popover and read what it says.
+ *
+ * The sphere alone means "Flow is unhappy about something", which is not the
+ * same as "out of credits" — acting on the icon alone would abort runs over
+ * unrelated warnings. Opening it costs one click on an info button and turns a
+ * guess into the actual sentence.
+ */
+export async function readFlowAlertMessage(): Promise<string> {
+  const trigger = findFlowAlertIndicator();
+  if (!trigger) return '';
+
+  const alreadyOpen = trigger.getAttribute('data-state') === 'open';
+  if (!alreadyOpen) {
+    // Hover first: Flow's is a hover-card, and a click alone may not open it.
+    for (const type of ['pointerover', 'mouseover', 'pointerenter', 'mouseenter']) {
+      trigger.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+    }
+    (trigger as HTMLElement).click?.();
+    await new Promise((r) => setTimeout(r, 400));
+  }
+
+  // The popover mounts elsewhere in the DOM, so read the page's open overlays
+  // rather than looking inside the trigger.
+  let text = '';
+  for (const el of document.querySelectorAll<HTMLElement>('[data-state="open"], [role="tooltip"], [role="dialog"]')) {
+    if (!isVisible(el) || el === trigger) continue;
+    const t = (el.innerText || el.textContent || '').trim();
+    if (t.length > text.length) text = t;
+  }
+
+  if (!alreadyOpen) {
+    // Leave the page as we found it — an open overlay swallows the next click.
+    for (const type of ['pointerout', 'mouseout', 'pointerleave', 'mouseleave']) {
+      trigger.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+    }
+  }
+  return text;
+}
+
+/** True when a message is Flow saying the account has no credits left. */
+export function readsAsCreditsExhausted(text: string): boolean {
+  if (!text || !matchesFlowText(text, 'credits')) return false;
+  // "1,240 credits remaining" also mentions credits. A refusal is a sentence,
+  // and in every language Flow ships it offers the upgrade in the same breath.
+  return matchesFlowText(text, 'upgrade') || text.trim().length >= 25;
+}
+
 export function findCreditsExhaustedNotice(): HTMLElement | null {
   /* Anchored on the Upgrade button and walked upward, rather than queried by
      role. Flow's notice is a popover with no role we can rely on — guessing at

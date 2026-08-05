@@ -17,7 +17,12 @@
      here kills a run that was working.
    ============================================================ */
 
-import { findCreditsExhaustedNotice } from '../content/flow/selectors';
+import {
+  findCreditsExhaustedNotice,
+  findFlowAlertIndicator,
+  readFlowAlertMessage,
+  readsAsCreditsExhausted,
+} from '../content/flow/selectors';
 import { isRunFatal, isTransientFailure } from '../studio/engine/WorkflowRunner';
 
 /** Give an element a real box; jsdom measures everything as zero. */
@@ -115,6 +120,92 @@ describe('findCreditsExhaustedNotice', () => {
     const el = notice('<p>Not enough credits</p><button>Upgrade</button>');
     el.style.display = 'none';
     expect(findCreditsExhaustedNotice()).toBeNull();
+  });
+});
+
+/* The markup below is verbatim from a live Flow page during a run. It is the
+   whole reason this detector changed: the popover is data-state="closed", so
+   the message the first version looked for is not in the DOM at all until
+   someone hovers the icon — and nobody hovers anything during automation. */
+describe('the orange alert sphere', () => {
+  const REAL_MARKUP = `
+    <div data-state="closed" class="sc-5c3af813-15 FuwbR" bis_skin_checked="1">
+      <img src="/fx/icons/flow_alert_sphere.svg" alt=""
+           class="sc-f803b119-0 bhyZfD sc-5c3af813-16 kJLxql"
+           crossorigin="anonymous" style="opacity: 1;">
+      <i class="google-symbols" font-size="1rem" color="black">info</i>
+    </div>`;
+
+  function mountIndicator(): HTMLElement {
+    const host = document.createElement('div');
+    host.innerHTML = REAL_MARKUP;
+    document.body.append(host);
+    for (const n of Array.from(host.querySelectorAll<HTMLElement>('*'))) {
+      sized(n, 24, 24);
+      Object.defineProperty(n, 'innerText', { get: () => n.textContent || '' });
+    }
+    return host.firstElementChild as HTMLElement;
+  }
+
+  it('is found while its popover is still closed', () => {
+    mountIndicator();
+    // The first version of this detector needed the message, and returned
+    // null here — which is every moment of a real run.
+    expect(findCreditsExhaustedNotice()).toBeNull();
+    expect(findFlowAlertIndicator()).not.toBeNull();
+  });
+
+  it('resolves to the element carrying the popover, not the img', () => {
+    mountIndicator();
+    expect(findFlowAlertIndicator()!.getAttribute('data-state')).toBe('closed');
+  });
+
+  it('reads the message once the popover opens', async () => {
+    const trigger = mountIndicator();
+    // Stand in for Radix: opening on hover, mounting the content elsewhere.
+    trigger.addEventListener('pointerover', () => {
+      trigger.setAttribute('data-state', 'open');
+      const pop = document.createElement('div');
+      pop.setAttribute('data-state', 'open');
+      pop.textContent =
+        'Not enough Google Flow credits to perform this action. ' +
+        'Try other settings or upgrade for more Google Flow credits.';
+      sized(pop, 220, 160);
+      Object.defineProperty(pop, 'innerText', { get: () => pop.textContent || '' });
+      document.body.append(pop);
+    });
+
+    const message = await readFlowAlertMessage();
+    expect(message).toMatch(/not enough google flow credits/i);
+    expect(readsAsCreditsExhausted(message)).toBe(true);
+  });
+
+  it('does not call an unrelated warning a credits problem', async () => {
+    const trigger = mountIndicator();
+    trigger.addEventListener('pointerover', () => {
+      const pop = document.createElement('div');
+      pop.setAttribute('data-state', 'open');
+      pop.textContent = 'This aspect ratio is not supported by the selected model.';
+      sized(pop, 260, 90);
+      Object.defineProperty(pop, 'innerText', { get: () => pop.textContent || '' });
+      document.body.append(pop);
+    });
+
+    // The sphere means "Flow is unhappy", not "out of credits". Aborting a
+    // whole run on the icon alone would kill it over a settings warning.
+    const message = await readFlowAlertMessage();
+    expect(message).toBeTruthy();
+    expect(readsAsCreditsExhausted(message)).toBe(false);
+  });
+
+  it('reports nothing when there is no alert at all', async () => {
+    expect(findFlowAlertIndicator()).toBeNull();
+    expect(await readFlowAlertMessage()).toBe('');
+    expect(readsAsCreditsExhausted('')).toBe(false);
+  });
+
+  it('does not mistake a balance readout for a refusal', () => {
+    expect(readsAsCreditsExhausted('1,240 credits')).toBe(false);
   });
 });
 
