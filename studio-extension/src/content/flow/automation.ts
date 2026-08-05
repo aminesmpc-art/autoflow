@@ -2795,70 +2795,6 @@ export class AutomationEngine {
    * Attach frame images (Start / End) in Frames creation mode.
    * images[0] → Start frame, images[1] → End frame (optional).
    */
-  /**
-   * Open one frame slot's dialog and put an image in it.
-   *
-   * The slot is a div with type="button" and aria-haspopup="dialog", so a
-   * querySelector for 'button' never finds it — worth knowing, because that
-   * is why every generic click helper walks straight past these.
-   *
-   * Verified by the slot filling, not by the click returning. A dialog that
-   * opened and took nothing looks identical to one that worked, right up
-   * until the clip comes back wrong.
-   */
-  private async fillFrameSlot(
-    slot: HTMLElement,
-    label: string,
-    item: { filename: string; fileData: { data: string; mime: string } }
-  ): Promise<boolean> {
-    if (frameSlotFilled(slot)) {
-      this.log('info', `${label} frame already holds an image — replacing it`);
-    }
-
-    // Open it. These are Radix dialog triggers, so the same escalation the
-    // model menu needed applies: a synthetic click may never reach React.
-    for (const [name, open] of [
-      ['react onClick', () => reactTrigger(slot, 'onClick')],
-      ['native click', () => { nativeClick(slot); }],
-      ['simulated click', () => { simulateClick(slot); }],
-    ] as Array<[string, () => unknown]>) {
-      if (this.stopped) return false;
-      try { await open(); } catch { /* next */ }
-      await humanDelay(500, 800);
-      if (slot.getAttribute('data-state') === 'open' || findFileInput()) {
-        this.log('info', `${label} frame dialog opened via ${name}`);
-        break;
-      }
-    }
-
-    const fileInput = findFileInput();
-    if (!fileInput) {
-      this.log('warn', `No file input in the ${label} frame dialog`);
-      return false;
-    }
-
-    const blob = this.base64ToBlob(item.fileData.data, item.fileData.mime);
-    const file = new File([blob], item.filename, { type: item.fileData.mime });
-    const dt = new DataTransfer();
-    dt.items.add(file);
-    fileInput.files = dt.files;
-    triggerFileInputChange(fileInput);
-
-    // Wait for the slot itself to show the image — the dialog closing is not
-    // the same thing, and neither is the upload starting.
-    const deadline = Date.now() + 45_000;
-    while (Date.now() < deadline) {
-      if (this.stopped) return false;
-      await sleep(500);
-      if (frameSlotFilled(slot)) {
-        this.log('info', `${label} frame set: ${item.filename}`);
-        return true;
-      }
-    }
-    this.log('warn', `${label} frame never showed the image`);
-    return false;
-  }
-
   private async attachFrameImages(images: ImageMeta[], promptIdx: number): Promise<boolean> {
     if (images.length === 0) return true;
 
@@ -2905,13 +2841,16 @@ export class AutomationEngine {
         return false;
       }
 
-      /* Frames do NOT go in the prompt box.
-         This used to paste them there, which is how ingredients are attached
-         — so the Start and End slots stayed empty and Flow generated from a
-         reference image instead of interpolating between two stills. The
-         clip came back looking like an ordinary generation, which is why it
-         read as "not working" rather than as an error.
-         Each slot opens its own dialog, and the file goes in there. */
+      /* One paste per image, in order.
+         Flow fills Start with the first pasted image and End with the second
+         — the slots follow paste order, which is why they can be filled
+         without opening either dialog.
+
+         The mistake was pasting both in a single DataTransfer: two files in
+         one clipboard payload read as a multi-image attachment, so they
+         landed as ingredients and the slots stayed empty. The clip then came
+         back looking like an ordinary generation, which is why this failed
+         quietly rather than erroring. */
       const slots = findFrameSlots();
       if (!slots) {
         this.log('warn', 'Flow is not showing Start/End frame slots — is the composer in video mode?');
@@ -2924,13 +2863,35 @@ export class AutomationEngine {
         const [label, slot] = targets[i];
         const item = filesToUpload[i];
 
-        const ok = await this.fillFrameSlot(slot, label, item);
-        if (!ok) {
+        const blob = this.base64ToBlob(item.fileData.data, item.fileData.mime);
+        const file = new File([blob], item.filename, { type: item.fileData.mime });
+        const dt = new DataTransfer();
+        dt.items.add(file);   // exactly one — see above
+
+        if (promptInput instanceof HTMLElement) promptInput.focus();
+        await sleep(150);
+        promptInput.dispatchEvent(new ClipboardEvent('paste', {
+          bubbles: true, cancelable: true, clipboardData: dt,
+        }));
+        this.log('info', `Pasted ${item.filename} for the ${label} frame`);
+
+        /* Wait for THIS slot before pasting the next. Firing both pastes back
+           to back races them into the same slot, and the order is the whole
+           meaning of the mode. */
+        const deadline = Date.now() + 45_000;
+        let landed = false;
+        while (Date.now() < deadline) {
+          if (this.stopped) return false;
+          await sleep(500);
+          if (frameSlotFilled(slot)) { landed = true; break; }
+        }
+        if (!landed) {
           throw new Error(
-            `Could not put an image in Flow's ${label} frame slot. Generating now ` +
-            'would attach it as an ingredient instead of interpolating, so this node stopped.'
+            `The ${label} frame never filled. Generating now would attach the image ` +
+            'as an ingredient instead of interpolating, so this node stopped.'
           );
         }
+        this.log('info', `${label} frame set: ${item.filename}`);
       }
       if (filesToUpload.length > 2) {
         this.log('warn', `Frames mode takes two images; ignoring ${filesToUpload.length - 2} extra`);
