@@ -488,6 +488,7 @@ function CanvasInner() {
 
       {/* Node Toolbar (Left sidebar) */}
       <div className="studio-toolbar">
+        <div className="studio-toolbar__heading">Add node</div>
         <button className="studio-toolbar__btn studio-toolbar__btn--add" onClick={addPromptNode} aria-label="Add Prompt node">
           <span className="studio-toolbar__btn-icon" aria-hidden="true">✏️</span>
           <span className="studio-toolbar__btn-label">Add Prompt</span>
