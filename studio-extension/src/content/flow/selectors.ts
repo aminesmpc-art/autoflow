@@ -267,6 +267,39 @@ export function findGenerateButton(): Element | null {
  * contains a model name like "Veo" or "Imagen", and which is
  * NOT the settings panel trigger (that one also has "Video"/"x1").
  */
+/**
+ * The model Flow is currently set to, readable whether or not a panel is open.
+ *
+ * Verification used to read the model dropdown's own trigger — which lives
+ * inside the settings popover. Selecting a model closes that popover, so the
+ * check ran against an element that no longer existed, read an empty string,
+ * concluded the click had failed, and fired four more clicks at a detached
+ * node.
+ *
+ * Flow also prints the selection in the composer bar ("🍌 Nano Banana Pro
+ * x1"), which is always on screen. That is the durable source.
+ */
+export function readSelectedModel(knownModels: readonly string[]): string {
+  // Panel open: its trigger is the most specific answer.
+  const trigger = findModelSelectorTrigger();
+  const fromTrigger = (trigger?.textContent || '').replace(/arrow_drop_down/g, '').trim();
+  if (fromTrigger) return fromTrigger;
+
+  /* Otherwise read the composer chip. Scoped away from open menus so a list
+     of choices is never mistaken for the choice. */
+  const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9.\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const wanted = knownModels.map(norm);
+
+  for (const el of document.querySelectorAll<HTMLElement>('button, span, div')) {
+    if (el.children.length > 2) continue;            // containers, not labels
+    if (el.closest('[role="menu"], [data-radix-menu-content]')) continue;
+    if (!isVisible(el)) continue;
+    const text = norm(el.textContent || '');
+    if (text && wanted.includes(text)) return (el.textContent || '').trim();
+  }
+  return '';
+}
+
 export function findModelSelectorTrigger(): Element | null {
   // Primary: find a button[aria-haspopup="menu"] INSIDE the open settings menu.
   // The settings trigger opens a [role="menu"] dropdown. Inside it, the model

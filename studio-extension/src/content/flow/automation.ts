@@ -17,6 +17,7 @@ import {
 } from '../../types';
 import { savePromptHistory, saveRunningQueue, clearRunningQueue } from '../../shared/storage';
 import { getStudioImageFiles } from './studioImages';
+import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS } from '../../types';
 
 import {
   MAX_RETRIES,
@@ -31,6 +32,7 @@ import {
   findPromptInput,
   findGenerateButton,
   findCreditsExhaustedNotice,
+  readSelectedModel,
   findAttachedIngredients,
   findLoadedIngredients,
   waitForIngredients,
@@ -117,6 +119,10 @@ import {
  * Strips punctuation, brackets, icon text (arrow_drop_down), and collapses whitespace.
  * e.g. "Veo 3.1 - Fast [Lower Priority]arrow_drop_down" → "veo 3.1 fast lower priority"
  */
+/* Every model name Flow might be showing, so readSelectedModel knows a model
+   label when it sees one in the composer bar. */
+const ALL_KNOWN_MODELS: readonly string[] = [...AVAILABLE_MODELS, ...AVAILABLE_IMAGE_MODELS];
+
 function normalizeForModelMatch(text: string): string {
   return text
     .toLowerCase()
@@ -2268,8 +2274,13 @@ export class AutomationEngine {
         const innerBtn = chosen.item.querySelector('button') as HTMLElement | null;
         const target = innerBtn || (chosen.item as HTMLElement);
 
+        /* Read from wherever Flow is still showing the model.
+           Checking the dropdown's own trigger was wrong: selecting an item
+           closes the popover that trigger lives in, so a click that WORKED
+           read back as an empty string and looked like a failure. */
         const landed = (): boolean => {
-          const raw = (overrideTrigger || findModelSelectorTrigger())?.textContent?.trim() || '';
+          const raw = readSelectedModel(ALL_KNOWN_MODELS);
+          if (!raw) return false;
           const norm = normalizeForModelMatch(raw);
           return norm === normalizeForModelMatch(chosen.text) || norm.includes(targetNorm);
         };
@@ -2299,6 +2310,16 @@ export class AutomationEngine {
 
         for (const [name, attempt] of strategies) {
           if (this.stopped) return;
+          /* Once the menu has closed the item is detached, and clicking a
+             detached node either does nothing or lands on whatever Radix
+             mounted in its place. Re-check before every attempt. */
+          if (!document.contains(chosen.item)) {
+            if (landed()) {
+              this.log('info', `Model set to ${chosen.text.trim()}`);
+              return;
+            }
+            break;
+          }
           try { await attempt(); } catch { /* try the next one */ }
           await humanDelay(400, 700);
           if (landed()) {
@@ -2307,7 +2328,7 @@ export class AutomationEngine {
           }
         }
 
-        const nowRaw = (overrideTrigger || findModelSelectorTrigger())?.textContent?.trim() || '';
+        const nowRaw = readSelectedModel(ALL_KNOWN_MODELS) || '(could not read)';
         if (!isRetry && !overrideTrigger) {
           this.log('warn', `Every click strategy left Flow on "${nowRaw}" — reopening settings and retrying`);
           await this.closeSettingsPanel();
