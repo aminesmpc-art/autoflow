@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "publishedAt": "2026-08-05T20:25:17.179Z",
+  "publishedAt": "2026-08-05T20:35:16.730Z",
   "templates": [
     {
       "id": "tpl_simple_image",
@@ -3148,6 +3148,439 @@
         "flow"
       ],
       "minExtensionVersion": "0.6.0",
+      "tier": "free"
+    },
+    {
+      "id": "tpl_animal_slapstick",
+      "name": "3D Animal Slapstick: 5 Beats",
+      "description": "Two desert animals, one thing they both want, and a twist that gives it to neither.",
+      "useCase": "The Oscar's Oasis format: hook in the first two seconds, escalate, peak, then an ironic twist, cut to about thirty seconds. Describe the pair in a line and the character_sheet preset writes the design brief — the animals have to be identical across all five scenes or the escalation reads as five unrelated clips. No dialogue anywhere, which is why the format travels: nothing to translate, and a model left to itself will add mouth-sync and a voice. The last shot is framed to match the first so it loops. Needs a signed-in ChatGPT tab for the design step.",
+      "category": "Content",
+      "difficulty": "Medium",
+      "nodeCount": 13,
+      "thumbnail": "🦊",
+      "nodes": [
+        {
+          "id": "p_cast",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 300
+          },
+          "data": {
+            "type": "prompt",
+            "label": "The Cast",
+            "text": "A fennec fox and a meerkat as a desert cartoon duo, bright 3D animation, rounded exaggerated caricature, Oscar's Oasis look"
+          }
+        },
+        {
+          "id": "ask_cast",
+          "type": "generate",
+          "position": {
+            "x": 480,
+            "y": 260
+          },
+          "data": {
+            "type": "generate",
+            "label": "Write the Design Brief",
+            "platform": "chatgpt",
+            "mediaType": "text",
+            "model": "",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null,
+            "preset": "character_sheet"
+          }
+        },
+        {
+          "id": "g_cast",
+          "type": "generate",
+          "position": {
+            "x": 920,
+            "y": 220
+          },
+          "data": {
+            "type": "generate",
+            "label": "Character Sheet",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_hook",
+          "type": "prompt",
+          "position": {
+            "x": 1420,
+            "y": 40
+          },
+          "data": {
+            "type": "prompt",
+            "label": "1. Hook — Something Worth Wanting",
+            "text": "A single drop of water hangs from a dry cactus spine, catching the light. The fennec fox freezes mid-step, ears snapping forward, eyes enormous. He tiptoes toward it in exaggerated slow motion.\nOpen ON the drop — the first two seconds decide whether anyone stays.\n\nBright 3D cartoon animation, the look of Oscar's Oasis or Larva. Rounded exaggerated caricature, thick clean forms, saturated desert palette — orange sand, hard blue sky, sharp midday sun.\nSquash-and-stretch physics: bodies compress on impact and stretch through motion, eyes pop wide, limbs windmill. Comedy is in the timing and the overshoot, not in detail.\nSame characters as the reference: identical design, proportions and colour. Do not restyle or redesign them.\nNo dialogue, no speech, no mouth-sync, no on-screen text. Sound is thumps, sand, and cartoon whooshes.\nOne continuous shot per clip, camera locked or a single simple move. Vertical 9:16."
+          }
+        },
+        {
+          "id": "g_hook",
+          "type": "generate",
+          "position": {
+            "x": 1940,
+            "y": 0
+          },
+          "data": {
+            "type": "generate",
+            "label": "1. Hook — Something Worth Wanting",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_rival",
+          "type": "prompt",
+          "position": {
+            "x": 1420,
+            "y": 500
+          },
+          "data": {
+            "type": "prompt",
+            "label": "2. The Rival",
+            "text": "The meerkat erupts from the sand directly under the fox, launching him into a spin. Both land, spot each other, and freeze nose to nose. A long silent beat, eyes narrowing.\nHold the stare one moment past comfortable — the pause is the joke.\n\nBright 3D cartoon animation, the look of Oscar's Oasis or Larva. Rounded exaggerated caricature, thick clean forms, saturated desert palette — orange sand, hard blue sky, sharp midday sun.\nSquash-and-stretch physics: bodies compress on impact and stretch through motion, eyes pop wide, limbs windmill. Comedy is in the timing and the overshoot, not in detail.\nSame characters as the reference: identical design, proportions and colour. Do not restyle or redesign them.\nNo dialogue, no speech, no mouth-sync, no on-screen text. Sound is thumps, sand, and cartoon whooshes.\nOne continuous shot per clip, camera locked or a single simple move. Vertical 9:16."
+          }
+        },
+        {
+          "id": "g_rival",
+          "type": "generate",
+          "position": {
+            "x": 1940,
+            "y": 460
+          },
+          "data": {
+            "type": "generate",
+            "label": "2. The Rival",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_escalate",
+          "type": "prompt",
+          "position": {
+            "x": 1420,
+            "y": 960
+          },
+          "data": {
+            "type": "prompt",
+            "label": "3. Escalation",
+            "text": "A full scramble: they tug, shove and vault over each other, the fox flattened into the sand and springing back, the meerkat cartwheeling off a rock. Sand sprays everywhere. The drop still hangs, untouched.\nFast, physical, and always readable — never a blur.\n\nBright 3D cartoon animation, the look of Oscar's Oasis or Larva. Rounded exaggerated caricature, thick clean forms, saturated desert palette — orange sand, hard blue sky, sharp midday sun.\nSquash-and-stretch physics: bodies compress on impact and stretch through motion, eyes pop wide, limbs windmill. Comedy is in the timing and the overshoot, not in detail.\nSame characters as the reference: identical design, proportions and colour. Do not restyle or redesign them.\nNo dialogue, no speech, no mouth-sync, no on-screen text. Sound is thumps, sand, and cartoon whooshes.\nOne continuous shot per clip, camera locked or a single simple move. Vertical 9:16."
+          }
+        },
+        {
+          "id": "g_escalate",
+          "type": "generate",
+          "position": {
+            "x": 1940,
+            "y": 920
+          },
+          "data": {
+            "type": "generate",
+            "label": "3. Escalation",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_peak",
+          "type": "prompt",
+          "position": {
+            "x": 1420,
+            "y": 1420
+          },
+          "data": {
+            "type": "prompt",
+            "label": "4. Peak Chaos",
+            "text": "The cactus bends back like a loaded spring under their weight, then releases — both animals fire into the sky, tumbling, limbs flailing, shrinking to dots. A beat of silence at the top of the arc.\nHold the silence. It makes the landing land.\n\nBright 3D cartoon animation, the look of Oscar's Oasis or Larva. Rounded exaggerated caricature, thick clean forms, saturated desert palette — orange sand, hard blue sky, sharp midday sun.\nSquash-and-stretch physics: bodies compress on impact and stretch through motion, eyes pop wide, limbs windmill. Comedy is in the timing and the overshoot, not in detail.\nSame characters as the reference: identical design, proportions and colour. Do not restyle or redesign them.\nNo dialogue, no speech, no mouth-sync, no on-screen text. Sound is thumps, sand, and cartoon whooshes.\nOne continuous shot per clip, camera locked or a single simple move. Vertical 9:16."
+          }
+        },
+        {
+          "id": "g_peak",
+          "type": "generate",
+          "position": {
+            "x": 1940,
+            "y": 1380
+          },
+          "data": {
+            "type": "generate",
+            "label": "4. Peak Chaos",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_twist",
+          "type": "prompt",
+          "position": {
+            "x": 1420,
+            "y": 1880
+          },
+          "data": {
+            "type": "prompt",
+            "label": "5. Twist — Neither of Them",
+            "text": "They crater into the sand side by side. As they lift their heads, a passing tortoise ambles up, licks the drop off the spine without breaking stride, and walks on. Both stare after it, then at each other.\nEND ON the cactus spine, now bare — the same framing the video opened on, so it loops straight back to the drop.\n\nBright 3D cartoon animation, the look of Oscar's Oasis or Larva. Rounded exaggerated caricature, thick clean forms, saturated desert palette — orange sand, hard blue sky, sharp midday sun.\nSquash-and-stretch physics: bodies compress on impact and stretch through motion, eyes pop wide, limbs windmill. Comedy is in the timing and the overshoot, not in detail.\nSame characters as the reference: identical design, proportions and colour. Do not restyle or redesign them.\nNo dialogue, no speech, no mouth-sync, no on-screen text. Sound is thumps, sand, and cartoon whooshes.\nOne continuous shot per clip, camera locked or a single simple move. Vertical 9:16."
+          }
+        },
+        {
+          "id": "g_twist",
+          "type": "generate",
+          "position": {
+            "x": 1940,
+            "y": 1840
+          },
+          "data": {
+            "type": "generate",
+            "label": "5. Twist — Neither of Them",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_p_cast_ask_cast_t",
+          "source": "p_cast",
+          "target": "ask_cast",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_ask_cast_g_cast_t",
+          "source": "ask_cast",
+          "target": "g_cast",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_hook_g_hook_t",
+          "source": "p_hook",
+          "target": "g_hook",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_cast_g_hook_i",
+          "source": "g_cast",
+          "target": "g_hook",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_rival_g_rival_t",
+          "source": "p_rival",
+          "target": "g_rival",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_cast_g_rival_i",
+          "source": "g_cast",
+          "target": "g_rival",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_escalate_g_escalate_t",
+          "source": "p_escalate",
+          "target": "g_escalate",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_cast_g_escalate_i",
+          "source": "g_cast",
+          "target": "g_escalate",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_peak_g_peak_t",
+          "source": "p_peak",
+          "target": "g_peak",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_cast_g_peak_i",
+          "source": "g_cast",
+          "target": "g_peak",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_twist_g_twist_t",
+          "source": "p_twist",
+          "target": "g_twist",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_cast_g_twist_i",
+          "source": "g_cast",
+          "target": "g_twist",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "chatgpt",
+        "flow"
+      ],
       "tier": "free"
     },
     {

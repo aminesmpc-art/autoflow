@@ -305,6 +305,58 @@ const FILM_CHARACTER =
   'An original fictional character, not any real person.';
 
 /** [key, label, the eight seconds] — the arc, in order. */
+/* ── 3D animal slapstick ──
+   The Oscar's Oasis / Larva format: two desert animals, one thing they both
+   want, and physical comedy escalating to an ironic twist. Five 6s scenes cut
+   to about thirty seconds.
+
+   No dialogue anywhere. The format travels because it needs no translation,
+   and a model given the chance will happily add mouth movement and a voice —
+   so every scene rules it out rather than staying silent about it. */
+const SLAPSTICK_STYLE =
+  'Bright 3D cartoon animation, the look of Oscar\'s Oasis or Larva. Rounded ' +
+  'exaggerated caricature, thick clean forms, saturated desert palette — ' +
+  'orange sand, hard blue sky, sharp midday sun.\n' +
+  'Squash-and-stretch physics: bodies compress on impact and stretch through ' +
+  'motion, eyes pop wide, limbs windmill. Comedy is in the timing and the ' +
+  'overshoot, not in detail.\n' +
+  'Same characters as the reference: identical design, proportions and colour. ' +
+  'Do not restyle or redesign them.\n' +
+  'No dialogue, no speech, no mouth-sync, no on-screen text. Sound is thumps, ' +
+  'sand, and cartoon whooshes.\n' +
+  'One continuous shot per clip, camera locked or a single simple move. ' +
+  'Vertical 9:16.';
+
+/** [key, label, the six seconds] — hook, escalate, peak, twist, loop. */
+const SLAPSTICK_SCENES = [
+  ['hook', '1. Hook — Something Worth Wanting',
+   'A single drop of water hangs from a dry cactus spine, catching the light. ' +
+   'The fennec fox freezes mid-step, ears snapping forward, eyes enormous. He ' +
+   'tiptoes toward it in exaggerated slow motion.\n' +
+   'Open ON the drop — the first two seconds decide whether anyone stays.'],
+  ['rival', '2. The Rival',
+   'The meerkat erupts from the sand directly under the fox, launching him ' +
+   'into a spin. Both land, spot each other, and freeze nose to nose. A long ' +
+   'silent beat, eyes narrowing.\n' +
+   'Hold the stare one moment past comfortable — the pause is the joke.'],
+  ['escalate', '3. Escalation',
+   'A full scramble: they tug, shove and vault over each other, the fox ' +
+   'flattened into the sand and springing back, the meerkat cartwheeling ' +
+   'off a rock. Sand sprays everywhere. The drop still hangs, untouched.\n' +
+   'Fast, physical, and always readable — never a blur.'],
+  ['peak', '4. Peak Chaos',
+   'The cactus bends back like a loaded spring under their weight, then ' +
+   'releases — both animals fire into the sky, tumbling, limbs flailing, ' +
+   'shrinking to dots. A beat of silence at the top of the arc.\n' +
+   'Hold the silence. It makes the landing land.'],
+  ['twist', '5. Twist — Neither of Them',
+   'They crater into the sand side by side. As they lift their heads, a ' +
+   'passing tortoise ambles up, licks the drop off the spine without breaking ' +
+   'stride, and walks on. Both stare after it, then at each other.\n' +
+   'END ON the cactus spine, now bare — the same framing the video opened on, ' +
+   'so it loops straight back to the drop.'],
+] as const;
+
 const FILM_SCENES = [
   ['hook', '1. Hook — Something Is Wrong',
    'The boy stands alone at the mouth of a rain-soaked alley at dusk, clutching ' +
@@ -998,6 +1050,56 @@ export const BUILTIN_TEMPLATES: Template[] = [
       }
       return out;
     }),
+  },
+  {
+    id: 'tpl_animal_slapstick',
+    name: '3D Animal Slapstick: 5 Beats',
+    description: 'Two desert animals, one thing they both want, and a twist that gives it to neither.',
+    useCase:
+      'The Oscar\'s Oasis format: hook in the first two seconds, escalate, peak, then an ironic twist, cut to about thirty seconds. Describe the pair in a line and the character_sheet preset writes the design brief — the animals have to be identical across all five scenes or the escalation reads as five unrelated clips. No dialogue anywhere, which is why the format travels: nothing to translate, and a model left to itself will add mouth-sync and a voice. The last shot is framed to match the first so it loops. Needs a signed-in ChatGPT tab for the design step.',
+    category: 'Content',
+    difficulty: 'Medium',
+    nodeCount: 13,
+    thumbnail: '🦊',
+    nodes: [
+      promptNode('p_cast', 'The Cast',
+        'A fennec fox and a meerkat as a desert cartoon duo, bright 3D animation, ' +
+        'rounded exaggerated caricature, Oscar\'s Oasis look',
+        40, 300),
+      // The preset turns that line into a full design brief — see studio/presets.
+      askNode('ask_cast', 'Write the Design Brief', 480, 260, 'character_sheet'),
+      genNode('g_cast', {
+        label: 'Character Sheet',
+        mediaType: 'image',
+        aspectRatio: '16:9',
+        model: 'Nano Banana Pro',
+      }, 920, 220),
+
+      ...SLAPSTICK_SCENES.flatMap(([key, label, body], i) => {
+        const y = i * 460;
+        return [
+          promptNode(`p_${key}`, label, body + '\n\n' + SLAPSTICK_STYLE, 1420, y + 40),
+          genNode(`g_${key}`, {
+            label,
+            mediaType: 'video',
+            aspectRatio: '9:16',
+            duration: '6s',
+            model: 'Omni Flash',
+          }, 1940, y),
+        ];
+      }),
+    ],
+    edges: [
+      tEdge('p_cast', 'ask_cast'),
+      tEdge('ask_cast', 'g_cast'),
+    ].concat(SLAPSTICK_SCENES.flatMap(([key]) => [
+      tEdge(`p_${key}`, `g_${key}`),
+      /* Every scene references the design sheet, never the scene before it.
+         These are five separate gags in one place; chaining would carry a
+         drifted animal into all of them, and the whole format rests on the
+         same two creatures being recognisable from hook to twist. */
+      iEdge('g_cast', `g_${key}`),
+    ])),
   },
   {
     id: 'tpl_emotional_short',
