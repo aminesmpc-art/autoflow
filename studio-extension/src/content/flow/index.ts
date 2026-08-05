@@ -1229,7 +1229,11 @@ function blobToRawBase64(blob: Blob): Promise<string> {
 }
 
 async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
-  const { findAssetCards, isVisible } = await import('./selectors');
+  const { findAssetCards, isVisible, findRowForPrompt } = await import('./selectors');
+
+  // What this node actually asked Flow for. Used further down to tell our
+  // generation apart from everything else in the grid.
+  const promptText: string = queue?.prompts?.[0]?.text || queue?.prompts?.[0]?.prompt || '';
 
   sendStudioProgress(nodeId, 20);
 
@@ -1342,9 +1346,33 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
         fallbackTileId = generatingCard.getAttribute('data-tile-id') || null;
         console.log(`[AutoFlow Studio] Locked onto generating tile ${fallbackTileId || '(no id)'}`);
       } else if (wait > 45 && allCards.length > 0) {
-        // Nothing ever showed as generating — the render may have finished
-        // between submit and our first poll. Last resort: newest card.
-        trackedTile = allCards[0];
+        /* Nothing ever showed as generating. The render may genuinely have
+           finished between submit and our first poll — or the submit never
+           landed at all, and the grid is showing work from an earlier node or
+           an earlier day.
+
+           This used to take allCards[0], the newest card, without checking
+           whose it was. When a submit had silently failed that returned the
+           previous clip as this node's result, and the run went green with
+           the wrong video in it — invisible until someone watched the output.
+
+           Flow prints each row's prompt beside its media, so ask for ours by
+           name instead. No match means we never submitted, which is worth
+           saying out loud. */
+        const mine = findRowForPrompt(promptText);
+        if (mine) {
+          trackedTile = document.querySelector(`[data-tile-id="${mine.tileId}"]`) || mine.element;
+          fallbackTileId = mine.tileId;
+          console.log(
+            `[AutoFlow Studio] Matched this node's prompt to tile ${mine.tileId}` +
+            `${mine.model ? ` (${mine.model}${mine.duration ? `, ${mine.duration}` : ''})` : ''}`
+          );
+        } else if (wait > 75) {
+          throw new Error(
+            'This generation never appeared in Flow — no tile on the page carries this ' +
+            'node\'s prompt. The submit did not land; check the Flow tab and run again.'
+          );
+        }
       }
     }
 

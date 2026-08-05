@@ -740,6 +740,107 @@ export function findAssetResults(dialog: Element): Element[] {
  * visible element carrying both, small enough to be a notice rather than the
  * page, counts.
  */
+/* ── Generation rows ──────────────────────────────────────────
+   Every row in Flow's grid carries its own prompt, model, ratio and duration
+   in the same block as its media. That makes "is this tile mine?" a question
+   with an actual answer, where before the poller guessed: if nothing had ever
+   looked like it was generating, it fell back to the newest card on the page
+   and reported whatever that was. If the submit had silently failed, the node
+   confidently returned the previous node's clip — or a video the user made
+   yesterday — and the run went green.
+
+   Anchored on `button.reuse-prompt-button`, the one class in that subtree
+   that is a name rather than a styled-components hash. Everything else there
+   (sc-7f95703a-1, iEkYZi) changes on any rebuild of Flow.
+   ──────────────────────────────────────────────────────────── */
+
+export interface FlowGenerationRow {
+  tileId: string;
+  /** The prompt text Flow shows under the media — what identifies the row. */
+  prompt: string;
+  model: string;
+  aspectRatio: string;
+  /** e.g. "6s", read from "Video length: 6s" */
+  duration: string;
+  element: HTMLElement;
+}
+
+/** Collapse whitespace so DOM wrapping does not defeat comparison. */
+const normalisePrompt = (s: string): string =>
+  (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+export function readGenerationRows(): FlowGenerationRow[] {
+  const rows: FlowGenerationRow[] = [];
+
+  for (const btn of document.querySelectorAll<HTMLElement>('button.reuse-prompt-button')) {
+    // <wrapper><div>PROMPT</div><div><button.reuse-prompt-button/></div></wrapper>
+    const wrapper = btn.parentElement?.parentElement;
+    const prompt = (wrapper?.firstElementChild as HTMLElement | null)?.textContent?.trim() || '';
+    if (!prompt) continue;
+
+    // The row is the nearest ancestor that also owns the media.
+    let row: HTMLElement | null = wrapper as HTMLElement | null;
+    let tile: Element | null = null;
+    for (let depth = 0; depth < 8 && row; depth++, row = row.parentElement) {
+      tile = row.querySelector('[data-tile-id]');
+      if (tile) break;
+    }
+    if (!row || !tile) continue;
+
+    /* Metadata lines are plain divs with no stable class, so they are read by
+       what they say rather than where they sit — Flow reorders them, and
+       "Resolution: 720p" is recognisable wherever it lands. */
+    const lines = Array.from(row.querySelectorAll<HTMLElement>('div'))
+      // Leaf by div, not by child count: the ratio line holds an icon glyph
+      // as well as its text, and skipping it lost the ratio entirely.
+      .filter((d) => !d.querySelector('div'))
+      .map((d) => (d.textContent || '').trim())
+      .filter(Boolean);
+
+    // The glyph's ligature runs into the value — "crop_9_16" + "9:16" reads as
+    // "crop_9_169:16" — so the ratio is taken from the end of the line.
+    const ratio = lines
+      .map((l) => l.match(/(\d{1,2}:\d{1,2})\s*$/)?.[1])
+      .find(Boolean) || '';
+
+    rows.push({
+      tileId: tile.getAttribute('data-tile-id') || '',
+      prompt,
+      model: lines.find((l) => /flash|veo|imagen|banana/i.test(l)) || '',
+      aspectRatio: ratio,
+      duration: (lines.find((l) => /length/i.test(l)) || '').replace(/^[^:]*:\s*/, ''),
+      element: row,
+    });
+  }
+  return rows;
+}
+
+/**
+ * The row Flow created for this exact prompt, if there is one.
+ *
+ * Absence is the useful answer: it means our submit never landed, which is
+ * worth failing on rather than papering over with somebody else's tile.
+ */
+export function findRowForPrompt(prompt: string): FlowGenerationRow | null {
+  const want = normalisePrompt(prompt);
+  if (want.length < 8) return null; // too short to identify anything
+
+  const rows = readGenerationRows();
+  const exact = rows.find((r) => normalisePrompt(r.prompt) === want);
+  if (exact) return exact;
+
+  /* Flow can trim trailing whitespace, collapse newlines, or clip a very long
+     prompt in the card. A long shared opening is still conclusive — two
+     different prompts agreeing on their first 80 characters would have to be
+     deliberate. */
+  const head = want.slice(0, 80);
+  if (head.length < 40) return null;
+  return rows.find((r) => {
+    const got = normalisePrompt(r.prompt);
+    return got.startsWith(head) || want.startsWith(got.slice(0, 80));
+  }) || null;
+}
+
 /**
  * The orange alert sphere Flow puts beside the generation settings.
  *
