@@ -67,9 +67,23 @@ function CanvasInner() {
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { zoomIn, zoomOut, fitView } = useReactFlow();
+  const { zoomIn, zoomOut, fitView, setCenter } = useReactFlow();
   const zoomPct = Math.round(useStore((s) => s.transform[2]) * 100);
   const [showMinimap, setShowMinimap] = useState(true);
+
+  /* Put a node in the middle of the screen.
+     A run happens across a canvas wider than the screen, so "which node is
+     this" and "where is the one that failed" were both answered by dragging
+     around looking for a coloured border. */
+  const flyTo = useCallback(
+    (nodeId: string) => {
+      const n = nodes.find((x) => x.id === nodeId);
+      if (!n) return;
+      // Offset by half the node so it lands centred rather than top-left.
+      setCenter(n.position.x + 150, n.position.y + 180, { zoom: 0.9, duration: 500 });
+    },
+    [nodes, setCenter]
+  );
 
   const handleRecenter = useCallback(
     () => fitView({ padding: 0.25, maxZoom: 1, duration: 300 }),
@@ -158,6 +172,32 @@ function CanvasInner() {
   }, [nodes, edges, isRunning, canRun, isPro, runBlockedReason, recordRun, setRunsUsed]);
 
   /* Nodes the user can retry — anything a run left in error. */
+  /* What the run bar reads. currentNodeId is set by the runner as each node
+     starts, so the bar names the node rather than saying "running". */
+  const currentNodeId = useStudioStore((st) => st.currentNodeId);
+  const runningLabel = (() => {
+    const n = nodes.find((x) => x.id === currentNodeId);
+    return ((n?.data as any)?.label as string) || 'Starting…';
+  })();
+
+  /* Elapsed, ticking on its own. A run has no total to count down from, so
+     time spent is the honest number — and a bar that only moves once per node
+     looks frozen during a five-minute video. */
+  const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState('0:00');
+  useEffect(() => {
+    if (!isRunning) { setRunStartedAt(null); setElapsed('0:00'); return; }
+    const started = runStartedAt ?? Date.now();
+    if (runStartedAt === null) setRunStartedAt(started);
+    const tick = () => {
+      const total = Math.max(0, Math.floor((Date.now() - started) / 1000));
+      setElapsed(`${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [isRunning, runStartedAt]);
+
   const failedNodeIds = nodes
     .filter((n) => {
       const d = n.data as any;
@@ -468,19 +508,12 @@ function CanvasInner() {
           <span className="studio-toolbar__btn-icon" aria-hidden="true">🎬</span>
           <span className="studio-toolbar__btn-label">Add Generate</span>
         </button>
+        {/* Run control lives in the run bar at the bottom, not here. Mixing
+            "build the workflow" with "operate the workflow" in one 40px column
+            meant the primary action moved position depending on state — Run
+            became Pause the moment you pressed it, under your cursor. */}
         <div className="studio-toolbar__divider" />
-        {isRunning ? (
-          <>
-            <button className="studio-toolbar__btn studio-toolbar__btn--pause" onClick={handlePause} aria-label={isPaused ? 'Resume workflow' : 'Pause workflow'}>
-              <span className="studio-toolbar__btn-icon" aria-hidden="true">{isPaused ? '▶' : '⏸'}</span>
-              <span className="studio-toolbar__btn-label">{isPaused ? 'Resume' : 'Pause'}</span>
-            </button>
-            <button className="studio-toolbar__btn studio-toolbar__btn--stop" onClick={handleStop} aria-label="Stop workflow">
-              <span className="studio-toolbar__btn-icon" aria-hidden="true">⏹</span>
-              <span className="studio-toolbar__btn-label">Stop</span>
-            </button>
-          </>
-        ) : (
+        {!isRunning && (
           <>
             <button
               className="studio-toolbar__btn studio-toolbar__btn--run"
@@ -566,6 +599,75 @@ function CanvasInner() {
           </Panel>
         )}
       </ReactFlow>
+
+      {/* ── Run bar ──
+          Everything about the run in one place that does not move: what is
+          running, how far in, how long, and how to stop it. Previously this
+          was a 4px progress bar and "4/5" in the top centre, with Pause and
+          Stop over on the left rail — three places to look, none of them
+          where the eye already was. */}
+      {(isRunning || failedNodeIds.length > 0) && (
+        <div className={`studio-runbar ${isRunning ? '' : 'studio-runbar--idle'}`}>
+          {isRunning && (
+            <>
+              <span className={`studio-runbar__pulse ${isPaused ? 'is-paused' : ''}`} />
+              <button
+                className="studio-runbar__node"
+                onClick={() => currentNodeId && flyTo(currentNodeId)}
+                disabled={!currentNodeId}
+                title="Show this node on the canvas"
+              >
+                {runningLabel}
+              </button>
+              <div className="studio-runbar__bar">
+                <div
+                  className="studio-runbar__fill"
+                  style={{ width: `${runProgress.total ? (runProgress.current / runProgress.total) * 100 : 0}%` }}
+                />
+              </div>
+              <span className="studio-runbar__count">
+                {runProgress.current}/{runProgress.total}
+              </span>
+              <span className="studio-runbar__elapsed">{elapsed}</span>
+              <button className="studio-runbar__btn" onClick={handlePause}>
+                {isPaused ? '▶ Resume' : '⏸ Pause'}
+              </button>
+              <button className="studio-runbar__btn studio-runbar__btn--stop" onClick={handleStop}>
+                ⏹ Stop
+              </button>
+            </>
+          )}
+
+          {/* A failed node used to be a red border somewhere on a canvas wider
+              than the screen. Now it is a button that flies you to it. */}
+          {failedNodeIds.length > 0 && (
+            <div className="studio-runbar__fails">
+              <span className="studio-runbar__fails-label">
+                {failedNodeIds.length} failed
+              </span>
+              {failedNodeIds.slice(0, 4).map((id) => {
+                const n = nodes.find((x) => x.id === id);
+                const d = n?.data as any;
+                return (
+                  <button
+                    key={id}
+                    className="studio-runbar__fail"
+                    onClick={() => flyTo(id)}
+                    title={d?.errorMessage || 'Show this node'}
+                  >
+                    {d?.label || id}
+                  </button>
+                );
+              })}
+              {!isRunning && (
+                <button className="studio-runbar__btn studio-runbar__btn--retry" onClick={() => handleRetry()}>
+                  ↻ Retry failed
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* One dock instead of zoom bottom-left + recenter bottom-centre + minimap */}
       <div className="studio-dock">

@@ -486,6 +486,9 @@
   border-color: #f97316;
   color: #f97316;
 }
+/* Grows with the name instead of cutting it off. "Miniature Car: Carve →
+   Match Cut" rendered as "Miniature Car: Carve → Mat…" with no way to read
+   the rest — and it is the one label that says which workflow you are in. */
 .studio-topbar__name {
   background: transparent;
   border: none;
@@ -494,7 +497,12 @@
   font-weight: 600;
   outline: none;
   min-width: 200px;
+  width: clamp(200px, 34vw, 520px);
+  text-overflow: ellipsis;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s;
 }
+.studio-topbar__name:hover { border-bottom-color: #2e2e35; }
 .studio-topbar__name:focus {
   border-bottom: 1px solid #f97316;
 }
@@ -1644,3 +1652,139 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   background: linear-gradient(135deg, #fbbf24, #f97316);
   box-shadow: 0 2px 8px rgba(249, 115, 22, 0.35);
 }
+
+/* ── Run bar ──────────────────────────────────────────────────
+   Sits above the zoom dock, centred, and never moves. The old arrangement
+   put progress in the top centre and Pause/Stop on the left rail, so
+   following a run meant watching two corners at once. */
+.studio-runbar {
+  position: absolute;
+  bottom: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(880px, calc(100vw - 48px));
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(18, 18, 21, 0.94);
+  backdrop-filter: blur(12px);
+  border: 1px solid #2a2a30;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+  font-size: 13px;
+  color: #e5e5e7;
+}
+/* Failures with nothing running: quieter, but still there to click. */
+.studio-runbar--idle { border-color: #3a2422; }
+
+/* Says "working" without a number changing — a video node can sit on the
+   same percentage for four minutes and look hung. */
+.studio-runbar__pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #f97316;
+  box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.55);
+  animation: studio-runbar-pulse 1.8s ease-out infinite;
+  flex: 0 0 auto;
+}
+.studio-runbar__pulse.is-paused { background: #9a9aa2; animation: none; }
+@keyframes studio-runbar-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.55); }
+  70%  { box-shadow: 0 0 0 9px rgba(249, 115, 22, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-runbar__pulse { animation: none; }
+}
+
+/* The node name is the button — clicking flies the canvas to it. */
+.studio-runbar__node {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  color: #e5e5e7;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 1px dashed transparent;
+}
+.studio-runbar__node:hover:not(:disabled) { border-bottom-color: #6b6b73; }
+.studio-runbar__node:disabled { cursor: default; color: #9a9aa2; }
+
+.studio-runbar__bar {
+  flex: 1 1 120px;
+  min-width: 80px;
+  height: 4px;
+  border-radius: 2px;
+  background: #26262c;
+  overflow: hidden;
+}
+.studio-runbar__fill {
+  height: 100%;
+  background: linear-gradient(90deg, #f97316, #fbbf24);
+  transition: width 0.4s ease;
+}
+.studio-runbar__count { color: #9a9aa2; font-variant-numeric: tabular-nums; }
+/* Tabular so the bar does not twitch every second as digits change width. */
+.studio-runbar__elapsed {
+  color: #9a9aa2;
+  font-variant-numeric: tabular-nums;
+  min-width: 42px;
+  text-align: right;
+}
+
+.studio-runbar__btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #2e2e35;
+  background: #1c1c20;
+  color: #e5e5e7;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.studio-runbar__btn:hover { background: #26262c; border-color: #3a3a42; }
+.studio-runbar__btn--stop { border-color: #4a2424; color: #ff8f8f; }
+.studio-runbar__btn--stop:hover { background: #2a1818; }
+.studio-runbar__btn--retry { border-color: #4a3a1c; color: #fbbf24; }
+
+/* ── Failures ──
+   A failed node used to be a red border somewhere on a canvas wider than the
+   screen. These are buttons: the label is the node, the tooltip is the error,
+   the click takes you there. */
+.studio-runbar__fails {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 1px solid #2a2a30;
+  overflow: hidden;
+}
+.studio-runbar__fails-label {
+  color: #ff8f8f;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.studio-runbar__fail {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 9px;
+  border-radius: 7px;
+  border: 1px solid #4a2424;
+  background: rgba(74, 36, 36, 0.35);
+  color: #ffb4b4;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.studio-runbar__fail:hover { background: rgba(74, 36, 36, 0.6); }
