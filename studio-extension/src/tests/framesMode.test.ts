@@ -1,3 +1,6 @@
+/**
+ * @jest-environment jsdom
+ */
 /* ============================================================
    Start and End frames.
 
@@ -18,6 +21,7 @@
    ============================================================ */
 
 import { NODE_PORTS, portsFor, validateTemplate } from '../studio/templates/validate';
+import { findFrameSlots, frameSlotFilled } from '../content/flow/selectors';
 
 /** The ordering rule the runner applies. */
 const orderedSources = (
@@ -110,5 +114,94 @@ describe('templates using frames validate', () => {
        interpolates from one end only. */
     expect(validateTemplate(frameTemplate('frame_stat', 'frame_end')).join(' '))
       .toMatch(/does not have/);
+  });
+});
+
+/* Finding the slots on the page.
+
+   Studio pasted frame images into the prompt box — the ingredients route —
+   so the Start and End slots stayed empty and Flow generated from a
+   reference instead of interpolating. The clip came back looking like an
+   ordinary generation, which is why it read as "not working" rather than as
+   an error.
+
+   Markup verbatim from a live composer. */
+describe('the Start and End slots', () => {
+  const box = (w: number, h: number) => () =>
+    ({ width: w, height: h, top: 0, left: 0, bottom: h, right: w, x: 0, y: 0, toJSON() {} });
+
+  function mountComposer(): void {
+    document.body.innerHTML = `
+      <div class="sc-273a6a40-0 hpgSgT">
+        <div type="button" aria-haspopup="dialog" aria-expanded="false"
+             aria-controls="radix-:r69:" data-state="closed"
+             class="sc-2f954d7d-0 cBWhrr">Start</div>
+        <button class="sc-e8425ea6-0 hOBPaw sc-2f954d7d-1 ewGlDn"></button>
+        <div type="button" aria-haspopup="dialog" aria-expanded="false"
+             aria-controls="radix-:r6a:" data-state="closed"
+             class="sc-2f954d7d-0 cBWhrr">End</div>
+      </div>`;
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>('*'))) {
+      (el as any).getBoundingClientRect = box(50, 50);
+    }
+  }
+
+  beforeEach(() => { document.body.innerHTML = ''; });
+
+  it('finds both slots in the live markup', () => {
+    mountComposer();
+    const slots = findFrameSlots();
+    expect(slots).not.toBeNull();
+    expect(slots!.start.textContent).toBe('Start');
+    expect(slots!.end.textContent).toBe('End');
+  });
+
+  it('finds them by order when the labels are translated', () => {
+    // "Start" and "End" are UI text; the order and the swap between them are
+    // not. Position is what survives a French or Japanese Flow.
+    mountComposer();
+    document.querySelectorAll('[aria-haspopup="dialog"]').forEach((el, i) => {
+      el.textContent = i === 0 ? 'Début' : 'Fin';
+    });
+    const slots = findFrameSlots();
+    expect(slots!.start.textContent).toBe('Début');
+    expect(slots!.end.textContent).toBe('Fin');
+  });
+
+  it('is not fooled by the swap button between them', () => {
+    // A real <button> sits between the two slots; the slots are DIVs with
+    // type="button", which is why a querySelector for 'button' finds neither.
+    mountComposer();
+    expect(document.querySelectorAll('button')).toHaveLength(1);
+    expect(findFrameSlots()).not.toBeNull();
+  });
+
+  it('reports nothing when the composer is in image mode', () => {
+    // No slots to fill, and pretending otherwise would attach an ingredient.
+    document.body.innerHTML = '<div>no dialogs here</div>';
+    expect(findFrameSlots()).toBeNull();
+  });
+
+  it('knows an empty slot from a filled one', () => {
+    mountComposer();
+    const slot = findFrameSlots()!.start;
+    expect(frameSlotFilled(slot)).toBe(false);
+
+    const img = document.createElement('img');
+    Object.defineProperty(img, 'complete', { value: true });
+    Object.defineProperty(img, 'naturalWidth', { value: 512 });
+    slot.append(img);
+    expect(frameSlotFilled(slot)).toBe(true);
+  });
+
+  it('treats an image that has not loaded as empty', () => {
+    // The <img> appears when the upload starts, so presence alone races it.
+    mountComposer();
+    const slot = findFrameSlots()!.start;
+    const img = document.createElement('img');
+    Object.defineProperty(img, 'complete', { value: false });
+    Object.defineProperty(img, 'naturalWidth', { value: 0 });
+    slot.append(img);
+    expect(frameSlotFilled(slot)).toBe(false);
   });
 });

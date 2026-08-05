@@ -815,6 +815,53 @@ export function findAssetResults(dialog: Element): Element[] {
  * visible element carrying both, small enough to be a notice rather than the
  * page, counts.
  */
+/* ── Start / End frame slots ──────────────────────────────────
+   Flow's video composer offers two drop targets rather than a list:
+
+     <div type="button" aria-haspopup="dialog" aria-controls="radix-:r69:"
+          data-state="closed">Start</div>
+     <button/>                                    ← swap
+     <div type="button" aria-haspopup="dialog" aria-controls="radix-:r6a:"
+          data-state="closed">End</div>
+
+   Note they are DIVs with type="button", not buttons — a querySelector for
+   'button' misses them entirely. Each opens a dialog; the image goes in
+   there, not into the prompt box. Pasting into the prompt attaches an
+   ingredient instead, which is what Studio was doing: the slots stayed empty
+   and Flow generated from a reference rather than interpolating.
+
+   Found by position rather than by the words "Start" and "End", which are
+   translated. They are the only two dialog triggers in the composer and they
+   are always in that order — the swap button between them exists precisely
+   because the order is meaningful.
+   ──────────────────────────────────────────────────────────── */
+
+export interface FrameSlots {
+  start: HTMLElement;
+  end: HTMLElement;
+}
+
+export function findFrameSlots(): FrameSlots | null {
+  const triggers = Array.from(
+    document.querySelectorAll<HTMLElement>('[aria-haspopup="dialog"]')
+  ).filter(isVisible);
+  if (triggers.length < 2) return null;
+
+  /* Prefer the labelled pair when the UI is in a language we know; fall back
+     to the first two, which is what the order guarantees. */
+  const byText = (word: RegExp) =>
+    triggers.find((t) => word.test((t.textContent || '').trim()));
+  const start = byText(/^start$/i) || triggers[0];
+  const end = byText(/^end$/i) || triggers[1];
+  return start && end && start !== end ? { start, end } : null;
+}
+
+/** True once a slot is holding an image rather than showing its placeholder. */
+export function frameSlotFilled(slot: HTMLElement): boolean {
+  const img = slot.querySelector('img');
+  return !!img && img.complete && img.naturalWidth > 0;
+}
+
 /* ── Attached reference images ────────────────────────────────
    Flow shows each attached ingredient as a chip in the prompt bar:
 
