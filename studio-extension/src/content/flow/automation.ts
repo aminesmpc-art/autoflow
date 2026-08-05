@@ -2206,35 +2206,75 @@ export class AutomationEngine {
     // When the model dropdown opens it creates a NEW [role="menu"] portal.
     // We scope our search to the LAST menu in the DOM to avoid matching
     // items from the parent settings menu.
-    const findModelOptions = (): NodeListOf<Element> | null => {
-      const allMenus = document.querySelectorAll('[role="menu"], [data-radix-menu-content]');
-      if (allMenus.length > 1) {
-        // Multiple menus open — the model sub-menu is the last (newest) portal
-        const subMenu = allMenus[allMenus.length - 1];
-        const items = subMenu.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"], [data-radix-collection-item]');
-        if (items.length > 0) return items;
+    /* Radix binds a menu to the button that opens it: the trigger carries an
+       id, the menu carries aria-labelledby pointing at it. That association is
+       exact, and it is the only thing that distinguishes the three model rows
+       from the settings panel's own tabs.
+
+       This used to fall back to a global query for [data-radix-collection-item]
+       when it could not find the sub-menu. The settings panel is full of those
+       — Image/Video, five ratios, x1 to x4 — so the fallback returned 18
+       "model menu items", the code concluded the menu was open, and never
+       escalated past the first click. The log said "Found 18 model menu items"
+       every time, which was the tell. */
+    const modelMenuFor = (trigger: Element): Element | null => {
+      const id = trigger.getAttribute('id');
+      if (id) {
+        /* Radix ids contain colons ("radix-:ri2:"), and an unescaped colon in
+           a selector is a pseudo-class — a syntax error, not a miss. */
+        const bound = document.querySelector(`[role="menu"][aria-labelledby="${CSS.escape(id)}"]`);
+        /* Trusted exclusively. A trigger with an id whose menu is not open
+           means the menu is not open — falling through to "some small menu"
+           from here would let one dropdown click another's items, which is
+           the failure this whole function exists to stop. */
+        return bound && isVisible(bound) ? bound : null;
       }
-      // Fallback: global search, but skip items that contain a nested dropdown trigger
-      return document.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"], [data-radix-collection-item]');
+      // No id to bind by: accept a menu only if it looks like a model list.
+      const menus = Array.from(document.querySelectorAll('[role="menu"], [data-radix-menu-content]'));
+      for (const menu of menus.reverse()) {
+        if (menu === trigger.closest('[role="menu"]')) continue; // the settings menu itself
+        if (!isVisible(menu)) continue;
+        const items = menu.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"]');
+        if (items.length && items.length <= 12) return menu;
+      }
+      return null;
     };
 
-    let menuItems = findModelOptions();
-    if (!menuItems || menuItems.length === 0) {
-      nativeClick(finalTrigger);
-      await humanDelay(600, 1000);
-      if (this.stopped) return;
-      menuItems = findModelOptions();
-    }
-    if (!menuItems || menuItems.length === 0) {
-      await reactTrigger(finalTrigger, 'onPointerDown');
-      await humanDelay(600, 1000);
-      if (this.stopped) return;
-      menuItems = findModelOptions();
+    const findModelOptions = (): Element[] => {
+      const menu = modelMenuFor(finalTrigger);
+      if (!menu) return [];
+      return Array.from(menu.querySelectorAll(
+        '[role="menuitem"], [role="menuitemradio"], [role="option"], [data-radix-collection-item]'
+      ));
+    };
+
+    /* Escalate until the menu is genuinely open, verified by aria-expanded and
+       by finding the bound menu — not by counting whatever happens to match. */
+    const isOpen = () =>
+      finalTrigger.getAttribute('aria-expanded') === 'true' || !!modelMenuFor(finalTrigger);
+
+    let menuItems: Element[] = findModelOptions();
+    if (!menuItems.length) {
+      for (const [name, open] of [
+        ['native click', () => { nativeClick(finalTrigger); }],
+        ['react onPointerDown', () => reactTrigger(finalTrigger, 'onPointerDown')],
+        ['react onClick', () => reactTrigger(finalTrigger, 'onClick')],
+        ['keyboard Enter', () => reactKeyTrigger(finalTrigger, 'Enter')],
+      ] as Array<[string, () => unknown]>) {
+        if (this.stopped) return;
+        try { await open(); } catch { /* next */ }
+        await humanDelay(500, 800);
+        menuItems = findModelOptions();
+        if (menuItems.length) {
+          this.log('info', `Model menu opened via ${name}`);
+          break;
+        }
+      }
     }
 
-    this.log('info', `Found ${menuItems?.length ?? 0} model menu items`);
+    this.log('info', `Found ${menuItems.length} model option(s)${isOpen() ? '' : ' (menu does not report itself open)'}`);
 
-    if (menuItems) {
+    if (menuItems.length) {
       /* Collect every candidate, then choose — rather than clicking the first
          thing that contains the target.
 
