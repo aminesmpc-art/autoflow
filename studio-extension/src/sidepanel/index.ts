@@ -244,9 +244,14 @@ function wire(): void {
   // A row that reports a missing tab may as well open it.
   for (const li of Array.from(document.querySelectorAll<HTMLLIElement>('#plat-list li'))) {
     const open = () => {
-      const url = li.dataset.plat === 'chatgpt'
-        ? 'https://chatgpt.com/'
-        : 'https://labs.google/fx/tools/flow';
+      // Table rather than a ternary: with three platforms a chained
+      // conditional sent Gemini's row to Flow.
+      const url = ({
+        chatgpt: 'https://chatgpt.com/',
+        gemini: 'https://gemini.google.com/app',
+        flow: 'https://labs.google/fx/tools/flow',
+      } as Record<string, string>)[li.dataset.plat || 'flow']
+        || 'https://labs.google/fx/tools/flow';
       chrome.tabs.create({ url }).catch(() => {});
     };
     li.addEventListener('click', open);

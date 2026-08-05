@@ -63,12 +63,18 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   );
 
   const status: NodeStatus = nodeData.status || 'idle';
-  const platform: 'flow' | 'chatgpt' = nodeData.platform === 'chatgpt' ? 'chatgpt' : 'flow';
-  const isChatGPT = platform === 'chatgpt';
+  const platform: 'flow' | 'chatgpt' | 'gemini' =
+    nodeData.platform === 'chatgpt' || nodeData.platform === 'gemini' ? nodeData.platform : 'flow';
+  /* Chat platforms behave identically here: they answer in text or images and
+     have no model or duration to choose. Keeping one flag for "is a chat"
+     means adding a fourth never needs this file rewired again. */
+  const isChat = platform !== 'flow';
+  const isChatGPT = isChat;
+  const chatName = platform === 'gemini' ? 'Gemini' : 'ChatGPT';
   const mediaType = nodeData.mediaType || 'image';
-  const isVideo = !isChatGPT && mediaType === 'video';
-  /* Text output only makes sense on ChatGPT — Flow has no chat to answer. */
-  const isText = isChatGPT && mediaType === 'text';
+  const isVideo = !isChat && mediaType === 'video';
+  /* Text output only makes sense on a chat platform — Flow has no chat. */
+  const isText = isChat && mediaType === 'text';
   const models = isVideo ? VIDEO_MODELS : IMAGE_MODELS;
   const ratios = isVideo ? VIDEO_RATIOS : IMAGE_RATIOS;
   const ratio = nodeData.aspectRatio || '9:16';
@@ -158,8 +164,8 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           {status === 'done' && !isText && !previewVideo && !preview && (
             <div className="sn-media__state">
               <span className="sn-media__state-icon">🖼</span>
-              <span>Generated on {isChatGPT ? 'ChatGPT' : 'Flow'}</span>
-              <small>{isChatGPT ? 'Prompt submitted — see the ChatGPT tab' : 'Preview unavailable'}</small>
+              <span>Generated on {isChat ? chatName : 'Flow'}</span>
+              <small>{isChat ? `Prompt submitted — see the ${chatName} tab` : 'Preview unavailable'}</small>
             </div>
           )}
 
@@ -218,6 +224,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           >
             <option value="flow">Flow</option>
             <option value="chatgpt">ChatGPT</option>
+            <option value="gemini">Gemini</option>
           </select>
 
           {/* ChatGPT can either draw or write. Asking it to write turns this
@@ -313,8 +320,8 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
 
       {/* ── External platform badge ── */}
       <div className="sn-platform">
-        <span className={`sn-platform__dot ${isChatGPT ? 'sn-platform__dot--chatgpt' : ''}`} />
-        {isChatGPT ? (isText ? 'ChatGPT Writer' : 'ChatGPT Images') : 'Google Flow'}
+        <span className={`sn-platform__dot ${isChat ? `sn-platform__dot--${platform}` : ''}`} />
+        {isChat ? `${chatName} ${isText ? 'Writer' : 'Images'}` : 'Google Flow'}
       </div>
 
       {/* Prefer the video when there is one — previously only the still could

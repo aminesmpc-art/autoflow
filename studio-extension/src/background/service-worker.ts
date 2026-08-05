@@ -9,7 +9,7 @@
    surface with no purpose here and every reason to rot.
    ============================================================ */
 
-type Platform = 'flow' | 'chatgpt' | 'grok';
+type Platform = 'flow' | 'chatgpt' | 'gemini' | 'grok';
 
 /** The Studio window's long-lived port. Null whenever Studio is closed. */
 let studioPort: chrome.runtime.Port | null = null;
@@ -94,6 +94,12 @@ const PLATFORMS: Record<Platform, { match: string; open: string; script: string;
     open: 'https://chatgpt.com/',
     script: 'chatgpt-content.js',
     name: 'ChatGPT',
+  },
+  gemini: {
+    match: 'https://gemini.google.com/*',
+    open: 'https://gemini.google.com/app',
+    script: 'gemini-content.js',
+    name: 'Gemini',
   },
   grok: {
     match: 'https://grok.com/*',

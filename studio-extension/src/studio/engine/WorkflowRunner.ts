@@ -501,7 +501,11 @@ export class WorkflowRunner {
 
     const config: NodeExecutionConfig = {
       prompt,
-      platform: nodeData.platform === 'chatgpt' ? 'chatgpt' : 'flow',
+      // Anything not a known chat platform runs on Flow. Listing them beats
+      // a chatgpt/else ternary, which silently sent Gemini nodes to Flow.
+      platform: nodeData.platform === 'chatgpt' || nodeData.platform === 'gemini'
+        ? nodeData.platform
+        : 'flow',
       model: nodeData.model || (nodeData.mediaType === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),
       mediaType: nodeData.mediaType || 'image',
       aspectRatio: nodeData.aspectRatio || '9:16',
