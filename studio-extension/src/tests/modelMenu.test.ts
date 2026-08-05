@@ -143,6 +143,31 @@ describe('telling the model button from the settings chip', () => {
     expect(isModelButton(btn)).toBe(true);
   });
 
+  /* The fallback path, reached when Flow shows a model we do not know yet.
+     Its old chip guard demanded a count AND the word "video" or "image" — but
+     in image mode the ratio is a crop_square glyph, so the word is never
+     there and the chip sailed through. */
+  const looksLikeSummaryChip = (t: string) =>
+    /x\s?\d/.test(t) || /crop_/.test(t) || /\d+:\d+/.test(t);
+
+  it('excludes the composer chip in every mode Flow renders it', () => {
+    for (const chip of [
+      // Both taken from a live page, glyph text and all.
+      '🍌 nano banana 2 litecrop_squarex1',
+      '🍌 nano banana procrop_9_16x1',
+      // Ratio written out rather than drawn, in case Flow ever does that.
+      'omni flash 9:16 x2',
+    ]) {
+      expect({ chip, excluded: looksLikeSummaryChip(chip) })
+        .toEqual({ chip, excluded: true });
+    }
+  });
+
+  it('does not exclude the model button itself', () => {
+    expect(looksLikeSummaryChip('🍌 nano banana proarrow_drop_down')).toBe(false);
+    expect(looksLikeSummaryChip('veo 3.1 fast')).toBe(false);
+  });
+
   it('accepts every model we offer', () => {
     for (const m of KNOWN) {
       const btn = document.createElement('button');

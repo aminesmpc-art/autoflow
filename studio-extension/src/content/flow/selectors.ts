@@ -343,15 +343,28 @@ export function findModelSelectorTrigger(): Element | null {
     }
   }
 
-  // Fallback: match by known model name keywords in button text
-  const btns = document.querySelectorAll('button[aria-haspopup="menu"]');
-  for (const btn of btns) {
+  /* Last resort: a button whose text mentions a model family. Only reached
+     when the exact match failed, which means Flow is showing a model we do
+     not know about yet.
+
+     The composer chip must still be excluded here. Its text is the whole
+     summary — "🍌 Nano Banana Pro" + a ratio glyph + "x1" — and clicking it
+     toggles the settings panel rather than opening the model list, which is
+     the open-and-close cycle this bug looked like from outside.
+
+     The old guard demanded BOTH a count and the word "video" or "image". In
+     image mode the ratio renders as a crop_square glyph, so the word is never
+     there and the chip sailed through. A trailing count is enough on its own:
+     a model button never carries one. */
+  const looksLikeSummaryChip = (text: string) =>
+    /x\s?\d/.test(text) || /crop_/.test(text) || /\d+:\d+/.test(text);
+
+  for (const btn of document.querySelectorAll('button[aria-haspopup="menu"]')) {
     const text = (btn.textContent || '').toLowerCase();
-    if ((text.includes('veo') || text.includes('imagen') || text.includes('banana') || text.includes('omni')) && isVisible(btn)) {
-      // Skip the settings trigger chip (contains media type + generation count like "Video x1")
-      if (/x\d/.test(text) && (text.includes('video') || text.includes('image'))) continue;
-      return btn;
-    }
+    const namesAFamily =
+      text.includes('veo') || text.includes('imagen') ||
+      text.includes('banana') || text.includes('omni');
+    if (namesAFamily && isVisible(btn) && !looksLikeSummaryChip(text)) return btn;
   }
   return null;
 }
