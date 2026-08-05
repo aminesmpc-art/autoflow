@@ -62,6 +62,12 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
     [id, updateNodeData]
   );
 
+  /* Whether anything is wired into the T input. React Flow keeps the edges in
+     the store, so the node can answer this itself rather than being told. */
+  const hasPrompt = useStudioStore(
+    (st) => st.edges.some((e) => e.target === id && e.targetHandle === 'text')
+  );
+
   const status: NodeStatus = nodeData.status || 'idle';
   const platform: 'flow' | 'chatgpt' | 'gemini' =
     nodeData.platform === 'chatgpt' || nodeData.platform === 'gemini' ? nodeData.platform : 'flow';
@@ -205,10 +211,15 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           {status === 'idle' && (
             <div className="sn-media__state sn-media__state--idle">
               <span className="sn-media__state-icon">{isText ? '💬' : isVideo ? '🎞' : '🖼'}</span>
+              {/* Said "Connect a prompt" even when one was connected, so a
+                  ready node looked unfinished. It knows the answer — the T
+                  handle either has an edge or it does not. */}
               <small>
-                {isText
-                  ? 'Connect what to ask, then Run — the answer feeds the next node'
-                  : 'Connect a prompt, then Run'}
+                {hasPrompt
+                  ? 'Ready — press Run'
+                  : isText
+                    ? 'Connect what to ask, then Run — the answer feeds the next node'
+                    : 'Connect a prompt, then Run'}
               </small>
             </div>
           )}

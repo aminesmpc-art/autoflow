@@ -1725,8 +1725,13 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
 }
 
 /* The node name is the button — clicking flies the canvas to it. */
+/* Was truncating to "Car Reference …" because the bar let the progress track
+   take the slack. The node name is the thing you are reading; the track is
+   the thing that can be narrow. */
 .studio-runbar__node {
-  max-width: 260px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1743,8 +1748,8 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
 .studio-runbar__node:disabled { cursor: default; color: #9a9aa2; }
 
 .studio-runbar__bar {
-  flex: 1 1 120px;
-  min-width: 80px;
+  flex: 1 1 90px;
+  min-width: 60px;
   height: 4px;
   border-radius: 2px;
   background: #26262c;

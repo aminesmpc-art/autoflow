@@ -415,21 +415,10 @@ function CanvasInner() {
             onChange={(e) => setWorkflowName(e.target.value)}
           />
         </div>
-        <div className="studio-topbar__center">
-          {isRunning && (
-            <div className="studio-topbar__progress">
-              <div className="studio-topbar__progress-bar">
-                <div
-                  className="studio-topbar__progress-fill"
-                  style={{ width: `${runProgress.total ? (runProgress.current / runProgress.total) * 100 : 0}%` }}
-                />
-              </div>
-              <span className="studio-topbar__progress-text">
-                {runProgress.current}/{runProgress.total}
-              </span>
-            </div>
-          )}
-        </div>
+        {/* Progress used to live here as well as in the run bar — the same
+            "0/5" in two places, neither of them next to the controls. The run
+            bar owns it now. */}
+        <div className="studio-topbar__center" />
         <div className="studio-topbar__right">
           {isPro ? (
             <span className="studio-topbar__stat">
