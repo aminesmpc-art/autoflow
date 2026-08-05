@@ -1,0 +1,4500 @@
+{
+  "schemaVersion": 1,
+  "publishedAt": "2026-08-05T01:59:04.475Z",
+  "templates": [
+    {
+      "id": "tpl_simple_image",
+      "name": "Simple Image",
+      "description": "One prompt, one image. The smallest possible workflow.",
+      "useCase": "Learning the canvas, or a quick one-off still.",
+      "category": "Starter",
+      "difficulty": "Easy",
+      "nodeCount": 2,
+      "thumbnail": "🖼️",
+      "nodes": [
+        {
+          "id": "p1",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 120
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Prompt",
+            "text": "A calico cat asleep on a stack of old books, warm afternoon light through a dusty window, shallow depth of field, photographic."
+          }
+        },
+        {
+          "id": "g1",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 80
+          },
+          "data": {
+            "type": "generate",
+            "label": "Generate Image",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "1:1",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_p1_g1_t",
+          "source": "p1",
+          "target": "g1",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_simple_video",
+      "name": "Simple Video",
+      "description": "One prompt, one video clip.",
+      "useCase": "A single establishing shot or quick B-roll clip.",
+      "category": "Starter",
+      "difficulty": "Easy",
+      "nodeCount": 2,
+      "thumbnail": "🎬",
+      "nodes": [
+        {
+          "id": "p1",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 120
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Scene Prompt",
+            "text": "Slow aerial push over a misty pine forest at sunrise, low fog between the trees, golden light, cinematic, no camera shake."
+          }
+        },
+        {
+          "id": "g1",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 80
+          },
+          "data": {
+            "type": "generate",
+            "label": "Generate Video",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "16:9",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_p1_g1_t",
+          "source": "p1",
+          "target": "g1",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_product_ad",
+      "name": "Product Photo → Video Ad",
+      "description": "Upload a product photo and turn it into a short ad clip.",
+      "useCase": "Fastest path from a real product shot to something postable.",
+      "category": "Marketing",
+      "difficulty": "Easy",
+      "nodeCount": 3,
+      "thumbnail": "📦",
+      "nodes": [
+        {
+          "id": "i1",
+          "type": "image",
+          "position": {
+            "x": 40,
+            "y": 60
+          },
+          "data": {
+            "type": "image",
+            "label": "Product Photo",
+            "imageName": "product",
+            "imageData": "",
+            "assetPath": ""
+          }
+        },
+        {
+          "id": "p1",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 430
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Ad Prompt",
+            "text": "The product on a clean marble surface, soft studio light, slow 180° turntable rotation, subtle glossy reflection, premium commercial look. Keep the product shape, colour and label exactly as in the reference."
+          }
+        },
+        {
+          "id": "g1",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 160
+          },
+          "data": {
+            "type": "generate",
+            "label": "Generate Ad Clip",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_i1_g1_i",
+          "source": "i1",
+          "target": "g1",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p1_g1_t",
+          "source": "p1",
+          "target": "g1",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "image",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_ugc_ad",
+      "name": "UGC Ad: Photo → Scene → Video",
+      "description": "Product photo becomes a lifestyle scene, then a handheld UGC-style clip.",
+      "useCase": "The standard UGC ad pipeline — the two-step beats going straight to video, because you get to approve the scene before spending a video generation on it.",
+      "category": "Marketing",
+      "difficulty": "Medium",
+      "nodeCount": 5,
+      "thumbnail": "🛍️",
+      "nodes": [
+        {
+          "id": "i1",
+          "type": "image",
+          "position": {
+            "x": 40,
+            "y": 60
+          },
+          "data": {
+            "type": "image",
+            "label": "Product Photo",
+            "imageName": "product",
+            "imageData": "",
+            "assetPath": ""
+          }
+        },
+        {
+          "id": "p1",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 430
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Lifestyle Scene",
+            "text": "A person holding the product in a sunlit kitchen, casual morning atmosphere, natural window light, shot on a phone camera, realistic skin texture. Keep the product exactly as in the reference — same shape, colour and label."
+          }
+        },
+        {
+          "id": "g1",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 160
+          },
+          "data": {
+            "type": "generate",
+            "label": "Scene Still",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p2",
+          "type": "prompt",
+          "position": {
+            "x": 520,
+            "y": 700
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Motion Prompt",
+            "text": "Handheld UGC-style video of this exact scene, subtle natural movement, slight camera sway, the person smiles and turns the product toward the camera. Low motion intensity, no warping."
+          }
+        },
+        {
+          "id": "g2",
+          "type": "generate",
+          "position": {
+            "x": 1000,
+            "y": 160
+          },
+          "data": {
+            "type": "generate",
+            "label": "UGC Clip",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_i1_g1_i",
+          "source": "i1",
+          "target": "g1",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p1_g1_t",
+          "source": "p1",
+          "target": "g1",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g1_g2_i",
+          "source": "g1",
+          "target": "g2",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p2_g2_t",
+          "source": "p2",
+          "target": "g2",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "image",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_character_3shots",
+      "name": "Character → 3 Consistent Shots",
+      "description": "Build a character sheet once, then reuse it for a wide, a medium and a close-up.",
+      "useCase": "The consistency stress test: if a wide, a walking shot and a reaction hold the same face, the character is production-ready.",
+      "category": "Character",
+      "difficulty": "Advanced",
+      "nodeCount": 8,
+      "thumbnail": "🎭",
+      "nodes": [
+        {
+          "id": "p0",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 320
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Character Description",
+            "text": "Character design sheet, concept art turnaround, multiple views (front, side, back). A young woman courier in a worn olive jacket, short dark curly hair, freckles, red canvas satchel, scuffed white trainers. Neutral grey backdrop, even lighting, consistent proportions across all views."
+          }
+        },
+        {
+          "id": "gs",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 260
+          },
+          "data": {
+            "type": "generate",
+            "label": "Character Sheet",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p1",
+          "type": "prompt",
+          "position": {
+            "x": 1000,
+            "y": 20
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Shot 1 — Wide",
+            "text": "Wide establishing shot: she walks down a rain-slick city street at dusk, neon signs reflecting in puddles, camera static at street level. Same character as the reference: identical face, hairstyle, outfit, body proportions, colour palette and art style. Do not restyle or reset the character."
+          }
+        },
+        {
+          "id": "g1",
+          "type": "generate",
+          "position": {
+            "x": 1480,
+            "y": 40
+          },
+          "data": {
+            "type": "generate",
+            "label": "Wide Shot",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p2",
+          "type": "prompt",
+          "position": {
+            "x": 1000,
+            "y": 440
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Shot 2 — Medium",
+            "text": "Medium tracking shot from the side as she checks a package label while walking, shallow depth of field, evening light. Same character as the reference: identical face, hairstyle, outfit, body proportions, colour palette and art style. Do not restyle or reset the character."
+          }
+        },
+        {
+          "id": "g2",
+          "type": "generate",
+          "position": {
+            "x": 1480,
+            "y": 460
+          },
+          "data": {
+            "type": "generate",
+            "label": "Medium Shot",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p3",
+          "type": "prompt",
+          "position": {
+            "x": 1000,
+            "y": 860
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Shot 3 — Close-up",
+            "text": "Close-up on her face as she looks up and smiles, warm practical light from a shop window, subtle head movement. Same character as the reference: identical face, hairstyle, outfit, body proportions, colour palette and art style. Do not restyle or reset the character."
+          }
+        },
+        {
+          "id": "g3",
+          "type": "generate",
+          "position": {
+            "x": 1480,
+            "y": 880
+          },
+          "data": {
+            "type": "generate",
+            "label": "Close-up",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_p0_gs_t",
+          "source": "p0",
+          "target": "gs",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_gs_g1_i",
+          "source": "gs",
+          "target": "g1",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p1_g1_t",
+          "source": "p1",
+          "target": "g1",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_gs_g2_i",
+          "source": "gs",
+          "target": "g2",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p2_g2_t",
+          "source": "p2",
+          "target": "g2",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_gs_g3_i",
+          "source": "gs",
+          "target": "g3",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p3_g3_t",
+          "source": "p3",
+          "target": "g3",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_chatgpt_to_flow",
+      "name": "ChatGPT Character → Flow Video",
+      "description": "Design the character on ChatGPT, animate it on Google Flow.",
+      "useCase": "Cross-platform: use whichever model draws your character best, then bring it into Flow for motion.",
+      "category": "Character",
+      "difficulty": "Medium",
+      "nodeCount": 4,
+      "thumbnail": "🔀",
+      "nodes": [
+        {
+          "id": "p0",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 260
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Character Prompt",
+            "text": "Character design sheet of a friendly robot barista: rounded matte-white chassis, mint green accents, single expressive blue eye-screen, small apron. Front, side and back views on a plain background, consistent proportions."
+          }
+        },
+        {
+          "id": "gc",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 200
+          },
+          "data": {
+            "type": "generate",
+            "label": "Design on ChatGPT",
+            "platform": "chatgpt",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p1",
+          "type": "prompt",
+          "position": {
+            "x": 520,
+            "y": 700
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Animation Prompt",
+            "text": "The robot barista slides a coffee cup across the counter and gives a small wave, cosy café interior, warm morning light, gentle camera push in. Same character as the reference: identical face, hairstyle, outfit, body proportions, colour palette and art style. Do not restyle or reset the character."
+          }
+        },
+        {
+          "id": "g1",
+          "type": "generate",
+          "position": {
+            "x": 1000,
+            "y": 200
+          },
+          "data": {
+            "type": "generate",
+            "label": "Animate on Flow",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_p0_gc_t",
+          "source": "p0",
+          "target": "gc",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_gc_g1_i",
+          "source": "gc",
+          "target": "g1",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p1_g1_t",
+          "source": "p1",
+          "target": "g1",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "chatgpt",
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_broll_pack",
+      "name": "B-Roll Pack (3 clips)",
+      "description": "Three themed B-roll clips in one run, ready to cut under a voiceover.",
+      "useCase": "Faceless YouTube and explainer channels — batch the cutaways instead of generating one at a time.",
+      "category": "Content",
+      "difficulty": "Easy",
+      "nodeCount": 6,
+      "thumbnail": "🎞️",
+      "nodes": [
+        {
+          "id": "p1",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 40
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Clip 1",
+            "text": "Close-up of hands typing on a mechanical keyboard in a dim room, screen glow on the fingers, shallow depth of field, slow push in."
+          }
+        },
+        {
+          "id": "g1",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 60
+          },
+          "data": {
+            "type": "generate",
+            "label": "B-Roll 1",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p2",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 440
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Clip 2",
+            "text": "Slow pan across a wall of sticky notes and printed charts, office afternoon light, soft focus falloff at the edges."
+          }
+        },
+        {
+          "id": "g2",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 460
+          },
+          "data": {
+            "type": "generate",
+            "label": "B-Roll 2",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p3",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 840
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Clip 3",
+            "text": "Overhead shot of coffee being poured into a white cup on a wooden desk beside an open notebook, steam rising, natural light."
+          }
+        },
+        {
+          "id": "g3",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 860
+          },
+          "data": {
+            "type": "generate",
+            "label": "B-Roll 3",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_p1_g1_t",
+          "source": "p1",
+          "target": "g1",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p2_g2_t",
+          "source": "p2",
+          "target": "g2",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p3_g3_t",
+          "source": "p3",
+          "target": "g3",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_style_variants",
+      "name": "Same Subject, 3 Styles",
+      "description": "One subject rendered three ways — pick the look before committing.",
+      "useCase": "Deciding art direction early, instead of discovering the style is wrong after ten generations.",
+      "category": "Image",
+      "difficulty": "Easy",
+      "nodeCount": 6,
+      "thumbnail": "🎨",
+      "nodes": [
+        {
+          "id": "p1",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 40
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Photographic",
+            "text": "A lighthouse on a rocky cliff during a storm, photographic, dramatic overcast light, long exposure sea spray, ultra detailed."
+          }
+        },
+        {
+          "id": "g1",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 20
+          },
+          "data": {
+            "type": "generate",
+            "label": "Photographic",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p2",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 400
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Illustrated",
+            "text": "A lighthouse on a rocky cliff during a storm, flat vector illustration, bold shapes, limited palette of navy, cream and coral, poster style."
+          }
+        },
+        {
+          "id": "g2",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 380
+          },
+          "data": {
+            "type": "generate",
+            "label": "Illustrated",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p3",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 760
+          },
+          "data": {
+            "type": "prompt",
+            "label": "3D Render",
+            "text": "A lighthouse on a rocky cliff during a storm, stylised 3D render, soft clay materials, gentle rim lighting, Pixar-like miniature diorama."
+          }
+        },
+        {
+          "id": "g3",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 740
+          },
+          "data": {
+            "type": "generate",
+            "label": "3D Render",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_p1_g1_t",
+          "source": "p1",
+          "target": "g1",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p2_g2_t",
+          "source": "p2",
+          "target": "g2",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p3_g3_t",
+          "source": "p3",
+          "target": "g3",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_ab_models",
+      "name": "A/B Model Comparison",
+      "description": "Same prompt through two models, side by side.",
+      "useCase": "Finding out which model suits your subject before burning credits at scale.",
+      "category": "Utility",
+      "difficulty": "Easy",
+      "nodeCount": 3,
+      "thumbnail": "⚖️",
+      "nodes": [
+        {
+          "id": "p1",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 320
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Shared Prompt",
+            "text": "A vintage motorcycle parked outside a neon-lit diner at night, wet asphalt reflecting the sign, cinematic, 35mm."
+          }
+        },
+        {
+          "id": "g1",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 60
+          },
+          "data": {
+            "type": "generate",
+            "label": "Model A — Nano Banana Pro",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "g2",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 520
+          },
+          "data": {
+            "type": "generate",
+            "label": "Model B — Imagen 4",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Imagen 4",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_p1_g1_t",
+          "source": "p1",
+          "target": "g1",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p1_g2_t",
+          "source": "p1",
+          "target": "g2",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_outfit_swap",
+      "name": "Outfit Swap → 2 Clips",
+      "description": "Put a new outfit on your photo, then turn it into two short videos.",
+      "useCase": "Mirror-selfie try-on content. Two reference images feed one generation — the person from one, the clothes from the other — then the dressed result drives both clips so the outfit stays identical across them.",
+      "category": "Fashion",
+      "difficulty": "Advanced",
+      "nodeCount": 8,
+      "thumbnail": "👗",
+      "nodes": [
+        {
+          "id": "i1",
+          "type": "image",
+          "position": {
+            "x": 40,
+            "y": 40
+          },
+          "data": {
+            "type": "image",
+            "label": "Person Photo",
+            "imageName": "person",
+            "imageData": "",
+            "assetPath": ""
+          }
+        },
+        {
+          "id": "i2",
+          "type": "image",
+          "position": {
+            "x": 40,
+            "y": 470
+          },
+          "data": {
+            "type": "image",
+            "label": "Outfit Reference",
+            "imageName": "outfit",
+            "imageData": "",
+            "assetPath": ""
+          }
+        },
+        {
+          "id": "p0",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 900
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Try-On Prompt",
+            "text": "IMAGE 01 = the person and the setting. IMAGE 02 = the outfit. Dress the person from IMAGE 01 in the exact outfit from IMAGE 02 — same garments, colours, fabric texture and proportions. Keep her face, hair, body, pose, phone and the original background from IMAGE 01 completely unchanged. Photographic, natural phone-camera lighting, realistic fabric folds."
+          }
+        },
+        {
+          "id": "g1",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 300
+          },
+          "data": {
+            "type": "generate",
+            "label": "Try-On Result",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p1",
+          "type": "prompt",
+          "position": {
+            "x": 1000,
+            "y": 40
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Clip 1 — Turn",
+            "text": "She slowly turns to show the outfit from the side, phone stays raised for the mirror selfie, subtle natural movement, no camera shake. Same character as the reference: identical face, hairstyle, outfit, body proportions, colour palette and art style. Do not restyle or reset the character."
+          }
+        },
+        {
+          "id": "g2",
+          "type": "generate",
+          "position": {
+            "x": 1480,
+            "y": 60
+          },
+          "data": {
+            "type": "generate",
+            "label": "Clip 1",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p2",
+          "type": "prompt",
+          "position": {
+            "x": 1000,
+            "y": 560
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Clip 2 — Detail",
+            "text": "She takes a small step toward the mirror and adjusts the jacket hem, looking down at the outfit then back up, static camera, natural handheld feel. Same character as the reference: identical face, hairstyle, outfit, body proportions, colour palette and art style. Do not restyle or reset the character."
+          }
+        },
+        {
+          "id": "g3",
+          "type": "generate",
+          "position": {
+            "x": 1480,
+            "y": 580
+          },
+          "data": {
+            "type": "generate",
+            "label": "Clip 2",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_i1_g1_i",
+          "source": "i1",
+          "target": "g1",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_i2_g1_i",
+          "source": "i2",
+          "target": "g1",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p0_g1_t",
+          "source": "p0",
+          "target": "g1",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g1_g2_i",
+          "source": "g1",
+          "target": "g2",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p1_g2_t",
+          "source": "p1",
+          "target": "g2",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g1_g3_i",
+          "source": "g1",
+          "target": "g3",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p2_g3_t",
+          "source": "p2",
+          "target": "g3",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "image",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_triple_lock",
+      "name": "Triple Lock: Face + Outfit + Scene",
+      "description": "Three references, each locking one thing — who, what they wear, where they are.",
+      "useCase": "The most controlled composite Studio can do. Separating identity, wardrobe and location into their own references stops the model trading one off against another — the usual failure where a new outfit quietly changes the face.",
+      "category": "Fashion",
+      "difficulty": "Advanced",
+      "nodeCount": 7,
+      "thumbnail": "🔒",
+      "nodes": [
+        {
+          "id": "i1",
+          "type": "image",
+          "position": {
+            "x": 40,
+            "y": 40
+          },
+          "data": {
+            "type": "image",
+            "label": "Face Reference",
+            "imageName": "face",
+            "imageData": "",
+            "assetPath": ""
+          }
+        },
+        {
+          "id": "i2",
+          "type": "image",
+          "position": {
+            "x": 40,
+            "y": 470
+          },
+          "data": {
+            "type": "image",
+            "label": "Outfit Sheet",
+            "imageName": "outfit",
+            "imageData": "",
+            "assetPath": ""
+          }
+        },
+        {
+          "id": "i3",
+          "type": "image",
+          "position": {
+            "x": 40,
+            "y": 900
+          },
+          "data": {
+            "type": "image",
+            "label": "Scene / Location",
+            "imageName": "scene",
+            "imageData": "",
+            "assetPath": ""
+          }
+        },
+        {
+          "id": "p0",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 1330
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Master Composition",
+            "text": "# MASTER REFERENCE COMPOSITION — IDENTITY LOCK + OUTFIT LOCK + SCENE LOCK\n\nIMAGE 01 = IDENTITY. Use this face only: same bone structure, eyes, brows, nose, lips, skin tone and hair. Do not beautify, slim, age or restyle the face.\n\nIMAGE 02 = OUTFIT. Reproduce every garment and accessory exactly as shown — cut, colour, print placement, fabric, footwear and bag. No substitutions.\n\nIMAGE 03 = SCENE. Place her in this exact location, matching its perspective, lighting direction, colour temperature and depth of field.\n\nOUTPUT: full-body shot of the IMAGE 01 person wearing the IMAGE 02 outfit inside the IMAGE 03 scene. Photographic, natural light, sharp on the subject."
+          }
+        },
+        {
+          "id": "g1",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 420
+          },
+          "data": {
+            "type": "generate",
+            "label": "Composite Still",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p1",
+          "type": "prompt",
+          "position": {
+            "x": 1000,
+            "y": 900
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Motion Prompt",
+            "text": "# REFERENCE SETUP\nUse the reference image as the ONLY visual source for the person, outfit and location.\n\nShe walks forward naturally, weight shifting between steps, hair and fabric moving with her. Camera static at eye level. Same face, same outfit, same location — do not restyle, recolour or reset anything."
+          }
+        },
+        {
+          "id": "g2",
+          "type": "generate",
+          "position": {
+            "x": 1000,
+            "y": 380
+          },
+          "data": {
+            "type": "generate",
+            "label": "Scene Clip",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_i1_g1_i",
+          "source": "i1",
+          "target": "g1",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_i2_g1_i",
+          "source": "i2",
+          "target": "g1",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_i3_g1_i",
+          "source": "i3",
+          "target": "g1",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p0_g1_t",
+          "source": "p0",
+          "target": "g1",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g1_g2_i",
+          "source": "g1",
+          "target": "g2",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p1_g2_t",
+          "source": "p1",
+          "target": "g2",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "image",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_product_ugc",
+      "name": "Product UGC: Model × Product",
+      "description": "Put a consistent model in your product photo, then two clips of her using it.",
+      "useCase": "Selling a physical product with UGC-style content. The product photo is a reference like any other, so the item keeps its real shape, colour and hardware instead of being re-imagined — the usual failure in product prompts.",
+      "category": "Marketing",
+      "difficulty": "Advanced",
+      "nodeCount": 9,
+      "thumbnail": "🪑",
+      "nodes": [
+        {
+          "id": "i1",
+          "type": "image",
+          "position": {
+            "x": 40,
+            "y": 40
+          },
+          "data": {
+            "type": "image",
+            "label": "Face Reference",
+            "imageName": "face",
+            "imageData": "",
+            "assetPath": ""
+          }
+        },
+        {
+          "id": "i2",
+          "type": "image",
+          "position": {
+            "x": 40,
+            "y": 470
+          },
+          "data": {
+            "type": "image",
+            "label": "Outfit Reference",
+            "imageName": "outfit",
+            "imageData": "",
+            "assetPath": ""
+          }
+        },
+        {
+          "id": "i3",
+          "type": "image",
+          "position": {
+            "x": 40,
+            "y": 900
+          },
+          "data": {
+            "type": "image",
+            "label": "Product Photo",
+            "imageName": "product",
+            "imageData": "",
+            "assetPath": ""
+          }
+        },
+        {
+          "id": "p0",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 1330
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Master Composition",
+            "text": "# ROLE ORDER — read the references in this exact order\n\nIMAGE 01 = FACE. Facial identity source only. Same bone structure, eyes, brows, nose, lips, skin tone and hair. Do not beautify, slim or restyle the face.\n\nIMAGE 02 = OUTFIT. Wardrobe source only. Reproduce each garment exactly — cut, colour, knit texture, layering and footwear. Ignore the body and background of this image.\n\nIMAGE 03 = PRODUCT + SETTING. The product must match this photo exactly: same silhouette, upholstery colour, stitching, armrests, base and castors. Keep the room, window light and desk as shown. Do not redesign the product.\n\nOUTPUT: the IMAGE 01 woman, wearing the IMAGE 02 outfit, seated naturally in the IMAGE 03 product within that room. Full body visible, photographic, daylight from the window."
+          }
+        },
+        {
+          "id": "g1",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 430
+          },
+          "data": {
+            "type": "generate",
+            "label": "Composite Still",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p1",
+          "type": "prompt",
+          "position": {
+            "x": 1000,
+            "y": 900
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Clip 1 — Working",
+            "text": "# REFERENCE SETUP\nUse the reference image as the ONLY source for the woman, her outfit, the product and the room.\n\nShe settles back into the chair and types on the laptop, small natural shifts of weight, the chair rocking slightly. Static camera at desk height. Same face, same outfit, same product — do not restyle or recolour anything."
+          }
+        },
+        {
+          "id": "g2",
+          "type": "generate",
+          "position": {
+            "x": 1480,
+            "y": 200
+          },
+          "data": {
+            "type": "generate",
+            "label": "Clip 1",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p2",
+          "type": "prompt",
+          "position": {
+            "x": 1000,
+            "y": 1400
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Clip 2 — Product Detail",
+            "text": "# REFERENCE SETUP\nUse the reference image as the ONLY source for the woman, her outfit, the product and the room.\n\nSlow push in past her shoulder onto the chair's backrest and armrest, showing the upholstery texture and stitching, she leans back into frame. Same face, same outfit, same product — no redesign."
+          }
+        },
+        {
+          "id": "g3",
+          "type": "generate",
+          "position": {
+            "x": 1480,
+            "y": 720
+          },
+          "data": {
+            "type": "generate",
+            "label": "Clip 2",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_i1_g1_i",
+          "source": "i1",
+          "target": "g1",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_i2_g1_i",
+          "source": "i2",
+          "target": "g1",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_i3_g1_i",
+          "source": "i3",
+          "target": "g1",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p0_g1_t",
+          "source": "p0",
+          "target": "g1",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g1_g2_i",
+          "source": "g1",
+          "target": "g2",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p1_g2_t",
+          "source": "p1",
+          "target": "g2",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g1_g3_i",
+          "source": "g1",
+          "target": "g3",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p2_g3_t",
+          "source": "p2",
+          "target": "g3",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "image",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_exercise_series",
+      "name": "Exercise Series: 1 Mascot → 4 Clips",
+      "description": "One character reference becomes four storyboards, then four 10-second vertical clips.",
+      "useCase": "Faceless fitness and how-to channels. Four parallel branches from a single style reference, so a whole series shares one look — and storyboarding before animating means you approve the movement while it is still cheap to change.",
+      "category": "Content",
+      "difficulty": "Advanced",
+      "nodeCount": 17,
+      "thumbnail": "💪",
+      "nodes": [
+        {
+          "id": "i1",
+          "type": "image",
+          "position": {
+            "x": 40,
+            "y": 40
+          },
+          "data": {
+            "type": "image",
+            "label": "Character / Style Reference",
+            "imageName": "mascot",
+            "imageData": "",
+            "assetPath": "assets/templates/fitness-mascot.jpg"
+          }
+        },
+        {
+          "id": "p_pu",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 460
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Push-Up — Storyboard",
+            "text": "Use the attached reference image as the visual style guide.\n\n# COMMON STYLE CONSTANTS — identical in every frame\n• Same character: faceless golden-yellow figure, heavy black outlines, flat vector\n  shading, dark grey shorts, one dark grey arm sleeve\n• Same dark neutral background and lighting\n• Same body proportions and muscle definition — do not restyle or re-anatomise\n\n# OUTPUT — a 2x2 storyboard grid of one full push-up repetition, labelled FRAME 01 to FRAME 04\nFRAME 01 — high plank, arms extended, body in a straight line\nFRAME 02 — lowering, elbows tracking back at 45°\nFRAME 03 — bottom position, chest just above the floor\nFRAME 04 — pressing back up to the start\n\nTint the muscles doing the work in a brighter yellow in each frame. Keep the four panels the same scale and camera distance so they read as one sequence."
+          }
+        },
+        {
+          "id": "g_pu",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 40
+          },
+          "data": {
+            "type": "generate",
+            "label": "Push-Up Storyboard",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "v_pu",
+          "type": "prompt",
+          "position": {
+            "x": 1000,
+            "y": 460
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Push-Up — Motion",
+            "text": "Create a 10-second vertical animated clip from the uploaded storyboard.\n\nFollow FRAME 01 → 04 in order as the motion path, looping smoothly back to the start. Keep the character exactly as shown — same golden-yellow figure, black outlines, flat vector style, dark shorts and sleeve, same background. Continuous motion, no morphing, no style drift, no camera cuts. Vertical 9:16 framing."
+          }
+        },
+        {
+          "id": "gv_pu",
+          "type": "generate",
+          "position": {
+            "x": 1480,
+            "y": 40
+          },
+          "data": {
+            "type": "generate",
+            "label": "Push-Up Clip",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_sq",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 1020
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Squat — Storyboard",
+            "text": "Use the attached reference image as the visual style guide.\n\n# COMMON STYLE CONSTANTS — identical in every frame\n• Same character: faceless golden-yellow figure, heavy black outlines, flat vector\n  shading, dark grey shorts, one dark grey arm sleeve\n• Same dark neutral background and lighting\n• Same body proportions and muscle definition — do not restyle or re-anatomise\n\n# OUTPUT — a 2x2 storyboard grid of one full bodyweight squat, labelled FRAME 01 to FRAME 04\nFRAME 01 — standing, feet shoulder-width\nFRAME 02 — descending, hips travelling back\nFRAME 03 — bottom position, thighs parallel to the floor\nFRAME 04 — driving up through the heels\n\nTint the muscles doing the work in a brighter yellow in each frame. Keep the four panels the same scale and camera distance so they read as one sequence."
+          }
+        },
+        {
+          "id": "g_sq",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 600
+          },
+          "data": {
+            "type": "generate",
+            "label": "Squat Storyboard",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "v_sq",
+          "type": "prompt",
+          "position": {
+            "x": 1000,
+            "y": 1020
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Squat — Motion",
+            "text": "Create a 10-second vertical animated clip from the uploaded storyboard.\n\nFollow FRAME 01 → 04 in order as the motion path, looping smoothly back to the start. Keep the character exactly as shown — same golden-yellow figure, black outlines, flat vector style, dark shorts and sleeve, same background. Continuous motion, no morphing, no style drift, no camera cuts. Vertical 9:16 framing."
+          }
+        },
+        {
+          "id": "gv_sq",
+          "type": "generate",
+          "position": {
+            "x": 1480,
+            "y": 600
+          },
+          "data": {
+            "type": "generate",
+            "label": "Squat Clip",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_pl",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 1580
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Plank — Storyboard",
+            "text": "Use the attached reference image as the visual style guide.\n\n# COMMON STYLE CONSTANTS — identical in every frame\n• Same character: faceless golden-yellow figure, heavy black outlines, flat vector\n  shading, dark grey shorts, one dark grey arm sleeve\n• Same dark neutral background and lighting\n• Same body proportions and muscle definition — do not restyle or re-anatomise\n\n# OUTPUT — a 2x2 storyboard grid of a forearm plank hold, labelled FRAME 01 to FRAME 04\nFRAME 01 — setting up on forearms and toes\nFRAME 02 — braced hold, straight line head to heels\nFRAME 03 — same hold seen from a low front angle\nFRAME 04 — controlled release to the knees\n\nTint the muscles doing the work in a brighter yellow in each frame. Keep the four panels the same scale and camera distance so they read as one sequence."
+          }
+        },
+        {
+          "id": "g_pl",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 1160
+          },
+          "data": {
+            "type": "generate",
+            "label": "Plank Storyboard",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "v_pl",
+          "type": "prompt",
+          "position": {
+            "x": 1000,
+            "y": 1580
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Plank — Motion",
+            "text": "Create a 10-second vertical animated clip from the uploaded storyboard.\n\nFollow FRAME 01 → 04 in order as the motion path, looping smoothly back to the start. Keep the character exactly as shown — same golden-yellow figure, black outlines, flat vector style, dark shorts and sleeve, same background. Continuous motion, no morphing, no style drift, no camera cuts. Vertical 9:16 framing."
+          }
+        },
+        {
+          "id": "gv_pl",
+          "type": "generate",
+          "position": {
+            "x": 1480,
+            "y": 1160
+          },
+          "data": {
+            "type": "generate",
+            "label": "Plank Clip",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_su",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 2140
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Sit-Up — Storyboard",
+            "text": "Use the attached reference image as the visual style guide.\n\n# COMMON STYLE CONSTANTS — identical in every frame\n• Same character: faceless golden-yellow figure, heavy black outlines, flat vector\n  shading, dark grey shorts, one dark grey arm sleeve\n• Same dark neutral background and lighting\n• Same body proportions and muscle definition — do not restyle or re-anatomise\n\n# OUTPUT — a 2x2 storyboard grid of one full sit-up repetition, labelled FRAME 01 to FRAME 04\nFRAME 01 — lying back, knees bent, hands at the temples\nFRAME 02 — curling up, shoulder blades leaving the floor\nFRAME 03 — top position, torso close to the thighs\nFRAME 04 — lowering back down under control\n\nTint the muscles doing the work in a brighter yellow in each frame. Keep the four panels the same scale and camera distance so they read as one sequence."
+          }
+        },
+        {
+          "id": "g_su",
+          "type": "generate",
+          "position": {
+            "x": 520,
+            "y": 1720
+          },
+          "data": {
+            "type": "generate",
+            "label": "Sit-Up Storyboard",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "v_su",
+          "type": "prompt",
+          "position": {
+            "x": 1000,
+            "y": 2140
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Sit-Up — Motion",
+            "text": "Create a 10-second vertical animated clip from the uploaded storyboard.\n\nFollow FRAME 01 → 04 in order as the motion path, looping smoothly back to the start. Keep the character exactly as shown — same golden-yellow figure, black outlines, flat vector style, dark shorts and sleeve, same background. Continuous motion, no morphing, no style drift, no camera cuts. Vertical 9:16 framing."
+          }
+        },
+        {
+          "id": "gv_su",
+          "type": "generate",
+          "position": {
+            "x": 1480,
+            "y": 1720
+          },
+          "data": {
+            "type": "generate",
+            "label": "Sit-Up Clip",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_i1_g_pu_i",
+          "source": "i1",
+          "target": "g_pu",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_pu_g_pu_t",
+          "source": "p_pu",
+          "target": "g_pu",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_pu_gv_pu_i",
+          "source": "g_pu",
+          "target": "gv_pu",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_v_pu_gv_pu_t",
+          "source": "v_pu",
+          "target": "gv_pu",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_i1_g_sq_i",
+          "source": "i1",
+          "target": "g_sq",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_sq_g_sq_t",
+          "source": "p_sq",
+          "target": "g_sq",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_sq_gv_sq_i",
+          "source": "g_sq",
+          "target": "gv_sq",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_v_sq_gv_sq_t",
+          "source": "v_sq",
+          "target": "gv_sq",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_i1_g_pl_i",
+          "source": "i1",
+          "target": "g_pl",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_pl_g_pl_t",
+          "source": "p_pl",
+          "target": "g_pl",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_pl_gv_pl_i",
+          "source": "g_pl",
+          "target": "gv_pl",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_v_pl_gv_pl_t",
+          "source": "v_pl",
+          "target": "gv_pl",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_i1_g_su_i",
+          "source": "i1",
+          "target": "g_su",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_su_g_su_t",
+          "source": "p_su",
+          "target": "g_su",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_su_gv_su_i",
+          "source": "g_su",
+          "target": "gv_su",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_v_su_gv_su_t",
+          "source": "v_su",
+          "target": "gv_su",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "image",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_styrofoam_asmr",
+      "name": "ASMR Styrofoam Carving: 6-Clip Chain",
+      "description": "One reference photo becomes a six-clip carving sequence, with every handoff frame shown on the canvas.",
+      "useCase": "ASMR and satisfying-craft channels. This is the format people usually build by hand — generate a clip, screenshot its last frame, upload it as the next clip's first frame, repeat five times. Studio passes each clip's closing frame to the next node automatically, so the block genuinely progresses from raw foam to finished sculpture in one run.",
+      "category": "Content",
+      "difficulty": "Advanced",
+      "nodeCount": 18,
+      "thumbnail": "🔨",
+      "nodes": [
+        {
+          "id": "i1",
+          "type": "image",
+          "position": {
+            "x": 40,
+            "y": 300
+          },
+          "data": {
+            "type": "image",
+            "label": "Subject Reference",
+            "imageName": "what to carve",
+            "imageData": "",
+            "assetPath": ""
+          }
+        },
+        {
+          "id": "p_cut",
+          "type": "prompt",
+          "position": {
+            "x": 300,
+            "y": 780
+          },
+          "data": {
+            "type": "prompt",
+            "label": "1. Measuring & Cutting",
+            "text": "Hands measure a white styrofoam sheet with a steel ruler, mark cut lines in pencil, then draw a utility knife through the foam in slow even passes. Linger on the blade parting the surface and the crumbs dropping away.\nEND ON: several clean rectangular blocks squared up in a neat stack.\n\n# SUBJECT\nCarve the subject in the attached reference image — match its shape, proportions and details closely. If no reference is attached, carve a seated lion. This format reads best with animals that have a strong silhouette.\n\n# CONSTANTS — identical in every clip\n• Macro close-ups at bench level, three-quarter view, so the form stays readable. Top-down only while measuring and cutting flat stock.\n• Hands and forearms visible, never a face.\n• Same warm workshop lighting, same worn wooden bench, tools and a jar of brushes soft and out of focus behind.\n• Photoreal materials: white foam grain, static-clinging dust, blade marks, loose crumbs and offcuts scattered across the bench.\n• ASMR audio led by the tools — blade shearing foam, dry crumbling, sanding grit.\n• Unhurried, steady hands. One continuous take, no cuts, no time-lapse.\n• Vertical 9:16, high detail."
+          }
+        },
+        {
+          "id": "g_cut",
+          "type": "generate",
+          "position": {
+            "x": 560,
+            "y": 200
+          },
+          "data": {
+            "type": "generate",
+            "label": "1. Measuring & Cutting",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "f_cut",
+          "type": "frame",
+          "position": {
+            "x": 900,
+            "y": 250
+          },
+          "data": {
+            "type": "frame",
+            "label": "Ends on →",
+            "frameUrl": ""
+          }
+        },
+        {
+          "id": "p_bond",
+          "type": "prompt",
+          "position": {
+            "x": 920,
+            "y": 780
+          },
+          "data": {
+            "type": "prompt",
+            "label": "2. Stacking & Bonding",
+            "text": "White glue is spread across each block face, the blocks are pressed together one by one and squared into a single tall cube. Show the glue squeezing out at the seams and hands holding steady pressure.\nEND ON: one solid bonded cube resting on the bench, seams barely visible.\n\n# SUBJECT\nCarve the subject in the attached reference image — match its shape, proportions and details closely. If no reference is attached, carve a seated lion. This format reads best with animals that have a strong silhouette.\n\n# CONSTANTS — identical in every clip\n• Macro close-ups at bench level, three-quarter view, so the form stays readable. Top-down only while measuring and cutting flat stock.\n• Hands and forearms visible, never a face.\n• Same warm workshop lighting, same worn wooden bench, tools and a jar of brushes soft and out of focus behind.\n• Photoreal materials: white foam grain, static-clinging dust, blade marks, loose crumbs and offcuts scattered across the bench.\n• ASMR audio led by the tools — blade shearing foam, dry crumbling, sanding grit.\n• Unhurried, steady hands. One continuous take, no cuts, no time-lapse.\n• Vertical 9:16, high detail."
+          }
+        },
+        {
+          "id": "g_bond",
+          "type": "generate",
+          "position": {
+            "x": 1180,
+            "y": 200
+          },
+          "data": {
+            "type": "generate",
+            "label": "2. Stacking & Bonding",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "f_bond",
+          "type": "frame",
+          "position": {
+            "x": 1520,
+            "y": 250
+          },
+          "data": {
+            "type": "frame",
+            "label": "Ends on →",
+            "frameUrl": ""
+          }
+        },
+        {
+          "id": "p_outline",
+          "type": "prompt",
+          "position": {
+            "x": 1540,
+            "y": 780
+          },
+          "data": {
+            "type": "prompt",
+            "label": "3. Outline Sketching",
+            "text": "A black marker draws the subject's outline onto the cube, then the block is rotated so the profile and front views are sketched on the adjacent faces as carving guides.\nEND ON: the cube fully outlined on every face, marker set down beside it.\n\n# SUBJECT\nCarve the subject in the attached reference image — match its shape, proportions and details closely. If no reference is attached, carve a seated lion. This format reads best with animals that have a strong silhouette.\n\n# CONSTANTS — identical in every clip\n• Macro close-ups at bench level, three-quarter view, so the form stays readable. Top-down only while measuring and cutting flat stock.\n• Hands and forearms visible, never a face.\n• Same warm workshop lighting, same worn wooden bench, tools and a jar of brushes soft and out of focus behind.\n• Photoreal materials: white foam grain, static-clinging dust, blade marks, loose crumbs and offcuts scattered across the bench.\n• ASMR audio led by the tools — blade shearing foam, dry crumbling, sanding grit.\n• Unhurried, steady hands. One continuous take, no cuts, no time-lapse.\n• Vertical 9:16, high detail."
+          }
+        },
+        {
+          "id": "g_outline",
+          "type": "generate",
+          "position": {
+            "x": 1800,
+            "y": 200
+          },
+          "data": {
+            "type": "generate",
+            "label": "3. Outline Sketching",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "f_outline",
+          "type": "frame",
+          "position": {
+            "x": 2140,
+            "y": 250
+          },
+          "data": {
+            "type": "frame",
+            "label": "Ends on →",
+            "frameUrl": ""
+          }
+        },
+        {
+          "id": "p_rough",
+          "type": "prompt",
+          "position": {
+            "x": 2160,
+            "y": 780
+          },
+          "data": {
+            "type": "prompt",
+            "label": "4. Rough Carving",
+            "text": "A long craft knife shears away the waste in broad confident strips that curl off and fall to the bench. Shot three-quarter on at bench level so the silhouette reads as it emerges — head, limbs and stance becoming recognisable while the surface stays faceted and unfinished.\nEND ON: the rough three-dimensional form clearly readable, offcuts piled around it.\n\n# SUBJECT\nCarve the subject in the attached reference image — match its shape, proportions and details closely. If no reference is attached, carve a seated lion. This format reads best with animals that have a strong silhouette.\n\n# CONSTANTS — identical in every clip\n• Macro close-ups at bench level, three-quarter view, so the form stays readable. Top-down only while measuring and cutting flat stock.\n• Hands and forearms visible, never a face.\n• Same warm workshop lighting, same worn wooden bench, tools and a jar of brushes soft and out of focus behind.\n• Photoreal materials: white foam grain, static-clinging dust, blade marks, loose crumbs and offcuts scattered across the bench.\n• ASMR audio led by the tools — blade shearing foam, dry crumbling, sanding grit.\n• Unhurried, steady hands. One continuous take, no cuts, no time-lapse.\n• Vertical 9:16, high detail."
+          }
+        },
+        {
+          "id": "g_rough",
+          "type": "generate",
+          "position": {
+            "x": 2420,
+            "y": 200
+          },
+          "data": {
+            "type": "generate",
+            "label": "4. Rough Carving",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "f_rough",
+          "type": "frame",
+          "position": {
+            "x": 2760,
+            "y": 250
+          },
+          "data": {
+            "type": "frame",
+            "label": "Ends on →",
+            "frameUrl": ""
+          }
+        },
+        {
+          "id": "p_detail",
+          "type": "prompt",
+          "position": {
+            "x": 2780,
+            "y": 780
+          },
+          "data": {
+            "type": "prompt",
+            "label": "5. Fine Detailing",
+            "text": "A scalpel cuts the fine features — face, eyes, fur or hide texture — in small deliberate strokes, fine-grit sandpaper rounds every edge, and a soft brush sweeps the dust clear. The hand turns the piece between passes to check it from each side.\nEND ON: the finished sculpture, smooth and sharply detailed, bench swept clean.\n\n# SUBJECT\nCarve the subject in the attached reference image — match its shape, proportions and details closely. If no reference is attached, carve a seated lion. This format reads best with animals that have a strong silhouette.\n\n# CONSTANTS — identical in every clip\n• Macro close-ups at bench level, three-quarter view, so the form stays readable. Top-down only while measuring and cutting flat stock.\n• Hands and forearms visible, never a face.\n• Same warm workshop lighting, same worn wooden bench, tools and a jar of brushes soft and out of focus behind.\n• Photoreal materials: white foam grain, static-clinging dust, blade marks, loose crumbs and offcuts scattered across the bench.\n• ASMR audio led by the tools — blade shearing foam, dry crumbling, sanding grit.\n• Unhurried, steady hands. One continuous take, no cuts, no time-lapse.\n• Vertical 9:16, high detail."
+          }
+        },
+        {
+          "id": "g_detail",
+          "type": "generate",
+          "position": {
+            "x": 3040,
+            "y": 200
+          },
+          "data": {
+            "type": "generate",
+            "label": "5. Fine Detailing",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "f_detail",
+          "type": "frame",
+          "position": {
+            "x": 3380,
+            "y": 250
+          },
+          "data": {
+            "type": "frame",
+            "label": "Ends on →",
+            "frameUrl": ""
+          }
+        },
+        {
+          "id": "p_reveal",
+          "type": "prompt",
+          "position": {
+            "x": 3400,
+            "y": 780
+          },
+          "data": {
+            "type": "prompt",
+            "label": "6. Final Reveal",
+            "text": "The camera pulls back from macro to a full view and orbits the finished sculpture once, slowly. Warm key light rakes across the carved texture. No hands in frame.\nEND ON: the completed piece centred and still, held for the last beat.\n\n# SUBJECT\nCarve the subject in the attached reference image — match its shape, proportions and details closely. If no reference is attached, carve a seated lion. This format reads best with animals that have a strong silhouette.\n\n# CONSTANTS — identical in every clip\n• Macro close-ups at bench level, three-quarter view, so the form stays readable. Top-down only while measuring and cutting flat stock.\n• Hands and forearms visible, never a face.\n• Same warm workshop lighting, same worn wooden bench, tools and a jar of brushes soft and out of focus behind.\n• Photoreal materials: white foam grain, static-clinging dust, blade marks, loose crumbs and offcuts scattered across the bench.\n• ASMR audio led by the tools — blade shearing foam, dry crumbling, sanding grit.\n• Unhurried, steady hands. One continuous take, no cuts, no time-lapse.\n• Vertical 9:16, high detail."
+          }
+        },
+        {
+          "id": "g_reveal",
+          "type": "generate",
+          "position": {
+            "x": 3660,
+            "y": 200
+          },
+          "data": {
+            "type": "generate",
+            "label": "6. Final Reveal",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_p_cut_g_cut_t",
+          "source": "p_cut",
+          "target": "g_cut",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_i1_g_cut_i",
+          "source": "i1",
+          "target": "g_cut",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_cut_f_cut_i",
+          "source": "g_cut",
+          "target": "f_cut",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_bond_g_bond_t",
+          "source": "p_bond",
+          "target": "g_bond",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_f_cut_g_bond_i",
+          "source": "f_cut",
+          "target": "g_bond",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_bond_f_bond_i",
+          "source": "g_bond",
+          "target": "f_bond",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_outline_g_outline_t",
+          "source": "p_outline",
+          "target": "g_outline",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_f_bond_g_outline_i",
+          "source": "f_bond",
+          "target": "g_outline",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_outline_f_outline_i",
+          "source": "g_outline",
+          "target": "f_outline",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_rough_g_rough_t",
+          "source": "p_rough",
+          "target": "g_rough",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_f_outline_g_rough_i",
+          "source": "f_outline",
+          "target": "g_rough",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_rough_f_rough_i",
+          "source": "g_rough",
+          "target": "f_rough",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_detail_g_detail_t",
+          "source": "p_detail",
+          "target": "g_detail",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_f_rough_g_detail_i",
+          "source": "f_rough",
+          "target": "g_detail",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_detail_f_detail_i",
+          "source": "g_detail",
+          "target": "f_detail",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_reveal_g_reveal_t",
+          "source": "p_reveal",
+          "target": "g_reveal",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_f_detail_g_reveal_i",
+          "source": "f_detail",
+          "target": "g_reveal",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "frame",
+        "generate",
+        "image",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "minExtensionVersion": "0.6.0",
+      "tier": "free"
+    },
+    {
+      "id": "tpl_miniature_car",
+      "name": "Miniature Car: Carve → Match Cut",
+      "description": "Name a car. Flow draws the reference sheet, then four clips carve it and match-cut to the real one.",
+      "useCase": "The build-up-and-reveal format, where the whole video is a setup for the last two seconds. Change the first line of the first node to any car — \"BMW M3 E46, 2003, Laguna Seca Blue\" — and it renders a three-view reference sheet, then carves it, details it, paints it and reveals it full size. No photo to source, and the sheet comes out at the angles and lighting the carve clips need rather than whatever a stock shot happened to be. The Last Frame nodes matter more here than anywhere: the match cut only lands if the miniature the reveal inherits is exactly the one the previous clip finished, so the handoff sits on the canvas where you can check it before spending a generation. Editing note from the format — post the reveal first as the hook, then the build.",
+      "category": "Content",
+      "difficulty": "Advanced",
+      "nodeCount": 13,
+      "thumbnail": "🚗",
+      "thumbnailImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMjAgMTI4IiB3aWR0aD0iMzIwIiBoZWlnaHQ9IjEyOCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJDYXJ2ZWQgd29vZGVuIGNhciBiZWNvbWluZyBhIHJlYWwgY2FyIj4KICA8IS0tIFRoZSBmb3JtYXQgaW4gb25lIGZyYW1lOiByYXcgYmxvY2sgb24gdGhlIGxlZnQsIGNhcnZlZCBtb2RlbCBpbiB0aGUKICAgICAgIG1pZGRsZSwgdGhlIHJlYWwgY2FyIGVtZXJnaW5nIG9uIHRoZSByaWdodC4gUmVhZCBhdCAxMjhweCBiZWhpbmQgYQogICAgICAgc2NyaW0sIHNvIGl0IGlzIGJ1aWx0IGZyb20gc2lsaG91ZXR0ZXMgcmF0aGVyIHRoYW4gZGV0YWlsLiAtLT4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iYmVuY2giIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjMjAxNTBmIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzBiMDcwNSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0id2FsbnV0IiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzlhNjEzNCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiM1ZDM4MTkiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImxhY3F1ZXIiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjZThlY2YyIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMC40NSIgc3RvcC1jb2xvcj0iIzlhYTdiOCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMzOTQyNGYiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImtleSIgeDE9IjAiIHkxPSIwIiB4Mj0iMSIgeTI9IjAiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiNmZmIyNTciIHN0b3Atb3BhY2l0eT0iMC41Ii8+CiAgICAgIDxzdG9wIG9mZnNldD0iMC42IiBzdG9wLWNvbG9yPSIjZmZiMjU3IiBzdG9wLW9wYWNpdHk9IjAiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9InJpbSIgeDE9IjEiIHkxPSIwIiB4Mj0iMCIgeTI9IjAiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiM1ZWM4ZmYiIHN0b3Atb3BhY2l0eT0iMC41Ii8+CiAgICAgIDxzdG9wIG9mZnNldD0iMC42IiBzdG9wLWNvbG9yPSIjNWVjOGZmIiBzdG9wLW9wYWNpdHk9IjAiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgPC9kZWZzPgoKICA8cmVjdCB3aWR0aD0iMzIwIiBoZWlnaHQ9IjEyOCIgZmlsbD0idXJsKCNiZW5jaCkiLz4KICA8cmVjdCB3aWR0aD0iMzIwIiBoZWlnaHQ9IjEyOCIgZmlsbD0idXJsKCNrZXkpIi8+CiAgPHJlY3Qgd2lkdGg9IjMyMCIgaGVpZ2h0PSIxMjgiIGZpbGw9InVybCgjcmltKSIvPgoKICA8IS0tIEJlbmNoIHN1cmZhY2UgLS0+CiAgPHJlY3QgeD0iMCIgeT0iOTYiIHdpZHRoPSIzMjAiIGhlaWdodD0iMzIiIGZpbGw9IiMyYTFhMTEiLz4KICA8cmVjdCB4PSIwIiB5PSI5NiIgd2lkdGg9IjMyMCIgaGVpZ2h0PSIyIiBmaWxsPSIjNmI0NTI2IiBvcGFjaXR5PSIwLjciLz4KCiAgPCEtLSAxLiBSYXcgYmxvY2ssIGNoaXNlbCBtYXJrcyAtLT4KICA8Zz4KICAgIDxwYXRoIGQ9Ik0xOCA2MGg1MnYzNkgxOHoiIGZpbGw9InVybCgjd2FsbnV0KSIvPgogICAgPHBhdGggZD0iTTE4IDYwaDUydjZIMTh6IiBmaWxsPSIjYjM3NjNmIiBvcGFjaXR5PSIwLjgiLz4KICAgIDxnIHN0cm9rZT0iIzNkMjQxMCIgc3Ryb2tlLW9wYWNpdHk9IjAuNTUiIHN0cm9rZS13aWR0aD0iMiI+CiAgICAgIDxwYXRoIGQ9Ik0yNiA2OGw4IDhNNDAgNjRsMTAgMTBNNTYgNzBsOCA4TTMwIDg0bDkgOCIvPgogICAgPC9nPgogICAgPCEtLSBzaGF2aW5ncyAtLT4KICAgIDxnIGZpbGw9IiNjMDhhNGQiIG9wYWNpdHk9IjAuNjUiPgogICAgICA8cGF0aCBkPSJNOCA5NHE2LTcgMTMtMy01IDUtMTMgM3oiLz4KICAgICAgPHBhdGggZD0iTTc0IDk1cTctNiAxMy0xLTYgNC0xMyAxeiIvPgogICAgPC9nPgogIDwvZz4KCiAgPCEtLSAyLiBDYXJ2ZWQgbWluaWF0dXJlLCBiYXJlIHdvb2QgLS0+CiAgPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTE0IDUyKSI+CiAgICA8cGF0aCBkPSJNNiAzMHE0LTE0IDE2LTE2aDIycTEzIDIgMTggMTZsNCA4cTEgNi01IDZIN3EtNiAwLTYtNnoiIGZpbGw9InVybCgjd2FsbnV0KSIvPgogICAgPHBhdGggZD0iTTE3IDE2cTQtOCAxMS05aDE0cTggMSAxMSA5eiIgZmlsbD0iI2M3OTI1NiIgb3BhY2l0eT0iMC41NSIvPgogICAgPGNpcmNsZSBjeD0iMTYiIGN5PSI0NCIgcj0iNyIgZmlsbD0iIzJiMWEwZCIvPgogICAgPGNpcmNsZSBjeD0iNTAiIGN5PSI0NCIgcj0iNyIgZmlsbD0iIzJiMWEwZCIvPgogICAgPGNpcmNsZSBjeD0iMTYiIGN5PSI0NCIgcj0iMyIgZmlsbD0iIzdkNTIyOCIvPgogICAgPGNpcmNsZSBjeD0iNTAiIGN5PSI0NCIgcj0iMyIgZmlsbD0iIzdkNTIyOCIvPgogIDwvZz4KCiAgPCEtLSBNYXRjaC1jdXQgc2VhbTogdGhlIG1vbWVudCB0aGUgc2NhbGUgY2hhbmdlcyAtLT4KICA8Zz4KICAgIDxyZWN0IHg9IjIwNCIgeT0iMCIgd2lkdGg9IjIiIGhlaWdodD0iMTI4IiBmaWxsPSIjZmZkOWEwIiBvcGFjaXR5PSIwLjM1Ii8+CiAgICA8cmVjdCB4PSIyMDMiIHk9IjAiIHdpZHRoPSI0IiBoZWlnaHQ9IjEyOCIgZmlsbD0iI2ZmZDlhMCIgb3BhY2l0eT0iMC4xMiIvPgogIDwvZz4KCiAgPCEtLSAzLiBUaGUgcmVhbCBjYXIsIGxhY3F1ZXJlZCwgbGFyZ2VyLCB3ZXQgYXNwaGFsdCAtLT4KICA8ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSgyMTYgNDApIj4KICAgIDxwYXRoIGQ9Ik00IDQ0cTUtMjAgMjItMjNoMzRxMTkgMyAyNiAyM2w2IDExcTIgOC03IDhIOHEtOSAwLTgtOHoiIGZpbGw9InVybCgjbGFjcXVlcikiLz4KICAgIDxwYXRoIGQ9Ik0yMiAyMnE2LTExIDE2LTEyaDIwcTExIDEgMTYgMTJ6IiBmaWxsPSIjY2ZlM2Y1IiBvcGFjaXR5PSIwLjYiLz4KICAgIDwhLS0gaGVhZGxpZ2h0LCB0aGUgdGhpbmcgdGhlIGNhbWVyYSBwdXNoZXMgaW50byAtLT4KICAgIDxlbGxpcHNlIGN4PSI5MCIgY3k9IjQ0IiByeD0iNyIgcnk9IjUiIGZpbGw9IiNmZmZiZTgiLz4KICAgIDxlbGxpcHNlIGN4PSI5MCIgY3k9IjQ0IiByeD0iMTQiIHJ5PSI5IiBmaWxsPSIjZmZmYmU4IiBvcGFjaXR5PSIwLjE4Ii8+CiAgICA8Y2lyY2xlIGN4PSIyMiIgY3k9IjYyIiByPSIxMCIgZmlsbD0iIzEyMTUxYSIvPgogICAgPGNpcmNsZSBjeD0iNzAiIGN5PSI2MiIgcj0iMTAiIGZpbGw9IiMxMjE1MWEiLz4KICAgIDxjaXJjbGUgY3g9IjIyIiBjeT0iNjIiIHI9IjQuNSIgZmlsbD0iIzdmOGI5YyIvPgogICAgPGNpcmNsZSBjeD0iNzAiIGN5PSI2MiIgcj0iNC41IiBmaWxsPSIjN2Y4YjljIi8+CiAgICA8IS0tIHJlZmxlY3Rpb24gb24gd2V0IGdyb3VuZCAtLT4KICAgIDxwYXRoIGQ9Ik02IDc0aDg0bC04IDEwSDE0eiIgZmlsbD0iIzlhYTdiOCIgb3BhY2l0eT0iMC4xOCIvPgogIDwvZz4KPC9zdmc+Cg==",
+      "nodes": [
+        {
+          "id": "p_car",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 260
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Which Car — edit line 1",
+            "text": "Reference sheet of a BMW M3 E46, 2003, Laguna Seca Blue.\n\nOne image on a plain mid-grey studio backdrop showing three views of that exact car: three-quarter front on the left, dead-side profile in the centre, three-quarter rear on the right. Even neutral studio lighting. The whole car in frame in every view, wheels straight, no cropping.\n\nRender the real production car of that exact year and trim, with its own headlights, grille, bumpers, mirrors, wheels, badges and exhaust layout, in that exact paint colour. Do not substitute another model and do not restyle it.\n\nUltra photorealistic product photography, 8K, sharp throughout, accurate panel reflections. No people, no background detail, no text, no watermarks."
+          }
+        },
+        {
+          "id": "g_sheet",
+          "type": "generate",
+          "position": {
+            "x": 560,
+            "y": 220
+          },
+          "data": {
+            "type": "generate",
+            "label": "Car Reference Sheet",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_block",
+          "type": "prompt",
+          "position": {
+            "x": 840,
+            "y": 780
+          },
+          "data": {
+            "type": "prompt",
+            "label": "1. Rough Carving",
+            "text": "A solid block of walnut is clamped on the bench. A chisel and mallet drive away the waste in confident strokes, shavings curling off and settling on the wood. The silhouette of the car emerges — roofline, bonnet, wheel arches — while every surface stays faceted and raw.\nEND ON: the rough car form, unmistakably the right vehicle, tool marks everywhere, shavings banked around it.\n\n# LOOK — identical in every clip\nUltra photorealistic, 8K HDR, ray-traced reflections, shallow depth of field.\nMacro cinematography at bench level, slow deliberate camera moves on a slider. No handheld, no shake, no whip pans.\nSame dark walnut workbench, same warm key light raking from the left, same cool rim light picking out the edges. Background falls off to near black.\nHands and forearms only — sleeves rolled, never a face.\nAudio led by the material: blade on grain, brush bristles, the tick of small parts set down. No music, no narration.\nSame vehicle as the reference throughout: identical model, proportions, body lines and colour. Do not restyle or substitute a different car.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_block",
+          "type": "generate",
+          "position": {
+            "x": 1100,
+            "y": 200
+          },
+          "data": {
+            "type": "generate",
+            "label": "1. Rough Carving",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "f_block",
+          "type": "frame",
+          "position": {
+            "x": 1440,
+            "y": 250
+          },
+          "data": {
+            "type": "frame",
+            "label": "Ends on →",
+            "frameUrl": ""
+          }
+        },
+        {
+          "id": "p_detail",
+          "type": "prompt",
+          "position": {
+            "x": 1460,
+            "y": 780
+          },
+          "data": {
+            "type": "prompt",
+            "label": "2. Precision Detailing",
+            "text": "Fine rasps, needle files and a scalpel cut the details in: door shut lines, grille slats, mirror stems, the lip of each wheel arch. Fine-grit paper follows and the surface goes from faceted to glass-smooth. A soft brush clears the dust between passes.\nEND ON: the bare wooden model, perfectly smooth and fully detailed, unpainted, bench swept clean.\n\n# LOOK — identical in every clip\nUltra photorealistic, 8K HDR, ray-traced reflections, shallow depth of field.\nMacro cinematography at bench level, slow deliberate camera moves on a slider. No handheld, no shake, no whip pans.\nSame dark walnut workbench, same warm key light raking from the left, same cool rim light picking out the edges. Background falls off to near black.\nHands and forearms only — sleeves rolled, never a face.\nAudio led by the material: blade on grain, brush bristles, the tick of small parts set down. No music, no narration.\nSame vehicle as the reference throughout: identical model, proportions, body lines and colour. Do not restyle or substitute a different car.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_detail",
+          "type": "generate",
+          "position": {
+            "x": 1720,
+            "y": 200
+          },
+          "data": {
+            "type": "generate",
+            "label": "2. Precision Detailing",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "f_detail",
+          "type": "frame",
+          "position": {
+            "x": 2060,
+            "y": 250
+          },
+          "data": {
+            "type": "frame",
+            "label": "Ends on →",
+            "frameUrl": ""
+          }
+        },
+        {
+          "id": "p_finish",
+          "type": "prompt",
+          "position": {
+            "x": 2080,
+            "y": 780
+          },
+          "data": {
+            "type": "prompt",
+            "label": "3. Paint & Assembly",
+            "text": "Thin coats of automotive lacquer go on and flash off to a deep mirror finish. Then the small parts: chrome trim pressed into the shut lines, badges set with tweezers, clear lenses seated into the headlights, rubber tyres pushed onto machined rims.\nEND ON: the finished miniature, glossy and complete, reflecting the bench light — a perfect scale model of the reference car.\n\n# LOOK — identical in every clip\nUltra photorealistic, 8K HDR, ray-traced reflections, shallow depth of field.\nMacro cinematography at bench level, slow deliberate camera moves on a slider. No handheld, no shake, no whip pans.\nSame dark walnut workbench, same warm key light raking from the left, same cool rim light picking out the edges. Background falls off to near black.\nHands and forearms only — sleeves rolled, never a face.\nAudio led by the material: blade on grain, brush bristles, the tick of small parts set down. No music, no narration.\nSame vehicle as the reference throughout: identical model, proportions, body lines and colour. Do not restyle or substitute a different car.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_finish",
+          "type": "generate",
+          "position": {
+            "x": 2340,
+            "y": 200
+          },
+          "data": {
+            "type": "generate",
+            "label": "3. Paint & Assembly",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "f_finish",
+          "type": "frame",
+          "position": {
+            "x": 2680,
+            "y": 250
+          },
+          "data": {
+            "type": "frame",
+            "label": "Ends on →",
+            "frameUrl": ""
+          }
+        },
+        {
+          "id": "p_reveal",
+          "type": "prompt",
+          "position": {
+            "x": 2700,
+            "y": 780
+          },
+          "data": {
+            "type": "prompt",
+            "label": "4. Match Cut to Real",
+            "text": "The camera pushes slowly along the finished miniature toward its headlight. As the frame fills with the reflection, the scale changes without a cut — the same headlight, the same body line, the same paint, now full size. The camera keeps pulling back to reveal the real car on wet asphalt at blue hour, workshop lights streaking across the panels.\nOne continuous move. The transition happens mid-shot, never on a cut, and the car must be identical either side of it.\nEND ON: the full-size car, static and centred, held for the last beat.\n\n# LOOK — identical in every clip\nUltra photorealistic, 8K HDR, ray-traced reflections, shallow depth of field.\nMacro cinematography at bench level, slow deliberate camera moves on a slider. No handheld, no shake, no whip pans.\nSame dark walnut workbench, same warm key light raking from the left, same cool rim light picking out the edges. Background falls off to near black.\nHands and forearms only — sleeves rolled, never a face.\nAudio led by the material: blade on grain, brush bristles, the tick of small parts set down. No music, no narration.\nSame vehicle as the reference throughout: identical model, proportions, body lines and colour. Do not restyle or substitute a different car.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_reveal",
+          "type": "generate",
+          "position": {
+            "x": 2960,
+            "y": 200
+          },
+          "data": {
+            "type": "generate",
+            "label": "4. Match Cut to Real",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_p_car_g_sheet_t",
+          "source": "p_car",
+          "target": "g_sheet",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_block_g_block_t",
+          "source": "p_block",
+          "target": "g_block",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_sheet_g_block_i",
+          "source": "g_sheet",
+          "target": "g_block",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_block_f_block_i",
+          "source": "g_block",
+          "target": "f_block",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_detail_g_detail_t",
+          "source": "p_detail",
+          "target": "g_detail",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_f_block_g_detail_i",
+          "source": "f_block",
+          "target": "g_detail",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_detail_f_detail_i",
+          "source": "g_detail",
+          "target": "f_detail",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_finish_g_finish_t",
+          "source": "p_finish",
+          "target": "g_finish",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_f_detail_g_finish_i",
+          "source": "f_detail",
+          "target": "g_finish",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_finish_f_finish_i",
+          "source": "g_finish",
+          "target": "f_finish",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_reveal_g_reveal_t",
+          "source": "p_reveal",
+          "target": "g_reveal",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_f_finish_g_reveal_i",
+          "source": "f_finish",
+          "target": "g_reveal",
+          "sourceHandle": "image",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "frame",
+        "generate",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "minExtensionVersion": "0.6.0",
+      "tier": "free"
+    },
+    {
+      "id": "tpl_ai_baby_firsts",
+      "name": "AI Toddler: 1 Character → 3 Firsts",
+      "description": "Generate one toddler, then film three first-time reactions with the same child.",
+      "useCase": "The reaction-video format that runs on Shorts, Reels and TikTok. The whole thing rests on it being the same child every clip — a face that changes between videos reads as three unrelated accounts, and matching one by hand across a posting schedule is the work. Node one generates the character, every clip references that sheet, so the child stays fixed and is fictional rather than anyone's actual kid. Clips are 8s at 9:16.",
+      "category": "Content",
+      "difficulty": "Medium",
+      "nodeCount": 8,
+      "thumbnail": "👶",
+      "thumbnailImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMjAgMTI4IiB3aWR0aD0iMzIwIiBoZWlnaHQ9IjEyOCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJGaXNoIHNwYSB0YW5rIj4KICA8IS0tIENhcmQgYXJ0d29yazogcmVhZCBhdCAxMjhweCB0YWxsIGJlaGluZCBhIGRhcmsgc2NyaW0sIHNvIGl0IGlzIGJ1aWx0CiAgICAgICBmcm9tIGxhcmdlIHNoYXBlcyBhbmQgaG9sZHMgdXAgc21hbGwuIFNlbGYtY29udGFpbmVkIOKAlCB0aGUgZXh0ZW5zaW9uJ3MKICAgICAgIENTUCBibG9ja3MgYW55IGV4dGVybmFsIHJlZmVyZW5jZS4gLS0+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Im1hbGwiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjMmEyMzIwIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzE0MTAwZSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0id2F0ZXIiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjMWU2ZjhjIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMC41NSIgc3RvcC1jb2xvcj0iIzEyNTA2YiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMwYTMzNDgiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3ciIHgxPSIwIiB5MT0iMCIgeDI9IjEiIHkyPSIwIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjN2RkM2ZjIiBzdG9wLW9wYWNpdHk9IjAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIwLjUiIHN0b3AtY29sb3I9IiM3ZGQzZmMiIHN0b3Atb3BhY2l0eT0iMC44NSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiM3ZGQzZmMiIHN0b3Atb3BhY2l0eT0iMCIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CgogIDxyZWN0IHdpZHRoPSIzMjAiIGhlaWdodD0iMTI4IiBmaWxsPSJ1cmwoI21hbGwpIi8+CgogIDwhLS0gTWFsbCBib2tlaCwgd2VsbCBvdXQgb2YgZm9jdXMgYmVoaW5kIHRoZSB0YW5rIC0tPgogIDxnIG9wYWNpdHk9IjAuNSI+CiAgICA8Y2lyY2xlIGN4PSI0MiIgY3k9IjI2IiByPSIxMyIgZmlsbD0iI2Y2YzE3NyIgb3BhY2l0eT0iMC4yOCIvPgogICAgPGNpcmNsZSBjeD0iOTYiIGN5PSIxNiIgcj0iOSIgZmlsbD0iI2Y2YzE3NyIgb3BhY2l0eT0iMC4yIi8+CiAgICA8Y2lyY2xlIGN4PSIyMzgiIGN5PSIyMiIgcj0iMTUiIGZpbGw9IiNlOGExM2EiIG9wYWNpdHk9IjAuMjIiLz4KICAgIDxjaXJjbGUgY3g9IjI4OCIgY3k9IjM0IiByPSIxMCIgZmlsbD0iI2Y2YzE3NyIgb3BhY2l0eT0iMC4xOCIvPgogICAgPHJlY3QgeD0iMTUwIiB5PSI4IiB3aWR0aD0iNDYiIGhlaWdodD0iMzAiIHJ4PSI0IiBmaWxsPSIjM2EyZjI4IiBvcGFjaXR5PSIwLjciLz4KICA8L2c+CgogIDwhLS0gVGFuayByaW0gLS0+CiAgPHJlY3QgeD0iMCIgeT0iNTYiIHdpZHRoPSIzMjAiIGhlaWdodD0iMTAiIGZpbGw9IiNkOWQ1Y2YiLz4KICA8cmVjdCB4PSIwIiB5PSI2NCIgd2lkdGg9IjMyMCIgaGVpZ2h0PSI0IiBmaWxsPSIjOWM5ODkxIi8+CgogIDwhLS0gV2F0ZXIgLS0+CiAgPHJlY3QgeD0iMCIgeT0iNjgiIHdpZHRoPSIzMjAiIGhlaWdodD0iNjAiIGZpbGw9InVybCgjd2F0ZXIpIi8+CiAgPHJlY3QgeD0iMCIgeT0iNjgiIHdpZHRoPSIzMjAiIGhlaWdodD0iMyIgZmlsbD0idXJsKCNnbG93KSIvPgoKICA8IS0tIFR3byBzbWFsbCBsZWdzIGVudGVyaW5nIHRoZSB3YXRlcjogdGhlIHdob2xlIGZvcm1hdCBpbiBvbmUgc2hhcGUgLS0+CiAgPGcgZmlsbD0iI2YwYzlhOCI+CiAgICA8cGF0aCBkPSJNMTM2IDQwYzcgMCAxMSA0IDExIDEwdjM0YzAgNS00IDgtOSA4cy05LTMtOS04VjUwYzAtNiAzLTEwIDctMTB6Ii8+CiAgICA8cGF0aCBkPSJNMTY2IDQyYzcgMCAxMSA0IDExIDEwdjMyYzAgNS00IDgtOSA4cy05LTMtOS04VjUyYzAtNiAzLTEwIDctMTB6Ii8+CiAgPC9nPgogIDxnIGZpbGw9IiNlMGI0OTIiPgogICAgPGVsbGlwc2UgY3g9IjEzOCIgY3k9Ijk0IiByeD0iMTAiIHJ5PSI2Ii8+CiAgICA8ZWxsaXBzZSBjeD0iMTY4IiBjeT0iOTIiIHJ4PSIxMCIgcnk9IjYiLz4KICA8L2c+CgogIDwhLS0gUmlwcGxlcyB3aGVyZSB0aGV5IG1lZXQgdGhlIHN1cmZhY2UgLS0+CiAgPGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjYTVlOGZmIiBzdHJva2Utb3BhY2l0eT0iMC41Ij4KICAgIDxlbGxpcHNlIGN4PSIxMzgiIGN5PSI3MiIgcng9IjE4IiByeT0iNCIvPgogICAgPGVsbGlwc2UgY3g9IjE2OCIgY3k9IjcyIiByeD0iMTYiIHJ5PSI0Ii8+CiAgICA8ZWxsaXBzZSBjeD0iMTUyIiBjeT0iNzQiIHJ4PSIzNCIgcnk9IjciIHN0cm9rZS1vcGFjaXR5PSIwLjIyIi8+CiAgPC9nPgoKICA8IS0tIEZpc2gsIGdhdGhlcmluZyB0b3dhcmQgdGhlIGZlZXQgLS0+CiAgPGcgZmlsbD0iIzBkMmIzYSIgb3BhY2l0eT0iMC44NSI+CiAgICA8ZWxsaXBzZSBjeD0iMTAyIiBjeT0iODgiIHJ4PSI5IiByeT0iMyIvPgogICAgPGVsbGlwc2UgY3g9IjEyMCIgY3k9IjEwMiIgcng9IjgiIHJ5PSIyLjYiLz4KICAgIDxlbGxpcHNlIGN4PSIxNTAiIGN5PSIxMTAiIHJ4PSIxMCIgcnk9IjMiLz4KICAgIDxlbGxpcHNlIGN4PSIxODYiIGN5PSI5NiIgcng9IjkiIHJ5PSIzIi8+CiAgICA8ZWxsaXBzZSBjeD0iMjA2IiBjeT0iMTEwIiByeD0iOCIgcnk9IjIuNiIvPgogICAgPGVsbGlwc2UgY3g9IjIzNCIgY3k9Ijg4IiByeD0iMTAiIHJ5PSIzIi8+CiAgICA8ZWxsaXBzZSBjeD0iMjYyIiBjeT0iMTA0IiByeD0iOCIgcnk9IjIuNiIvPgogICAgPGVsbGlwc2UgY3g9Ijc2IiBjeT0iMTA4IiByeD0iOCIgcnk9IjIuNiIvPgogICAgPGVsbGlwc2UgY3g9IjI4OCIgY3k9IjkyIiByeD0iNyIgcnk9IjIuNCIvPgogIDwvZz4KCiAgPCEtLSBDYXVzdGljcyAtLT4KICA8ZyBzdHJva2U9IiNiZmYwZmYiIHN0cm9rZS1vcGFjaXR5PSIwLjE2IiBzdHJva2Utd2lkdGg9IjIiIGZpbGw9Im5vbmUiPgogICAgPHBhdGggZD0iTTEyIDg0cTE2LTggMzIgMHQzMiAwIi8+CiAgICA8cGF0aCBkPSJNMTk2IDExOHExNi04IDMyIDB0MzIgMCIvPgogIDwvZz4KPC9zdmc+Cg==",
+      "nodes": [
+        {
+          "id": "p_kid",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 300
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Character Design",
+            "text": "Character reference sheet: one photorealistic toddler, about 18 months old, standing against a plain light grey backdrop.\n\nRound cheeks, dark curly hair, big brown eyes, a wide open smile. Wearing a plain white t-shirt and soft grey shorts, barefoot.\n\nNeutral even studio lighting, sharp focus, full body head to toe, facing the camera. Natural skin texture. No props, no background detail.\n\nThis is an original fictional character, not any real person."
+          }
+        },
+        {
+          "id": "g_kid",
+          "type": "generate",
+          "position": {
+            "x": 560,
+            "y": 260
+          },
+          "data": {
+            "type": "generate",
+            "label": "Character Sheet",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "1:1",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_fish",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 40
+          },
+          "data": {
+            "type": "prompt",
+            "label": "1. Fish Spa",
+            "text": "The child sits on the rim of a shallow fish-spa tank in a bright shopping mall, held under the arms by an adult, and lowers both feet into the water. Small fish swarm toward the toes. The child jolts, then bursts out laughing and kicks once, splashing.\nCamera at the child's level, close enough to hold the face and the water in the same frame.\n\nShot on a modern phone by a parent standing close. Handheld with slight natural micro-shake, one continuous take, no cuts. Natural available light.\nSame child as the reference: identical face, hair, skin tone and outfit. Do not restyle, age up or redesign the child.\nAn adult's hands support the child and stay in frame; the adult's face is never shown.\nNatural sound only — the child, ambience, a parent laughing off-camera. No music, no narration, no captions.\nWarm and safe throughout. The child is happy and secure the whole time: no distress, no crying, no danger, nothing that could read as harm.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_fish",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 0
+          },
+          "data": {
+            "type": "generate",
+            "label": "1. Fish Spa",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_sand",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 500
+          },
+          "data": {
+            "type": "prompt",
+            "label": "2. First Sand",
+            "text": "The child stands at the edge of dry beach sand at golden hour, supported by an adult's hands, and lifts one foot away the instant it touches. Tries again, then plants both feet and grins down at them, curling the toes.\nLow camera, warm backlight, sea blurred behind.\n\nShot on a modern phone by a parent standing close. Handheld with slight natural micro-shake, one continuous take, no cuts. Natural available light.\nSame child as the reference: identical face, hair, skin tone and outfit. Do not restyle, age up or redesign the child.\nAn adult's hands support the child and stay in frame; the adult's face is never shown.\nNatural sound only — the child, ambience, a parent laughing off-camera. No music, no narration, no captions.\nWarm and safe throughout. The child is happy and secure the whole time: no distress, no crying, no danger, nothing that could read as harm.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_sand",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 460
+          },
+          "data": {
+            "type": "generate",
+            "label": "2. First Sand",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_ice",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 960
+          },
+          "data": {
+            "type": "prompt",
+            "label": "3. First Ice Cream",
+            "text": "The child, in a high chair at an outdoor cafe, takes a first lick of vanilla ice cream from a cone held by an adult. Freezes at the cold, blinks, then leans straight back in for more, ice cream on the nose.\nClose framing on the face, dappled shade, street sounds behind.\n\nShot on a modern phone by a parent standing close. Handheld with slight natural micro-shake, one continuous take, no cuts. Natural available light.\nSame child as the reference: identical face, hair, skin tone and outfit. Do not restyle, age up or redesign the child.\nAn adult's hands support the child and stay in frame; the adult's face is never shown.\nNatural sound only — the child, ambience, a parent laughing off-camera. No music, no narration, no captions.\nWarm and safe throughout. The child is happy and secure the whole time: no distress, no crying, no danger, nothing that could read as harm.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_ice",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 920
+          },
+          "data": {
+            "type": "generate",
+            "label": "3. First Ice Cream",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_p_kid_g_kid_t",
+          "source": "p_kid",
+          "target": "g_kid",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_fish_g_fish_t",
+          "source": "p_fish",
+          "target": "g_fish",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_kid_g_fish_i",
+          "source": "g_kid",
+          "target": "g_fish",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_sand_g_sand_t",
+          "source": "p_sand",
+          "target": "g_sand",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_kid_g_sand_i",
+          "source": "g_kid",
+          "target": "g_sand",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_ice_g_ice_t",
+          "source": "p_ice",
+          "target": "g_ice",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_kid_g_ice_i",
+          "source": "g_kid",
+          "target": "g_ice",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_kids_episode",
+      "name": "Kids Cartoon: 1 Mascot → 4 Scenes",
+      "description": "Design a cartoon mascot once, then hold it across a four-scene episode.",
+      "useCase": "Preschool and educational channels, where the format rests on children recognising the same character every episode — and where holding one design across four scenes by hand is the part that actually takes the time. The first node draws the mascot; every scene after it references that single design rather than the scene before, so a wobble in one clip cannot propagate. Deliberately animated: photoreal footage of children is what gets a kids channel age-restricted or pulled.",
+      "category": "Content",
+      "difficulty": "Medium",
+      "nodeCount": 10,
+      "thumbnail": "🦊",
+      "nodes": [
+        {
+          "id": "p_char",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 300
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Mascot Design",
+            "text": "Character design sheet for a preschool cartoon mascot, on a plain pale background.\n\nA cheerful young fox cub standing upright, wearing a small yellow explorer backpack and a red scarf. Big friendly eyes, round soft body, short limbs, warm orange fur with a cream chest and tail tip. Waving with one paw.\n\nBright 3D cartoon animation style — soft rounded shapes, thick clean outlines, saturated colours, even lighting. Toy-like, clearly illustrated, never photorealistic.\n\nFull body, head to toe, centred, facing the camera."
+          }
+        },
+        {
+          "id": "g_char",
+          "type": "generate",
+          "position": {
+            "x": 560,
+            "y": 260
+          },
+          "data": {
+            "type": "generate",
+            "label": "Mascot Design Sheet",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "1:1",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_hello",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 40
+          },
+          "data": {
+            "type": "prompt",
+            "label": "1. Hello",
+            "text": "The character walks into a sunny meadow, stops in the centre, waves at the camera and hops once on the spot with both arms up. Wide friendly framing, the whole body in shot, camera still at the character's eye level.\nCheerful ukulele and light percussion, birdsong underneath.\n\nRender style: bright 3D cartoon animation, the look of a modern preschool series. Soft rounded shapes, thick clean outlines, saturated primary colours, gentle even lighting, no harsh shadows. Toy-like and clearly illustrated — never photorealistic, never live action, and no real children in frame.\nSame character as the reference: identical face, body proportions, colour palette and outfit. Do not restyle or redesign the character.\nFriendly and calm. No peril, no scares, no chase, no loud sudden motion."
+          }
+        },
+        {
+          "id": "g_hello",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 0
+          },
+          "data": {
+            "type": "generate",
+            "label": "1. Hello",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "16:9",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_count",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 500
+          },
+          "data": {
+            "type": "prompt",
+            "label": "2. Counting",
+            "text": "The character points one paw at three big floating numbered balloons — 1, 2, 3 — touching each in turn, and each one bobs and glows as it is touched. The character looks back at the camera and claps.\nSame meadow, same music. Slow clear beats so a child can follow along.\n\nRender style: bright 3D cartoon animation, the look of a modern preschool series. Soft rounded shapes, thick clean outlines, saturated primary colours, gentle even lighting, no harsh shadows. Toy-like and clearly illustrated — never photorealistic, never live action, and no real children in frame.\nSame character as the reference: identical face, body proportions, colour palette and outfit. Do not restyle or redesign the character.\nFriendly and calm. No peril, no scares, no chase, no loud sudden motion."
+          }
+        },
+        {
+          "id": "g_count",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 460
+          },
+          "data": {
+            "type": "generate",
+            "label": "2. Counting",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "16:9",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_colour",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 960
+          },
+          "data": {
+            "type": "prompt",
+            "label": "3. Colours",
+            "text": "Three oversized shapes sit in the grass — a red ball, a blue cube, a yellow star. The character walks to each one, pats it, and holds it up to the camera before setting it down.\nSame meadow, same music. Unhurried, one object at a time.\n\nRender style: bright 3D cartoon animation, the look of a modern preschool series. Soft rounded shapes, thick clean outlines, saturated primary colours, gentle even lighting, no harsh shadows. Toy-like and clearly illustrated — never photorealistic, never live action, and no real children in frame.\nSame character as the reference: identical face, body proportions, colour palette and outfit. Do not restyle or redesign the character.\nFriendly and calm. No peril, no scares, no chase, no loud sudden motion."
+          }
+        },
+        {
+          "id": "g_colour",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 920
+          },
+          "data": {
+            "type": "generate",
+            "label": "3. Colours",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "16:9",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_wave",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 1420
+          },
+          "data": {
+            "type": "prompt",
+            "label": "4. Goodbye",
+            "text": "The character waves goodbye with both paws, turns and walks away down a winding path toward a low hill, then turns back for one last wave before the camera settles.\nMusic resolves and softens. Warm late-afternoon light.\n\nRender style: bright 3D cartoon animation, the look of a modern preschool series. Soft rounded shapes, thick clean outlines, saturated primary colours, gentle even lighting, no harsh shadows. Toy-like and clearly illustrated — never photorealistic, never live action, and no real children in frame.\nSame character as the reference: identical face, body proportions, colour palette and outfit. Do not restyle or redesign the character.\nFriendly and calm. No peril, no scares, no chase, no loud sudden motion."
+          }
+        },
+        {
+          "id": "g_wave",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 1380
+          },
+          "data": {
+            "type": "generate",
+            "label": "4. Goodbye",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "16:9",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_p_char_g_char_t",
+          "source": "p_char",
+          "target": "g_char",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_hello_g_hello_t",
+          "source": "p_hello",
+          "target": "g_hello",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_char_g_hello_i",
+          "source": "g_char",
+          "target": "g_hello",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_count_g_count_t",
+          "source": "p_count",
+          "target": "g_count",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_char_g_count_i",
+          "source": "g_char",
+          "target": "g_count",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_colour_g_colour_t",
+          "source": "p_colour",
+          "target": "g_colour",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_char_g_colour_i",
+          "source": "g_char",
+          "target": "g_colour",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_wave_g_wave_t",
+          "source": "p_wave",
+          "target": "g_wave",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_char_g_wave_i",
+          "source": "g_char",
+          "target": "g_wave",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
+      "tier": "free"
+    },
+    {
+      "id": "tpl_pool_fails",
+      "name": "Water Wipeouts: 4 Written by AI",
+      "description": "ChatGPT writes four different wipeout prompts, Flow renders all four — a different set every run.",
+      "useCase": "Faceless fail and satisfying channels, where the format never changes but the clip has to. One brief fans out to four Ask AI nodes, and because they run as consecutive turns in the same ChatGPT conversation each one is told to differ from the last — so a single Run gives four unrelated wipeouts. Needs a signed-in ChatGPT tab; clips are 10s, which is Flow's longest.",
+      "category": "Content",
+      "difficulty": "Advanced",
+      "nodeCount": 9,
+      "thumbnail": "🌊",
+      "thumbnailImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMjAgMTI4IiB3aWR0aD0iMzIwIiBoZWlnaHQ9IjEyOCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJGbG9hdGluZyBvYnN0YWNsZSBjb3Vyc2Ugb3ZlciB3YXRlciI+CiAgPCEtLSBUaGUgV2F0ZXIgV2lwZW91dHMgY2FyZCBoYXMgcmVmZXJlbmNlZCB0aGlzIGZpbGUgc2luY2UgdGhlIHRlbXBsYXRlIHdhcwogICAgICAgd3JpdHRlbjsgaXQgd2FzIG5ldmVyIGNyZWF0ZWQsIHNvIHRoZSBjYXJkIHF1aWV0bHkgZmVsbCBiYWNrIHRvIGl0cwogICAgICAgZW1vamkuIG5vRXJyb3JPbk1pc3Npbmcgb24gdGhlIGNvcHkgcGx1Z2luIGhpZCBpdCBmcm9tIHRoZSBidWlsZC4gLS0+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9InNreSIgeDE9IjAiIHkxPSIwIiB4Mj0iMCIgeTI9IjEiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMyYjZmOWUiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjNGFhM2M3Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJwb29sIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzJlYTNjNCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMxMjYxN2UiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgPC9kZWZzPgoKICA8cmVjdCB3aWR0aD0iMzIwIiBoZWlnaHQ9IjEyOCIgZmlsbD0idXJsKCNza3kpIi8+CiAgPGNpcmNsZSBjeD0iMjcyIiBjeT0iMjQiIHI9IjE4IiBmaWxsPSIjZmZkNjZiIiBvcGFjaXR5PSIwLjU1Ii8+CgogIDwhLS0gUG9vbHNpZGUgLS0+CiAgPHJlY3QgeD0iMCIgeT0iNTIiIHdpZHRoPSIzMjAiIGhlaWdodD0iMTIiIGZpbGw9IiNjZmQ2ZDkiLz4KICA8cmVjdCB4PSIwIiB5PSI2MiIgd2lkdGg9IjMyMCIgaGVpZ2h0PSI2NiIgZmlsbD0idXJsKCNwb29sKSIvPgoKICA8IS0tIEZsb2F0aW5nIG9ic3RhY2xlcyByZWNlZGluZyBhY3Jvc3MgdGhlIHBvb2wgLS0+CiAgPGc+CiAgICA8cmVjdCB4PSIyNCIgeT0iODYiIHdpZHRoPSI1NCIgaGVpZ2h0PSIxMyIgcng9IjYiIGZpbGw9IiNmNDYyMmYiLz4KICAgIDxyZWN0IHg9IjI0IiB5PSI5NyIgd2lkdGg9IjU0IiBoZWlnaHQ9IjUiIHJ4PSIyLjUiIGZpbGw9IiNjMzRhMjAiLz4KICAgIDxyZWN0IHg9IjExMiIgeT0iNzgiIHdpZHRoPSI0NiIgaGVpZ2h0PSIxMSIgcng9IjUuNSIgZmlsbD0iI2Y3YzAyZSIvPgogICAgPHJlY3QgeD0iMTEyIiB5PSI4NyIgd2lkdGg9IjQ2IiBoZWlnaHQ9IjQiIHJ4PSIyIiBmaWxsPSIjYzk5MzBmIi8+CiAgICA8cmVjdCB4PSIxOTIiIHk9IjcyIiB3aWR0aD0iNDAiIGhlaWdodD0iMTAiIHJ4PSI1IiBmaWxsPSIjM2ZiZjZhIi8+CiAgICA8cmVjdCB4PSIxOTIiIHk9IjgwIiB3aWR0aD0iNDAiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IiMyYjhkNGMiLz4KICAgIDxyZWN0IHg9IjI1OCIgeT0iNjgiIHdpZHRoPSIzNCIgaGVpZ2h0PSI5IiByeD0iNC41IiBmaWxsPSIjZjQ2MjJmIi8+CiAgPC9nPgoKICA8IS0tIE1pZC13aXBlb3V0OiBhIGZpZ3VyZSBsZWF2aW5nIHRoZSBwYWQsIGFscmVhZHkgcGFzdCBzYXZpbmcgaXQgLS0+CiAgPGcgZmlsbD0iI2YwYzlhOCI+CiAgICA8Y2lyY2xlIGN4PSIxNTAiIGN5PSI0NCIgcj0iOSIvPgogICAgPHBhdGggZD0iTTE0MyA1NGgxNWw0IDIyaC0yM3oiLz4KICAgIDxwYXRoIGQ9Ik0xNDYgNzZsLTkgMTcgNiAzIDEwLTE2eiIvPgogICAgPHBhdGggZD0iTTE1OCA3NmwxMCAxNS02IDQtMTAtMTV6Ii8+CiAgICA8cGF0aCBkPSJNMTQxIDU4bC0xOSA2IDIgNiAyMC01eiIgLz4KICAgIDxwYXRoIGQ9Ik0xNjAgNTdsMTgtOSAzIDYtMTggMTB6Ii8+CiAgPC9nPgoKICA8IS0tIFNwbGFzaCBiZWxvdyAtLT4KICA8ZyBmaWxsPSIjZWFmYWZmIiBvcGFjaXR5PSIwLjkiPgogICAgPGVsbGlwc2UgY3g9IjE1MCIgY3k9IjEwNCIgcng9IjMwIiByeT0iOCIvPgogICAgPHBhdGggZD0iTTEyNCAxMDBsLTgtMTQgNyAzIDQgMTB6Ii8+CiAgICA8cGF0aCBkPSJNMTc2IDEwMGw5LTE1LTcgMy01IDExeiIvPgogICAgPHBhdGggZD0iTTE1MCA5NmwtMy0xOCA2IDAtMSAxOHoiLz4KICA8L2c+CiAgPGcgZmlsbD0iI2ZmZmZmZiIgb3BhY2l0eT0iMC43NSI+CiAgICA8Y2lyY2xlIGN4PSIxMTgiIGN5PSI4MCIgcj0iMyIvPgogICAgPGNpcmNsZSBjeD0iMTg0IiBjeT0iNzYiIHI9IjIuNSIvPgogICAgPGNpcmNsZSBjeD0iMTYzIiBjeT0iNzAiIHI9IjIiLz4KICA8L2c+CgogIDwhLS0gU3VyZmFjZSBjaG9wIC0tPgogIDxnIHN0cm9rZT0iI2JmZjBmZiIgc3Ryb2tlLW9wYWNpdHk9IjAuMyIgc3Ryb2tlLXdpZHRoPSIyIiBmaWxsPSJub25lIj4KICAgIDxwYXRoIGQ9Ik0wIDExNnExOC03IDM2IDB0MzYgMCIvPgogICAgPHBhdGggZD0iTTIxMiAxMjBxMTgtNyAzNiAwdDM2IDAiLz4KICA8L2c+Cjwvc3ZnPgo=",
+      "nodes": [
+        {
+          "id": "brief",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 300
+          },
+          "data": {
+            "type": "prompt",
+            "label": "The Brief",
+            "text": "Write ONE prompt for a 10-second vertical AI video. Output only the prompt itself — no title, no explanation, no preamble, no quotes, no markdown.\n\n# THE SHOT\nA single contestant attempting a floating obstacle course over water, filmed by a friend on a modern phone. One continuous handheld take, no cuts. The contestant's face stays visible. It ends in one unexpected wipeout.\n\n# MUST READ AS A REAL PHONE VIDEO\n• Handheld from the poolside, slight micro-shake, imperfect framing, a touch of autofocus hunting.\n• Never drone, tripod, gimbal, stabiliser or cinematic camera moves.\n• The person filming is never seen — no hands, shadow or reflection.\n• Natural sound only: splashes, wet slaps on inflatables, shouting, laughing, pool ambience. No music, no narration.\n• Nothing glossy — not an advert, not influencer content, not a film.\n\n# VARY IT\nPick a different location, contestant and obstacle order than any prompt you have already written in this conversation, and end on a different wipeout. Obstacles to draw from: floating pads, balance beam, rolling log, rope swing, tilting platform, rotating arm, slippery ramp, foam wall.\n\n# BEAT-BY-BEAT\nDescribe the ten seconds in order — the approach, two or three obstacles, then the fall. Keep it under 150 words."
+          }
+        },
+        {
+          "id": "ask1",
+          "type": "generate",
+          "position": {
+            "x": 560,
+            "y": 0
+          },
+          "data": {
+            "type": "generate",
+            "label": "Write Clip 1",
+            "platform": "chatgpt",
+            "mediaType": "text",
+            "model": "",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "clip1",
+          "type": "generate",
+          "position": {
+            "x": 1040,
+            "y": 0
+          },
+          "data": {
+            "type": "generate",
+            "label": "Clip 1",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "ask2",
+          "type": "generate",
+          "position": {
+            "x": 560,
+            "y": 420
+          },
+          "data": {
+            "type": "generate",
+            "label": "Write Clip 2",
+            "platform": "chatgpt",
+            "mediaType": "text",
+            "model": "",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "clip2",
+          "type": "generate",
+          "position": {
+            "x": 1040,
+            "y": 420
+          },
+          "data": {
+            "type": "generate",
+            "label": "Clip 2",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "ask3",
+          "type": "generate",
+          "position": {
+            "x": 560,
+            "y": 840
+          },
+          "data": {
+            "type": "generate",
+            "label": "Write Clip 3",
+            "platform": "chatgpt",
+            "mediaType": "text",
+            "model": "",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "clip3",
+          "type": "generate",
+          "position": {
+            "x": 1040,
+            "y": 840
+          },
+          "data": {
+            "type": "generate",
+            "label": "Clip 3",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "ask4",
+          "type": "generate",
+          "position": {
+            "x": 560,
+            "y": 1260
+          },
+          "data": {
+            "type": "generate",
+            "label": "Write Clip 4",
+            "platform": "chatgpt",
+            "mediaType": "text",
+            "model": "",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "clip4",
+          "type": "generate",
+          "position": {
+            "x": 1040,
+            "y": 1260
+          },
+          "data": {
+            "type": "generate",
+            "label": "Clip 4",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "10s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_brief_ask1_t",
+          "source": "brief",
+          "target": "ask1",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_ask1_clip1_t",
+          "source": "ask1",
+          "target": "clip1",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_brief_ask2_t",
+          "source": "brief",
+          "target": "ask2",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_ask2_clip2_t",
+          "source": "ask2",
+          "target": "clip2",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_brief_ask3_t",
+          "source": "brief",
+          "target": "ask3",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_ask3_clip3_t",
+          "source": "ask3",
+          "target": "clip3",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_brief_ask4_t",
+          "source": "brief",
+          "target": "ask4",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_ask4_clip4_t",
+          "source": "ask4",
+          "target": "clip4",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "chatgpt",
+        "flow"
+      ],
+      "tier": "free"
+    }
+  ]
+}
