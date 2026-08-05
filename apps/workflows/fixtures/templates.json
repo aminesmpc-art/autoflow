@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "publishedAt": "2026-08-05T02:16:11.335Z",
+  "publishedAt": "2026-08-05T20:05:36.271Z",
   "templates": [
     {
       "id": "tpl_simple_image",
@@ -3866,11 +3866,11 @@
     {
       "id": "tpl_miniature_car",
       "name": "Miniature Car: Carve → Match Cut",
-      "description": "Name a car. Flow draws the reference sheet, then four clips carve it and match-cut to the real one.",
+      "description": "Name a car. A preset writes the sheet prompt, then four clips carve it and match-cut to the real one.",
       "useCase": "The build-up-and-reveal format, where the whole video is a setup for the last two seconds. Change the first line of the first node to any car — \"BMW M3 E46, 2003, Laguna Seca Blue\" — and it renders a three-view reference sheet, then carves it, details it, paints it and reveals it full size. No photo to source, and the sheet comes out at the angles and lighting the carve clips need rather than whatever a stock shot happened to be. The Last Frame nodes matter more here than anywhere: the match cut only lands if the miniature the reveal inherits is exactly the one the previous clip finished, so the handoff sits on the canvas where you can check it before spending a generation. Editing note from the format — post the reveal first as the hook, then the build.",
       "category": "Content",
       "difficulty": "Advanced",
-      "nodeCount": 13,
+      "nodeCount": 14,
       "thumbnail": "🚗",
       "thumbnailImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMjAgMTI4IiB3aWR0aD0iMzIwIiBoZWlnaHQ9IjEyOCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJDYXJ2ZWQgd29vZGVuIGNhciBiZWNvbWluZyBhIHJlYWwgY2FyIj4KICA8IS0tIFRoZSBmb3JtYXQgaW4gb25lIGZyYW1lOiByYXcgYmxvY2sgb24gdGhlIGxlZnQsIGNhcnZlZCBtb2RlbCBpbiB0aGUKICAgICAgIG1pZGRsZSwgdGhlIHJlYWwgY2FyIGVtZXJnaW5nIG9uIHRoZSByaWdodC4gUmVhZCBhdCAxMjhweCBiZWhpbmQgYQogICAgICAgc2NyaW0sIHNvIGl0IGlzIGJ1aWx0IGZyb20gc2lsaG91ZXR0ZXMgcmF0aGVyIHRoYW4gZGV0YWlsLiAtLT4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iYmVuY2giIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjMjAxNTBmIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzBiMDcwNSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0id2FsbnV0IiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzlhNjEzNCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiM1ZDM4MTkiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImxhY3F1ZXIiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjZThlY2YyIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMC40NSIgc3RvcC1jb2xvcj0iIzlhYTdiOCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMzOTQyNGYiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImtleSIgeDE9IjAiIHkxPSIwIiB4Mj0iMSIgeTI9IjAiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiNmZmIyNTciIHN0b3Atb3BhY2l0eT0iMC41Ii8+CiAgICAgIDxzdG9wIG9mZnNldD0iMC42IiBzdG9wLWNvbG9yPSIjZmZiMjU3IiBzdG9wLW9wYWNpdHk9IjAiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9InJpbSIgeDE9IjEiIHkxPSIwIiB4Mj0iMCIgeTI9IjAiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiM1ZWM4ZmYiIHN0b3Atb3BhY2l0eT0iMC41Ii8+CiAgICAgIDxzdG9wIG9mZnNldD0iMC42IiBzdG9wLWNvbG9yPSIjNWVjOGZmIiBzdG9wLW9wYWNpdHk9IjAiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgPC9kZWZzPgoKICA8cmVjdCB3aWR0aD0iMzIwIiBoZWlnaHQ9IjEyOCIgZmlsbD0idXJsKCNiZW5jaCkiLz4KICA8cmVjdCB3aWR0aD0iMzIwIiBoZWlnaHQ9IjEyOCIgZmlsbD0idXJsKCNrZXkpIi8+CiAgPHJlY3Qgd2lkdGg9IjMyMCIgaGVpZ2h0PSIxMjgiIGZpbGw9InVybCgjcmltKSIvPgoKICA8IS0tIEJlbmNoIHN1cmZhY2UgLS0+CiAgPHJlY3QgeD0iMCIgeT0iOTYiIHdpZHRoPSIzMjAiIGhlaWdodD0iMzIiIGZpbGw9IiMyYTFhMTEiLz4KICA8cmVjdCB4PSIwIiB5PSI5NiIgd2lkdGg9IjMyMCIgaGVpZ2h0PSIyIiBmaWxsPSIjNmI0NTI2IiBvcGFjaXR5PSIwLjciLz4KCiAgPCEtLSAxLiBSYXcgYmxvY2ssIGNoaXNlbCBtYXJrcyAtLT4KICA8Zz4KICAgIDxwYXRoIGQ9Ik0xOCA2MGg1MnYzNkgxOHoiIGZpbGw9InVybCgjd2FsbnV0KSIvPgogICAgPHBhdGggZD0iTTE4IDYwaDUydjZIMTh6IiBmaWxsPSIjYjM3NjNmIiBvcGFjaXR5PSIwLjgiLz4KICAgIDxnIHN0cm9rZT0iIzNkMjQxMCIgc3Ryb2tlLW9wYWNpdHk9IjAuNTUiIHN0cm9rZS13aWR0aD0iMiI+CiAgICAgIDxwYXRoIGQ9Ik0yNiA2OGw4IDhNNDAgNjRsMTAgMTBNNTYgNzBsOCA4TTMwIDg0bDkgOCIvPgogICAgPC9nPgogICAgPCEtLSBzaGF2aW5ncyAtLT4KICAgIDxnIGZpbGw9IiNjMDhhNGQiIG9wYWNpdHk9IjAuNjUiPgogICAgICA8cGF0aCBkPSJNOCA5NHE2LTcgMTMtMy01IDUtMTMgM3oiLz4KICAgICAgPHBhdGggZD0iTTc0IDk1cTctNiAxMy0xLTYgNC0xMyAxeiIvPgogICAgPC9nPgogIDwvZz4KCiAgPCEtLSAyLiBDYXJ2ZWQgbWluaWF0dXJlLCBiYXJlIHdvb2QgLS0+CiAgPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTE0IDUyKSI+CiAgICA8cGF0aCBkPSJNNiAzMHE0LTE0IDE2LTE2aDIycTEzIDIgMTggMTZsNCA4cTEgNi01IDZIN3EtNiAwLTYtNnoiIGZpbGw9InVybCgjd2FsbnV0KSIvPgogICAgPHBhdGggZD0iTTE3IDE2cTQtOCAxMS05aDE0cTggMSAxMSA5eiIgZmlsbD0iI2M3OTI1NiIgb3BhY2l0eT0iMC41NSIvPgogICAgPGNpcmNsZSBjeD0iMTYiIGN5PSI0NCIgcj0iNyIgZmlsbD0iIzJiMWEwZCIvPgogICAgPGNpcmNsZSBjeD0iNTAiIGN5PSI0NCIgcj0iNyIgZmlsbD0iIzJiMWEwZCIvPgogICAgPGNpcmNsZSBjeD0iMTYiIGN5PSI0NCIgcj0iMyIgZmlsbD0iIzdkNTIyOCIvPgogICAgPGNpcmNsZSBjeD0iNTAiIGN5PSI0NCIgcj0iMyIgZmlsbD0iIzdkNTIyOCIvPgogIDwvZz4KCiAgPCEtLSBNYXRjaC1jdXQgc2VhbTogdGhlIG1vbWVudCB0aGUgc2NhbGUgY2hhbmdlcyAtLT4KICA8Zz4KICAgIDxyZWN0IHg9IjIwNCIgeT0iMCIgd2lkdGg9IjIiIGhlaWdodD0iMTI4IiBmaWxsPSIjZmZkOWEwIiBvcGFjaXR5PSIwLjM1Ii8+CiAgICA8cmVjdCB4PSIyMDMiIHk9IjAiIHdpZHRoPSI0IiBoZWlnaHQ9IjEyOCIgZmlsbD0iI2ZmZDlhMCIgb3BhY2l0eT0iMC4xMiIvPgogIDwvZz4KCiAgPCEtLSAzLiBUaGUgcmVhbCBjYXIsIGxhY3F1ZXJlZCwgbGFyZ2VyLCB3ZXQgYXNwaGFsdCAtLT4KICA8ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSgyMTYgNDApIj4KICAgIDxwYXRoIGQ9Ik00IDQ0cTUtMjAgMjItMjNoMzRxMTkgMyAyNiAyM2w2IDExcTIgOC03IDhIOHEtOSAwLTgtOHoiIGZpbGw9InVybCgjbGFjcXVlcikiLz4KICAgIDxwYXRoIGQ9Ik0yMiAyMnE2LTExIDE2LTEyaDIwcTExIDEgMTYgMTJ6IiBmaWxsPSIjY2ZlM2Y1IiBvcGFjaXR5PSIwLjYiLz4KICAgIDwhLS0gaGVhZGxpZ2h0LCB0aGUgdGhpbmcgdGhlIGNhbWVyYSBwdXNoZXMgaW50byAtLT4KICAgIDxlbGxpcHNlIGN4PSI5MCIgY3k9IjQ0IiByeD0iNyIgcnk9IjUiIGZpbGw9IiNmZmZiZTgiLz4KICAgIDxlbGxpcHNlIGN4PSI5MCIgY3k9IjQ0IiByeD0iMTQiIHJ5PSI5IiBmaWxsPSIjZmZmYmU4IiBvcGFjaXR5PSIwLjE4Ii8+CiAgICA8Y2lyY2xlIGN4PSIyMiIgY3k9IjYyIiByPSIxMCIgZmlsbD0iIzEyMTUxYSIvPgogICAgPGNpcmNsZSBjeD0iNzAiIGN5PSI2MiIgcj0iMTAiIGZpbGw9IiMxMjE1MWEiLz4KICAgIDxjaXJjbGUgY3g9IjIyIiBjeT0iNjIiIHI9IjQuNSIgZmlsbD0iIzdmOGI5YyIvPgogICAgPGNpcmNsZSBjeD0iNzAiIGN5PSI2MiIgcj0iNC41IiBmaWxsPSIjN2Y4YjljIi8+CiAgICA8IS0tIHJlZmxlY3Rpb24gb24gd2V0IGdyb3VuZCAtLT4KICAgIDxwYXRoIGQ9Ik02IDc0aDg0bC04IDEwSDE0eiIgZmlsbD0iIzlhYTdiOCIgb3BhY2l0eT0iMC4xOCIvPgogIDwvZz4KPC9zdmc+Cg==",
       "nodes": [
@@ -3879,12 +3879,38 @@
           "type": "prompt",
           "position": {
             "x": 40,
-            "y": 260
+            "y": 300
           },
           "data": {
             "type": "prompt",
-            "label": "Which Car — edit line 1",
-            "text": "Reference sheet of a BMW M3 E46, 2003, Laguna Seca Blue.\n\nOne image on a plain mid-grey studio backdrop showing three views of that exact car: three-quarter front on the left, dead-side profile in the centre, three-quarter rear on the right. Even neutral studio lighting. The whole car in frame in every view, wheels straight, no cropping.\n\nRender the real production car of that exact year and trim, with its own headlights, grille, bumpers, mirrors, wheels, badges and exhaust layout, in that exact paint colour. Do not substitute another model and do not restyle it.\n\nUltra photorealistic product photography, 8K, sharp throughout, accurate panel reflections. No people, no background detail, no text, no watermarks."
+            "label": "Which Car",
+            "text": "BMW M3 E46, 2003, Laguna Seca Blue"
+          }
+        },
+        {
+          "id": "ask_sheet",
+          "type": "generate",
+          "position": {
+            "x": 480,
+            "y": 260
+          },
+          "data": {
+            "type": "generate",
+            "label": "Write the Sheet Prompt",
+            "platform": "chatgpt",
+            "mediaType": "text",
+            "model": "",
+            "aspectRatio": "9:16",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null,
+            "preset": "car_sheet"
           }
         },
         {
@@ -4106,8 +4132,21 @@
       ],
       "edges": [
         {
-          "id": "e_p_car_g_sheet_t",
+          "id": "e_p_car_ask_sheet_t",
           "source": "p_car",
+          "target": "ask_sheet",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_ask_sheet_g_sheet_t",
+          "source": "ask_sheet",
           "target": "g_sheet",
           "sourceHandle": "text",
           "targetHandle": "text",
@@ -4268,6 +4307,7 @@
         "prompt"
       ],
       "requiresPlatforms": [
+        "chatgpt",
         "flow"
       ],
       "minExtensionVersion": "0.6.0",

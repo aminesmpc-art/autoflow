@@ -124,8 +124,12 @@ const frameNode = (id: string, label: string, x: number, y: number): Node => ({
 });
 
 /** An Ask AI node — ChatGPT writing text, so no model or ratio applies. */
-const askNode = (id: string, label: string, x: number, y: number): Node =>
-  genNode(id, { label, mediaType: 'text', platform: 'chatgpt' }, x, y);
+const askNode = (id: string, label: string, x: number, y: number, preset?: string): Node => {
+  const node = genNode(id, { label, mediaType: 'text', platform: 'chatgpt' }, x, y);
+  // A preset wraps whatever the user types in a brief — see studio/presets.
+  if (preset) (node.data as any).preset = preset;
+  return node;
+};
 
 /** text edge (orange) */
 const tEdge = (source: string, target: string): Edge => ({
@@ -375,36 +379,14 @@ const CAR_STYLE =
   'body lines and colour. Do not restyle or substitute a different car.\n' +
   'Vertical 9:16.';
 
-/* The one node the user edits — and it goes straight to the image model.
+/* The car the user wants, and nothing else.
 
-   This used to route through ChatGPT to write the sheet prompt first, which
-   was a mistake twice over.
-
-   It was slow: a full chat round-trip and a tab switch before the first pixel,
-   on top of a run that is already four video generations long.
-
-   And it was wrong. The line reading "↑ Change this line to any car" was
-   written at the user, but ChatGPT is not able to tell the difference — asked
-   for a BMW M3 E46 it duly changed the line to any car and returned a Nissan
-   Skyline R34. Nothing in a prompt can be addressed to someone other than the
-   model reading it. The editing hint now lives in the node's label, where the
-   model never sees it.
-
-   Dropping the middle step lost nothing: the image model knows what an E46
-   looks like far better than a paragraph describing one, so having a text
-   model enumerate the headlights first was ceremony. */
-const CAR_BRIEF =
-  'Reference sheet of a BMW M3 E46, 2003, Laguna Seca Blue.\n\n' +
-  'One image on a plain mid-grey studio backdrop showing three views of that ' +
-  'exact car: three-quarter front on the left, dead-side profile in the ' +
-  'centre, three-quarter rear on the right. Even neutral studio lighting. The ' +
-  'whole car in frame in every view, wheels straight, no cropping.\n\n' +
-  'Render the real production car of that exact year and trim, with its own ' +
-  'headlights, grille, bumpers, mirrors, wheels, badges and exhaust layout, in ' +
-  'that exact paint colour. Do not substitute another model and do not restyle ' +
-  'it.\n\n' +
-  'Ultra photorealistic product photography, 8K, sharp throughout, accurate ' +
-  'panel reflections. No people, no background detail, no text, no watermarks.';
+   This used to be CAR_BRIEF — 150 words of sheet instructions wrapped around
+   one editable line. That brief now lives in studio/presets as `car_sheet`,
+   where every template can reach it and a bad wording can be fixed without a
+   store review. What is left here is the only part that was ever the user's:
+   the car. */
+const CAR_SUBJECT = 'BMW M3 E46, 2003, Laguna Seca Blue';
 
 /** [key, label, the ten seconds — ending on the state the next clip inherits] */
 const CAR_STAGES = [
@@ -1063,18 +1045,22 @@ export const BUILTIN_TEMPLATES: Template[] = [
   {
     id: 'tpl_miniature_car',
     name: 'Miniature Car: Carve → Match Cut',
-    description: 'Name a car. Flow draws the reference sheet, then four clips carve it and match-cut to the real one.',
+    description: 'Name a car. A preset writes the sheet prompt, then four clips carve it and match-cut to the real one.',
     useCase:
       'The build-up-and-reveal format, where the whole video is a setup for the last two seconds. Change the first line of the first node to any car — "BMW M3 E46, 2003, Laguna Seca Blue" — and it renders a three-view reference sheet, then carves it, details it, paints it and reveals it full size. No photo to source, and the sheet comes out at the angles and lighting the carve clips need rather than whatever a stock shot happened to be. The Last Frame nodes matter more here than anywhere: the match cut only lands if the miniature the reveal inherits is exactly the one the previous clip finished, so the handoff sits on the canvas where you can check it before spending a generation. Editing note from the format — post the reveal first as the hook, then the build.',
     category: 'Content',
     difficulty: 'Advanced',
-    nodeCount: 13,
+    nodeCount: 14,
     thumbnail: '🚗',
     thumbnailImage: 'assets/templates/miniature-car.svg',
     nodes: [
       // The label carries the editing hint; the prompt text cannot, because
       // everything in it is read by a model as an instruction to itself.
-      promptNode('p_car', 'Which Car — edit line 1', CAR_BRIEF, 40, 260),
+      promptNode('p_car', 'Which Car', CAR_SUBJECT, 40, 300),
+      // The car_sheet preset turns those few words into the full brief — the
+      // angles, the lighting, and the instruction to name this generation's
+      // details rather than any car of the class.
+      askNode('ask_sheet', 'Write the Sheet Prompt', 480, 260, 'car_sheet'),
       genNode('g_sheet', {
         label: 'Car Reference Sheet',
         mediaType: 'image',
@@ -1101,8 +1087,9 @@ export const BUILTIN_TEMPLATES: Template[] = [
       }),
     ],
     edges: [
-      // Straight to the image model — no text model in between to reinterpret it.
-      tEdge('p_car', 'g_sheet'),
+      // Car name → preset writes the brief → Flow renders the sheet.
+      tEdge('p_car', 'ask_sheet'),
+      tEdge('ask_sheet', 'g_sheet'),
     ].concat(CAR_STAGES.flatMap(([key], i) => {
       const prev = CAR_STAGES[i - 1];
       const out = [

@@ -161,13 +161,25 @@ describe('Miniature Car', () => {
     expect(tpl.nodes.filter((n) => n.type === 'image')).toHaveLength(0);
   });
 
-  it('sends the car straight to the image model', () => {
-    // It used to go through ChatGPT to have the sheet prompt written. That
-    // cost a chat round-trip before the first pixel, and bought nothing the
-    // image model did not already know about the car.
+  it('routes the car name through the car_sheet preset', () => {
+    /* The prompt node now holds only "BMW M3 E46, 2003, Laguna Seca Blue".
+       The 150 words of sheet instructions live in studio/presets, where every
+       template can reach them and a bad wording is fixable without a store
+       review — rather than being duplicated inline here. */
     const from = (id: string) => tpl.edges.filter((e) => e.source === id).map((e) => e.target);
-    expect(from('p_car')).toEqual(['g_sheet']);
-    expect(tpl.nodes.some((n) => (n.data as any).platform === 'chatgpt')).toBe(false);
+    expect(from('p_car')).toEqual(['ask_sheet']);
+    expect(from('ask_sheet')).toContain('g_sheet');
+
+    const ask = byId.get('ask_sheet')!.data as any;
+    expect({ media: ask.mediaType, preset: ask.preset })
+      .toEqual({ media: 'text', preset: 'car_sheet' });
+  });
+
+  it('asks the user for the car and nothing more', () => {
+    // The whole point of the preset: what is typed is a car, not a brief.
+    const text: string = (byId.get('p_car')!.data as any).text;
+    expect(text.length).toBeLessThan(80);
+    expect(text).toMatch(/BMW/);
   });
 
 
@@ -183,9 +195,9 @@ describe('Miniature Car', () => {
 
   it('chains the four clips through three visible frames', () => {
     const count = (type: string) => tpl.nodes.filter((n) => n.type === type).length;
-    // 4 carve clips + the reference sheet.
+    // 4 carve clips + the reference sheet + the Ask AI node.
     expect({ generate: count('generate'), frames: count('frame') })
-      .toEqual({ generate: 5, frames: 3 });
+      .toEqual({ generate: 6, frames: 3 });
     // The reveal ends the chain, so it feeds no frame.
     expect(tpl.edges.some((e) => e.source === 'g_reveal' && e.targetHandle === 'image_ref'))
       .toBe(false);
