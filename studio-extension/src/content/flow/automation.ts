@@ -2209,9 +2209,18 @@ export class AutomationEngine {
     const currentModelRaw = finalTrigger.textContent?.trim() || '';
     const currentModelNorm = normalizeForModelMatch(currentModelRaw);
     const targetNorm = normalizeForModelMatch(modelName);
-    if (currentModelNorm.includes(targetNorm)) {
+    /* Exact, not "contains".
+       "Nano Banana 2 Lite" contains "Nano Banana 2", so asking for the plain
+       model while Flow sat on Lite reported "already set" and returned without
+       opening anything — the same prefix trap fixed in the item matching
+       below, left in the one check that runs before it. Every earlier attempt
+       at this bug was downstream of a function that returned on line one. */
+    if (currentModelNorm === targetNorm) {
       this.log('info', `Model already set: ${currentModelRaw}`);
       return;
+    }
+    if (currentModelNorm) {
+      this.log('info', `Model is "${currentModelRaw}", switching to "${modelName}"`);
     }
 
     // Open the model dropdown — try multiple strategies
@@ -2339,7 +2348,9 @@ export class AutomationEngine {
           const raw = readSelectedModel(ALL_KNOWN_MODELS);
           if (!raw) return false;
           const norm = normalizeForModelMatch(raw);
-          return norm === normalizeForModelMatch(chosen.text) || norm.includes(targetNorm);
+          // Exact for the same reason: Lite must not satisfy a request for
+          // the model it is a variant of.
+          return norm === normalizeForModelMatch(chosen.text) || norm === targetNorm;
         };
 
         /* An escalating ladder, not one click.

@@ -105,6 +105,45 @@ describe('choosing from the live menu', () => {
    Radix's internals — and what actually needs protecting is the decision to
    have more than one strategy, which is exactly what a later tidy-up would
    undo. */
+/* The check that runs BEFORE any of the above, and the one that actually
+   broke it. From a live log:
+
+       [model] chose "🍌 Nano Banana 2 Litearrow_drop_down"
+       [INFO]  Model already set: 🍌 Nano Banana 2 Lite
+
+   Flow was on Lite, the node wanted the plain model, and
+   "nano banana 2 lite".includes("nano banana 2") is true — so setModel
+   returned on its first branch and never opened a menu at all. Five earlier
+   attempts were spent on code that never ran. */
+describe('deciding the model is already set', () => {
+  const alreadySet = (current: string, want: string) =>
+    normalizeForModelMatch(current) === normalizeForModelMatch(want);
+
+  it('does not treat Lite as the model it is a variant of', () => {
+    expect(alreadySet('🍌 Nano Banana 2 Litearrow_drop_down', 'Nano Banana 2')).toBe(false);
+  });
+
+  it('does not treat the plain model as Lite either', () => {
+    expect(alreadySet('🍌 Nano Banana 2arrow_drop_down', 'Nano Banana 2 Lite')).toBe(false);
+  });
+
+  it('recognises a genuine match, glyph and emoji included', () => {
+    expect(alreadySet('🍌 Nano Banana 2arrow_drop_down', 'Nano Banana 2')).toBe(true);
+    expect(alreadySet('🍌 Nano Banana 2 Litearrow_drop_down', 'Nano Banana 2 Lite')).toBe(true);
+  });
+
+  it('holds for every pair of models we offer', () => {
+    // Any two different models must never be mistaken for each other, in
+    // either direction — prefixes are the whole hazard here.
+    for (const a of AVAILABLE_IMAGE_MODELS) {
+      for (const b of AVAILABLE_IMAGE_MODELS) {
+        expect({ a, b, same: alreadySet(`🍌 ${a}arrow_drop_down`, b) })
+          .toEqual({ a, b, same: a === b });
+      }
+    }
+  });
+});
+
 describe('setModel clicks like clickGenerate does', () => {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const source: string = require('fs').readFileSync(
