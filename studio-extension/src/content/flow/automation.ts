@@ -31,6 +31,9 @@ import {
   findPromptInput,
   findGenerateButton,
   findCreditsExhaustedNotice,
+  findAttachedIngredients,
+  findLoadedIngredients,
+  waitForIngredients,
   findFlowAlertIndicator,
   readFlowAlertMessage,
   readsAsCreditsExhausted,
@@ -640,6 +643,25 @@ export class AutomationEngine {
 
         // Snapshot API cache BEFORE Generate (so we can diff later to find new entries)
         onBeforeSubmit();
+
+        /* Last line of defence before spending a generation.
+           Attaching verifies its own work now, but filling the prompt sits
+           between the two and can re-render the prompt bar — so the count is
+           re-read here rather than assumed to have survived. Generating with a
+           reference missing produces a plausible clip built from the text
+           alone, which is the one failure nothing downstream can detect. */
+        if (prompt.images && prompt.images.length > 0) {
+          const attachedNow = findLoadedIngredients().length;
+          if (attachedNow < prompt.images.length) {
+            const ok = await waitForIngredients(prompt.images.length, 20_000);
+            if (!ok) {
+              throw new Error(
+                `Flow shows ${findLoadedIngredients().length} of ${prompt.images.length} reference image(s) ` +
+                'attached. Generating now would drop the reference, so this node stopped instead.'
+              );
+            }
+          }
+        }
 
         // State: CLICK_GENERATE
         this.state = 'CLICK_GENERATE';
@@ -2381,15 +2403,30 @@ export class AutomationEngine {
       if (promptInput instanceof HTMLElement) promptInput.focus();
       await sleep(100);
 
+      // What is attached already — the wait below is for ours, not the total.
+      const before = findLoadedIngredients().length;
+
       const pasteEvent = new ClipboardEvent('paste', {
         bubbles: true,
         cancelable: true,
         clipboardData: dt,
       });
       promptInput.dispatchEvent(pasteEvent);
-      this.log('info', `Pasted ${newIndices.length} new image(s) — waiting 8s for upload...`);
 
-      await sleep(8000);
+      /* Wait for the chips to actually arrive, rather than sleeping 8s and
+         hoping. Typing the prompt and clicking Generate while an upload is
+         still in flight makes Flow generate from the text alone — the
+         reference silently dropped, and nothing on screen to say so. */
+      const wantChips = before + newIndices.length;
+      this.log('info', `Pasted ${newIndices.length} image(s) — waiting for them to attach...`);
+      if (!(await waitForIngredients(wantChips))) {
+        const got = findLoadedIngredients().length;
+        throw new Error(
+          `Only ${got} of ${wantChips} reference image(s) finished uploading to Flow. ` +
+          'Generating now would drop the reference, so this node stopped instead.'
+        );
+      }
+      this.log('info', `${wantChips} reference image(s) attached and loaded`);
 
       // Mark as uploaded
       for (const idx of newIndices) {
@@ -2528,6 +2565,7 @@ export class AutomationEngine {
       return false;
     }
 
+    const chipsBefore = findLoadedIngredients().length;
     const blob = this.base64ToBlob(fileData.data, fileData.mime);
     const file = new File([blob], filename, { type: fileData.mime });
     const dt = new DataTransfer();
@@ -2535,8 +2573,14 @@ export class AutomationEngine {
     fileInput.files = dt.files;
     triggerFileInputChange(fileInput);
     
-    this.log('info', `File uploaded: ${filename} — waiting 6s for Flow processing...`);
-    await sleep(6000);
+    /* Was a flat 6s. An upload slower than that meant the caller carried on
+       and Generate fired with nothing attached. */
+    const wantAfterUpload = chipsBefore + 1;
+    if (!(await waitForIngredients(wantAfterUpload))) {
+      this.log('warn', `${filename} did not finish uploading — Flow shows ${findLoadedIngredients().length} attached`);
+      return false;
+    }
+    this.log('info', `File uploaded and attached: ${filename}`);
     return true;
   }
 
@@ -2651,15 +2695,24 @@ export class AutomationEngine {
       if (promptInput instanceof HTMLElement) promptInput.focus();
       await sleep(200);
 
+      const framesBefore = findLoadedIngredients().length;
+
       const pasteEvent = new ClipboardEvent('paste', {
         bubbles: true,
         cancelable: true,
         clipboardData: dt,
       });
       promptInput.dispatchEvent(pasteEvent);
-      this.log('info', `Pasted ${filesToUpload.length} frame image(s) — waiting 8s for upload...`);
 
-      await sleep(8000);
+      const wantFrameChips = framesBefore + filesToUpload.length;
+      this.log('info', `Pasted ${filesToUpload.length} frame image(s) — waiting for them to attach...`);
+      if (!(await waitForIngredients(wantFrameChips))) {
+        const got = findLoadedIngredients().length;
+        throw new Error(
+          `Only ${got} of ${wantFrameChips} frame image(s) finished uploading to Flow. ` +
+          'Generating now would drop the reference, so this node stopped instead.'
+        );
+      }
 
       // Add to uploaded cache
       for (const item of filesToUpload) {

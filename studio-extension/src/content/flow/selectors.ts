@@ -740,6 +740,85 @@ export function findAssetResults(dialog: Element): Element[] {
  * visible element carrying both, small enough to be a notice rather than the
  * page, counts.
  */
+/* ── Attached reference images ────────────────────────────────
+   Flow shows each attached ingredient as a chip in the prompt bar:
+
+     <button data-card-open="false" data-state="closed">
+       <div><img src="/fx/api/trpc/media.getMediaUrlRedirect?name=..."
+                 crossorigin="anonymous" style="opacity: 1;"></div>
+       <div><i class="google-symbols">cancel</i></div>   ← remove
+     </button>
+
+   Uploading used to be followed by `await sleep(8000)` and an unconditional
+   "uploaded successfully". On a slow upload the prompt was typed and Generate
+   clicked while the chip was still arriving, so Flow generated from the text
+   alone — the reference silently dropped, the clip subtly wrong, and the run
+   green throughout.
+
+   Identified by the pair of things no other element on the page has together:
+   a media URL and a remove button. Grid tiles use the same URL shape, so the
+   cancel glyph is what separates "attached to this prompt" from "exists in
+   your library".
+   ──────────────────────────────────────────────────────────── */
+
+/** Reference chips currently attached to the prompt bar. */
+export function findAttachedIngredients(): HTMLElement[] {
+  const chips: HTMLElement[] = [];
+  for (const btn of document.querySelectorAll<HTMLElement>('button')) {
+    const img = btn.querySelector('img[src*="getMediaUrlRedirect"]');
+    if (!img) continue;
+    // The remove control is what makes it an attachment rather than a tile.
+    const removable = Array.from(btn.querySelectorAll('i')).some(
+      (i) => (i.textContent || '').trim().toLowerCase() === 'cancel'
+    );
+    if (removable && isVisible(btn)) chips.push(btn);
+  }
+  return chips;
+}
+
+/**
+ * Chips whose image has actually arrived.
+ *
+ * A chip appears the instant the upload starts, so counting chips alone still
+ * races the upload. Flow fades each one in with `opacity: 1` once it has
+ * loaded, and the element's own `complete`/`naturalWidth` say the same thing
+ * without depending on a style Flow could restyle tomorrow.
+ */
+export function findLoadedIngredients(): HTMLElement[] {
+  return findAttachedIngredients().filter((chip) => {
+    const img = chip.querySelector<HTMLImageElement>('img[src*="getMediaUrlRedirect"]');
+    return !!img && img.complete && img.naturalWidth > 0;
+  });
+}
+
+/**
+ * Wait until `expected` references are attached and loaded.
+ *
+ * Returns true only on evidence. A timeout returns false and the caller
+ * decides — which beats the old behaviour of sleeping a fixed 8 seconds and
+ * announcing success either way.
+ */
+export async function waitForIngredients(
+  expected: number,
+  timeoutMs = 45_000
+): Promise<boolean> {
+  if (expected <= 0) return true;
+  const deadline = Date.now() + timeoutMs;
+  let stable = 0;
+
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 500));
+    if (findLoadedIngredients().length >= expected) {
+      // Two consecutive clean reads: an upload finishing between polls would
+      // otherwise let a half-attached set through.
+      if (++stable >= 2) return true;
+    } else {
+      stable = 0;
+    }
+  }
+  return false;
+}
+
 /* ── Generation rows ──────────────────────────────────────────
    Every row in Flow's grid carries its own prompt, model, ratio and duration
    in the same block as its media. That makes "is this tile mine?" a question
