@@ -2264,22 +2264,52 @@ export class AutomationEngine {
       }
 
       if (chosen) {
-        // The clickable element may be a button inside the menuitem div
-        const innerBtn = chosen.item.querySelector('button');
-        simulateClick(innerBtn || chosen.item);
-        await humanDelay(400, 700);
+        // The clickable element is a <button> inside the menuitem div.
+        const innerBtn = chosen.item.querySelector('button') as HTMLElement | null;
+        const target = innerBtn || (chosen.item as HTMLElement);
 
-        /* Verify, because a click that did not take is invisible. Every other
-           silent-wrong-result bug this session came from reporting success on
-           the strength of having tried. */
-        const nowRaw = (overrideTrigger || findModelSelectorTrigger())?.textContent?.trim() || '';
-        const nowNorm = normalizeForModelMatch(nowRaw);
-        if (nowNorm.includes(targetNorm) || nowNorm === normalizeForModelMatch(chosen.text)) {
-          this.log('info', `Model set: ${nowRaw || chosen.text.trim()}`);
-          return;
+        const landed = (): boolean => {
+          const raw = (overrideTrigger || findModelSelectorTrigger())?.textContent?.trim() || '';
+          const norm = normalizeForModelMatch(raw);
+          return norm === normalizeForModelMatch(chosen.text) || norm.includes(targetNorm);
+        };
+
+        /* An escalating ladder, not one click.
+           This used to be a lone simulateClick, and that is why the model never
+           changed while the ratio tabs right above it did: the ratio buttons
+           are plain role="tab" elements, but a model row is a Radix menu item,
+           and React's synthetic handler ignores an event whose isTrusted is
+           false. Same lesson clickGenerate learned — reactTrigger runs in the
+           MAIN world, where the handler is real.
+
+           Verified after every attempt so the first one that works stops the
+           rest, and so a failure is a failure rather than four silent tries. */
+        const strategies: Array<[string, () => Promise<unknown> | unknown]> = [
+          ['react onSelect', () => reactTrigger(chosen.item, 'onSelect')],
+          ['react onClick', () => reactTrigger(target, 'onClick')],
+          ['native click', () => { nativeClick(target); }],
+          ['simulated click', () => { simulateClick(target); }],
+          // Radix drives its menus from the keyboard too, and Enter on a
+          // focused item goes through the same path a real user would.
+          ['keyboard Enter', async () => {
+            (chosen.item as HTMLElement).focus?.();
+            await reactKeyTrigger(chosen.item, 'Enter');
+          }],
+        ];
+
+        for (const [name, attempt] of strategies) {
+          if (this.stopped) return;
+          try { await attempt(); } catch { /* try the next one */ }
+          await humanDelay(400, 700);
+          if (landed()) {
+            this.log('info', `Model set to ${chosen.text.trim()} (via ${name})`);
+            return;
+          }
         }
+
+        const nowRaw = (overrideTrigger || findModelSelectorTrigger())?.textContent?.trim() || '';
         if (!isRetry && !overrideTrigger) {
-          this.log('warn', `Clicked "${chosen.text.trim()}" but Flow still shows "${nowRaw}" — retrying`);
+          this.log('warn', `Every click strategy left Flow on "${nowRaw}" — reopening settings and retrying`);
           await this.closeSettingsPanel();
           await humanDelay(500, 800);
           return this.setModel(modelName, null, true);

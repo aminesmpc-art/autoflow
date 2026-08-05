@@ -1,3 +1,4 @@
+/// <reference types="node" />
 /* ============================================================
    Choosing the right model from Flow's menu.
 
@@ -89,6 +90,47 @@ describe('choosing from the live menu', () => {
 
   it('still resolves a target that is only a substring, when unique', () => {
     expect(choose(FLOW_IMAGE_MENU, 'Pro')).toBe('🍌 Nano Banana Pro');
+  });
+});
+
+/* The decision above was only half the bug. The other half was the click.
+
+   setModel used a lone simulateClick, and that is why the model never changed
+   while the ratio tabs directly above it did: a ratio is a plain role="tab"
+   button, but a model row is a Radix menu item, and React's synthetic handler
+   ignores an event whose isTrusted is false. clickGenerate learned this and
+   grew a ladder; setModel never did.
+
+   Pinned by reading the source, because the alternative is a DOM harness for
+   Radix's internals — and what actually needs protecting is the decision to
+   have more than one strategy, which is exactly what a later tidy-up would
+   undo. */
+describe('setModel clicks like clickGenerate does', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const source: string = require('fs').readFileSync(
+    require('path').join(__dirname, '../content/flow/automation.ts'), 'utf8'
+  );
+  const setModelBody = source.slice(
+    source.indexOf('private async setModel'),
+    source.indexOf('IMAGE ATTACHMENT')
+  );
+
+  it('reaches the MAIN world, where the handler is real', () => {
+    // The one strategy a synthetic click cannot substitute for.
+    expect(setModelBody).toContain('reactTrigger');
+  });
+
+  it('has more than one way to click', () => {
+    const strategies = ['reactTrigger', 'nativeClick', 'simulateClick'];
+    for (const s of strategies) {
+      expect({ strategy: s, present: setModelBody.includes(s) })
+        .toEqual({ strategy: s, present: true });
+    }
+  });
+
+  it('checks whether the model actually changed', () => {
+    // Without this a failed click is four silent tries and a wrong run.
+    expect(setModelBody).toMatch(/const landed\s*=/);
   });
 });
 
