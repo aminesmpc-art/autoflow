@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "publishedAt": "2026-08-05T01:59:04.475Z",
+  "publishedAt": "2026-08-05T02:16:11.335Z",
   "templates": [
     {
       "id": "tpl_simple_image",
@@ -3148,6 +3148,719 @@
         "flow"
       ],
       "minExtensionVersion": "0.6.0",
+      "tier": "free"
+    },
+    {
+      "id": "tpl_emotional_short",
+      "name": "Emotional Short: 1 Character → 10 Beats",
+      "description": "Tension, escalation, an unexpected kindness, relief — ten scenes holding one character.",
+      "useCase": "The retention format: cold open on trouble, escalate, turn on an act of kindness, resolve warm — and frame the last shot to match the first so it loops. Every scene references the character sheet rather than the scene before it, because these are ten different moments and a face that drifts in scene 3 would otherwise poison the seven after it. The colour arc is the part most people skip and it does real work: desaturated blue-grey through the tense half, warming to gold at the turn. Ten 8s clips give you the spine, not the finished film — the 2-4 second cutting the format lives on happens in the edit, where you cover each beat from more than one angle.",
+      "category": "Content",
+      "difficulty": "Advanced",
+      "nodeCount": 22,
+      "thumbnail": "🎬",
+      "nodes": [
+        {
+          "id": "p_char",
+          "type": "prompt",
+          "position": {
+            "x": 40,
+            "y": 300
+          },
+          "data": {
+            "type": "prompt",
+            "label": "Character Design",
+            "text": "Character reference sheet: one photorealistic 3D animated character, on a plain mid-grey backdrop.\n\nA boy of about ten, thin, with dark tousled hair and large expressive brown eyes. Wearing a faded oversized green jacket with frayed cuffs, a grey shirt and worn trainers. Carrying a canvas satchel across one shoulder.\n\nThree views: three-quarter front on the left, side profile in the centre, three-quarter back on the right. Neutral even lighting, full body, sharp focus, natural skin and fabric texture.\n\nAn original fictional character, not any real person."
+          }
+        },
+        {
+          "id": "g_char",
+          "type": "generate",
+          "position": {
+            "x": 560,
+            "y": 260
+          },
+          "data": {
+            "type": "generate",
+            "label": "Character Sheet",
+            "platform": "flow",
+            "mediaType": "image",
+            "model": "Nano Banana Pro",
+            "aspectRatio": "16:9",
+            "duration": "6s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_hook",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 40
+          },
+          "data": {
+            "type": "prompt",
+            "label": "1. Hook — Something Is Wrong",
+            "text": "The boy stands alone at the mouth of a rain-soaked alley at dusk, clutching his satchel to his chest, looking back over his shoulder at something out of frame. Rain streaks the air. He is breathing fast.\nCOLOUR: desaturated blue-grey, cold, heavy shadows. Open on his face.\n\nUltra-realistic 3D animation, cinematic lighting, shallow depth of field, 35mm feel. Rendered like a modern animated feature, not a game engine.\nSame character as the reference: identical face, hair, build, clothing and colour palette. Do not restyle, age or redesign them.\nExpression carries the scene — the story is told in faces and body language, not dialogue. No spoken lines, no on-screen text, no subtitles.\nOne continuous shot, no cuts inside the clip. Slow deliberate camera.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_hook",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 0
+          },
+          "data": {
+            "type": "generate",
+            "label": "1. Hook — Something Is Wrong",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_loss",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 500
+          },
+          "data": {
+            "type": "prompt",
+            "label": "2. What He Has Lost",
+            "text": "He kneels on wet pavement and empties the satchel — a few coins, a folded photograph, nothing else. His hands are shaking. He presses the photograph flat and stares at it.\nCOLOUR: same cold blue-grey. One weak streetlamp above him.\n\nUltra-realistic 3D animation, cinematic lighting, shallow depth of field, 35mm feel. Rendered like a modern animated feature, not a game engine.\nSame character as the reference: identical face, hair, build, clothing and colour palette. Do not restyle, age or redesign them.\nExpression carries the scene — the story is told in faces and body language, not dialogue. No spoken lines, no on-screen text, no subtitles.\nOne continuous shot, no cuts inside the clip. Slow deliberate camera.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_loss",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 460
+          },
+          "data": {
+            "type": "generate",
+            "label": "2. What He Has Lost",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_closing",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 960
+          },
+          "data": {
+            "type": "prompt",
+            "label": "3. The Walls Close In",
+            "text": "He walks quickly along a narrow street of shuttered shops, glancing behind him. The buildings lean in, the passageway narrows ahead, and the rain gets heavier.\nCOLOUR: colder still, almost monochrome. Deep shadow either side.\n\nUltra-realistic 3D animation, cinematic lighting, shallow depth of field, 35mm feel. Rendered like a modern animated feature, not a game engine.\nSame character as the reference: identical face, hair, build, clothing and colour palette. Do not restyle, age or redesign them.\nExpression carries the scene — the story is told in faces and body language, not dialogue. No spoken lines, no on-screen text, no subtitles.\nOne continuous shot, no cuts inside the clip. Slow deliberate camera.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_closing",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 920
+          },
+          "data": {
+            "type": "generate",
+            "label": "3. The Walls Close In",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_refused",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 1420
+          },
+          "data": {
+            "type": "prompt",
+            "label": "4. Turned Away",
+            "text": "He stops at a lit bakery window, hesitates, and pushes the door. A hand inside turns the sign to CLOSED and the light goes out. He steps back into the rain, face falling.\nCOLOUR: brief warm light from inside, snatched away, back to cold.\n\nUltra-realistic 3D animation, cinematic lighting, shallow depth of field, 35mm feel. Rendered like a modern animated feature, not a game engine.\nSame character as the reference: identical face, hair, build, clothing and colour palette. Do not restyle, age or redesign them.\nExpression carries the scene — the story is told in faces and body language, not dialogue. No spoken lines, no on-screen text, no subtitles.\nOne continuous shot, no cuts inside the clip. Slow deliberate camera.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_refused",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 1380
+          },
+          "data": {
+            "type": "generate",
+            "label": "4. Turned Away",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_storm",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 1880
+          },
+          "data": {
+            "type": "prompt",
+            "label": "5. Escalation",
+            "text": "The rain becomes a downpour. He shelters under a broken awning, soaked through and shivering, arms wrapped around his knees. Traffic passes and nobody stops. Water sheets off the edge of the awning.\nCOLOUR: the coldest point of the film. Blue-black, harsh reflections.\n\nUltra-realistic 3D animation, cinematic lighting, shallow depth of field, 35mm feel. Rendered like a modern animated feature, not a game engine.\nSame character as the reference: identical face, hair, build, clothing and colour palette. Do not restyle, age or redesign them.\nExpression carries the scene — the story is told in faces and body language, not dialogue. No spoken lines, no on-screen text, no subtitles.\nOne continuous shot, no cuts inside the clip. Slow deliberate camera.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_storm",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 1840
+          },
+          "data": {
+            "type": "generate",
+            "label": "5. Escalation",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_bottom",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 2340
+          },
+          "data": {
+            "type": "prompt",
+            "label": "6. The Lowest Point",
+            "text": "Close on his face as he gives up looking — eyes down, jaw tight, the fight going out of him. He does not cry. He simply stops.\nCOLOUR: cold and desaturated, but hold the last beat one moment too long.\n\nUltra-realistic 3D animation, cinematic lighting, shallow depth of field, 35mm feel. Rendered like a modern animated feature, not a game engine.\nSame character as the reference: identical face, hair, build, clothing and colour palette. Do not restyle, age or redesign them.\nExpression carries the scene — the story is told in faces and body language, not dialogue. No spoken lines, no on-screen text, no subtitles.\nOne continuous shot, no cuts inside the clip. Slow deliberate camera.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_bottom",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 2300
+          },
+          "data": {
+            "type": "generate",
+            "label": "6. The Lowest Point",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_turn",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 2800
+          },
+          "data": {
+            "type": "prompt",
+            "label": "7. The Turn — Unexpected Kindness",
+            "text": "A pair of worn boots stops in front of him. A weathered hand enters frame holding out a paper cup of something steaming and a folded dry coat. The boy looks up, uncomprehending. The stranger's face stays out of frame.\nCOLOUR: the first warmth of the film — amber light spilling in from the left.\n\nUltra-realistic 3D animation, cinematic lighting, shallow depth of field, 35mm feel. Rendered like a modern animated feature, not a game engine.\nSame character as the reference: identical face, hair, build, clothing and colour palette. Do not restyle, age or redesign them.\nExpression carries the scene — the story is told in faces and body language, not dialogue. No spoken lines, no on-screen text, no subtitles.\nOne continuous shot, no cuts inside the clip. Slow deliberate camera.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_turn",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 2760
+          },
+          "data": {
+            "type": "generate",
+            "label": "7. The Turn — Unexpected Kindness",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_warmth",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 3260
+          },
+          "data": {
+            "type": "prompt",
+            "label": "8. Relief",
+            "text": "He sits wrapped in the oversized coat with both hands around the cup, steam rising past his face. His shoulders drop for the first time. A small disbelieving breath of a laugh.\nCOLOUR: warming quickly — amber and gold, the blue draining away.\n\nUltra-realistic 3D animation, cinematic lighting, shallow depth of field, 35mm feel. Rendered like a modern animated feature, not a game engine.\nSame character as the reference: identical face, hair, build, clothing and colour palette. Do not restyle, age or redesign them.\nExpression carries the scene — the story is told in faces and body language, not dialogue. No spoken lines, no on-screen text, no subtitles.\nOne continuous shot, no cuts inside the clip. Slow deliberate camera.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_warmth",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 3220
+          },
+          "data": {
+            "type": "generate",
+            "label": "8. Relief",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_gift",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 3720
+          },
+          "data": {
+            "type": "prompt",
+            "label": "9. Passing It On",
+            "text": "Morning. Dry, bright street. The boy crouches to hand the folded coat to another child sitting where he had been, then presses the photograph into his own pocket and stands.\nCOLOUR: warm gold, soft, fully saturated. Long low sunlight.\n\nUltra-realistic 3D animation, cinematic lighting, shallow depth of field, 35mm feel. Rendered like a modern animated feature, not a game engine.\nSame character as the reference: identical face, hair, build, clothing and colour palette. Do not restyle, age or redesign them.\nExpression carries the scene — the story is told in faces and body language, not dialogue. No spoken lines, no on-screen text, no subtitles.\nOne continuous shot, no cuts inside the clip. Slow deliberate camera.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_gift",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 3680
+          },
+          "data": {
+            "type": "generate",
+            "label": "9. Passing It On",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        },
+        {
+          "id": "p_loop",
+          "type": "prompt",
+          "position": {
+            "x": 1060,
+            "y": 4180
+          },
+          "data": {
+            "type": "prompt",
+            "label": "10. Resolution — Echo the Opening",
+            "text": "The same alley mouth as the first shot, now in clear morning light. The boy stands in exactly the same position, satchel over his shoulder, and this time he looks forward instead of back, and walks out of frame.\nCOLOUR: the composition of scene 1 rendered warm. Frame it to match, so the video can loop straight back to the beginning.\n\nUltra-realistic 3D animation, cinematic lighting, shallow depth of field, 35mm feel. Rendered like a modern animated feature, not a game engine.\nSame character as the reference: identical face, hair, build, clothing and colour palette. Do not restyle, age or redesign them.\nExpression carries the scene — the story is told in faces and body language, not dialogue. No spoken lines, no on-screen text, no subtitles.\nOne continuous shot, no cuts inside the clip. Slow deliberate camera.\nVertical 9:16."
+          }
+        },
+        {
+          "id": "g_loop",
+          "type": "generate",
+          "position": {
+            "x": 1580,
+            "y": 4140
+          },
+          "data": {
+            "type": "generate",
+            "label": "10. Resolution — Echo the Opening",
+            "platform": "flow",
+            "mediaType": "video",
+            "model": "Omni Flash",
+            "aspectRatio": "9:16",
+            "duration": "8s",
+            "creationType": "ingredients",
+            "enabled": true,
+            "status": "idle",
+            "resultUrl": null,
+            "previewUrl": "",
+            "resultTileId": null,
+            "progress": 0,
+            "errorMessage": null
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e_p_char_g_char_t",
+          "source": "p_char",
+          "target": "g_char",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_hook_g_hook_t",
+          "source": "p_hook",
+          "target": "g_hook",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_char_g_hook_i",
+          "source": "g_char",
+          "target": "g_hook",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_loss_g_loss_t",
+          "source": "p_loss",
+          "target": "g_loss",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_char_g_loss_i",
+          "source": "g_char",
+          "target": "g_loss",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_closing_g_closing_t",
+          "source": "p_closing",
+          "target": "g_closing",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_char_g_closing_i",
+          "source": "g_char",
+          "target": "g_closing",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_refused_g_refused_t",
+          "source": "p_refused",
+          "target": "g_refused",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_char_g_refused_i",
+          "source": "g_char",
+          "target": "g_refused",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_storm_g_storm_t",
+          "source": "p_storm",
+          "target": "g_storm",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_char_g_storm_i",
+          "source": "g_char",
+          "target": "g_storm",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_bottom_g_bottom_t",
+          "source": "p_bottom",
+          "target": "g_bottom",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_char_g_bottom_i",
+          "source": "g_char",
+          "target": "g_bottom",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_turn_g_turn_t",
+          "source": "p_turn",
+          "target": "g_turn",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_char_g_turn_i",
+          "source": "g_char",
+          "target": "g_turn",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_warmth_g_warmth_t",
+          "source": "p_warmth",
+          "target": "g_warmth",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_char_g_warmth_i",
+          "source": "g_char",
+          "target": "g_warmth",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_gift_g_gift_t",
+          "source": "p_gift",
+          "target": "g_gift",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_char_g_gift_i",
+          "source": "g_char",
+          "target": "g_gift",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_p_loop_g_loop_t",
+          "source": "p_loop",
+          "target": "g_loop",
+          "sourceHandle": "text",
+          "targetHandle": "text",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2.5
+          }
+        },
+        {
+          "id": "e_g_char_g_loop_i",
+          "source": "g_char",
+          "target": "g_loop",
+          "sourceHandle": "result",
+          "targetHandle": "image_ref",
+          "type": "default",
+          "animated": true,
+          "style": {
+            "stroke": "#3b82f6",
+            "strokeWidth": 2.5
+          }
+        }
+      ],
+      "requiresNodeTypes": [
+        "generate",
+        "prompt"
+      ],
+      "requiresPlatforms": [
+        "flow"
+      ],
       "tier": "free"
     },
     {

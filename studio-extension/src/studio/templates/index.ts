@@ -266,6 +266,94 @@ const KIDS_CHARACTER =
   'never photorealistic.\n\n' +
   'Full body, head to toe, centred, facing the camera.';
 
+/* ── Emotional short film, 10 beats ──
+   Tension → escalation → an unexpected kindness → relief, with the last shot
+   echoing the first so the video loops.
+
+   Every scene references the character sheet, never the scene before it. This
+   is a narrative, not a continuous build: the scenes are different moments in
+   different places, and chaining them would carry a drifted face into all ten.
+   Fanning out from one design means a bad scene is one bad scene.
+
+   The colour arc is the part most people skip and it is doing real work —
+   desaturated blue-grey through the tense half, warming to gold at the turn.
+   It lives per scene rather than in the shared block precisely because it is
+   the one thing that must change. */
+const FILM_STYLE =
+  'Ultra-realistic 3D animation, cinematic lighting, shallow depth of field, ' +
+  '35mm feel. Rendered like a modern animated feature, not a game engine.\n' +
+  'Same character as the reference: identical face, hair, build, clothing and ' +
+  'colour palette. Do not restyle, age or redesign them.\n' +
+  'Expression carries the scene — the story is told in faces and body language, ' +
+  'not dialogue. No spoken lines, no on-screen text, no subtitles.\n' +
+  'One continuous shot, no cuts inside the clip. Slow deliberate camera.\n' +
+  'Vertical 9:16.';
+
+const FILM_CHARACTER =
+  'Character reference sheet: one photorealistic 3D animated character, on a ' +
+  'plain mid-grey backdrop.\n\n' +
+  'A boy of about ten, thin, with dark tousled hair and large expressive brown ' +
+  'eyes. Wearing a faded oversized green jacket with frayed cuffs, a grey shirt ' +
+  'and worn trainers. Carrying a canvas satchel across one shoulder.\n\n' +
+  'Three views: three-quarter front on the left, side profile in the centre, ' +
+  'three-quarter back on the right. Neutral even lighting, full body, sharp ' +
+  'focus, natural skin and fabric texture.\n\n' +
+  'An original fictional character, not any real person.';
+
+/** [key, label, the eight seconds] — the arc, in order. */
+const FILM_SCENES = [
+  ['hook', '1. Hook — Something Is Wrong',
+   'The boy stands alone at the mouth of a rain-soaked alley at dusk, clutching ' +
+   'his satchel to his chest, looking back over his shoulder at something out of ' +
+   'frame. Rain streaks the air. He is breathing fast.\n' +
+   'COLOUR: desaturated blue-grey, cold, heavy shadows. Open on his face.'],
+  ['loss', '2. What He Has Lost',
+   'He kneels on wet pavement and empties the satchel — a few coins, a folded ' +
+   'photograph, nothing else. His hands are shaking. He presses the photograph ' +
+   'flat and stares at it.\n' +
+   'COLOUR: same cold blue-grey. One weak streetlamp above him.'],
+  ['closing', '3. The Walls Close In',
+   'He walks quickly along a narrow street of shuttered shops, glancing behind ' +
+   'him. The buildings lean in, the passageway narrows ahead, and the rain gets ' +
+   'heavier.\n' +
+   'COLOUR: colder still, almost monochrome. Deep shadow either side.'],
+  ['refused', '4. Turned Away',
+   'He stops at a lit bakery window, hesitates, and pushes the door. A hand ' +
+   'inside turns the sign to CLOSED and the light goes out. He steps back into ' +
+   'the rain, face falling.\n' +
+   'COLOUR: brief warm light from inside, snatched away, back to cold.'],
+  ['storm', '5. Escalation',
+   'The rain becomes a downpour. He shelters under a broken awning, soaked ' +
+   'through and shivering, arms wrapped around his knees. Traffic passes and ' +
+   'nobody stops. Water sheets off the edge of the awning.\n' +
+   'COLOUR: the coldest point of the film. Blue-black, harsh reflections.'],
+  ['bottom', '6. The Lowest Point',
+   'Close on his face as he gives up looking — eyes down, jaw tight, the fight ' +
+   'going out of him. He does not cry. He simply stops.\n' +
+   'COLOUR: cold and desaturated, but hold the last beat one moment too long.'],
+  ['turn', '7. The Turn — Unexpected Kindness',
+   'A pair of worn boots stops in front of him. A weathered hand enters frame ' +
+   'holding out a paper cup of something steaming and a folded dry coat. The boy ' +
+   'looks up, uncomprehending. The stranger\'s face stays out of frame.\n' +
+   'COLOUR: the first warmth of the film — amber light spilling in from the left.'],
+  ['warmth', '8. Relief',
+   'He sits wrapped in the oversized coat with both hands around the cup, steam ' +
+   'rising past his face. His shoulders drop for the first time. A small ' +
+   'disbelieving breath of a laugh.\n' +
+   'COLOUR: warming quickly — amber and gold, the blue draining away.'],
+  ['gift', '9. Passing It On',
+   'Morning. Dry, bright street. The boy crouches to hand the folded coat to ' +
+   'another child sitting where he had been, then presses the photograph into ' +
+   'his own pocket and stands.\n' +
+   'COLOUR: warm gold, soft, fully saturated. Long low sunlight.'],
+  ['loop', '10. Resolution — Echo the Opening',
+   'The same alley mouth as the first shot, now in clear morning light. The boy ' +
+   'stands in exactly the same position, satchel over his shoulder, and this ' +
+   'time he looks forward instead of back, and walks out of frame.\n' +
+   'COLOUR: the composition of scene 1 rendered warm. Frame it to match, so the ' +
+   'video can loop straight back to the beginning.'],
+] as const;
+
 /* ── Miniature car build ──
    Same chain shape as the styrofoam carve, with one difference that changes
    the whole format: the last clip is a match cut. Three clips build a wooden
@@ -928,6 +1016,49 @@ export const BUILTIN_TEMPLATES: Template[] = [
       }
       return out;
     }),
+  },
+  {
+    id: 'tpl_emotional_short',
+    name: 'Emotional Short: 1 Character → 10 Beats',
+    description: 'Tension, escalation, an unexpected kindness, relief — ten scenes holding one character.',
+    useCase:
+      'The retention format: cold open on trouble, escalate, turn on an act of kindness, resolve warm — and frame the last shot to match the first so it loops. Every scene references the character sheet rather than the scene before it, because these are ten different moments and a face that drifts in scene 3 would otherwise poison the seven after it. The colour arc is the part most people skip and it does real work: desaturated blue-grey through the tense half, warming to gold at the turn. Ten 8s clips give you the spine, not the finished film — the 2-4 second cutting the format lives on happens in the edit, where you cover each beat from more than one angle.',
+    category: 'Content',
+    difficulty: 'Advanced',
+    nodeCount: 22,
+    thumbnail: '🎬',
+    nodes: [
+      promptNode('p_char', 'Character Design', FILM_CHARACTER, 40, 300),
+      genNode('g_char', {
+        label: 'Character Sheet',
+        mediaType: 'image',
+        aspectRatio: '16:9',
+        model: 'Nano Banana Pro',
+      }, 560, 260),
+
+      ...FILM_SCENES.flatMap(([key, label, body], i) => {
+        const y = i * 460;
+        return [
+          promptNode(`p_${key}`, label, body + '\n\n' + FILM_STYLE, 1060, y + 40),
+          genNode(`g_${key}`, {
+            label,
+            mediaType: 'video',
+            aspectRatio: '9:16',
+            duration: '8s',
+            model: 'Omni Flash',
+          }, 1580, y),
+        ];
+      }),
+    ],
+    edges: [
+      tEdge('p_char', 'g_char'),
+    ].concat(FILM_SCENES.flatMap(([key]) => [
+      tEdge(`p_${key}`, `g_${key}`),
+      /* One design, ten scenes. Recognising the same face across the arc is
+         what makes the ending land — and a drifted face partway through would
+         otherwise be inherited by everything after it. */
+      iEdge('g_char', `g_${key}`),
+    ])),
   },
   {
     id: 'tpl_miniature_car',
