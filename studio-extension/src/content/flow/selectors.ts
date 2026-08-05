@@ -300,16 +300,45 @@ export function readSelectedModel(knownModels: readonly string[]): string {
   return '';
 }
 
+/** Model names, for telling the model button apart from the settings chip. */
+let knownModelNames: readonly string[] = [];
+export function setKnownModelNames(names: readonly string[]): void {
+  knownModelNames = names;
+}
+
+const normModel = (t: string) =>
+  t.toLowerCase().replace(/arrow_drop_down/g, '').replace(/[^a-z0-9.\s]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+
+/**
+ * The button that opens the model list — not the chip that opens the settings.
+ *
+ * Both carry aria-haspopup="menu". The composer chip summarises everything
+ * ("🍌 Nano Banana Pro" + a ratio glyph + "x1"), while the model button's text
+ * is a model name and nothing else. Matching on "contains a model name" picked
+ * the chip, and the menu bound to the chip is the settings panel — which is
+ * why the log kept reporting 11 options, the exact number of tabs in it.
+ *
+ * So: exact text match wins, and only then anything looser.
+ */
+function looksLikeModelButton(btn: Element): boolean {
+  const text = normModel(btn.textContent || '');
+  return !!text && knownModelNames.some((m) => normModel(m) === text);
+}
+
 export function findModelSelectorTrigger(): Element | null {
-  // Primary: find a button[aria-haspopup="menu"] INSIDE the open settings menu.
-  // The settings trigger opens a [role="menu"] dropdown. Inside it, the model
-  // selector is a nested button[aria-haspopup="menu"] (e.g. "Nano Banana 2 ▼").
-  const menuContainer = document.querySelector(
-    '[role="menu"], [data-radix-menu-content]'
-  );
-  if (menuContainer) {
-    const innerBtns = menuContainer.querySelectorAll('button[aria-haspopup="menu"]');
-    for (const btn of innerBtns) {
+  const all = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'))
+    .filter(isVisible);
+
+  // Exact model-name text, anywhere — this is the model button by definition.
+  const exact = all.find(looksLikeModelButton);
+  if (exact) return exact;
+
+  // Primary: a nested aria-haspopup button inside an open menu. Scoped to the
+  // menu that actually contains one, rather than whichever menu is first in
+  // the document.
+  for (const menuContainer of document.querySelectorAll('[role="menu"], [data-radix-menu-content]')) {
+    for (const btn of menuContainer.querySelectorAll('button[aria-haspopup="menu"]')) {
       if (isVisible(btn)) return btn;
     }
   }

@@ -33,6 +33,7 @@ import {
   findGenerateButton,
   findCreditsExhaustedNotice,
   readSelectedModel,
+  setKnownModelNames,
   findAttachedIngredients,
   findLoadedIngredients,
   waitForIngredients,
@@ -122,6 +123,8 @@ import {
 /* Every model name Flow might be showing, so readSelectedModel knows a model
    label when it sees one in the composer bar. */
 const ALL_KNOWN_MODELS: readonly string[] = [...AVAILABLE_MODELS, ...AVAILABLE_IMAGE_MODELS];
+// Lets the selectors tell the model button from the settings chip.
+setKnownModelNames(ALL_KNOWN_MODELS);
 
 function normalizeForModelMatch(text: string): string {
   return text

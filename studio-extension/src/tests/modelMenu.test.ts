@@ -113,6 +113,45 @@ const optionsFor = (trigger: Element): Element[] => {
 
 beforeEach(() => { document.body.innerHTML = ''; });
 
+/* The trigger has to be found before its menu can be. Both the model button
+   and the composer settings chip carry aria-haspopup="menu"; the chip's text
+   is "🍌 Nano Banana Pro" plus a ratio glyph plus "x1", the model button's is
+   a model name alone. Matching on "contains a model name" picked the chip,
+   and the menu bound to the chip is the settings panel — which is why the log
+   reported 11 options, the exact number of tabs in it. */
+describe('telling the model button from the settings chip', () => {
+  const KNOWN = ['Nano Banana Pro', 'Nano Banana 2', 'Nano Banana 2 Lite'];
+  const norm = (t: string) =>
+    t.toLowerCase().replace(/arrow_drop_down/g, '').replace(/[^a-z0-9.\s]/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+  const isModelButton = (el: Element) => {
+    const text = norm(el.textContent || '');
+    return !!text && KNOWN.some((m) => norm(m) === text);
+  };
+
+  it('rejects the composer chip, which summarises everything', () => {
+    const chip = document.createElement('button');
+    chip.setAttribute('aria-haspopup', 'menu');
+    chip.textContent = '🍌 Nano Banana Procrop_squarex1';
+    expect(isModelButton(chip)).toBe(false);
+  });
+
+  it('accepts the model button, whose text is the model alone', () => {
+    const btn = document.createElement('button');
+    btn.setAttribute('aria-haspopup', 'menu');
+    btn.textContent = '🍌 Nano Banana Proarrow_drop_down';
+    expect(isModelButton(btn)).toBe(true);
+  });
+
+  it('accepts every model we offer', () => {
+    for (const m of KNOWN) {
+      const btn = document.createElement('button');
+      btn.textContent = `🍌 ${m}arrow_drop_down`;
+      expect({ model: m, matched: isModelButton(btn) }).toEqual({ model: m, matched: true });
+    }
+  });
+});
+
 describe('finding the model menu', () => {
   it('finds nothing while the menu is closed', () => {
     const trigger = mountSettingsPanel('radix-r1e7');
