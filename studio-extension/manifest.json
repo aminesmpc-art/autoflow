@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFlow Studio — Node Workflows for AI Video",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "Build node workflows that drive Google Veo, ChatGPT and Grok from one canvas. Third-party tool, not affiliated with Google, OpenAI or xAI.",
   "minimum_chrome_version": "114",
   "offline_enabled": false,

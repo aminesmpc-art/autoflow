@@ -82,7 +82,7 @@ export type ImageResolution = '1K' | '2K' | '4K';
 export type VideoDuration = '4s' | '6s' | '8s' | '10s';
 
 // ── Image generation model & ratio ──
-export type ImageModel = 'Nano Banana Pro' | 'Nano Banana 2' | 'Imagen 4';
+export type ImageModel = 'Nano Banana Pro' | 'Nano Banana 2' | 'Nano Banana 2 Lite';
 export type ImageRatio = '16:9' | '4:3' | '1:1' | '3:4' | '9:16';
 
 // ── Settings snapshot ──
@@ -409,11 +409,20 @@ export const AVAILABLE_MODELS = [
   'Veo 3.1 - Lite [Lower Priority]',
 ];
 
-/** Image models Flow exposes — must match the names rendered on the page */
+/* Image models Flow exposes.
+   Taken from the live menu, which renders them with a banana emoji the
+   matcher strips. Order matches the page.
+
+   'Nano Banana 2' is a prefix of 'Nano Banana 2 Lite', which is why setModel
+   requires an exact name before it will accept a substring — a first-match
+   scan picked whichever the DOM happened to list first.
+
+   Imagen 4 was here and is not in Flow's menu any more; asking for it left
+   the run on whatever Flow defaulted to. */
 export const AVAILABLE_IMAGE_MODELS: ImageModel[] = [
   'Nano Banana Pro',
   'Nano Banana 2',
-  'Imagen 4',
+  'Nano Banana 2 Lite',
 ];
 
 export const AVAILABLE_VOICES = [

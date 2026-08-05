@@ -2229,30 +2229,65 @@ export class AutomationEngine {
     this.log('info', `Found ${menuItems?.length ?? 0} model menu items`);
 
     if (menuItems) {
+      /* Collect every candidate, then choose — rather than clicking the first
+         thing that contains the target.
+
+         Flow's image menu is:
+             Nano Banana Pro / Nano Banana 2 / Nano Banana 2 Lite
+
+         "Nano Banana 2" is a substring of "Nano Banana 2 Lite", so a
+         first-match-wins scan picks whichever DOM order happens to put first,
+         and a menu reorder silently switches the model on every run. An exact
+         name is never ambiguous; a substring is only trusted when exactly one
+         item matches. */
+      const candidates: Array<{ item: Element; text: string; norm: string }> = [];
       for (const item of menuItems) {
-        const itemText = item.textContent || '';
-        const itemNorm = normalizeForModelMatch(itemText);
-
-        // Skip disabled items
         if (item.getAttribute('aria-disabled') === 'true' ||
-          item.getAttribute('data-disabled') === 'true') {
-          continue;
-        }
+          item.getAttribute('data-disabled') === 'true') continue;
+        // Items that are themselves dropdown triggers are parent containers.
+        if (item.querySelector('button[aria-haspopup="menu"]')) continue;
+        if (!isVisible(item)) continue;
+        const text = item.textContent || '';
+        candidates.push({ item, text, norm: normalizeForModelMatch(text) });
+      }
 
-        // Skip items that are themselves dropdown triggers (parent menu containers)
-        if (item.querySelector('button[aria-haspopup="menu"]')) {
-          continue;
-        }
+      const exact = candidates.filter((c) => c.norm === targetNorm);
+      const loose = candidates.filter((c) => c.norm.includes(targetNorm));
+      const chosen = exact[0] || (loose.length === 1 ? loose[0] : null);
 
-        if (itemNorm.includes(targetNorm) && isVisible(item)) {
-          // The clickable element may be a button inside the menuitem div
-          const innerBtn = item.querySelector('button');
-          const clickTarget = innerBtn || item;
-          simulateClick(clickTarget);
-          this.log('info', `Selected model: ${itemText.trim()}`);
-          await humanDelay(300, 600);
+      if (!chosen && loose.length > 1) {
+        // Refusing beats guessing: picking the wrong one here produces a whole
+        // run at the wrong model, and nothing downstream can tell.
+        this.log('warn',
+          `"${modelName}" matches ${loose.length} models (${loose.map((c) => c.text.trim()).join(', ')}). ` +
+          'Refusing to guess — use the exact name Flow shows.');
+      }
+
+      if (chosen) {
+        // The clickable element may be a button inside the menuitem div
+        const innerBtn = chosen.item.querySelector('button');
+        simulateClick(innerBtn || chosen.item);
+        await humanDelay(400, 700);
+
+        /* Verify, because a click that did not take is invisible. Every other
+           silent-wrong-result bug this session came from reporting success on
+           the strength of having tried. */
+        const nowRaw = (overrideTrigger || findModelSelectorTrigger())?.textContent?.trim() || '';
+        const nowNorm = normalizeForModelMatch(nowRaw);
+        if (nowNorm.includes(targetNorm) || nowNorm === normalizeForModelMatch(chosen.text)) {
+          this.log('info', `Model set: ${nowRaw || chosen.text.trim()}`);
           return;
         }
+        if (!isRetry && !overrideTrigger) {
+          this.log('warn', `Clicked "${chosen.text.trim()}" but Flow still shows "${nowRaw}" — retrying`);
+          await this.closeSettingsPanel();
+          await humanDelay(500, 800);
+          return this.setModel(modelName, null, true);
+        }
+        throw new Error(
+          `Could not set the model to "${modelName}" — Flow still shows "${nowRaw}". ` +
+          'Generating now would use the wrong model, so this node stopped instead.'
+        );
       }
     }
 
