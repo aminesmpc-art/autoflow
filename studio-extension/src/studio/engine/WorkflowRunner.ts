@@ -448,7 +448,18 @@ export class WorkflowRunner {
     // into image_ref — previously only one survived.
     const referenceImageIds: string[] = [];
     const referenceImageData: string[] = [];
-    for (const srcId of inputs.get('image_ref') || []) {
+
+    /* Frames mode hands Flow a first and last still and lets it interpolate.
+       The order is the whole meaning — swap them and the clip runs backwards —
+       so it comes from two named ports rather than the order edges happen to
+       sit in. Edge order is invisible on the canvas and changes when a
+       connection is remade, which is not something to hang a video on. */
+    const isFrames = nodeData.creationType === 'frames' && nodeData.mediaType === 'video';
+    const orderedSources = isFrames
+      ? [...(inputs.get('frame_start') || []), ...(inputs.get('frame_end') || [])]
+      : (inputs.get('image_ref') || []);
+
+    for (const srcId of orderedSources) {
       const imgResult = this.nodeResults.get(srcId);
       if (!imgResult) continue;
       if (imgResult.referenceUrl && imgResult.referenceUrl.startsWith('data:')) {
@@ -479,7 +490,7 @@ export class WorkflowRunner {
        produced nothing is a failure that already happened upstream. */
     if (!referenceImageIds.length && !referenceImageData.length) {
       const allNodes = useStudioStore.getState().nodes;
-      const broken = (inputs.get('image_ref') || [])
+      const broken = orderedSources
         .map((id) => allNodes.find((n) => n.id === id))
         .filter((n) => n && (n.type === 'frame' || n.type === 'generate'));
       if (broken.length) {

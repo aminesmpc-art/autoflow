@@ -19,7 +19,11 @@ export const NODE_PORTS: Record<string, { in: string[]; out: string[] }> = {
   prompt: { in: [], out: ['text'] },
   image: { in: [], out: ['image'] },
   frame: { in: ['image_ref'], out: ['image'] },
-  generate: { in: ['text', 'image_ref'], out: ['result'] },
+  /* frame_start / frame_end are the Frames mode ports. Two named handles
+     rather than one image_ref taking a list, because "which image is the
+     first frame" cannot be answered by edge order — that is invisible on the
+     canvas and changes when a connection is remade. */
+  generate: { in: ['text', 'image_ref', 'frame_start', 'frame_end'], out: ['result'] },
   // A prompt writer emits text rather than a result.
   'generate:text': { in: ['text', 'image_ref'], out: ['text'] },
 };

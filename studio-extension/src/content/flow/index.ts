@@ -1095,7 +1095,11 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
     }],
     settings: {
       mediaType,
-      creationType: 'ingredients',
+      /* Frames mode gives Flow a first and last still and lets it
+         interpolate between them. The engine has supported it all along —
+         attachFrameImages exists — but Studio pinned this to 'ingredients',
+         so the whole mode was unreachable from a node. */
+      creationType: config.creationType === 'frames' ? 'frames' : 'ingredients',
       model: isImage ? 'Omni Flash' : (config.model || 'Omni Flash'),
       orientation: (config.aspectRatio === '9:16' || config.aspectRatio === '3:4') ? 'portrait' : 'landscape',
       generations: 1,

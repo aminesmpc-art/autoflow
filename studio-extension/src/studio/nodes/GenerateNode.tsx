@@ -80,6 +80,9 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   const chatName = platform === 'gemini' ? 'Gemini' : 'ChatGPT';
   const mediaType = nodeData.mediaType || 'image';
   const isVideo = !isChat && mediaType === 'video';
+  /* Frames mode: Flow takes a first and last still and interpolates between
+     them. Video only — an image has no "between". */
+  const isFrames = isVideo && nodeData.creationType === 'frames';
   /* Text output only makes sense on a chat platform — Flow has no chat. */
   const isText = isChat && mediaType === 'text';
   const models = isVideo ? VIDEO_MODELS : IMAGE_MODELS;
@@ -241,6 +244,26 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
 
           {/* ChatGPT can either draw or write. Asking it to write turns this
               node into a prompt writer whose answer feeds the next node. */}
+          {isVideo && (
+            <div className="sn-field">
+              <label className="sn-field__label">FROM</label>
+              <select
+                className="sn-bar__sel sn-bar__sel--grow nodrag"
+                value={nodeData.creationType || 'ingredients'}
+                onChange={(e) => set('creationType', e.target.value)}
+                title="Ingredients: reference images. Frames: a first and last still, interpolated."
+              >
+                <option value="ingredients">Ingredients</option>
+                <option value="frames">Start &amp; End frames</option>
+              </select>
+              {isFrames && (
+                <small className="sn-field__hint">
+                  Connect both ends — Start decides where the clip opens.
+                </small>
+              )}
+            </div>
+          )}
+
           {isText && (
             <div className="sn-field sn-field--preset">
               <label className="sn-field__label">PRESET</label>
