@@ -14,6 +14,7 @@ import {
 import { trackUsage } from '../../shared/api';
 import { bridge, type NodeExecutionConfig, type NodeResult } from './bridge';
 import { useStudioStore } from '../store';
+import { composeAskPrompt } from '../presets';
 
 export type RunnerState = 'idle' | 'running' | 'paused' | 'stopped' | 'done' | 'error';
 
@@ -499,8 +500,21 @@ export class WorkflowRunner {
       );
     }
 
+    /* Ask AI presets wrap the user's subject in the craft.
+       Composed here rather than in the node because the variant depends on
+       whether a reference image actually resolved — "character sheet from a
+       photo" and "from a description" are different briefs, and only this
+       point knows which one applies. */
+    const askPrompt = nodeData.mediaType === 'text'
+      ? composeAskPrompt(
+          nodeData.preset,
+          prompt,
+          referenceImageData.length > 0 || referenceImageIds.length > 0
+        )
+      : prompt;
+
     const config: NodeExecutionConfig = {
-      prompt,
+      prompt: askPrompt,
       // Anything not a known chat platform runs on Flow. Listing them beats
       // a chatgpt/else ternary, which silently sent Gemini nodes to Flow.
       platform: nodeData.platform === 'chatgpt' || nodeData.platform === 'gemini'

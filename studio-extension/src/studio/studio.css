@@ -1817,3 +1817,13 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   cursor: pointer;
 }
 .studio-runbar__fail:hover { background: rgba(74, 36, 36, 0.6); }
+
+/* ── Ask AI preset ──
+   A dropdown of names teaches nothing; the hint under it is the part that
+   says what each preset actually asks the model to do. */
+.sn-field--preset { display: flex; flex-direction: column; gap: 3px; }
+.sn-field__hint {
+  font-size: 10px;
+  line-height: 1.35;
+  color: #6f6f79;
+}

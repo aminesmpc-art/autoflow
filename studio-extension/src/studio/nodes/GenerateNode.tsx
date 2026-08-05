@@ -10,6 +10,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { Lightbox } from '../components/Lightbox';
 import { useStudioStore } from '../store';
 import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS } from '../../types';
+import { ASK_PRESETS, DEFAULT_PRESET_ID, findPreset } from '../presets';
 
 type NodeStatus = 'idle' | 'running' | 'done' | 'error';
 
@@ -240,6 +241,26 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
 
           {/* ChatGPT can either draw or write. Asking it to write turns this
               node into a prompt writer whose answer feeds the next node. */}
+          {isText && (
+            <div className="sn-field sn-field--preset">
+              <label className="sn-field__label">PRESET</label>
+              <select
+                className="sn-bar__sel sn-bar__sel--grow nodrag"
+                value={nodeData.preset || DEFAULT_PRESET_ID}
+                onChange={(e) => set('preset', e.target.value)}
+                title="Wraps what you type in a brief, so a few words produce a usable prompt"
+              >
+                {ASK_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              {/* The hint is the whole point: a dropdown of names teaches
+                  nothing, and the difference between these is what they ask
+                  the model to do. */}
+              <small className="sn-field__hint">{findPreset(nodeData.preset).hint}</small>
+            </div>
+          )}
+
           {isChatGPT && (
             <select
               className="sn-bar__sel"
