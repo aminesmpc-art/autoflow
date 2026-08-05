@@ -37,6 +37,7 @@ import {
   findAttachedIngredients,
   findFrameSlots,
   frameSlotFilled,
+  describeFrameSlot,
   findLoadedIngredients,
   waitForIngredients,
   findFlowAlertIndicator,
@@ -2880,15 +2881,24 @@ export class AutomationEngine {
            meaning of the mode. */
         const deadline = Date.now() + 45_000;
         let landed = false;
+        let reported = false;
         while (Date.now() < deadline) {
           if (this.stopped) return false;
           await sleep(500);
           if (frameSlotFilled(slot)) { landed = true; break; }
+          /* Say what the slot looks like halfway through, rather than only
+             at the end. "Still uploading" and "filled, but I cannot see it"
+             are indistinguishable from outside, and the second one is a bug
+             in this check rather than in Flow. */
+          if (!reported && Date.now() > deadline - 30_000) {
+            reported = true;
+            this.log('info', `${label} frame not detected yet — ${describeFrameSlot(slot)}`);
+          }
         }
         if (!landed) {
           throw new Error(
-            `The ${label} frame never filled. Generating now would attach the image ` +
-            'as an ingredient instead of interpolating, so this node stopped.'
+            `The ${label} frame never filled (${describeFrameSlot(slot)}). Generating now ` +
+            'would attach the image as an ingredient instead of interpolating, so this node stopped.'
           );
         }
         this.log('info', `${label} frame set: ${item.filename}`);

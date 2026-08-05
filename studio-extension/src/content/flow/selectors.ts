@@ -856,10 +856,43 @@ export function findFrameSlots(): FrameSlots | null {
   return start && end && start !== end ? { start, end } : null;
 }
 
-/** True once a slot is holding an image rather than showing its placeholder. */
+/**
+ * True once a slot is holding an image rather than showing its placeholder.
+ *
+ * Checks both ways a thumbnail can be drawn. An <img> is the obvious one, but
+ * a slot that renders it as a CSS background-image has no <img> at all — and
+ * looking only for the element meant the slot filled on screen while the wait
+ * loop sat there for its full 45 seconds and then called it a failure.
+ *
+ * Both branches require an actual image source. Loosening this to "the
+ * placeholder text went away" would be worse than the original bug: it would
+ * report filled before the bytes arrived, and the second paste would race
+ * into a slot still settling.
+ */
 export function frameSlotFilled(slot: HTMLElement): boolean {
-  const img = slot.querySelector('img');
-  return !!img && img.complete && img.naturalWidth > 0;
+  for (const img of slot.querySelectorAll('img')) {
+    if (img.complete && img.naturalWidth > 0) return true;
+  }
+  for (const el of [slot, ...Array.from(slot.querySelectorAll<HTMLElement>('*'))]) {
+    const bg = getComputedStyle(el).backgroundImage;
+    // "none" when unset; a real thumbnail is a url(...) or a data: URI.
+    if (bg && bg !== 'none' && /url\(|data:/.test(bg)) return true;
+  }
+  return false;
+}
+
+/** What a slot looks like right now, for when it will not fill. */
+export function describeFrameSlot(slot: HTMLElement): string {
+  const imgs = slot.querySelectorAll('img').length;
+  const loaded = Array.from(slot.querySelectorAll('img'))
+    .filter((i) => i.complete && i.naturalWidth > 0).length;
+  /* Same test frameSlotFilled uses, not `!== 'none'`. An unstyled element
+     reports an empty string, which read as "background set" and would have
+     pointed the next investigation at a thumbnail that was never there. */
+  const bg = getComputedStyle(slot).backgroundImage;
+  const hasBg = !!bg && bg !== 'none' && /url\(|data:/.test(bg);
+  const text = (slot.textContent || '').trim().slice(0, 24);
+  return `text="${text}" imgs=${imgs} loaded=${loaded} bg=${hasBg ? 'set' : 'none'}`;
 }
 
 /* ── Attached reference images ────────────────────────────────

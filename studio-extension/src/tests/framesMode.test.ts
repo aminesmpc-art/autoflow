@@ -21,7 +21,7 @@
    ============================================================ */
 
 import { NODE_PORTS, portsFor, validateTemplate } from '../studio/templates/validate';
-import { findFrameSlots, frameSlotFilled } from '../content/flow/selectors';
+import { findFrameSlots, frameSlotFilled, describeFrameSlot } from '../content/flow/selectors';
 
 /** The ordering rule the runner applies. */
 const orderedSources = (
@@ -203,5 +203,68 @@ describe('the Start and End slots', () => {
     Object.defineProperty(img, 'naturalWidth', { value: 0 });
     slot.append(img);
     expect(frameSlotFilled(slot)).toBe(false);
+  });
+});
+
+/* A thumbnail can be drawn two ways, and looking for only one of them meant
+   the slot filled on screen while the wait loop ran its full 45 seconds and
+   then called it a failure — presenting as "the images are uploading" with
+   nothing ever finishing. */
+describe('detecting a filled slot', () => {
+  function slot(): HTMLElement {
+    const el = document.createElement('div');
+    el.setAttribute('aria-haspopup', 'dialog');
+    el.textContent = 'Start';
+    document.body.append(el);
+    return el;
+  }
+
+  beforeEach(() => { document.body.innerHTML = ''; });
+
+  it('sees a thumbnail rendered as an <img>', () => {
+    const s = slot();
+    const img = document.createElement('img');
+    Object.defineProperty(img, 'complete', { value: true });
+    Object.defineProperty(img, 'naturalWidth', { value: 400 });
+    s.append(img);
+    expect(frameSlotFilled(s)).toBe(true);
+  });
+
+  it('sees one rendered as a CSS background', () => {
+    // No <img> exists in this case at all.
+    const s = slot();
+    const inner = document.createElement('div');
+    inner.style.backgroundImage = 'url("blob:https://labs.google/abc")';
+    s.append(inner);
+    expect(frameSlotFilled(s)).toBe(true);
+  });
+
+  it('does not count an empty slot as filled', () => {
+    expect(frameSlotFilled(slot())).toBe(false);
+  });
+
+  it('does not count background-image: none', () => {
+    const s = slot();
+    const inner = document.createElement('div');
+    inner.style.backgroundImage = 'none';
+    s.append(inner);
+    expect(frameSlotFilled(s)).toBe(false);
+  });
+
+  it('does not count an image still loading', () => {
+    /* Reporting filled early is worse than reporting late: the next paste
+       would race into a slot that is still settling, and order is the whole
+       meaning of the mode. */
+    const s = slot();
+    const img = document.createElement('img');
+    Object.defineProperty(img, 'complete', { value: false });
+    Object.defineProperty(img, 'naturalWidth', { value: 0 });
+    s.append(img);
+    expect(frameSlotFilled(s)).toBe(false);
+  });
+
+  it('describes a slot that will not fill', () => {
+    // What gets logged when the wait gives up, so the next report says which.
+    expect(describeFrameSlot(slot())).toMatch(/text="Start".*imgs=0.*bg=none/);
   });
 });
