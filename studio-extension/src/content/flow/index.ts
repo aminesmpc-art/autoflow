@@ -1575,7 +1575,17 @@ async function sendStudioResult(
   const referenceUrl = pickReferenceStill({
     endFrame: videoEl ? await captureVideoEndFrame(videoEl) : '',
     posterStill: stills.reference,
+    // For a clip the poster is the OPENING frame, so it must not stand in for
+    // a failed capture — see pickReferenceStill.
+    isVideo: !!videoEl,
   });
+  if (videoEl && !referenceUrl) {
+    console.warn(
+      '[AutoFlow Studio] No end frame captured for this clip. Anything chained ' +
+      'from it will report a missing reference rather than silently restarting ' +
+      'from the opening frame.'
+    );
+  }
 
   try {
     chrome.runtime.sendMessage({
@@ -1613,6 +1623,53 @@ function captureVideoFrame(video: HTMLVideoElement): string {
 }
 
 /**
+ * Get enough of a clip loaded that it can be seeked and drawn.
+ *
+ * `preload="none"` means the browser has fetched nothing — not even metadata —
+ * so duration is NaN and drawing the element produces an empty canvas. Setting
+ * preload and calling load() starts the fetch; readyState >= 2 (HAVE_CURRENT_DATA)
+ * is the point at which drawImage returns pixels.
+ *
+ * The attribute is restored afterwards so Flow's own lazy-loading behaviour is
+ * unchanged for the user. Returns false rather than throwing: a clip that will
+ * not load is a reason to report no frame, never a reason to fail the run.
+ */
+async function ensureVideoLoaded(video: HTMLVideoElement): Promise<boolean> {
+  const ready = () => video.readyState >= 2 && isFinite(video.duration) && video.duration > 0;
+  if (ready()) return true;
+
+  const originalPreload = video.getAttribute('preload');
+  video.preload = 'auto';
+  try { video.load(); } catch { /* already loading */ }
+
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      for (const ev of ['loadeddata', 'canplay', 'loadedmetadata', 'error']) {
+        video.removeEventListener(ev, check);
+      }
+      resolve();
+    };
+    const check = () => { if (ready()) finish(); };
+    // 10s: a Flow clip is a few MB and this happens once per node. Longer than
+    // the seek timeout below because fetching bytes is the slow part.
+    const timer = setTimeout(finish, 10_000);
+    for (const ev of ['loadeddata', 'canplay', 'loadedmetadata', 'error']) {
+      video.addEventListener(ev, check);
+    }
+    check();
+  });
+
+  if (originalPreload === null) video.removeAttribute('preload');
+  else video.preload = originalPreload as any;
+
+  return ready();
+}
+
+/**
  * Capture the LAST frame of a page <video>.
  *
  * Chained workflows hand one clip's ending to the next clip as its opening
@@ -1623,6 +1680,18 @@ function captureVideoFrame(video: HTMLVideoElement): string {
  * the tile on the page looks untouched.
  */
 async function captureVideoEndFrame(video: HTMLVideoElement): Promise<string> {
+  /* Flow renders its tiles with preload="none", so the element usually holds
+     no data at all: duration is NaN, readyState is 0, and every seek below is
+     pointless. This used to bail straight to the poster — the clip's OPENING
+     frame — so a Last Frame node showed the start of the shot it was supposed
+     to end, and the chain silently restarted on every link.
+
+     Loading it is the whole fix. The element is left as we found it. */
+  if (!(await ensureVideoLoaded(video))) {
+    console.warn('[AutoFlow Studio] Clip would not load, so no end frame could be captured');
+    return '';
+  }
+
   const duration = video.duration;
   if (!isFinite(duration) || duration <= 0) return captureVideoFrame(video);
 
