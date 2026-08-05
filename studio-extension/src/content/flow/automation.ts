@@ -2176,7 +2176,21 @@ export class AutomationEngine {
       if (this.stopped) return;
     }
 
+    /* One line that answers every question this bug has raised, instead of
+       another round of inference from a count. Five attempts were spent
+       reasoning about which button was clicked when the page could simply be
+       asked. */
+    if (!overrideTrigger) {
+      const candidates = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'))
+        .filter(isVisible)
+        .map((b) => `"${(b.textContent || '').trim().slice(0, 48)}"#${b.getAttribute('id') || 'no-id'}`);
+      this.log('info', `[model] want="${modelName}" | panelOpen=${isSettingsPanelOpen()} | candidates: ${candidates.join(' , ') || 'none'}`);
+    }
+
     const finalTrigger = overrideTrigger || findModelSelectorTrigger();
+    if (finalTrigger && !overrideTrigger) {
+      this.log('info', `[model] chose "${(finalTrigger.textContent || '').trim().slice(0, 48)}" #${finalTrigger.getAttribute('id') || 'no-id'}`);
+    }
     if (!finalTrigger) {
       if (!isRetry && !overrideTrigger) {
         // Right after an Image<->Video switch the video-mode dropdown may not
