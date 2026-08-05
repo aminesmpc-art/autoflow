@@ -1,6 +1,6 @@
 # Cloud-hosted workflow templates
 
-**Status:** design, not built.
+**Status:** phases 1–3 built. Phase 4 (shared workflows) not started.
 **Problem:** every new template means a rebuild, a Chrome Web Store review, and a
 wait for users to update — to change prompt text and node positions.
 
@@ -207,10 +207,10 @@ Phased so that the risky part is observable before it matters.
 
 | Phase | What ships | How we know it works |
 |---|---|---|
-| 1 | Loader, cache, bundled fallback — serving **the same templates already bundled** | Gallery is identical. Console says whether it rendered from cache, network or bundle. A no-op that proves the pipeline. |
-| 2 | `templates:publish` script; one cloud-only template | It appears without a store update. A v0.5.2 build does **not** see it — the capability gate works. |
-| 3 | Pro gating | Non-Pro receives no `nodes` array for a Pro template. Verified in the network tab, not the UI. |
-| 4 | *(later)* shared / user-submitted workflows | — |
+| 1 ✅ | Loader, cache, bundled fallback — serving **the same templates already bundled** | Gallery is identical. Console says whether it rendered from cache, network or bundle. A no-op that proves the pipeline. |
+| 2 ✅ | `templates:publish` script; backend endpoint | It appears without a store update. A v0.5.2 build does **not** see it — the capability gate works. |
+| 3 ✅ | Pro gating | Non-Pro receives no `nodes` array for a Pro template. Verified in the network tab, not the UI. |
+| 4 | *(not started)* shared / user-submitted workflows | — |
 
 Phase 1 is deliberately boring. If it goes wrong, nothing changes for anyone.
 

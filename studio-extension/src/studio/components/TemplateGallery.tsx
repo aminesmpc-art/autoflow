@@ -5,7 +5,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStudioStore, normalizeWorkflow, resolveAssets } from '../store';
-import { TEMPLATES, CATEGORIES, type Template } from '../templates';
+import { CATEGORIES, type Template } from '../templates';
+import { loadTemplates, refreshTemplates, type TemplateSource } from '../templates/loader';
+import { getUpgradeTarget } from '../../shared/api';
 
 /** Node-chain preview gets noisy past this many dots */
 const MAX_PREVIEW_DOTS = 8;
@@ -51,6 +53,17 @@ export default function TemplateGallery() {
 
   const loadTemplate = useCallback(
     async (template: Template) => {
+      /* A Pro template reaches a free account as metadata only — the server
+         strips nodes and edges rather than sending the graph and trusting the
+         UI to hide it. So there is nothing to open here; send them to the
+         upgrade page instead. The card is a conversion surface, not a
+         disabled button. */
+      if (template.locked) {
+        const { url } = await getUpgradeTarget();
+        window.open(url, '_blank', 'noopener');
+        return;
+      }
+
       // Deep clone nodes/edges so each instance is independent,
       // then normalize (edge style, model names, missing fields)
       const { nodes: clonedNodes, edges: clonedEdges } = normalizeWorkflow(
@@ -77,11 +90,37 @@ export default function TemplateGallery() {
     setView('canvas');
   }, [newWorkflow, setView]);
 
+  /* Templates come from the cache, the bundle, or the backend — see
+     templates/loader.ts. The gallery renders whatever is available first and
+     swaps in a newer set if one arrives; it never waits on the network, so a
+     slow or missing API looks like a slightly older gallery rather than a
+     spinner or an error. */
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [source, setSource] = useState<TemplateSource>('bundle');
+
+  useEffect(() => {
+    let live = true;
+    loadTemplates().then(({ templates: t, source: s }) => {
+      if (!live) return;
+      setTemplates(t);
+      setSource(s);
+      console.log(`[Templates] Showing ${t.length} from ${s}`);
+      // Then see if the backend has anything newer, without blocking the above.
+      refreshTemplates().then((fresher) => {
+        if (!live || !fresher) return;
+        setTemplates(fresher.templates);
+        setSource(fresher.source);
+        console.log(`[Templates] Refreshed to ${fresher.templates.length} from network`);
+      });
+    });
+    return () => { live = false; };
+  }, []);
+
   /* Search covers the use-case line too — people look for "ad" or
      "consistency", not the template's proper name. */
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return TEMPLATES.filter((t) => {
+    return templates.filter((t) => {
       if (category !== 'All' && t.category !== category) return false;
       if (!q) return true;
       return (
@@ -91,7 +130,7 @@ export default function TemplateGallery() {
         t.category.toLowerCase().includes(q)
       );
     });
-  }, [query, category]);
+  }, [query, category, templates]);
 
   return (
     <div className="studio-gallery">
@@ -191,10 +230,13 @@ export default function TemplateGallery() {
         {visible.map((tpl) => (
           <div
             key={tpl.id}
-            className="studio-gallery__card"
+            className={`studio-gallery__card ${tpl.locked ? 'studio-gallery__card--locked' : ''}`}
             onClick={() => loadTemplate(tpl)}
-            title={tpl.useCase}
+            title={tpl.locked ? `${tpl.useCase}
+
+Pro template — click to upgrade.` : tpl.useCase}
           >
+            {tpl.locked && <span className="studio-gallery__lock">PRO</span>}
             {/* Thumbnail previews the template's real node chain rather than
                 sitting empty around a single oversized emoji */}
             <div className="studio-gallery__card-thumb">

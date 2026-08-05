@@ -33,6 +33,24 @@ export interface Template {
   useCase: string;
   nodes: Node[];
   edges: Edge[];
+
+  /* ── Cloud delivery ──
+     Absent on bundled templates, where the build itself is the guarantee.
+     Set by the publish script, and read by the loader to decide whether this
+     build can draw a template it was not compiled with. */
+
+  /** Node types this template needs, e.g. ['frame']. */
+  requiresNodeTypes?: string[];
+  /** Platforms it needs an adapter for, e.g. ['chatgpt']. */
+  requiresPlatforms?: string[];
+  /** Version floor for anything not expressible as a node type. */
+  minExtensionVersion?: string;
+  /** 'pro' templates arrive with empty nodes/edges unless the account is Pro. */
+  tier?: 'free' | 'pro';
+  /** True when the server sent metadata only — the card prompts to upgrade. */
+  locked?: boolean;
+  /** Hides a template everywhere on the next fetch, without a republish. */
+  disabled?: boolean;
 }
 
 /* ── Helpers keep the definitions readable ── */
@@ -413,7 +431,15 @@ const KIDS_SCENES = [
    'Music resolves and softens. Warm late-afternoon light.'],
 ] as const;
 
-export const TEMPLATES: Template[] = [
+/**
+ * The templates compiled into this build.
+ *
+ * Still the source of truth: authored here in TypeScript, validated by
+ * templates.test.ts, then exported to JSON by scripts/publish-templates.js.
+ * At runtime these are the floor the loader falls back to — a fresh install,
+ * or the API being down, must still open a gallery with workflows in it.
+ */
+export const BUILTIN_TEMPLATES: Template[] = [
   /* ─────────────── Starters ─────────────── */
   {
     id: 'tpl_simple_image',
@@ -1091,3 +1117,6 @@ export const TEMPLATES: Template[] = [
 ];
 
 export const CATEGORIES = ['All', 'Starter', 'Marketing', 'Character', 'Fashion', 'Content', 'Image', 'Utility'] as const;
+
+/** @deprecated Use the loader; this is the bundled floor, not the whole set. */
+export const TEMPLATES = BUILTIN_TEMPLATES;

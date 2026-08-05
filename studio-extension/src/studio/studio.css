@@ -131,6 +131,9 @@
 }
 
 .studio-gallery__card {
+  /* Positioning context for the PRO badge, which would otherwise anchor to
+     whatever ancestor happened to be positioned — the viewport, in practice. */
+  position: relative;
   background: #141416;
   border: 1px solid #1e1e22;
   border-radius: 14px;
@@ -1619,4 +1622,25 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   color: #7b7b85;
   border-top: 1px solid #1e1e24;
   text-align: center;
+}
+
+/* ── Pro templates ──
+   The card stays legible and clickable: it arrives without its node graph, so
+   clicking opens checkout rather than an empty canvas. Dimming it entirely
+   would read as broken. */
+.studio-gallery__card--locked .studio-gallery__card-thumb { opacity: 0.55; }
+.studio-gallery__card--locked:hover .studio-gallery__card-thumb { opacity: 0.8; }
+.studio-gallery__lock {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #1a1206;
+  background: linear-gradient(135deg, #fbbf24, #f97316);
+  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.35);
 }
