@@ -12,7 +12,14 @@
    "character sheet from a photo" and "from a sentence" are different jobs.
    ============================================================ */
 
-import { ASK_PRESETS, composeAskPrompt, findPreset, DEFAULT_PRESET_ID } from '../studio/presets';
+import {
+  BUILTIN_ASK_PRESETS as ASK_PRESETS, composeAskPrompt, findPreset,
+  DEFAULT_PRESET_ID, setAskPresets, getAskPresets, validatePreset,
+} from '../studio/presets';
+
+// Each test starts from the bundled set, since these swap it around.
+afterEach(() => setAskPresets(BUILTIN_ASK_PRESETS_SNAPSHOT));
+const BUILTIN_ASK_PRESETS_SNAPSHOT = ASK_PRESETS;
 
 describe('the preset set', () => {
   it('has unique ids and a default that resolves', () => {
@@ -108,6 +115,46 @@ describe('composeAskPrompt', () => {
     for (const p of ASK_PRESETS.filter((p) => p.id !== 'none')) {
       expect({ id: p.id, empty: composeAskPrompt(p.id, '', false).length === 0 })
         .toEqual({ id: p.id, empty: false });
+    }
+  });
+});
+
+/* Presets ride the same pipeline as templates, so a brief producing weak
+   sheets is a publish rather than a store review. What must not come with
+   that is a bad publish emptying the dropdown. */
+describe('published presets', () => {
+  it('replaces the bundled set when the payload has one', () => {
+    setAskPresets([{ id: 'x', name: 'X', hint: 'h', brief: 'do {{subject}}' }]);
+    expect(getAskPresets()).toHaveLength(1);
+    expect(composeAskPrompt('x', 'a cat', false)).toBe('do a cat');
+  });
+
+  it('keeps the bundled set when the payload has none', () => {
+    // An empty list would silently remove the feature rather than update it.
+    setAskPresets([]);
+    expect(getAskPresets().length).toBe(ASK_PRESETS.length);
+    setAskPresets(undefined);
+    expect(getAskPresets().length).toBe(ASK_PRESETS.length);
+  });
+
+  it('rejects a preset carrying anything but strings', () => {
+    /* The rule cloud delivery rests on: MV3 permits fetching configuration
+       and forbids fetching code. A function here would make this a policy
+       violation, not just a bug. */
+    expect(validatePreset({ id: 'x', name: 'X', hint: 'h', brief: '{{subject}}', run: () => 1 }))
+      .not.toEqual([]);
+    expect(validatePreset({ id: 'x', name: 'X', hint: 'h', brief: '{{subject}}', count: 3 }))
+      .not.toEqual([]);
+  });
+
+  it('rejects a brief that ignores what the user typed', () => {
+    expect(validatePreset({ id: 'x', name: 'X', hint: 'h', brief: 'draw a horse' }).join(' '))
+      .toMatch(/\{\{subject\}\}/);
+  });
+
+  it('accepts every preset we ship', () => {
+    for (const p of ASK_PRESETS) {
+      expect({ id: p.id, problems: validatePreset(p) }).toEqual({ id: p.id, problems: [] });
     }
   });
 });

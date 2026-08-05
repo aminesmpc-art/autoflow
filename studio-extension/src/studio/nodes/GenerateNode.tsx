@@ -10,7 +10,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { Lightbox } from '../components/Lightbox';
 import { useStudioStore } from '../store';
 import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS } from '../../types';
-import { ASK_PRESETS, DEFAULT_PRESET_ID, findPreset } from '../presets';
+import { getAskPresets, DEFAULT_PRESET_ID, findPreset } from '../presets';
 
 type NodeStatus = 'idle' | 'running' | 'done' | 'error';
 
@@ -250,7 +250,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                 onChange={(e) => set('preset', e.target.value)}
                 title="Wraps what you type in a brief, so a few words produce a usable prompt"
               >
-                {ASK_PRESETS.map((p) => (
+                {getAskPresets().map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>

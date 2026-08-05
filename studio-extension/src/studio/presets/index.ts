@@ -46,7 +46,15 @@ const ONLY_THE_PROMPT =
   '\n\nOutput only the prompt itself — no title, no preamble, no explanation, ' +
   'no quotes, no markdown, no numbered list unless asked for one.';
 
-export const ASK_PRESETS: AskPreset[] = [
+/**
+ * The presets compiled into this build.
+ *
+ * The floor, exactly like BUILTIN_TEMPLATES: a fresh install or an
+ * unreachable API still has every preset. The loader replaces this set with
+ * a published one when it can, which is what lets a brief that produces weak
+ * sheets be rewritten and live in minutes instead of a store review.
+ */
+export const BUILTIN_ASK_PRESETS: AskPreset[] = [
   {
     id: 'none',
     name: 'None — send as written',
@@ -206,10 +214,54 @@ export const ASK_PRESETS: AskPreset[] = [
   },
 ];
 
+/* What the app is actually using. Starts as the bundled set and is replaced
+   by the loader after a fetch — a module-level list rather than a parameter
+   on every call site, because the node dropdown, the runner and the tests all
+   need the same answer and threading it through each of them invites drift. */
+let activePresets: AskPreset[] = BUILTIN_ASK_PRESETS;
+
+export const getAskPresets = (): AskPreset[] => activePresets;
+
+export function setAskPresets(presets: AskPreset[] | null | undefined): void {
+  // Never leave the app with nothing to choose from: an empty published list
+  // would silently remove the feature rather than update it.
+  activePresets = presets && presets.length ? presets : BUILTIN_ASK_PRESETS;
+}
+
+/** @deprecated Use getAskPresets() — this is the bundled floor, not the live set. */
+export const ASK_PRESETS = BUILTIN_ASK_PRESETS;
+
 export const DEFAULT_PRESET_ID = 'none';
 
 export const findPreset = (id?: string): AskPreset =>
-  ASK_PRESETS.find((p) => p.id === id) || ASK_PRESETS[0];
+  activePresets.find((p) => p.id === id) || activePresets[0];
+
+/**
+ * Problems with a published preset, in plain language. Empty means valid.
+ *
+ * The one rule that is not stylistic: every field must be a string. MV3
+ * permits fetching configuration and forbids fetching code, so the day a
+ * preset can carry a function this stops being a config fetch. Everything
+ * else here is about not shipping a preset that produces nothing.
+ */
+export function validatePreset(p: any): string[] {
+  const problems: string[] = [];
+  if (!p || typeof p !== 'object') return ['not an object'];
+  for (const field of ['id', 'name', 'hint', 'brief'] as const) {
+    if (!p[field] || typeof p[field] !== 'string') problems.push(`missing or non-string ${field}`);
+  }
+  if (p.withImage !== undefined && typeof p.withImage !== 'string') {
+    problems.push('withImage is not a string');
+  }
+  for (const [key, value] of Object.entries(p)) {
+    if (typeof value !== 'string') problems.push(`field "${key}" is ${typeof value}, not a string`);
+  }
+  // A brief with no placeholder ignores whatever the user typed.
+  if (typeof p.brief === 'string' && p.id !== 'none' && !p.brief.includes('{{subject}}')) {
+    problems.push('brief never uses {{subject}}, so whatever the user types is discarded');
+  }
+  return problems;
+}
 
 /**
  * The text actually sent to the chat.

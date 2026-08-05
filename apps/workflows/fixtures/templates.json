@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "publishedAt": "2026-08-05T20:05:36.271Z",
+  "publishedAt": "2026-08-05T20:25:17.179Z",
   "templates": [
     {
       "id": "tpl_simple_image",
@@ -5248,6 +5248,53 @@
         "flow"
       ],
       "tier": "free"
+    }
+  ],
+  "presets": [
+    {
+      "id": "none",
+      "name": "None — send as written",
+      "hint": "Your text goes to the model unchanged.",
+      "brief": "{{subject}}"
+    },
+    {
+      "id": "car_sheet",
+      "name": "Car reference sheet",
+      "hint": "Type a model and year. Returns a three-view sheet prompt.",
+      "brief": "Write ONE image-generation prompt for a reference sheet of this exact car: {{subject}}\n\n# THE SHEET\nOne image on a plain mid-grey studio backdrop, three views: three-quarter front on the left, dead-side profile in the centre, three-quarter rear on the right. Even neutral studio lighting. The whole car in frame in every view, wheels straight, no cropping.\n\n# BE SPECIFIC TO THIS MODEL\nName the details that make it recognisably this generation and trim: headlight and tail-light shape, grille design, bumper and skirt lines, bonnet contour, mirror style, wheel design and spoke count, badge placement, exhaust layout, roofline. Name the paint colour precisely. A prompt that would suit any car of that class is wrong — that is the failure to avoid.\n\n# LOOK\nUltra photorealistic product photography, 8K, sharp throughout, accurate panel reflections. No people, no background detail, no text, no watermarks.\n\nUnder 150 words.\n\nOutput only the prompt itself — no title, no preamble, no explanation, no quotes, no markdown, no numbered list unless asked for one."
+    },
+    {
+      "id": "character_sheet",
+      "name": "Character sheet",
+      "hint": "A name or a line of description. Wire in a photo to match one instead.",
+      "brief": "Write ONE image-generation prompt for a character reference sheet of: {{subject}}\n\n# THE SHEET\nOne image on a plain mid-grey backdrop, three views: three-quarter front, side profile, three-quarter back. Full body head to toe in every view, neutral pose, arms clear of the body so the silhouette reads. Even lighting, no dramatic shadow.\n\n# PIN THE THINGS THAT DRIFT\nFace shape and features, hair length colour and how it falls, exact clothing including fastenings and footwear, body proportions, palette, and any prop the character always carries. These are what a later shot gets wrong, so name them rather than implying them.\n\nInvent whatever the description leaves open, and commit to it — a sheet that hedges is a sheet nothing can be matched against.\n\nUnder 150 words.\n\nOutput only the prompt itself — no title, no preamble, no explanation, no quotes, no markdown, no numbered list unless asked for one.",
+      "withImage": "Write ONE image-generation prompt for a character reference sheet that MATCHES the attached reference image. Notes on the subject: {{subject}}\n\n# READ THE REFERENCE FIRST\nDescribe what is actually there — face shape, hair, build, clothing down to fastenings and footwear, colour palette, any distinctive prop. Do not improve, restyle, age or idealise the person in it. Where the reference is ambiguous, say what it shows rather than inventing.\n\n# THE SHEET\nOne image on a plain mid-grey backdrop, three views: three-quarter front, side profile, three-quarter back. Full body, neutral pose, even lighting. Same person in every view.\n\nUnder 150 words.\n\nOutput only the prompt itself — no title, no preamble, no explanation, no quotes, no markdown, no numbered list unless asked for one."
+    },
+    {
+      "id": "continue_shot",
+      "name": "Continue this shot",
+      "hint": "Wire a Last Frame in. Writes the clip that follows it.",
+      "brief": "Write ONE prompt for the video clip that follows this moment: {{subject}}\n\nContinue the action rather than restarting it — the next clip opens exactly where this one ended, so do not re-establish the scene, re-introduce the subject or cut away.\n\nKeep the same location, lighting, camera height and subject. Describe what changes over the next few seconds and nothing else.\n\nUnder 120 words.\n\nOutput only the prompt itself — no title, no preamble, no explanation, no quotes, no markdown, no numbered list unless asked for one.",
+      "withImage": "The attached image is the LAST FRAME of the previous clip. Write ONE prompt for the clip that continues from it.\n{{subject}}\n\n# CONTINUE, DO NOT RESTART\nOpen on exactly what the frame shows. Same location, same lighting, same camera height, same subject in the same position. No cut, no re-establishing shot, no reset to a wide.\n\nDescribe the reference back accurately first — the model needs to know what it is continuing — then say what changes over the next few seconds.\n\nUnder 120 words.\n\nOutput only the prompt itself — no title, no preamble, no explanation, no quotes, no markdown, no numbered list unless asked for one."
+    },
+    {
+      "id": "scene_beats",
+      "name": "Scene beats",
+      "hint": "A logline. Returns numbered shots with an emotional arc.",
+      "brief": "Break this into a numbered sequence of shots: {{subject}}\n\n# THE ARC\nOpen on tension or a question, escalate, turn on something unexpected, resolve. Frame the final shot to echo the first so the video can loop.\n\n# EACH SHOT\nOne line naming what happens, the framing, and the colour temperature. Carry the colour from cool and desaturated through the tense half to warm at the turn — that progression is doing real work and is the part most sequences skip.\n\nEvery shot must hold the same character and location unless the story moves. Number them. No dialogue.\n\nGive 6 shots unless the subject asks for a different count.\n\nOutput only the numbered list — no title, no preamble, no explanation, no markdown."
+    },
+    {
+      "id": "match_style",
+      "name": "Match this style",
+      "hint": "Wire an image in. Describes its look so other shots can reuse it.",
+      "brief": "Describe the visual style of: {{subject}}\n\nWrite it as a style block that can be appended to any prompt — lens and framing habits, lighting direction and quality, colour palette and grade, texture and grain, level of realism.\n\nDescribe only the look. No subject, no action, no story — anything specific to one shot makes the block unusable in the next.\n\nOutput only the prompt itself — no title, no preamble, no explanation, no quotes, no markdown, no numbered list unless asked for one.",
+      "withImage": "Describe the visual style of the attached image so it can be reused on other subjects.\n{{subject}}\n\nLens and framing, lighting direction and quality, colour palette and grade, texture and grain, level of realism.\n\nDescribe only the look. Not what is in the picture — a style block that names the subject cannot be applied to anything else, which is the whole point of extracting it.\n\nOutput only the prompt itself — no title, no preamble, no explanation, no quotes, no markdown, no numbered list unless asked for one."
+    },
+    {
+      "id": "product_ugc",
+      "name": "Product brief",
+      "hint": "Name a product. Returns a UGC-style scene prompt.",
+      "brief": "Write ONE prompt for a handheld UGC-style video of this product: {{subject}}\n\n# MUST READ AS A REAL PHONE VIDEO\nShot by one person on a modern phone. Slight micro-shake, imperfect framing, natural available light, one continuous take. Never a tripod, gimbal, drone or cinematic move.\n\nThe product stays exactly as it is — same shape, colour and label. Held so the label faces camera at least once.\n\nNothing glossy. Not an advert, not influencer content. Natural sound only, no music.\n\nUnder 120 words.\n\nOutput only the prompt itself — no title, no preamble, no explanation, no quotes, no markdown, no numbered list unless asked for one."
     }
   ]
 }

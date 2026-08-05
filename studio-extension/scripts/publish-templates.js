@@ -41,24 +41,28 @@ function loadSources() {
   const tmp = path.join(ROOT, 'node_modules', '.cache', 'template-export');
   fs.mkdirSync(tmp, { recursive: true });
 
-  const compile = (rel) => {
-    const src = fs.readFileSync(path.join(ROOT, 'src/studio/templates', rel + '.ts'), 'utf8');
+  /* `as` is the output filename, given explicitly rather than derived.
+     Deriving it from the path basename put templates/index.ts and
+     presets/index.ts in the same file — the second overwrote the first, and
+     requiring "the templates" handed back the presets module. */
+  const compile = (rel, as) => {
+    const src = fs.readFileSync(path.join(ROOT, 'src/studio', rel + '.ts'), 'utf8');
     const { outputText } = ts.transpileModule(src, {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
       fileName: rel + '.ts',
     });
-    const out = path.join(tmp, rel + '.js');
+    const out = path.join(tmp, as + '.js');
     fs.writeFileSync(out, outputText);
     return out;
   };
 
-  // validate first: index does not import it, but requiring in dependency
-  // order keeps a future import from surprising us.
-  const validatePath = compile('validate');
-  const indexPath = compile('index');
+  const validatePath = compile('templates/validate', 'validate');
+  const indexPath = compile('templates/index', 'templates');
+  const presetsPath = compile('presets/index', 'presets');
   return {
     validate: require(validatePath),
     templates: require(indexPath),
+    presets: require(presetsPath),
   };
 }
 
@@ -116,7 +120,7 @@ function inlineArtwork(tpl) {
 let validateMod;
 
 function main() {
-  const { templates: mod, validate } = loadSources();
+  const { templates: mod, validate, presets: presetsMod } = loadSources();
   validateMod = validate;
 
   const source = mod.BUILTIN_TEMPLATES;
@@ -152,10 +156,27 @@ function main() {
     process.exit(1);
   }
 
+  /* Presets ride along. They are text with a {{subject}} placeholder — the
+     same "data, not code" that makes templates publishable — and a template
+     naming a preset is useless if the preset cannot be fixed with it. */
+  const presets = presetsMod.BUILTIN_ASK_PRESETS;
+  const badPresets = presets.filter((p) => presetsMod.validatePreset(p).length);
+  if (badPresets.length) {
+    for (const p of badPresets) {
+      console.error(
+        `  ✗ preset ${p.id}\n      - ` + presetsMod.validatePreset(p).join('\n      - ')
+      );
+    }
+    console.error('\nPreset validation failed. Nothing was written.');
+    process.exit(1);
+  }
+  console.log(`Validated ${presets.length} preset(s).`);
+
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     publishedAt: new Date().toISOString(),
     templates: out,
+    presets,
   };
 
   fs.mkdirSync(OUT_DIR, { recursive: true });

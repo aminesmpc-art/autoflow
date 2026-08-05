@@ -15,6 +15,9 @@
 
 import { BUILTIN_TEMPLATES, type Template } from './index';
 import { validateTemplate, capabilityGap } from './validate';
+import {
+  type AskPreset, BUILTIN_ASK_PRESETS, setAskPresets, validatePreset,
+} from '../presets';
 
 const API_BASE = 'https://api.auto-flow.studio';
 const CACHE_KEY = 'af_templates_cache';
@@ -26,6 +29,11 @@ export interface TemplatePayload {
   schemaVersion: number;
   publishedAt?: string;
   templates: Template[];
+  /* Ask AI briefs travel with the templates. Same reasoning as templates
+     themselves: they are text, so fixing a brief that produces weak sheets is
+     a publish rather than a store review — and a template referring to a
+     preset is useless if the preset it names cannot be updated with it. */
+  presets?: AskPreset[];
 }
 
 /** Bumped only when the format changes in a way old builds cannot read. */
@@ -81,6 +89,34 @@ export function usable(templates: Template[]): Template[] {
   return out;
 }
 
+/**
+ * Install the published presets, dropping any that are malformed.
+ *
+ * Per preset, never per payload — one bad brief must not take the other six
+ * with it. Absent or entirely unusable leaves the bundled set in place, which
+ * is why setAskPresets treats an empty list as "keep what you have".
+ */
+function applyPresets(presets: AskPreset[] | undefined): void {
+  if (!Array.isArray(presets) || !presets.length) return;
+  const usable = presets.filter((p) => {
+    const problems = validatePreset(p);
+    if (problems.length) {
+      console.error(
+        `[Presets] Rejected "${(p as any)?.id || '(no id)'}":\n  - ` +
+        problems.join('\n  - ')
+      );
+      return false;
+    }
+    return true;
+  });
+  if (!usable.length) {
+    console.error('[Presets] Nothing in the payload was usable — keeping the bundled set');
+    return;
+  }
+  setAskPresets(usable);
+  console.log(`[Presets] Using ${usable.length} published preset(s)`);
+}
+
 async function readCache(): Promise<CacheEntry | null> {
   try {
     const got = await chrome.storage.local.get(CACHE_KEY);
@@ -101,7 +137,11 @@ async function readCache(): Promise<CacheEntry | null> {
  */
 export async function loadTemplates(): Promise<LoadResult> {
   const cached = await readCache();
-  if (cached) return { templates: usable(cached.payload.templates), source: 'cache' };
+  if (cached) {
+    applyPresets(cached.payload.presets);
+    return { templates: usable(cached.payload.templates), source: 'cache' };
+  }
+  setAskPresets(BUILTIN_ASK_PRESETS);
   return { templates: usable(BUILTIN_TEMPLATES), source: 'bundle' };
 }
 
@@ -163,6 +203,8 @@ export async function refreshTemplates(opts: { force?: boolean } = {}): Promise<
     );
     return null;
   }
+
+  applyPresets(payload.presets);
 
   const templates = usable(payload.templates);
   if (!templates.length) {
