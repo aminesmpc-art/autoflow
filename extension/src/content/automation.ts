@@ -2128,9 +2128,17 @@ export class AutomationEngine {
     const currentModelRaw = finalTrigger.textContent?.trim() || '';
     const currentModelNorm = normalizeForModelMatch(currentModelRaw);
     const targetNorm = normalizeForModelMatch(modelName);
-    if (currentModelNorm.includes(targetNorm)) {
+    /* Exact, not "contains".
+       "Nano Banana 2 Lite" contains "Nano Banana 2", so asking for the plain
+       model while Flow sat on Lite reported "already set" and returned
+       without opening anything. Found in Studio, which shares this engine;
+       it surfaces there first only because Studio drives image models. */
+    if (currentModelNorm === targetNorm) {
       this.log('info', `Model already set: ${currentModelRaw}`);
       return;
+    }
+    if (currentModelNorm) {
+      this.log('info', `Model is "${currentModelRaw}", switching to "${modelName}"`);
     }
 
     // Open the model dropdown — try multiple strategies
@@ -2171,30 +2179,68 @@ export class AutomationEngine {
     this.log('info', `Found ${menuItems?.length ?? 0} model menu items`);
 
     if (menuItems) {
+      /* Collect, then choose. Flow's image menu is
+             Nano Banana Pro / Nano Banana 2 / Nano Banana 2 Lite
+         and "Nano Banana 2" is a substring of "Nano Banana 2 Lite", so a
+         first-match-wins scan returns whichever the DOM lists first. An exact
+         name is never ambiguous; a substring is trusted only when unique. */
+      const candidates: Array<{ item: Element; text: string; norm: string }> = [];
       for (const item of menuItems) {
-        const itemText = item.textContent || '';
-        const itemNorm = normalizeForModelMatch(itemText);
-
-        // Skip disabled items
         if (item.getAttribute('aria-disabled') === 'true' ||
-          item.getAttribute('data-disabled') === 'true') {
-          continue;
-        }
+          item.getAttribute('data-disabled') === 'true') continue;
+        // Items that are themselves dropdown triggers are parent containers.
+        if (item.querySelector('button[aria-haspopup="menu"]')) continue;
+        if (!isVisible(item)) continue;
+        const text = item.textContent || '';
+        candidates.push({ item, text, norm: normalizeForModelMatch(text) });
+      }
 
-        // Skip items that are themselves dropdown triggers (parent menu containers)
-        if (item.querySelector('button[aria-haspopup="menu"]')) {
-          continue;
-        }
+      const exact = candidates.filter((c) => c.norm === targetNorm);
+      const loose = candidates.filter((c) => c.norm.includes(targetNorm));
+      const chosen = exact[0] || (loose.length === 1 ? loose[0] : null);
 
-        if (itemNorm.includes(targetNorm) && isVisible(item)) {
-          // The clickable element may be a button inside the menuitem div
-          const innerBtn = item.querySelector('button');
-          const clickTarget = innerBtn || item;
-          simulateClick(clickTarget);
-          this.log('info', `Selected model: ${itemText.trim()}`);
-          await humanDelay(300, 600);
-          return;
+      if (!chosen && loose.length > 1) {
+        // Refusing beats guessing: the cost of guessing is a whole queue at
+        // the wrong model, and nothing downstream can tell.
+        this.log('warn',
+          `"${modelName}" matches ${loose.length} models (${loose.map((c) => c.text.trim()).join(', ')}). ` +
+          'Refusing to guess — use the exact name Flow shows.');
+      }
+
+      if (chosen) {
+        const innerBtn = chosen.item.querySelector('button') as HTMLElement | null;
+        const target = innerBtn || (chosen.item as HTMLElement);
+
+        /* An escalating ladder, not one click. A model row is a Radix menu
+           item, and React ignores an event whose isTrusted is false — the
+           same wall clickGenerate hit. Verified after every attempt so the
+           first that works stops the rest. */
+        const landed = () => {
+          const raw = (overrideTrigger || findModelSelectorTrigger())?.textContent?.trim() || '';
+          const norm = normalizeForModelMatch(raw);
+          return norm === normalizeForModelMatch(chosen.text) || norm === targetNorm;
+        };
+
+        const strategies: Array<[string, () => Promise<unknown> | unknown]> = [
+          ['react onSelect', () => reactTrigger(chosen.item, 'onSelect')],
+          ['react onClick', () => reactTrigger(target, 'onClick')],
+          ['native click', () => { nativeClick(target); }],
+          ['simulated click', () => { simulateClick(target); }],
+        ];
+
+        for (const [name, attempt] of strategies) {
+          if (this.stopped) return;
+          // Once the menu closes the item is detached; clicking it then lands
+          // on whatever Radix mounted in its place.
+          if (!document.contains(chosen.item)) break;
+          try { await attempt(); } catch { /* try the next one */ }
+          await humanDelay(400, 700);
+          if (landed()) {
+            this.log('info', `Model set to ${chosen.text.trim()} (via ${name})`);
+            return;
+          }
         }
+        this.log('warn', `Clicked "${chosen.text.trim()}" but Flow did not switch`);
       }
     }
 
