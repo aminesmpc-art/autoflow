@@ -19,6 +19,16 @@ import { isFramesMode } from '../templates/validate';
 
 export type RunnerState = 'idle' | 'running' | 'paused' | 'stopped' | 'done' | 'error';
 
+/**
+ * Platforms driven through a chat window rather than Flow's composer.
+ *
+ * A list rather than a chain of equality checks, which is what this was. Adding
+ * Gemini meant remembering to widen a `chatgpt/else` ternary, and the one that
+ * was missed sent every Gemini node to Flow — silently, because Flow accepts
+ * any prompt. Grok would have been the same bug a second time.
+ */
+export const CHAT_PLATFORMS = ['chatgpt', 'gemini', 'grok'];
+
 /** One extra attempt. Enough to ride out a blip, few enough that a node which
     is genuinely broken fails while the user is still watching. */
 const MAX_AUTO_RETRIES = 1;
@@ -543,7 +553,7 @@ export class WorkflowRunner {
       prompt: askPrompt,
       // Anything not a known chat platform runs on Flow. Listing them beats
       // a chatgpt/else ternary, which silently sent Gemini nodes to Flow.
-      platform: nodeData.platform === 'chatgpt' || nodeData.platform === 'gemini'
+      platform: CHAT_PLATFORMS.includes(nodeData.platform)
         ? nodeData.platform
         : 'flow',
       model: nodeData.model || (nodeData.mediaType === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),

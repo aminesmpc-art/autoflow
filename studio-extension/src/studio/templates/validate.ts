@@ -73,7 +73,7 @@ export const portsFor = (node: any) => {
 export const RENDERABLE_NODE_TYPES = ['prompt', 'image', 'generate', 'frame'] as const;
 
 /** Platforms this build has an adapter for. */
-export const SUPPORTED_PLATFORMS = ['flow', 'chatgpt', 'gemini'] as const;
+export const SUPPORTED_PLATFORMS = ['flow', 'chatgpt', 'gemini', 'grok'] as const;
 
 /**
  * Problems with a template, as a list of human-readable strings.

@@ -17,7 +17,7 @@ export interface NodeExecutionConfig {
   referenceImageIds?: string[];
   referenceImageData?: string[]; // base64 fallback
   /** Target platform — the service worker routes by this. Default 'flow'. */
-  platform?: 'flow' | 'chatgpt' | 'gemini';
+  platform?: 'flow' | 'chatgpt' | 'gemini' | 'grok';
 }
 
 export interface NodeResult {

@@ -12,8 +12,17 @@ import { useStudioStore } from '../store';
 import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS, modelHasDuration } from '../../types';
 import { getAskPresets, DEFAULT_PRESET_ID, findPreset } from '../presets';
 import { portsFor, retargetImagePorts } from '../templates/validate';
+import { CHAT_PLATFORMS } from '../engine/WorkflowRunner';
 
 type NodeStatus = 'idle' | 'running' | 'done' | 'error';
+type Platform = 'flow' | 'chatgpt' | 'gemini' | 'grok';
+
+/** What each chat platform is called on screen. */
+const CHAT_NAMES: Record<string, string> = {
+  chatgpt: 'ChatGPT',
+  gemini: 'Gemini',
+  grok: 'Grok',
+};
 
 /**
  * How each input port draws.
@@ -111,14 +120,14 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   );
 
   const status: NodeStatus = nodeData.status || 'idle';
-  const platform: 'flow' | 'chatgpt' | 'gemini' =
-    nodeData.platform === 'chatgpt' || nodeData.platform === 'gemini' ? nodeData.platform : 'flow';
   /* Chat platforms behave identically here: they answer in text or images and
-     have no model or duration to choose. Keeping one flag for "is a chat"
-     means adding a fourth never needs this file rewired again. */
+     have no model, ratio or duration to choose. One flag for "is a chat" is
+     what let Grok become the fourth without rewiring this file. */
+  const platform: Platform =
+    CHAT_PLATFORMS.includes(nodeData.platform) ? nodeData.platform : 'flow';
   const isChat = platform !== 'flow';
   const isChatGPT = isChat;
-  const chatName = platform === 'gemini' ? 'Gemini' : 'ChatGPT';
+  const chatName = CHAT_NAMES[platform] || 'ChatGPT';
   const mediaType = nodeData.mediaType || 'image';
   const isVideo = !isChat && mediaType === 'video';
   /* Frames mode: Flow takes a first and last still and interpolates between
@@ -313,6 +322,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               <option value="flow">Flow</option>
               <option value="chatgpt">ChatGPT</option>
               <option value="gemini">Gemini</option>
+              <option value="grok">Grok</option>
             </select>
           </label>
 

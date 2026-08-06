@@ -249,6 +249,7 @@ function wire(): void {
       const url = ({
         chatgpt: 'https://chatgpt.com/',
         gemini: 'https://gemini.google.com/app',
+        grok: 'https://grok.com/imagine',
         flow: 'https://labs.google/fx/tools/flow',
       } as Record<string, string>)[li.dataset.plat || 'flow']
         || 'https://labs.google/fx/tools/flow';

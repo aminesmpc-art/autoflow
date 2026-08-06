@@ -13,7 +13,7 @@ module.exports = {
     'flow-content': './src/content/flow/index.ts',
     'chatgpt-content': './src/content/chatgpt/index.ts',
     'gemini-content': './src/content/gemini/index.ts',
-    // grok-content lands with the Grok adapter (milestone 8)
+    'grok-content': './src/content/grok/index.ts',
     'sw-bypass': './src/content/flow/sw-bypass.ts',
     studio: './src/studio/index.tsx',
     sidepanel: './src/sidepanel/index.ts',
