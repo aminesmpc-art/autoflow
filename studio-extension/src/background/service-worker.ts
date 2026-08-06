@@ -196,8 +196,18 @@ async function waitForTabReady(tabId: number, timeoutMs = 30_000): Promise<boole
 
   while (Date.now() < deadline) {
     try {
-      const pong: any = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-      if (pong?.pong) return true;
+      /* Anything that comes back without throwing means a content script is
+         listening, which is the whole question. Do NOT inspect the shape of
+         the reply: the chat scripts answer { pong: true } and the Flow script
+         answers { type: 'PONG', runLocked }, so a check for `.pong` was false
+         for Flow forever. Every Flow node then sat through this entire loop,
+         got its content script injected a second time, and waited again —
+         about forty seconds of nothing before each node.
+
+         Chrome rejects with "Receiving end does not exist" when nobody is
+         there, so not throwing is the signal. */
+      await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+      return true;
     } catch {
       /* not listening yet */
     }
@@ -255,7 +265,13 @@ chrome.runtime.onConnect.addListener((port) => {
        user left open on a cold profile is mid-reload just as often. Returns
        immediately when the script is already listening, so a warm tab pays
        nothing for this. */
-    const ready = await waitForTabReady(tabId);
+    /* Only a generation is worth waiting on. Pause and stop are the controls
+       someone reaches for when a run is misbehaving, and making those sit
+       through a readiness wait is the opposite of what they are for. */
+    const ready = await waitForTabReady(
+      tabId,
+      msg.type === 'STUDIO_EXECUTE_NODE' ? 30_000 : 3_000
+    );
     if (!ready) {
       try {
         await chrome.scripting.executeScript({ target: { tabId }, files: [cfg.script] });

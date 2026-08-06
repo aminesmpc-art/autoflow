@@ -699,7 +699,10 @@ async function handleMessage(msg: Message): Promise<any> {
     }
 
     case 'PING':
-      return { type: 'PONG', runLocked: isRunLocked() };
+      // `pong` as well as the legacy shape: the worker's readiness check looked
+      // for it, found it only on the chat scripts, and made every Flow node
+      // wait out a thirty-second loop that could never succeed.
+      return { type: 'PONG', pong: true, runLocked: isRunLocked() };
 
     // أ¢â€‌â‚¬أ¢â€‌â‚¬ Studio: Execute a single node on Google Flow أ¢â€‌â‚¬أ¢â€‌â‚¬
     case 'STUDIO_EXECUTE_NODE' as any:
