@@ -409,6 +409,20 @@ export const AVAILABLE_MODELS = [
   'Veo 3.1 - Lite [Lower Priority]',
 ];
 
+/**
+ * Models whose settings panel offers a clip length.
+ *
+ * Only Omni does. Pick any Veo and the panel shows media type, mode, ratio,
+ * model and a generation count — no duration row at all, so Flow decides the
+ * length. Asking for "6s" there was searching for a menu item that does not
+ * exist, and the miss was logged as a warning, which reads as "the click
+ * failed" rather than "this model has no such setting".
+ */
+export const MODELS_WITH_DURATION = ['Omni Flash'];
+
+export const modelHasDuration = (model: string): boolean =>
+  MODELS_WITH_DURATION.some((m) => (model || '').trim().toLowerCase().startsWith(m.toLowerCase()));
+
 /* Image models Flow exposes.
    Taken from the live menu, which renders them with a banana emoji the
    matcher strips. Order matches the page.

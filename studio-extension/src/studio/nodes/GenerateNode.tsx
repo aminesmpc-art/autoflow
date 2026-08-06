@@ -9,7 +9,7 @@ import { memo, useCallback, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { Lightbox } from '../components/Lightbox';
 import { useStudioStore } from '../store';
-import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS } from '../../types';
+import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS, modelHasDuration } from '../../types';
 import { getAskPresets, DEFAULT_PRESET_ID, findPreset } from '../presets';
 import { portsFor, retargetImagePorts } from '../templates/validate';
 
@@ -360,7 +360,12 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                 </select>
               </label>
 
-              {isVideo && (
+              {/* Only Omni lets you choose a length. The Veo panels have no
+                  duration row, so offering the dropdown there promised a
+                  setting that could not be applied — the run asked for 6s and
+                  got whatever Flow decided, with a warning that read like a
+                  failed click. */}
+              {isVideo && modelHasDuration(nodeData.model || models[0]) && (
                 <label className="sn-field" title="Clip length">
                   <span className="sn-field__label">Length</span>
                   <select

@@ -17,7 +17,7 @@ import {
 } from '../../types';
 import { savePromptHistory, saveRunningQueue, clearRunningQueue } from '../../shared/storage';
 import { getStudioImageFiles } from './studioImages';
-import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS } from '../../types';
+import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS, modelHasDuration } from '../../types';
 
 import {
   MAX_RETRIES,
@@ -1766,9 +1766,16 @@ export class AutomationEngine {
     }
     if (this.stopped) return false;
 
-    // 4b. Set video duration (4s/6s/8s) — video mode only
+    /* 4b. Clip length (4s/6s/8s), which only Omni offers.
+       The Veo panels have no duration row, so asking there searched for a
+       menu item that cannot exist and logged the miss as a warning — a
+       failure message for a setting that was never on offer. */
     if (settings.mediaType !== 'image' && settings.duration) {
-      await applyMenuItem(settings.duration, `Duration: ${settings.duration}`);
+      if (modelHasDuration(settings.model)) {
+        await applyMenuItem(settings.duration, `Duration: ${settings.duration}`);
+      } else {
+        this.log('info', `${settings.model} has no duration setting — Flow picks the length`);
+      }
       if (this.stopped) return false;
     }
 

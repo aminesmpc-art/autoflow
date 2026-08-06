@@ -28,6 +28,7 @@ import {
   findFrameSlotDialog, findAssetOptions, assetOptionId, assetOptionSelected,
   findAddToPromptButton, findUploadsTab, findFrameSlotClearButton, describeAssetDialog,
 } from '../content/flow/selectors';
+import { modelHasDuration, AVAILABLE_MODELS } from '../types';
 
 /** The ordering rule the runner applies. */
 const orderedSources = (
@@ -199,6 +200,38 @@ describe('opening an older frames workflow', () => {
 
   it('does not touch a frames node that has no images at all', () => {
     expect(migrateFrameEdges([framesNode], [])).toEqual([]);
+  });
+});
+
+/* Clip length is an Omni setting. The Veo panels show media type, mode,
+   ratio, model and a generation count — no duration row — so a node offering
+   the dropdown promised something that could not be applied, and the engine
+   logged the missing menu item as a warning that read like a failed click. */
+describe('which models have a duration', () => {
+  it('knows Omni does', () => {
+    expect(modelHasDuration('Omni Flash')).toBe(true);
+  });
+
+  it('knows the Veo models do not', () => {
+    for (const m of ['Veo 3.1 - Lite', 'Veo 3.1 - Fast', 'Veo 3.1 - Quality',
+                     'Veo 3.1 - Lite [Lower Priority]']) {
+      expect({ m, has: modelHasDuration(m) }).toEqual({ m, has: false });
+    }
+  });
+
+  it('does not fall over on an empty or unknown model', () => {
+    // A node saved before the model list changed still has to render.
+    expect(modelHasDuration('')).toBe(false);
+    expect(modelHasDuration(undefined as any)).toBe(false);
+    expect(modelHasDuration('Some Future Model')).toBe(false);
+  });
+
+  it('covers every video model the picker offers', () => {
+    // If Flow adds one, this says so rather than silently defaulting it off.
+    for (const m of AVAILABLE_MODELS) {
+      expect(typeof modelHasDuration(m)).toBe('boolean');
+    }
+    expect(AVAILABLE_MODELS.filter(modelHasDuration)).toEqual(['Omni Flash']);
   });
 });
 
