@@ -1146,9 +1146,17 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
   // Return immediately -- do NOT block the message port.
   // Fire-and-forget poller sends updates via chrome.runtime.sendMessage.
   // Reference images stay registered until the node settles (retries re-attach them).
-  pollStudioCompletion(nodeId, queue).finally(() => {
-    releaseStudioImages(refImages.map(i => i.id));
-  });
+  /* The poller throws for a submit that never landed. Unhandled, that
+     rejection reached no one: the node was left with no result at all and sat
+     there until the runner's own 22-minute budget expired, replacing a
+     specific message with a generic timeout. */
+  pollStudioCompletion(nodeId, queue)
+    .catch((e: any) => {
+      sendStudioError(nodeId, e?.message || 'Tracking this generation failed');
+    })
+    .finally(() => {
+      releaseStudioImages(refImages.map(i => i.id));
+    });
   return { success: true };
 }
 
@@ -1299,10 +1307,21 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
   console.log(`[AutoFlow Studio] Engine submitted. Tracking tiles: ${trackedTileIds.join(', ') || 'none'}`);
   sendStudioProgress(nodeId, 40);
 
-  // If engine already marked as done (unlikely in lite, but possible)
+  /* The engine saying "done" is not a result.
+   *
+   * This used to return here with nothing but a tile id. Everything a result
+   * carries — the preview, the playable clip, and the last frame a chained
+   * node continues from — is read off the tile ELEMENT inside
+   * sendStudioResult. Handing it no element produced a node that went green
+   * with "Preview unavailable" and an empty referenceUrl, so the Last Frame
+   * below it stayed blank and every node after that failed with "Nothing to
+   * continue from" while Flow was rendering the clip perfectly well.
+   *
+   * It cost nothing to skip the tracking loop here and everything downstream,
+   * so both paths go through it now. A tile that is already finished is
+   * detected on the first pass a second later. */
   if (prompt.status === 'done') {
-    await sendStudioResult(nodeId, trackedTileIds[0] || '');
-    return;
+    console.log('[AutoFlow Studio] Engine reports done — locating the tile to capture from');
   }
 
   // ── Phase 2: Track tile using Studio-specific state detection ──
