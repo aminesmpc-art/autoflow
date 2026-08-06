@@ -995,14 +995,14 @@
 /* Disabled nodes are visibly inert */
 .sn--disabled { opacity: 0.45; filter: saturate(0.4); }
 
-/* ── Enable/disable toggle ── */
+/* ── Enable/disable toggle ──
+   Sits in the title row beside the name. It used to be pinned inside the card
+   at top-right, where it covered the result once there was one. */
 .sn-toggle {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 3;
-  width: 34px;
-  height: 19px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 30px;
+  height: 17px;
   padding: 2px;
   background: #3a3a42;
   border: none;
@@ -1010,6 +1010,23 @@
   cursor: pointer;
   transition: background 0.2s;
 }
+.sn-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.45);
+}
+/* Says why the card is greyed out. Opacity alone reads as "loading". */
+.sn-label__skip {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 5px;
+  background: #2a2a30;
+  border-radius: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: #8b8b95;
+}
+.sn-label__skip + .sn-toggle { margin-left: 6px; }
 .sn-toggle--on { background: #22c55e; }
 .sn-toggle__knob {
   display: block;
@@ -1019,7 +1036,10 @@
   border-radius: 50%;
   transition: transform 0.2s;
 }
-.sn-toggle--on .sn-toggle__knob { transform: translateX(15px); }
+/* The title row sits outside the card, so it keeps full contrast while the
+   card itself greys out — which matters, because it now carries the switch
+   that turns the node back on. */
+.sn-toggle--on .sn-toggle__knob { transform: translateX(13px); }
 
 /* ── Media area — takes the shape of the chosen aspect ratio ── */
 .sn-media {
@@ -1101,6 +1121,23 @@
   word-break: break-word;
 }
 .sn-media__state-icon { font-size: 26px; opacity: 0.5; }
+
+/* An outline of the shape this node will produce, shown while it is empty.
+   The media box stays compact until there is a result, so the ratio buttons
+   were the only clue to the output shape — and three pills reading 9:16,
+   16:9 and 1:1 all look alike. */
+.sn-media__ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 68px;
+  border: 1.5px dashed #2f2f38;
+  border-radius: 9px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.022), transparent 62%);
+}
+.sn-media__ghost .sn-media__state-icon { font-size: 20px; opacity: 0.38; }
+.sn-media__state--idle { gap: 9px; }
+.sn--running .sn-media__ghost { border-color: #3d2f52; }
 .sn-media__state--running { color: #c084fc; }
 /* The written prompt a ChatGPT text node produced. Scrolls rather than
    stretching the node — replies run to a few hundred words. */
@@ -1197,11 +1234,62 @@
    this one a real basis and let it take a full row when it needs to. */
 .sn-bar__sel--grow { flex: 1 1 130px; min-width: 118px; width: 100%; }
 
+/* ── The generate node's settings, on a grid ──
+   Two equal columns, so a control either takes half the width or all of it
+   and nothing ever ends a line alone with dead space beside it. As a wrapping
+   flex row the pairings changed with every option that appeared or vanished.
+
+   Scoped to --grid: ImageNode and PromptNode use the plain .sn-bar row. */
+.sn-bar--grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+  gap: 7px 6px;
+  padding: 9px 8px 10px;
+}
+.sn-bar--grid .sn-field--wide { grid-column: 1 / -1; }
+
+/* Segmented pills. For three-to-five short values a dropdown hides the
+   current one behind a click, and these are the settings you want to read at
+   a glance — the node literally takes the shape of the ratio. */
+.sn-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: #17171c;
+  border: 1px solid #2c2c34;
+  border-radius: 7px;
+}
+.sn-seg__btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 2px;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: #7a7a85;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.sn-seg__btn:hover { background: #22222a; color: #b4b4bd; }
+.sn-seg__btn--on {
+  background: #2e2e38;
+  color: #f4f4f5;
+  box-shadow: inset 0 0 0 1px #3f3f4a;
+}
+.sn-seg__btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.35);
+}
+
 /* Labelled control: a bare row of dropdowns gave no clue what each one set */
 .sn-field {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   flex: 0 0 auto;
   min-width: 0;
 }
@@ -1818,12 +1906,17 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
 }
 .studio-runbar__fail:hover { background: rgba(74, 36, 36, 0.6); }
 
-/* ── Ask AI preset ──
-   A dropdown of names teaches nothing; the hint under it is the part that
-   says what each preset actually asks the model to do. */
-.sn-field--preset { display: flex; flex-direction: column; gap: 3px; }
+/* ── Hints under a control ──
+   For the Ask AI preset especially: a dropdown of names teaches nothing, and
+   the hint is the part that says what each preset asks the model to do. */
 .sn-field__hint {
   font-size: 10px;
   line-height: 1.35;
   color: #6f6f79;
+}
+/* On the grid a hint is a row of its own, tucked under the control it
+   explains rather than floating a full gap below it. */
+.sn-bar--grid .sn-field__hint {
+  margin-top: -3px;
+  padding-left: 2px;
 }

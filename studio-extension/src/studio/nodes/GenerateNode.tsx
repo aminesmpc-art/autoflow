@@ -147,17 +147,17 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
         <button className="sn-actions__btn sn-actions__btn--danger" onClick={() => removeNode(id)} title="Delete node">🗑</button>
       </div>
 
-      {/* ── External title ── */}
+      {/* ── External title ──
+          The toggle lives up here rather than floating inside the card. It was
+          pinned over the top-right of the media area, where it sat on top of
+          empty space on an idle node and on top of the result once there was
+          one. */}
       <div className="sn-label">
         <span className="sn-label__icon" aria-hidden="true">{isText ? '💬' : isVideo ? '🎞' : '🖼'}</span>
         <span className="sn-label__text">
           {nodeData.label || (isText ? 'Ask AI' : 'Flow — Image/Video Generate')}
         </span>
-      </div>
-
-      {/* ── The card ── */}
-      <div className={`sn ${statusClass(status)} ${!enabled ? 'sn--disabled' : ''}`}>
-        {/* Enable/disable toggle */}
+        {!enabled && <span className="sn-label__skip">SKIPPED</span>}
         <button
           className={`sn-toggle ${enabled ? 'sn-toggle--on' : ''}`}
           onClick={() => set('enabled', !enabled)}
@@ -166,14 +166,28 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
         >
           <span className="sn-toggle__knob" />
         </button>
+      </div>
+
+      {/* ── The card ── */}
+      <div className={`sn ${statusClass(status)} ${!enabled ? 'sn--disabled' : ''}`}>
 
         {/* ── Media area — full ratio only once there's something to show ── */}
         {/* Text has no aspect ratio — a 9:16 box of empty space reads as a
             broken image node. Give it a compact panel that grows with the
             answer instead. */}
+        {/* Hold the chosen aspect ratio only once there is something in it.
+            A 9:16 node reserved 400px of empty black before it had run, so a
+            three-node workflow scrolled like a ten-node one and the settings
+            — the part you actually touch before running — sat below the fold. */}
         <div
           className={`sn-media ${!(status === 'done' && (preview || previewVideo)) ? 'sn-media--empty' : ''}`}
-          style={isText ? { minHeight: 120, maxHeight: 260 } : { aspectRatio: ratioToCss(ratio) }}
+          style={
+            isText
+              ? { minHeight: 120, maxHeight: 260 }
+              : (status === 'done' && (preview || previewVideo))
+                ? { aspectRatio: ratioToCss(ratio) }
+                : { height: 132 }
+          }
         >
           {status === 'done' && previewVideo && (
             <>
@@ -255,7 +269,18 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
 
           {status === 'idle' && (
             <div className="sn-media__state sn-media__state--idle">
-              <span className="sn-media__state-icon">{isText ? '💬' : isVideo ? '🎞' : '🖼'}</span>
+              {/* An outline in the chosen ratio. The box itself is compact
+                  until there is a result to show, so without this nothing on
+                  an idle node said whether it was making a portrait or a
+                  landscape — and the ratio buttons are three identical pills
+                  otherwise. */}
+              {isText ? (
+                <span className="sn-media__state-icon">💬</span>
+              ) : (
+                <span className="sn-media__ghost" style={{ aspectRatio: ratioToCss(ratio) }}>
+                  <span className="sn-media__state-icon">{isVideo ? '🎞' : '🖼'}</span>
+                </span>
+              )}
               {/* Said "Connect a prompt" even when one was connected, so a
                   ready node looked unfinished. It knows the answer — the T
                   handle either has an edge or it does not. */}
@@ -270,89 +295,110 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           )}
         </div>
 
-        {/* ── Compact settings strip ── */}
-        <div className="sn-bar">
-          <select
-            className="sn-bar__sel"
-            value={platform}
-            onChange={(e) => set('platform', e.target.value)}
-            title="Platform"
-          >
-            <option value="flow">Flow</option>
-            <option value="chatgpt">ChatGPT</option>
-            <option value="gemini">Gemini</option>
-          </select>
+        {/* ── Settings ──
+            A two-column grid rather than a wrapping row. As a flex row the
+            controls paired up differently every time an option appeared or
+            vanished — Ratio would end a line alone with half the card empty
+            beside it — and only some of them carried a label, so Flow and
+            Video were two unexplained dropdowns. Everything is labelled and
+            everything lands on a column now. */}
+        <div className="sn-bar sn-bar--grid">
+          <label className="sn-field" title="Which service runs this node">
+            <span className="sn-field__label">Platform</span>
+            <select
+              className="sn-bar__sel nodrag"
+              value={platform}
+              onChange={(e) => set('platform', e.target.value)}
+            >
+              <option value="flow">Flow</option>
+              <option value="chatgpt">ChatGPT</option>
+              <option value="gemini">Gemini</option>
+            </select>
+          </label>
 
           {/* ChatGPT can either draw or write. Asking it to write turns this
               node into a prompt writer whose answer feeds the next node. */}
-          {isVideo && (
-            <div className="sn-field">
-              <label className="sn-field__label">FROM</label>
+          {isChatGPT && (
+            <label className="sn-field" title="Ask for an image, or for a written prompt">
+              <span className="sn-field__label">Output</span>
               <select
-                className="sn-bar__sel sn-bar__sel--grow nodrag"
+                className="sn-bar__sel nodrag"
+                value={mediaType === 'text' ? 'text' : 'image'}
+                onChange={(e) => set('mediaType', e.target.value)}
+              >
+                <option value="image">Image</option>
+                <option value="text">Text</option>
+              </select>
+            </label>
+          )}
+
+          {!isChatGPT && (
+            <label className="sn-field" title="Output type">
+              <span className="sn-field__label">Output</span>
+              <select
+                className="sn-bar__sel nodrag"
+                value={mediaType}
+                onChange={(e) => handleMediaType(e.target.value)}
+              >
+                <option value="image">Image</option>
+                <option value="video">Video</option>
+              </select>
+            </label>
+          )}
+
+          {isVideo && (
+            <label className="sn-field sn-field--wide" title="Ingredients: reference images. Frames: a first and last still, interpolated.">
+              <span className="sn-field__label">Build from</span>
+              <select
+                className="sn-bar__sel nodrag"
                 value={nodeData.creationType || 'ingredients'}
                 onChange={(e) => handleCreationType(e.target.value)}
-                title="Ingredients: reference images. Frames: a first and last still, interpolated."
               >
-                <option value="ingredients">Ingredients</option>
+                <option value="ingredients">Ingredients — reference images</option>
                 <option value="frames">Start &amp; End frames</option>
               </select>
-              {isFrames && (
-                <small className="sn-field__hint">
-                  {nodeData.framesNotice
-                    ? nodeData.framesNotice
-                    : 'Wire an image into S and one into E — S is where the clip opens.'}
-                </small>
-              )}
-            </div>
+            </label>
+          )}
+
+          {isVideo && isFrames && (
+            <small className="sn-field__hint sn-field--wide">
+              {nodeData.framesNotice
+                ? nodeData.framesNotice
+                : 'Wire an image into S and one into E — S is where the clip opens.'}
+            </small>
           )}
 
           {isText && (
-            <div className="sn-field sn-field--preset">
-              <label className="sn-field__label">PRESET</label>
+            <label className="sn-field sn-field--wide" title="Wraps what you type in a brief, so a few words produce a usable prompt">
+              <span className="sn-field__label">Preset</span>
               <select
-                className="sn-bar__sel sn-bar__sel--grow nodrag"
+                className="sn-bar__sel nodrag"
                 value={nodeData.preset || DEFAULT_PRESET_ID}
                 onChange={(e) => set('preset', e.target.value)}
-                title="Wraps what you type in a brief, so a few words produce a usable prompt"
               >
                 {getAskPresets().map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>
-              {/* The hint is the whole point: a dropdown of names teaches
-                  nothing, and the difference between these is what they ask
-                  the model to do. */}
-              <small className="sn-field__hint">{findPreset(nodeData.preset).hint}</small>
-            </div>
+            </label>
           )}
 
-          {isChatGPT && (
-            <select
-              className="sn-bar__sel"
-              value={mediaType === 'text' ? 'text' : 'image'}
-              onChange={(e) => set('mediaType', e.target.value)}
-              title="Ask ChatGPT for an image, or for a written prompt"
-            >
-              <option value="image">Image</option>
-              <option value="text">Text</option>
-            </select>
+          {/* The hint is the whole point: a dropdown of names teaches nothing,
+              and the difference between these is what they ask the model to do. */}
+          {isText && (
+            <small className="sn-field__hint sn-field--wide">{findPreset(nodeData.preset).hint}</small>
           )}
 
           {/* Flow exposes model/ratio/duration; the ChatGPT composer has none */}
           {!isChatGPT && (
             <>
-              <select className="sn-bar__sel" value={mediaType} onChange={(e) => handleMediaType(e.target.value)} title="Output type">
-                <option value="image">Image</option>
-                <option value="video">Video</option>
-              </select>
-
-              {/* Model gets its own labelled row — the names are long and it's
-                  the setting people change most after the prompt. */}
+              {/* Model takes the full width — the names are long
+                  ("Veo 3.1 - Lite [Lower Priority]") and it is the setting
+                  people change most after the prompt. */}
               <label className="sn-field sn-field--wide" title="Model">
                 <span className="sn-field__label">Model</span>
                 <select
-                  className="sn-bar__sel sn-bar__sel--grow"
+                  className="sn-bar__sel nodrag"
                   value={nodeData.model || models[0]}
                   onChange={(e) => set('model', e.target.value)}
                 >
@@ -361,37 +407,51 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               </label>
 
               {/* Only Omni lets you choose a length. The Veo panels have no
-                  duration row, so offering the dropdown there promised a
+                  duration row, so offering the control there promised a
                   setting that could not be applied — the run asked for 6s and
                   got whatever Flow decided, with a warning that read like a
                   failed click. */}
               {isVideo && modelHasDuration(nodeData.model || models[0]) && (
-                <label className="sn-field" title="Clip length">
+                <div className="sn-field sn-field--wide" title="Clip length">
                   <span className="sn-field__label">Length</span>
-                  <select
-                    className="sn-bar__sel"
-                    value={nodeData.duration || '6s'}
-                    onChange={(e) => set('duration', e.target.value)}
-                  >
-                    {DURATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </label>
+                  <div className="sn-seg nodrag">
+                    {DURATIONS.map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        className={`sn-seg__btn ${(nodeData.duration || '6s') === d ? 'sn-seg__btn--on' : ''}`}
+                        onClick={() => set('duration', d)}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
 
-              <label className="sn-field" title="Aspect ratio">
+              {/* Pills rather than a dropdown: there are only three or five,
+                  the current one is readable without opening anything, and the
+                  node takes the shape you pick — so this is the control most
+                  worth being able to see at a glance. */}
+              <div className="sn-field sn-field--wide" title="Aspect ratio">
                 <span className="sn-field__label">Ratio</span>
-                <select
-                  className="sn-bar__sel"
-                  value={ratio}
-                  onChange={(e) => set('aspectRatio', e.target.value)}
-                >
-                  {ratios.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </label>
+                <div className="sn-seg nodrag">
+                  {ratios.map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      className={`sn-seg__btn ${ratio === r ? 'sn-seg__btn--on' : ''}`}
+                      onClick={() => set('aspectRatio', r)}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </>
           )}
           {isChatGPT && (
-            <span className="sn-bar__hint">
+            <span className="sn-bar__hint sn-field--wide">
               {isText ? 'Writes a prompt · needs a ChatGPT tab' : 'Image · prompt only'}
             </span>
           )}
