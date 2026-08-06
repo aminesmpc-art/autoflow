@@ -189,6 +189,14 @@ body {
 }
 .sp-plat li.is-open .sp-plat__state { color: var(--good); }
 
+/* A tab that is there and unreachable. Amber rather than grey, because it
+   needs an action — and a different one from "open the tab". */
+.sp-plat li.is-blocked .sp-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.16);
+}
+.sp-plat li.is-blocked .sp-plat__state { color: #f59e0b; }
+
 /* ── Account ── */
 .sp-input {
   width: 100%;

@@ -109,6 +109,37 @@ const PLATFORMS: Record<Platform, { match: string; open: string; script: string;
   },
 };
 
+/**
+ * What the panel can say about a platform.
+ *
+ * "blocked" exists because the honest answer to a tab we can see and cannot
+ * touch is not "not open". A Grok window sat open on screen while the panel
+ * read "not open", which points the user at opening another tab — and the
+ * second one reads the same way, because the problem was never the tab.
+ *
+ * chrome.tabs.query({url}) returns nothing for a host the extension has no
+ * access to, which is indistinguishable from no such tab. Asking the
+ * permissions API separates the two.
+ */
+type PlatformState = 'open' | 'closed' | 'blocked';
+
+async function platformState(match: string): Promise<PlatformState> {
+  let granted = true;
+  try {
+    granted = await chrome.permissions.contains({ origins: [match] });
+  } catch {
+    /* Older Chrome, or a pattern it will not evaluate — assume access and let
+       the query below be the answer. */
+  }
+
+  try {
+    if ((await chrome.tabs.query({ url: match })).length > 0) return 'open';
+  } catch {
+    return granted ? 'closed' : 'blocked';
+  }
+  return granted ? 'closed' : 'blocked';
+}
+
 /** Reuse the user's existing tab if there is one; open it if not. */
 async function ensurePlatformTab(platform: Platform): Promise<number | null> {
   const cfg = PLATFORMS[platform];
@@ -504,13 +535,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'PANEL_PLATFORM_STATUS') {
     // Answering needs a query, so keep the channel open.
     (async () => {
-      const status: Record<string, boolean> = {};
+      const status: Record<string, PlatformState> = {};
       for (const [key, cfg] of Object.entries(PLATFORMS)) {
-        try {
-          status[key] = (await chrome.tabs.query({ url: cfg.match })).length > 0;
-        } catch {
-          status[key] = false;
-        }
+        status[key] = await platformState(cfg.match);
       }
       sendResponse(status);
     })();
