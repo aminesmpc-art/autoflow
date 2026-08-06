@@ -38,6 +38,14 @@ import {
   findFrameSlots,
   frameSlotFilled,
   describeFrameSlot,
+  findFrameSlotClearButton,
+  findFrameSlotDialog,
+  findAssetOptions,
+  assetOptionId,
+  assetOptionSelected,
+  findAddToPromptButton,
+  findUploadsTab,
+  describeAssetDialog,
   findLoadedIngredients,
   waitForIngredients,
   findFlowAlertIndicator,
@@ -663,14 +671,32 @@ export class AutomationEngine {
            reference missing produces a plausible clip built from the text
            alone, which is the one failure nothing downstream can detect. */
         if (prompt.images && prompt.images.length > 0) {
-          const attachedNow = findLoadedIngredients().length;
-          if (attachedNow < prompt.images.length) {
-            const ok = await waitForIngredients(prompt.images.length, 20_000);
-            if (!ok) {
+          if (this.queue!.settings.creationType === 'frames') {
+            /* Frames images live in the Start and End slots, not the
+               ingredient tray, so counting chips here would report zero
+               attached however well the paste went. Check the slots the
+               images actually went into. */
+            const slots = findFrameSlots();
+            const want = Math.min(prompt.images.length, 2);
+            const have = slots
+              ? [slots.start, slots.end].slice(0, want).filter(frameSlotFilled).length
+              : 0;
+            if (have < want) {
               throw new Error(
-                `Flow shows ${findLoadedIngredients().length} of ${prompt.images.length} reference image(s) ` +
-                'attached. Generating now would drop the reference, so this node stopped instead.'
+                `Flow shows ${have} of ${want} frame(s) in place. Generating now would ` +
+                'interpolate from the wrong stills, so this node stopped instead.'
               );
+            }
+          } else {
+            const attachedNow = findLoadedIngredients().length;
+            if (attachedNow < prompt.images.length) {
+              const ok = await waitForIngredients(prompt.images.length, 20_000);
+              if (!ok) {
+                throw new Error(
+                  `Flow shows ${findLoadedIngredients().length} of ${prompt.images.length} reference image(s) ` +
+                  'attached. Generating now would drop the reference, so this node stopped instead.'
+                );
+              }
             }
           }
         }
@@ -2800,6 +2826,9 @@ export class AutomationEngine {
     if (images.length === 0) return true;
 
     this.log('info', `Attaching ${images.length} frame image(s) for prompt #${promptIdx + 1}`);
+    if (images.length > 2) {
+      this.log('warn', `Frames mode takes two images; ignoring ${images.length - 2} extra`);
+    }
 
     let imageBlobs: any;
     try {
@@ -2813,206 +2842,275 @@ export class AutomationEngine {
       return false;
     }
 
-    const frameSlots: Array<{ label: 'Start' | 'End'; fileIndex: number }> = [];
-    frameSlots.push({ label: 'Start', fileIndex: 0 });
-    if (images.length > 1) {
-      frameSlots.push({ label: 'End', fileIndex: 1 });
-    }
+    const labels: Array<'Start' | 'End'> = ['Start', 'End'];
 
-    // Phase 1: Upload any missing frame images to the main Flow page first
-    const filesToUpload: Array<{ fileData: any; filename: string }> = [];
-    for (const slot of frameSlots) {
-      const fileData = imageBlobs.files[slot.fileIndex];
-      if (!fileData) continue;
-
-      const ext = fileData.mime.includes('png') ? 'png' : 'jpg';
-      const idSlug = (images[slot.fileIndex].id || '').replace(/-/g, '').slice(0, 8) || `${promptIdx}_${slot.fileIndex}`;
-      const filename = `af_${idSlug}.${ext}`;
-
-      if (!this.uploadedAssets.has(filename)) {
-        filesToUpload.push({ fileData, filename });
-      }
-    }
-
-    if (filesToUpload.length > 0) {
-      this.log('info', `Pasting ${filesToUpload.length} new frame image(s) onto prompt input...`);
-      const promptInput = findPromptInput();
-      if (!promptInput) {
-        this.log('warn', 'Prompt input not found to paste frame images');
-        return false;
-      }
-
-      /* One paste per image, in order.
-         Flow fills Start with the first pasted image and End with the second
-         — the slots follow paste order, which is why they can be filled
-         without opening either dialog.
-
-         The mistake was pasting both in a single DataTransfer: two files in
-         one clipboard payload read as a multi-image attachment, so they
-         landed as ingredients and the slots stayed empty. The clip then came
-         back looking like an ordinary generation, which is why this failed
-         quietly rather than erroring. */
-      const slots = findFrameSlots();
-      if (!slots) {
-        this.log('warn', 'Flow is not showing Start/End frame slots — is the composer in video mode?');
-        return false;
-      }
-
-      const targets: Array<[string, HTMLElement]> = [['Start', slots.start], ['End', slots.end]];
-      for (let i = 0; i < Math.min(filesToUpload.length, 2); i++) {
-        if (this.stopped) return false;
-        const [label, slot] = targets[i];
-        const item = filesToUpload[i];
-
-        const blob = this.base64ToBlob(item.fileData.data, item.fileData.mime);
-        const file = new File([blob], item.filename, { type: item.fileData.mime });
-        const dt = new DataTransfer();
-        dt.items.add(file);   // exactly one — see above
-
-        if (promptInput instanceof HTMLElement) promptInput.focus();
-        await sleep(150);
-        promptInput.dispatchEvent(new ClipboardEvent('paste', {
-          bubbles: true, cancelable: true, clipboardData: dt,
-        }));
-        this.log('info', `Pasted ${item.filename} for the ${label} frame`);
-
-        /* Wait for THIS slot before pasting the next. Firing both pastes back
-           to back races them into the same slot, and the order is the whole
-           meaning of the mode. */
-        const deadline = Date.now() + 45_000;
-        let landed = false;
-        let reported = false;
-        while (Date.now() < deadline) {
-          if (this.stopped) return false;
-          await sleep(500);
-          if (frameSlotFilled(slot)) { landed = true; break; }
-          /* Say what the slot looks like halfway through, rather than only
-             at the end. "Still uploading" and "filled, but I cannot see it"
-             are indistinguishable from outside, and the second one is a bug
-             in this check rather than in Flow. */
-          if (!reported && Date.now() > deadline - 30_000) {
-            reported = true;
-            this.log('info', `${label} frame not detected yet — ${describeFrameSlot(slot)}`);
-          }
-        }
-        if (!landed) {
-          throw new Error(
-            `The ${label} frame never filled (${describeFrameSlot(slot)}). Generating now ` +
-            'would attach the image as an ingredient instead of interpolating, so this node stopped.'
-          );
-        }
-        this.log('info', `${label} frame set: ${item.filename}`);
-      }
-      if (filesToUpload.length > 2) {
-        this.log('warn', `Frames mode takes two images; ignoring ${filesToUpload.length - 2} extra`);
-      }
-
-      // Add to uploaded cache
-      for (const item of filesToUpload) {
-        this.uploadedAssets.add(item.filename);
-      }
-      this.log('info', 'Frame image(s) uploaded successfully.');
-    }
-
-    // Phase 2: Open dialog for each slot, search by name, and click to select/attach
-    for (const slot of frameSlots) {
+    /* Empty both slots before anything else.
+       A slot keeps its image between generations, so a prompt that supplies
+       only a Start frame would otherwise silently interpolate towards the
+       previous shot's End. Clearing first also means the pickers can be
+       opened at all — a filled slot is a thumbnail, not a dialog trigger. */
+    for (const label of labels) {
       if (this.stopped) return false;
-      const fileData = imageBlobs.files[slot.fileIndex];
+      if (!(await this.clearFrameSlot(label))) return false;
+    }
+
+    /* Every media id the library already holds, read before anything is
+       uploaded. This is how our image is identified afterwards: Flow renames
+       uploads to a UUID of its own, so the name we chose is not in the picker
+       to search for. Measured on a live composer — searching "af_" matched 0
+       of 2 rows that were both ours. */
+    const known = await this.readLibraryAssetIds();
+    if (known === null) {
+      this.log('warn', 'Could not read the asset picker to identify frame images');
+      return false;
+    }
+
+    for (let i = 0; i < Math.min(imageBlobs.files.length, 2); i++) {
+      if (this.stopped) return false;
+      const label = labels[i];
+      const fileData = imageBlobs.files[i];
       if (!fileData) continue;
 
       const ext = fileData.mime.includes('png') ? 'png' : 'jpg';
-      const idSlug = (images[slot.fileIndex].id || '').replace(/-/g, '').slice(0, 8) || `${promptIdx}_${slot.fileIndex}`;
+      const idSlug = (images[i].id || '').replace(/-/g, '').slice(0, 8) || `${promptIdx}_${i}`;
       const filename = `af_${idSlug}.${ext}`;
 
-      this.log('info', `Preparing to attach "${slot.label}" frame: ${filename}...`);
+      // Upload, then find the row that was not there a moment ago.
+      const mediaId = await this.uploadFrameImage(fileData, filename, known, label);
+      if (!mediaId) return false;
+      known.add(mediaId);
 
-      const checkAttached = (): boolean => {
-        const btn = findFrameButton(slot.label);
-        if (!btn) return false;
-        const hasImg = btn.querySelector('img') !== null;
-        const text = (btn.textContent || '').trim();
-        return hasImg || (text !== slot.label);
-      };
-
-      if (checkAttached()) {
-        this.log('info', `"${slot.label}" frame already has an image attached. Skipping.`);
-        continue;
-      }
-
-      const frameBtn = findFrameButton(slot.label);
-      if (!frameBtn) {
-        this.log('warn', `Cannot find "${slot.label}" frame button`);
-        return false;
-      }
-
-      await this.dismissDialogs();
-      await sleep(200);
-
-      simulateClick(frameBtn);
-      await humanDelay(400, 700);
-
-      let dialog = findAssetSearchDialog();
-      if (!dialog) {
-        nativeClick(frameBtn);
-        await humanDelay(500, 800);
-        dialog = findAssetSearchDialog();
-      }
-      if (!dialog) {
-        this.log('warn', `Dialog did not open after clicking "${slot.label}"`);
-        return false;
-      }
-
-      const imageTab = findImageTabInDialog();
-      if (imageTab && imageTab.getAttribute('aria-selected') !== 'true') {
-        const tabStrategies = [
-          () => reactTrigger(imageTab, 'onPointerDown'),
-          () => reactTrigger(imageTab, 'onClick'),
-          () => { simulateClick(imageTab); return true; },
-          () => { nativeClick(imageTab); return true; }
-        ];
-        for (const strat of tabStrategies) {
-          await strat();
-          await sleep(100);
-        }
-        await sleep(200);
-      }
-
-      this.log('info', `Searching for frame asset "${filename}" in dialog...`);
-      const selected = await this.searchAndClickAssetInDialog(dialog, filename);
-
-      if (!selected) {
-        this.log('warn', `Failed to select frame image "${filename}" from search results`);
-        await this.dismissDialogs();
-        return false;
-      }
-
-      // Poll until the image shows up in the frame slot to verify attachment
-      const maxWaitMs = 6000;
-      const startWait = Date.now();
-      let attached = false;
-
-      while (Date.now() - startWait < maxWaitMs) {
-        if (this.stopped) return false;
-        if (checkAttached()) {
-          attached = true;
-          break;
-        }
-        await sleep(500);
-      }
-
-      if (!attached) {
-        this.log('warn', `Timed out waiting for "${slot.label}" frame to reflect selected image.`);
-        await this.dismissDialogs();
-        return false;
-      }
-
-      this.log('info', `Successfully attached ${slot.label} frame: ${filename}`);
-      await this.dismissDialogs();
-      await sleep(400);
+      if (!(await this.selectFrameAsset(label, mediaId, filename))) return false;
+      this.uploadedAssets.add(filename);
     }
 
     this.log('info', `All frame image(s) attached for prompt #${promptIdx + 1}`);
     return true;
+  }
+
+  /** Open the Start picker briefly to read which assets already exist. */
+  private async readLibraryAssetIds(): Promise<Set<string> | null> {
+    const dialog = await this.openFrameSlotDialog('Start');
+    if (!dialog) return null;
+    const ids = new Set(findAssetOptions(dialog).map(assetOptionId));
+    this.log('info', `Asset library holds ${ids.size} image(s) before upload`);
+    await this.dismissDialogs();
+    await sleep(300);
+    return ids;
+  }
+
+  /** Empty a slot that is still holding the previous prompt's frame. */
+  private async clearFrameSlot(label: 'Start' | 'End'): Promise<boolean> {
+    const slots = findFrameSlots();
+    if (!slots) {
+      this.log('warn', 'Flow is not showing Start/End frame slots — is the composer in video mode?');
+      return false;
+    }
+    const slot = label === 'Start' ? slots.start : slots.end;
+    if (!frameSlotFilled(slot)) return true;
+
+    const clear = findFrameSlotClearButton(slot);
+    if (!clear) {
+      this.log('warn', `${label} frame is occupied and has no remove control — ${describeFrameSlot(slot)}`);
+      return false;
+    }
+    simulateClick(clear);
+    await sleep(600);
+
+    const after = findFrameSlots();
+    const nowEmpty = after && !frameSlotFilled(label === 'Start' ? after.start : after.end);
+    if (!nowEmpty) {
+      this.log('warn', `${label} frame would not clear — it still holds the previous image`);
+      return false;
+    }
+    this.log('info', `${label} frame cleared`);
+    return true;
+  }
+
+  /**
+   * Put one image in Flow's library and return the media id it was given.
+   *
+   * Pasting onto the prompt is what uploads it — the slots themselves take no
+   * drop. Which asset is ours is then a question of identity, not of name,
+   * so the answer is whichever media id appeared that was not there before.
+   */
+  private async uploadFrameImage(
+    fileData: any,
+    filename: string,
+    known: Set<string>,
+    label: 'Start' | 'End'
+  ): Promise<string | null> {
+    const promptInput = findPromptInput();
+    if (!promptInput) {
+      this.log('warn', 'Prompt input not found to upload frame image');
+      return null;
+    }
+
+    const blob = this.base64ToBlob(fileData.data, fileData.mime);
+    const file = new File([blob], filename, { type: fileData.mime });
+    const dt = new DataTransfer();
+    dt.items.add(file);   // one at a time: two in one payload read as ingredients
+
+    if (promptInput instanceof HTMLElement) promptInput.focus();
+    await sleep(150);
+    promptInput.dispatchEvent(new ClipboardEvent('paste', {
+      bubbles: true, cancelable: true, clipboardData: dt,
+    }));
+    this.log('info', `Uploading ${filename} for the ${label} frame...`);
+
+    /* Poll the picker for the new row. Reopened each round rather than left
+       open, because the list is fetched when the dialog mounts and an upload
+       that finishes afterwards does not necessarily push into it. */
+    const deadline = Date.now() + 90_000;
+    let reported = false;
+    while (Date.now() < deadline) {
+      if (this.stopped) return null;
+      await sleep(2500);
+
+      const dialog = await this.openFrameSlotDialog(label);
+      if (dialog) {
+        const fresh = findAssetOptions(dialog).map(assetOptionId).filter((id) => id && !known.has(id));
+        if (fresh.length) {
+          // Newest first under Flow's default "Recent" sort.
+          const id = fresh[0];
+          this.log('info', `${filename} uploaded (media ${id.slice(0, 8)})`);
+          return id;
+        }
+        if (!reported && Date.now() > deadline - 60_000) {
+          reported = true;
+          this.log('info', `${label} frame still uploading — ${describeAssetDialog(dialog)}`);
+        }
+      }
+      await this.dismissDialogs();
+      await sleep(200);
+    }
+
+    this.log('warn', `${filename} never appeared in the asset picker after 90s`);
+    return null;
+  }
+
+  /**
+   * Select a known asset into a slot and commit it.
+   *
+   * Clicking the row only previews it. "Add to Prompt" is what fills the slot
+   * and closes the dialog — the step whose absence left every slot empty
+   * while everything upstream reported success.
+   */
+  private async selectFrameAsset(
+    label: 'Start' | 'End',
+    mediaId: string,
+    filename: string
+  ): Promise<boolean> {
+    const dialog = await this.openFrameSlotDialog(label);
+    if (!dialog) {
+      this.log('warn', `The ${label} picker did not open`);
+      return false;
+    }
+
+    let row = findAssetOptions(dialog).find((r) => assetOptionId(r) === mediaId);
+    if (!row) {
+      /* Pasted images can land under Uploads rather than Images depending on
+         which tab the picker opens on. */
+      const uploads = findUploadsTab(dialog);
+      if (uploads) {
+        simulateClick(uploads);
+        await sleep(800);
+        row = findAssetOptions(dialog).find((r) => assetOptionId(r) === mediaId);
+      }
+    }
+    if (!row) {
+      this.log('warn', `${filename} is not in the ${label} picker — ${describeAssetDialog(dialog)}`);
+      await this.dismissDialogs();
+      return false;
+    }
+
+    if (!assetOptionSelected(row)) {
+      simulateClick(row);
+      await sleep(400);
+      if (!assetOptionSelected(row)) {
+        nativeClick(row);
+        await sleep(400);
+      }
+    }
+    if (!assetOptionSelected(row)) {
+      this.log('warn', `${filename} would not select in the ${label} picker`);
+      await this.dismissDialogs();
+      return false;
+    }
+
+    const commit = findAddToPromptButton(dialog);
+    if (!commit) {
+      this.log('warn', `No "Add to Prompt" button in the ${label} picker — ${describeAssetDialog(dialog)}`);
+      await this.dismissDialogs();
+      return false;
+    }
+    simulateClick(commit);
+
+    // The slot itself is the evidence — not the click, and not the dialog closing.
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      if (this.stopped) return false;
+      await sleep(500);
+      const slots = findFrameSlots();
+      if (!slots) continue;
+      const slot = label === 'Start' ? slots.start : slots.end;
+      if (frameSlotFilled(slot)) {
+        this.log('info', `${label} frame set: ${filename}`);
+        await this.dismissDialogs();
+        return true;
+      }
+    }
+
+    const slots = findFrameSlots();
+    const desc = slots
+      ? describeFrameSlot(label === 'Start' ? slots.start : slots.end)
+      : 'slots not found';
+    this.log('warn', `${label} frame never filled after Add to Prompt — ${desc}`);
+    await this.dismissDialogs();
+    return false;
+  }
+
+  /** Click a slot and return the picker it controls. */
+  private async openFrameSlotDialog(label: 'Start' | 'End'): Promise<HTMLElement | null> {
+    await this.dismissDialogs();
+    await sleep(250);
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (this.stopped) return null;
+
+      const slots = findFrameSlots();
+      if (!slots) {
+        this.log('warn', 'Flow is not showing Start/End frame slots — is the composer in video mode?');
+        return null;
+      }
+      const slot = label === 'Start' ? slots.start : slots.end;
+
+      /* A filled slot is a thumbnail rather than a dialog trigger, so there
+         is nothing here to open. The caller clears it first; reaching this
+         means it came back. */
+      if (frameSlotFilled(slot)) {
+        this.log('warn', `${label} frame is already holding an image`);
+        return null;
+      }
+
+      slot.scrollIntoView({ block: 'center', behavior: 'instant' });
+      await sleep(150);
+      if (attempt === 0) simulateClick(slot);
+      else if (attempt === 1) nativeClick(slot);
+      else await reactTrigger(slot, 'onClick');
+      await humanDelay(500, 800);
+
+      /* The dialog is the slot's own, resolved through aria-controls — not
+         "whichever dialog is open". Both slots have one, and filling Start
+         from End's picker would reverse the clip. */
+      const dialog = findFrameSlotDialog(slot);
+      if (dialog && dialog.getAttribute('data-state') !== 'closed') return dialog;
+      await this.dismissDialogs();
+      await sleep(300);
+    }
+
+    this.log('warn', `The ${label} picker did not open after three attempts`);
+    return null;
   }
 
   /** Dismiss any open dialogs/popover/modals by pressing Escape */

@@ -23,16 +23,50 @@ export const NODE_PORTS: Record<string, { in: string[]; out: string[] }> = {
      rather than one image_ref taking a list, because "which image is the
      first frame" cannot be answered by edge order — that is invisible on the
      canvas and changes when a connection is remade. */
+  /* Every port a generate node can have in any mode. Not what any single node
+     draws — portsFor picks the subset for the mode it is actually in. */
   generate: { in: ['text', 'image_ref', 'frame_start', 'frame_end'], out: ['result'] },
   // A prompt writer emits text rather than a result.
   'generate:text': { in: ['text', 'image_ref'], out: ['text'] },
+  /* Frames mode swaps the one image port for the two frame ports. It is a
+     swap rather than an addition: in this mode the runner reads only
+     frame_start and frame_end, so leaving image_ref on the node would offer a
+     socket that accepts a wire and then ignores it. The same argument runs
+     the other way, which is why Ingredients has its own entry rather than
+     falling back to the union — a plain image node drawing S and E would take
+     a wire the runner never looks at. */
+  'generate:ingredients': { in: ['text', 'image_ref'], out: ['result'] },
+  'generate:frames': { in: ['text', 'frame_start', 'frame_end'], out: ['result'] },
 };
 
+/**
+ * Whether a generate node's dropdowns put it in Start/End frames mode.
+ *
+ * Flow only — the slots are Flow's video composer. The platform check matters
+ * because switching a node from Flow to ChatGPT leaves mediaType and
+ * creationType behind in its data, and without it the node would draw S and E
+ * ports on a platform that has no such thing.
+ */
+export const isFramesMode = (data: any): boolean =>
+  (data?.platform || 'flow') === 'flow' &&
+  data?.mediaType === 'video' &&
+  data?.creationType === 'frames';
+
+/**
+ * The ports a node draws, given its current settings.
+ *
+ * GenerateNode renders its handles from this, and validateTemplate checks
+ * edges against it, so the two cannot drift. They did drift once: the frame
+ * ports were added here and to the runner but never to the node, so Frames
+ * mode had no socket to plug into and every image landed on image_ref, where
+ * the runner no longer looked. The node generated from the prompt alone.
+ */
 export const portsFor = (node: any) => {
-  const key = node?.type === 'generate' && node?.data?.mediaType === 'text'
-    ? 'generate:text'
-    : node?.type;
-  return NODE_PORTS[key];
+  if (node?.type === 'generate') {
+    if (node?.data?.mediaType === 'text') return NODE_PORTS['generate:text'];
+    return NODE_PORTS[isFramesMode(node?.data) ? 'generate:frames' : 'generate:ingredients'];
+  }
+  return NODE_PORTS[node?.type];
 };
 
 /** Node types this build can actually draw — Canvas.tsx's nodeTypes map. */
@@ -176,6 +210,78 @@ export function capabilityGap(
     return `needs version ${tpl.minExtensionVersion} or newer`;
   }
   return null;
+}
+
+/* ============================================================
+   Moving wires when the mode changes.
+
+   Switching FROM between Ingredients and Frames changes which ports the node
+   draws. An edge pointing at a handle that is no longer rendered does not
+   error and does not disappear from the file — React Flow simply stops
+   drawing it, and the runner stops finding it. The canvas looks connected,
+   the clip comes back built from the prompt alone, and nothing anywhere says
+   why. So the wires move with the mode.
+   ============================================================ */
+
+const FRAME_HANDLES = ['frame_start', 'frame_end'];
+
+/**
+ * Re-point one node's image wires for the mode it is switching into.
+ *
+ * Into Frames: the first two image wires become Start and End, in the order
+ * they were drawn. Any beyond the second are dropped — the mode takes exactly
+ * two stills — and the count comes back so the caller can say so rather than
+ * letting connections vanish quietly.
+ *
+ * Back to Ingredients: both frame wires become ordinary references. Nothing
+ * is dropped; image_ref takes a list.
+ */
+export function retargetImagePorts(
+  nodeId: string,
+  edges: any[],
+  toFrames: boolean
+): { edges: any[]; dropped: number } {
+  let slot = 0;
+  let dropped = 0;
+
+  const next: any[] = [];
+  for (const e of edges) {
+    if (e?.target !== nodeId) { next.push(e); continue; }
+
+    if (toFrames && e.targetHandle === 'image_ref') {
+      if (slot >= FRAME_HANDLES.length) { dropped++; continue; }
+      next.push({ ...e, targetHandle: FRAME_HANDLES[slot++] });
+      continue;
+    }
+    if (!toFrames && FRAME_HANDLES.includes(e.targetHandle)) {
+      next.push({ ...e, targetHandle: 'image_ref' });
+      continue;
+    }
+    next.push(e);
+  }
+
+  return { edges: next, dropped };
+}
+
+/**
+ * The same repair, applied to a whole workflow as it loads.
+ *
+ * Saved workflows and published templates written before the frame ports
+ * existed put their stills on image_ref with creationType already set to
+ * frames. Opening one now would draw two empty sockets and no wires. Only
+ * nodes that have no frame wiring at all are touched, so a workflow that was
+ * built correctly is left exactly as it is.
+ */
+export function migrateFrameEdges(nodes: any[], edges: any[]): any[] {
+  let out = edges;
+  for (const n of nodes || []) {
+    if (n?.type !== 'generate' || !isFramesMode(n.data)) continue;
+    const mine = out.filter((e: any) => e?.target === n.id);
+    if (mine.some((e: any) => FRAME_HANDLES.includes(e.targetHandle))) continue;
+    if (!mine.some((e: any) => e.targetHandle === 'image_ref')) continue;
+    out = retargetImagePorts(n.id, out, true).edges;
+  }
+  return out;
 }
 
 /** Numeric-segment compare. -1, 0, 1. Handles "0.9.0" vs "0.10.0" correctly. */

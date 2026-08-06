@@ -11,8 +11,27 @@ import { Lightbox } from '../components/Lightbox';
 import { useStudioStore } from '../store';
 import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS } from '../../types';
 import { getAskPresets, DEFAULT_PRESET_ID, findPreset } from '../presets';
+import { portsFor, retargetImagePorts } from '../templates/validate';
 
 type NodeStatus = 'idle' | 'running' | 'done' | 'error';
+
+/**
+ * How each input port draws.
+ *
+ * Which ports exist is decided by portsFor; this only says what they look
+ * like. Start and End get letters rather than two identical picture glyphs,
+ * because which is which is the entire meaning of the mode.
+ */
+const PORT_SPECS: Record<string, { glyph: string; cls: string; top: string; title: string }> = {
+  text: { glyph: 'T', cls: 'sn-port--text', top: '38%', title: 'Prompt' },
+  /* Prompt writers take references too, now that the ChatGPT script actually
+     uploads them. Showing this frame to Ask AI and asking what happens next is
+     the reason to want a prompt writer at all — it was hidden only while an
+     attached image would have been dropped. */
+  image_ref: { glyph: '🖼', cls: 'sn-port--image', top: '62%', title: 'Reference image' },
+  frame_start: { glyph: 'S', cls: 'sn-port--image', top: '58%', title: 'Start frame — where the clip opens' },
+  frame_end: { glyph: 'E', cls: 'sn-port--image', top: '78%', title: 'End frame — where the clip lands' },
+};
 
 /* Model names must match what Flow renders on the page — single source of truth */
 const VIDEO_MODELS: readonly string[] = AVAILABLE_MODELS;
@@ -58,6 +77,28 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
         mediaType: value,
         model: value === 'image' ? IMAGE_MODELS[0] : VIDEO_MODELS[0],
         aspectRatio: '9:16',
+      });
+    },
+    [id, updateNodeData]
+  );
+
+  /* Switching FROM changes which image ports the node draws, so the wires
+     already attached have to move with it. Left alone they point at a handle
+     that is no longer rendered: React Flow stops drawing the edge, the runner
+     stops finding it, and the clip comes back generated from the prompt with
+     no sign anything was lost. */
+  const handleCreationType = useCallback(
+    (value: string) => {
+      const toFrames = value === 'frames';
+      const { edges, setEdges } = useStudioStore.getState();
+      const { edges: moved, dropped } = retargetImagePorts(id, edges, toFrames);
+      setEdges(moved);
+      updateNodeData(id, {
+        creationType: value,
+        // Two stills is the whole mode; say what happened to the third.
+        framesNotice: dropped
+          ? `${dropped} extra image connection${dropped > 1 ? 's' : ''} removed — Frames uses two.`
+          : '',
       });
     },
     [id, updateNodeData]
@@ -250,7 +291,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               <select
                 className="sn-bar__sel sn-bar__sel--grow nodrag"
                 value={nodeData.creationType || 'ingredients'}
-                onChange={(e) => set('creationType', e.target.value)}
+                onChange={(e) => handleCreationType(e.target.value)}
                 title="Ingredients: reference images. Frames: a first and last still, interpolated."
               >
                 <option value="ingredients">Ingredients</option>
@@ -258,7 +299,9 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               </select>
               {isFrames && (
                 <small className="sn-field__hint">
-                  Connect both ends — Start decides where the clip opens.
+                  {nodeData.framesNotice
+                    ? nodeData.framesNotice
+                    : 'Wire an image into S and one into E — S is where the clip opens.'}
                 </small>
               )}
             </div>
@@ -349,17 +392,29 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           )}
         </div>
 
-        {/* ── Handles: large, labelled, outside the edge ── */}
-        <Handle type="target" position={Position.Left} id="text" className="sn-port sn-port--text" style={{ top: '38%' }}>
-          <span className="sn-port__glyph">T</span>
-        </Handle>
-        {/* Prompt writers take references too, now that the ChatGPT script
-            actually uploads them. Showing this frame to Ask AI and asking what
-            happens next is the reason to want a prompt writer at all — it was
-            hidden only while an attached image would have been dropped. */}
-        <Handle type="target" position={Position.Left} id="image_ref" className="sn-port sn-port--image" style={{ top: '62%' }}>
-          <span className="sn-port__glyph">🖼</span>
-        </Handle>
+        {/* ── Handles: large, labelled, outside the edge ──
+            Drawn from portsFor, the same function the validator checks edges
+            against. Hard-coding them here is how Frames mode shipped with two
+            ports the runner read and the node never drew: every image landed
+            on image_ref, the runner looked at frame_start, and the node
+            generated from the prompt alone. */}
+        {(portsFor({ type: 'generate', data: nodeData })?.in || []).map((port) => {
+          const spec = PORT_SPECS[port];
+          if (!spec) return null;
+          return (
+            <Handle
+              key={port}
+              type="target"
+              position={Position.Left}
+              id={port}
+              className={`sn-port ${spec.cls}`}
+              style={{ top: spec.top }}
+              title={spec.title}
+            >
+              <span className="sn-port__glyph">{spec.glyph}</span>
+            </Handle>
+          );
+        })}
         {/* Text answers leave on the text port so they land on the next node's
             T input; media leaves on result, which carries the reference. */}
         {isText ? (

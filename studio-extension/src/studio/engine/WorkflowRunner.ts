@@ -15,6 +15,7 @@ import { trackUsage } from '../../shared/api';
 import { bridge, type NodeExecutionConfig, type NodeResult } from './bridge';
 import { useStudioStore } from '../store';
 import { composeAskPrompt } from '../presets';
+import { isFramesMode } from '../templates/validate';
 
 export type RunnerState = 'idle' | 'running' | 'paused' | 'stopped' | 'done' | 'error';
 
@@ -454,7 +455,7 @@ export class WorkflowRunner {
        so it comes from two named ports rather than the order edges happen to
        sit in. Edge order is invisible on the canvas and changes when a
        connection is remade, which is not something to hang a video on. */
-    const isFrames = nodeData.creationType === 'frames' && nodeData.mediaType === 'video';
+    const isFrames = isFramesMode(nodeData);
     const orderedSources = isFrames
       ? [...(inputs.get('frame_start') || []), ...(inputs.get('frame_end') || [])]
       : (inputs.get('image_ref') || []);
@@ -497,6 +498,20 @@ export class WorkflowRunner {
         const names = broken.map((n) => (n!.data as any)?.label || n!.id);
         throw new Error(
           `Nothing to continue from — ${names.join(', ')} produced no usable frame`
+        );
+      }
+
+      /* Frames mode without frames is not a mode, it is an ordinary
+         generation wearing its name. Flow would accept the prompt and return
+         a plausible clip that starts and ends nowhere near the stills the
+         user wired up, and the only symptom would be a clip that looks
+         unrelated. This is how the mode failed on its first outing: the node
+         drew no S or E port at all, every image landed on the old reference
+         port, and the run submitted with nothing attached. */
+      if (isFrames) {
+        throw new Error(
+          'Frames mode has no images — wire one into S (start) and one into E (end), ' +
+          'or switch FROM back to Ingredients'
         );
       }
     }

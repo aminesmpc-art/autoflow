@@ -841,14 +841,59 @@ export interface FrameSlots {
   end: HTMLElement;
 }
 
+/**
+ * The button between the two slots.
+ *
+ * Its whole purpose is to swap first and last, which makes it the one element
+ * that exists in every state of this row — and therefore the anchor worth
+ * navigating from. Matched on the Material ligature "swap_horiz", which is an
+ * icon name rather than prose and so survives a French or Japanese Flow; the
+ * aria-label is checked too in case the ligature is ever swapped for an SVG.
+ */
+export function findFrameSwapButton(): HTMLElement | null {
+  for (const b of Array.from(document.querySelectorAll<HTMLElement>('button'))) {
+    if (!isVisible(b)) continue;
+    const text = (b.textContent || '').trim().toLowerCase();
+    const label = (b.getAttribute('aria-label') || '').toLowerCase();
+    if (text.includes('swap_horiz')) return b;
+    if (/swap.*(frame|first|last)/.test(`${text} ${label}`)) return b;
+  }
+  return null;
+}
+
+/**
+ * The Start and End slots, in that order.
+ *
+ * Navigated from the swap button rather than by collecting dialog triggers,
+ * because a slot stops being a dialog trigger the moment it holds an image:
+ *
+ *   empty   <div type="button" aria-haspopup="dialog" …>Start</div>
+ *   filled  <div class="sc-784d6f75-0 …"><img …><button>cancel</button></div>
+ *
+ * Counting triggers therefore worked exactly once per run. As soon as Start
+ * was filled, one trigger remained, the count fell below two, and attaching
+ * the End frame reported "Flow is not showing Start/End frame slots" — with
+ * the slots plainly on screen and one of them already correct.
+ *
+ * Verified against a live composer, both empty and half-filled.
+ */
 export function findFrameSlots(): FrameSlots | null {
+  const swap = findFrameSwapButton();
+  if (swap) {
+    const start = swap.previousElementSibling as HTMLElement | null;
+    const end = swap.nextElementSibling as HTMLElement | null;
+    if (start && end && start !== end) return { start, end };
+  }
+
+  /* Fallback for a composer whose swap button we cannot see: two dialog
+     triggers, which is what an untouched pair looks like. Prefer the labelled
+     pair when the language is one we know; otherwise take them in order,
+     which is what the swap button existing at all guarantees is meaningful. */
   const triggers = Array.from(
     document.querySelectorAll<HTMLElement>('[aria-haspopup="dialog"]')
   ).filter(isVisible);
   if (triggers.length < 2) return null;
 
-  /* Prefer the labelled pair when the UI is in a language we know; fall back
-     to the first two, which is what the order guarantees. */
   const byText = (word: RegExp) =>
     triggers.find((t) => word.test((t.textContent || '').trim()));
   const start = byText(/^start$/i) || triggers[0];
@@ -879,6 +924,127 @@ export function frameSlotFilled(slot: HTMLElement): boolean {
     if (bg && bg !== 'none' && /url\(|data:/.test(bg)) return true;
   }
   return false;
+}
+
+/** The remove control on a filled slot, so a run does not inherit the frames
+ *  the previous prompt left behind. */
+export function findFrameSlotClearButton(slot: HTMLElement): HTMLElement | null {
+  const buttons = Array.from(slot.querySelectorAll<HTMLElement>('button'));
+  const labelled = buttons.find((b) =>
+    /cancel|close|clear|remove/i.test(`${b.textContent || ''} ${b.getAttribute('aria-label') || ''}`)
+  );
+  return labelled || buttons[0] || null;
+}
+
+/* ── The asset picker ─────────────────────────────────────────
+   Opened by clicking a slot. Verified against a live composer:
+
+     <div role="dialog" id="radix-:r29:" data-state="open">     ← id is the
+       <button role="tab" aria-selected="true">Images</button>     slot's
+       <button role="tab" aria-selected="false">Uploads</button>   aria-controls
+       <input id="add-menu-input" placeholder="Search assets">
+       <div data-testid="virtuoso-item-list">
+         <div data-item-index="0">
+           <div role="option" aria-selected="true">
+             <img src="…media.getMediaUrlRedirect?name=<mediaId>"
+                  alt="b4611d71-….jpg">
+       <button>Add to Prompt</button>                           ← commits
+
+   Two facts here cost a release each.
+
+   The first: clicking a row only previews it. "Add to Prompt" is what puts
+   the image in the slot and closes the dialog. Without that click the slot
+   stays empty however well everything upstream went.
+
+   The second: Flow renames every upload to a UUID of its own. A file pasted
+   as af_b4611d71.png comes back named b4611d71-d2c8-….jpg, so searching the
+   box for the name we chose returns nothing — measured, not assumed: "af_"
+   matched 0 of 2 assets that were both ours. Selection is therefore by
+   identity, diffing the media ids in the list against a snapshot taken
+   before the upload, never by name.
+   ──────────────────────────────────────────────────────────── */
+
+/** The picker a given slot opens, resolved through its own aria-controls. */
+export function findFrameSlotDialog(slot: HTMLElement): HTMLElement | null {
+  const id = slot.getAttribute('aria-controls');
+  if (id) {
+    // getElementById copes with the colons in a Radix id; querySelector needs
+    // CSS.escape, which jsdom does not implement.
+    const byId = document.getElementById(id);
+    if (byId && isVisible(byId)) return byId;
+  }
+  const open = Array.from(
+    document.querySelectorAll<HTMLElement>('[role="dialog"][data-state="open"]')
+  ).filter(isVisible);
+  return open[open.length - 1] || null;
+}
+
+/** The selectable asset rows, newest first under Flow's default "Recent" sort. */
+export function findAssetOptions(dialog: Element): HTMLElement[] {
+  const rows = Array.from(dialog.querySelectorAll<HTMLElement>('[role="option"]')).filter(isVisible);
+  if (rows.length) return rows;
+  // Virtuoso wrapper, for a build that drops the role.
+  return Array.from(
+    dialog.querySelectorAll<HTMLElement>('[data-testid="virtuoso-item-list"] > div[data-item-index]')
+  ).filter(isVisible);
+}
+
+/**
+ * What identifies one asset from another.
+ *
+ * The media id in the thumbnail URL, which is unique per upload. The visible
+ * name is not: uploading the same picture twice produces two rows with
+ * identical names, and telling them apart is the entire job here.
+ */
+export function assetOptionId(row: Element): string {
+  const img = row.querySelector('img');
+  const src = img?.getAttribute('src') || '';
+  const named = src.match(/[?&]name=([^&]+)/);
+  return named ? named[1] : src || img?.getAttribute('alt') || '';
+}
+
+/** Whether the picker considers this row the current selection. */
+export function assetOptionSelected(row: Element): boolean {
+  return row.getAttribute('aria-selected') === 'true';
+}
+
+/** The button that commits the selection into the slot. */
+export function findAddToPromptButton(dialog: Element): HTMLElement | null {
+  const buttons = Array.from(dialog.querySelectorAll<HTMLElement>('button')).filter(isVisible);
+  const byText = buttons.find((b) => /add to prompt/i.test((b.textContent || '').trim()));
+  if (byText) return byText;
+
+  /* Fallback by shape, for a translated UI: the widest plain button in the
+     dialog. The tabs, the sort trigger and "Upload media" are all excluded
+     by something structural rather than by their wording. */
+  const plain = buttons.filter((b) => {
+    if (b.getAttribute('role') === 'tab') return false;
+    if (b.getAttribute('aria-haspopup')) return false;
+    return !/upload/i.test((b.textContent || '').trim());
+  });
+  plain.sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width);
+  return plain[0] || null;
+}
+
+/** The "Uploads" tab, for when a pasted image does not show under "Images". */
+export function findUploadsTab(dialog: Element): HTMLElement | null {
+  const tabs = Array.from(dialog.querySelectorAll<HTMLElement>('[role="tab"]')).filter(isVisible);
+  return (
+    tabs.find((t) => /upload|drive_folder_upload/i.test((t.textContent || '').trim())) || null
+  );
+}
+
+/** What the picker holds right now, for when the expected row never arrives. */
+export function describeAssetDialog(dialog: Element | null): string {
+  if (!dialog) return 'no dialog';
+  const rows = findAssetOptions(dialog);
+  const tabs = Array.from(dialog.querySelectorAll<HTMLElement>('[role="tab"]'))
+    .map((t) => `${(t.textContent || '').trim().slice(0, 12)}${t.getAttribute('aria-selected') === 'true' ? '*' : ''}`);
+  const commit = findAddToPromptButton(dialog);
+  return (
+    `rows=${rows.length} ids=[${rows.slice(0, 4).map((r) => assetOptionId(r).slice(0, 8)).join(',')}] ` +
+    `tabs=[${tabs.join(',')}] commit=${commit ? 'yes' : 'MISSING'}`
+  );
 }
 
 /** What a slot looks like right now, for when it will not fill. */

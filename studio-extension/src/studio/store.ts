@@ -7,6 +7,7 @@
 import { create } from 'zustand';
 import type { Node, Edge } from '@xyflow/react';
 import { applyNodeChanges, applyEdgeChanges } from '@xyflow/react';
+import { migrateFrameEdges } from './templates/validate';
 
 /* ── Types ── */
 
@@ -215,7 +216,11 @@ export function normalizeWorkflow(nodes: Node[], edges: Edge[]): { nodes: Node[]
     }
     return { ...node, data: d };
   });
-  const normEdges = edges.map((edge) => ({
+  /* Frames-mode nodes saved before the Start/End ports existed put their
+     stills on image_ref. Opening one now would draw two empty sockets and no
+     wires, and generate from the prompt alone. Both loaders come through
+     here, so the repair belongs here rather than at each call site. */
+  const normEdges = migrateFrameEdges(normNodes, edges).map((edge) => ({
     ...edge,
     type: 'default',
     animated: true,
