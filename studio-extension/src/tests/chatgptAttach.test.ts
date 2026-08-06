@@ -55,6 +55,16 @@ function buildHarness(): Harness {
   fileInput.multiple = true;
   const sendBtn = document.createElement('button');
   sendBtn.setAttribute('data-testid', 'send-button');
+  /* ChatGPT empties the composer when it accepts a message, and the script
+     reads that as proof the send landed. A fake that keeps the text would be
+     modelling a page that swallowed the click — which is a real state, and
+     has its own test below. */
+  // Cleared on the next tick, not inside the handler: the real page processes
+  // the submit first, and clearing synchronously would hide the prompt from
+  // anything else listening for the same click.
+  sendBtn.addEventListener('click', () => {
+    setTimeout(() => { composer.textContent = ''; }, 0);
+  });
 
   form.append(composer, fileInput, sendBtn);
   document.body.append(form);
@@ -208,7 +218,10 @@ describe('ChatGPT reference upload', () => {
     const h = buildHarness();
     autoAcceptUploads(h);
     let clicked = 0;
-    h.sendBtn.addEventListener('click', () => { clicked++; });
+    let textAtSend = '';
+    // Read at the moment of the click: afterwards the composer is empty,
+    // because that is what accepting a message looks like.
+    h.sendBtn.addEventListener('click', () => { clicked++; textAtSend = h.composer.textContent || ''; });
 
     await h.execute({
       nodeId: 'n1',
@@ -218,7 +231,8 @@ describe('ChatGPT reference upload', () => {
 
     // Uploading re-renders the composer on the real site; the prompt must
     // survive that, and send must come after the attachment, not before.
-    expect(h.composer.textContent).toBe('continue this scene');
+    expect(textAtSend).toBe('continue this scene');
+    expect(h.fileInput.files).toHaveLength(1);
     expect(clicked).toBe(1);
     expect(errorsFrom(h)).toEqual([]);
   }, 20_000);
@@ -426,5 +440,35 @@ describe('ChatGPT reference upload', () => {
     // wire an image into Ask AI at all.
     expect(h.fileInput.files).toHaveLength(1);
     expect(errorsFrom(h)).toEqual([]);
+  }, 20_000);
+});
+
+/* A page that has rendered but not finished hydrating shows a send button
+   before React has attached a handler to it, so the click is swallowed and the
+   prompt sits in the composer unsent. That is what a workflow started before
+   the ChatGPT tab existed actually looked like: the tab opened, the prompt
+   appeared, nothing was sent, and the node was blamed a minute and a half
+   later for a reply that was never coming — taking every node downstream with
+   it. */
+describe('a send that does not go through', () => {
+  it('says so instead of waiting out the reply timeout', async () => {
+    const h = buildHarness();
+    // A button that takes the click and does nothing — the hydrating page.
+    h.sendBtn.replaceWith(h.sendBtn.cloneNode(true));
+
+    await h.execute({ nodeId: 'n1', config: { prompt: 'write me a shot list', mediaType: 'text' } });
+
+    expect(errorsFrom(h).join(' ')).toMatch(/send did not go through/i);
+  }, 20_000);
+
+  it('blames the send rather than the typing', async () => {
+    /* The distinction the next report depends on: "could not type" sends
+       someone to the composer selector, and the composer was fine. */
+    const h = buildHarness();
+    h.sendBtn.replaceWith(h.sendBtn.cloneNode(true));
+
+    await h.execute({ nodeId: 'n1', config: { prompt: 'write me a shot list', mediaType: 'text' } });
+
+    expect(errorsFrom(h).join(' ')).not.toMatch(/could not type/i);
   }, 20_000);
 });

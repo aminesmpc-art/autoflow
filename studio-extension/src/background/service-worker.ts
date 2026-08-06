@@ -125,12 +125,54 @@ async function ensurePlatformTab(platform: Platform): Promise<number | null> {
     }
 
     const tab = await chrome.tabs.create({ url, active: false });
-    // Give the page a moment to mount before anything is sent to it.
-    await new Promise((r) => setTimeout(r, 3000));
     return tab.id ?? null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Wait until a tab can actually take the job.
+ *
+ * This used to be `setTimeout(3000)` after opening the tab. Three seconds is
+ * not a cold ChatGPT load — it has to authenticate, hydrate and mount its
+ * composer — so the job arrived at a page that was still assembling itself.
+ * The symptom was specific and misleading: the prompt appeared in the composer
+ * and was never sent, because the send button existed before React had
+ * attached a handler to it. The node then waited out its full reply timeout
+ * for an answer to a question nobody had asked, and every node downstream
+ * failed with it.
+ *
+ * Two conditions, both evidence rather than elapsed time: the tab reports
+ * finished loading, and the content script answers. The script answering is
+ * the one that matters — it is the thing the message is actually for.
+ *
+ * Returns false if the script never answers, so the caller can inject it
+ * rather than send into the void.
+ */
+async function waitForTabReady(tabId: number, timeoutMs = 30_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.status === 'complete') break;
+    } catch {
+      return false; // tab closed under us
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+
+  while (Date.now() < deadline) {
+    try {
+      const pong: any = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+      if (pong?.pong) return true;
+    } catch {
+      /* not listening yet */
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return false;
 }
 
 function replyToStudio(msg: unknown): void {
@@ -176,6 +218,18 @@ chrome.runtime.onConnect.addListener((port) => {
     // Only arm the keepalive for work that actually takes minutes.
     if (msg.type === 'STUDIO_EXECUTE_NODE') {
       startKeepalive(tabId).catch(() => { /* non-critical */ });
+    }
+
+    /* Applies to a tab we found as well as one we opened: a ChatGPT window the
+       user left open on a cold profile is mid-reload just as often. Returns
+       immediately when the script is already listening, so a warm tab pays
+       nothing for this. */
+    const ready = await waitForTabReady(tabId);
+    if (!ready) {
+      try {
+        await chrome.scripting.executeScript({ target: { tabId }, files: [cfg.script] });
+        await waitForTabReady(tabId, 10_000);
+      } catch { /* the send below reports it properly */ }
     }
 
     try {

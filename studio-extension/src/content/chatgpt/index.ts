@@ -477,21 +477,56 @@ async function handleExecute(payload: any): Promise<any> {
   fillComposer(composer, prompt);
   await sleep(500);
 
-  const landed = composer instanceof HTMLTextAreaElement
-    ? composer.value.trim()
-    : (composer.textContent || '').trim();
+  const composerText = (el: HTMLElement): string =>
+    el instanceof HTMLTextAreaElement ? el.value.trim() : (el.textContent || '').trim();
+
+  /**
+   * Send, and confirm it left the composer.
+   *
+   * A click that does nothing is the failure this exists for. On a page that
+   * has rendered but not finished hydrating, the send button is on screen
+   * before React has attached its handler, so the click is swallowed and the
+   * prompt just sits there — which is exactly what a cold-started tab looked
+   * like: text in the box, nothing sent, and the node blamed later for a reply
+   * that was never coming.
+   *
+   * ChatGPT clears the composer when it accepts a message, so an empty
+   * composer is the evidence. Escalates click → Enter before giving up.
+   */
+  async function submitPrompt(el: HTMLElement): Promise<boolean> {
+    const attempts: Array<() => void> = [
+      () => (findSendButton() as HTMLElement | null)?.click(),
+      () => el.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true,
+      })),
+    ];
+
+    for (const attempt of attempts) {
+      attempt();
+      for (let i = 0; i < 12; i++) {
+        await sleep(250);
+        if (!composerText(el)) return true;
+      }
+    }
+    return !composerText(el);
+  }
+
+  const landed = composerText(composer);
   if (!landed) {
     send('STUDIO_NODE_ERROR', { nodeId, error: 'Could not type into the ChatGPT prompt box' });
     return { success: false };
   }
 
-  const btn = findSendButton();
-  if (btn) {
-    btn.click();
-  } else {
-    composer.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter', code: 'Enter', bubbles: true, cancelable: true,
-    }));
+  if (!(await submitPrompt(composer))) {
+    /* The prompt is typed and sitting there unsent. Waiting out the reply
+       timeout would spend 90 seconds waiting for an answer to a question
+       nobody asked, then blame the reply. */
+    send('STUDIO_NODE_ERROR', {
+      nodeId,
+      error: 'The prompt was typed into ChatGPT but the send did not go through — '
+        + 'the page may still have been loading. It is in the composer; run this node again.',
+    });
+    return { success: false };
   }
 
   console.log(`[AutoFlow ChatGPT] Prompt submitted — waiting for the ${wantsText ? 'reply' : 'image'}...`);
