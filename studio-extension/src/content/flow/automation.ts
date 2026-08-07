@@ -188,6 +188,12 @@ export class AutomationEngine {
   }
   private paused = false;
   private stopped = false;
+  /** When this queue started, so startup milestones can report elapsed time. */
+  private startedAt = 0;
+  /** Milliseconds since the queue started, for the startup log. */
+  private since(): string {
+    return this.startedAt ? `+${((Date.now() - this.startedAt) / 1000).toFixed(1)}s` : '';
+  }
   private currentPromptIdx = 0;
   private baselineTileCount = 0; // tiles on page before queue starts
   /** Cache of filenames already uploaded to Flow's library (persists across prompts) */
@@ -237,6 +243,11 @@ export class AutomationEngine {
     // Initialize API cache for this queue session
     onQueueStart();
 
+    /* Elapsed milliseconds against this, printed at each startup milestone.
+       "It takes too long to start" could not be answered from the log before
+       — every line said what happened and none said when, so the slow step
+       was whichever one you happened to be watching. */
+    this.startedAt = Date.now();
     this.log('info', `Starting queue "${queue.name}" with ${queue.prompts.length} prompts`);
     this.sendQueueStatus('running');
 
@@ -260,7 +271,7 @@ export class AutomationEngine {
     // ── Apply settings once at queue start (mode, ratio, generations, model) ──
     await this.ensurePageReady();
     this.mode = this.queue.settings.automationMode || 'flow';
-    this.log('info', `Automation mode: ${this.mode.toUpperCase()}`);
+    this.log('info', `Automation mode: ${this.mode.toUpperCase()} ${this.since()}`);
     await humanDelay(500, 1000);
     const settingsOk = await this.applyAllSettings(this.queue.settings);
     if (this.stopped) {
@@ -1068,7 +1079,7 @@ export class AutomationEngine {
       // look for the main prompt input.
       const promptInput = findPromptInput();
       if (promptInput && isVisible(promptInput)) {
-        this.log('info', 'Page ready — prompt input visible');
+        this.log('info', `Page ready — prompt input visible ${this.since()}`);
         return;
       }
 
@@ -1785,7 +1796,7 @@ export class AutomationEngine {
     // Close the settings panel
     await this.closeSettingsPanel();
 
-    this.log('info', 'All settings applied');
+    this.log('info', `All settings applied ${this.since()}`);
     return true;
   }
 

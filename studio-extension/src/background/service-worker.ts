@@ -268,10 +268,18 @@ chrome.runtime.onConnect.addListener((port) => {
     /* Only a generation is worth waiting on. Pause and stop are the controls
        someone reaches for when a run is misbehaving, and making those sit
        through a readiness wait is the opposite of what they are for. */
+    const readyAt = Date.now();
     const ready = await waitForTabReady(
       tabId,
       msg.type === 'STUDIO_EXECUTE_NODE' ? 30_000 : 3_000
     );
+    /* Printed whenever it was not instant. A readiness check that silently
+       costs seconds is exactly how forty of them went unnoticed: every log
+       line said what happened, none said when. */
+    const waited = Date.now() - readyAt;
+    if (waited > 400) {
+      console.log(`[Studio] Waited ${(waited / 1000).toFixed(1)}s for the ${cfg.name} tab (ready=${ready})`);
+    }
     if (!ready) {
       try {
         await chrome.scripting.executeScript({ target: { tabId }, files: [cfg.script] });

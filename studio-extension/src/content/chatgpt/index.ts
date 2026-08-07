@@ -494,18 +494,39 @@ async function handleExecute(payload: any): Promise<any> {
    * composer is the evidence. Escalates click → Enter before giving up.
    */
   async function submitPrompt(el: HTMLElement): Promise<boolean> {
-    const attempts: Array<() => void> = [
-      () => (findSendButton() as HTMLElement | null)?.click(),
-      () => el.dispatchEvent(new KeyboardEvent('keydown', {
+    /* Named, because when this fails the only question worth answering is
+       which rung it got to and what the button looked like at the time. The
+       previous version reported "the send did not go through" and nothing
+       else, which is how a fix ends up being guessed rather than found. */
+    const attempts: Array<[string, () => void]> = [
+      ['send button', () => (findSendButton() as HTMLElement | null)?.click()],
+      ['Enter', () => el.dispatchEvent(new KeyboardEvent('keydown', {
         key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true,
-      })),
+      }))],
+      // ChatGPT's composer sits in a real <form>; this is what the button does.
+      ['form submit', () => {
+        const form = el.closest('form');
+        if (form) (form as any).requestSubmit?.() ?? form.submit();
+      }],
     ];
 
-    for (const attempt of attempts) {
+    for (const [name, attempt] of attempts) {
+      const btn = findSendButton() as HTMLButtonElement | null;
+      console.log(
+        `[AutoFlow ChatGPT] Submitting via ${name} — button ${
+          btn ? `found (${btn.getAttribute('data-testid') || btn.getAttribute('aria-label')}, ` +
+                `disabled=${btn.disabled})` : 'NOT FOUND'
+        }, composer holds ${composerText(el).length} chars`
+      );
       attempt();
+
+      // 3s per rung: ChatGPT clears its composer the moment it accepts.
       for (let i = 0; i < 12; i++) {
         await sleep(250);
-        if (!composerText(el)) return true;
+        if (!composerText(el)) {
+          console.log(`[AutoFlow ChatGPT] Accepted after ${name}`);
+          return true;
+        }
       }
     }
     return !composerText(el);

@@ -1068,6 +1068,8 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
     return { type: 'STUDIO_NODE_ERROR', payload: { nodeId, error: 'Missing nodeId or config' } };
   }
 
+  const startedAt = Date.now();
+  const since = () => `+${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
   console.log(`[AutoFlow Studio] Executing node ${nodeId}`);
 
   // ── Resolve reference images (Image nodes + upstream Generate tiles) ──
@@ -1079,6 +1081,12 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
   } catch (e: any) {
     sendStudioError(nodeId, e.message || 'Failed to resolve reference images');
     return { success: false };
+  }
+  /* Reference images are fetched and registered before the queue starts, so a
+     slow one delays everything visible after it. Timed separately because
+     from the outside it is indistinguishable from Flow being slow. */
+  if (refImages.length) {
+    console.log(`[AutoFlow Studio] ${refImages.length} reference image(s) resolved ${since()}`);
   }
 
   const mediaType = config.mediaType || 'image';
@@ -1138,6 +1146,7 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
     updatedAt: Date.now(),
   };
 
+  console.log(`[AutoFlow Studio] Handing the node to the engine ${since()}`);
   // Start the queue (non-blocking)
   const result = await startQueue(queue);
   if (!result.success) {
