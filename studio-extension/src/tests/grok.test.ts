@@ -174,6 +174,101 @@ describe('submitting', () => {
   }, 15_000);
 });
 
+/* ============================================================
+   Grok Imagine, from the live markup.
+
+   Two things here are the opposite of what the chat surface does, and both
+   were wrong in the first cut of this adapter:
+
+   1. The submit button EXISTS while the composer is empty and is `disabled`
+      — `<button type="submit" aria-label="Submit" disabled="">`. Since an
+      empty composer is also the resting state after a submit, reading
+      "disabled" as "busy" means the completion check can never pass and every
+      node runs to its timeout with the finished clip on screen.
+
+   2. A finished clip is a <video src=… poster=…>. There is no <img> in it at
+      all, so an image-only search finds nothing however long it waits.
+   ============================================================ */
+describe('Grok Imagine', () => {
+  const IMAGINE = `
+    <form>
+      <div data-testid="chat-input">
+        <div contenteditable="true" role="textbox" aria-label="Ask Grok anything"
+             class="tiptap ProseMirror"><p data-placeholder="Type to imagine"></p></div>
+      </div>
+      <input class="hidden" multiple accept="image/jpeg,image/png" type="file" name="files">
+      <button type="submit" aria-label="Submit" disabled=""></button>
+      <div role="radiogroup" aria-label="Generation mode">
+        <button type="button" role="radio" aria-checked="false" aria-label="Image"></button>
+        <button type="button" role="radio" aria-checked="true" aria-label="Video"><span>Video</span></button>
+        <button type="button" role="radio" aria-checked="false" aria-label="Agent"></button>
+      </div>
+      <div role="radiogroup" aria-label="Video resolution">
+        <button type="button" role="radio" aria-checked="false"><span>480p</span></button>
+        <button type="button" role="radio" aria-checked="true"><span>720p</span></button>
+        <button type="button" role="radio" aria-checked="false"><span>1080p</span></button>
+      </div>
+      <div role="radiogroup" aria-label="Video duration">
+        <button type="button" role="radio" aria-checked="false"><span>6s</span></button>
+        <button type="button" role="radio" aria-checked="true"><span>10s</span></button>
+        <button type="button" role="radio" aria-checked="false"><span>15s</span></button>
+      </div>
+      <button type="button" aria-label="Aspect Ratio"><span>9:16</span></button>
+    </form>`;
+
+  const clip = (id: string) => {
+    const btn = document.createElement('button');
+    btn.setAttribute('aria-label', 'Hot Girl Shaking Her Ass');
+    btn.innerHTML =
+      `<video src="https://assets.grok.com/users/u1/generated/${id}/generated_video.mp4?cache=1"` +
+      ` poster="https://assets.grok.com/users/u1/generated/${id}/preview_image.jpg?cache=1"></video>`;
+    document.body.append(btn);
+    return btn;
+  };
+
+  beforeEach(() => { document.body.innerHTML = IMAGINE; });
+
+  it('has a submit button that is present and disabled while empty', () => {
+    // The premise of the deadlock. If this ever stops being true the guard
+    // below is guarding nothing, and this test says so.
+    const btn = document.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    expect(btn.disabled).toBe(true);
+  });
+
+  it('exposes each control as an aria-labelled radio group', () => {
+    for (const label of ['Generation mode', 'Video resolution', 'Video duration']) {
+      expect(document.querySelector(`[role="radiogroup"][aria-label="${label}"]`)).not.toBeNull();
+    }
+  });
+
+  it('marks the checked option with aria-checked', () => {
+    // What selectRadio reads back to confirm a click took, rather than
+    // assuming it did.
+    const mode = document.querySelector('[role="radiogroup"][aria-label="Generation mode"]')!;
+    const on = mode.querySelector('[role="radio"][aria-checked="true"]');
+    expect(on!.getAttribute('aria-label')).toBe('Video');
+  });
+
+  it('renders a finished clip as a video with a poster, and no image', () => {
+    clip('eeac2e93');
+    expect(document.querySelectorAll('img')).toHaveLength(0);
+    const v = document.querySelector<HTMLVideoElement>('video[src]')!;
+    expect(v.getAttribute('src')).toMatch(/generated_video\.mp4/);
+    expect(v.getAttribute('poster')).toMatch(/preview_image\.jpg/);
+  });
+
+  it('tells two clips apart by the generation id in the URL', () => {
+    /* Both carry the same aria-label — it is the model's summary of the
+       prompt, and the live page showed three in a row reading "Hot Girl Video
+       Generation". The id in the URL is the only thing unique per clip. */
+    const a = clip('aaaa1111');
+    const b = clip('bbbb2222');
+    expect(a.getAttribute('aria-label')).toBe(b.getAttribute('aria-label'));
+    const srcs = Array.from(document.querySelectorAll('video[src]')).map((v) => v.getAttribute('src'));
+    expect(new Set(srcs).size).toBe(2);
+  });
+});
+
 describe('reference images', () => {
   let h: Harness;
   beforeEach(() => { h = buildHarness(); });

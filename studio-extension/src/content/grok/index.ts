@@ -147,10 +147,88 @@ function looksSignedOut(): boolean {
  */
 function isGenerating(): boolean {
   if (findStopButton()) return true;
-  if (document.querySelector('[aria-busy="true"]')) return true;
-  const btn = findSendButton() as HTMLButtonElement | null;
+
+  /* Deliberately NOT "the submit button is disabled".
+     On /imagine that button is always in the DOM and is disabled whenever the
+     composer is empty — which is precisely the state the page rests in after
+     a submit. Reading it as busy would mean `stable && !isGenerating()` could
+     never pass and every node would run to its timeout with the finished
+     video on screen. The real completion signal is a new result holding
+     still; this is only the secondary guard, so it stays conservative. */
+  const form = findComposer()?.closest('form');
+  return !!form?.querySelector('[aria-busy="true"]');
+}
+
+/* ── Grok Imagine ──────────────────────────────────────────────
+   /imagine is a generator rather than a chat, and its controls are a row of
+   aria-labelled radio groups, which is about as good as this gets:
+
+     [role="radiogroup"][aria-label="Generation mode"]  Image | Video | Agent
+     [role="radiogroup"][aria-label="Video resolution"] 480p | 720p | 1080p
+     [role="radiogroup"][aria-label="Video duration"]   6s | 10s | 15s
+     button[aria-label="Aspect Ratio"]                  opens a menu
+
+   Mode buttons carry an aria-label; the resolution and duration buttons carry
+   only a <span> of text, so both are matched.
+   ──────────────────────────────────────────────────────────── */
+
+function findRadioGroup(label: string): HTMLElement | null {
+  const group = document.querySelector<HTMLElement>(`[role="radiogroup"][aria-label="${label}"]`);
+  return group && isVisible(group) ? group : null;
+}
+
+/** Set one radio group, and confirm from aria-checked that it took. */
+async function selectRadio(groupLabel: string, value: string): Promise<boolean> {
+  const group = findRadioGroup(groupLabel);
+  if (!group) return false;
+
+  const want = value.trim().toLowerCase();
+  const btn = Array.from(group.querySelectorAll<HTMLElement>('[role="radio"]')).find((b) =>
+    (b.getAttribute('aria-label') || '').trim().toLowerCase() === want ||
+    (b.textContent || '').trim().toLowerCase() === want
+  );
   if (!btn) return false;
-  return btn.disabled || btn.getAttribute('aria-disabled') === 'true';
+  if (btn.getAttribute('aria-checked') === 'true') return true;
+
+  btn.click();
+  for (let i = 0; i < 8; i++) {
+    await sleep(150);
+    if (btn.getAttribute('aria-checked') === 'true') return true;
+  }
+  return false;
+}
+
+/** Aspect ratio lives behind a menu rather than in a radio group. */
+async function selectAspectRatio(value: string): Promise<boolean> {
+  const trigger = Array.from(document.querySelectorAll<HTMLElement>('button[aria-label="Aspect Ratio"]'))
+    .find(isVisible);
+  if (!trigger) return false;
+  if ((trigger.textContent || '').includes(value)) return true;
+
+  trigger.click();
+  await sleep(500);
+  const item = Array.from(
+    document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"], [role="option"]')
+  ).find((el) => (el.textContent || '').trim().includes(value));
+  if (!item) {
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return false;
+  }
+  item.click();
+  await sleep(400);
+  return (trigger.textContent || '').includes(value);
+}
+
+/**
+ * Finished clips.
+ *
+ * Grok renders a result as a <video> with the mp4 on src and a still on
+ * poster — there is no <img> anywhere in it, which is why an image-only
+ * search found nothing on this surface however long it waited.
+ */
+function collectResultVideos(): HTMLVideoElement[] {
+  return Array.from(document.querySelectorAll<HTMLVideoElement>('video[src]'))
+    .filter((v) => /generated_video|assets\.grok\.com/.test(v.src));
 }
 
 /** The composer's own container, used to keep attachments out of results. */
@@ -247,7 +325,10 @@ function describePage(): string {
   const imgs = Array.from(document.querySelectorAll('img'));
   return (
     `${imgs.length} images, ${imgs.filter((i) => i.complete && i.naturalWidth >= 256).length} at result size; ` +
+    `${collectResultVideos().length} generated clip(s); ` +
     `${replyBlocks().length} reply block(s); ` +
+    `mode=${findRadioGroup('Generation mode')
+      ?.querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('aria-label') || 'unknown'}; ` +
     `composer region ${composerRegion() ? 'identified' : 'NOT identified'}; ` +
     `generating=${isGenerating()}`
   );
@@ -451,8 +532,45 @@ async function handleExecute(payload: any): Promise<any> {
   }
 
   const wantsText = config?.mediaType === 'text';
-  const preexisting = new Set(collectResultImages().map((i) => i.currentSrc || i.src));
+  const wantsVideo = config?.mediaType === 'video';
+  const preexisting = new Set(
+    wantsVideo
+      ? collectResultVideos().map((v) => v.src)
+      : collectResultImages().map((i) => i.currentSrc || i.src)
+  );
   const priorReply = wantsText ? readLatestReply().trim() : '';
+
+  /* Imagine's controls, applied before the prompt goes in. Each one reports
+     rather than assuming: a mode that did not take produces a still where a
+     clip was asked for, and nothing downstream can tell the difference. */
+  if (wantsVideo || config?.mediaType === 'image') {
+    const mode = wantsVideo ? 'Video' : 'Image';
+    if (await selectRadio('Generation mode', mode)) {
+      console.log(`[AutoFlow Grok] Mode: ${mode}`);
+    } else if (findRadioGroup('Generation mode')) {
+      send('STUDIO_NODE_ERROR', {
+        nodeId,
+        error: `Could not switch Grok to ${mode} mode — it is still set to something else`,
+      });
+      return { success: false };
+    }
+  }
+
+  if (wantsVideo) {
+    // Optional: a node that names none of these keeps whatever Grok has.
+    for (const [group, value] of [
+      ['Video resolution', config?.resolution],
+      ['Video duration', config?.duration],
+    ] as Array<[string, string | undefined]>) {
+      if (!value) continue;
+      const ok = await selectRadio(group, value);
+      console.log(`[AutoFlow Grok] ${group}: ${value}${ok ? '' : ' — not offered, left as is'}`);
+    }
+    if (config?.aspectRatio) {
+      const ok = await selectAspectRatio(config.aspectRatio);
+      console.log(`[AutoFlow Grok] Aspect ratio: ${config.aspectRatio}${ok ? '' : ' — not offered, left as is'}`);
+    }
+  }
 
   const references: string[] = (config?.referenceImageData || [])
     .filter((d: unknown): d is string => typeof d === 'string' && d.startsWith('data:'));
@@ -501,7 +619,9 @@ async function handleExecute(payload: any): Promise<any> {
   startAntiThrottle();
   const work = wantsText
     ? trackTextReply(nodeId, priorReply)
-    : trackGeneration(nodeId, preexisting);
+    : wantsVideo
+      ? trackVideoGeneration(nodeId, preexisting)
+      : trackGeneration(nodeId, preexisting);
   work.finally(stopAntiThrottle);
   return { success: true };
 }
@@ -558,6 +678,80 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
   send('STUDIO_NODE_ERROR', {
     nodeId,
     error: `Grok image did not complete within 6 minutes — check the Grok tab (${describePage()})`,
+  });
+}
+
+/**
+ * Wait for a clip that was not there when we started.
+ *
+ * Identified by its mp4 URL, which carries a generation id — the visible
+ * label is the model's own summary of the prompt and is neither unique nor
+ * predictable.
+ *
+ * The bytes are on assets.grok.com rather than grok.com, so fetching them may
+ * be refused. That is survivable for showing the clip, since the Studio page
+ * can load the URL directly; it is not survivable for chaining, so the poster
+ * is fetched separately and a failure there is said out loud rather than
+ * leaving a downstream node to fail with a missing reference.
+ */
+async function trackVideoGeneration(nodeId: string, preexisting: Set<string>): Promise<void> {
+  const startedAt = Date.now();
+  let stableSrc = '';
+  let stableCount = 0;
+  let explained = false;
+
+  while (Date.now() - startedAt < GENERATION_TIMEOUT_MS) {
+    await sleep(POLL_MS);
+    const elapsed = Date.now() - startedAt;
+    send('STUDIO_NODE_PROGRESS', {
+      nodeId,
+      progress: Math.min(90, 20 + Math.floor((elapsed / GENERATION_TIMEOUT_MS) * 90)),
+    });
+
+    const fresh = collectResultVideos().filter((v) => !preexisting.has(v.src));
+    if (fresh.length === 0) {
+      if (!explained && elapsed > 60_000 && !isGenerating()) {
+        explained = true;
+        console.warn(`[AutoFlow Grok] No clip yet and nothing is streaming. ${describePage()}`);
+      }
+      continue;
+    }
+
+    const candidate = fresh[fresh.length - 1];
+    if (candidate.src === stableSrc) stableCount++;
+    else { stableSrc = candidate.src; stableCount = 0; }
+
+    if (stableCount >= 2) {
+      const poster = candidate.getAttribute('poster') || '';
+      // Best effort: chaining needs bytes, display only needs the URL.
+      let referenceUrl = '';
+      if (poster) {
+        try {
+          const resp = await fetch(poster);
+          if (resp.ok) referenceUrl = await blobToDataUrl(await resp.blob());
+        } catch {
+          console.warn('[AutoFlow Grok] Could not read the clip\'s still — a node chained '
+            + 'from this one will report a missing reference rather than generating without it.');
+        }
+      }
+
+      send('STUDIO_NODE_RESULT', {
+        nodeId,
+        tileId: '',
+        imageUrl: candidate.src,
+        thumbnailUrl: poster,
+        previewUrl: poster,
+        previewVideoUrl: candidate.src,
+        referenceUrl,
+      });
+      console.log(`[AutoFlow Grok] Clip captured${referenceUrl ? ' with a still' : ' (still unavailable)'}`);
+      return;
+    }
+  }
+
+  send('STUDIO_NODE_ERROR', {
+    nodeId,
+    error: `Grok clip did not finish within 6 minutes — check the Grok tab (${describePage()})`,
   });
 }
 

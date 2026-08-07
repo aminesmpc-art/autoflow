@@ -13,6 +13,8 @@ export interface NodeExecutionConfig {
   mediaType: 'image' | 'video' | 'text';
   aspectRatio: string;
   duration?: string;
+  /** Grok Imagine only — 480p / 720p / 1080p. Flow has no such control. */
+  resolution?: string;
   creationType: 'ingredients' | 'frames';
   referenceImageIds?: string[];
   referenceImageData?: string[]; // base64 fallback

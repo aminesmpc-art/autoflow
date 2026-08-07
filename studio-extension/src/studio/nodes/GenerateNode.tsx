@@ -52,6 +52,14 @@ const VIDEO_RATIOS = ['9:16', '16:9', '1:1'];
    simply unreachable from Studio. */
 const DURATIONS = ['4s', '6s', '8s', '10s'];
 
+/* Grok Imagine's own sets, read off its controls. Its duration radio group
+   offers 6/10/15 and its resolution group 480/720/1080 — none of which
+   overlap Flow's, which is why they are separate lists rather than a merged
+   one that would offer a button Grok does not have. */
+const GROK_DURATIONS = ['6s', '10s', '15s'];
+const GROK_RESOLUTIONS = ['480p', '720p', '1080p'];
+const GROK_RATIOS = ['9:16', '16:9', '1:1'];
+
 /** CSS aspect-ratio for the media area, so the node takes the shape of its output */
 function ratioToCss(ratio: string): string {
   const [w, h] = (ratio || '9:16').split(':');
@@ -129,14 +137,22 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   const isChatGPT = isChat;
   const chatName = CHAT_NAMES[platform] || 'ChatGPT';
   const mediaType = nodeData.mediaType || 'image';
-  const isVideo = !isChat && mediaType === 'video';
+  /* Grok Imagine generates video too, so "is this a clip" stopped being the
+     same question as "is this Flow". Everything Flow-specific below — the
+     model list, Frames mode — still checks the platform rather than this. */
+  const isGrok = platform === 'grok';
+  const isVideo = mediaType === 'video' && (platform === 'flow' || isGrok);
   /* Frames mode: Flow takes a first and last still and interpolates between
      them. Video only — an image has no "between". */
-  const isFrames = isVideo && nodeData.creationType === 'frames';
+  const isFrames = isVideo && platform === 'flow' && nodeData.creationType === 'frames';
   /* Text output only makes sense on a chat platform — Flow has no chat. */
   const isText = isChat && mediaType === 'text';
   const models = isVideo ? VIDEO_MODELS : IMAGE_MODELS;
-  const ratios = isVideo ? VIDEO_RATIOS : IMAGE_RATIOS;
+  /* Grok offers its own values and only its own. Showing Flow's would let a
+     node ask for 4s or 4:3, which Imagine has no button for — the run would
+     keep whatever was already set and nothing would say why. */
+  const ratios = isGrok ? GROK_RATIOS : isVideo ? VIDEO_RATIOS : IMAGE_RATIOS;
+  const durations = isGrok ? GROK_DURATIONS : DURATIONS;
   const ratio = nodeData.aspectRatio || '9:16';
   const progress = nodeData.progress || 0;
   const enabled = nodeData.enabled !== false;
@@ -333,10 +349,12 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               <span className="sn-field__label">Output</span>
               <select
                 className="sn-bar__sel nodrag"
-                value={mediaType === 'text' ? 'text' : 'image'}
+                value={mediaType === 'text' ? 'text' : isGrok && mediaType === 'video' ? 'video' : 'image'}
                 onChange={(e) => set('mediaType', e.target.value)}
               >
                 <option value="image">Image</option>
+                {/* Imagine generates clips; the other chats do not. */}
+                {isGrok && <option value="video">Video</option>}
                 <option value="text">Text</option>
               </select>
             </label>
@@ -460,9 +478,67 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               </div>
             </>
           )}
+          {/* Grok Imagine has no model list, but it does have the three
+              controls its own toolbar shows. */}
+          {isGrok && isVideo && (
+            <>
+              <div className="sn-field sn-field--wide" title="Clip length">
+                <span className="sn-field__label">Length</span>
+                <div className="sn-seg nodrag">
+                  {durations.map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      className={`sn-seg__btn ${(nodeData.duration || '10s') === d ? 'sn-seg__btn--on' : ''}`}
+                      onClick={() => set('duration', d)}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="sn-field sn-field--wide" title="Resolution">
+                <span className="sn-field__label">Resolution</span>
+                <div className="sn-seg nodrag">
+                  {GROK_RESOLUTIONS.map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      className={`sn-seg__btn ${(nodeData.resolution || '720p') === r ? 'sn-seg__btn--on' : ''}`}
+                      onClick={() => set('resolution', r)}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="sn-field sn-field--wide" title="Aspect ratio">
+                <span className="sn-field__label">Ratio</span>
+                <div className="sn-seg nodrag">
+                  {ratios.map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      className={`sn-seg__btn ${ratio === r ? 'sn-seg__btn--on' : ''}`}
+                      onClick={() => set('aspectRatio', r)}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
           {isChatGPT && (
             <span className="sn-bar__hint sn-field--wide">
-              {isText ? 'Writes a prompt · needs a ChatGPT tab' : 'Image · prompt only'}
+              {isText
+                ? `Writes a prompt · needs a ${chatName} tab`
+                : isGrok && isVideo
+                  ? 'Clip · needs a Grok Imagine tab'
+                  : `Image · needs a ${chatName} tab`}
             </span>
           )}
         </div>

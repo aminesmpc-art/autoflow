@@ -560,6 +560,8 @@ export class WorkflowRunner {
       mediaType: nodeData.mediaType || 'image',
       aspectRatio: nodeData.aspectRatio || '9:16',
       duration: nodeData.duration || '6s',
+      // Grok reads this; Flow ignores it.
+      resolution: nodeData.resolution || undefined,
       creationType: nodeData.creationType || 'ingredients',
       referenceImageIds: referenceImageIds.length > 0 ? referenceImageIds : undefined,
       referenceImageData: referenceImageData.length > 0 ? referenceImageData : undefined,
