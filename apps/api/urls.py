@@ -2,6 +2,7 @@
 from django.urls import path
 
 from . import views
+from apps.workflows import views as workflow_views
 
 urlpatterns = [
     # Auth
@@ -20,6 +21,10 @@ urlpatterns = [
 
     # Entitlements
     path("entitlements", views.EntitlementsView.as_view(), name="entitlements"),
+    # Studio workflow templates — served so that adding one no longer needs a
+    # Chrome Web Store review. See apps/workflows/models.py.
+    path("templates", workflow_views.TemplateListView.as_view(), name="templates-list"),
+    path("templates/publish", workflow_views.TemplatePublishView.as_view(), name="templates-publish"),
 
     # Usage
     path("usage/consume", views.ConsumePromptView.as_view(), name="usage-consume"),

@@ -116,7 +116,10 @@ chrome.runtime.onMessage.addListener((msg) => {
    Answers "is the tab this run needs even open" before a node discovers it
    three minutes in. */
 async function refreshPlatforms(): Promise<void> {
-  let status: Record<string, boolean> = {};
+  /* 'open' | 'closed' | 'blocked'. Booleans until a Grok window sat open on
+     screen while this read "not open" — which sends the user to open another
+     tab that reads the same way, because the tab was never the problem. */
+  let status: Record<string, string> = {};
   let reachedWorker = true;
   try {
     status = (await chrome.runtime.sendMessage({ type: 'PANEL_PLATFORM_STATUS' })) || {};
@@ -141,10 +144,20 @@ async function refreshPlatforms(): Promise<void> {
 
   for (const li of Array.from(document.querySelectorAll<HTMLLIElement>('#plat-list li'))) {
     const key = li.dataset.plat || '';
-    const open = !!status[key];
+    const value = status[key];
+    // Older workers answered with booleans; treat that as before.
+    const open = value === 'open' || value === true as any;
+    const blocked = value === 'blocked';
     li.classList.toggle('is-open', open);
+    li.classList.toggle('is-blocked', blocked);
     const state = li.querySelector('.sp-plat__state');
-    if (state) state.textContent = open ? 'open' : 'not open';
+    if (state) state.textContent = open ? 'open' : blocked ? 'no access' : 'not open';
+    /* Clicking a blocked row opens another tab that will read the same way,
+       so say where the switch actually is. */
+    li.title = blocked
+      ? 'The tab is there but this extension has no access to the site. '
+        + 'Open chrome://extensions, find AutoFlow Studio, and set Site access to "On all sites".'
+      : '';
   }
 }
 
@@ -244,9 +257,15 @@ function wire(): void {
   // A row that reports a missing tab may as well open it.
   for (const li of Array.from(document.querySelectorAll<HTMLLIElement>('#plat-list li'))) {
     const open = () => {
-      const url = li.dataset.plat === 'chatgpt'
-        ? 'https://chatgpt.com/'
-        : 'https://labs.google/fx/tools/flow';
+      // Table rather than a ternary: with three platforms a chained
+      // conditional sent Gemini's row to Flow.
+      const url = ({
+        chatgpt: 'https://chatgpt.com/',
+        gemini: 'https://gemini.google.com/app',
+        grok: 'https://grok.com/imagine',
+        flow: 'https://labs.google/fx/tools/flow',
+      } as Record<string, string>)[li.dataset.plat || 'flow']
+        || 'https://labs.google/fx/tools/flow';
       chrome.tabs.create({ url }).catch(() => {});
     };
     li.addEventListener('click', open);

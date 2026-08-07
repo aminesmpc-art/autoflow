@@ -17,6 +17,7 @@ import {
 } from '../../types';
 import { savePromptHistory, saveRunningQueue, clearRunningQueue } from '../../shared/storage';
 import { getStudioImageFiles } from './studioImages';
+import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS, modelHasDuration } from '../../types';
 
 import {
   MAX_RETRIES,
@@ -30,6 +31,26 @@ import {
   sleep,
   findPromptInput,
   findGenerateButton,
+  findCreditsExhaustedNotice,
+  readSelectedModel,
+  setKnownModelNames,
+  findAttachedIngredients,
+  findFrameSlots,
+  frameSlotFilled,
+  describeFrameSlot,
+  findFrameSlotClearButton,
+  findFrameSlotDialog,
+  findAssetOptions,
+  assetOptionId,
+  assetOptionSelected,
+  findAddToPromptButton,
+  findUploadsTab,
+  describeAssetDialog,
+  findLoadedIngredients,
+  waitForIngredients,
+  findFlowAlertIndicator,
+  readFlowAlertMessage,
+  readsAsCreditsExhausted,
   findModelSelectorTrigger,
   findMenuItem,
   findIngredientAttachButton,
@@ -110,6 +131,12 @@ import {
  * Strips punctuation, brackets, icon text (arrow_drop_down), and collapses whitespace.
  * e.g. "Veo 3.1 - Fast [Lower Priority]arrow_drop_down" → "veo 3.1 fast lower priority"
  */
+/* Every model name Flow might be showing, so readSelectedModel knows a model
+   label when it sees one in the composer bar. */
+const ALL_KNOWN_MODELS: readonly string[] = [...AVAILABLE_MODELS, ...AVAILABLE_IMAGE_MODELS];
+// Lets the selectors tell the model button from the settings chip.
+setKnownModelNames(ALL_KNOWN_MODELS);
+
 function normalizeForModelMatch(text: string): string {
   return text
     .toLowerCase()
@@ -161,6 +188,12 @@ export class AutomationEngine {
   }
   private paused = false;
   private stopped = false;
+  /** When this queue started, so startup milestones can report elapsed time. */
+  private startedAt = 0;
+  /** Milliseconds since the queue started, for the startup log. */
+  private since(): string {
+    return this.startedAt ? `+${((Date.now() - this.startedAt) / 1000).toFixed(1)}s` : '';
+  }
   private currentPromptIdx = 0;
   private baselineTileCount = 0; // tiles on page before queue starts
   /** Cache of filenames already uploaded to Flow's library (persists across prompts) */
@@ -210,6 +243,11 @@ export class AutomationEngine {
     // Initialize API cache for this queue session
     onQueueStart();
 
+    /* Elapsed milliseconds against this, printed at each startup milestone.
+       "It takes too long to start" could not be answered from the log before
+       — every line said what happened and none said when, so the slow step
+       was whichever one you happened to be watching. */
+    this.startedAt = Date.now();
     this.log('info', `Starting queue "${queue.name}" with ${queue.prompts.length} prompts`);
     this.sendQueueStatus('running');
 
@@ -233,7 +271,7 @@ export class AutomationEngine {
     // ── Apply settings once at queue start (mode, ratio, generations, model) ──
     await this.ensurePageReady();
     this.mode = this.queue.settings.automationMode || 'flow';
-    this.log('info', `Automation mode: ${this.mode.toUpperCase()}`);
+    this.log('info', `Automation mode: ${this.mode.toUpperCase()} ${this.since()}`);
     await humanDelay(500, 1000);
     const settingsOk = await this.applyAllSettings(this.queue.settings);
     if (this.stopped) {
@@ -637,6 +675,43 @@ export class AutomationEngine {
         // Snapshot API cache BEFORE Generate (so we can diff later to find new entries)
         onBeforeSubmit();
 
+        /* Last line of defence before spending a generation.
+           Attaching verifies its own work now, but filling the prompt sits
+           between the two and can re-render the prompt bar — so the count is
+           re-read here rather than assumed to have survived. Generating with a
+           reference missing produces a plausible clip built from the text
+           alone, which is the one failure nothing downstream can detect. */
+        if (prompt.images && prompt.images.length > 0) {
+          if (this.queue!.settings.creationType === 'frames') {
+            /* Frames images live in the Start and End slots, not the
+               ingredient tray, so counting chips here would report zero
+               attached however well the paste went. Check the slots the
+               images actually went into. */
+            const slots = findFrameSlots();
+            const want = Math.min(prompt.images.length, 2);
+            const have = slots
+              ? [slots.start, slots.end].slice(0, want).filter(frameSlotFilled).length
+              : 0;
+            if (have < want) {
+              throw new Error(
+                `Flow shows ${have} of ${want} frame(s) in place. Generating now would ` +
+                'interpolate from the wrong stills, so this node stopped instead.'
+              );
+            }
+          } else {
+            const attachedNow = findLoadedIngredients().length;
+            if (attachedNow < prompt.images.length) {
+              const ok = await waitForIngredients(prompt.images.length, 20_000);
+              if (!ok) {
+                throw new Error(
+                  `Flow shows ${findLoadedIngredients().length} of ${prompt.images.length} reference image(s) ` +
+                  'attached. Generating now would drop the reference, so this node stopped instead.'
+                );
+              }
+            }
+          }
+        }
+
         // State: CLICK_GENERATE
         this.state = 'CLICK_GENERATE';
         await this.clickGenerate();
@@ -1004,7 +1079,7 @@ export class AutomationEngine {
       // look for the main prompt input.
       const promptInput = findPromptInput();
       if (promptInput && isVisible(promptInput)) {
-        this.log('info', 'Page ready — prompt input visible');
+        this.log('info', `Page ready — prompt input visible ${this.since()}`);
         return;
       }
 
@@ -1702,9 +1777,16 @@ export class AutomationEngine {
     }
     if (this.stopped) return false;
 
-    // 4b. Set video duration (4s/6s/8s) — video mode only
+    /* 4b. Clip length (4s/6s/8s), which only Omni offers.
+       The Veo panels have no duration row, so asking there searched for a
+       menu item that cannot exist and logged the miss as a warning — a
+       failure message for a setting that was never on offer. */
     if (settings.mediaType !== 'image' && settings.duration) {
-      await applyMenuItem(settings.duration, `Duration: ${settings.duration}`);
+      if (modelHasDuration(settings.model)) {
+        await applyMenuItem(settings.duration, `Duration: ${settings.duration}`);
+      } else {
+        this.log('info', `${settings.model} has no duration setting — Flow picks the length`);
+      }
       if (this.stopped) return false;
     }
 
@@ -1714,7 +1796,7 @@ export class AutomationEngine {
     // Close the settings panel
     await this.closeSettingsPanel();
 
-    this.log('info', 'All settings applied');
+    this.log('info', `All settings applied ${this.since()}`);
     return true;
   }
 
@@ -2141,7 +2223,21 @@ export class AutomationEngine {
       if (this.stopped) return;
     }
 
+    /* One line that answers every question this bug has raised, instead of
+       another round of inference from a count. Five attempts were spent
+       reasoning about which button was clicked when the page could simply be
+       asked. */
+    if (!overrideTrigger) {
+      const candidates = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'))
+        .filter(isVisible)
+        .map((b) => `"${(b.textContent || '').trim().slice(0, 48)}"#${b.getAttribute('id') || 'no-id'}`);
+      this.log('info', `[model] want="${modelName}" | panelOpen=${isSettingsPanelOpen()} | candidates: ${candidates.join(' , ') || 'none'}`);
+    }
+
     const finalTrigger = overrideTrigger || findModelSelectorTrigger();
+    if (finalTrigger && !overrideTrigger) {
+      this.log('info', `[model] chose "${(finalTrigger.textContent || '').trim().slice(0, 48)}" #${finalTrigger.getAttribute('id') || 'no-id'}`);
+    }
     if (!finalTrigger) {
       if (!isRetry && !overrideTrigger) {
         // Right after an Image<->Video switch the video-mode dropdown may not
@@ -2160,9 +2256,18 @@ export class AutomationEngine {
     const currentModelRaw = finalTrigger.textContent?.trim() || '';
     const currentModelNorm = normalizeForModelMatch(currentModelRaw);
     const targetNorm = normalizeForModelMatch(modelName);
-    if (currentModelNorm.includes(targetNorm)) {
+    /* Exact, not "contains".
+       "Nano Banana 2 Lite" contains "Nano Banana 2", so asking for the plain
+       model while Flow sat on Lite reported "already set" and returned without
+       opening anything — the same prefix trap fixed in the item matching
+       below, left in the one check that runs before it. Every earlier attempt
+       at this bug was downstream of a function that returned on line one. */
+    if (currentModelNorm === targetNorm) {
       this.log('info', `Model already set: ${currentModelRaw}`);
       return;
+    }
+    if (currentModelNorm) {
+      this.log('info', `Model is "${currentModelRaw}", switching to "${modelName}"`);
     }
 
     // Open the model dropdown — try multiple strategies
@@ -2174,59 +2279,181 @@ export class AutomationEngine {
     // When the model dropdown opens it creates a NEW [role="menu"] portal.
     // We scope our search to the LAST menu in the DOM to avoid matching
     // items from the parent settings menu.
-    const findModelOptions = (): NodeListOf<Element> | null => {
-      const allMenus = document.querySelectorAll('[role="menu"], [data-radix-menu-content]');
-      if (allMenus.length > 1) {
-        // Multiple menus open — the model sub-menu is the last (newest) portal
-        const subMenu = allMenus[allMenus.length - 1];
-        const items = subMenu.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"], [data-radix-collection-item]');
-        if (items.length > 0) return items;
+    /* Radix binds a menu to the button that opens it: the trigger carries an
+       id, the menu carries aria-labelledby pointing at it. That association is
+       exact, and it is the only thing that distinguishes the three model rows
+       from the settings panel's own tabs.
+
+       This used to fall back to a global query for [data-radix-collection-item]
+       when it could not find the sub-menu. The settings panel is full of those
+       — Image/Video, five ratios, x1 to x4 — so the fallback returned 18
+       "model menu items", the code concluded the menu was open, and never
+       escalated past the first click. The log said "Found 18 model menu items"
+       every time, which was the tell. */
+    const modelMenuFor = (trigger: Element): Element | null => {
+      const id = trigger.getAttribute('id');
+      if (id) {
+        /* Radix ids contain colons ("radix-:ri2:"), and an unescaped colon in
+           a selector is a pseudo-class — a syntax error, not a miss. */
+        const bound = document.querySelector(`[role="menu"][aria-labelledby="${CSS.escape(id)}"]`);
+        /* Trusted exclusively. A trigger with an id whose menu is not open
+           means the menu is not open — falling through to "some small menu"
+           from here would let one dropdown click another's items, which is
+           the failure this whole function exists to stop. */
+        return bound && isVisible(bound) ? bound : null;
       }
-      // Fallback: global search, but skip items that contain a nested dropdown trigger
-      return document.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"], [data-radix-collection-item]');
+      // No id to bind by: accept a menu only if it looks like a model list.
+      const menus = Array.from(document.querySelectorAll('[role="menu"], [data-radix-menu-content]'));
+      for (const menu of menus.reverse()) {
+        if (menu === trigger.closest('[role="menu"]')) continue; // the settings menu itself
+        if (!isVisible(menu)) continue;
+        const items = menu.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"]');
+        if (items.length && items.length <= 12) return menu;
+      }
+      return null;
     };
 
-    let menuItems = findModelOptions();
-    if (!menuItems || menuItems.length === 0) {
-      nativeClick(finalTrigger);
-      await humanDelay(600, 1000);
-      if (this.stopped) return;
-      menuItems = findModelOptions();
-    }
-    if (!menuItems || menuItems.length === 0) {
-      await reactTrigger(finalTrigger, 'onPointerDown');
-      await humanDelay(600, 1000);
-      if (this.stopped) return;
-      menuItems = findModelOptions();
+    const findModelOptions = (): Element[] => {
+      const menu = modelMenuFor(finalTrigger);
+      if (!menu) return [];
+      return Array.from(menu.querySelectorAll(
+        '[role="menuitem"], [role="menuitemradio"], [role="option"], [data-radix-collection-item]'
+      ));
+    };
+
+    /* Escalate until the menu is genuinely open, verified by aria-expanded and
+       by finding the bound menu — not by counting whatever happens to match. */
+    const isOpen = () =>
+      finalTrigger.getAttribute('aria-expanded') === 'true' || !!modelMenuFor(finalTrigger);
+
+    let menuItems: Element[] = findModelOptions();
+    if (!menuItems.length) {
+      for (const [name, open] of [
+        ['native click', () => { nativeClick(finalTrigger); }],
+        ['react onPointerDown', () => reactTrigger(finalTrigger, 'onPointerDown')],
+        ['react onClick', () => reactTrigger(finalTrigger, 'onClick')],
+        ['keyboard Enter', () => reactKeyTrigger(finalTrigger, 'Enter')],
+      ] as Array<[string, () => unknown]>) {
+        if (this.stopped) return;
+        try { await open(); } catch { /* next */ }
+        await humanDelay(500, 800);
+        menuItems = findModelOptions();
+        if (menuItems.length) {
+          this.log('info', `Model menu opened via ${name}`);
+          break;
+        }
+      }
     }
 
-    this.log('info', `Found ${menuItems?.length ?? 0} model menu items`);
+    this.log('info', `Found ${menuItems.length} model option(s)${isOpen() ? '' : ' (menu does not report itself open)'}`);
 
-    if (menuItems) {
+    if (menuItems.length) {
+      /* Collect every candidate, then choose — rather than clicking the first
+         thing that contains the target.
+
+         Flow's image menu is:
+             Nano Banana Pro / Nano Banana 2 / Nano Banana 2 Lite
+
+         "Nano Banana 2" is a substring of "Nano Banana 2 Lite", so a
+         first-match-wins scan picks whichever DOM order happens to put first,
+         and a menu reorder silently switches the model on every run. An exact
+         name is never ambiguous; a substring is only trusted when exactly one
+         item matches. */
+      const candidates: Array<{ item: Element; text: string; norm: string }> = [];
       for (const item of menuItems) {
-        const itemText = item.textContent || '';
-        const itemNorm = normalizeForModelMatch(itemText);
-
-        // Skip disabled items
         if (item.getAttribute('aria-disabled') === 'true' ||
-          item.getAttribute('data-disabled') === 'true') {
-          continue;
+          item.getAttribute('data-disabled') === 'true') continue;
+        // Items that are themselves dropdown triggers are parent containers.
+        if (item.querySelector('button[aria-haspopup="menu"]')) continue;
+        if (!isVisible(item)) continue;
+        const text = item.textContent || '';
+        candidates.push({ item, text, norm: normalizeForModelMatch(text) });
+      }
+
+      const exact = candidates.filter((c) => c.norm === targetNorm);
+      const loose = candidates.filter((c) => c.norm.includes(targetNorm));
+      const chosen = exact[0] || (loose.length === 1 ? loose[0] : null);
+
+      if (!chosen && loose.length > 1) {
+        // Refusing beats guessing: picking the wrong one here produces a whole
+        // run at the wrong model, and nothing downstream can tell.
+        this.log('warn',
+          `"${modelName}" matches ${loose.length} models (${loose.map((c) => c.text.trim()).join(', ')}). ` +
+          'Refusing to guess — use the exact name Flow shows.');
+      }
+
+      if (chosen) {
+        // The clickable element is a <button> inside the menuitem div.
+        const innerBtn = chosen.item.querySelector('button') as HTMLElement | null;
+        const target = innerBtn || (chosen.item as HTMLElement);
+
+        /* Read from wherever Flow is still showing the model.
+           Checking the dropdown's own trigger was wrong: selecting an item
+           closes the popover that trigger lives in, so a click that WORKED
+           read back as an empty string and looked like a failure. */
+        const landed = (): boolean => {
+          const raw = readSelectedModel(ALL_KNOWN_MODELS);
+          if (!raw) return false;
+          const norm = normalizeForModelMatch(raw);
+          // Exact for the same reason: Lite must not satisfy a request for
+          // the model it is a variant of.
+          return norm === normalizeForModelMatch(chosen.text) || norm === targetNorm;
+        };
+
+        /* An escalating ladder, not one click.
+           This used to be a lone simulateClick, and that is why the model never
+           changed while the ratio tabs right above it did: the ratio buttons
+           are plain role="tab" elements, but a model row is a Radix menu item,
+           and React's synthetic handler ignores an event whose isTrusted is
+           false. Same lesson clickGenerate learned — reactTrigger runs in the
+           MAIN world, where the handler is real.
+
+           Verified after every attempt so the first one that works stops the
+           rest, and so a failure is a failure rather than four silent tries. */
+        const strategies: Array<[string, () => Promise<unknown> | unknown]> = [
+          ['react onSelect', () => reactTrigger(chosen.item, 'onSelect')],
+          ['react onClick', () => reactTrigger(target, 'onClick')],
+          ['native click', () => { nativeClick(target); }],
+          ['simulated click', () => { simulateClick(target); }],
+          // Radix drives its menus from the keyboard too, and Enter on a
+          // focused item goes through the same path a real user would.
+          ['keyboard Enter', async () => {
+            (chosen.item as HTMLElement).focus?.();
+            await reactKeyTrigger(chosen.item, 'Enter');
+          }],
+        ];
+
+        for (const [name, attempt] of strategies) {
+          if (this.stopped) return;
+          /* Once the menu has closed the item is detached, and clicking a
+             detached node either does nothing or lands on whatever Radix
+             mounted in its place. Re-check before every attempt. */
+          if (!document.contains(chosen.item)) {
+            if (landed()) {
+              this.log('info', `Model set to ${chosen.text.trim()}`);
+              return;
+            }
+            break;
+          }
+          try { await attempt(); } catch { /* try the next one */ }
+          await humanDelay(400, 700);
+          if (landed()) {
+            this.log('info', `Model set to ${chosen.text.trim()} (via ${name})`);
+            return;
+          }
         }
 
-        // Skip items that are themselves dropdown triggers (parent menu containers)
-        if (item.querySelector('button[aria-haspopup="menu"]')) {
-          continue;
+        const nowRaw = readSelectedModel(ALL_KNOWN_MODELS) || '(could not read)';
+        if (!isRetry && !overrideTrigger) {
+          this.log('warn', `Every click strategy left Flow on "${nowRaw}" — reopening settings and retrying`);
+          await this.closeSettingsPanel();
+          await humanDelay(500, 800);
+          return this.setModel(modelName, null, true);
         }
-
-        if (itemNorm.includes(targetNorm) && isVisible(item)) {
-          // The clickable element may be a button inside the menuitem div
-          const innerBtn = item.querySelector('button');
-          const clickTarget = innerBtn || item;
-          simulateClick(clickTarget);
-          this.log('info', `Selected model: ${itemText.trim()}`);
-          await humanDelay(300, 600);
-          return;
-        }
+        throw new Error(
+          `Could not set the model to "${modelName}" — Flow still shows "${nowRaw}". ` +
+          'Generating now would use the wrong model, so this node stopped instead.'
+        );
       }
     }
 
@@ -2377,15 +2604,30 @@ export class AutomationEngine {
       if (promptInput instanceof HTMLElement) promptInput.focus();
       await sleep(100);
 
+      // What is attached already — the wait below is for ours, not the total.
+      const before = findLoadedIngredients().length;
+
       const pasteEvent = new ClipboardEvent('paste', {
         bubbles: true,
         cancelable: true,
         clipboardData: dt,
       });
       promptInput.dispatchEvent(pasteEvent);
-      this.log('info', `Pasted ${newIndices.length} new image(s) — waiting 8s for upload...`);
 
-      await sleep(8000);
+      /* Wait for the chips to actually arrive, rather than sleeping 8s and
+         hoping. Typing the prompt and clicking Generate while an upload is
+         still in flight makes Flow generate from the text alone — the
+         reference silently dropped, and nothing on screen to say so. */
+      const wantChips = before + newIndices.length;
+      this.log('info', `Pasted ${newIndices.length} image(s) — waiting for them to attach...`);
+      if (!(await waitForIngredients(wantChips))) {
+        const got = findLoadedIngredients().length;
+        throw new Error(
+          `Only ${got} of ${wantChips} reference image(s) finished uploading to Flow. ` +
+          'Generating now would drop the reference, so this node stopped instead.'
+        );
+      }
+      this.log('info', `${wantChips} reference image(s) attached and loaded`);
 
       // Mark as uploaded
       for (const idx of newIndices) {
@@ -2524,6 +2766,7 @@ export class AutomationEngine {
       return false;
     }
 
+    const chipsBefore = findLoadedIngredients().length;
     const blob = this.base64ToBlob(fileData.data, fileData.mime);
     const file = new File([blob], filename, { type: fileData.mime });
     const dt = new DataTransfer();
@@ -2531,8 +2774,14 @@ export class AutomationEngine {
     fileInput.files = dt.files;
     triggerFileInputChange(fileInput);
     
-    this.log('info', `File uploaded: ${filename} — waiting 6s for Flow processing...`);
-    await sleep(6000);
+    /* Was a flat 6s. An upload slower than that meant the caller carried on
+       and Generate fired with nothing attached. */
+    const wantAfterUpload = chipsBefore + 1;
+    if (!(await waitForIngredients(wantAfterUpload))) {
+      this.log('warn', `${filename} did not finish uploading — Flow shows ${findLoadedIngredients().length} attached`);
+      return false;
+    }
+    this.log('info', `File uploaded and attached: ${filename}`);
     return true;
   }
 
@@ -2595,6 +2844,9 @@ export class AutomationEngine {
     if (images.length === 0) return true;
 
     this.log('info', `Attaching ${images.length} frame image(s) for prompt #${promptIdx + 1}`);
+    if (images.length > 2) {
+      this.log('warn', `Frames mode takes two images; ignoring ${images.length - 2} extra`);
+    }
 
     let imageBlobs: any;
     try {
@@ -2608,161 +2860,275 @@ export class AutomationEngine {
       return false;
     }
 
-    const frameSlots: Array<{ label: 'Start' | 'End'; fileIndex: number }> = [];
-    frameSlots.push({ label: 'Start', fileIndex: 0 });
-    if (images.length > 1) {
-      frameSlots.push({ label: 'End', fileIndex: 1 });
-    }
+    const labels: Array<'Start' | 'End'> = ['Start', 'End'];
 
-    // Phase 1: Upload any missing frame images to the main Flow page first
-    const filesToUpload: Array<{ fileData: any; filename: string }> = [];
-    for (const slot of frameSlots) {
-      const fileData = imageBlobs.files[slot.fileIndex];
-      if (!fileData) continue;
-
-      const ext = fileData.mime.includes('png') ? 'png' : 'jpg';
-      const idSlug = (images[slot.fileIndex].id || '').replace(/-/g, '').slice(0, 8) || `${promptIdx}_${slot.fileIndex}`;
-      const filename = `af_${idSlug}.${ext}`;
-
-      if (!this.uploadedAssets.has(filename)) {
-        filesToUpload.push({ fileData, filename });
-      }
-    }
-
-    if (filesToUpload.length > 0) {
-      this.log('info', `Pasting ${filesToUpload.length} new frame image(s) onto prompt input...`);
-      const promptInput = findPromptInput();
-      if (!promptInput) {
-        this.log('warn', 'Prompt input not found to paste frame images');
-        return false;
-      }
-
-      const dt = new DataTransfer();
-      for (const item of filesToUpload) {
-        const blob = this.base64ToBlob(item.fileData.data, item.fileData.mime);
-        const file = new File([blob], item.filename, { type: item.fileData.mime });
-        dt.items.add(file);
-      }
-
-      if (promptInput instanceof HTMLElement) promptInput.focus();
-      await sleep(200);
-
-      const pasteEvent = new ClipboardEvent('paste', {
-        bubbles: true,
-        cancelable: true,
-        clipboardData: dt,
-      });
-      promptInput.dispatchEvent(pasteEvent);
-      this.log('info', `Pasted ${filesToUpload.length} frame image(s) — waiting 8s for upload...`);
-
-      await sleep(8000);
-
-      // Add to uploaded cache
-      for (const item of filesToUpload) {
-        this.uploadedAssets.add(item.filename);
-      }
-      this.log('info', 'Frame image(s) uploaded successfully.');
-    }
-
-    // Phase 2: Open dialog for each slot, search by name, and click to select/attach
-    for (const slot of frameSlots) {
+    /* Empty both slots before anything else.
+       A slot keeps its image between generations, so a prompt that supplies
+       only a Start frame would otherwise silently interpolate towards the
+       previous shot's End. Clearing first also means the pickers can be
+       opened at all — a filled slot is a thumbnail, not a dialog trigger. */
+    for (const label of labels) {
       if (this.stopped) return false;
-      const fileData = imageBlobs.files[slot.fileIndex];
+      if (!(await this.clearFrameSlot(label))) return false;
+    }
+
+    /* Every media id the library already holds, read before anything is
+       uploaded. This is how our image is identified afterwards: Flow renames
+       uploads to a UUID of its own, so the name we chose is not in the picker
+       to search for. Measured on a live composer — searching "af_" matched 0
+       of 2 rows that were both ours. */
+    const known = await this.readLibraryAssetIds();
+    if (known === null) {
+      this.log('warn', 'Could not read the asset picker to identify frame images');
+      return false;
+    }
+
+    for (let i = 0; i < Math.min(imageBlobs.files.length, 2); i++) {
+      if (this.stopped) return false;
+      const label = labels[i];
+      const fileData = imageBlobs.files[i];
       if (!fileData) continue;
 
       const ext = fileData.mime.includes('png') ? 'png' : 'jpg';
-      const idSlug = (images[slot.fileIndex].id || '').replace(/-/g, '').slice(0, 8) || `${promptIdx}_${slot.fileIndex}`;
+      const idSlug = (images[i].id || '').replace(/-/g, '').slice(0, 8) || `${promptIdx}_${i}`;
       const filename = `af_${idSlug}.${ext}`;
 
-      this.log('info', `Preparing to attach "${slot.label}" frame: ${filename}...`);
+      // Upload, then find the row that was not there a moment ago.
+      const mediaId = await this.uploadFrameImage(fileData, filename, known, label);
+      if (!mediaId) return false;
+      known.add(mediaId);
 
-      const checkAttached = (): boolean => {
-        const btn = findFrameButton(slot.label);
-        if (!btn) return false;
-        const hasImg = btn.querySelector('img') !== null;
-        const text = (btn.textContent || '').trim();
-        return hasImg || (text !== slot.label);
-      };
-
-      if (checkAttached()) {
-        this.log('info', `"${slot.label}" frame already has an image attached. Skipping.`);
-        continue;
-      }
-
-      const frameBtn = findFrameButton(slot.label);
-      if (!frameBtn) {
-        this.log('warn', `Cannot find "${slot.label}" frame button`);
-        return false;
-      }
-
-      await this.dismissDialogs();
-      await sleep(200);
-
-      simulateClick(frameBtn);
-      await humanDelay(400, 700);
-
-      let dialog = findAssetSearchDialog();
-      if (!dialog) {
-        nativeClick(frameBtn);
-        await humanDelay(500, 800);
-        dialog = findAssetSearchDialog();
-      }
-      if (!dialog) {
-        this.log('warn', `Dialog did not open after clicking "${slot.label}"`);
-        return false;
-      }
-
-      const imageTab = findImageTabInDialog();
-      if (imageTab && imageTab.getAttribute('aria-selected') !== 'true') {
-        const tabStrategies = [
-          () => reactTrigger(imageTab, 'onPointerDown'),
-          () => reactTrigger(imageTab, 'onClick'),
-          () => { simulateClick(imageTab); return true; },
-          () => { nativeClick(imageTab); return true; }
-        ];
-        for (const strat of tabStrategies) {
-          await strat();
-          await sleep(100);
-        }
-        await sleep(200);
-      }
-
-      this.log('info', `Searching for frame asset "${filename}" in dialog...`);
-      const selected = await this.searchAndClickAssetInDialog(dialog, filename);
-
-      if (!selected) {
-        this.log('warn', `Failed to select frame image "${filename}" from search results`);
-        await this.dismissDialogs();
-        return false;
-      }
-
-      // Poll until the image shows up in the frame slot to verify attachment
-      const maxWaitMs = 6000;
-      const startWait = Date.now();
-      let attached = false;
-
-      while (Date.now() - startWait < maxWaitMs) {
-        if (this.stopped) return false;
-        if (checkAttached()) {
-          attached = true;
-          break;
-        }
-        await sleep(500);
-      }
-
-      if (!attached) {
-        this.log('warn', `Timed out waiting for "${slot.label}" frame to reflect selected image.`);
-        await this.dismissDialogs();
-        return false;
-      }
-
-      this.log('info', `Successfully attached ${slot.label} frame: ${filename}`);
-      await this.dismissDialogs();
-      await sleep(400);
+      if (!(await this.selectFrameAsset(label, mediaId, filename))) return false;
+      this.uploadedAssets.add(filename);
     }
 
     this.log('info', `All frame image(s) attached for prompt #${promptIdx + 1}`);
     return true;
+  }
+
+  /** Open the Start picker briefly to read which assets already exist. */
+  private async readLibraryAssetIds(): Promise<Set<string> | null> {
+    const dialog = await this.openFrameSlotDialog('Start');
+    if (!dialog) return null;
+    const ids = new Set(findAssetOptions(dialog).map(assetOptionId));
+    this.log('info', `Asset library holds ${ids.size} image(s) before upload`);
+    await this.dismissDialogs();
+    await sleep(300);
+    return ids;
+  }
+
+  /** Empty a slot that is still holding the previous prompt's frame. */
+  private async clearFrameSlot(label: 'Start' | 'End'): Promise<boolean> {
+    const slots = findFrameSlots();
+    if (!slots) {
+      this.log('warn', 'Flow is not showing Start/End frame slots — is the composer in video mode?');
+      return false;
+    }
+    const slot = label === 'Start' ? slots.start : slots.end;
+    if (!frameSlotFilled(slot)) return true;
+
+    const clear = findFrameSlotClearButton(slot);
+    if (!clear) {
+      this.log('warn', `${label} frame is occupied and has no remove control — ${describeFrameSlot(slot)}`);
+      return false;
+    }
+    simulateClick(clear);
+    await sleep(600);
+
+    const after = findFrameSlots();
+    const nowEmpty = after && !frameSlotFilled(label === 'Start' ? after.start : after.end);
+    if (!nowEmpty) {
+      this.log('warn', `${label} frame would not clear — it still holds the previous image`);
+      return false;
+    }
+    this.log('info', `${label} frame cleared`);
+    return true;
+  }
+
+  /**
+   * Put one image in Flow's library and return the media id it was given.
+   *
+   * Pasting onto the prompt is what uploads it — the slots themselves take no
+   * drop. Which asset is ours is then a question of identity, not of name,
+   * so the answer is whichever media id appeared that was not there before.
+   */
+  private async uploadFrameImage(
+    fileData: any,
+    filename: string,
+    known: Set<string>,
+    label: 'Start' | 'End'
+  ): Promise<string | null> {
+    const promptInput = findPromptInput();
+    if (!promptInput) {
+      this.log('warn', 'Prompt input not found to upload frame image');
+      return null;
+    }
+
+    const blob = this.base64ToBlob(fileData.data, fileData.mime);
+    const file = new File([blob], filename, { type: fileData.mime });
+    const dt = new DataTransfer();
+    dt.items.add(file);   // one at a time: two in one payload read as ingredients
+
+    if (promptInput instanceof HTMLElement) promptInput.focus();
+    await sleep(150);
+    promptInput.dispatchEvent(new ClipboardEvent('paste', {
+      bubbles: true, cancelable: true, clipboardData: dt,
+    }));
+    this.log('info', `Uploading ${filename} for the ${label} frame...`);
+
+    /* Poll the picker for the new row. Reopened each round rather than left
+       open, because the list is fetched when the dialog mounts and an upload
+       that finishes afterwards does not necessarily push into it. */
+    const deadline = Date.now() + 90_000;
+    let reported = false;
+    while (Date.now() < deadline) {
+      if (this.stopped) return null;
+      await sleep(2500);
+
+      const dialog = await this.openFrameSlotDialog(label);
+      if (dialog) {
+        const fresh = findAssetOptions(dialog).map(assetOptionId).filter((id) => id && !known.has(id));
+        if (fresh.length) {
+          // Newest first under Flow's default "Recent" sort.
+          const id = fresh[0];
+          this.log('info', `${filename} uploaded (media ${id.slice(0, 8)})`);
+          return id;
+        }
+        if (!reported && Date.now() > deadline - 60_000) {
+          reported = true;
+          this.log('info', `${label} frame still uploading — ${describeAssetDialog(dialog)}`);
+        }
+      }
+      await this.dismissDialogs();
+      await sleep(200);
+    }
+
+    this.log('warn', `${filename} never appeared in the asset picker after 90s`);
+    return null;
+  }
+
+  /**
+   * Select a known asset into a slot and commit it.
+   *
+   * Clicking the row only previews it. "Add to Prompt" is what fills the slot
+   * and closes the dialog — the step whose absence left every slot empty
+   * while everything upstream reported success.
+   */
+  private async selectFrameAsset(
+    label: 'Start' | 'End',
+    mediaId: string,
+    filename: string
+  ): Promise<boolean> {
+    const dialog = await this.openFrameSlotDialog(label);
+    if (!dialog) {
+      this.log('warn', `The ${label} picker did not open`);
+      return false;
+    }
+
+    let row = findAssetOptions(dialog).find((r) => assetOptionId(r) === mediaId);
+    if (!row) {
+      /* Pasted images can land under Uploads rather than Images depending on
+         which tab the picker opens on. */
+      const uploads = findUploadsTab(dialog);
+      if (uploads) {
+        simulateClick(uploads);
+        await sleep(800);
+        row = findAssetOptions(dialog).find((r) => assetOptionId(r) === mediaId);
+      }
+    }
+    if (!row) {
+      this.log('warn', `${filename} is not in the ${label} picker — ${describeAssetDialog(dialog)}`);
+      await this.dismissDialogs();
+      return false;
+    }
+
+    if (!assetOptionSelected(row)) {
+      simulateClick(row);
+      await sleep(400);
+      if (!assetOptionSelected(row)) {
+        nativeClick(row);
+        await sleep(400);
+      }
+    }
+    if (!assetOptionSelected(row)) {
+      this.log('warn', `${filename} would not select in the ${label} picker`);
+      await this.dismissDialogs();
+      return false;
+    }
+
+    const commit = findAddToPromptButton(dialog);
+    if (!commit) {
+      this.log('warn', `No "Add to Prompt" button in the ${label} picker — ${describeAssetDialog(dialog)}`);
+      await this.dismissDialogs();
+      return false;
+    }
+    simulateClick(commit);
+
+    // The slot itself is the evidence — not the click, and not the dialog closing.
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      if (this.stopped) return false;
+      await sleep(500);
+      const slots = findFrameSlots();
+      if (!slots) continue;
+      const slot = label === 'Start' ? slots.start : slots.end;
+      if (frameSlotFilled(slot)) {
+        this.log('info', `${label} frame set: ${filename}`);
+        await this.dismissDialogs();
+        return true;
+      }
+    }
+
+    const slots = findFrameSlots();
+    const desc = slots
+      ? describeFrameSlot(label === 'Start' ? slots.start : slots.end)
+      : 'slots not found';
+    this.log('warn', `${label} frame never filled after Add to Prompt — ${desc}`);
+    await this.dismissDialogs();
+    return false;
+  }
+
+  /** Click a slot and return the picker it controls. */
+  private async openFrameSlotDialog(label: 'Start' | 'End'): Promise<HTMLElement | null> {
+    await this.dismissDialogs();
+    await sleep(250);
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (this.stopped) return null;
+
+      const slots = findFrameSlots();
+      if (!slots) {
+        this.log('warn', 'Flow is not showing Start/End frame slots — is the composer in video mode?');
+        return null;
+      }
+      const slot = label === 'Start' ? slots.start : slots.end;
+
+      /* A filled slot is a thumbnail rather than a dialog trigger, so there
+         is nothing here to open. The caller clears it first; reaching this
+         means it came back. */
+      if (frameSlotFilled(slot)) {
+        this.log('warn', `${label} frame is already holding an image`);
+        return null;
+      }
+
+      slot.scrollIntoView({ block: 'center', behavior: 'instant' });
+      await sleep(150);
+      if (attempt === 0) simulateClick(slot);
+      else if (attempt === 1) nativeClick(slot);
+      else await reactTrigger(slot, 'onClick');
+      await humanDelay(500, 800);
+
+      /* The dialog is the slot's own, resolved through aria-controls — not
+         "whichever dialog is open". Both slots have one, and filling Start
+         from End's picker would reverse the clip. */
+      const dialog = findFrameSlotDialog(slot);
+      if (dialog && dialog.getAttribute('data-state') !== 'closed') return dialog;
+      await this.dismissDialogs();
+      await sleep(300);
+    }
+
+    this.log('warn', `The ${label} picker did not open after three attempts`);
+    return null;
   }
 
   /** Dismiss any open dialogs/popover/modals by pressing Escape */
@@ -2937,9 +3303,41 @@ export class AutomationEngine {
       return ((el as HTMLInputElement).value || el.textContent || '').trim();
     };
 
+    /* Out of credits is not a click that failed — it is a click that will
+       never work, and every fallback below would raise the same notice again.
+       Thrown rather than returned so it leaves clickGenerate immediately;
+       the message is what WorkflowRunner matches on to stop the whole run,
+       since the next node has exactly as many credits as this one. */
+    const throwIfOutOfCredits = async (): Promise<void> => {
+      // Cheapest first: if the popover already happens to be open, read it.
+      let message = findCreditsExhaustedNotice()
+        ? (findCreditsExhaustedNotice()!.innerText || '')
+        : '';
+
+      /* Otherwise go by the orange sphere, which is the only part visible
+         during a run, and open it to find out what it is actually complaining
+         about. The icon alone means "Flow is unhappy", which is not the same
+         as "no credits" — aborting on that would kill runs over unrelated
+         warnings. */
+      if (!message && findFlowAlertIndicator()) {
+        message = await readFlowAlertMessage();
+        if (message) this.log('warn', `Flow alert on screen: ${message.slice(0, 160)}`);
+      }
+
+      if (!readsAsCreditsExhausted(message)) return;
+      throw new Error(
+        'Google Flow is out of credits — the generation was refused before it started. ' +
+        'Top up or wait for your quota to reset, then run again.'
+      );
+    };
+
+    // An alert already showing means we are out before we even click.
+    await throwIfOutOfCredits();
+
     const clickWorked = async (): Promise<boolean> => {
       // Poll a few times — Flow's UI needs a moment to clear the prompt and start tiles
       for (let attempt = 0; attempt < 4; attempt++) {
+        await throwIfOutOfCredits();
         // Primary signal: prompt text CHANGED after submit.
         // We can't check for empty because Flow's Slate editor always has
         // placeholder text ("What do you want to create?") in textContent.

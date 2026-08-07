@@ -33,6 +33,24 @@ export interface Template {
   useCase: string;
   nodes: Node[];
   edges: Edge[];
+
+  /* ── Cloud delivery ──
+     Absent on bundled templates, where the build itself is the guarantee.
+     Set by the publish script, and read by the loader to decide whether this
+     build can draw a template it was not compiled with. */
+
+  /** Node types this template needs, e.g. ['frame']. */
+  requiresNodeTypes?: string[];
+  /** Platforms it needs an adapter for, e.g. ['chatgpt']. */
+  requiresPlatforms?: string[];
+  /** Version floor for anything not expressible as a node type. */
+  minExtensionVersion?: string;
+  /** 'pro' templates arrive with empty nodes/edges unless the account is Pro. */
+  tier?: 'free' | 'pro';
+  /** True when the server sent metadata only — the card prompts to upgrade. */
+  locked?: boolean;
+  /** Hides a template everywhere on the next fetch, without a republish. */
+  disabled?: boolean;
 }
 
 /* ── Helpers keep the definitions readable ── */
@@ -97,9 +115,21 @@ const genNode = (id: string, o: GenOpts, x: number, y: number): Node => ({
   },
 });
 
+/** A Last Frame node — surfaces the still one clip hands to the next. */
+const frameNode = (id: string, label: string, x: number, y: number): Node => ({
+  id,
+  type: 'frame',
+  position: { x, y },
+  data: { type: 'frame', label, frameUrl: '' },
+});
+
 /** An Ask AI node — ChatGPT writing text, so no model or ratio applies. */
-const askNode = (id: string, label: string, x: number, y: number): Node =>
-  genNode(id, { label, mediaType: 'text', platform: 'chatgpt' }, x, y);
+const askNode = (id: string, label: string, x: number, y: number, preset?: string): Node => {
+  const node = genNode(id, { label, mediaType: 'text', platform: 'chatgpt' }, x, y);
+  // A preset wraps whatever the user types in a brief — see studio/presets.
+  if (preset) (node.data as any).preset = preset;
+  return node;
+};
 
 /** text edge (orange) */
 const tEdge = (source: string, target: string): Edge => ({
@@ -208,7 +238,330 @@ const POOL_FAILS_BRIEF =
   'Describe the ten seconds in order — the approach, two or three obstacles, then ' +
   'the fall. Keep it under 150 words.';
 
-export const TEMPLATES: Template[] = [
+/* ── Kids animation ──
+   Deliberately, explicitly stylised. Two reasons, and they point the same way.
+
+   The channels that work in this niche are animated — a mascot children
+   recognise and come back for. Photoreal footage of children is the version
+   that gets demonetised, age-restricted or pulled outright under the rules
+   YouTube and TikTok enforce hardest around synthetic minors, and it is not
+   something this template will help anyone make. Every prompt below names the
+   render style as cartoon and keeps real children out of frame.
+
+   Repeated verbatim in every scene, exactly like CONTINUITY above — it is what
+   stops the mascot drifting between scene 1 and scene 4. */
+const KIDS_STYLE =
+  'Render style: bright 3D cartoon animation, the look of a modern preschool ' +
+  'series. Soft rounded shapes, thick clean outlines, saturated primary colours, ' +
+  'gentle even lighting, no harsh shadows. Toy-like and clearly illustrated — ' +
+  'never photorealistic, never live action, and no real children in frame.\n' +
+  'Same character as the reference: identical face, body proportions, colour ' +
+  'palette and outfit. Do not restyle or redesign the character.\n' +
+  'Friendly and calm. No peril, no scares, no chase, no loud sudden motion.';
+
+const KIDS_CHARACTER =
+  'Character design sheet for a preschool cartoon mascot, on a plain pale ' +
+  'background.\n\n' +
+  'A cheerful young fox cub standing upright, wearing a small yellow explorer ' +
+  'backpack and a red scarf. Big friendly eyes, round soft body, short limbs, ' +
+  'warm orange fur with a cream chest and tail tip. Waving with one paw.\n\n' +
+  'Bright 3D cartoon animation style — soft rounded shapes, thick clean ' +
+  'outlines, saturated colours, even lighting. Toy-like, clearly illustrated, ' +
+  'never photorealistic.\n\n' +
+  'Full body, head to toe, centred, facing the camera.';
+
+/* ── Emotional short film, 10 beats ──
+   Tension → escalation → an unexpected kindness → relief, with the last shot
+   echoing the first so the video loops.
+
+   Every scene references the character sheet, never the scene before it. This
+   is a narrative, not a continuous build: the scenes are different moments in
+   different places, and chaining them would carry a drifted face into all ten.
+   Fanning out from one design means a bad scene is one bad scene.
+
+   The colour arc is the part most people skip and it is doing real work —
+   desaturated blue-grey through the tense half, warming to gold at the turn.
+   It lives per scene rather than in the shared block precisely because it is
+   the one thing that must change. */
+const FILM_STYLE =
+  'Ultra-realistic 3D animation, cinematic lighting, shallow depth of field, ' +
+  '35mm feel. Rendered like a modern animated feature, not a game engine.\n' +
+  'Same character as the reference: identical face, hair, build, clothing and ' +
+  'colour palette. Do not restyle, age or redesign them.\n' +
+  'Expression carries the scene — the story is told in faces and body language, ' +
+  'not dialogue. No spoken lines, no on-screen text, no subtitles.\n' +
+  'One continuous shot, no cuts inside the clip. Slow deliberate camera.\n' +
+  'Vertical 9:16.';
+
+const FILM_CHARACTER =
+  'Character reference sheet: one photorealistic 3D animated character, on a ' +
+  'plain mid-grey backdrop.\n\n' +
+  'A boy of about ten, thin, with dark tousled hair and large expressive brown ' +
+  'eyes. Wearing a faded oversized green jacket with frayed cuffs, a grey shirt ' +
+  'and worn trainers. Carrying a canvas satchel across one shoulder.\n\n' +
+  'Three views: three-quarter front on the left, side profile in the centre, ' +
+  'three-quarter back on the right. Neutral even lighting, full body, sharp ' +
+  'focus, natural skin and fabric texture.\n\n' +
+  'An original fictional character, not any real person.';
+
+/** [key, label, the eight seconds] — the arc, in order. */
+/* ── 3D animal slapstick ──
+   The Oscar's Oasis / Larva format: two desert animals, one thing they both
+   want, and physical comedy escalating to an ironic twist. Five 6s scenes cut
+   to about thirty seconds.
+
+   No dialogue anywhere. The format travels because it needs no translation,
+   and a model given the chance will happily add mouth movement and a voice —
+   so every scene rules it out rather than staying silent about it. */
+const SLAPSTICK_STYLE =
+  'Bright 3D cartoon animation, the look of Oscar\'s Oasis or Larva. Rounded ' +
+  'exaggerated caricature, thick clean forms, saturated desert palette — ' +
+  'orange sand, hard blue sky, sharp midday sun.\n' +
+  'Squash-and-stretch physics: bodies compress on impact and stretch through ' +
+  'motion, eyes pop wide, limbs windmill. Comedy is in the timing and the ' +
+  'overshoot, not in detail.\n' +
+  'Same characters as the reference: identical design, proportions and colour. ' +
+  'Do not restyle or redesign them.\n' +
+  'No dialogue, no speech, no mouth-sync, no on-screen text. Sound is thumps, ' +
+  'sand, and cartoon whooshes.\n' +
+  'One continuous shot per clip, camera locked or a single simple move. ' +
+  'Vertical 9:16.';
+
+/** [key, label, the six seconds] — hook, escalate, peak, twist, loop. */
+const SLAPSTICK_SCENES = [
+  ['hook', '1. Hook — Something Worth Wanting',
+   'A single drop of water hangs from a dry cactus spine, catching the light. ' +
+   'The fennec fox freezes mid-step, ears snapping forward, eyes enormous. He ' +
+   'tiptoes toward it in exaggerated slow motion.\n' +
+   'Open ON the drop — the first two seconds decide whether anyone stays.'],
+  ['rival', '2. The Rival',
+   'The meerkat erupts from the sand directly under the fox, launching him ' +
+   'into a spin. Both land, spot each other, and freeze nose to nose. A long ' +
+   'silent beat, eyes narrowing.\n' +
+   'Hold the stare one moment past comfortable — the pause is the joke.'],
+  ['escalate', '3. Escalation',
+   'A full scramble: they tug, shove and vault over each other, the fox ' +
+   'flattened into the sand and springing back, the meerkat cartwheeling ' +
+   'off a rock. Sand sprays everywhere. The drop still hangs, untouched.\n' +
+   'Fast, physical, and always readable — never a blur.'],
+  ['peak', '4. Peak Chaos',
+   'The cactus bends back like a loaded spring under their weight, then ' +
+   'releases — both animals fire into the sky, tumbling, limbs flailing, ' +
+   'shrinking to dots. A beat of silence at the top of the arc.\n' +
+   'Hold the silence. It makes the landing land.'],
+  ['twist', '5. Twist — Neither of Them',
+   'They crater into the sand side by side. As they lift their heads, a ' +
+   'passing tortoise ambles up, licks the drop off the spine without breaking ' +
+   'stride, and walks on. Both stare after it, then at each other.\n' +
+   'END ON the cactus spine, now bare — the same framing the video opened on, ' +
+   'so it loops straight back to the drop.'],
+] as const;
+
+const FILM_SCENES = [
+  ['hook', '1. Hook — Something Is Wrong',
+   'The boy stands alone at the mouth of a rain-soaked alley at dusk, clutching ' +
+   'his satchel to his chest, looking back over his shoulder at something out of ' +
+   'frame. Rain streaks the air. He is breathing fast.\n' +
+   'COLOUR: desaturated blue-grey, cold, heavy shadows. Open on his face.'],
+  ['loss', '2. What He Has Lost',
+   'He kneels on wet pavement and empties the satchel — a few coins, a folded ' +
+   'photograph, nothing else. His hands are shaking. He presses the photograph ' +
+   'flat and stares at it.\n' +
+   'COLOUR: same cold blue-grey. One weak streetlamp above him.'],
+  ['closing', '3. The Walls Close In',
+   'He walks quickly along a narrow street of shuttered shops, glancing behind ' +
+   'him. The buildings lean in, the passageway narrows ahead, and the rain gets ' +
+   'heavier.\n' +
+   'COLOUR: colder still, almost monochrome. Deep shadow either side.'],
+  ['refused', '4. Turned Away',
+   'He stops at a lit bakery window, hesitates, and pushes the door. A hand ' +
+   'inside turns the sign to CLOSED and the light goes out. He steps back into ' +
+   'the rain, face falling.\n' +
+   'COLOUR: brief warm light from inside, snatched away, back to cold.'],
+  ['storm', '5. Escalation',
+   'The rain becomes a downpour. He shelters under a broken awning, soaked ' +
+   'through and shivering, arms wrapped around his knees. Traffic passes and ' +
+   'nobody stops. Water sheets off the edge of the awning.\n' +
+   'COLOUR: the coldest point of the film. Blue-black, harsh reflections.'],
+  ['bottom', '6. The Lowest Point',
+   'Close on his face as he gives up looking — eyes down, jaw tight, the fight ' +
+   'going out of him. He does not cry. He simply stops.\n' +
+   'COLOUR: cold and desaturated, but hold the last beat one moment too long.'],
+  ['turn', '7. The Turn — Unexpected Kindness',
+   'A pair of worn boots stops in front of him. A weathered hand enters frame ' +
+   'holding out a paper cup of something steaming and a folded dry coat. The boy ' +
+   'looks up, uncomprehending. The stranger\'s face stays out of frame.\n' +
+   'COLOUR: the first warmth of the film — amber light spilling in from the left.'],
+  ['warmth', '8. Relief',
+   'He sits wrapped in the oversized coat with both hands around the cup, steam ' +
+   'rising past his face. His shoulders drop for the first time. A small ' +
+   'disbelieving breath of a laugh.\n' +
+   'COLOUR: warming quickly — amber and gold, the blue draining away.'],
+  ['gift', '9. Passing It On',
+   'Morning. Dry, bright street. The boy crouches to hand the folded coat to ' +
+   'another child sitting where he had been, then presses the photograph into ' +
+   'his own pocket and stands.\n' +
+   'COLOUR: warm gold, soft, fully saturated. Long low sunlight.'],
+  ['loop', '10. Resolution — Echo the Opening',
+   'The same alley mouth as the first shot, now in clear morning light. The boy ' +
+   'stands in exactly the same position, satchel over his shoulder, and this ' +
+   'time he looks forward instead of back, and walks out of frame.\n' +
+   'COLOUR: the composition of scene 1 rendered warm. Frame it to match, so the ' +
+   'video can loop straight back to the beginning.'],
+] as const;
+
+/* ── Miniature car build ──
+   Same chain shape as the styrofoam carve, with one difference that changes
+   the whole format: the last clip is a match cut. Three clips build a wooden
+   miniature, the fourth holds the finished model in frame and becomes the real
+   car in the same camera move. The payoff only lands if the miniature the
+   fourth clip inherits is the exact one the third clip finished — which is
+   what the Last Frame nodes make visible instead of hoped-for. */
+const CAR_STYLE =
+  '# LOOK — identical in every clip\n' +
+  'Ultra photorealistic, 8K HDR, ray-traced reflections, shallow depth of field.\n' +
+  'Macro cinematography at bench level, slow deliberate camera moves on a slider. ' +
+  'No handheld, no shake, no whip pans.\n' +
+  'Same dark walnut workbench, same warm key light raking from the left, same ' +
+  'cool rim light picking out the edges. Background falls off to near black.\n' +
+  'Hands and forearms only — sleeves rolled, never a face.\n' +
+  'Audio led by the material: blade on grain, brush bristles, the tick of small ' +
+  'parts set down. No music, no narration.\n' +
+  'Same vehicle as the reference throughout: identical model, proportions, ' +
+  'body lines and colour. Do not restyle or substitute a different car.\n' +
+  'Vertical 9:16.';
+
+/* The car the user wants, and nothing else.
+
+   This used to be CAR_BRIEF — 150 words of sheet instructions wrapped around
+   one editable line. That brief now lives in studio/presets as `car_sheet`,
+   where every template can reach it and a bad wording can be fixed without a
+   store review. What is left here is the only part that was ever the user's:
+   the car. */
+const CAR_SUBJECT = 'BMW M3 E46, 2003, Laguna Seca Blue';
+
+/** [key, label, the ten seconds — ending on the state the next clip inherits] */
+const CAR_STAGES = [
+  ['block', '1. Rough Carving',
+   'A solid block of walnut is clamped on the bench. A chisel and mallet drive ' +
+   'away the waste in confident strokes, shavings curling off and settling on ' +
+   'the wood. The silhouette of the car emerges — roofline, bonnet, wheel ' +
+   'arches — while every surface stays faceted and raw.\n' +
+   'END ON: the rough car form, unmistakably the right vehicle, tool marks ' +
+   'everywhere, shavings banked around it.'],
+  ['detail', '2. Precision Detailing',
+   'Fine rasps, needle files and a scalpel cut the details in: door shut lines, ' +
+   'grille slats, mirror stems, the lip of each wheel arch. Fine-grit paper ' +
+   'follows and the surface goes from faceted to glass-smooth. A soft brush ' +
+   'clears the dust between passes.\n' +
+   'END ON: the bare wooden model, perfectly smooth and fully detailed, ' +
+   'unpainted, bench swept clean.'],
+  ['finish', '3. Paint & Assembly',
+   'Thin coats of automotive lacquer go on and flash off to a deep mirror ' +
+   'finish. Then the small parts: chrome trim pressed into the shut lines, ' +
+   'badges set with tweezers, clear lenses seated into the headlights, rubber ' +
+   'tyres pushed onto machined rims.\n' +
+   'END ON: the finished miniature, glossy and complete, reflecting the bench ' +
+   'light — a perfect scale model of the reference car.'],
+  ['reveal', '4. Match Cut to Real',
+   'The camera pushes slowly along the finished miniature toward its headlight. ' +
+   'As the frame fills with the reflection, the scale changes without a cut — ' +
+   'the same headlight, the same body line, the same paint, now full size. The ' +
+   'camera keeps pulling back to reveal the real car on wet asphalt at blue ' +
+   'hour, workshop lights streaking across the panels.\n' +
+   'One continuous move. The transition happens mid-shot, never on a cut, and ' +
+   'the car must be identical either side of it.\n' +
+   'END ON: the full-size car, static and centred, held for the last beat.'],
+] as const;
+
+/* ── AI toddler, photoreal ──
+   The 100M-view format: a small child meeting something for the first time,
+   shot like a parent's phone video. It lives or dies on the child being the
+   SAME child every clip, which is why this one starts by generating a design
+   sheet instead of taking an upload.
+
+   That is a deliberate choice, not a limitation. Generating the character
+   means it is fictional and yours — consistent across a whole channel, and
+   nobody's actual kid. Feeding a real child's photo into this would produce
+   synthetic video of an identifiable minor, which is a different thing
+   entirely and not what the template is for. */
+const BABY_STYLE =
+  'Shot on a modern phone by a parent standing close. Handheld with slight ' +
+  'natural micro-shake, one continuous take, no cuts. Natural available light.\n' +
+  'Same child as the reference: identical face, hair, skin tone and outfit. ' +
+  'Do not restyle, age up or redesign the child.\n' +
+  'An adult\'s hands support the child and stay in frame; the adult\'s face is ' +
+  'never shown.\n' +
+  'Natural sound only — the child, ambience, a parent laughing off-camera. ' +
+  'No music, no narration, no captions.\n' +
+  'Warm and safe throughout. The child is happy and secure the whole time: no ' +
+  'distress, no crying, no danger, nothing that could read as harm.\n' +
+  'Vertical 9:16.';
+
+const BABY_CHARACTER =
+  'Character reference sheet: one photorealistic toddler, about 18 months old, ' +
+  'standing against a plain light grey backdrop.\n\n' +
+  'Round cheeks, dark curly hair, big brown eyes, a wide open smile. Wearing a ' +
+  'plain white t-shirt and soft grey shorts, barefoot.\n\n' +
+  'Neutral even studio lighting, sharp focus, full body head to toe, facing the ' +
+  'camera. Natural skin texture. No props, no background detail.\n\n' +
+  'This is an original fictional character, not any real person.';
+
+/** [key, label, the eight seconds] — each is a first encounter, which is the
+    beat the format is actually built on. */
+const BABY_CLIPS = [
+  ['fish', '1. Fish Spa',
+   'The child sits on the rim of a shallow fish-spa tank in a bright shopping ' +
+   'mall, held under the arms by an adult, and lowers both feet into the water. ' +
+   'Small fish swarm toward the toes. The child jolts, then bursts out laughing ' +
+   'and kicks once, splashing.\n' +
+   'Camera at the child\'s level, close enough to hold the face and the water in ' +
+   'the same frame.'],
+  ['sand', '2. First Sand',
+   'The child stands at the edge of dry beach sand at golden hour, supported by ' +
+   'an adult\'s hands, and lifts one foot away the instant it touches. Tries ' +
+   'again, then plants both feet and grins down at them, curling the toes.\n' +
+   'Low camera, warm backlight, sea blurred behind.'],
+  ['ice', '3. First Ice Cream',
+   'The child, in a high chair at an outdoor cafe, takes a first lick of vanilla ' +
+   'ice cream from a cone held by an adult. Freezes at the cold, blinks, then ' +
+   'leans straight back in for more, ice cream on the nose.\n' +
+   'Close framing on the face, dappled shade, street sounds behind.'],
+] as const;
+
+/** [key, label, what happens in the 8 seconds] — one idea per scene. */
+const KIDS_SCENES = [
+  ['hello', '1. Hello',
+   'The character walks into a sunny meadow, stops in the centre, waves at the ' +
+   'camera and hops once on the spot with both arms up. Wide friendly framing, ' +
+   'the whole body in shot, camera still at the character\'s eye level.\n' +
+   'Cheerful ukulele and light percussion, birdsong underneath.'],
+  ['count', '2. Counting',
+   'The character points one paw at three big floating numbered balloons — 1, 2, ' +
+   '3 — touching each in turn, and each one bobs and glows as it is touched. ' +
+   'The character looks back at the camera and claps.\n' +
+   'Same meadow, same music. Slow clear beats so a child can follow along.'],
+  ['colour', '3. Colours',
+   'Three oversized shapes sit in the grass — a red ball, a blue cube, a yellow ' +
+   'star. The character walks to each one, pats it, and holds it up to the ' +
+   'camera before setting it down.\n' +
+   'Same meadow, same music. Unhurried, one object at a time.'],
+  ['wave', '4. Goodbye',
+   'The character waves goodbye with both paws, turns and walks away down a ' +
+   'winding path toward a low hill, then turns back for one last wave before ' +
+   'the camera settles.\n' +
+   'Music resolves and softens. Warm late-afternoon light.'],
+] as const;
+
+/**
+ * The templates compiled into this build.
+ *
+ * Still the source of truth: authored here in TypeScript, validated by
+ * templates.test.ts, then exported to JSON by scripts/publish-templates.js.
+ * At runtime these are the floor the loader falls back to — a fresh install,
+ * or the API being down, must still open a gallery with workflows in it.
+ */
+export const BUILTIN_TEMPLATES: Template[] = [
   /* ─────────────── Starters ─────────────── */
   {
     id: 'tpl_simple_image',
@@ -647,22 +1000,22 @@ export const TEMPLATES: Template[] = [
   {
     id: 'tpl_styrofoam_asmr',
     name: 'ASMR Styrofoam Carving: 6-Clip Chain',
-    description: 'One reference photo becomes a six-clip carving sequence, each clip continuing where the last one ended.',
+    description: 'One reference photo becomes a six-clip carving sequence, with every handoff frame shown on the canvas.',
     useCase:
       'ASMR and satisfying-craft channels. This is the format people usually build by hand — generate a clip, screenshot its last frame, upload it as the next clip\'s first frame, repeat five times. Studio passes each clip\'s closing frame to the next node automatically, so the block genuinely progresses from raw foam to finished sculpture in one run.',
     category: 'Content',
     difficulty: 'Advanced',
-    nodeCount: 13,
+    nodeCount: 18,
     thumbnail: '🔨',
     nodes: [
       imageNode('i1', 'Subject Reference', 40, 300, 'what to carve'),
 
       ...(STYROFOAM_STAGES).flatMap(([key, label, body], i) => {
-        const x = 520 + i * 480;
-        return [
+        const x = 560 + i * 620;
+        const out: Node[] = [
           promptNode(`p_${key}`, `${i + 1}. ${label}`,
             body + '\n\n' + STYROFOAM_STYLE,
-            i === 0 ? 40 : x - 480, 700),
+            x - 260, 780),
           genNode(`g_${key}`, {
             label: `${i + 1}. ${label}`,
             mediaType: 'video',
@@ -673,19 +1026,278 @@ export const TEMPLATES: Template[] = [
             model: 'Omni Flash',
           }, x, 200),
         ];
+        // A Last Frame between each pair, so the handoff this format depends
+        // on is something you can look at rather than infer from the result.
+        if (i < STYROFOAM_STAGES.length - 1) {
+          out.push(frameNode(`f_${key}`, 'Ends on →', x + 340, 250));
+        }
+        return out;
       }),
     ],
     edges: STYROFOAM_STAGES.flatMap(([key], i) => {
       const prev = STYROFOAM_STAGES[i - 1];
-      return [
+      const out = [
         tEdge(`p_${key}`, `g_${key}`),
-        // Clip 1 starts from the user's photo; every later clip starts from the
-        // frame the previous clip ended on.
+        // Clip 1 starts from the user's photo; every later clip starts from
+        // the Last Frame node showing where the previous clip ended.
         i === 0
           ? iEdge('i1', `g_${key}`, 'image')
-          : iEdge(`g_${prev[0]}`, `g_${key}`),
+          : iEdge(`f_${prev[0]}`, `g_${key}`, 'image'),
       ];
+      // Each clip feeds its own Last Frame, except the reveal, which ends it.
+      if (i < STYROFOAM_STAGES.length - 1) {
+        out.push(iEdge(`g_${key}`, `f_${key}`));
+      }
+      return out;
     }),
+  },
+  {
+    id: 'tpl_animal_slapstick',
+    name: '3D Animal Slapstick: 5 Beats',
+    description: 'Two desert animals, one thing they both want, and a twist that gives it to neither.',
+    useCase:
+      'The Oscar\'s Oasis format: hook in the first two seconds, escalate, peak, then an ironic twist, cut to about thirty seconds. Describe the pair in a line and the character_sheet preset writes the design brief — the animals have to be identical across all five scenes or the escalation reads as five unrelated clips. No dialogue anywhere, which is why the format travels: nothing to translate, and a model left to itself will add mouth-sync and a voice. The last shot is framed to match the first so it loops. Needs a signed-in ChatGPT tab for the design step.',
+    category: 'Content',
+    difficulty: 'Medium',
+    nodeCount: 13,
+    thumbnail: '🦊',
+    nodes: [
+      promptNode('p_cast', 'The Cast',
+        'A fennec fox and a meerkat as a desert cartoon duo, bright 3D animation, ' +
+        'rounded exaggerated caricature, Oscar\'s Oasis look',
+        40, 300),
+      // The preset turns that line into a full design brief — see studio/presets.
+      askNode('ask_cast', 'Write the Design Brief', 480, 260, 'character_sheet'),
+      genNode('g_cast', {
+        label: 'Character Sheet',
+        mediaType: 'image',
+        aspectRatio: '16:9',
+        model: 'Nano Banana Pro',
+      }, 920, 220),
+
+      ...SLAPSTICK_SCENES.flatMap(([key, label, body], i) => {
+        const y = i * 460;
+        return [
+          promptNode(`p_${key}`, label, body + '\n\n' + SLAPSTICK_STYLE, 1420, y + 40),
+          genNode(`g_${key}`, {
+            label,
+            mediaType: 'video',
+            aspectRatio: '9:16',
+            duration: '6s',
+            model: 'Omni Flash',
+          }, 1940, y),
+        ];
+      }),
+    ],
+    edges: [
+      tEdge('p_cast', 'ask_cast'),
+      tEdge('ask_cast', 'g_cast'),
+    ].concat(SLAPSTICK_SCENES.flatMap(([key]) => [
+      tEdge(`p_${key}`, `g_${key}`),
+      /* Every scene references the design sheet, never the scene before it.
+         These are five separate gags in one place; chaining would carry a
+         drifted animal into all of them, and the whole format rests on the
+         same two creatures being recognisable from hook to twist. */
+      iEdge('g_cast', `g_${key}`),
+    ])),
+  },
+  {
+    id: 'tpl_emotional_short',
+    name: 'Emotional Short: 1 Character → 10 Beats',
+    description: 'Tension, escalation, an unexpected kindness, relief — ten scenes holding one character.',
+    useCase:
+      'The retention format: cold open on trouble, escalate, turn on an act of kindness, resolve warm — and frame the last shot to match the first so it loops. Every scene references the character sheet rather than the scene before it, because these are ten different moments and a face that drifts in scene 3 would otherwise poison the seven after it. The colour arc is the part most people skip and it does real work: desaturated blue-grey through the tense half, warming to gold at the turn. Ten 8s clips give you the spine, not the finished film — the 2-4 second cutting the format lives on happens in the edit, where you cover each beat from more than one angle.',
+    category: 'Content',
+    difficulty: 'Advanced',
+    nodeCount: 22,
+    thumbnail: '🎬',
+    nodes: [
+      promptNode('p_char', 'Character Design', FILM_CHARACTER, 40, 300),
+      genNode('g_char', {
+        label: 'Character Sheet',
+        mediaType: 'image',
+        aspectRatio: '16:9',
+        model: 'Nano Banana Pro',
+      }, 560, 260),
+
+      ...FILM_SCENES.flatMap(([key, label, body], i) => {
+        const y = i * 460;
+        return [
+          promptNode(`p_${key}`, label, body + '\n\n' + FILM_STYLE, 1060, y + 40),
+          genNode(`g_${key}`, {
+            label,
+            mediaType: 'video',
+            aspectRatio: '9:16',
+            duration: '8s',
+            model: 'Omni Flash',
+          }, 1580, y),
+        ];
+      }),
+    ],
+    edges: [
+      tEdge('p_char', 'g_char'),
+    ].concat(FILM_SCENES.flatMap(([key]) => [
+      tEdge(`p_${key}`, `g_${key}`),
+      /* One design, ten scenes. Recognising the same face across the arc is
+         what makes the ending land — and a drifted face partway through would
+         otherwise be inherited by everything after it. */
+      iEdge('g_char', `g_${key}`),
+    ])),
+  },
+  {
+    id: 'tpl_miniature_car',
+    name: 'Miniature Car: Carve → Match Cut',
+    description: 'Name a car. A preset writes the sheet prompt, then four clips carve it and match-cut to the real one.',
+    useCase:
+      'The build-up-and-reveal format, where the whole video is a setup for the last two seconds. Change the first line of the first node to any car — "BMW M3 E46, 2003, Laguna Seca Blue" — and it renders a three-view reference sheet, then carves it, details it, paints it and reveals it full size. No photo to source, and the sheet comes out at the angles and lighting the carve clips need rather than whatever a stock shot happened to be. The Last Frame nodes matter more here than anywhere: the match cut only lands if the miniature the reveal inherits is exactly the one the previous clip finished, so the handoff sits on the canvas where you can check it before spending a generation. Editing note from the format — post the reveal first as the hook, then the build.',
+    category: 'Content',
+    difficulty: 'Advanced',
+    nodeCount: 14,
+    thumbnail: '🚗',
+    thumbnailImage: 'assets/templates/miniature-car.svg',
+    nodes: [
+      // The label carries the editing hint; the prompt text cannot, because
+      // everything in it is read by a model as an instruction to itself.
+      promptNode('p_car', 'Which Car', CAR_SUBJECT, 40, 300),
+      // The car_sheet preset turns those few words into the full brief — the
+      // angles, the lighting, and the instruction to name this generation's
+      // details rather than any car of the class.
+      askNode('ask_sheet', 'Write the Sheet Prompt', 480, 260, 'car_sheet'),
+      genNode('g_sheet', {
+        label: 'Car Reference Sheet',
+        mediaType: 'image',
+        aspectRatio: '16:9',
+        model: 'Nano Banana Pro',
+      }, 560, 220),
+
+      ...CAR_STAGES.flatMap(([key, label, body], i) => {
+        const x = 1100 + i * 620;
+        const out: Node[] = [
+          promptNode(`p_${key}`, label, body + '\n\n' + CAR_STYLE, x - 260, 780),
+          genNode(`g_${key}`, {
+            label,
+            mediaType: 'video',
+            aspectRatio: '9:16',
+            duration: '10s',
+            model: 'Omni Flash',
+          }, x, 200),
+        ];
+        if (i < CAR_STAGES.length - 1) {
+          out.push(frameNode(`f_${key}`, 'Ends on →', x + 340, 250));
+        }
+        return out;
+      }),
+    ],
+    edges: [
+      // Car name → preset writes the brief → Flow renders the sheet.
+      tEdge('p_car', 'ask_sheet'),
+      tEdge('ask_sheet', 'g_sheet'),
+    ].concat(CAR_STAGES.flatMap(([key], i) => {
+      const prev = CAR_STAGES[i - 1];
+      const out = [
+        tEdge(`p_${key}`, `g_${key}`),
+        /* Clip 1 works from the generated reference sheet. Every clip after it
+           starts from the previous clip's closing frame, which is what keeps
+           one continuous object across four generations — and is the entire
+           reason the match cut at the end reads as the same car. */
+        i === 0
+          ? iEdge('g_sheet', `g_${key}`)
+          : iEdge(`f_${prev[0]}`, `g_${key}`, 'image'),
+      ];
+      if (i < CAR_STAGES.length - 1) {
+        out.push(iEdge(`g_${key}`, `f_${key}`));
+      }
+      return out;
+    })),
+  },
+  {
+    id: 'tpl_ai_baby_firsts',
+    name: 'AI Toddler: 1 Character → 3 Firsts',
+    description: 'Generate one toddler, then film three first-time reactions with the same child.',
+    useCase:
+      'The reaction-video format that runs on Shorts, Reels and TikTok. The whole thing rests on it being the same child every clip — a face that changes between videos reads as three unrelated accounts, and matching one by hand across a posting schedule is the work. Node one generates the character, every clip references that sheet, so the child stays fixed and is fictional rather than anyone\'s actual kid. Clips are 8s at 9:16.',
+    category: 'Content',
+    difficulty: 'Medium',
+    nodeCount: 8,
+    thumbnail: '👶',
+    thumbnailImage: 'assets/templates/ai-baby.svg',
+    nodes: [
+      promptNode('p_kid', 'Character Design', BABY_CHARACTER, 40, 300),
+      genNode('g_kid', {
+        label: 'Character Sheet',
+        mediaType: 'image',
+        aspectRatio: '1:1',
+        model: 'Nano Banana Pro',
+      }, 560, 260),
+
+      ...BABY_CLIPS.flatMap(([key, label, body], i) => {
+        const y = i * 460;
+        return [
+          promptNode(`p_${key}`, label, body + '\n\n' + BABY_STYLE, 1060, y + 40),
+          genNode(`g_${key}`, {
+            label,
+            mediaType: 'video',
+            aspectRatio: '9:16',
+            duration: '8s',
+            model: 'Omni Flash',
+          }, 1580, y),
+        ];
+      }),
+    ],
+    edges: [
+      tEdge('p_kid', 'g_kid'),
+    ].concat(BABY_CLIPS.flatMap(([key]) => [
+      tEdge(`p_${key}`, `g_${key}`),
+      /* Every clip references the character sheet, never the clip before it.
+         Chaining would carry a drifted face into everything downstream, and on
+         this format a face that drifts is the format failing. */
+      iEdge('g_kid', `g_${key}`),
+    ])),
+  },
+  {
+    id: 'tpl_kids_episode',
+    name: 'Kids Cartoon: 1 Mascot → 4 Scenes',
+    description: 'Design a cartoon mascot once, then hold it across a four-scene episode.',
+    useCase:
+      'Preschool and educational channels, where the format rests on children recognising the same character every episode — and where holding one design across four scenes by hand is the part that actually takes the time. The first node draws the mascot; every scene after it references that single design rather than the scene before, so a wobble in one clip cannot propagate. Deliberately animated: photoreal footage of children is what gets a kids channel age-restricted or pulled.',
+    category: 'Content',
+    difficulty: 'Medium',
+    nodeCount: 10,
+    thumbnail: '🦊',
+    nodes: [
+      promptNode('p_char', 'Mascot Design', KIDS_CHARACTER, 40, 300),
+      genNode('g_char', {
+        label: 'Mascot Design Sheet',
+        mediaType: 'image',
+        aspectRatio: '1:1',
+        model: 'Nano Banana Pro',
+      }, 560, 260),
+
+      ...KIDS_SCENES.flatMap(([key, label, body], i) => {
+        const y = i * 460;
+        return [
+          promptNode(`p_${key}`, label, body + '\n\n' + KIDS_STYLE, 1060, y + 40),
+          genNode(`g_${key}`, {
+            label,
+            mediaType: 'video',
+            aspectRatio: '16:9',
+            // 8s reads as a scene rather than a clip, and four of them cut
+            // together into roughly half a minute of episode.
+            duration: '8s',
+            model: 'Omni Flash',
+          }, 1580, y),
+        ];
+      }),
+    ],
+    edges: [
+      tEdge('p_char', 'g_char'),
+    ].concat(KIDS_SCENES.flatMap(([key]) => [
+      tEdge(`p_${key}`, `g_${key}`),
+      /* Every scene references the design sheet, not the scene before it.
+         Chaining would carry a drifted face forward into everything after it;
+         this way one bad scene stays one bad scene, and retries on its own. */
+      iEdge('g_char', `g_${key}`),
+    ])),
   },
   {
     id: 'tpl_pool_fails',
@@ -725,3 +1337,6 @@ export const TEMPLATES: Template[] = [
 ];
 
 export const CATEGORIES = ['All', 'Starter', 'Marketing', 'Character', 'Fashion', 'Content', 'Image', 'Utility'] as const;
+
+/** @deprecated Use the loader; this is the bundled floor, not the whole set. */
+export const TEMPLATES = BUILTIN_TEMPLATES;

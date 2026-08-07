@@ -16,6 +16,12 @@ export interface ReferenceCandidates {
    * hand forward.
    */
   posterStill: string;
+  /**
+   * Whether the result was a clip. Decides what an empty endFrame means:
+   * "there was never going to be one" for an image, or "the capture failed"
+   * for a video.
+   */
+  isVideo?: boolean;
 }
 
 /**
@@ -26,10 +32,18 @@ export interface ReferenceCandidates {
  * character that never moves. The poster is always present, so preferring it
  * would mean the seek never mattered.
  *
- * The poster remains the fallback: image results have no end frame, and a
- * video whose frame could not be captured is better represented by its poster
- * than by nothing.
+ * For an image the poster IS the result, so it is the right answer.
+ *
+ * For a video it is the opening frame, and returning it when the seek failed
+ * is worse than returning nothing. It looks like a working handoff: the Last
+ * Frame node shows a plausible still, the next clip starts from it, and the
+ * whole chain quietly restarts from the beginning of the previous shot with
+ * nothing on screen to say so. Nothing is at least visible — the frame node
+ * says it captured nothing, and the node downstream refuses to run rather
+ * than generating without the reference it was wired for.
  */
-export function pickReferenceStill({ endFrame, posterStill }: ReferenceCandidates): string {
-  return endFrame || posterStill || '';
+export function pickReferenceStill({ endFrame, posterStill, isVideo }: ReferenceCandidates): string {
+  if (endFrame) return endFrame;
+  if (isVideo) return '';
+  return posterStill || '';
 }

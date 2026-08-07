@@ -699,7 +699,10 @@ async function handleMessage(msg: Message): Promise<any> {
     }
 
     case 'PING':
-      return { type: 'PONG', runLocked: isRunLocked() };
+      // `pong` as well as the legacy shape: the worker's readiness check looked
+      // for it, found it only on the chat scripts, and made every Flow node
+      // wait out a thirty-second loop that could never succeed.
+      return { type: 'PONG', pong: true, runLocked: isRunLocked() };
 
     // أ¢â€‌â‚¬أ¢â€‌â‚¬ Studio: Execute a single node on Google Flow أ¢â€‌â‚¬أ¢â€‌â‚¬
     case 'STUDIO_EXECUTE_NODE' as any:
@@ -1065,6 +1068,8 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
     return { type: 'STUDIO_NODE_ERROR', payload: { nodeId, error: 'Missing nodeId or config' } };
   }
 
+  const startedAt = Date.now();
+  const since = () => `+${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
   console.log(`[AutoFlow Studio] Executing node ${nodeId}`);
 
   // ── Resolve reference images (Image nodes + upstream Generate tiles) ──
@@ -1076,6 +1081,12 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
   } catch (e: any) {
     sendStudioError(nodeId, e.message || 'Failed to resolve reference images');
     return { success: false };
+  }
+  /* Reference images are fetched and registered before the queue starts, so a
+     slow one delays everything visible after it. Timed separately because
+     from the outside it is indistinguishable from Flow being slow. */
+  if (refImages.length) {
+    console.log(`[AutoFlow Studio] ${refImages.length} reference image(s) resolved ${since()}`);
   }
 
   const mediaType = config.mediaType || 'image';
@@ -1095,7 +1106,11 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
     }],
     settings: {
       mediaType,
-      creationType: 'ingredients',
+      /* Frames mode gives Flow a first and last still and lets it
+         interpolate between them. The engine has supported it all along —
+         attachFrameImages exists — but Studio pinned this to 'ingredients',
+         so the whole mode was unreachable from a node. */
+      creationType: config.creationType === 'frames' ? 'frames' : 'ingredients',
       model: isImage ? 'Omni Flash' : (config.model || 'Omni Flash'),
       orientation: (config.aspectRatio === '9:16' || config.aspectRatio === '3:4') ? 'portrait' : 'landscape',
       generations: 1,
@@ -1131,6 +1146,7 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
     updatedAt: Date.now(),
   };
 
+  console.log(`[AutoFlow Studio] Handing the node to the engine ${since()}`);
   // Start the queue (non-blocking)
   const result = await startQueue(queue);
   if (!result.success) {
@@ -1142,9 +1158,17 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
   // Return immediately -- do NOT block the message port.
   // Fire-and-forget poller sends updates via chrome.runtime.sendMessage.
   // Reference images stay registered until the node settles (retries re-attach them).
-  pollStudioCompletion(nodeId, queue).finally(() => {
-    releaseStudioImages(refImages.map(i => i.id));
-  });
+  /* The poller throws for a submit that never landed. Unhandled, that
+     rejection reached no one: the node was left with no result at all and sat
+     there until the runner's own 22-minute budget expired, replacing a
+     specific message with a generic timeout. */
+  pollStudioCompletion(nodeId, queue)
+    .catch((e: any) => {
+      sendStudioError(nodeId, e?.message || 'Tracking this generation failed');
+    })
+    .finally(() => {
+      releaseStudioImages(refImages.map(i => i.id));
+    });
   return { success: true };
 }
 
@@ -1229,7 +1253,11 @@ function blobToRawBase64(blob: Blob): Promise<string> {
 }
 
 async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
-  const { findAssetCards, isVisible } = await import('./selectors');
+  const { findAssetCards, isVisible, findRowForPrompt } = await import('./selectors');
+
+  // What this node actually asked Flow for. Used further down to tell our
+  // generation apart from everything else in the grid.
+  const promptText: string = queue?.prompts?.[0]?.text || queue?.prompts?.[0]?.prompt || '';
 
   sendStudioProgress(nodeId, 20);
 
@@ -1291,10 +1319,21 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
   console.log(`[AutoFlow Studio] Engine submitted. Tracking tiles: ${trackedTileIds.join(', ') || 'none'}`);
   sendStudioProgress(nodeId, 40);
 
-  // If engine already marked as done (unlikely in lite, but possible)
+  /* The engine saying "done" is not a result.
+   *
+   * This used to return here with nothing but a tile id. Everything a result
+   * carries — the preview, the playable clip, and the last frame a chained
+   * node continues from — is read off the tile ELEMENT inside
+   * sendStudioResult. Handing it no element produced a node that went green
+   * with "Preview unavailable" and an empty referenceUrl, so the Last Frame
+   * below it stayed blank and every node after that failed with "Nothing to
+   * continue from" while Flow was rendering the clip perfectly well.
+   *
+   * It cost nothing to skip the tracking loop here and everything downstream,
+   * so both paths go through it now. A tile that is already finished is
+   * detected on the first pass a second later. */
   if (prompt.status === 'done') {
-    await sendStudioResult(nodeId, trackedTileIds[0] || '');
-    return;
+    console.log('[AutoFlow Studio] Engine reports done — locating the tile to capture from');
   }
 
   // ── Phase 2: Track tile using Studio-specific state detection ──
@@ -1342,9 +1381,33 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
         fallbackTileId = generatingCard.getAttribute('data-tile-id') || null;
         console.log(`[AutoFlow Studio] Locked onto generating tile ${fallbackTileId || '(no id)'}`);
       } else if (wait > 45 && allCards.length > 0) {
-        // Nothing ever showed as generating — the render may have finished
-        // between submit and our first poll. Last resort: newest card.
-        trackedTile = allCards[0];
+        /* Nothing ever showed as generating. The render may genuinely have
+           finished between submit and our first poll — or the submit never
+           landed at all, and the grid is showing work from an earlier node or
+           an earlier day.
+
+           This used to take allCards[0], the newest card, without checking
+           whose it was. When a submit had silently failed that returned the
+           previous clip as this node's result, and the run went green with
+           the wrong video in it — invisible until someone watched the output.
+
+           Flow prints each row's prompt beside its media, so ask for ours by
+           name instead. No match means we never submitted, which is worth
+           saying out loud. */
+        const mine = findRowForPrompt(promptText);
+        if (mine) {
+          trackedTile = document.querySelector(`[data-tile-id="${mine.tileId}"]`) || mine.element;
+          fallbackTileId = mine.tileId;
+          console.log(
+            `[AutoFlow Studio] Matched this node's prompt to tile ${mine.tileId}` +
+            `${mine.model ? ` (${mine.model}${mine.duration ? `, ${mine.duration}` : ''})` : ''}`
+          );
+        } else if (wait > 75) {
+          throw new Error(
+            'This generation never appeared in Flow — no tile on the page carries this ' +
+            'node\'s prompt. The submit did not land; check the Flow tab and run again.'
+          );
+        }
       }
     }
 
@@ -1547,7 +1610,17 @@ async function sendStudioResult(
   const referenceUrl = pickReferenceStill({
     endFrame: videoEl ? await captureVideoEndFrame(videoEl) : '',
     posterStill: stills.reference,
+    // For a clip the poster is the OPENING frame, so it must not stand in for
+    // a failed capture — see pickReferenceStill.
+    isVideo: !!videoEl,
   });
+  if (videoEl && !referenceUrl) {
+    console.warn(
+      '[AutoFlow Studio] No end frame captured for this clip. Anything chained ' +
+      'from it will report a missing reference rather than silently restarting ' +
+      'from the opening frame.'
+    );
+  }
 
   try {
     chrome.runtime.sendMessage({
@@ -1585,6 +1658,53 @@ function captureVideoFrame(video: HTMLVideoElement): string {
 }
 
 /**
+ * Get enough of a clip loaded that it can be seeked and drawn.
+ *
+ * `preload="none"` means the browser has fetched nothing — not even metadata —
+ * so duration is NaN and drawing the element produces an empty canvas. Setting
+ * preload and calling load() starts the fetch; readyState >= 2 (HAVE_CURRENT_DATA)
+ * is the point at which drawImage returns pixels.
+ *
+ * The attribute is restored afterwards so Flow's own lazy-loading behaviour is
+ * unchanged for the user. Returns false rather than throwing: a clip that will
+ * not load is a reason to report no frame, never a reason to fail the run.
+ */
+async function ensureVideoLoaded(video: HTMLVideoElement): Promise<boolean> {
+  const ready = () => video.readyState >= 2 && isFinite(video.duration) && video.duration > 0;
+  if (ready()) return true;
+
+  const originalPreload = video.getAttribute('preload');
+  video.preload = 'auto';
+  try { video.load(); } catch { /* already loading */ }
+
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      for (const ev of ['loadeddata', 'canplay', 'loadedmetadata', 'error']) {
+        video.removeEventListener(ev, check);
+      }
+      resolve();
+    };
+    const check = () => { if (ready()) finish(); };
+    // 10s: a Flow clip is a few MB and this happens once per node. Longer than
+    // the seek timeout below because fetching bytes is the slow part.
+    const timer = setTimeout(finish, 10_000);
+    for (const ev of ['loadeddata', 'canplay', 'loadedmetadata', 'error']) {
+      video.addEventListener(ev, check);
+    }
+    check();
+  });
+
+  if (originalPreload === null) video.removeAttribute('preload');
+  else video.preload = originalPreload as any;
+
+  return ready();
+}
+
+/**
  * Capture the LAST frame of a page <video>.
  *
  * Chained workflows hand one clip's ending to the next clip as its opening
@@ -1595,6 +1715,18 @@ function captureVideoFrame(video: HTMLVideoElement): string {
  * the tile on the page looks untouched.
  */
 async function captureVideoEndFrame(video: HTMLVideoElement): Promise<string> {
+  /* Flow renders its tiles with preload="none", so the element usually holds
+     no data at all: duration is NaN, readyState is 0, and every seek below is
+     pointless. This used to bail straight to the poster — the clip's OPENING
+     frame — so a Last Frame node showed the start of the shot it was supposed
+     to end, and the chain silently restarted on every link.
+
+     Loading it is the whole fix. The element is left as we found it. */
+  if (!(await ensureVideoLoaded(video))) {
+    console.warn('[AutoFlow Studio] Clip would not load, so no end frame could be captured');
+    return '';
+  }
+
   const duration = video.duration;
   if (!isFinite(duration) || duration <= 0) return captureVideoFrame(video);
 

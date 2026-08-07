@@ -204,15 +204,27 @@ export function findModelSelectorTrigger(): Element | null {
     }
   }
 
-  // Fallback: match by known model name keywords in button text
-  const btns = document.querySelectorAll('button[aria-haspopup="menu"]');
-  for (const btn of btns) {
+  /* Fallback: a button whose text mentions a model family.
+
+     The composer chip must be excluded here. Both it and the real model
+     button carry aria-haspopup="menu" and both contain the model name, but
+     the chip's text is the whole summary — "Nano Banana 2 Lite" + a
+     crop_square glyph + "x1" — and clicking it toggles the settings panel
+     rather than opening the model list.
+
+     The old guard demanded BOTH a count and the word "video" or "image". In
+     image mode the ratio renders as a glyph, so the word is never there and
+     the chip sailed through. A count, a crop_ glyph or a written ratio is
+     each enough on its own; a model button carries none of them. */
+  const looksLikeSummaryChip = (text: string) =>
+    /x\s?\d/.test(text) || /crop_/.test(text) || /\d+:\d+/.test(text);
+
+  for (const btn of document.querySelectorAll('button[aria-haspopup="menu"]')) {
     const text = (btn.textContent || '').toLowerCase();
-    if ((text.includes('veo') || text.includes('imagen') || text.includes('banana') || text.includes('omni')) && isVisible(btn)) {
-      // Skip the settings trigger chip (contains media type + generation count like "Video x1")
-      if (/x\d/.test(text) && (text.includes('video') || text.includes('image'))) continue;
-      return btn;
-    }
+    const namesAFamily =
+      text.includes('veo') || text.includes('imagen') ||
+      text.includes('banana') || text.includes('omni');
+    if (namesAFamily && isVisible(btn) && !looksLikeSummaryChip(text)) return btn;
   }
   return null;
 }

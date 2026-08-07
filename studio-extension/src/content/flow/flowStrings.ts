@@ -130,6 +130,45 @@ export const FLOW_STRINGS = {
     'إعادة المحاولة', // AR
   ],
 
+  /**
+   * "Not enough Google Flow credits to perform this action."
+   *
+   * Matched on the word for credits alone rather than the whole sentence.
+   * The full string is long and its wording changes; the noun is the stable
+   * part, and it is paired with an upgrade button before we act on it, so a
+   * loose match here cannot fire on its own.
+   */
+  credits: [
+    'credits',         // EN
+    'crédits',         // FR
+    'créditos',        // ES/PT
+    'guthaben',        // DE
+    'crediti',         // IT
+    'tegoed',          // NL
+    'kredi',           // TR
+    'кредит',          // RU
+    'クレジット',      // JA
+    '크레딧',          // KO
+    '积分',            // ZH
+    'رصيد',           // AR
+  ],
+
+  /** "Upgrade" — the button Flow offers alongside a credit warning */
+  upgrade: [
+    'upgrade',         // EN
+    'mettre à niveau', // FR
+    'mejorar',         // ES
+    'fazer upgrade',   // PT
+    'upgraden',        // DE/NL
+    'esegui l\'upgrade', // IT
+    'yükselt',         // TR
+    'обновить',        // RU
+    'アップグレード',  // JA
+    '업그레이드',      // KO
+    '升级',            // ZH
+    'ترقية',          // AR
+  ],
+
   /** "Grid" view mode tab */
   grid: [
     'grid',            // EN

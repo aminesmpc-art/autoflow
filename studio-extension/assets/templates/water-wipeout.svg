@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 128" width="320" height="128" role="img" aria-label="Floating obstacle course over water">
+  <!-- The Water Wipeouts card has referenced this file since the template was
+       written; it was never created, so the card quietly fell back to its
+       emoji. noErrorOnMissing on the copy plugin hid it from the build. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b6f9e"/>
+      <stop offset="1" stop-color="#4aa3c7"/>
+    </linearGradient>
+    <linearGradient id="pool" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2ea3c4"/>
+      <stop offset="1" stop-color="#12617e"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="320" height="128" fill="url(#sky)"/>
+  <circle cx="272" cy="24" r="18" fill="#ffd66b" opacity="0.55"/>
+
+  <!-- Poolside -->
+  <rect x="0" y="52" width="320" height="12" fill="#cfd6d9"/>
+  <rect x="0" y="62" width="320" height="66" fill="url(#pool)"/>
+
+  <!-- Floating obstacles receding across the pool -->
+  <g>
+    <rect x="24" y="86" width="54" height="13" rx="6" fill="#f4622f"/>
+    <rect x="24" y="97" width="54" height="5" rx="2.5" fill="#c34a20"/>
+    <rect x="112" y="78" width="46" height="11" rx="5.5" fill="#f7c02e"/>
+    <rect x="112" y="87" width="46" height="4" rx="2" fill="#c9930f"/>
+    <rect x="192" y="72" width="40" height="10" rx="5" fill="#3fbf6a"/>
+    <rect x="192" y="80" width="40" height="4" rx="2" fill="#2b8d4c"/>
+    <rect x="258" y="68" width="34" height="9" rx="4.5" fill="#f4622f"/>
+  </g>
+
+  <!-- Mid-wipeout: a figure leaving the pad, already past saving it -->
+  <g fill="#f0c9a8">
+    <circle cx="150" cy="44" r="9"/>
+    <path d="M143 54h15l4 22h-23z"/>
+    <path d="M146 76l-9 17 6 3 10-16z"/>
+    <path d="M158 76l10 15-6 4-10-15z"/>
+    <path d="M141 58l-19 6 2 6 20-5z" />
+    <path d="M160 57l18-9 3 6-18 10z"/>
+  </g>
+
+  <!-- Splash below -->
+  <g fill="#eafaff" opacity="0.9">
+    <ellipse cx="150" cy="104" rx="30" ry="8"/>
+    <path d="M124 100l-8-14 7 3 4 10z"/>
+    <path d="M176 100l9-15-7 3-5 11z"/>
+    <path d="M150 96l-3-18 6 0-1 18z"/>
+  </g>
+  <g fill="#ffffff" opacity="0.75">
+    <circle cx="118" cy="80" r="3"/>
+    <circle cx="184" cy="76" r="2.5"/>
+    <circle cx="163" cy="70" r="2"/>
+  </g>
+
+  <!-- Surface chop -->
+  <g stroke="#bff0ff" stroke-opacity="0.3" stroke-width="2" fill="none">
+    <path d="M0 116q18-7 36 0t36 0"/>
+    <path d="M212 120q18-7 36 0t36 0"/>
+  </g>
+</svg>

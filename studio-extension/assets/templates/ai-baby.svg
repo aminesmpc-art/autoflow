@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 128" width="320" height="128" role="img" aria-label="Fish spa tank">
+  <!-- Card artwork: read at 128px tall behind a dark scrim, so it is built
+       from large shapes and holds up small. Self-contained — the extension's
+       CSP blocks any external reference. -->
+  <defs>
+    <linearGradient id="mall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2320"/>
+      <stop offset="1" stop-color="#14100e"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e6f8c"/>
+      <stop offset="0.55" stop-color="#12506b"/>
+      <stop offset="1" stop-color="#0a3348"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7dd3fc" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#7dd3fc" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#7dd3fc" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="320" height="128" fill="url(#mall)"/>
+
+  <!-- Mall bokeh, well out of focus behind the tank -->
+  <g opacity="0.5">
+    <circle cx="42" cy="26" r="13" fill="#f6c177" opacity="0.28"/>
+    <circle cx="96" cy="16" r="9" fill="#f6c177" opacity="0.2"/>
+    <circle cx="238" cy="22" r="15" fill="#e8a13a" opacity="0.22"/>
+    <circle cx="288" cy="34" r="10" fill="#f6c177" opacity="0.18"/>
+    <rect x="150" y="8" width="46" height="30" rx="4" fill="#3a2f28" opacity="0.7"/>
+  </g>
+
+  <!-- Tank rim -->
+  <rect x="0" y="56" width="320" height="10" fill="#d9d5cf"/>
+  <rect x="0" y="64" width="320" height="4" fill="#9c9891"/>
+
+  <!-- Water -->
+  <rect x="0" y="68" width="320" height="60" fill="url(#water)"/>
+  <rect x="0" y="68" width="320" height="3" fill="url(#glow)"/>
+
+  <!-- Two small legs entering the water: the whole format in one shape -->
+  <g fill="#f0c9a8">
+    <path d="M136 40c7 0 11 4 11 10v34c0 5-4 8-9 8s-9-3-9-8V50c0-6 3-10 7-10z"/>
+    <path d="M166 42c7 0 11 4 11 10v32c0 5-4 8-9 8s-9-3-9-8V52c0-6 3-10 7-10z"/>
+  </g>
+  <g fill="#e0b492">
+    <ellipse cx="138" cy="94" rx="10" ry="6"/>
+    <ellipse cx="168" cy="92" rx="10" ry="6"/>
+  </g>
+
+  <!-- Ripples where they meet the surface -->
+  <g fill="none" stroke="#a5e8ff" stroke-opacity="0.5">
+    <ellipse cx="138" cy="72" rx="18" ry="4"/>
+    <ellipse cx="168" cy="72" rx="16" ry="4"/>
+    <ellipse cx="152" cy="74" rx="34" ry="7" stroke-opacity="0.22"/>
+  </g>
+
+  <!-- Fish, gathering toward the feet -->
+  <g fill="#0d2b3a" opacity="0.85">
+    <ellipse cx="102" cy="88" rx="9" ry="3"/>
+    <ellipse cx="120" cy="102" rx="8" ry="2.6"/>
+    <ellipse cx="150" cy="110" rx="10" ry="3"/>
+    <ellipse cx="186" cy="96" rx="9" ry="3"/>
+    <ellipse cx="206" cy="110" rx="8" ry="2.6"/>
+    <ellipse cx="234" cy="88" rx="10" ry="3"/>
+    <ellipse cx="262" cy="104" rx="8" ry="2.6"/>
+    <ellipse cx="76" cy="108" rx="8" ry="2.6"/>
+    <ellipse cx="288" cy="92" rx="7" ry="2.4"/>
+  </g>
+
+  <!-- Caustics -->
+  <g stroke="#bff0ff" stroke-opacity="0.16" stroke-width="2" fill="none">
+    <path d="M12 84q16-8 32 0t32 0"/>
+    <path d="M196 118q16-8 32 0t32 0"/>
+  </g>
+</svg>

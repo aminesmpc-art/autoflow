@@ -14,8 +14,20 @@ import {
 import { trackUsage } from '../../shared/api';
 import { bridge, type NodeExecutionConfig, type NodeResult } from './bridge';
 import { useStudioStore } from '../store';
+import { composeAskPrompt } from '../presets';
+import { isFramesMode } from '../templates/validate';
 
 export type RunnerState = 'idle' | 'running' | 'paused' | 'stopped' | 'done' | 'error';
+
+/**
+ * Platforms driven through a chat window rather than Flow's composer.
+ *
+ * A list rather than a chain of equality checks, which is what this was. Adding
+ * Gemini meant remembering to widen a `chatgpt/else` ternary, and the one that
+ * was missed sent every Gemini node to Flow — silently, because Flow accepts
+ * any prompt. Grok would have been the same bug a second time.
+ */
+export const CHAT_PLATFORMS = ['chatgpt', 'gemini', 'grok'];
 
 /** One extra attempt. Enough to ride out a blip, few enough that a node which
     is genuinely broken fails while the user is still watching. */
@@ -47,6 +59,27 @@ export function isTransientFailure(message: string): boolean {
     /failed to fetch/i,
     /network|econn|timed? out fetching/i,
     /http 5\d\d/i,
+  ].some((p) => p.test(m));
+}
+
+/**
+ * Whether a failure makes every remaining node pointless.
+ *
+ * Distinct from isTransientFailure, which asks "try this node again?". This
+ * asks "is there any reason to keep going at all?" — and for a quota that is
+ * gone, or an account that is not signed in, the honest answer is no. Every
+ * later node would fail identically, each after its own multi-minute wait.
+ *
+ * Deliberately short. Anything not listed keeps the old behaviour of failing
+ * one node and letting independent branches continue, because stopping a run
+ * that could have finished is its own kind of expensive.
+ */
+export function isRunFatal(message: string): boolean {
+  const m = message || '';
+  return [
+    /out of credits/i,
+    /not enough .*credits/i,
+    /sign(ed)? in|not signed in|logged out/i,
   ].some((p) => p.test(m));
 }
 
@@ -363,6 +396,29 @@ export class WorkflowRunner {
             trackUsage(1, 'text', 'failed').catch(() => { /* non-blocking */ });
           }
 
+          /* Some failures are the workflow's, and the run should carry on to
+             the branches that do not depend on them. Running out of credits is
+             not one of those: the next node has exactly as many credits as
+             this one, so continuing means watching every remaining node fail
+             the same way — and a video node that never starts still holds the
+             runner for its full 22-minute budget first. On a six-node overnight
+             queue that is over an hour of waiting to be told the same thing
+             six times. Stop, and say why. */
+          if (!succeeded && isRunFatal(lastError)) {
+            console.error(`[Runner] Stopping the run: ${lastError}`);
+            this.abortRequested = true;
+            report({ nodeLabel: '', progress: 0, lastError });
+            for (const later of generateSteps) {
+              if (later.nodeId === step.nodeId || this.nodeResults.has(later.nodeId)) continue;
+              if (this.failedNodes.has(later.nodeId)) continue;
+              store.updateNodeData(later.nodeId, {
+                status: 'idle',
+                progress: 0,
+                errorMessage: 'Not run — the run stopped before reaching this node',
+              });
+            }
+          }
+
           // Don't abort the whole workflow — move on to the next node
           completedCount++;
           store.setRunProgress(completedCount, generateSteps.length);
@@ -403,7 +459,18 @@ export class WorkflowRunner {
     // into image_ref — previously only one survived.
     const referenceImageIds: string[] = [];
     const referenceImageData: string[] = [];
-    for (const srcId of inputs.get('image_ref') || []) {
+
+    /* Frames mode hands Flow a first and last still and lets it interpolate.
+       The order is the whole meaning — swap them and the clip runs backwards —
+       so it comes from two named ports rather than the order edges happen to
+       sit in. Edge order is invisible on the canvas and changes when a
+       connection is remade, which is not something to hang a video on. */
+    const isFrames = isFramesMode(nodeData);
+    const orderedSources = isFrames
+      ? [...(inputs.get('frame_start') || []), ...(inputs.get('frame_end') || [])]
+      : (inputs.get('image_ref') || []);
+
+    for (const srcId of orderedSources) {
       const imgResult = this.nodeResults.get(srcId);
       if (!imgResult) continue;
       if (imgResult.referenceUrl && imgResult.referenceUrl.startsWith('data:')) {
@@ -421,6 +488,44 @@ export class WorkflowRunner {
       }
     }
 
+    /* A broken link in a chain must not generate anyway.
+       The styrofoam template depends on every clip starting from the previous
+       one's last frame. If a capture came back empty, this node would generate
+       regardless — same prompt, no continuity — and the only symptom would be
+       a clip that quietly restarts the sculpture halfway through a six-clip
+       sequence. Burn nothing, and name the link that broke.
+
+       Scoped to frame and generate sources on purpose: an image node left
+       empty is the user's choice — several templates ship with blank slots and
+       prompts written to work without one — whereas a frame or a clip that
+       produced nothing is a failure that already happened upstream. */
+    if (!referenceImageIds.length && !referenceImageData.length) {
+      const allNodes = useStudioStore.getState().nodes;
+      const broken = orderedSources
+        .map((id) => allNodes.find((n) => n.id === id))
+        .filter((n) => n && (n.type === 'frame' || n.type === 'generate'));
+      if (broken.length) {
+        const names = broken.map((n) => (n!.data as any)?.label || n!.id);
+        throw new Error(
+          `Nothing to continue from — ${names.join(', ')} produced no usable frame`
+        );
+      }
+
+      /* Frames mode without frames is not a mode, it is an ordinary
+         generation wearing its name. Flow would accept the prompt and return
+         a plausible clip that starts and ends nowhere near the stills the
+         user wired up, and the only symptom would be a clip that looks
+         unrelated. This is how the mode failed on its first outing: the node
+         drew no S or E port at all, every image landed on the old reference
+         port, and the run submitted with nothing attached. */
+      if (isFrames) {
+        throw new Error(
+          'Frames mode has no images — wire one into S (start) and one into E (end), ' +
+          'or switch FROM back to Ingredients'
+        );
+      }
+    }
+
     // An empty prompt still submits and burns a generation on Flow, so fail
     // here with something actionable instead of at the far end of the bridge.
     if (!prompt.trim()) {
@@ -431,13 +536,32 @@ export class WorkflowRunner {
       );
     }
 
+    /* Ask AI presets wrap the user's subject in the craft.
+       Composed here rather than in the node because the variant depends on
+       whether a reference image actually resolved — "character sheet from a
+       photo" and "from a description" are different briefs, and only this
+       point knows which one applies. */
+    const askPrompt = nodeData.mediaType === 'text'
+      ? composeAskPrompt(
+          nodeData.preset,
+          prompt,
+          referenceImageData.length > 0 || referenceImageIds.length > 0
+        )
+      : prompt;
+
     const config: NodeExecutionConfig = {
-      prompt,
-      platform: nodeData.platform === 'chatgpt' ? 'chatgpt' : 'flow',
+      prompt: askPrompt,
+      // Anything not a known chat platform runs on Flow. Listing them beats
+      // a chatgpt/else ternary, which silently sent Gemini nodes to Flow.
+      platform: CHAT_PLATFORMS.includes(nodeData.platform)
+        ? nodeData.platform
+        : 'flow',
       model: nodeData.model || (nodeData.mediaType === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),
       mediaType: nodeData.mediaType || 'image',
       aspectRatio: nodeData.aspectRatio || '9:16',
       duration: nodeData.duration || '6s',
+      // Grok reads this; Flow ignores it.
+      resolution: nodeData.resolution || undefined,
       creationType: nodeData.creationType || 'ingredients',
       referenceImageIds: referenceImageIds.length > 0 ? referenceImageIds : undefined,
       referenceImageData: referenceImageData.length > 0 ? referenceImageData : undefined,
@@ -459,8 +583,12 @@ export class WorkflowRunner {
     // Asking ChatGPT for text is a chat round-trip, so it fails fast rather
     // than holding a workflow open for minutes.
     const isTextNode = config.mediaType === 'text';
-    const timeoutMs = isTextNode ? 2 * 60 * 1000 : isVideoNode ? 22 * 60 * 1000 : 8 * 60 * 1000;
-    const timeoutLabel = isTextNode ? '2 minutes' : isVideoNode ? '22 minutes' : '8 minutes';
+    /* 3 minutes, not 2: a ChatGPT node can now spend up to 45s uploading
+       reference images before it even asks the question, and the old budget
+       left the reply only 30s of headroom — the outer wait would have expired
+       first and blamed the model for a slow upload. */
+    const timeoutMs = isTextNode ? 3 * 60 * 1000 : isVideoNode ? 22 * 60 * 1000 : 8 * 60 * 1000;
+    const timeoutLabel = isTextNode ? '3 minutes' : isVideoNode ? '22 minutes' : '8 minutes';
 
     // Send to Flow via bridge
     return new Promise<NodeResult>((resolve, reject) => {

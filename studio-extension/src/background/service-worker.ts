@@ -9,7 +9,7 @@
    surface with no purpose here and every reason to rot.
    ============================================================ */
 
-type Platform = 'flow' | 'chatgpt' | 'grok';
+type Platform = 'flow' | 'chatgpt' | 'gemini' | 'grok';
 
 /** The Studio window's long-lived port. Null whenever Studio is closed. */
 let studioPort: chrome.runtime.Port | null = null;
@@ -95,6 +95,12 @@ const PLATFORMS: Record<Platform, { match: string; open: string; script: string;
     script: 'chatgpt-content.js',
     name: 'ChatGPT',
   },
+  gemini: {
+    match: 'https://gemini.google.com/*',
+    open: 'https://gemini.google.com/app',
+    script: 'gemini-content.js',
+    name: 'Gemini',
+  },
   grok: {
     match: 'https://grok.com/*',
     open: 'https://grok.com/imagine',
@@ -102,6 +108,37 @@ const PLATFORMS: Record<Platform, { match: string; open: string; script: string;
     name: 'Grok',
   },
 };
+
+/**
+ * What the panel can say about a platform.
+ *
+ * "blocked" exists because the honest answer to a tab we can see and cannot
+ * touch is not "not open". A Grok window sat open on screen while the panel
+ * read "not open", which points the user at opening another tab — and the
+ * second one reads the same way, because the problem was never the tab.
+ *
+ * chrome.tabs.query({url}) returns nothing for a host the extension has no
+ * access to, which is indistinguishable from no such tab. Asking the
+ * permissions API separates the two.
+ */
+type PlatformState = 'open' | 'closed' | 'blocked';
+
+async function platformState(match: string): Promise<PlatformState> {
+  let granted = true;
+  try {
+    granted = await chrome.permissions.contains({ origins: [match] });
+  } catch {
+    /* Older Chrome, or a pattern it will not evaluate — assume access and let
+       the query below be the answer. */
+  }
+
+  try {
+    if ((await chrome.tabs.query({ url: match })).length > 0) return 'open';
+  } catch {
+    return granted ? 'closed' : 'blocked';
+  }
+  return granted ? 'closed' : 'blocked';
+}
 
 /** Reuse the user's existing tab if there is one; open it if not. */
 async function ensurePlatformTab(platform: Platform): Promise<number | null> {
@@ -119,12 +156,64 @@ async function ensurePlatformTab(platform: Platform): Promise<number | null> {
     }
 
     const tab = await chrome.tabs.create({ url, active: false });
-    // Give the page a moment to mount before anything is sent to it.
-    await new Promise((r) => setTimeout(r, 3000));
     return tab.id ?? null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Wait until a tab can actually take the job.
+ *
+ * This used to be `setTimeout(3000)` after opening the tab. Three seconds is
+ * not a cold ChatGPT load — it has to authenticate, hydrate and mount its
+ * composer — so the job arrived at a page that was still assembling itself.
+ * The symptom was specific and misleading: the prompt appeared in the composer
+ * and was never sent, because the send button existed before React had
+ * attached a handler to it. The node then waited out its full reply timeout
+ * for an answer to a question nobody had asked, and every node downstream
+ * failed with it.
+ *
+ * Two conditions, both evidence rather than elapsed time: the tab reports
+ * finished loading, and the content script answers. The script answering is
+ * the one that matters — it is the thing the message is actually for.
+ *
+ * Returns false if the script never answers, so the caller can inject it
+ * rather than send into the void.
+ */
+async function waitForTabReady(tabId: number, timeoutMs = 30_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.status === 'complete') break;
+    } catch {
+      return false; // tab closed under us
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+
+  while (Date.now() < deadline) {
+    try {
+      /* Anything that comes back without throwing means a content script is
+         listening, which is the whole question. Do NOT inspect the shape of
+         the reply: the chat scripts answer { pong: true } and the Flow script
+         answers { type: 'PONG', runLocked }, so a check for `.pong` was false
+         for Flow forever. Every Flow node then sat through this entire loop,
+         got its content script injected a second time, and waited again —
+         about forty seconds of nothing before each node.
+
+         Chrome rejects with "Receiving end does not exist" when nobody is
+         there, so not throwing is the signal. */
+      await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+      return true;
+    } catch {
+      /* not listening yet */
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return false;
 }
 
 function replyToStudio(msg: unknown): void {
@@ -170,6 +259,32 @@ chrome.runtime.onConnect.addListener((port) => {
     // Only arm the keepalive for work that actually takes minutes.
     if (msg.type === 'STUDIO_EXECUTE_NODE') {
       startKeepalive(tabId).catch(() => { /* non-critical */ });
+    }
+
+    /* Applies to a tab we found as well as one we opened: a ChatGPT window the
+       user left open on a cold profile is mid-reload just as often. Returns
+       immediately when the script is already listening, so a warm tab pays
+       nothing for this. */
+    /* Only a generation is worth waiting on. Pause and stop are the controls
+       someone reaches for when a run is misbehaving, and making those sit
+       through a readiness wait is the opposite of what they are for. */
+    const readyAt = Date.now();
+    const ready = await waitForTabReady(
+      tabId,
+      msg.type === 'STUDIO_EXECUTE_NODE' ? 30_000 : 3_000
+    );
+    /* Printed whenever it was not instant. A readiness check that silently
+       costs seconds is exactly how forty of them went unnoticed: every log
+       line said what happened, none said when. */
+    const waited = Date.now() - readyAt;
+    if (waited > 400) {
+      console.log(`[Studio] Waited ${(waited / 1000).toFixed(1)}s for the ${cfg.name} tab (ready=${ready})`);
+    }
+    if (!ready) {
+      try {
+        await chrome.scripting.executeScript({ target: { tabId }, files: [cfg.script] });
+        await waitForTabReady(tabId, 10_000);
+      } catch { /* the send below reports it properly */ }
     }
 
     try {
@@ -444,13 +559,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'PANEL_PLATFORM_STATUS') {
     // Answering needs a query, so keep the channel open.
     (async () => {
-      const status: Record<string, boolean> = {};
+      const status: Record<string, PlatformState> = {};
       for (const [key, cfg] of Object.entries(PLATFORMS)) {
-        try {
-          status[key] = (await chrome.tabs.query({ url: cfg.match })).length > 0;
-        } catch {
-          status[key] = false;
-        }
+        status[key] = await platformState(cfg.match);
       }
       sendResponse(status);
     })();

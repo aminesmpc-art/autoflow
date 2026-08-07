@@ -131,6 +131,9 @@
 }
 
 .studio-gallery__card {
+  /* Positioning context for the PRO badge, which would otherwise anchor to
+     whatever ancestor happened to be positioned — the viewport, in practice. */
+  position: relative;
   background: #141416;
   border: 1px solid #1e1e22;
   border-radius: 14px;
@@ -483,6 +486,9 @@
   border-color: #f97316;
   color: #f97316;
 }
+/* Grows with the name instead of cutting it off. "Miniature Car: Carve →
+   Match Cut" rendered as "Miniature Car: Carve → Mat…" with no way to read
+   the rest — and it is the one label that says which workflow you are in. */
 .studio-topbar__name {
   background: transparent;
   border: none;
@@ -491,7 +497,12 @@
   font-weight: 600;
   outline: none;
   min-width: 200px;
+  width: clamp(200px, 34vw, 520px);
+  text-overflow: ellipsis;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s;
 }
+.studio-topbar__name:hover { border-bottom-color: #2e2e35; }
 .studio-topbar__name:focus {
   border-bottom: 1px solid #f97316;
 }
@@ -555,7 +566,8 @@
   top: 64px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
+  width: 168px;
   z-index: 10;
   background: rgba(20, 20, 22, 0.9);
   backdrop-filter: blur(8px);
@@ -563,44 +575,55 @@
   border-radius: 12px;
   padding: 8px;
 }
+/* Labelled, not a column of emoji.
+   These were 40px squares whose labels appeared on hover — so the rail read
+   as five unnamed icons, and finding "Add Last Frame" meant hovering each one
+   in turn. The canvas has room; 168px of it costs nothing and the rail stops
+   being a guessing game. */
 .studio-toolbar__btn {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
   background: transparent;
   border: none;
   border-radius: 8px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
+  justify-content: flex-start;
+  gap: 10px;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
 }
 .studio-toolbar__btn:hover {
   background: #1e1e22;
 }
-
-/* Slide-out label so icon-only buttons are identifiable without guessing */
-.studio-toolbar__btn-label {
-  position: absolute;
-  left: calc(100% + 10px);
-  top: 50%;
-  transform: translateY(-50%);
-  padding: 5px 10px;
-  background: #1e1e22;
-  border: 1px solid #2a2a2e;
-  border-radius: 6px;
-  color: #e5e5e7;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s;
-  z-index: 20;
+.studio-toolbar__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
-.studio-toolbar__btn:hover .studio-toolbar__btn-label,
-.studio-toolbar__btn:focus-visible .studio-toolbar__btn-label { opacity: 1; }
+.studio-toolbar__btn:disabled:hover { background: transparent; }
+
+.studio-toolbar__btn-icon {
+  flex: 0 0 18px;
+  font-size: 15px;
+  line-height: 1;
+  text-align: center;
+}
+
+.studio-toolbar__btn-label {
+  flex: 1 1 auto;
+  color: #b8b8c0;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.studio-toolbar__btn:hover .studio-toolbar__btn-label { color: #e5e5e7; }
+
 .studio-toolbar__btn--primary {
   background: rgba(249, 115, 22, 0.15);
 }
@@ -641,11 +664,23 @@
 .studio-toolbar__btn-icon {
   font-size: 18px;
 }
+/* Full width now the rail is a list rather than a column of squares. */
 .studio-toolbar__divider {
-  width: 24px;
+  width: 100%;
   height: 1px;
   background: #2a2a2e;
-  margin: 4px auto;
+  margin: 6px 0;
+}
+
+/* Section heading, so the rail reads as "things you can add" rather than an
+   undifferentiated stack. */
+.studio-toolbar__heading {
+  padding: 2px 10px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5f5f68;
 }
 
 
@@ -960,14 +995,14 @@
 /* Disabled nodes are visibly inert */
 .sn--disabled { opacity: 0.45; filter: saturate(0.4); }
 
-/* ── Enable/disable toggle ── */
+/* ── Enable/disable toggle ──
+   Sits in the title row beside the name. It used to be pinned inside the card
+   at top-right, where it covered the result once there was one. */
 .sn-toggle {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 3;
-  width: 34px;
-  height: 19px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 30px;
+  height: 17px;
   padding: 2px;
   background: #3a3a42;
   border: none;
@@ -975,6 +1010,23 @@
   cursor: pointer;
   transition: background 0.2s;
 }
+.sn-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.45);
+}
+/* Says why the card is greyed out. Opacity alone reads as "loading". */
+.sn-label__skip {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 5px;
+  background: #2a2a30;
+  border-radius: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: #8b8b95;
+}
+.sn-label__skip + .sn-toggle { margin-left: 6px; }
 .sn-toggle--on { background: #22c55e; }
 .sn-toggle__knob {
   display: block;
@@ -984,7 +1036,10 @@
   border-radius: 50%;
   transition: transform 0.2s;
 }
-.sn-toggle--on .sn-toggle__knob { transform: translateX(15px); }
+/* The title row sits outside the card, so it keeps full contrast while the
+   card itself greys out — which matters, because it now carries the switch
+   that turns the node back on. */
+.sn-toggle--on .sn-toggle__knob { transform: translateX(13px); }
 
 /* ── Media area — takes the shape of the chosen aspect ratio ── */
 .sn-media {
@@ -1066,6 +1121,23 @@
   word-break: break-word;
 }
 .sn-media__state-icon { font-size: 26px; opacity: 0.5; }
+
+/* An outline of the shape this node will produce, shown while it is empty.
+   The media box stays compact until there is a result, so the ratio buttons
+   were the only clue to the output shape — and three pills reading 9:16,
+   16:9 and 1:1 all look alike. */
+.sn-media__ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 68px;
+  border: 1.5px dashed #2f2f38;
+  border-radius: 9px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.022), transparent 62%);
+}
+.sn-media__ghost .sn-media__state-icon { font-size: 20px; opacity: 0.38; }
+.sn-media__state--idle { gap: 9px; }
+.sn--running .sn-media__ghost { border-color: #3d2f52; }
 .sn-media__state--running { color: #c084fc; }
 /* The written prompt a ChatGPT text node produced. Scrolls rather than
    stretching the node — replies run to a few hundred words. */
@@ -1162,11 +1234,62 @@
    this one a real basis and let it take a full row when it needs to. */
 .sn-bar__sel--grow { flex: 1 1 130px; min-width: 118px; width: 100%; }
 
+/* ── The generate node's settings, on a grid ──
+   Two equal columns, so a control either takes half the width or all of it
+   and nothing ever ends a line alone with dead space beside it. As a wrapping
+   flex row the pairings changed with every option that appeared or vanished.
+
+   Scoped to --grid: ImageNode and PromptNode use the plain .sn-bar row. */
+.sn-bar--grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+  gap: 7px 6px;
+  padding: 9px 8px 10px;
+}
+.sn-bar--grid .sn-field--wide { grid-column: 1 / -1; }
+
+/* Segmented pills. For three-to-five short values a dropdown hides the
+   current one behind a click, and these are the settings you want to read at
+   a glance — the node literally takes the shape of the ratio. */
+.sn-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: #17171c;
+  border: 1px solid #2c2c34;
+  border-radius: 7px;
+}
+.sn-seg__btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 2px;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: #7a7a85;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.sn-seg__btn:hover { background: #22222a; color: #b4b4bd; }
+.sn-seg__btn--on {
+  background: #2e2e38;
+  color: #f4f4f5;
+  box-shadow: inset 0 0 0 1px #3f3f4a;
+}
+.sn-seg__btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.35);
+}
+
 /* Labelled control: a bare row of dropdowns gave no clue what each one set */
 .sn-field {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   flex: 0 0 auto;
   min-width: 0;
 }
@@ -1207,6 +1330,9 @@
   border-radius: 50%;
 }
 .sn-platform__dot--chatgpt { background: #10a37f; }
+.sn-platform__dot--gemini { background: #4285f4; }
+/* xAI's mark is monochrome; a light dot is what reads on this card. */
+.sn-platform__dot--grok { background: #e4e4e7; }
 
 /* Hint text in the settings strip (e.g. ChatGPT's prompt-only mode) */
 .sn-bar__hint {
@@ -1618,4 +1744,181 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   color: #7b7b85;
   border-top: 1px solid #1e1e24;
   text-align: center;
+}
+
+/* ── Pro templates ──
+   The card stays legible and clickable: it arrives without its node graph, so
+   clicking opens checkout rather than an empty canvas. Dimming it entirely
+   would read as broken. */
+.studio-gallery__card--locked .studio-gallery__card-thumb { opacity: 0.55; }
+.studio-gallery__card--locked:hover .studio-gallery__card-thumb { opacity: 0.8; }
+.studio-gallery__lock {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #1a1206;
+  background: linear-gradient(135deg, #fbbf24, #f97316);
+  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.35);
+}
+
+/* ── Run bar ──────────────────────────────────────────────────
+   Sits above the zoom dock, centred, and never moves. The old arrangement
+   put progress in the top centre and Pause/Stop on the left rail, so
+   following a run meant watching two corners at once. */
+.studio-runbar {
+  position: absolute;
+  bottom: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(880px, calc(100vw - 48px));
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(18, 18, 21, 0.94);
+  backdrop-filter: blur(12px);
+  border: 1px solid #2a2a30;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+  font-size: 13px;
+  color: #e5e5e7;
+}
+/* Failures with nothing running: quieter, but still there to click. */
+.studio-runbar--idle { border-color: #3a2422; }
+
+/* Says "working" without a number changing — a video node can sit on the
+   same percentage for four minutes and look hung. */
+.studio-runbar__pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #f97316;
+  box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.55);
+  animation: studio-runbar-pulse 1.8s ease-out infinite;
+  flex: 0 0 auto;
+}
+.studio-runbar__pulse.is-paused { background: #9a9aa2; animation: none; }
+@keyframes studio-runbar-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.55); }
+  70%  { box-shadow: 0 0 0 9px rgba(249, 115, 22, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-runbar__pulse { animation: none; }
+}
+
+/* The node name is the button — clicking flies the canvas to it. */
+/* Was truncating to "Car Reference …" because the bar let the progress track
+   take the slack. The node name is the thing you are reading; the track is
+   the thing that can be narrow. */
+.studio-runbar__node {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  color: #e5e5e7;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 1px dashed transparent;
+}
+.studio-runbar__node:hover:not(:disabled) { border-bottom-color: #6b6b73; }
+.studio-runbar__node:disabled { cursor: default; color: #9a9aa2; }
+
+.studio-runbar__bar {
+  flex: 1 1 90px;
+  min-width: 60px;
+  height: 4px;
+  border-radius: 2px;
+  background: #26262c;
+  overflow: hidden;
+}
+.studio-runbar__fill {
+  height: 100%;
+  background: linear-gradient(90deg, #f97316, #fbbf24);
+  transition: width 0.4s ease;
+}
+.studio-runbar__count { color: #9a9aa2; font-variant-numeric: tabular-nums; }
+/* Tabular so the bar does not twitch every second as digits change width. */
+.studio-runbar__elapsed {
+  color: #9a9aa2;
+  font-variant-numeric: tabular-nums;
+  min-width: 42px;
+  text-align: right;
+}
+
+.studio-runbar__btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #2e2e35;
+  background: #1c1c20;
+  color: #e5e5e7;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.studio-runbar__btn:hover { background: #26262c; border-color: #3a3a42; }
+.studio-runbar__btn--stop { border-color: #4a2424; color: #ff8f8f; }
+.studio-runbar__btn--stop:hover { background: #2a1818; }
+.studio-runbar__btn--retry { border-color: #4a3a1c; color: #fbbf24; }
+
+/* ── Failures ──
+   A failed node used to be a red border somewhere on a canvas wider than the
+   screen. These are buttons: the label is the node, the tooltip is the error,
+   the click takes you there. */
+.studio-runbar__fails {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 1px solid #2a2a30;
+  overflow: hidden;
+}
+.studio-runbar__fails-label {
+  color: #ff8f8f;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.studio-runbar__fail {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 9px;
+  border-radius: 7px;
+  border: 1px solid #4a2424;
+  background: rgba(74, 36, 36, 0.35);
+  color: #ffb4b4;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.studio-runbar__fail:hover { background: rgba(74, 36, 36, 0.6); }
+
+/* ── Hints under a control ──
+   For the Ask AI preset especially: a dropdown of names teaches nothing, and
+   the hint is the part that says what each preset asks the model to do. */
+.sn-field__hint {
+  font-size: 10px;
+  line-height: 1.35;
+  color: #6f6f79;
+}
+/* On the grid a hint is a row of its own, tucked under the control it
+   explains rather than floating a full gap below it. */
+.sn-bar--grid .sn-field__hint {
+  margin-top: -3px;
+  padding-left: 2px;
 }

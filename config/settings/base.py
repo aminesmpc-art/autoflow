@@ -43,6 +43,7 @@ LOCAL_APPS = [
     "apps.webhooks",
     "apps.extractions",
     "apps.marketing",
+    "apps.workflows",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -335,3 +336,8 @@ LOGGING = {
         "apps": {"handlers": ["console"], "level": "DEBUG", "propagate": False},
     },
 }
+
+# Shared secret for scripts/publish-templates.js in the extension repo.
+# A build script rather than a person, so a bearer token beats a real account:
+# a leaked one can replace the template bundle and nothing else.
+TEMPLATE_PUBLISH_TOKEN = config("TEMPLATE_PUBLISH_TOKEN", default="")

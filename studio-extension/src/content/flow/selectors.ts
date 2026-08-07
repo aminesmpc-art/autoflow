@@ -267,29 +267,104 @@ export function findGenerateButton(): Element | null {
  * contains a model name like "Veo" or "Imagen", and which is
  * NOT the settings panel trigger (that one also has "Video"/"x1").
  */
+/**
+ * The model Flow is currently set to, readable whether or not a panel is open.
+ *
+ * Verification used to read the model dropdown's own trigger — which lives
+ * inside the settings popover. Selecting a model closes that popover, so the
+ * check ran against an element that no longer existed, read an empty string,
+ * concluded the click had failed, and fired four more clicks at a detached
+ * node.
+ *
+ * Flow also prints the selection in the composer bar ("🍌 Nano Banana Pro
+ * x1"), which is always on screen. That is the durable source.
+ */
+export function readSelectedModel(knownModels: readonly string[]): string {
+  // Panel open: its trigger is the most specific answer.
+  const trigger = findModelSelectorTrigger();
+  const fromTrigger = (trigger?.textContent || '').replace(/arrow_drop_down/g, '').trim();
+  if (fromTrigger) return fromTrigger;
+
+  /* Otherwise read the composer chip. Scoped away from open menus so a list
+     of choices is never mistaken for the choice. */
+  const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9.\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const wanted = knownModels.map(norm);
+
+  for (const el of document.querySelectorAll<HTMLElement>('button, span, div')) {
+    if (el.children.length > 2) continue;            // containers, not labels
+    if (el.closest('[role="menu"], [data-radix-menu-content]')) continue;
+    if (!isVisible(el)) continue;
+    const text = norm(el.textContent || '');
+    if (text && wanted.includes(text)) return (el.textContent || '').trim();
+  }
+  return '';
+}
+
+/** Model names, for telling the model button apart from the settings chip. */
+let knownModelNames: readonly string[] = [];
+export function setKnownModelNames(names: readonly string[]): void {
+  knownModelNames = names;
+}
+
+const normModel = (t: string) =>
+  t.toLowerCase().replace(/arrow_drop_down/g, '').replace(/[^a-z0-9.\s]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+
+/**
+ * The button that opens the model list — not the chip that opens the settings.
+ *
+ * Both carry aria-haspopup="menu". The composer chip summarises everything
+ * ("🍌 Nano Banana Pro" + a ratio glyph + "x1"), while the model button's text
+ * is a model name and nothing else. Matching on "contains a model name" picked
+ * the chip, and the menu bound to the chip is the settings panel — which is
+ * why the log kept reporting 11 options, the exact number of tabs in it.
+ *
+ * So: exact text match wins, and only then anything looser.
+ */
+function looksLikeModelButton(btn: Element): boolean {
+  const text = normModel(btn.textContent || '');
+  return !!text && knownModelNames.some((m) => normModel(m) === text);
+}
+
 export function findModelSelectorTrigger(): Element | null {
-  // Primary: find a button[aria-haspopup="menu"] INSIDE the open settings menu.
-  // The settings trigger opens a [role="menu"] dropdown. Inside it, the model
-  // selector is a nested button[aria-haspopup="menu"] (e.g. "Nano Banana 2 ▼").
-  const menuContainer = document.querySelector(
-    '[role="menu"], [data-radix-menu-content]'
-  );
-  if (menuContainer) {
-    const innerBtns = menuContainer.querySelectorAll('button[aria-haspopup="menu"]');
-    for (const btn of innerBtns) {
+  const all = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'))
+    .filter(isVisible);
+
+  // Exact model-name text, anywhere — this is the model button by definition.
+  const exact = all.find(looksLikeModelButton);
+  if (exact) return exact;
+
+  // Primary: a nested aria-haspopup button inside an open menu. Scoped to the
+  // menu that actually contains one, rather than whichever menu is first in
+  // the document.
+  for (const menuContainer of document.querySelectorAll('[role="menu"], [data-radix-menu-content]')) {
+    for (const btn of menuContainer.querySelectorAll('button[aria-haspopup="menu"]')) {
       if (isVisible(btn)) return btn;
     }
   }
 
-  // Fallback: match by known model name keywords in button text
-  const btns = document.querySelectorAll('button[aria-haspopup="menu"]');
-  for (const btn of btns) {
+  /* Last resort: a button whose text mentions a model family. Only reached
+     when the exact match failed, which means Flow is showing a model we do
+     not know about yet.
+
+     The composer chip must still be excluded here. Its text is the whole
+     summary — "🍌 Nano Banana Pro" + a ratio glyph + "x1" — and clicking it
+     toggles the settings panel rather than opening the model list, which is
+     the open-and-close cycle this bug looked like from outside.
+
+     The old guard demanded BOTH a count and the word "video" or "image". In
+     image mode the ratio renders as a crop_square glyph, so the word is never
+     there and the chip sailed through. A trailing count is enough on its own:
+     a model button never carries one. */
+  const looksLikeSummaryChip = (text: string) =>
+    /x\s?\d/.test(text) || /crop_/.test(text) || /\d+:\d+/.test(text);
+
+  for (const btn of document.querySelectorAll('button[aria-haspopup="menu"]')) {
     const text = (btn.textContent || '').toLowerCase();
-    if ((text.includes('veo') || text.includes('imagen') || text.includes('banana') || text.includes('omni')) && isVisible(btn)) {
-      // Skip the settings trigger chip (contains media type + generation count like "Video x1")
-      if (/x\d/.test(text) && (text.includes('video') || text.includes('image'))) continue;
-      return btn;
-    }
+    const namesAFamily =
+      text.includes('veo') || text.includes('imagen') ||
+      text.includes('banana') || text.includes('omni');
+    if (namesAFamily && isVisible(btn) && !looksLikeSummaryChip(text)) return btn;
   }
   return null;
 }
@@ -725,6 +800,572 @@ export function findAssetResults(dialog: Element): Element[] {
  *  Skips our injected af-bot-* inputs to avoid confusion.
  *  Flow's native input has a styled-component class like sc-a40aa0db-0.
  */
+/**
+ * Flow's "not enough credits" notice, if it is on screen.
+ *
+ * Worth its own detector because of what it costs to miss. Flow accepts the
+ * click, shows this, and never creates a tile — so the poller waits out its
+ * full budget (22 minutes for video) for something that was refused in the
+ * first second, then the runner moves to the next node and does it again.
+ * An overnight queue can spend hours discovering the same fact repeatedly.
+ *
+ * Two signals required, because either alone is a false positive waiting to
+ * happen: the word for credits appears in ordinary billing UI all over the
+ * page, and an upgrade button sits in Flow's chrome permanently. Only a
+ * visible element carrying both, small enough to be a notice rather than the
+ * page, counts.
+ */
+/* ── Start / End frame slots ──────────────────────────────────
+   Flow's video composer offers two drop targets rather than a list:
+
+     <div type="button" aria-haspopup="dialog" aria-controls="radix-:r69:"
+          data-state="closed">Start</div>
+     <button/>                                    ← swap
+     <div type="button" aria-haspopup="dialog" aria-controls="radix-:r6a:"
+          data-state="closed">End</div>
+
+   Note they are DIVs with type="button", not buttons — a querySelector for
+   'button' misses them entirely. Each opens a dialog; the image goes in
+   there, not into the prompt box. Pasting into the prompt attaches an
+   ingredient instead, which is what Studio was doing: the slots stayed empty
+   and Flow generated from a reference rather than interpolating.
+
+   Found by position rather than by the words "Start" and "End", which are
+   translated. They are the only two dialog triggers in the composer and they
+   are always in that order — the swap button between them exists precisely
+   because the order is meaningful.
+   ──────────────────────────────────────────────────────────── */
+
+export interface FrameSlots {
+  start: HTMLElement;
+  end: HTMLElement;
+}
+
+/**
+ * The button between the two slots.
+ *
+ * Its whole purpose is to swap first and last, which makes it the one element
+ * that exists in every state of this row — and therefore the anchor worth
+ * navigating from. Matched on the Material ligature "swap_horiz", which is an
+ * icon name rather than prose and so survives a French or Japanese Flow; the
+ * aria-label is checked too in case the ligature is ever swapped for an SVG.
+ */
+export function findFrameSwapButton(): HTMLElement | null {
+  for (const b of Array.from(document.querySelectorAll<HTMLElement>('button'))) {
+    if (!isVisible(b)) continue;
+    const text = (b.textContent || '').trim().toLowerCase();
+    const label = (b.getAttribute('aria-label') || '').toLowerCase();
+    if (text.includes('swap_horiz')) return b;
+    if (/swap.*(frame|first|last)/.test(`${text} ${label}`)) return b;
+  }
+  return null;
+}
+
+/**
+ * The Start and End slots, in that order.
+ *
+ * Navigated from the swap button rather than by collecting dialog triggers,
+ * because a slot stops being a dialog trigger the moment it holds an image:
+ *
+ *   empty   <div type="button" aria-haspopup="dialog" …>Start</div>
+ *   filled  <div class="sc-784d6f75-0 …"><img …><button>cancel</button></div>
+ *
+ * Counting triggers therefore worked exactly once per run. As soon as Start
+ * was filled, one trigger remained, the count fell below two, and attaching
+ * the End frame reported "Flow is not showing Start/End frame slots" — with
+ * the slots plainly on screen and one of them already correct.
+ *
+ * Verified against a live composer, both empty and half-filled.
+ */
+export function findFrameSlots(): FrameSlots | null {
+  const swap = findFrameSwapButton();
+  if (swap) {
+    const start = swap.previousElementSibling as HTMLElement | null;
+    const end = swap.nextElementSibling as HTMLElement | null;
+    if (start && end && start !== end) return { start, end };
+  }
+
+  /* Fallback for a composer whose swap button we cannot see: two dialog
+     triggers, which is what an untouched pair looks like. Prefer the labelled
+     pair when the language is one we know; otherwise take them in order,
+     which is what the swap button existing at all guarantees is meaningful. */
+  const triggers = Array.from(
+    document.querySelectorAll<HTMLElement>('[aria-haspopup="dialog"]')
+  ).filter(isVisible);
+  if (triggers.length < 2) return null;
+
+  const byText = (word: RegExp) =>
+    triggers.find((t) => word.test((t.textContent || '').trim()));
+  const start = byText(/^start$/i) || triggers[0];
+  const end = byText(/^end$/i) || triggers[1];
+  return start && end && start !== end ? { start, end } : null;
+}
+
+/**
+ * True once a slot is holding an image rather than showing its placeholder.
+ *
+ * Checks both ways a thumbnail can be drawn. An <img> is the obvious one, but
+ * a slot that renders it as a CSS background-image has no <img> at all — and
+ * looking only for the element meant the slot filled on screen while the wait
+ * loop sat there for its full 45 seconds and then called it a failure.
+ *
+ * Both branches require an actual image source. Loosening this to "the
+ * placeholder text went away" would be worse than the original bug: it would
+ * report filled before the bytes arrived, and the second paste would race
+ * into a slot still settling.
+ */
+export function frameSlotFilled(slot: HTMLElement): boolean {
+  for (const img of slot.querySelectorAll('img')) {
+    if (img.complete && img.naturalWidth > 0) return true;
+  }
+  for (const el of [slot, ...Array.from(slot.querySelectorAll<HTMLElement>('*'))]) {
+    const bg = getComputedStyle(el).backgroundImage;
+    // "none" when unset; a real thumbnail is a url(...) or a data: URI.
+    if (bg && bg !== 'none' && /url\(|data:/.test(bg)) return true;
+  }
+  return false;
+}
+
+/** The remove control on a filled slot, so a run does not inherit the frames
+ *  the previous prompt left behind. */
+export function findFrameSlotClearButton(slot: HTMLElement): HTMLElement | null {
+  const buttons = Array.from(slot.querySelectorAll<HTMLElement>('button'));
+  const labelled = buttons.find((b) =>
+    /cancel|close|clear|remove/i.test(`${b.textContent || ''} ${b.getAttribute('aria-label') || ''}`)
+  );
+  return labelled || buttons[0] || null;
+}
+
+/* ── The asset picker ─────────────────────────────────────────
+   Opened by clicking a slot. Verified against a live composer:
+
+     <div role="dialog" id="radix-:r29:" data-state="open">     ← id is the
+       <button role="tab" aria-selected="true">Images</button>     slot's
+       <button role="tab" aria-selected="false">Uploads</button>   aria-controls
+       <input id="add-menu-input" placeholder="Search assets">
+       <div data-testid="virtuoso-item-list">
+         <div data-item-index="0">
+           <div role="option" aria-selected="true">
+             <img src="…media.getMediaUrlRedirect?name=<mediaId>"
+                  alt="b4611d71-….jpg">
+       <button>Add to Prompt</button>                           ← commits
+
+   Two facts here cost a release each.
+
+   The first: clicking a row only previews it. "Add to Prompt" is what puts
+   the image in the slot and closes the dialog. Without that click the slot
+   stays empty however well everything upstream went.
+
+   The second: Flow renames every upload to a UUID of its own. A file pasted
+   as af_b4611d71.png comes back named b4611d71-d2c8-….jpg, so searching the
+   box for the name we chose returns nothing — measured, not assumed: "af_"
+   matched 0 of 2 assets that were both ours. Selection is therefore by
+   identity, diffing the media ids in the list against a snapshot taken
+   before the upload, never by name.
+   ──────────────────────────────────────────────────────────── */
+
+/** The picker a given slot opens, resolved through its own aria-controls. */
+export function findFrameSlotDialog(slot: HTMLElement): HTMLElement | null {
+  const id = slot.getAttribute('aria-controls');
+  if (id) {
+    // getElementById copes with the colons in a Radix id; querySelector needs
+    // CSS.escape, which jsdom does not implement.
+    const byId = document.getElementById(id);
+    if (byId && isVisible(byId)) return byId;
+  }
+  const open = Array.from(
+    document.querySelectorAll<HTMLElement>('[role="dialog"][data-state="open"]')
+  ).filter(isVisible);
+  return open[open.length - 1] || null;
+}
+
+/** The selectable asset rows, newest first under Flow's default "Recent" sort. */
+export function findAssetOptions(dialog: Element): HTMLElement[] {
+  const rows = Array.from(dialog.querySelectorAll<HTMLElement>('[role="option"]')).filter(isVisible);
+  if (rows.length) return rows;
+  // Virtuoso wrapper, for a build that drops the role.
+  return Array.from(
+    dialog.querySelectorAll<HTMLElement>('[data-testid="virtuoso-item-list"] > div[data-item-index]')
+  ).filter(isVisible);
+}
+
+/**
+ * What identifies one asset from another.
+ *
+ * The media id in the thumbnail URL, which is unique per upload. The visible
+ * name is not: uploading the same picture twice produces two rows with
+ * identical names, and telling them apart is the entire job here.
+ */
+export function assetOptionId(row: Element): string {
+  const img = row.querySelector('img');
+  const src = img?.getAttribute('src') || '';
+  const named = src.match(/[?&]name=([^&]+)/);
+  return named ? named[1] : src || img?.getAttribute('alt') || '';
+}
+
+/** Whether the picker considers this row the current selection. */
+export function assetOptionSelected(row: Element): boolean {
+  return row.getAttribute('aria-selected') === 'true';
+}
+
+/** The button that commits the selection into the slot. */
+export function findAddToPromptButton(dialog: Element): HTMLElement | null {
+  const buttons = Array.from(dialog.querySelectorAll<HTMLElement>('button')).filter(isVisible);
+  const byText = buttons.find((b) => /add to prompt/i.test((b.textContent || '').trim()));
+  if (byText) return byText;
+
+  /* Fallback by shape, for a translated UI: the widest plain button in the
+     dialog. The tabs, the sort trigger and "Upload media" are all excluded
+     by something structural rather than by their wording. */
+  const plain = buttons.filter((b) => {
+    if (b.getAttribute('role') === 'tab') return false;
+    if (b.getAttribute('aria-haspopup')) return false;
+    return !/upload/i.test((b.textContent || '').trim());
+  });
+  plain.sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width);
+  return plain[0] || null;
+}
+
+/** The "Uploads" tab, for when a pasted image does not show under "Images". */
+export function findUploadsTab(dialog: Element): HTMLElement | null {
+  const tabs = Array.from(dialog.querySelectorAll<HTMLElement>('[role="tab"]')).filter(isVisible);
+  return (
+    tabs.find((t) => /upload|drive_folder_upload/i.test((t.textContent || '').trim())) || null
+  );
+}
+
+/** What the picker holds right now, for when the expected row never arrives. */
+export function describeAssetDialog(dialog: Element | null): string {
+  if (!dialog) return 'no dialog';
+  const rows = findAssetOptions(dialog);
+  const tabs = Array.from(dialog.querySelectorAll<HTMLElement>('[role="tab"]'))
+    .map((t) => `${(t.textContent || '').trim().slice(0, 12)}${t.getAttribute('aria-selected') === 'true' ? '*' : ''}`);
+  const commit = findAddToPromptButton(dialog);
+  return (
+    `rows=${rows.length} ids=[${rows.slice(0, 4).map((r) => assetOptionId(r).slice(0, 8)).join(',')}] ` +
+    `tabs=[${tabs.join(',')}] commit=${commit ? 'yes' : 'MISSING'}`
+  );
+}
+
+/** What a slot looks like right now, for when it will not fill. */
+export function describeFrameSlot(slot: HTMLElement): string {
+  const imgs = slot.querySelectorAll('img').length;
+  const loaded = Array.from(slot.querySelectorAll('img'))
+    .filter((i) => i.complete && i.naturalWidth > 0).length;
+  /* Same test frameSlotFilled uses, not `!== 'none'`. An unstyled element
+     reports an empty string, which read as "background set" and would have
+     pointed the next investigation at a thumbnail that was never there. */
+  const bg = getComputedStyle(slot).backgroundImage;
+  const hasBg = !!bg && bg !== 'none' && /url\(|data:/.test(bg);
+  const text = (slot.textContent || '').trim().slice(0, 24);
+  return `text="${text}" imgs=${imgs} loaded=${loaded} bg=${hasBg ? 'set' : 'none'}`;
+}
+
+/* ── Attached reference images ────────────────────────────────
+   Flow shows each attached ingredient as a chip in the prompt bar:
+
+     <button data-card-open="false" data-state="closed">
+       <div><img src="/fx/api/trpc/media.getMediaUrlRedirect?name=..."
+                 crossorigin="anonymous" style="opacity: 1;"></div>
+       <div><i class="google-symbols">cancel</i></div>   ← remove
+     </button>
+
+   Uploading used to be followed by `await sleep(8000)` and an unconditional
+   "uploaded successfully". On a slow upload the prompt was typed and Generate
+   clicked while the chip was still arriving, so Flow generated from the text
+   alone — the reference silently dropped, the clip subtly wrong, and the run
+   green throughout.
+
+   Identified by the pair of things no other element on the page has together:
+   a media URL and a remove button. Grid tiles use the same URL shape, so the
+   cancel glyph is what separates "attached to this prompt" from "exists in
+   your library".
+   ──────────────────────────────────────────────────────────── */
+
+/** Reference chips currently attached to the prompt bar. */
+export function findAttachedIngredients(): HTMLElement[] {
+  const chips: HTMLElement[] = [];
+  for (const btn of document.querySelectorAll<HTMLElement>('button')) {
+    const img = btn.querySelector('img[src*="getMediaUrlRedirect"]');
+    if (!img) continue;
+    // The remove control is what makes it an attachment rather than a tile.
+    const removable = Array.from(btn.querySelectorAll('i')).some(
+      (i) => (i.textContent || '').trim().toLowerCase() === 'cancel'
+    );
+    if (removable && isVisible(btn)) chips.push(btn);
+  }
+  return chips;
+}
+
+/**
+ * Chips whose image has actually arrived.
+ *
+ * A chip appears the instant the upload starts, so counting chips alone still
+ * races the upload. Flow fades each one in with `opacity: 1` once it has
+ * loaded, and the element's own `complete`/`naturalWidth` say the same thing
+ * without depending on a style Flow could restyle tomorrow.
+ */
+export function findLoadedIngredients(): HTMLElement[] {
+  return findAttachedIngredients().filter((chip) => {
+    const img = chip.querySelector<HTMLImageElement>('img[src*="getMediaUrlRedirect"]');
+    return !!img && img.complete && img.naturalWidth > 0;
+  });
+}
+
+/**
+ * Wait until `expected` references are attached and loaded.
+ *
+ * Returns true only on evidence. A timeout returns false and the caller
+ * decides — which beats the old behaviour of sleeping a fixed 8 seconds and
+ * announcing success either way.
+ */
+export async function waitForIngredients(
+  expected: number,
+  timeoutMs = 45_000
+): Promise<boolean> {
+  if (expected <= 0) return true;
+  const deadline = Date.now() + timeoutMs;
+  let stable = 0;
+
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 500));
+    if (findLoadedIngredients().length >= expected) {
+      // Two consecutive clean reads: an upload finishing between polls would
+      // otherwise let a half-attached set through.
+      if (++stable >= 2) return true;
+    } else {
+      stable = 0;
+    }
+  }
+  return false;
+}
+
+/* ── Generation rows ──────────────────────────────────────────
+   Every row in Flow's grid carries its own prompt, model, ratio and duration
+   in the same block as its media. That makes "is this tile mine?" a question
+   with an actual answer, where before the poller guessed: if nothing had ever
+   looked like it was generating, it fell back to the newest card on the page
+   and reported whatever that was. If the submit had silently failed, the node
+   confidently returned the previous node's clip — or a video the user made
+   yesterday — and the run went green.
+
+   Anchored on `button.reuse-prompt-button`, the one class in that subtree
+   that is a name rather than a styled-components hash. Everything else there
+   (sc-7f95703a-1, iEkYZi) changes on any rebuild of Flow.
+   ──────────────────────────────────────────────────────────── */
+
+export interface FlowGenerationRow {
+  tileId: string;
+  /** The prompt text Flow shows under the media — what identifies the row. */
+  prompt: string;
+  model: string;
+  aspectRatio: string;
+  /** e.g. "6s", read from "Video length: 6s" */
+  duration: string;
+  element: HTMLElement;
+}
+
+/** Collapse whitespace so DOM wrapping does not defeat comparison. */
+const normalisePrompt = (s: string): string =>
+  (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+export function readGenerationRows(): FlowGenerationRow[] {
+  const rows: FlowGenerationRow[] = [];
+
+  for (const btn of document.querySelectorAll<HTMLElement>('button.reuse-prompt-button')) {
+    // <wrapper><div>PROMPT</div><div><button.reuse-prompt-button/></div></wrapper>
+    const wrapper = btn.parentElement?.parentElement;
+    const prompt = (wrapper?.firstElementChild as HTMLElement | null)?.textContent?.trim() || '';
+    if (!prompt) continue;
+
+    // The row is the nearest ancestor that also owns the media.
+    let row: HTMLElement | null = wrapper as HTMLElement | null;
+    let tile: Element | null = null;
+    for (let depth = 0; depth < 8 && row; depth++, row = row.parentElement) {
+      tile = row.querySelector('[data-tile-id]');
+      if (tile) break;
+    }
+    if (!row || !tile) continue;
+
+    /* Metadata lines are plain divs with no stable class, so they are read by
+       what they say rather than where they sit — Flow reorders them, and
+       "Resolution: 720p" is recognisable wherever it lands. */
+    const lines = Array.from(row.querySelectorAll<HTMLElement>('div'))
+      // Leaf by div, not by child count: the ratio line holds an icon glyph
+      // as well as its text, and skipping it lost the ratio entirely.
+      .filter((d) => !d.querySelector('div'))
+      .map((d) => (d.textContent || '').trim())
+      .filter(Boolean);
+
+    // The glyph's ligature runs into the value — "crop_9_16" + "9:16" reads as
+    // "crop_9_169:16" — so the ratio is taken from the end of the line.
+    const ratio = lines
+      .map((l) => l.match(/(\d{1,2}:\d{1,2})\s*$/)?.[1])
+      .find(Boolean) || '';
+
+    rows.push({
+      tileId: tile.getAttribute('data-tile-id') || '',
+      prompt,
+      model: lines.find((l) => /flash|veo|imagen|banana/i.test(l)) || '',
+      aspectRatio: ratio,
+      duration: (lines.find((l) => /length/i.test(l)) || '').replace(/^[^:]*:\s*/, ''),
+      element: row,
+    });
+  }
+  return rows;
+}
+
+/**
+ * The row Flow created for this exact prompt, if there is one.
+ *
+ * Absence is the useful answer: it means our submit never landed, which is
+ * worth failing on rather than papering over with somebody else's tile.
+ */
+export function findRowForPrompt(prompt: string): FlowGenerationRow | null {
+  const want = normalisePrompt(prompt);
+  if (want.length < 8) return null; // too short to identify anything
+
+  const rows = readGenerationRows();
+  const exact = rows.find((r) => normalisePrompt(r.prompt) === want);
+  if (exact) return exact;
+
+  /* Flow can trim trailing whitespace, collapse newlines, or clip a very long
+     prompt in the card. A long shared opening is still conclusive — two
+     different prompts agreeing on their first 80 characters would have to be
+     deliberate. */
+  const head = want.slice(0, 80);
+  if (head.length < 40) return null;
+  return rows.find((r) => {
+    const got = normalisePrompt(r.prompt);
+    return got.startsWith(head) || want.startsWith(got.slice(0, 80));
+  }) || null;
+}
+
+/**
+ * The orange alert sphere Flow puts beside the generation settings.
+ *
+ * This is the signal that actually exists while a run is happening. The
+ * message explaining it lives in a popover that is `data-state="closed"`
+ * until someone hovers the icon — closed Radix popovers render no content at
+ * all, so a detector that only reads the message finds nothing, ever, during
+ * automation. Nobody hovers anything during a run.
+ *
+ * Matched on the icon's own filename rather than a class, because every class
+ * on it is a generated styled-components hash that changes on any rebuild.
+ */
+export function findFlowAlertIndicator(): HTMLElement | null {
+  const icon = document.querySelector<HTMLElement>('img[src*="flow_alert"]');
+  if (!icon || !isVisible(icon)) return null;
+  // The wrapper is what carries the popover trigger; the img ignores clicks.
+  return (icon.closest('[data-state]') as HTMLElement) || icon.parentElement || icon;
+}
+
+/**
+ * Open the alert popover and read what it says.
+ *
+ * The sphere alone means "Flow is unhappy about something", which is not the
+ * same as "out of credits" — acting on the icon alone would abort runs over
+ * unrelated warnings. Opening it costs one click on an info button and turns a
+ * guess into the actual sentence.
+ */
+export async function readFlowAlertMessage(): Promise<string> {
+  const trigger = findFlowAlertIndicator();
+  if (!trigger) return '';
+
+  const alreadyOpen = trigger.getAttribute('data-state') === 'open';
+  if (!alreadyOpen) {
+    // Hover first: Flow's is a hover-card, and a click alone may not open it.
+    for (const type of ['pointerover', 'mouseover', 'pointerenter', 'mouseenter']) {
+      trigger.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+    }
+    (trigger as HTMLElement).click?.();
+    await new Promise((r) => setTimeout(r, 400));
+  }
+
+  // The popover mounts elsewhere in the DOM, so read the page's open overlays
+  // rather than looking inside the trigger.
+  let text = '';
+  for (const el of document.querySelectorAll<HTMLElement>('[data-state="open"], [role="tooltip"], [role="dialog"]')) {
+    if (!isVisible(el) || el === trigger) continue;
+    const t = (el.innerText || el.textContent || '').trim();
+    if (t.length > text.length) text = t;
+  }
+
+  if (!alreadyOpen) {
+    // Leave the page as we found it — an open overlay swallows the next click.
+    for (const type of ['pointerout', 'mouseout', 'pointerleave', 'mouseleave']) {
+      trigger.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+    }
+  }
+  return text;
+}
+
+/** True when a message is Flow saying the account has no credits left. */
+export function readsAsCreditsExhausted(text: string): boolean {
+  if (!text || !matchesFlowText(text, 'credits')) return false;
+  // "1,240 credits remaining" also mentions credits. A refusal is a sentence,
+  // and in every language Flow ships it offers the upgrade in the same breath.
+  return matchesFlowText(text, 'upgrade') || text.trim().length >= 25;
+}
+
+export function findCreditsExhaustedNotice(): HTMLElement | null {
+  /* Anchored on the Upgrade button and walked upward, rather than queried by
+     role. Flow's notice is a popover with no role we can rely on — guessing at
+     one would make this silently stop working the next time the component
+     changes, which is the failure mode it exists to prevent. Every version of
+     this notice has an upgrade button in it. */
+  const buttons = Array.from(document.querySelectorAll<HTMLElement>('button, a'))
+    .filter((b) => matchesFlowText(b.innerText || b.textContent || '', 'upgrade'));
+
+  for (const btn of buttons) {
+    let el: HTMLElement | null = btn.parentElement;
+    for (let depth = 0; depth < 5 && el; depth++, el = el.parentElement) {
+      if (!isVisible(el)) continue;
+
+      // A notice, not the whole app. The one in the report is ~220x160; a
+      // pricing page mentions credits and upgrading too, and matching it
+      // would abort a run that was working.
+      const rect = el.getBoundingClientRect();
+      if (rect.height > 420 || rect.width > 620) continue;
+
+      const text = (el.innerText || el.textContent || '').trim();
+      if (!matchesFlowText(text, 'credits')) continue;
+
+      /* Third signal, because a persistent header chip reading
+         "1,240 credits · Upgrade" satisfies both of the others. A refusal is
+         a sentence, and it carries an error glyph; a balance is neither.
+         The glyph is checked first since it survives translation, and the
+         length test covers a notice rendered with an SVG icon instead. */
+      const hasErrorGlyph = Array.from(el.querySelectorAll('*')).some((n) => {
+        const t = (n.textContent || '').trim().toLowerCase();
+        return t === 'error' || t === 'error_outline' || t === 'warning' || t === 'report';
+      });
+      /* Measured on the message, not the whole notice. Button labels are the
+         one part guaranteed present in both a refusal and a balance chip, so
+         counting them makes a chip with a wordy CTA look like a sentence. */
+      const stripped = el.cloneNode(true) as HTMLElement;
+      for (const cta of Array.from(stripped.querySelectorAll('button, a'))) cta.remove();
+      const message = (stripped.textContent || '').trim();
+
+      /* A refusal is a sentence; a balance is a number and a noun. The
+         thresholds only have to separate those two, so they sit well below
+         the shortest real refusal (~35 Latin, ~25 CJK) and well above the
+         longest plausible balance ("1,240 credits" is 13).
+
+         Character counts are not comparable across scripts — the same message
+         is ~130 characters in English and under 30 in Japanese — so one
+         threshold would either miss every CJK notice or match a Latin chip.
+
+         Erring toward detection on purpose. A false negative is the bug this
+         exists to fix: 22 minutes per node, silently. A false positive stops
+         the run with a message saying exactly why, and costs one rerun. */
+      const dense = /[　-鿿가-힯]/.test(message);
+      if (hasErrorGlyph || message.length >= (dense ? 14 : 25)) return el;
+    }
+  }
+  return null;
+}
+
 export function findFileInput(): HTMLInputElement | null {
   // Priority 1: Flow's file input accepting images (has SC class, no af-bot id)
   const imgInputs = document.querySelectorAll('input[type="file"][accept*="image"]');
