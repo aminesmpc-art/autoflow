@@ -288,13 +288,39 @@ function inExtendMode(): boolean {
  * Matched on the generation id in its mp4 URL, because the visible label is
  * the model's summary of the prompt and repeats across clips.
  */
+/**
+ * The Extend control, revealing the collapsed panel if that is where it is.
+ *
+ * Every place that asks "is Extend available" has to go through here. The
+ * previous fix taught only startExtend to click "Post actions", and left
+ * openClipForExtend testing for the bare button — so with the Studio side
+ * panel open, which narrows the window and collapses that whole column, this
+ * function could never succeed. It waited six seconds and reported the clip
+ * was not in Grok's history, which was never the problem.
+ */
+async function findExtendControl(): Promise<HTMLElement | null> {
+  const direct = buttonByLabel('Extend');
+  if (direct) return direct;
+
+  const reveal = buttonByLabel('Post actions');
+  if (!reveal) return null;
+
+  reveal.click();
+  for (let i = 0; i < 12; i++) {
+    await sleep(250);
+    const revealed = buttonByLabel('Extend');
+    if (revealed) return revealed;
+  }
+  return null;
+}
+
 async function openClipForExtend(videoUrl: string): Promise<boolean> {
   const id = /generated\/([^/]+)\//.exec(videoUrl || '')?.[1] || '';
   if (!id) return false;
 
   const already = document.querySelector<HTMLVideoElement>(`video[src*="${id}"]`);
-  // Already open in the viewer? The Extend button is only there if it is.
-  if (already && buttonByLabel('Extend')) return true;
+  // Already open in the viewer? Extend is only offered on an open clip.
+  if (already && await findExtendControl()) return true;
 
   const thumb = Array.from(document.querySelectorAll<HTMLVideoElement>('video[src]'))
     .find((v) => v.src.includes(id));
@@ -304,7 +330,7 @@ async function openClipForExtend(videoUrl: string): Promise<boolean> {
   openable.click();
   for (let i = 0; i < 20; i++) {
     await sleep(300);
-    if (buttonByLabel('Extend')) return true;
+    if (await findExtendControl()) return true;
   }
   return false;
 }
@@ -335,18 +361,7 @@ async function startExtend(videoUrl: string, seconds: string | undefined): Promi
        3. The "More options" menu, which is what the working grok-auto
           extension uses: its entries are div[role="menuitem"] with no button
           among them. */
-    let extend = buttonByLabel('Extend');
-
-    if (!extend) {
-      const reveal = buttonByLabel('Post actions');
-      if (reveal) {
-        reveal.click();
-        for (let i = 0; i < 12 && !extend; i++) {
-          await sleep(250);
-          extend = buttonByLabel('Extend');
-        }
-      }
-    }
+    const extend = await findExtendControl();
 
     if (extend) {
       extend.click();
@@ -773,6 +788,10 @@ async function handleExecute(payload: any): Promise<any> {
     }
     const problem = await startExtend(config.extendFromVideo, config.extendSeconds);
     if (problem) {
+      /* Also to the panel. The Diagnostics section was empty for a failure
+         that happened entirely inside this tab, which left the console on
+         grok.com as the only place the reason existed. */
+      logLine(`Extend failed: ${problem}`);
       send('STUDIO_NODE_ERROR', {
         nodeId,
         error: `${problem}. Generating now would make a new clip instead of continuing this one.`,

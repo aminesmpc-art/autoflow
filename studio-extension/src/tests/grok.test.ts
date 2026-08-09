@@ -26,7 +26,7 @@
 
 /// <reference types="node" />
 
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 const BUNDLE = join(__dirname, '../../dist/grok-content.js');
@@ -358,6 +358,21 @@ describe('extending a clip', () => {
 
     reveal.click();
     expect(labelled('Extend')).toBeDefined();
+  });
+
+  it('finds Extend from the collapsed panel on every path', () => {
+    /* The half-fix. Revealing was taught to one caller and not the other, so
+       openClipForExtend still tested for the bare button — and with the side
+       panel open, which is the only state Studio runs in, it waited six
+       seconds and then reported the clip was not in Grok's history. It was;
+       the button was behind Post actions. */
+    const SOURCE = readFileSync(
+      join(__dirname, '../content/grok/index.ts'), 'utf8'
+    );
+    const body = SOURCE.slice(SOURCE.indexOf('async function openClipForExtend'));
+    const openClip = body.slice(0, body.indexOf('async function startExtend'));
+    expect(openClip).toMatch(/findExtendControl\(\)/);
+    expect(openClip).not.toMatch(/buttonByLabel\('Extend'\)/);
   });
 
   it('offers Extend on an open clip', () => {
