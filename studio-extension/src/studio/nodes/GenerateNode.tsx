@@ -59,6 +59,8 @@ const DURATIONS = ['4s', '6s', '8s', '10s'];
 const GROK_DURATIONS = ['6s', '10s', '15s'];
 const GROK_RESOLUTIONS = ['480p', '720p', '1080p'];
 const GROK_RATIOS = ['9:16', '16:9', '1:1'];
+/* What Extend offers on top of the clip you already have. */
+const GROK_EXTEND_STEPS = ['+6s', '+10s'];
 
 /** CSS aspect-ratio for the media area, so the node takes the shape of its output */
 function ratioToCss(ratio: string): string {
@@ -487,6 +489,50 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               controls its own toolbar shows. */}
           {isGrok && isVideo && (
             <>
+              {/* Imagine can continue a finished clip instead of starting one.
+                  Extending replaces the shot settings — the framing is already
+                  decided — so the rest of the controls give way to a length. */}
+              <div className="sn-field sn-field--wide" title="Start a new clip, or continue the one before it">
+                <span className="sn-field__label">Mode</span>
+                <div className="sn-seg nodrag">
+                  {[['', 'New clip'], ['extend', 'Extend']].map(([value, label]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      className={`sn-seg__btn ${(nodeData.extend ? 'extend' : '') === value ? 'sn-seg__btn--on' : ''}`}
+                      onClick={() => set('extend', value === 'extend')}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {nodeData.extend && (
+                <>
+                  <small className="sn-field__hint sn-field--wide">
+                    Wire the Grok clip to continue into 🖼 — Extend adds to it.
+                  </small>
+                  <div className="sn-field sn-field--wide" title="How much to add">
+                    <span className="sn-field__label">Add</span>
+                    <div className="sn-seg nodrag">
+                      {GROK_EXTEND_STEPS.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          className={`sn-seg__btn ${(nodeData.extendSeconds || '+10s') === s ? 'sn-seg__btn--on' : ''}`}
+                          onClick={() => set('extendSeconds', s)}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {!nodeData.extend && (
+                <>
               <div className="sn-field sn-field--wide" title="Clip length">
                 <span className="sn-field__label">Length</span>
                 <div className="sn-seg nodrag">
@@ -534,6 +580,8 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                   ))}
                 </div>
               </div>
+                </>
+              )}
             </>
           )}
 

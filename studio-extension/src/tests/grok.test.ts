@@ -285,3 +285,82 @@ describe('reference images', () => {
     expect(h.composer.textContent).toBe('');
   });
 });
+
+/* ============================================================
+   Extend.
+
+   Imagine can continue a finished clip instead of starting a new one. The
+   sequence, read off the live viewer:
+
+     button[aria-label="Extend"]  →  button[aria-label="Cancel Extend"]
+                                     replaces it, and a +6s / +10s row appears
+
+   "Cancel Extend" is the reason this is checkable at all. Without a signal
+   that the mode engaged, a click that went nowhere is indistinguishable from
+   one that worked — and the node would generate a brand-new clip while
+   reporting that it had continued one, which is the failure that looks like a
+   success.
+   ============================================================ */
+describe('extending a clip', () => {
+  const CLIP = 'https://assets.grok.com/users/u1/generated/eeac2e93/generated_video.mp4?cache=1';
+
+  const box = (w: number, h: number) => () =>
+    ({ width: w, height: h, top: 0, left: 0, bottom: h, right: w, x: 0, y: 0, toJSON() {} });
+
+  /** The viewer, with the clip open and Extend on offer. */
+  function mountViewer(extending = false): void {
+    document.body.innerHTML = `
+      <button aria-label="Hot Girl Shaking Her Ass"><video src="${CLIP}"></video></button>
+      <button type="button" aria-label="Regenerate">Regenerate</button>
+      <button type="button" aria-label="${extending ? 'Cancel Extend' : 'Extend'}">${extending ? 'Cancel Extend' : 'Extend'}</button>
+      <button type="button" aria-label="Share">Share</button>
+      ${extending ? '<button type="button">+6s</button><button type="button">+10s</button>' : ''}`;
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>('*'))) {
+      (el as any).getBoundingClientRect = box(200, 36);
+    }
+  }
+
+  const labelled = (label: string) =>
+    Array.from(document.querySelectorAll<HTMLElement>('button[aria-label]'))
+      .find((b) => (b.getAttribute('aria-label') || '').trim().toLowerCase() === label.toLowerCase());
+
+  it('offers Extend on an open clip', () => {
+    mountViewer();
+    expect(labelled('Extend')).toBeDefined();
+    expect(labelled('Cancel Extend')).toBeUndefined();
+  });
+
+  it('treats Cancel Extend as proof the mode engaged', () => {
+    /* The whole check. Before the click there is no such button; after it
+       there is, and only then is it safe to type the prompt. */
+    mountViewer(true);
+    expect(labelled('Cancel Extend')).toBeDefined();
+  });
+
+  it('finds the clip to extend by the generation id in its URL', () => {
+    // Labels repeat across clips; the id does not.
+    mountViewer();
+    const id = /generated\/([^/]+)\//.exec(CLIP)![1];
+    expect(id).toBe('eeac2e93');
+    const found = Array.from(document.querySelectorAll<HTMLVideoElement>('video[src]'))
+      .find((v) => v.getAttribute('src')!.includes(id));
+    expect(found).toBeDefined();
+    expect(found!.closest('button')).not.toBeNull();
+  });
+
+  it('offers the two lengths Imagine actually adds', () => {
+    mountViewer(true);
+    const pills = Array.from(document.querySelectorAll<HTMLElement>('button'))
+      .map((b) => (b.textContent || '').trim())
+      .filter((t) => /^\+\d+s$/.test(t));
+    expect(pills).toEqual(['+6s', '+10s']);
+  });
+
+  it('does not confuse Extend with Cancel Extend', () => {
+    /* An exact match on aria-label, not a substring: "Cancel Extend" contains
+       "Extend", so a loose match would click cancel and then wait for a mode
+       it had just left. */
+    mountViewer(true);
+    expect(labelled('Extend')).toBeUndefined();
+  });
+});

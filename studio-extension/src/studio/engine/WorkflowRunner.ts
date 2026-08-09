@@ -549,6 +549,29 @@ export class WorkflowRunner {
         )
       : prompt;
 
+    /* Grok's Extend continues a clip rather than making one, so the node needs
+       the clip itself — not a still of it. Taken from the upstream node's
+       result, which for a Grok video holds the mp4 URL the content script uses
+       to find it again in Grok's history.
+
+       Failing here rather than in the tab: without it the run would enter an
+       ordinary generation and produce a brand-new clip that looks like a
+       success and breaks the continuity the node existed for. */
+    let extendFromVideo: string | undefined;
+    if (nodeData.extend && nodeData.platform === 'grok' && nodeData.mediaType === 'video') {
+      const sources = [...(inputs.get('image_ref') || []), ...(inputs.get('text') || [])];
+      for (const srcId of sources) {
+        const upstream = this.nodeResults.get(srcId);
+        const url = upstream?.previewVideoUrl || upstream?.videoUrl || upstream?.imageUrl || '';
+        if (/\.mp4|generated_video/.test(url)) { extendFromVideo = url; break; }
+      }
+      if (!extendFromVideo) {
+        throw new Error(
+          'Extend has no clip to continue — connect this node to the Grok video node before it'
+        );
+      }
+    }
+
     const config: NodeExecutionConfig = {
       prompt: askPrompt,
       // Anything not a known chat platform runs on Flow. Listing them beats
@@ -560,8 +583,11 @@ export class WorkflowRunner {
       mediaType: nodeData.mediaType || 'image',
       aspectRatio: nodeData.aspectRatio || '9:16',
       duration: nodeData.duration || '6s',
-      // Grok reads this; Flow ignores it.
+      // Grok reads these; Flow ignores them.
       resolution: nodeData.resolution || undefined,
+      extend: extendFromVideo ? true : undefined,
+      extendSeconds: extendFromVideo ? (nodeData.extendSeconds || '+10s') : undefined,
+      extendFromVideo,
       creationType: nodeData.creationType || 'ingredients',
       referenceImageIds: referenceImageIds.length > 0 ? referenceImageIds : undefined,
       referenceImageData: referenceImageData.length > 0 ? referenceImageData : undefined,

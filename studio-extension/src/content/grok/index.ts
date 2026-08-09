@@ -61,6 +61,15 @@ function send(type: string, payload: Record<string, unknown>): void {
   try { chrome.runtime.sendMessage({ type, payload }).catch(() => {}); } catch {}
 }
 
+/** A line for the side panel's diagnostics, and for the console. */
+function logLine(line: string): void {
+  console.log(`[AutoFlow Grok] ${line}`);
+  try {
+    chrome.runtime.sendMessage({ type: 'STUDIO_LOG', payload: { source: 'Grok', line } })
+      .catch(() => {});
+  } catch {}
+}
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function isVisible(el: Element): boolean {
@@ -233,6 +242,96 @@ async function selectAspectRatio(value: string): Promise<boolean> {
   item.click();
   await sleep(400);
   return (trigger.textContent || '').includes(value);
+}
+
+/* ── Extend ────────────────────────────────────────────────────
+   Imagine can continue a finished clip instead of starting a new one. The
+   sequence, read off the live viewer:
+
+     button[aria-label="Extend"]        on the open clip
+       → button[aria-label="Cancel Extend"] replaces it   ← the proof
+       → a "+6s" / "+10s" pill row appears
+       → the composer takes a prompt and submits as usual
+
+   "Cancel Extend" appearing is what makes this checkable. Without it, a click
+   that did nothing would be indistinguishable from one that worked, and the
+   node would generate a fresh clip while reporting that it had extended one.
+   ──────────────────────────────────────────────────────────── */
+
+const buttonByLabel = (label: string): HTMLElement | null =>
+  Array.from(document.querySelectorAll<HTMLElement>('button[aria-label]'))
+    .find((b) => (b.getAttribute('aria-label') || '').trim().toLowerCase() === label.toLowerCase()
+      && isVisible(b)) || null;
+
+/** Whether the composer is currently in extend mode. */
+const inExtendMode = (): boolean => !!buttonByLabel('Cancel Extend');
+
+/**
+ * Open the clip this node is extending.
+ *
+ * Matched on the generation id in its mp4 URL, because the visible label is
+ * the model's summary of the prompt and repeats across clips.
+ */
+async function openClipForExtend(videoUrl: string): Promise<boolean> {
+  const id = /generated\/([^/]+)\//.exec(videoUrl || '')?.[1] || '';
+  if (!id) return false;
+
+  const already = document.querySelector<HTMLVideoElement>(`video[src*="${id}"]`);
+  // Already open in the viewer? The Extend button is only there if it is.
+  if (already && buttonByLabel('Extend')) return true;
+
+  const thumb = Array.from(document.querySelectorAll<HTMLVideoElement>('video[src]'))
+    .find((v) => v.src.includes(id));
+  const openable = thumb?.closest('button') as HTMLElement | null;
+  if (!openable) return false;
+
+  openable.click();
+  for (let i = 0; i < 20; i++) {
+    await sleep(300);
+    if (buttonByLabel('Extend')) return true;
+  }
+  return false;
+}
+
+/**
+ * Put the composer into extend mode on the right clip.
+ *
+ * Returns a reason when it could not. Falling through to an ordinary
+ * generation would produce a brand-new clip that looks like a success and
+ * breaks the continuity the node existed for.
+ */
+async function startExtend(videoUrl: string, seconds: string | undefined): Promise<string | null> {
+  if (!inExtendMode()) {
+    if (!(await openClipForExtend(videoUrl))) {
+      return 'Could not open the clip to extend — it is not in Grok\'s history on this page';
+    }
+
+    const extend = buttonByLabel('Extend');
+    if (!extend) return 'Grok is not offering Extend on this clip';
+    extend.click();
+
+    let engaged = false;
+    for (let i = 0; i < 20 && !engaged; i++) {
+      await sleep(300);
+      engaged = inExtendMode();
+    }
+    if (!engaged) return 'Clicked Extend but Grok did not switch into extend mode';
+  }
+
+  /* Optional. A node that names no length keeps whatever Imagine offers by
+     default rather than guessing on the user's behalf. */
+  if (seconds) {
+    const want = seconds.startsWith('+') ? seconds : `+${seconds}`;
+    const pill = Array.from(document.querySelectorAll<HTMLElement>('button'))
+      .find((b) => (b.textContent || '').trim() === want && isVisible(b));
+    if (pill) {
+      pill.click();
+      await sleep(300);
+    } else {
+      console.warn(`[AutoFlow Grok] Extend length ${want} is not offered — left as is`);
+    }
+  }
+  return null;
 }
 
 /**
@@ -581,7 +680,32 @@ async function handleExecute(payload: any): Promise<any> {
     }
   }
 
-  if (wantsVideo) {
+  /* Extending continues an existing clip, so none of the settings below apply
+     — Imagine offers only a length, and the shot is already framed. Done
+     before the prompt goes in, because entering extend mode re-renders the
+     composer. */
+  const wantsExtend = wantsVideo && !!config?.extend;
+  if (wantsExtend) {
+    if (!config?.extendFromVideo) {
+      send('STUDIO_NODE_ERROR', {
+        nodeId,
+        error: 'Nothing to extend — wire this node to the Grok clip it should continue',
+      });
+      return { success: false };
+    }
+    const problem = await startExtend(config.extendFromVideo, config.extendSeconds);
+    if (problem) {
+      send('STUDIO_NODE_ERROR', {
+        nodeId,
+        error: `${problem}. Generating now would make a new clip instead of continuing this one.`,
+      });
+      return { success: false };
+    }
+    logLine(`Extending the previous clip${config.extendSeconds ? ` by ${config.extendSeconds}` : ''}`);
+    composer = findComposer() || composer;
+  }
+
+  if (wantsVideo && !wantsExtend) {
     // Optional: a node that names none of these keeps whatever Grok has.
     for (const [group, value] of [
       ['Video resolution', config?.resolution],

@@ -15,6 +15,12 @@ export interface NodeExecutionConfig {
   duration?: string;
   /** Grok Imagine only — 480p / 720p / 1080p. Flow has no such control. */
   resolution?: string;
+  /* Grok Imagine's Extend: continue an existing clip rather than start one.
+     extendFromVideo is the mp4 URL of the clip being continued, which is how
+     the content script finds it again in Grok's history. */
+  extend?: boolean;
+  extendSeconds?: string;
+  extendFromVideo?: string;
   creationType: 'ingredients' | 'frames';
   referenceImageIds?: string[];
   referenceImageData?: string[]; // base64 fallback
