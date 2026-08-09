@@ -944,6 +944,46 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
   });
 }
 
+/** Consecutive quiet polls before a silent page is called a failure. */
+const STALL_POLLS = 30; // 30 x 2s = a minute of nothing
+
+/**
+ * Grok refusing to show what it made.
+ *
+ * A blocked generation renders a placeholder rather than a clip — the video
+ * area becomes a grey box with an eye-off glyph — and it never turns into
+ * anything. Distinguishing that from "still rendering" is the difference
+ * between failing in seconds with a reason and spending six minutes to report
+ * a timeout.
+ *
+ * Read from the result area only. The prompt is on the page too, and a prompt
+ * about moderation must not be mistaken for a moderation notice.
+ */
+function readWithheldNotice(): string {
+  const stage = document.querySelector<HTMLElement>('main') || document.body;
+  const composer = composerRegion();
+
+  const PATTERNS: Array<[RegExp, string]> = [
+    [/moderat|content polic|guidelines|not allowed|violat|unsafe|inappropriate/i,
+      'Grok withheld this generation'],
+    [/couldn'?t (create|generate|make)|unable to (create|generate)|failed to generate/i,
+      'Grok could not generate this'],
+    [/hidden|blocked|unavailable/i, 'Grok is not showing this generation'],
+  ];
+
+  for (const [pattern, label] of PATTERNS) {
+    for (const el of Array.from(stage.querySelectorAll<HTMLElement>('div, p, span'))) {
+      if (el.children.length > 2) continue;
+      if (composer && composer.contains(el)) continue;
+      const text = (el.textContent || '').trim();
+      if (text.length < 8 || text.length > 300) continue;
+      if (!pattern.test(text)) continue;
+      return `${label}: ${text.slice(0, 200)}`;
+    }
+  }
+  return '';
+}
+
 /**
  * Wait for a clip that was not there when we started.
  *
@@ -962,6 +1002,7 @@ async function trackVideoGeneration(nodeId: string, preexisting: Set<string>): P
   let stableSrc = '';
   let stableCount = 0;
   let explained = false;
+  let stalled = 0;
 
   while (Date.now() - startedAt < GENERATION_TIMEOUT_MS) {
     await sleep(POLL_MS);
@@ -971,14 +1012,39 @@ async function trackVideoGeneration(nodeId: string, preexisting: Set<string>): P
       progress: Math.min(90, 20 + Math.floor((elapsed / GENERATION_TIMEOUT_MS) * 90)),
     });
 
+    /* Grok withheld it. A blocked generation never becomes a clip, so waiting
+       out the full six minutes spends the run and then blames the timeout. */
+    const withheld = readWithheldNotice();
+    if (withheld) {
+      logLine(`Generation withheld: ${withheld}`);
+      send('STUDIO_NODE_ERROR', { nodeId, error: withheld });
+      return;
+    }
+
     const fresh = collectResultVideos().filter((v) => !preexisting.has(v.src));
     if (fresh.length === 0) {
-      if (!explained && elapsed > 60_000 && !isGenerating()) {
+      /* Nothing arriving and nothing streaming. Counted rather than timed
+         from the start, so a genuinely slow render — which does show as
+         generating — is never cut off; only a page that has gone quiet is.
+         Six minutes of an unchanging screen is not patience, it is the run
+         failing slowly and then reporting the wrong cause. */
+      if (!isGenerating()) stalled++; else stalled = 0;
+
+      if (!explained && stalled === STALL_POLLS / 2) {
         explained = true;
-        console.warn(`[AutoFlow Grok] No clip yet and nothing is streaming. ${describePage()}`);
+        logLine(`No clip yet and nothing is streaming. ${describePage()}`);
+      }
+      if (stalled >= STALL_POLLS) {
+        send('STUDIO_NODE_ERROR', {
+          nodeId,
+          error: 'Grok produced nothing and stopped working — the generation was most '
+            + `likely refused. Check the Grok tab. (${describePage()})`,
+        });
+        return;
       }
       continue;
     }
+    stalled = 0;
 
     const candidate = fresh[fresh.length - 1];
     if (candidate.src === stableSrc) stableCount++;
