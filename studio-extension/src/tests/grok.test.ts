@@ -324,6 +324,42 @@ describe('extending a clip', () => {
     Array.from(document.querySelectorAll<HTMLElement>('button[aria-label]'))
       .find((b) => (b.getAttribute('aria-label') || '').trim().toLowerCase() === label.toLowerCase());
 
+  /* The panel that holds Extend is not always on screen. Running Studio in
+     the side panel narrows the window, and Grok collapses the whole column —
+     Regenerate, Extend, Share — behind a single "Post actions" button. So the
+     button every earlier screenshot showed was simply absent whenever the
+     panel was open, which is the state anyone driving Studio is actually in. */
+  it('has no Extend button while the panel is collapsed', () => {
+    document.body.innerHTML = `
+      <button type="button" aria-label="Post actions"></button>
+      <main></main>`;
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>('*'))) {
+      (el as any).getBoundingClientRect = box(40, 40);
+    }
+    expect(labelled('Extend')).toBeUndefined();
+    expect(labelled('Post actions')).toBeDefined();
+  });
+
+  it('reveals Extend once Post actions is clicked', () => {
+    document.body.innerHTML = '<button type="button" aria-label="Post actions"></button>';
+    const reveal = document.querySelector<HTMLElement>('button[aria-label="Post actions"]')!;
+    (reveal as any).getBoundingClientRect = box(40, 40);
+    reveal.addEventListener('click', () => {
+      const panel = document.createElement('div');
+      panel.innerHTML = `
+        <button type="button" aria-label="Regenerate"><span>Regenerate</span></button>
+        <button type="button" aria-label="Extend"><span class="truncate flex-1 text-center">Extend</span></button>
+        <button type="button" aria-label="Share"><span>Share</span></button>`;
+      document.body.append(panel);
+      for (const el of Array.from(panel.querySelectorAll<HTMLElement>('*'))) {
+        (el as any).getBoundingClientRect = box(240, 36);
+      }
+    });
+
+    reveal.click();
+    expect(labelled('Extend')).toBeDefined();
+  });
+
   it('offers Extend on an open clip', () => {
     mountViewer();
     expect(labelled('Extend')).toBeDefined();

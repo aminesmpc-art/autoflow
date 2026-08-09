@@ -322,32 +322,49 @@ async function startExtend(videoUrl: string, seconds: string | undefined): Promi
       return 'Could not open the clip to extend — it is not in Grok\'s history on this page';
     }
 
-    /* Two ways in, because Grok offers two.
-       The proven one — taken from the working grok-auto extension — is the
-       "More options" menu: its entries are div[role="menuitem"], and the one
-       we want contains "extend". The panel button beside Regenerate/Share is
-       the other, and is what this file was originally written against. Trying
-       the menu first because that is the path with a track record. */
-    let opened = false;
+    /* Three ways in, tried in the order they are cheapest to confirm.
 
-    const more = buttonByLabel('More options');
-    if (more) {
+       1. The Extend button itself, in the panel beside Regenerate and Share.
+
+       2. That panel is not always on screen. Running Studio in the side panel
+          narrows the window, and Grok collapses the whole column behind
+          button[aria-label="Post actions"] — so the button this looked for
+          existed in every screenshot taken with the panel closed and in none
+          taken with it open. Reveal it, then look again.
+
+       3. The "More options" menu, which is what the working grok-auto
+          extension uses: its entries are div[role="menuitem"] with no button
+          among them. */
+    let extend = buttonByLabel('Extend');
+
+    if (!extend) {
+      const reveal = buttonByLabel('Post actions');
+      if (reveal) {
+        reveal.click();
+        for (let i = 0; i < 12 && !extend; i++) {
+          await sleep(250);
+          extend = buttonByLabel('Extend');
+        }
+      }
+    }
+
+    if (extend) {
+      extend.click();
+    } else {
+      const more = buttonByLabel('More options');
+      if (!more) {
+        return 'Grok is not offering Extend on this clip — no Extend button, '
+          + 'no Post actions panel and no More options menu';
+      }
       more.click();
       await sleep(900);
       const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
         .find((el) => /extend/i.test(el.textContent || '') && isVisible(el));
-      if (item) {
-        item.click();
-        opened = true;
-      } else {
+      if (!item) {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        return 'Grok is not offering Extend on this clip';
       }
-    }
-
-    if (!opened) {
-      const extend = buttonByLabel('Extend');
-      if (!extend) return 'Grok is not offering Extend on this clip';
-      extend.click();
+      item.click();
     }
 
     /* 15s, and it is not generous: entering extend mode re-renders the
