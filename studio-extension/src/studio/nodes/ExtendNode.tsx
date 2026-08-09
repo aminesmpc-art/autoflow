@@ -16,7 +16,7 @@
    as one.
    ============================================================ */
 
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useStudioStore } from '../store';
 import {
@@ -42,8 +42,16 @@ function ExtendNodeComponent({ id, data, selected }: NodeProps) {
 
   /* The chain is a fact about the canvas, so it is read from the canvas
      rather than stored on the node — moving a wire changes the answer, and a
-     copy kept here would go stale the moment it did. */
-  const chain = useStudioStore((s) => extendChain(id, s.nodes, s.edges));
+     copy kept here would go stale the moment it did.
+
+     Computed in a memo, NOT inside the selector. extendChain returns a fresh
+     object every call, and Zustand v5 compares snapshots with Object.is: a
+     selector returning a new object is "changed" on every store read, so the
+     render loop never settles. That is not a slow node, it is a hung tab —
+     selecting one turned the whole Studio window black. */
+  const nodes = useStudioStore((s) => s.nodes);
+  const edges = useStudioStore((s) => s.edges);
+  const chain = useMemo(() => extendChain(id, nodes, edges), [id, nodes, edges]);
 
   const step = nodeData.extendSeconds || '+10s';
   const affordable = affordableExtendSteps(chain.secondsBefore);

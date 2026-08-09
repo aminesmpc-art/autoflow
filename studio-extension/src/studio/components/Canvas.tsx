@@ -25,16 +25,31 @@ import { ImageNode } from '../nodes/ImageNode';
 import { GenerateNode } from '../nodes/GenerateNode';
 import { FrameNode } from '../nodes/FrameNode';
 import { ExtendNode } from '../nodes/ExtendNode';
+import { NodeBoundary } from './NodeBoundary';
 import { runner } from '../engine/WorkflowRunner';
 import { bridge } from '../engine/bridge';
 
 /* Register custom node types */
+/* Each node type wrapped so a render error is contained to its own card.
+   Without this, one node throwing unmounts the entire canvas: React tears
+   down the tree and Studio goes black, with the workflow still saved and no
+   longer openable. */
+const guarded = (Node: any, label: string) => {
+  const Guarded = (props: any) => (
+    <NodeBoundary label={(props?.data as any)?.label || label}>
+      <Node {...props} />
+    </NodeBoundary>
+  );
+  Guarded.displayName = `Guarded(${label})`;
+  return Guarded;
+};
+
 const nodeTypes = {
-  prompt: PromptNode,
-  image: ImageNode,
-  generate: GenerateNode,
-  frame: FrameNode,
-  extend: ExtendNode,
+  prompt: guarded(PromptNode, 'Prompt'),
+  image: guarded(ImageNode, 'Image'),
+  generate: guarded(GenerateNode, 'Generate'),
+  frame: guarded(FrameNode, 'Last Frame'),
+  extend: guarded(ExtendNode, 'Extend'),
 };
 
 function CanvasInner() {
