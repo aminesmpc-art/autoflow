@@ -45,6 +45,13 @@
     </div>
 
     <div id="run-error" class="sp-error" hidden></div>
+
+    <!-- What the content scripts are doing, without opening devtools on a
+         third-party site to read it. -->
+    <details id="diag" class="sp-diag">
+      <summary class="sp-diag__summary">Diagnostics</summary>
+      <div id="diag-log" class="sp-diag__log">Nothing logged yet.</div>
+    </details>
   </section>
 
   <button id="open-studio" class="sp-btn sp-btn--primary sp-btn--wide">
@@ -78,6 +85,16 @@
         <span class="sp-plat__state">—</span>
       </li>
     </ul>
+  </section>
+
+  <!-- ── Diagnostics ──
+       Recent log lines from content scripts, so you can see what happened
+       without opening devtools on a third-party site. -->
+  <section class="sp-card sp-card--diag">
+    <div class="sp-card__title">Diagnostics</div>
+    <div id="diag-log" class="sp-diag">
+      <div class="sp-diag__empty">No log entries yet.</div>
+    </div>
   </section>
 
   <section class="sp-card">

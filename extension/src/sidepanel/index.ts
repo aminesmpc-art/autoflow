@@ -172,6 +172,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initLibraryTab();
   initAccountTab();
   initStudioEntry();
+  initTobyFlowUI();
   // Single source of truth for the displayed version
   const verEl = document.getElementById('af-version');
   if (verEl) verEl.textContent = `v${chrome.runtime.getManifest().version}`;
@@ -261,6 +262,138 @@ function initStudioEntry() {
   chrome.storage.local.get('studio_opened_once').then((r) => {
     if (r?.studio_opened_once) promo?.classList.add('is-compact');
   }).catch(() => {});
+}
+
+function initTobyFlowUI() {
+  // 1. Sub-nav pills switching (Templates, Workflows, Shared)
+  const subPills = $$('.tf-sub-pill');
+  subPills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      subPills.forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+    });
+  });
+
+  // 2. Search & Category filtering for Template Cards
+  const searchInput = $('#tf-search-templates') as HTMLInputElement | null;
+  const categorySelect = $('#tf-filter-category') as HTMLSelectElement | null;
+
+  function filterCards() {
+    const query = searchInput?.value.toLowerCase().trim() || '';
+    const category = categorySelect?.value || 'all';
+    const templateCards = $$('.tf-template-card');
+
+    templateCards.forEach(card => {
+      const cardEl = card as HTMLElement;
+      const title = cardEl.querySelector('.tf-card-title')?.textContent?.toLowerCase() || '';
+      const cardCat = cardEl.getAttribute('data-category') || '';
+
+      const matchesQuery = title.includes(query);
+      const matchesCat = category === 'all' || cardCat === category;
+
+      cardEl.style.display = matchesQuery && matchesCat ? 'flex' : 'none';
+    });
+  }
+
+  searchInput?.addEventListener('input', filterCards);
+  categorySelect?.addEventListener('change', filterCards);
+
+  // 3. Template card click -> open Studio or notify user
+  $$('.tf-template-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const title = card.querySelector('.tf-card-title')?.textContent || 'Template';
+      showToast(`Opening ${title} in AutoFlow Studio...`, 'success');
+      chrome.runtime.sendMessage({ type: 'OPEN_STUDIO' });
+    });
+  });
+
+  // 4. Quick header action buttons
+  $('#btn-quick-settings')?.addEventListener('click', () => {
+    const settingsTab = $('[data-tab="settings"]');
+    settingsTab?.click();
+  });
+
+  $('#btn-open-site')?.addEventListener('click', () => {
+    chrome.tabs.create({ url: 'https://labs.google/flow' });
+  });
+
+  $('#btn-open-docs')?.addEventListener('click', () => {
+    chrome.tabs.create({ url: 'https://labs.google/flow' });
+  });
+
+  // 5. Top Avatar/Profile button -> open Auth Modal if logged out, or jump to Account tab
+  const topProfileBtn = $('#btn-top-profile');
+  const authModal = $('#tf-auth-modal');
+  const closeAuthModal = $('#btn-close-auth-modal');
+
+  topProfileBtn?.addEventListener('click', () => {
+    if (_isAuthenticated) {
+      const accountTab = $('[data-tab="account"]');
+      accountTab?.click();
+    } else {
+      if (authModal) authModal.style.display = 'flex';
+    }
+  });
+
+  closeAuthModal?.addEventListener('click', () => {
+    if (authModal) authModal.style.display = 'none';
+  });
+
+  // 6. Quick Auth Modal Form submit handler
+  const quickLoginForm = $('#tf-quick-login-form') as HTMLFormElement | null;
+  quickLoginForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = ($('#tf-quick-email') as HTMLInputElement).value.trim();
+    const password = ($('#tf-quick-password') as HTMLInputElement).value;
+    const submitBtn = $('#btn-tf-quick-submit') as HTMLButtonElement;
+    const msgEl = $('#tf-quick-login-msg') as HTMLElement;
+
+    if (!email || !password) return;
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Signing in…';
+    if (msgEl) msgEl.style.display = 'none';
+
+    try {
+      const result = await login(email, password);
+      if (result.ok) {
+        await showLoggedInState();
+        if (authModal) authModal.style.display = 'none';
+        showToast('Signed in successfully!', 'success');
+      } else {
+        if (msgEl) {
+          msgEl.textContent = result.message;
+          msgEl.className = 'af-auth-message error';
+          msgEl.style.display = 'block';
+        }
+      }
+    } catch {
+      if (msgEl) {
+        msgEl.textContent = 'Sign in failed. Please try again.';
+        msgEl.className = 'af-auth-message error';
+        msgEl.style.display = 'block';
+      }
+    }
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Sign In';
+  });
+
+  // 7. Google Auth inside Modal
+  $('#btn-tf-google-auth')?.addEventListener('click', () => {
+    $('#btn-google-auth')?.click();
+    if (authModal) authModal.style.display = 'none';
+  });
+
+  // 8. Register link inside Modal -> navigate to Account tab Register view
+  $('#tf-link-register')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (authModal) authModal.style.display = 'none';
+    const accountTab = $('[data-tab="account"]');
+    accountTab?.click();
+    const showRegisterBtn = $('#btn-show-register');
+    showRegisterBtn?.click();
+  });
 }
 
 function initTabs() {
@@ -4959,29 +5092,34 @@ async function showLoggedInState() {
     // Cache for offline use
     chrome.storage.local.set({ af_cached_profile: profile });
     ($('#account-email') as HTMLElement).textContent = profile.email;
+    
+    // Set top avatar initial
+    const topAvatar = $('#tf-top-avatar-initial');
+    if (topAvatar && profile.email) {
+      topAvatar.textContent = profile.email[0].toUpperCase();
+    }
+
     // Show Ultra Family button for signed-in users
     const ultraBtn = document.getElementById('btn-header-ultra-family');
     if (ultraBtn) ultraBtn.style.display = '';
 
-    // "Open Studio" is wired in initStudioEntry() — it must work signed-out
-    // too, and this function only runs after sign-in.
     const badge = $('#account-plan-badge') as HTMLElement;
+    const footerPlanBadge = $('#tf-footer-plan-badge');
+
     if (profile.is_pro_active) {
       badge.textContent = 'Pro';
       badge.className = 'af-plan-badge pro';
+      if (footerPlanBadge) footerPlanBadge.textContent = 'Pro Plan';
       // Hide upgrade CTA for Pro users
       const upgradeCta = document.getElementById('upgrade-cta');
       if (upgradeCta) upgradeCta.style.display = 'none';
-      
-
     } else {
       badge.textContent = 'Free';
       badge.className = 'af-plan-badge';
+      if (footerPlanBadge) footerPlanBadge.textContent = 'Free Plan';
       // Show upgrade CTA for Free users
       const upgradeCta = document.getElementById('upgrade-cta');
       if (upgradeCta) upgradeCta.style.display = '';
-
-
     }
   } else {
     // Profile fetch failed — check if session is truly expired or just a network issue
@@ -5002,15 +5140,24 @@ async function showLoggedInState() {
       if (profile) {
         chrome.storage.local.set({ af_cached_profile: profile });
         ($('#account-email') as HTMLElement).textContent = profile.email;
+        const topAvatar = $('#tf-top-avatar-initial');
+        if (topAvatar && profile.email) {
+          topAvatar.textContent = profile.email[0].toUpperCase();
+        }
+
         const badge = $('#account-plan-badge') as HTMLElement;
+        const footerPlanBadge = $('#tf-footer-plan-badge');
+
         if (profile.is_pro_active) {
           badge.textContent = 'Pro';
           badge.className = 'af-plan-badge pro';
+          if (footerPlanBadge) footerPlanBadge.textContent = 'Pro Plan';
           const upgradeCta = document.getElementById('upgrade-cta');
           if (upgradeCta) upgradeCta.style.display = 'none';
         } else {
           badge.textContent = 'Free';
           badge.className = 'af-plan-badge';
+          if (footerPlanBadge) footerPlanBadge.textContent = 'Free Plan';
           const upgradeCta = document.getElementById('upgrade-cta');
           if (upgradeCta) upgradeCta.style.display = '';
         }
@@ -5020,6 +5167,10 @@ async function showLoggedInState() {
       const { af_cached_profile } = await chrome.storage.local.get('af_cached_profile');
       if (af_cached_profile) {
         ($('#account-email') as HTMLElement).textContent = af_cached_profile.email;
+        const topAvatar = $('#tf-top-avatar-initial');
+        if (topAvatar && af_cached_profile.email) {
+          topAvatar.textContent = af_cached_profile.email[0].toUpperCase();
+        }
         const badge = $('#account-plan-badge') as HTMLElement;
         badge.textContent = 'Offline';
         badge.className = 'af-plan-badge';
@@ -5039,6 +5190,12 @@ function showLoggedOutState() {
   $('#account-logged-out')!.style.display = 'block';
   $('#account-verify-pending')!.style.display = 'none';
   $('#account-logged-in')!.style.display = 'none';
+
+  const topAvatar = $('#tf-top-avatar-initial');
+  if (topAvatar) topAvatar.textContent = '?';
+
+  const footerPlanBadge = $('#tf-footer-plan-badge');
+  if (footerPlanBadge) footerPlanBadge.textContent = 'Guest';
 
   // Hide Ultra Family button when logged out
   const ultraBtn = document.getElementById('btn-header-ultra-family');
@@ -5099,6 +5256,16 @@ async function updateUsageDisplay() {
   updateBar('lite', usage.lite_used, usage.lite_limit, usage.lite_remaining, usage.is_pro);
   updateBar('flow', usage.flow_used, usage.flow_limit, usage.flow_remaining, usage.is_pro);
   updateBar('fullrun', usage.full_monthly_used, usage.full_monthly_limit, usage.full_monthly_remaining, usage.is_pro);
+
+  // Update bottom footer quota bar
+  const footerQuotaText = $('#tf-footer-quota-text');
+  if (footerQuotaText) {
+    if (usage.is_pro) {
+      footerQuotaText.textContent = 'Unlimited';
+    } else {
+      footerQuotaText.textContent = `${usage.full_remaining} / ${usage.full_limit}`;
+    }
+  }
 
   // Fix hint text for daily Full mode
   const fullrunHint = $(`#account-fullrun-usage-hint`) as HTMLElement;

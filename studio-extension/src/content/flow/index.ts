@@ -1364,13 +1364,21 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
     // Find the tracked tile in DOM
     let trackedTile: Element | null = null;
     for (const id of trackedTileIds) {
+      // Primary: the grid tile
       const el = document.querySelector(`[data-tile-id="${id}"]`);
       if (el && isVisible(el)) { trackedTile = el; break; }
+
+      // Detail View fallback: when the Detail View is open, Flow unmounts the
+      // grid and shows history-step elements in the sidebar instead. The tile
+      // id appears as part of the element's DOM id.
+      const historyStep = document.querySelector(`div[id="history-step-${id}"]`);
+      if (historyStep && isVisible(historyStep)) { trackedTile = historyStep; break; }
     }
 
     // Fallback path (no engine tile IDs): follow a tile we saw generating
     if (!trackedTile && fallbackTileId) {
-      const el = document.querySelector(`[data-tile-id="${fallbackTileId}"]`);
+      const el = document.querySelector(`[data-tile-id="${fallbackTileId}"]`)
+        || document.querySelector(`div[id="history-step-${fallbackTileId}"]`);
       if (el && isVisible(el)) trackedTile = el;
     }
     if (!trackedTile && trackedTileIds.length === 0) {
@@ -1412,7 +1420,7 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
     }
 
     if (!trackedTile) {
-      if (wait % 10 === 0) console.log('[AutoFlow Studio] Tile not in DOM, waiting...');
+      if (wait % 10 === 0) logLine(`Tile not in DOM yet (wait=${wait}s)...`);
       continue;
     }
 
@@ -1422,8 +1430,8 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
     const state = getStudioTileState(trackedTile);
 
     if (state === 'completed') {
-      console.log('[AutoFlow Studio] Tile completed!');
-      const tileId = trackedTile.getAttribute('data-tile-id') || '';
+      logLine(`Tile completed! (id=${trackedTile.getAttribute('data-tile-id') || trackedTile.id || 'unknown'})`);
+      const tileId = trackedTile.getAttribute('data-tile-id') || trackedTile.id || '';
       const mediaUrl = extractTileMediaUrl(trackedTile);
       const previewSrc = extractTilePreviewSrc(trackedTile);
       await sendStudioResult(nodeId, tileId, mediaUrl, previewSrc, trackedTile);
@@ -1890,6 +1898,17 @@ function sendStudioError(nodeId: string, error: string): void {
     chrome.runtime.sendMessage({
       type: 'STUDIO_NODE_ERROR',
       payload: { nodeId, error },
+    }).catch(() => {});
+  } catch {}
+}
+
+/** Diagnostic log — shows in both the console and the side-panel Diagnostics section. */
+function logLine(line: string): void {
+  console.log(`[AutoFlow Flow] ${line}`);
+  try {
+    chrome.runtime.sendMessage({
+      type: 'STUDIO_LOG',
+      payload: { source: 'Flow', line },
     }).catch(() => {});
   } catch {}
 }

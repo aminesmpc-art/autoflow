@@ -40,6 +40,21 @@ chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
   return false;
 });
 
+/**
+ * A line for the side panel's diagnostics, and for the console.
+ *
+ * The console is on the ChatGPT tab; the panel is where someone watching a run
+ * is actually looking, and asking them to open devtools on a third-party site
+ * to find out why a node failed is asking too much.
+ */
+function logLine(line: string): void {
+  console.log(`[AutoFlow ChatGPT] ${line}`);
+  try {
+    chrome.runtime.sendMessage({ type: 'STUDIO_LOG', payload: { source: 'ChatGPT', line } })
+      .catch(() => {});
+  } catch {}
+}
+
 function send(type: string, payload: Record<string, unknown>): void {
   try { chrome.runtime.sendMessage({ type, payload }).catch(() => {}); } catch {}
 }
@@ -102,6 +117,112 @@ function findSendButton(): HTMLElement | null {
     }
   }
   return null;
+}
+
+/* ── The "Create image" tool ───────────────────────────────────
+   Asking ChatGPT in prose for a picture is a coin flip — it answers with a
+   description about as often as it draws. Selecting the tool makes it a
+   generation request, which is what an image node is for.
+
+   Read off the live composer: the + button is
+   button[data-testid="composer-plus-btn"], and the menu it opens is a list of
+   div.__menu-item — no role="menuitem" anywhere, which is why a standard menu
+   query finds nothing. The chosen tool then appears as a pill INSIDE the
+   editor, marked data-inline-selection-pill.
+   ──────────────────────────────────────────────────────────── */
+
+/** Whether a tool pill with this label is already on the composer. */
+function hasToolPill(label: string): boolean {
+  return Array.from(document.querySelectorAll('[data-inline-selection-pill]'))
+    .some((p) => (p.textContent || '').trim().toLowerCase() === label.toLowerCase());
+}
+
+/**
+ * Put the Create image tool on the composer.
+ *
+ * Returns a reason when it could not, rather than a bare false: an image node
+ * that quietly ran without the tool comes back with a paragraph of prose where
+ * a picture should be, and the capture then waits out its whole timeout
+ * looking for an image nobody asked ChatGPT to draw.
+ */
+async function selectCreateImageTool(): Promise<string | null> {
+  if (hasToolPill('Create image')) return null;
+
+  const plus = document.querySelector<HTMLElement>('button[data-testid="composer-plus-btn"]');
+  if (!plus) return 'ChatGPT\'s "+" menu button is not on the page';
+
+  // A plain .click() does not open it; the menu is opened on pointerdown.
+  for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click']) {
+    plus.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+  }
+
+  let item: HTMLElement | undefined;
+  for (let i = 0; i < 12 && !item; i++) {
+    await sleep(250);
+    item = Array.from(document.querySelectorAll<HTMLElement>('.__menu-item'))
+      .find((el) => /^create image/i.test((el.textContent || '').trim()));
+  }
+  if (!item) {
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    const opened = document.querySelectorAll('.__menu-item').length;
+    return opened
+      ? `ChatGPT's "+" menu has no "Create image" entry (${opened} entries offered)`
+      : 'ChatGPT\'s "+" menu did not open';
+  }
+
+  item.click();
+  for (let i = 0; i < 12; i++) {
+    await sleep(250);
+    if (hasToolPill('Create image')) return null;
+  }
+  return 'Clicked "Create image" but the composer did not take the tool';
+}
+
+/**
+ * Keep the newest turn on screen.
+ *
+ * ChatGPT only renders what is near the viewport, and a generated image that
+ * has scrolled out is either not in the DOM or never loads its bytes — so the
+ * capture searched a page the picture was not on and waited out its timeout
+ * while the picture sat there, one scroll away.
+ */
+function scrollToNewest(): void {
+  const target = document.querySelector<HTMLElement>('main [class*="overflow-y"], main');
+  if (target) target.scrollTop = target.scrollHeight;
+  // Some builds scroll the document instead of a pane.
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+/**
+ * ChatGPT refusing or failing, in its own words.
+ *
+ * Distinct from "still working": a refusal never becomes an image however long
+ * it is given, so waiting six minutes for one wastes the run and reports the
+ * wrong cause. Anchored on phrases that only appear when the turn has ended
+ * badly, and only read from the newest turn.
+ */
+function readFailureNotice(): string {
+  const turns = document.querySelectorAll<HTMLElement>('[data-message-author-role="assistant"]');
+  const latest = turns[turns.length - 1];
+  const text = (latest?.innerText || '').trim();
+  if (!text) return '';
+
+  const patterns: Array<[RegExp, string]> = [
+    [/content policy|can'?t (help with|create|generate) that|unable to (create|generate)/i,
+      'ChatGPT declined this prompt'],
+    [/you'?ve (hit|reached) (your|the) (limit|cap)|rate limit|try again later|come back later/i,
+      'ChatGPT is rate limited'],
+    [/something went wrong|error (generating|creating)|failed to generate/i,
+      'ChatGPT reported an error generating the image'],
+  ];
+  for (const [pattern, label] of patterns) {
+    if (pattern.test(text)) {
+      // Its own sentence beats our paraphrase for deciding what to do next.
+      const sentence = text.split(/(?<=[.!?])\s/).find((s) => pattern.test(s)) || text.slice(0, 160);
+      return `${label}: ${sentence.trim().slice(0, 200)}`;
+    }
+  }
+  return '';
 }
 
 /** Fill either a textarea (native setter) or a contenteditable (insertText) */
@@ -415,7 +536,7 @@ async function handleExecute(payload: any): Promise<any> {
     return { success: false };
   }
 
-  console.log(`[AutoFlow ChatGPT] Executing node ${nodeId}`);
+  logLine(`Executing node ${nodeId} (${config?.mediaType || 'image'}, prompt ${prompt.length} chars)`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 10 });
 
   // A freshly opened tab may still be mounting, so give the composer a
@@ -434,6 +555,8 @@ async function handleExecute(payload: any): Promise<any> {
     });
     return { success: false };
   }
+
+  logLine(`Composer found: <${composer.tagName.toLowerCase()}> id="${composer.id || 'none'}" connected=${composer.isConnected}`);
 
   const wantsText = config?.mediaType === 'text';
 
@@ -474,11 +597,64 @@ async function handleExecute(payload: any): Promise<any> {
     composer = findComposer() || composer;
   }
 
+  /* Ask for a picture with the tool, not with words. Before typing, because
+     choosing it puts a pill in the composer and ChatGPT re-renders around it.
+     Text nodes must not get it — the whole point of a prompt writer is prose
+     back. */
+  if (!wantsText) {
+    const toolProblem = await selectCreateImageTool();
+    if (toolProblem) {
+      send('STUDIO_NODE_ERROR', {
+        nodeId,
+        error: `${toolProblem}. Without it ChatGPT answers in words and this node would `
+          + 'wait out its timeout looking for a picture.',
+      });
+      return { success: false };
+    }
+    logLine('Create image tool selected');
+    composer = findComposer() || composer;
+  }
+
   fillComposer(composer, prompt);
   await sleep(500);
 
-  const composerText = (el: HTMLElement): string =>
-    el instanceof HTMLTextAreaElement ? el.value.trim() : (el.textContent || '').trim();
+  /**
+   * What the user actually typed, with the tool pills subtracted.
+   *
+   * Selecting "Create image" puts a pill INSIDE the editor — the composer's
+   * textContent becomes "﻿Create image " before a single character of
+   * prompt is typed. Both pill spans are contenteditable="false", which is
+   * what separates a widget from the text.
+   *
+   * Two checks depend on this being the prompt and nothing else: that the
+   * typing landed, and that the send emptied the box. Counting the pill would
+   * make the first pass on an empty composer and the second never pass at
+   * all, so the send would escalate through every rung and report failure
+   * after successfully sending.
+   */
+  const composerText = (el: HTMLElement): string => {
+    if (el instanceof HTMLTextAreaElement) return el.value.trim();
+    const clone = el.cloneNode(true) as HTMLElement;
+    for (const widget of Array.from(
+      clone.querySelectorAll('[contenteditable="false"], [data-inline-selection-pill]')
+    )) {
+      widget.remove();
+    }
+    return (clone.textContent || '').replace(/﻿/g, '').trim();
+  };
+
+  /* Read the composer that is on the page NOW, not the one we typed through.
+     execCommand('insertText') acts on whatever holds the selection, and
+     ChatGPT swaps its composer node out as it hydrates — so the text lands in
+     the live element while the reference captured a moment earlier is
+     detached and reads empty. That produced "Could not type into the ChatGPT
+     prompt box" with the prompt plainly sitting in the box. */
+  const live = findComposer() || composer;
+  if (live !== composer) {
+    logLine(`Composer was replaced while typing — reading the live one (old node ${
+      composer.isConnected ? 'still attached' : 'detached'})`);
+  }
+  composer = live;
 
   /**
    * Send, and confirm it left the composer.
@@ -533,6 +709,7 @@ async function handleExecute(payload: any): Promise<any> {
   }
 
   const landed = composerText(composer);
+  logLine(`After fill: composer holds ${landed.length} chars, connected=${composer.isConnected}`);
   if (!landed) {
     send('STUDIO_NODE_ERROR', { nodeId, error: 'Could not type into the ChatGPT prompt box' });
     return { success: false };
@@ -550,7 +727,7 @@ async function handleExecute(payload: any): Promise<any> {
     return { success: false };
   }
 
-  console.log(`[AutoFlow ChatGPT] Prompt submitted — waiting for the ${wantsText ? 'reply' : 'image'}...`);
+  logLine(`Prompt submitted — waiting for the ${wantsText ? 'reply' : 'image'}`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 20 });
 
   // Return the message channel NOW — the wait can take minutes and Chrome
@@ -580,6 +757,20 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
     const elapsed = Date.now() - startedAt;
     const progress = Math.min(90, 20 + Math.floor((elapsed / GENERATION_TIMEOUT_MS) * 90));
     send('STUDIO_NODE_PROGRESS', { nodeId, progress });
+
+    /* Every poll, because the answer grows as it streams and pushes itself
+       out of view. ChatGPT renders what is near the viewport, so an image
+       that has scrolled off is either absent from the DOM or never loads its
+       bytes — and the search then runs against a page the picture is not on. */
+    scrollToNewest();
+
+    /* A refusal or a rate limit never turns into an image, so waiting the
+       full six minutes for one spends the run and then blames the timeout. */
+    const failure = readFailureNotice();
+    if (failure) {
+      send('STUDIO_NODE_ERROR', { nodeId, error: failure });
+      return;
+    }
 
     const fresh = collectResultImages().filter(
       (i) => !preexisting.has(i.currentSrc || i.src)

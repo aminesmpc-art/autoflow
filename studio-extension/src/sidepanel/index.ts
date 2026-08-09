@@ -109,8 +109,57 @@ async function refreshRun(): Promise<void> {
 // without polling hard.
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === 'PANEL_RUN_STATE') renderRun(msg.payload || {});
+  if (msg?.type === 'PANEL_LOG_PUSH') appendLogEntry(msg.payload);
   return false;
 });
+
+/* ── Diagnostics ──
+   Renders log entries from content scripts so you can diagnose a failed node
+   without opening devtools on chatgpt.com. */
+
+function formatLogTs(ts: number): string {
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, '0')}:${
+    String(d.getMinutes()).padStart(2, '0')}:${
+    String(d.getSeconds()).padStart(2, '0')}`;
+}
+
+function appendLogEntry(entry: { ts: number; source: string; line: string }): void {
+  const container = document.getElementById('diag-log');
+  if (!container) return;
+
+  // Remove the "No log entries yet" placeholder on first entry.
+  const empty = container.querySelector('.sp-diag__empty');
+  if (empty) empty.remove();
+
+  const row = document.createElement('div');
+  row.className = 'sp-diag__line';
+
+  const ts = document.createElement('span');
+  ts.className = 'sp-diag__ts';
+  ts.textContent = formatLogTs(entry.ts);
+
+  const src = document.createElement('span');
+  src.className = 'sp-diag__src';
+  src.textContent = entry.source;
+
+  const msg = document.createElement('span');
+  msg.className = 'sp-diag__msg';
+  msg.textContent = entry.line;
+
+  row.append(ts, src, msg);
+  container.appendChild(row);
+  container.scrollTop = container.scrollHeight;
+}
+
+async function refreshLogs(): Promise<void> {
+  try {
+    const entries = await chrome.runtime.sendMessage({ type: 'PANEL_GET_LOGS' });
+    if (Array.isArray(entries)) {
+      for (const e of entries) appendLogEntry(e);
+    }
+  } catch { /* worker asleep */ }
+}
 
 /* ── Platforms ──
    Answers "is the tab this run needs even open" before a node discovers it
@@ -330,6 +379,7 @@ function boot(): void {
     ['run status', refreshRun],
     ['account', refreshAccount],
     ['platforms', refreshPlatforms],
+    ['logs', refreshLogs],
   ];
   for (const [name, step] of steps) {
     try {
@@ -345,3 +395,36 @@ boot();
 
 // Tabs open and close without telling us; a slow poll keeps the dots honest.
 setInterval(() => { refreshPlatforms().catch(() => {}); }, 5000);
+
+/**
+ * Diagnostics, pulled from the worker's buffer.
+ *
+ * Only while the section is open: this polls, and polling to render something
+ * nobody has expanded is work for nothing.
+ */
+async function refreshLog(): Promise<void> {
+  const box = document.getElementById('diag');
+  const out = document.getElementById('diag-log');
+  if (!box || !out || !(box as HTMLDetailsElement).open) return;
+
+  let lines: Array<{ at: number; source: string; line: string }> = [];
+  try {
+    lines = (await chrome.runtime.sendMessage({ type: 'PANEL_LOG' })) || [];
+  } catch {
+    out.textContent = 'Background worker is not responding.';
+    return;
+  }
+
+  if (!lines.length) {
+    out.textContent = 'Nothing logged yet.';
+    return;
+  }
+
+  const stamp = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour12: false });
+  out.textContent = lines.map((l) => `${stamp(l.at)}  ${l.source}: ${l.line}`).join('\n');
+  // Newest at the bottom, so it reads like a log rather than needing a scroll.
+  out.scrollTop = out.scrollHeight;
+}
+
+document.getElementById('diag')?.addEventListener('toggle', () => { refreshLog().catch(() => {}); });
+setInterval(() => { refreshLog().catch(() => {}); }, 2000);

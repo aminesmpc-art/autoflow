@@ -36,6 +36,8 @@ const TEXT_TIMEOUT_MS = 90 * 1000;
 const POLL_MS = 2000;
 const UPLOAD_TIMEOUT_MS = 45 * 1000;
 const MAX_CAPTURE_BYTES = 15 * 1024 * 1024;
+/** Videos are much larger than stills — 50 MB lets a 15 s 1080p clip through. */
+const MAX_VIDEO_CAPTURE_BYTES = 50 * 1024 * 1024;
 
 chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
   if (msg?.type === 'PING') { sendResponse({ pong: true }); return true; }
@@ -112,7 +114,10 @@ function findSendButton(): HTMLElement | null {
 
   for (const btn of document.querySelectorAll<HTMLElement>('button[aria-label]')) {
     const label = btn.getAttribute('aria-label') || '';
-    if (/^(submit|send)/i.test(label) && isVisible(btn)) return btn;
+    /* Imagine's re-prompt page labels its button "Make video" or "Make image"
+       rather than "Submit". Without matching those, every generation after the
+       first falls back to pressing Enter, which may or may not work. */
+    if (/^(submit|send|make (video|image))/i.test(label) && isVisible(btn)) return btn;
   }
   return null;
 }
@@ -147,6 +152,17 @@ function looksSignedOut(): boolean {
  */
 function isGenerating(): boolean {
   if (findStopButton()) return true;
+
+  /* Grok Imagine shows generation progress inside the result article area
+     rather than on the composer form. Look for loading text or progress
+     indicators there — without this the poller reads "idle" the whole time
+     and can latch onto a half-loaded result. */
+  const article = document.querySelector('article');
+  if (article) {
+    const text = article.innerText || '';
+    if (/generating|creating your|loading/i.test(text)) return true;
+    if (article.querySelector('[role="progressbar"], .animate-spin, [class*="spinner"]')) return true;
+  }
 
   /* Deliberately NOT "the submit button is disabled".
      On /imagine that button is always in the DOM and is disabled whenever the
@@ -291,6 +307,12 @@ function collectResultImages(): HTMLImageElement[] {
     if (!src) return false;
     if (src.startsWith('data:') && src.length < 2000) return false; // inline icons
     if (composer && composer.contains(img)) return false;
+    /* Grok Imagine results are hosted at assets.grok.com — recognise them
+       even while still loading, since the URL alone confirms they are results
+       rather than UI chrome. The old size check rejected them during the
+       lazy-load window, so the poller saw nothing until it timed out. */
+    const isGrokAsset = /assets\.grok\.com\/users\/.*\/(preview_image|generated_image)/i.test(src);
+    if (isGrokAsset) return true;
     const rect = img.getBoundingClientRect();
     if (rect.width < 180 && rect.height < 180) return false;
     return img.complete && img.naturalWidth >= 256 && img.naturalHeight >= 256;
@@ -656,7 +678,7 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
     if (src === stableSrc) stableCount++;
     else { stableSrc = src; stableCount = 0; }
 
-    if (stableCount >= 2 && !isGenerating()) {
+    if (stableCount >= 3 && !isGenerating()) {
       try {
         const dataUrl = await captureImage(candidate);
         send('STUDIO_NODE_RESULT', {
@@ -721,30 +743,81 @@ async function trackVideoGeneration(nodeId: string, preexisting: Set<string>): P
     if (candidate.src === stableSrc) stableCount++;
     else { stableSrc = candidate.src; stableCount = 0; }
 
-    if (stableCount >= 2) {
+    if (stableCount >= 2 && !isGenerating()) {
       const poster = candidate.getAttribute('poster') || '';
-      // Best effort: chaining needs bytes, display only needs the URL.
+
+      /* ── Poster (still image) ──
+         Three layers, each compensating for the one above failing:
+         1. fetch() the poster URL with credentials — works when cookies travel
+         2. Draw the <video> frame onto a canvas — works regardless of CORS
+         3. Give up — the node shows "done" with no preview, which is better
+            than timing out pretending nothing happened. */
       let referenceUrl = '';
+
+      // Layer 1: fetch the poster URL directly
       if (poster) {
         try {
-          const resp = await fetch(poster);
+          const resp = await fetch(poster, { credentials: 'include' });
           if (resp.ok) referenceUrl = await blobToDataUrl(await resp.blob());
         } catch {
-          console.warn('[AutoFlow Grok] Could not read the clip\'s still — a node chained '
-            + 'from this one will report a missing reference rather than generating without it.');
+          /* fall through to canvas */
         }
+      }
+
+      // Layer 2: canvas capture from the playing <video> element
+      if (!referenceUrl && candidate.videoWidth > 0 && candidate.videoHeight > 0) {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = candidate.videoWidth;
+          canvas.height = candidate.videoHeight;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(candidate, 0, 0);
+            referenceUrl = canvas.toDataURL('image/jpeg', 0.92);
+            console.log('[AutoFlow Grok] Poster captured via canvas fallback');
+          }
+        } catch {
+          console.warn('[AutoFlow Grok] Canvas poster capture also failed (CORS-tainted)');
+        }
+      }
+
+      if (!referenceUrl) {
+        console.warn('[AutoFlow Grok] Could not capture a still — a node chained '
+          + 'from this one will report a missing reference.');
+      }
+
+      /* ── Video bytes ──
+         The extension page is chrome-extension:// and cannot reach
+         assets.grok.com (no cookies, different origin). Fetch the mp4 here
+         where the content script shares grok.com's session. */
+      let videoDataUrl = '';
+      try {
+        const resp = await fetch(candidate.src, { credentials: 'include' });
+        if (resp.ok) {
+          const blob = await resp.blob();
+          if (blob.size <= MAX_VIDEO_CAPTURE_BYTES) {
+            videoDataUrl = await blobToDataUrl(blob);
+            console.log(`[AutoFlow Grok] Video inlined (${(blob.size / 1e6).toFixed(1)} MB)`);
+          } else {
+            console.warn(`[AutoFlow Grok] Video too large to inline (${(blob.size / 1e6).toFixed(1)} MB)`);
+          }
+        } else {
+          console.warn(`[AutoFlow Grok] Video fetch returned HTTP ${resp.status}`);
+        }
+      } catch (e: any) {
+        console.warn('[AutoFlow Grok] Could not fetch video bytes:', e?.message);
       }
 
       send('STUDIO_NODE_RESULT', {
         nodeId,
         tileId: '',
-        imageUrl: candidate.src,
-        thumbnailUrl: poster,
-        previewUrl: poster,
-        previewVideoUrl: candidate.src,
+        imageUrl: videoDataUrl || referenceUrl || candidate.src,
+        thumbnailUrl: referenceUrl || poster,
+        previewUrl: referenceUrl || poster,
+        previewVideoUrl: videoDataUrl || candidate.src,
         referenceUrl,
       });
-      console.log(`[AutoFlow Grok] Clip captured${referenceUrl ? ' with a still' : ' (still unavailable)'}`);
+      console.log(`[AutoFlow Grok] Clip captured — video=${videoDataUrl ? 'inlined' : 'URL only'}, still=${referenceUrl ? 'inlined' : 'unavailable'}`);
       return;
     }
   }

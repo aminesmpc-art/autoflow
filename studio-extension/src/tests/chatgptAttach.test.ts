@@ -66,13 +66,48 @@ function buildHarness(): Harness {
     setTimeout(() => { composer.textContent = ''; }, 0);
   });
 
-  form.append(composer, fileInput, sendBtn);
+  /* The "+" menu, because an image node now selects the Create image tool
+     through it. Modelled on the live one: it opens on pointerdown, its entries
+     are div.__menu-item with no role, and choosing one drops a
+     contenteditable="false" pill into the editor. A harness without it would
+     make every image test exercise the failure path instead. */
+  const plusBtn = document.createElement('button');
+  plusBtn.setAttribute('data-testid', 'composer-plus-btn');
+  plusBtn.addEventListener('pointerdown', () => {
+    if (document.querySelector('.__menu-item')) return;
+    const menu = document.createElement('div');
+    menu.id = 'fake-plus-menu';
+    for (const label of ['Add photos & filesUpload from computer', 'Create imageVisualize anything']) {
+      const item = document.createElement('div');
+      item.className = 'group __menu-item';
+      item.textContent = label;
+      (item as any).getBoundingClientRect = () =>
+        ({ width: 260, height: 36, top: 0, left: 0, bottom: 36, right: 260, x: 0, y: 0, toJSON() {} });
+      item.addEventListener('click', () => {
+        if (!/^Create image/.test(label)) return;
+        const cursor = document.createElement('span');
+        cursor.setAttribute('contenteditable', 'false');
+        cursor.setAttribute('data-inline-selection-pill-cursor-target', '');
+        cursor.textContent = '﻿';
+        const pill = document.createElement('span');
+        pill.setAttribute('contenteditable', 'false');
+        pill.setAttribute('data-inline-selection-pill', '');
+        pill.textContent = 'Create image';
+        composer.prepend(cursor, pill);
+        menu.remove();
+      });
+      menu.append(item);
+    }
+    document.body.append(menu);
+  });
+
+  form.append(composer, fileInput, sendBtn, plusBtn);
   document.body.append(form);
 
   // Everything the script measures is zero-sized under jsdom, so isVisible()
   // would reject the whole page. Give the elements a real box.
   const box = { width: 400, height: 40, top: 0, left: 0, bottom: 40, right: 400, x: 0, y: 0, toJSON() {} };
-  for (const el of [composer, sendBtn, fileInput]) {
+  for (const el of [composer, sendBtn, fileInput, plusBtn]) {
     (el as any).getBoundingClientRect = () => box;
   }
 
@@ -471,4 +506,104 @@ describe('a send that does not go through', () => {
 
     expect(errorsFrom(h).join(' ')).not.toMatch(/could not type/i);
   }, 20_000);
+});
+
+/* ============================================================
+   The "Create image" tool.
+
+   Asking in prose is a coin flip — ChatGPT answers with a description about
+   as often as it draws. Selecting the tool makes it a generation request.
+
+   Everything below is verbatim from a live composer. Two details are the
+   whole reason this needed reading rather than guessing:
+
+   - The menu entries are div.__menu-item with no role="menuitem" anywhere, so
+     a standard menu query returns zero.
+   - The chosen tool becomes a pill INSIDE the editor, so the composer's
+     textContent reads "\uFEFFCreate image " before a character of prompt is
+     typed. Both pill spans are contenteditable="false", which is what tells a
+     widget from the text — and the fill check and the send check both depend
+     on getting that right.
+   ============================================================ */
+describe('the Create image tool', () => {
+  /** The + menu, as it renders once opened. */
+  function mountMenu(host: HTMLElement): void {
+    const menu = document.createElement('div');
+    for (const label of [
+      'Add photos & filesUpload from computer',
+      'Add from libraryBrowse and search your files',
+      'Create imageVisualize anything',
+      'Web searchFind real-time news and info',
+    ]) {
+      const item = document.createElement('div');
+      item.className = 'group __menu-item gap-1.5';
+      item.textContent = label;
+      (item as any).getBoundingClientRect = () =>
+        ({ width: 260, height: 36, top: 0, left: 0, bottom: 36, right: 260, x: 0, y: 0, toJSON() {} });
+      menu.append(item);
+    }
+    host.append(menu);
+  }
+
+  /** The pill the tool leaves in the editor. */
+  function addPill(composer: HTMLElement): void {
+    const cursor = document.createElement('span');
+    cursor.setAttribute('contenteditable', 'false');
+    cursor.setAttribute('data-inline-selection-pill-cursor-target', '');
+    cursor.textContent = '\uFEFF';
+    const pill = document.createElement('span');
+    pill.setAttribute('contenteditable', 'false');
+    pill.setAttribute('data-inline-selection-pill', '');
+    pill.textContent = 'Create image';
+    composer.prepend(cursor, pill);
+  }
+
+  it('finds the entry even though it is not a menuitem', () => {
+    document.body.innerHTML = '';
+    const host = document.createElement('div');
+    document.body.append(host);
+    mountMenu(host);
+
+    expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(0);
+    const found = Array.from(document.querySelectorAll<HTMLElement>('.__menu-item'))
+      .find((el) => /^create image/i.test((el.textContent || '').trim()));
+    expect(found).toBeDefined();
+  });
+
+  it('does not mistake "Add from library" for it', () => {
+    // Anchored at the start, so an entry merely containing the words loses.
+    document.body.innerHTML = '';
+    const host = document.createElement('div');
+    document.body.append(host);
+    mountMenu(host);
+
+    const found = Array.from(document.querySelectorAll<HTMLElement>('.__menu-item'))
+      .find((el) => /^create image/i.test((el.textContent || '').trim()));
+    expect(found!.textContent).toMatch(/^Create image/);
+  });
+
+  it('reads the pill as a widget, not as the prompt', () => {
+    /* The trap. Counting the pill would make an empty composer look filled,
+       and would make a sent composer never look empty — so the send would
+       escalate through every rung and report failure after succeeding. */
+    const h = buildHarness();
+    addPill(h.composer);
+    expect(h.composer.textContent).toContain('Create image');
+
+    const clone = h.composer.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('[contenteditable="false"], [data-inline-selection-pill]')
+      .forEach((n) => n.remove());
+    expect((clone.textContent || '').replace(/\uFEFF/g, '').trim()).toBe('');
+  });
+
+  it('still reads the prompt when the pill is present', () => {
+    const h = buildHarness();
+    addPill(h.composer);
+    h.composer.append(document.createTextNode('a red bicycle'));
+
+    const clone = h.composer.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('[contenteditable="false"], [data-inline-selection-pill]')
+      .forEach((n) => n.remove());
+    expect((clone.textContent || '').replace(/\uFEFF/g, '').trim()).toBe('a red bicycle');
+  });
 });

@@ -5516,3 +5516,586 @@ button:focus-visible {
   flex-shrink: 0;
 }
 
+/* ============================================================
+   TobyFlow-Inspired Modern Interface Redesign (2026)
+   ============================================================ */
+
+:root {
+  --tf-lime: #b5f602;
+  --tf-lime-dim: rgba(181, 246, 2, 0.15);
+  --tf-lime-border: rgba(181, 246, 2, 0.35);
+  --tf-bg-main: #141416;
+  --tf-bg-card: #202024;
+  --tf-bg-card-hover: #2a2a30;
+  --tf-bg-input: #1a1a1e;
+  --tf-border: rgba(255, 255, 255, 0.07);
+  --tf-border-active: rgba(255, 255, 255, 0.16);
+  --tf-text-gold: #fbbf24;
+}
+
+/* Toby Header Toolbar */
+.tf-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #121214;
+  border-bottom: 1px solid var(--tf-border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.tf-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.3px;
+}
+
+.tf-brand-icon {
+  width: 24px;
+  height: 24px;
+  background: var(--tf-lime);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #000;
+  box-shadow: 0 0 12px rgba(181, 246, 2, 0.4);
+}
+
+.tf-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tf-action-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #9ea3b0;
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.tf-action-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+}
+
+.tf-notification-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  background: #ef4444;
+  border-radius: 50%;
+}
+
+.tf-avatar-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #3b82f6;
+  color: #fff;
+  font-weight: 700;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #141416;
+  cursor: pointer;
+  position: relative;
+}
+
+.tf-avatar-dot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 7px;
+  height: 7px;
+  background: #22c55e;
+  border-radius: 50%;
+  border: 1.5px solid #141416;
+}
+
+/* Session / Date Selector Bar */
+.tf-session-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: #18181c;
+  border-bottom: 1px solid var(--tf-border);
+}
+
+.tf-session-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #d1d5db;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tf-session-picker:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.tf-add-session-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tf-add-session-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+}
+
+/* Main Navigation Tabs */
+.tf-main-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
+  background: #141416;
+  border-bottom: 1px solid var(--tf-border);
+  overflow-x: auto;
+}
+
+.tf-nav-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 11px;
+  border: none;
+  background: transparent;
+  color: #8b909f;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.tf-nav-tab:hover {
+  color: #d1d5db;
+}
+
+.tf-nav-tab.active {
+  color: var(--tf-lime);
+  font-weight: 600;
+}
+
+.tf-nav-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  background: var(--tf-lime);
+  border-radius: 2px;
+  box-shadow: 0 0 8px var(--tf-lime);
+}
+
+/* Secondary Navigation Pills */
+.tf-sub-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+}
+
+.tf-sub-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #8b909f;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tf-sub-pill:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tf-sub-pill.active {
+  color: #ffffff;
+  background: #25252a;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Search & Category Filter Bar */
+.tf-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 10px;
+}
+
+.tf-search-input-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.tf-search-icon {
+  position: absolute;
+  left: 10px;
+  color: #6b7280;
+  pointer-events: none;
+}
+
+.tf-search-input {
+  width: 100%;
+  padding: 7px 10px 7px 32px;
+  background: var(--tf-bg-input);
+  border: 1px solid var(--tf-border);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 12px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.tf-search-input:focus {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: #222227;
+}
+
+.tf-category-select {
+  padding: 7px 10px;
+  background: var(--tf-bg-input);
+  border: 1px solid var(--tf-border);
+  border-radius: 8px;
+  color: #9ca3af;
+  font-size: 11.5px;
+  outline: none;
+  cursor: pointer;
+}
+
+/* 2-Column Template Cards Grid */
+.tf-template-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 14px 14px;
+}
+
+.tf-template-card {
+  background: var(--tf-bg-card);
+  border: 1px solid var(--tf-border);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.25s ease;
+  cursor: pointer;
+}
+
+.tf-template-card:hover {
+  background: var(--tf-bg-card-hover);
+  border-color: var(--tf-border-active);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+.tf-card-thumb-wrap {
+  width: 100%;
+  height: 110px;
+  position: relative;
+  background: #111;
+  overflow: hidden;
+}
+
+.tf-card-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.tf-template-card:hover .tf-card-thumb {
+  transform: scale(1.04);
+}
+
+.tf-card-body {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tf-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.tf-card-tags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.tf-card-badge {
+  font-size: 9.5px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #9ca3af;
+}
+
+.tf-card-nodes-badge {
+  font-size: 9.5px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(181, 246, 2, 0.08);
+  color: var(--tf-lime);
+}
+
+.tf-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-size: 10px;
+  color: #6b7280;
+}
+
+.tf-card-users {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.tf-card-stars {
+  color: var(--tf-text-gold);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tf-load-more-btn {
+  width: calc(100% - 28px);
+  margin: 0 14px 16px;
+  padding: 9px;
+  background: #1a1a1e;
+  border: 1px solid var(--tf-border);
+  border-radius: 10px;
+  color: #d1d5db;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.tf-load-more-btn:hover {
+  background: #232328;
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+/* Bottom Quota Footer Bar */
+.tf-footer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #101012;
+  border-top: 1px solid var(--tf-border);
+  position: sticky;
+  bottom: 0;
+  z-index: 90;
+}
+
+.tf-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tf-trial-pill {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #9ca3af;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.tf-register-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  background: transparent;
+  border: 1px solid var(--tf-text-gold);
+  color: var(--tf-text-gold);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tf-register-btn:hover {
+  background: rgba(251, 191, 36, 0.1);
+  transform: translateY(-1px);
+}
+
+.tf-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10.5px;
+  color: #8b909f;
+}
+
+.tf-counter-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.tf-watermark-status {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: #6b7280;
+}
+
+/* Sign In / Register Modal Drawer */
+.tf-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  z-index: 999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.2s ease;
+}
+
+.tf-modal-overlay.active {
+  display: flex;
+}
+
+.tf-modal-content {
+  width: 100%;
+  max-width: 360px;
+  background: #18181c;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tf-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.tf-modal-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.tf-auth-header {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.tf-auth-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--tf-lime);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #000;
+  box-shadow: 0 0 16px rgba(181, 246, 2, 0.4);
+  margin-bottom: 4px;
+}
+
+.tf-auth-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.tf-auth-subtitle {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+

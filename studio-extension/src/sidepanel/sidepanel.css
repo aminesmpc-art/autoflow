@@ -1,27 +1,33 @@
-/* Side panel — the control surface for a run happening in another tab.
-   Chrome opens panels around 320-400px, so everything is built narrow-first
-   and nothing relies on horizontal room. */
+/* Side panel — TobyFlow Premium Obsidian & Lime Control Panel */
 
 *, *::before, *::after { box-sizing: border-box; }
 
 :root {
-  --bg: #0a0a0c;
-  --card: #131317;
-  --line: #212127;
-  --text: #e8e8ea;
-  --muted: #7b7b85;
-  --accent: #8b5cf6;
-  --accent-2: #6366f1;
+  --bg: #141416;
+  --card: #18181c;
+  --card-hover: #1f1f24;
+  --line: #232328;
+  --line-focus: #34343d;
+  --text: #ffffff;
+  --muted: #8e8e99;
+  --dim: #5a5a66;
+  --accent: #b5f602;
+  --accent-hover: #9ee000;
+  --accent-alpha: rgba(181, 246, 2, 0.12);
+  --accent-glow: rgba(181, 246, 2, 0.25);
   --good: #22c55e;
+  --good-alpha: rgba(34, 197, 94, 0.15);
   --bad: #f87171;
+  --bad-alpha: rgba(248, 113, 113, 0.12);
+  --warning: #f59e0b;
 }
 
 body {
   margin: 0;
-  padding: 14px 14px 20px;
+  padding: 16px;
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.5 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font: 13px/1.5 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -29,54 +35,58 @@ body {
 .sp-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 .sp-mark {
-  width: 32px; height: 32px;
+  width: 34px; height: 34px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  background: var(--accent-alpha);
+  border: 1px solid rgba(181, 246, 2, 0.3);
   display: grid; place-items: center;
-  font-size: 12px; color: #fff;
+  font-size: 11px; color: var(--accent);
   flex-shrink: 0;
+  box-shadow: 0 0 12px rgba(181, 246, 2, 0.15);
 }
 .sp-head__text { min-width: 0; flex: 1; }
-.sp-head__name { font-weight: 650; letter-spacing: -0.2px; }
+.sp-head__name { font-weight: 700; letter-spacing: -0.2px; font-size: 14px; color: #fff; }
 .sp-head__sub {
   font-size: 11px; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .sp-badge {
-  padding: 3px 9px; border-radius: 999px;
+  padding: 4px 10px; border-radius: 999px;
   font-size: 10px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.5px;
-  background: rgba(123,123,133,0.16); color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.6px;
+  background: rgba(255, 255, 255, 0.06); color: var(--muted);
+  border: 1px solid var(--line);
   flex-shrink: 0;
 }
 .sp-badge--pro {
-  background: linear-gradient(135deg, rgba(139,92,246,0.25), rgba(99,102,241,0.25));
-  color: #c9b8ff;
+  background: var(--accent-alpha);
+  color: var(--accent);
+  border-color: rgba(181, 246, 2, 0.35);
+  box-shadow: 0 0 10px rgba(181, 246, 2, 0.15);
 }
 
-/* ── Run ──
-   Leads the panel and changes shape when live, so a glance tells you whether
-   anything is happening without reading a word. */
+/* ── Run Section ── */
 .sp-run {
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 14px;
+  padding: 16px;
   background: var(--card);
-  transition: border-color 0.25s, background 0.25s;
+  transition: border-color 0.25s, background 0.25s, box-shadow 0.25s;
 }
 .sp-run:has(#run-live:not([hidden])) {
-  border-color: rgba(139,92,246,0.45);
-  background: linear-gradient(160deg, rgba(139,92,246,0.10), var(--card) 60%);
+  border-color: rgba(181, 246, 2, 0.4);
+  background: linear-gradient(160deg, rgba(181, 246, 2, 0.08), var(--card) 60%);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 
-.sp-run__idle { text-align: center; padding: 10px 0 6px; }
-.sp-run__idle-icon { font-size: 20px; color: #33333c; line-height: 1; }
-.sp-run__idle-text { margin-top: 8px; font-weight: 600; color: #9a9aa4; }
-.sp-run__idle-hint { margin-top: 3px; font-size: 11.5px; color: var(--muted); }
+.sp-run__idle { text-align: center; padding: 14px 0 8px; }
+.sp-run__idle-icon { font-size: 22px; color: var(--dim); line-height: 1; }
+.sp-run__idle-text { margin-top: 8px; font-weight: 600; color: #c4c4cc; font-size: 13.5px; }
+.sp-run__idle-hint { margin-top: 4px; font-size: 11.5px; color: var(--muted); }
 
 .sp-run__top {
   display: flex; align-items: center; gap: 8px;
@@ -85,24 +95,25 @@ body {
 .sp-run__node {
   font-weight: 650; flex: 1; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: #fff;
 }
 .sp-run__elapsed {
   font-size: 11px; color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 .sp-run__pulse {
-  width: 7px; height: 7px; border-radius: 50%;
+  width: 8px; height: 8px; border-radius: 50%;
   background: var(--accent);
   flex-shrink: 0;
   animation: sp-pulse 1.6s ease-in-out infinite;
 }
 @keyframes sp-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(139,92,246,0.5); }
-  50% { opacity: 0.55; box-shadow: 0 0 0 5px rgba(139,92,246,0); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(181, 246, 2, 0.6); }
+  50% { opacity: 0.55; box-shadow: 0 0 0 6px rgba(181, 246, 2, 0); }
 }
 .sp-run__meta {
   display: flex; justify-content: space-between;
-  margin-top: 6px;
+  margin-top: 8px;
   font-size: 11px; color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -110,42 +121,61 @@ body {
 /* ── Bars ── */
 .sp-bar {
   height: 6px; border-radius: 999px;
-  background: #1e1e24; overflow: hidden;
+  background: #202026; overflow: hidden;
 }
 .sp-bar--thin { height: 4px; }
 .sp-bar__fill {
   height: 100%; width: 0;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
   transition: width 0.35s ease;
+  box-shadow: 0 0 8px rgba(181, 246, 2, 0.4);
 }
-.sp-bar__fill--full { background: linear-gradient(90deg, #f59e0b, var(--bad)); }
+.sp-bar__fill--full { background: linear-gradient(90deg, var(--warning), var(--bad)); }
 
 /* ── Buttons ── */
 .sp-btn {
-  padding: 9px 12px;
+  padding: 10px 14px;
   border-radius: 10px;
   border: 1px solid transparent;
   font: inherit; font-weight: 600;
   cursor: pointer;
-  transition: filter 0.15s, background 0.15s, border-color 0.15s;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  transition: all 0.2s ease;
 }
 .sp-btn--wide { width: 100%; }
-.sp-btn:hover:not(:disabled) { filter: brightness(1.14); }
+.sp-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.08); }
 .sp-btn:active:not(:disabled) { transform: translateY(0.5px); }
 .sp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .sp-btn--primary {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #fff;
+  background: var(--accent);
+  color: #0e0e10;
+  font-weight: 700;
   margin: 12px 0;
-  box-shadow: 0 4px 14px rgba(99,102,241,0.22);
+  box-shadow: 0 4px 16px var(--accent-glow);
+  border: 1px solid rgba(181, 246, 2, 0.4);
 }
-.sp-btn--ghost { background: transparent; border-color: #2b2b33; color: #c3c3cc; }
-.sp-btn--ghost:hover { background: #1a1a20; }
+.sp-btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: 0 6px 20px rgba(181, 246, 2, 0.35);
+}
+.sp-btn--ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--line);
+  color: #d1d1d6;
+}
+.sp-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--line-focus);
+  color: #fff;
+}
 .sp-btn--danger {
-  background: rgba(248,113,113,0.12);
-  border-color: rgba(248,113,113,0.35);
+  background: var(--bad-alpha);
+  border-color: rgba(248, 113, 113, 0.3);
   color: #fca5a5;
+}
+.sp-btn--danger:hover {
+  background: rgba(248, 113, 113, 0.2);
 }
 .sp-row { display: flex; gap: 8px; margin-top: 12px; }
 .sp-row .sp-btn { flex: 1; }
@@ -155,93 +185,164 @@ body {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 13px;
+  padding: 14px;
   margin-top: 12px;
 }
 .sp-card__title {
   font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.8px;
-  color: var(--muted); margin-bottom: 9px;
+  color: var(--muted); margin-bottom: 10px; font-weight: 700;
 }
 
-/* ── Platforms ──
-   Rows are buttons: the panel that tells you a tab is missing may as well
-   open it. */
+/* ── Platforms ── */
 .sp-plat { list-style: none; margin: 0; padding: 0; }
 .sp-plat li {
-  display: flex; align-items: center; gap: 9px;
-  padding: 7px 8px;
-  margin: 0 -8px;
-  border-radius: 9px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  margin: 0 -4px 2px;
+  border-radius: 999px;
   cursor: pointer;
   transition: background 0.15s;
+  border: 1px solid transparent;
 }
-.sp-plat li:hover, .sp-plat li:focus-visible { background: #1a1a20; outline: none; }
-.sp-plat__name { flex: 1; min-width: 0; }
+.sp-plat li:hover, .sp-plat li:focus-visible {
+  background: var(--card-hover);
+  border-color: var(--line);
+  outline: none;
+}
+.sp-plat__name { flex: 1; min-width: 0; font-weight: 500; color: #e1e1e6; }
 .sp-plat__state { font-size: 11px; color: var(--muted); }
 .sp-dot {
-  width: 7px; height: 7px; border-radius: 50%;
+  width: 8px; height: 8px; border-radius: 50%;
   background: #3a3a43; flex-shrink: 0;
   transition: background 0.2s, box-shadow 0.2s;
 }
 .sp-plat li.is-open .sp-dot {
   background: var(--good);
-  box-shadow: 0 0 0 3px rgba(34,197,94,0.14);
+  box-shadow: 0 0 0 3px var(--good-alpha);
 }
-.sp-plat li.is-open .sp-plat__state { color: var(--good); }
+.sp-plat li.is-open .sp-plat__state { color: var(--good); font-weight: 600; }
 
-/* A tab that is there and unreachable. Amber rather than grey, because it
-   needs an action — and a different one from "open the tab". */
 .sp-plat li.is-blocked .sp-dot {
-  background: #f59e0b;
+  background: var(--warning);
   box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.16);
 }
-.sp-plat li.is-blocked .sp-plat__state { color: #f59e0b; }
+.sp-plat li.is-blocked .sp-plat__state { color: var(--warning); font-weight: 600; }
+
+/* ── Diagnostics ──
+   Collapsed by default. It is for the moment something goes wrong; a wall of
+   log text above the controls the rest of the time would be noise. */
+.sp-diag { margin-top: 10px; }
+.sp-diag__summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #6b6b73;
+  user-select: none;
+}
+.sp-diag__summary:hover { color: #e5e5e7; }
+.sp-diag__log {
+  margin-top: 8px;
+  max-height: 190px;
+  overflow-y: auto;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: #9a9aa4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 /* ── Account ── */
 .sp-input {
   width: 100%;
-  padding: 9px 11px;
+  padding: 10px 12px;
   margin-bottom: 8px;
-  background: #0d0d10;
-  border: 1px solid #2b2b33;
+  background: #0e0e11;
+  border: 1px solid var(--line);
   border-radius: 10px;
   color: var(--text);
   font: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
-.sp-input::placeholder { color: #55555f; }
+.sp-input::placeholder { color: var(--dim); }
 .sp-input:focus {
   outline: none;
-  border-color: var(--accent-2);
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.14);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-alpha);
 }
 
-.sp-acct { display: flex; align-items: center; gap: 9px; }
+.sp-acct { display: flex; align-items: center; gap: 10px; }
 .sp-avatar {
-  width: 26px; height: 26px; border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent);
   display: grid; place-items: center;
-  font-size: 11px; font-weight: 700; color: #fff;
+  font-size: 12px; font-weight: 700; color: #0e0e10;
   text-transform: uppercase; flex-shrink: 0;
+  box-shadow: 0 0 10px var(--accent-glow);
 }
 .sp-acct__email {
-  font-weight: 550; min-width: 0;
+  font-weight: 600; min-width: 0; color: #fff;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .sp-usage { margin: 12px 0; }
 .sp-usage__row {
   display: flex; justify-content: space-between;
-  font-size: 11px; color: var(--muted); margin-bottom: 5px;
+  font-size: 11px; color: var(--muted); margin-bottom: 6px;
   font-variant-numeric: tabular-nums;
 }
 
 .sp-note { margin: 8px 0 0; font-size: 11px; color: var(--muted); }
 .sp-error {
   margin-top: 10px;
-  padding: 8px 10px;
-  border-radius: 0 8px 8px 0;
-  border-left: 2px solid rgba(248,113,113,0.55);
-  background: rgba(248,113,113,0.08);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border-left: 3px solid var(--bad);
+  background: var(--bad-alpha);
   color: #fca5a5;
   font-size: 11.5px;
   word-break: break-word;
 }
+
+/* ── Diagnostics ── */
+.sp-card--diag { padding-bottom: 8px; }
+.sp-diag {
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.sp-diag__empty {
+  padding: 8px 0 4px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--dim);
+}
+.sp-diag__line {
+  display: flex;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Menlo', 'Consolas', monospace;
+  font-size: 10.5px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.sp-diag__line:hover { background: rgba(255, 255, 255, 0.04); }
+.sp-diag__ts {
+  color: var(--dim);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.sp-diag__src {
+  color: var(--accent);
+  flex-shrink: 0;
+  font-weight: 600;
+}
+.sp-diag__msg {
+  color: #c4c4cc;
+  min-width: 0;
+}
+
+

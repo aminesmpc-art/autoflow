@@ -50,6 +50,13 @@ function patchRunState(patch: Partial<RunSnapshot>): void {
   chrome.runtime.sendMessage({ type: 'PANEL_RUN_STATE', payload: runState }).catch(() => {});
 }
 
+/* ── Diagnostic log ──
+   A ring buffer fed by STUDIO_LOG messages from content scripts. The panel
+   pulls it on open and gets live pushes as entries arrive. Keeps the last 50
+   lines — enough for a failed run but small enough to sit in memory forever. */
+const DIAG_LOG_MAX = 50;
+const diagLog: Array<{ ts: number; source: string; line: string }> = [];
+
 /* ── Keepalive ──
    A video generation easily outlasts Chrome's idle timeout for a service
    worker. If the worker is recycled mid-run the port dies and the next node
@@ -122,6 +129,21 @@ const PLATFORMS: Record<Platform, { match: string; open: string; script: string;
  * permissions API separates the two.
  */
 type PlatformState = 'open' | 'closed' | 'blocked';
+
+/**
+ * The last few diagnostic lines, for the side panel.
+ *
+ * Capped and in memory only: this is for reading during a run, not a record.
+ * The worker is the only place all four content scripts can reach.
+ */
+const LOG_LIMIT = 60;
+const studioLog: Array<{ at: number; source: string; line: string }> = [];
+
+function pushLog(source: string, line: string): void {
+  if (!line) return;
+  studioLog.push({ at: Date.now(), source, line });
+  if (studioLog.length > LOG_LIMIT) studioLog.splice(0, studioLog.length - LOG_LIMIT);
+}
 
 async function platformState(match: string): Promise<PlatformState> {
   let granted = true;
@@ -278,6 +300,7 @@ chrome.runtime.onConnect.addListener((port) => {
        line said what happened, none said when. */
     const waited = Date.now() - readyAt;
     if (waited > 400) {
+      pushLog('Studio', `Waited ${(waited / 1000).toFixed(1)}s for the ${cfg.name} tab (ready=${ready})`);
       console.log(`[Studio] Waited ${(waited / 1000).toFixed(1)}s for the ${cfg.name} tab (ready=${ready})`);
     }
     if (!ready) {
@@ -520,6 +543,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // async
   }
 
+  // ── Diagnostic log ──
+  // Content scripts send STUDIO_LOG with { source, line }. Collect them in a
+  // ring buffer so the panel can display them, and push each new one live.
+  // Must sit ABOVE the STUDIO_* catch-all — STUDIO_LOG starts with "STUDIO_"
+  // and comes from a tab, so the catch-all was swallowing it.
+  if (msg?.type === 'STUDIO_LOG' && sender.tab) {
+    const entry = {
+      ts: Date.now(),
+      source: msg.payload?.source || '?',
+      line: msg.payload?.line || '',
+    };
+    diagLog.push(entry);
+    if (diagLog.length > DIAG_LOG_MAX) diagLog.shift();
+    chrome.runtime.sendMessage({ type: 'PANEL_LOG_PUSH', payload: entry }).catch(() => {});
+    return false;
+  }
+
   // Results arrive from a content script; forward them to the Studio window.
   if (msg?.type?.startsWith?.('STUDIO_') && sender.tab) {
     replyToStudio(msg);
@@ -539,6 +579,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
 
+  if (msg?.type === 'PANEL_GET_LOGS') {
+    sendResponse(diagLog);
+    return false;
+  }
+
   if (msg?.type === 'PANEL_OPEN_STUDIO') {
     openStudio().catch(() => {});
     return false;
@@ -553,6 +598,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     replyToStudio({ type: 'STUDIO_CONTROL', payload: { action: msg.action } });
     sendResponse({ ok: true });
+    return false;
+  }
+
+  /* Diagnostics for the panel.
+     The content scripts log to the console of the site they drive, which is
+     the one place someone watching a run is not looking — finding out why a
+     node failed meant opening devtools on chatgpt.com. */
+  if (msg?.type === 'STUDIO_LOG') {
+    pushLog(msg.payload?.source || 'Studio', msg.payload?.line || '');
+    return false;
+  }
+
+  if (msg?.type === 'PANEL_LOG') {
+    sendResponse(studioLog);
     return false;
   }
 
