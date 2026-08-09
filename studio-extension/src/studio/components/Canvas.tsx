@@ -24,6 +24,7 @@ import { PromptNode } from '../nodes/PromptNode';
 import { ImageNode } from '../nodes/ImageNode';
 import { GenerateNode } from '../nodes/GenerateNode';
 import { FrameNode } from '../nodes/FrameNode';
+import { ExtendNode } from '../nodes/ExtendNode';
 import { runner } from '../engine/WorkflowRunner';
 import { bridge } from '../engine/bridge';
 
@@ -33,6 +34,7 @@ const nodeTypes = {
   image: ImageNode,
   generate: GenerateNode,
   frame: FrameNode,
+  extend: ExtendNode,
 };
 
 function CanvasInner() {
@@ -407,6 +409,34 @@ function CanvasInner() {
   }, [addNode, nodes, guardAdd]);
 
   /**
+   * Grok's extend, as its own node.
+   *
+   * It was a toggle on the clip node, and that hid what it is: a second
+   * generation with its own prompt, its own length and its own result. As a
+   * node it can also be chained, which is how a 10s clip reaches 30 — and how
+   * the arithmetic that caps it becomes something you can see rather than
+   * something a run discovers.
+   */
+  const addExtendNode = useCallback(() => {
+    if (!guardAdd()) return;
+    const id = `extend_${Date.now()}`;
+    addNode({
+      id,
+      type: 'extend',
+      position: { x: 900, y: 320 + nodes.length * 50 },
+      data: {
+        type: 'extend',
+        label: `Extend ${nodes.filter((n) => (n.data as any).type === 'extend').length + 1}`,
+        extendSeconds: '+10s',
+        enabled: true,
+        status: 'idle',
+        progress: 0,
+        errorMessage: null,
+      },
+    });
+  }, [addNode, nodes, guardAdd]);
+
+  /**
    * A generate node preconfigured to ask ChatGPT for text.
    *
    * Same node type underneath — it reuses the whole execution path — but
@@ -539,6 +569,10 @@ function CanvasInner() {
         <button className="studio-toolbar__btn" onClick={addGrokNode} aria-label="Add Grok clip node">
           <span className="studio-toolbar__btn-icon" aria-hidden="true">⚡</span>
           <span className="studio-toolbar__btn-label">Add Grok</span>
+        </button>
+        <button className="studio-toolbar__btn" onClick={addExtendNode} aria-label="Add Extend node">
+          <span className="studio-toolbar__btn-icon" aria-hidden="true">⏱</span>
+          <span className="studio-toolbar__btn-label">Add Extend</span>
         </button>
         <button className="studio-toolbar__btn studio-toolbar__btn--primary" onClick={addGenerateNode} aria-label="Add Generate node">
           <span className="studio-toolbar__btn-icon" aria-hidden="true">🎬</span>

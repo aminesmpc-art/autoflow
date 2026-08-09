@@ -19,8 +19,6 @@ const DURATIONS = ['6s', '10s', '15s'];
 const RESOLUTIONS = ['480p', '720p', '1080p'];
 /** Its aspect-ratio menu. */
 const RATIOS = ['9:16', '16:9', '1:1'];
-/** What Extend adds on top of the clip you already have. */
-const EXTEND_STEPS = ['+6s', '+10s'];
 
 interface Props {
   nodeData: any;
@@ -57,60 +55,32 @@ function Segmented({
 }
 
 export function GrokSettings({ nodeData, set }: Props) {
-  const extending = !!nodeData.extend;
-
+  /* No Extend here. It used to be a mode on this node, which hid what it is:
+     a second generation, with its own prompt, its own result and a chain that
+     can only reach 30 seconds. It is the Extend node now — see ExtendNode. */
   return (
     <>
-      {/* Imagine can continue a finished clip instead of starting one. */}
       <Segmented
-        label="Mode"
-        title="Start a new clip, or continue the one before it"
-        options={['New clip', 'Extend']}
-        value={extending ? 'Extend' : 'New clip'}
-        onPick={(v) => set('extend', v === 'Extend')}
+        label="Length"
+        title="Clip length"
+        options={DURATIONS}
+        value={nodeData.duration || '10s'}
+        onPick={(v) => set('duration', v)}
       />
-
-      {/* Extending replaces the shot settings rather than joining them — the
-          framing is already decided, and the only thing Imagine offers is how
-          much to add. */}
-      {extending ? (
-        <>
-          <small className="sn-field__hint sn-field--wide">
-            Wire the Grok clip to continue into 🖼 — Extend adds to it.
-          </small>
-          <Segmented
-            label="Add"
-            title="How much to add to the clip"
-            options={EXTEND_STEPS}
-            value={nodeData.extendSeconds || '+10s'}
-            onPick={(v) => set('extendSeconds', v)}
-          />
-        </>
-      ) : (
-        <>
-          <Segmented
-            label="Length"
-            title="Clip length"
-            options={DURATIONS}
-            value={nodeData.duration || '10s'}
-            onPick={(v) => set('duration', v)}
-          />
-          <Segmented
-            label="Resolution"
-            title="Resolution"
-            options={RESOLUTIONS}
-            value={nodeData.resolution || '720p'}
-            onPick={(v) => set('resolution', v)}
-          />
-          <Segmented
-            label="Ratio"
-            title="Aspect ratio"
-            options={RATIOS}
-            value={nodeData.aspectRatio || '9:16'}
-            onPick={(v) => set('aspectRatio', v)}
-          />
-        </>
-      )}
+      <Segmented
+        label="Resolution"
+        title="Resolution"
+        options={RESOLUTIONS}
+        value={nodeData.resolution || '720p'}
+        onPick={(v) => set('resolution', v)}
+      />
+      <Segmented
+        label="Ratio"
+        title="Aspect ratio"
+        options={RATIOS}
+        value={nodeData.aspectRatio || '9:16'}
+        onPick={(v) => set('aspectRatio', v)}
+      />
     </>
   );
 }

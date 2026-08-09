@@ -367,7 +367,10 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
             </label>
           )}
 
-          {isVideo && (
+          {/* Flow's alone: Imagine has neither ingredients nor Start/End frames,
+              and offering the choice there promised a mode with nothing behind
+              it. */}
+          {isVideo && platform === 'flow' && (
             <label className="sn-field sn-field--wide" title="Ingredients: reference images. Frames: a first and last still, interpolated.">
               <span className="sn-field__label">Build from</span>
               <select
@@ -531,7 +534,10 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
       {/* ── External platform badge ── */}
       <div className="sn-platform">
         <span className={`sn-platform__dot ${isChat ? `sn-platform__dot--${platform}` : ''}`} />
-        {isChat ? `${chatName} ${isText ? 'Writer' : 'Images'}` : 'Google Flow'}
+        {!isChat ? 'Google Flow'
+          : isText ? `${chatName} Writer`
+          : isVideo ? `${chatName} Imagine`
+          : `${chatName} Images`}
       </div>
 
       {/* Prefer the video when there is one — previously only the still could

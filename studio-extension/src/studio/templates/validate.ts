@@ -37,6 +37,10 @@ export const NODE_PORTS: Record<string, { in: string[]; out: string[] }> = {
      a wire the runner never looks at. */
   'generate:ingredients': { in: ['text', 'image_ref'], out: ['result'] },
   'generate:frames': { in: ['text', 'frame_start', 'frame_end'], out: ['result'] },
+  /* Grok's extend. A clip in, a prompt for what happens next, a longer clip
+     out — so a second extend can chain from the first. `video` rather than
+     `image_ref` because a still is exactly what this cannot take. */
+  extend: { in: ['text', 'video'], out: ['result'] },
 };
 
 /**
@@ -70,7 +74,103 @@ export const portsFor = (node: any) => {
 };
 
 /** Node types this build can actually draw — Canvas.tsx's nodeTypes map. */
-export const RENDERABLE_NODE_TYPES = ['prompt', 'image', 'generate', 'frame'] as const;
+export const RENDERABLE_NODE_TYPES = ['prompt', 'image', 'generate', 'frame', 'extend'] as const;
+
+/* ── Grok's extend arithmetic ──────────────────────────────────
+   Imagine starts a clip at 6, 10 or 15 seconds and extends it by 6 or 10,
+   and the finished clip cannot pass 30. Those three facts together are why
+   an extend node cannot just offer both steps: 15 + 10 + 10 is 35, and the
+   third of those is a generation Imagine will not complete.
+
+   So the node asks what is left rather than offering what exists. Kept here
+   because the node, the validator and the runner each need the same answer,
+   and three copies of a rule like this drift.
+   ──────────────────────────────────────────────────────────── */
+
+export const GROK_MAX_TOTAL_SECONDS = 30;
+export const GROK_EXTEND_STEPS = ['+6s', '+10s'] as const;
+/** 15 + 6 + 6 = 27 fits; a third extend cannot, from any starting length. */
+export const GROK_MAX_EXTENDS = 2;
+
+/** Seconds out of "10s", "+6s", 15 — anything the canvas might hold. */
+export const secondsOf = (value: unknown): number =>
+  parseInt(String(value ?? '').replace(/[^\d]/g, ''), 10) || 0;
+
+export interface ExtendChain {
+  /** Length of the clip before this node adds to it. */
+  secondsBefore: number;
+  /** This node's position in the chain, 1-based. */
+  index: number;
+  /** The Grok clip the chain starts from, if it starts from one. */
+  rootId: string | null;
+  /** Why this chain cannot run, in the user's terms. */
+  problem: string | null;
+}
+
+/**
+ * Walk back from an extend node to the clip it is lengthening.
+ *
+ * An extend is only meaningful against a Grok video — there is nothing to
+ * continue on a Flow tile or a still — so the walk reports what it found
+ * rather than assuming, and the node, the validator and the runner all read
+ * the same verdict.
+ */
+export function extendChain(nodeId: string, nodes: any[], edges: any[]): ExtendChain {
+  const byId = new Map((nodes || []).map((n: any) => [n.id, n]));
+  const sourceOf = (id: string) =>
+    (edges || []).find((e: any) => e.target === id && e.targetHandle === 'video')?.source;
+
+  let steps = 0;
+  let current = nodeId;
+  const seen = new Set<string>([nodeId]);
+
+  for (;;) {
+    steps++;
+    const parentId = sourceOf(current);
+    if (!parentId) {
+      return { secondsBefore: 0, index: steps, rootId: null,
+        problem: 'Nothing to extend — connect this to a Grok video node' };
+    }
+    if (seen.has(parentId)) {
+      return { secondsBefore: 0, index: steps, rootId: null, problem: 'These nodes form a loop' };
+    }
+    seen.add(parentId);
+
+    const parent = byId.get(parentId);
+    const data = parent?.data || {};
+
+    if (parent?.type === 'extend') {
+      current = parentId;
+      continue;
+    }
+
+    if (parent?.type !== 'generate' || data.platform !== 'grok' || data.mediaType !== 'video') {
+      return { secondsBefore: 0, index: steps, rootId: null,
+        problem: 'Extend only continues a Grok video node' };
+    }
+
+    /* Sum the chain now that the root is known: the clip's own length plus
+       every extend between it and here. */
+    let total = secondsOf(data.duration || '10s');
+    let walk = nodeId;
+    const between: string[] = [];
+    while (walk !== parentId) {
+      const up = sourceOf(walk)!;
+      if (up !== parentId) between.push(up);
+      walk = up;
+    }
+    for (const id of between) total += secondsOf(byId.get(id)?.data?.extendSeconds || '+10s');
+
+    const problem = steps > GROK_MAX_EXTENDS
+      ? `Grok allows ${GROK_MAX_EXTENDS} extends; this is number ${steps}`
+      : null;
+    return { secondsBefore: total, index: steps, rootId: parentId, problem };
+  }
+}
+
+/** The steps that still fit under the cap. Empty means the clip is full. */
+export const affordableExtendSteps = (secondsBefore: number): string[] =>
+  GROK_EXTEND_STEPS.filter((s) => secondsBefore + secondsOf(s) <= GROK_MAX_TOTAL_SECONDS);
 
 /** Platforms this build has an adapter for. */
 export const SUPPORTED_PLATFORMS = ['flow', 'chatgpt', 'gemini', 'grok'] as const;
@@ -147,6 +247,21 @@ export function validateTemplate(tpl: any): string[] {
   );
   for (const n of tpl.nodes.filter((n: any) => n.type === 'generate')) {
     if (!hasText.has(n.id)) fail(`generate node "${n.id}" has no prompt connected`);
+  }
+
+  /* Extend continues a Grok clip and cannot pass 30 seconds. Both are checked
+     here so a published template cannot ship a chain that spends two
+     generations before Imagine refuses the third. */
+  for (const n of tpl.nodes.filter((n: any) => n.type === 'extend')) {
+    const chain = extendChain(n.id, tpl.nodes, tpl.edges);
+    if (chain.problem) {
+      fail(`extend node "${n.id}": ${chain.problem}`);
+      continue;
+    }
+    const total = chain.secondsBefore + secondsOf(n.data?.extendSeconds || '+10s');
+    if (total > GROK_MAX_TOTAL_SECONDS) {
+      fail(`extend node "${n.id}" would make ${total}s, past Grok's ${GROK_MAX_TOTAL_SECONDS}s limit`);
+    }
   }
 
   // A frame shows *the* last frame; two upstream clips make that a race.

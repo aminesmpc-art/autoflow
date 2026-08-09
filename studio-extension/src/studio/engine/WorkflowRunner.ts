@@ -15,7 +15,9 @@ import { trackUsage } from '../../shared/api';
 import { bridge, type NodeExecutionConfig, type NodeResult } from './bridge';
 import { useStudioStore } from '../store';
 import { composeAskPrompt } from '../presets';
-import { isFramesMode } from '../templates/validate';
+import {
+  isFramesMode, extendChain, secondsOf, GROK_MAX_TOTAL_SECONDS,
+} from '../templates/validate';
 
 export type RunnerState = 'idle' | 'running' | 'paused' | 'stopped' | 'done' | 'error';
 
@@ -180,7 +182,8 @@ export class WorkflowRunner {
     // Count generate nodes for progress — disabled ones never run, so
     // counting them would leave the progress bar short of its total.
     const generateSteps = steps.filter((s) => {
-      if (s.nodeType !== 'generate') return false;
+      // An extend is a generation: its own prompt, its own clip, its own wait.
+      if (s.nodeType !== 'generate' && s.nodeType !== 'extend') return false;
       if (only && !only.has(s.nodeId)) return false;
       const n = nodes.find((x) => x.id === s.nodeId);
       return (n?.data as any)?.enabled !== false;
@@ -283,6 +286,7 @@ export class WorkflowRunner {
           break;
         }
 
+        case 'extend':
         case 'generate': {
           // Nodes toggled off are skipped without consuming a generation
           if (nodeData.enabled === false) {
@@ -443,6 +447,10 @@ export class WorkflowRunner {
   private async executeGenerateNode(nodeId: string, node: Node, edges: Edge[]): Promise<NodeResult> {
     const nodeData = node.data as any;
     const inputs = getNodeInputs(nodeId, edges);
+    /* An extend runs the same path — submit a prompt, wait for a clip — but
+       everything it sends is decided by the chain it sits in rather than by
+       its own dropdowns. */
+    const isExtendNode = node.type === 'extend' || nodeData.type === 'extend';
 
     // Gather prompt from upstream text connection(s)
     let prompt = '';
@@ -558,16 +566,28 @@ export class WorkflowRunner {
        ordinary generation and produce a brand-new clip that looks like a
        success and breaks the continuity the node existed for. */
     let extendFromVideo: string | undefined;
-    if (nodeData.extend && nodeData.platform === 'grok' && nodeData.mediaType === 'video') {
-      const sources = [...(inputs.get('image_ref') || []), ...(inputs.get('text') || [])];
-      for (const srcId of sources) {
-        const upstream = this.nodeResults.get(srcId);
-        const url = upstream?.previewVideoUrl || upstream?.videoUrl || upstream?.imageUrl || '';
-        if (/\.mp4|generated_video/.test(url)) { extendFromVideo = url; break; }
-      }
-      if (!extendFromVideo) {
+    if (isExtendNode) {
+      const { nodes: allNodes, edges: allEdges } = useStudioStore.getState();
+      const chain = extendChain(nodeId, allNodes, allEdges);
+      if (chain.problem) throw new Error(chain.problem);
+
+      /* Refused here rather than in the tab. Imagine will not complete a clip
+         past 30 seconds, and finding that out at the far end costs every
+         generation before it in the chain. */
+      const total = chain.secondsBefore + secondsOf(nodeData.extendSeconds || '+10s');
+      if (total > GROK_MAX_TOTAL_SECONDS) {
         throw new Error(
-          'Extend has no clip to continue — connect this node to the Grok video node before it'
+          `${nodeData.extendSeconds || '+10s'} would make this clip ${total}s, past Grok's `
+          + `${GROK_MAX_TOTAL_SECONDS}s limit — choose a smaller step or shorten the clip it continues`
+        );
+      }
+
+      const srcId = inputs.get('video')?.[0];
+      const upstream = srcId ? this.nodeResults.get(srcId) : undefined;
+      extendFromVideo = upstream?.previewVideoUrl || upstream?.videoUrl || upstream?.imageUrl || '';
+      if (!extendFromVideo || !/\.mp4|generated_video/.test(extendFromVideo)) {
+        throw new Error(
+          'Extend has no clip to continue — the node before it produced no Grok video'
         );
       }
     }
@@ -576,17 +596,17 @@ export class WorkflowRunner {
       prompt: askPrompt,
       // Anything not a known chat platform runs on Flow. Listing them beats
       // a chatgpt/else ternary, which silently sent Gemini nodes to Flow.
-      platform: CHAT_PLATFORMS.includes(nodeData.platform)
-        ? nodeData.platform
+      platform: isExtendNode ? 'grok'
+        : CHAT_PLATFORMS.includes(nodeData.platform) ? nodeData.platform
         : 'flow',
       model: nodeData.model || (nodeData.mediaType === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),
-      mediaType: nodeData.mediaType || 'image',
+      mediaType: isExtendNode ? 'video' : (nodeData.mediaType || 'image'),
       aspectRatio: nodeData.aspectRatio || '9:16',
       duration: nodeData.duration || '6s',
       // Grok reads these; Flow ignores them.
-      resolution: nodeData.resolution || undefined,
-      extend: extendFromVideo ? true : undefined,
-      extendSeconds: extendFromVideo ? (nodeData.extendSeconds || '+10s') : undefined,
+      resolution: isExtendNode ? undefined : (nodeData.resolution || undefined),
+      extend: isExtendNode ? true : undefined,
+      extendSeconds: isExtendNode ? (nodeData.extendSeconds || '+10s') : undefined,
       extendFromVideo,
       creationType: nodeData.creationType || 'ingredients',
       referenceImageIds: referenceImageIds.length > 0 ? referenceImageIds : undefined,
