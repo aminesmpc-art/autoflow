@@ -555,11 +555,14 @@ async function handleExecute(payload: any): Promise<any> {
 
   const wantsText = config?.mediaType === 'text';
   const wantsVideo = config?.mediaType === 'video';
-  const preexisting = new Set(
+  /* What is on the page before we ask for anything, so the result can be told
+     from it later. Re-taken after references are attached — see below. */
+  const snapshot = () => new Set(
     wantsVideo
       ? collectResultVideos().map((v) => v.src)
       : collectResultImages().map((i) => i.currentSrc || i.src)
   );
+  let preexisting = snapshot();
   const priorReply = wantsText ? readLatestReply().trim() : '';
 
   /* Imagine's controls, applied before the prompt goes in. Each one reports
@@ -614,6 +617,12 @@ async function handleExecute(payload: any): Promise<any> {
     }
     console.log(`[AutoFlow Grok] ${references.length} reference image(s) attached`);
     send('STUDIO_NODE_PROGRESS', { nodeId, progress: 15 });
+    /* The thumbnails we just uploaded are on the page now, and they are not
+       results. Without this they count as new images, and since
+       composerRegion() returns null whenever the composer has no <form>
+       ancestor, one of them can be captured and returned as the generated
+       image — a silently wrong result rather than a visible failure. */
+    preexisting = snapshot();
     composer = findComposer() || composer; // uploading re-renders the composer
   }
 
@@ -644,7 +653,18 @@ async function handleExecute(payload: any): Promise<any> {
     : wantsVideo
       ? trackVideoGeneration(nodeId, preexisting)
       : trackGeneration(nodeId, preexisting);
-  work.finally(stopAntiThrottle);
+  /* .finally re-raises, so without this a throw inside either tracker becomes
+     an unhandled rejection: no STUDIO_NODE_ERROR is sent and the node sits
+     pending until the runner's own budget turns a precise cause into a generic
+     timeout. The Flow script handles the same case the same way. */
+  work
+    .catch((e: any) => {
+      send('STUDIO_NODE_ERROR', {
+        nodeId,
+        error: `Tracking the Grok result failed: ${e?.message || e}`,
+      });
+    })
+    .finally(stopAntiThrottle);
   return { success: true };
 }
 

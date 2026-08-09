@@ -882,7 +882,21 @@ export function findFrameSlots(): FrameSlots | null {
   if (swap) {
     const start = swap.previousElementSibling as HTMLElement | null;
     const end = swap.nextElementSibling as HTMLElement | null;
-    if (start && end && start !== end) return { start, end };
+    /* Confirm each sibling actually looks like a slot before trusting it.
+       Taking them on position alone means that if Flow ever wraps a slot, or
+       puts anything else next to the swap button, this returns the wrong two
+       elements with full confidence — and the labelled-trigger fallback below,
+       which would have got it right, never runs. A slot is either an empty
+       dialog trigger or one already holding an image. */
+    /* Shape, not load state. Requiring frameSlotFilled here would reject a
+       slot whose thumbnail has not finished loading — which is exactly when
+       the slots need finding — so a filled slot counts on having the parts of
+       one: a thumbnail, or the button that clears it. */
+    const looksLikeSlot = (el: HTMLElement | null) =>
+      !!el && (el.getAttribute('aria-haspopup') === 'dialog' || !!el.querySelector('img, button'));
+    if (start && end && start !== end && looksLikeSlot(start) && looksLikeSlot(end)) {
+      return { start, end };
+    }
   }
 
   /* Fallback for a composer whose swap button we cannot see: two dialog
