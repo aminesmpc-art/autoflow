@@ -127,7 +127,11 @@ export class WorkflowRunner {
     const nodeById = new Map(nodes.map((n) => [n.id, n]));
     const isRunnable = (id: string) => {
       const d = nodeById.get(id)?.data as any;
-      return d?.type === 'generate' && d?.enabled !== false;
+      /* An extend is a generation and has to be treated as one here, or a
+         retry neither re-runs it nor pulls in the clip it continues — and it
+         then fails with "no clip to continue" against a canvas that is wired
+         correctly. */
+      return (d?.type === 'generate' || d?.type === 'extend') && d?.enabled !== false;
     };
 
     const set = new Set<string>();

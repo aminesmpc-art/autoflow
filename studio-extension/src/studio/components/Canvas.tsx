@@ -218,7 +218,10 @@ function CanvasInner() {
   const failedNodeIds = nodes
     .filter((n) => {
       const d = n.data as any;
-      return d?.type === 'generate' && d?.status === 'error';
+      /* Extend nodes fail like generate nodes and must be offered in the same
+         Retry failed set — left out, a failed extend had no way back except
+         re-running the whole workflow and paying for the clips again. */
+      return (d?.type === 'generate' || d?.type === 'extend') && d?.status === 'error';
     })
     .map((n) => n.id);
 

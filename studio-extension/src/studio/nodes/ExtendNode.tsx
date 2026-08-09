@@ -16,9 +16,10 @@
    as one.
    ============================================================ */
 
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useStudioStore } from '../store';
+import { Lightbox } from '../components/Lightbox';
 import {
   extendChain, affordableExtendSteps, secondsOf,
   GROK_EXTEND_STEPS, GROK_MAX_TOTAL_SECONDS,
@@ -39,6 +40,12 @@ function ExtendNodeComponent({ id, data, selected }: NodeProps) {
   const nodeData = data as any;
   const updateNodeData = useStudioStore((s) => s.updateNodeData);
   const removeNode = useStudioStore((s) => s.removeNode);
+  const [zoomed, setZoomed] = useState(false);
+
+  // Self-contained data URLs, or the clip's own URL when it was too big to inline.
+  const preview = nodeData.previewUrl || '';
+  const previewVideo = nodeData.previewVideoUrl || '';
+  const progress = nodeData.progress || 0;
 
   /* The chain is a fact about the canvas, so it is read from the canvas
      rather than stored on the node — moving a wire changes the answer, and a
@@ -86,6 +93,89 @@ function ExtendNodeComponent({ id, data, selected }: NodeProps) {
       </div>
 
       <div className={`sn ${statusClass(status)} ${!enabled ? 'sn--disabled' : ''}`}>
+        {/* The longer clip, where every other node shows its output.
+            This node shipped without one: it ran, it produced a clip, and the
+            card showed only the arithmetic — so "where do I see the result"
+            had no answer on the node that made it. */}
+        <div
+          className={`sn-media ${status === 'done' && (preview || previewVideo) ? '' : 'sn-media--empty'}`}
+          style={status === 'done' && (preview || previewVideo) ? { aspectRatio: '9 / 16' } : { height: 118 }}
+        >
+          {status === 'done' && previewVideo && (
+            <>
+              <video
+                className="sn-media__img nodrag nowheel"
+                src={previewVideo}
+                poster={preview || undefined}
+                controls loop muted playsInline
+              />
+              <button
+                className="sn-media__expand"
+                onClick={() => setZoomed(true)}
+                title="View full size"
+                aria-label="View full size"
+              >⤢</button>
+            </>
+          )}
+
+          {status === 'done' && !previewVideo && preview && (
+            <img
+              className="sn-media__img sn-media__img--zoom"
+              src={preview}
+              alt="Extended clip"
+              onClick={() => setZoomed(true)}
+              title="Click to view full size"
+            />
+          )}
+
+          {status === 'done' && !previewVideo && !preview && (
+            <div className="sn-media__state">
+              <span className="sn-media__state-icon">🎞</span>
+              <span>Extended on Grok</span>
+              {/* The bytes live on assets.grok.com, which may refuse to be
+                  fetched from here. The clip still exists — say where. */}
+              <small>Preview unavailable — see the Grok tab</small>
+            </div>
+          )}
+
+          {status === 'running' && (
+            <div className="sn-media__state sn-media__state--running">
+              <div className="sn-spinner" />
+              <span>Extending…</span>
+              <div className="sn-progress">
+                <div className="sn-progress__fill" style={{ width: `${progress}%` }} />
+              </div>
+              <small>{progress > 0 ? `${progress}%` : 'Starting'}</small>
+            </div>
+          )}
+
+          {status === 'error' && (
+            <div className="sn-media__state sn-media__state--error">
+              <span className="sn-media__state-icon">⚠</span>
+              <span>Extend failed</span>
+              <small title={nodeData.errorMessage}>{nodeData.errorMessage}</small>
+              <button
+                type="button"
+                className="sn-retry-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.dispatchEvent(new CustomEvent('studio:retry-node', { detail: id }));
+                }}
+                title="Re-run just this node and anything skipped because of it"
+              >↻ Retry</button>
+            </div>
+          )}
+
+          {status === 'idle' && (
+            <div className="sn-media__state sn-media__state--idle">
+              <span className="sn-media__ghost" style={{ aspectRatio: '9 / 16' }}>
+                <span className="sn-media__state-icon">⏱</span>
+              </span>
+              <small>{chain.problem ? 'Not ready' : 'Ready — press Run'}</small>
+            </div>
+          )}
+        </div>
+
         <div className="sn-ext">
           {/* The sum, stated. Without it the cap is a rule you discover by
               hitting it, three minutes into a run. */}
@@ -129,9 +219,9 @@ function ExtendNodeComponent({ id, data, selected }: NodeProps) {
             </div>
           </div>
 
-          {status === 'error' && nodeData.errorMessage && (
-            <div className="sn-ext__warn">{nodeData.errorMessage}</div>
-          )}
+          {/* The run's own failure is shown in the media area above, where
+              every other node shows it. Only the wiring problems belong here,
+              because those are about the canvas rather than the run. */}
           {status === 'idle' && !chain.problem && (
             <small className="sn-ext__hint">
               Wire a prompt into T for what happens next.
@@ -155,6 +245,15 @@ function ExtendNodeComponent({ id, data, selected }: NodeProps) {
         <span className="sn-platform__dot sn-platform__dot--grok" />
         Grok Imagine · extend
       </div>
+
+      {zoomed && (previewVideo || preview) && (
+        <Lightbox
+          src={previewVideo || preview}
+          kind={previewVideo ? 'video' : 'image'}
+          alt="Extended clip, full size"
+          onClose={() => setZoomed(false)}
+        />
+      )}
 
       <div className="sn-actions">
         <button className="sn-actions__btn sn-actions__btn--danger" onClick={() => removeNode(id)} title="Delete node">🗑</button>
