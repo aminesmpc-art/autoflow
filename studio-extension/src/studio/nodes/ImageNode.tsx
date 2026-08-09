@@ -49,7 +49,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps) {
   );
 
   return (
-    <div className={`sn-wrap sn-wrap--input ${selected ? 'sn-wrap--selected' : ''}`}>
+    <div className={`sn-wrap sn-wrap--input sn-wrap--kind-image ${selected ? 'sn-wrap--selected' : ''}`}>
       <div className="sn-actions">
         <button className="sn-actions__btn" onClick={() => duplicateNode(id)} title="Duplicate node">⧉</button>
         <button className="sn-actions__btn sn-actions__btn--danger" onClick={() => removeNode(id)} title="Delete node">🗑</button>

@@ -155,7 +155,12 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   const previewVideo = nodeData.previewVideoUrl || '';
 
   return (
-    <div className={`sn-wrap ${selected ? 'sn-wrap--selected' : ''}`}>
+    /* The family this card belongs to, so a busy canvas is readable
+       zoomed out. Flow, Grok and the chat writers look nothing alike in what
+       they do and looked identical on screen. */
+    <div className={`sn-wrap sn-wrap--kind-${
+      platform === 'flow' ? 'flow' : platform === 'grok' ? 'grok' : 'chat'
+    } ${selected ? 'sn-wrap--selected' : ''}`}>
       {/* ── Floating action bar (above the card) ── */}
       <div className="sn-actions">
         {preview && (

@@ -683,6 +683,17 @@
   color: #5f5f68;
 }
 
+/* Three groups rather than seven buttons.
+   The list grew past the point where it could be read at a glance, and the
+   ordering was arrival order: Last Frame and Extend both continue a clip and
+   sat three apart, with two things that start one in between. */
+.studio-toolbar__group + .studio-toolbar__group {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #1c1c20;
+}
+.studio-toolbar__group .studio-toolbar__heading { padding-top: 0; }
+
 
 /* Empty State */
 .studio-empty {
@@ -961,7 +972,31 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.sn-label__icon { font-size: 12px; opacity: 0.85; }
+/* The node's kind, as a chip rather than a loose glyph.
+   On a fourteen-node canvas every card was the same dark rectangle and the
+   only way to tell a prompt from a clip was to read it. A tinted square in
+   the title costs nothing and makes the graph legible zoomed out, which is
+   where anyone building one actually works. */
+.sn-label__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: #232329;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 1;
+}
+.sn-wrap--kind-prompt  .sn-label__icon { background: rgba(249, 115, 22, 0.18); }
+.sn-wrap--kind-image   .sn-label__icon { background: rgba(59, 130, 246, 0.18); }
+.sn-wrap--kind-flow    .sn-label__icon { background: rgba(168, 85, 247, 0.18); }
+.sn-wrap--kind-chat    .sn-label__icon { background: rgba(16, 163, 127, 0.18); }
+.sn-wrap--kind-grok    .sn-label__icon { background: rgba(228, 228, 231, 0.16); }
+.sn-wrap--kind-frame   .sn-label__icon { background: rgba(234, 179, 8, 0.18); }
+.sn-wrap--kind-extend  .sn-label__icon { background: rgba(234, 179, 8, 0.18); }
 .sn-wrap--selected .sn-label { color: #e5e5e7; }
 
 /* The card */

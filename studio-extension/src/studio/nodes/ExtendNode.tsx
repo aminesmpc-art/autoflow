@@ -62,7 +62,7 @@ function ExtendNodeComponent({ id, data, selected }: NodeProps) {
   const overCap = !chain.problem && chain.rootId && !affordable.includes(step);
 
   return (
-    <div className={`sn-wrap ${selected ? 'sn-wrap--selected' : ''}`}>
+    <div className={`sn-wrap sn-wrap--kind-extend ${selected ? 'sn-wrap--selected' : ''}`}>
       <div className="sn-label">
         <span className="sn-label__icon" aria-hidden="true">⏱</span>
         <span className="sn-label__text">{nodeData.label || 'Extend'}</span>
@@ -82,7 +82,10 @@ function ExtendNodeComponent({ id, data, selected }: NodeProps) {
           {/* The sum, stated. Without it the cap is a rule you discover by
               hitting it, three minutes into a run. */}
           <div className="sn-ext__sum">
-            <span className="sn-ext__from">{chain.secondsBefore || '—'}s</span>
+            {/* "—" on its own when nothing is connected. Rendering the dash
+                and then appending the unit gave "—s", which reads as a broken
+                number rather than as "no answer yet". */}
+            <span className="sn-ext__from">{chain.rootId ? `${chain.secondsBefore}s` : '—'}</span>
             <span className="sn-ext__arrow">→</span>
             <span className={`sn-ext__to ${total > GROK_MAX_TOTAL_SECONDS ? 'sn-ext__to--over' : ''}`}>
               {chain.rootId ? `${total}s` : '—'}

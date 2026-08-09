@@ -549,35 +549,50 @@ function CanvasInner() {
 
       {/* Node Toolbar (Left sidebar) */}
       <div className="studio-toolbar">
-        <div className="studio-toolbar__heading">Add node</div>
-        <button className="studio-toolbar__btn studio-toolbar__btn--add" onClick={addPromptNode} aria-label="Add Prompt node">
-          <span className="studio-toolbar__btn-icon" aria-hidden="true">✏️</span>
-          <span className="studio-toolbar__btn-label">Add Prompt</span>
-        </button>
-        <button className="studio-toolbar__btn" onClick={addImageNode} aria-label="Add Image node">
-          <span className="studio-toolbar__btn-icon" aria-hidden="true">🖼️</span>
-          <span className="studio-toolbar__btn-label">Add Image</span>
-        </button>
-        <button className="studio-toolbar__btn" onClick={addFrameNode} aria-label="Add Last Frame node">
-          <span className="studio-toolbar__btn-icon" aria-hidden="true">🎞</span>
-          <span className="studio-toolbar__btn-label">Add Last Frame</span>
-        </button>
-        <button className="studio-toolbar__btn" onClick={addAskNode} aria-label="Add Ask AI node">
-          <span className="studio-toolbar__btn-icon" aria-hidden="true">💬</span>
-          <span className="studio-toolbar__btn-label">Add Ask AI</span>
-        </button>
-        <button className="studio-toolbar__btn" onClick={addGrokNode} aria-label="Add Grok clip node">
-          <span className="studio-toolbar__btn-icon" aria-hidden="true">⚡</span>
-          <span className="studio-toolbar__btn-label">Add Grok</span>
-        </button>
-        <button className="studio-toolbar__btn" onClick={addExtendNode} aria-label="Add Extend node">
-          <span className="studio-toolbar__btn-icon" aria-hidden="true">⏱</span>
-          <span className="studio-toolbar__btn-label">Add Extend</span>
-        </button>
-        <button className="studio-toolbar__btn studio-toolbar__btn--primary" onClick={addGenerateNode} aria-label="Add Generate node">
-          <span className="studio-toolbar__btn-icon" aria-hidden="true">🎬</span>
-          <span className="studio-toolbar__btn-label">Add Generate</span>
-        </button>
+        {/* Grouped by what a node does, because a flat list of seven stopped
+            being scannable — "Add Last Frame" and "Add Extend" both continue a
+            clip, and sat three apart from each other between two things that
+            start one. */}
+        <div className="studio-toolbar__group">
+          <div className="studio-toolbar__heading">Inputs</div>
+          <button className="studio-toolbar__btn studio-toolbar__btn--add" onClick={addPromptNode} aria-label="Add Prompt node">
+            <span className="studio-toolbar__btn-icon" aria-hidden="true">✏️</span>
+            <span className="studio-toolbar__btn-label">Prompt</span>
+          </button>
+          <button className="studio-toolbar__btn" onClick={addImageNode} aria-label="Add Image node">
+            <span className="studio-toolbar__btn-icon" aria-hidden="true">🖼️</span>
+            <span className="studio-toolbar__btn-label">Image</span>
+          </button>
+        </div>
+
+        <div className="studio-toolbar__group">
+          <div className="studio-toolbar__heading">Generate</div>
+          <button className="studio-toolbar__btn studio-toolbar__btn--primary" onClick={addGenerateNode} aria-label="Add Generate node">
+            <span className="studio-toolbar__btn-icon" aria-hidden="true">🎬</span>
+            <span className="studio-toolbar__btn-label">Flow clip</span>
+          </button>
+          <button className="studio-toolbar__btn" onClick={addGrokNode} aria-label="Add Grok clip node">
+            <span className="studio-toolbar__btn-icon" aria-hidden="true">⚡</span>
+            <span className="studio-toolbar__btn-label">Grok clip</span>
+          </button>
+          <button className="studio-toolbar__btn" onClick={addAskNode} aria-label="Add Ask AI node">
+            <span className="studio-toolbar__btn-icon" aria-hidden="true">💬</span>
+            <span className="studio-toolbar__btn-label">Ask AI</span>
+          </button>
+        </div>
+
+        <div className="studio-toolbar__group">
+          <div className="studio-toolbar__heading">Continue a clip</div>
+          <button className="studio-toolbar__btn" onClick={addFrameNode} aria-label="Add Last Frame node">
+            <span className="studio-toolbar__btn-icon" aria-hidden="true">🎞</span>
+            <span className="studio-toolbar__btn-label">Last frame</span>
+          </button>
+          <button className="studio-toolbar__btn" onClick={addExtendNode} aria-label="Add Extend node">
+            <span className="studio-toolbar__btn-icon" aria-hidden="true">⏱</span>
+            <span className="studio-toolbar__btn-label">Extend</span>
+          </button>
+        </div>
+
         {/* Run control lives in the run bar at the bottom, not here. Mixing
             "build the workflow" with "operate the workflow" in one 40px column
             meant the primary action moved position depending on state — Run

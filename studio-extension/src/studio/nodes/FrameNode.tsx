@@ -27,7 +27,7 @@ function FrameNodeComponent({ id, data, selected }: NodeProps) {
   const frame: string = nodeData.frameUrl || '';
 
   return (
-    <div className={`fn-wrap ${selected ? 'fn-wrap--selected' : ''}`}>
+    <div className={`fn-wrap sn-wrap--kind-frame ${selected ? 'fn-wrap--selected' : ''}`}>
       <div className="sn-actions">
         <button className="sn-actions__btn" onClick={() => duplicateNode(id)} title="Duplicate node">⧉</button>
         <button className="sn-actions__btn sn-actions__btn--danger" onClick={() => removeNode(id)} title="Delete node">🗑</button>
