@@ -229,25 +229,43 @@ function scrollToNewest(): void {
  * wrong cause. Anchored on phrases that only appear when the turn has ended
  * badly, and only read from the newest turn.
  */
-function readFailureNotice(): string {
-  const turns = document.querySelectorAll<HTMLElement>('[data-message-author-role="assistant"]');
-  const latest = turns[turns.length - 1];
-  const text = (latest?.innerText || '').trim();
-  if (!text) return '';
+const FAILURE_PATTERNS: Array<[RegExp, string]> = [
+  /* "policies", plural. The first version of this matched "content policy"
+     and the message ChatGPT actually shows is "the prompt may violate our
+     content policies" — so the one refusal this was written for was the one
+     it could not see, and the node waited out its full six minutes. */
+  [/content polic(y|ies)|violate our|can'?t (help with|create|generate) that|unable to (create|generate)|against our (usage )?polic|didn'?t follow our/i,
+    'ChatGPT declined this prompt'],
+  [/you'?ve (hit|reached) (your|the) (limit|cap)|rate limit|try again later|come back later|please wait/i,
+    'ChatGPT is rate limited'],
+  [/something went wrong|error (generating|creating)|failed to generate|unable to load/i,
+    'ChatGPT reported an error generating the image'],
+];
 
-  const patterns: Array<[RegExp, string]> = [
-    [/content policy|can'?t (help with|create|generate) that|unable to (create|generate)/i,
-      'ChatGPT declined this prompt'],
-    [/you'?ve (hit|reached) (your|the) (limit|cap)|rate limit|try again later|come back later/i,
-      'ChatGPT is rate limited'],
-    [/something went wrong|error (generating|creating)|failed to generate/i,
-      'ChatGPT reported an error generating the image'],
-  ];
-  for (const [pattern, label] of patterns) {
-    if (pattern.test(text)) {
+/**
+ * ChatGPT refusing or failing, in its own words.
+ *
+ * Distinct from "still working": a refusal never becomes an image however long
+ * it is given, so waiting six minutes for one wastes the run and then reports
+ * the wrong cause.
+ *
+ * Searched by element rather than by reading one turn's text, because an image
+ * refusal does not necessarily render inside an assistant turn — the live one
+ * appears as its own line under the prompt bubble. Anything inside a USER turn
+ * is skipped, so a prompt that happens to discuss content policy cannot
+ * accuse itself.
+ */
+function readFailureNotice(): string {
+  for (const [pattern, label] of FAILURE_PATTERNS) {
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>('div, p, span'))) {
+      // Leaf-ish: the element holding the sentence, not a section containing it.
+      if (el.children.length > 2) continue;
+      const text = (el.textContent || '').trim();
+      if (text.length < 20 || text.length > 400) continue;
+      if (!pattern.test(text)) continue;
+      if (el.closest('[data-message-author-role="user"]')) continue;
       // Its own sentence beats our paraphrase for deciding what to do next.
-      const sentence = text.split(/(?<=[.!?])\s/).find((s) => pattern.test(s)) || text.slice(0, 160);
-      return `${label}: ${sentence.trim().slice(0, 200)}`;
+      return `${label}: ${text.slice(0, 220)}`;
     }
   }
   return '';

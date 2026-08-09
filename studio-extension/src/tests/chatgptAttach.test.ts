@@ -691,3 +691,76 @@ describe('scrolling to the newest turn', () => {
     expect(nav.scrollTop).toBe(0);
   });
 });
+
+/* ============================================================
+   ChatGPT saying no.
+
+   A refusal never becomes an image, so waiting the full six minutes for one
+   spends the run and then blames the timeout instead of the refusal.
+
+   The message is verbatim from a live refusal. It is also the reason this
+   test exists: the first version of the detector matched "content policy"
+   and the real message says "content policies" — so the single case it was
+   written for was the one case it could not see.
+   ============================================================ */
+describe('a refusal', () => {
+  const REFUSAL =
+    'We’re so sorry, but the prompt may violate our content policies. '
+    + 'If you think we got it wrong, please retry or edit your prompt.';
+
+  /** Live shape: its own line under the prompt bubble, not inside a turn. */
+  function showRefusal(): void {
+    const line = document.createElement('div');
+    line.textContent = REFUSAL;
+    document.body.append(line);
+  }
+
+  it('fails the node instead of waiting out the timeout', async () => {
+    const h = buildHarness();
+    autoAcceptUploads(h);
+
+    const run = h.execute({ nodeId: 'n1', config: { prompt: 'a portrait', mediaType: 'image' } });
+    await new Promise((r) => setTimeout(r, 600));
+    showRefusal();
+    await run;
+
+    // The poller checks every couple of seconds.
+    await new Promise((r) => setTimeout(r, 5000));
+    expect(errorsFrom(h).join(' ')).toMatch(/declined this prompt/i);
+  }, 30_000);
+
+  it('quotes what ChatGPT actually said', async () => {
+    /* "Declined" alone does not say whether to reword, retry, or give up.
+       The sentence does. */
+    const h = buildHarness();
+    autoAcceptUploads(h);
+
+    const run = h.execute({ nodeId: 'n1', config: { prompt: 'a portrait', mediaType: 'image' } });
+    await new Promise((r) => setTimeout(r, 600));
+    showRefusal();
+    await run;
+    await new Promise((r) => setTimeout(r, 5000));
+
+    expect(errorsFrom(h).join(' ')).toMatch(/content policies/i);
+  }, 30_000);
+
+  it('does not accuse a prompt that merely mentions the words', async () => {
+    /* The prompt is the user's, and it is on the page too. A workflow about
+       moderation policy must not fail itself. */
+    document.body.innerHTML = '';
+    const userTurn = document.createElement('div');
+    userTurn.setAttribute('data-message-author-role', 'user');
+    userTurn.textContent =
+      'Write a scene where a moderator explains our content policies to a new hire.';
+    document.body.append(userTurn);
+
+    const hits = Array.from(document.querySelectorAll<HTMLElement>('div, p, span')).filter((el) => {
+      if (el.children.length > 2) return false;
+      const t = (el.textContent || '').trim();
+      if (t.length < 20 || t.length > 400) return false;
+      if (!/content polic(y|ies)/i.test(t)) return false;
+      return !el.closest('[data-message-author-role="user"]');
+    });
+    expect(hits).toHaveLength(0);
+  });
+});
