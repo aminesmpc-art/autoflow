@@ -13,6 +13,7 @@ import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS, modelHasDuration } from '../.
 import { getAskPresets, DEFAULT_PRESET_ID, findPreset } from '../presets';
 import { portsFor, retargetImagePorts } from '../templates/validate';
 import { CHAT_PLATFORMS } from '../engine/WorkflowRunner';
+import { GrokSettings } from './GrokSettings';
 
 type NodeStatus = 'idle' | 'running' | 'done' | 'error';
 type Platform = 'flow' | 'chatgpt' | 'gemini' | 'grok';
@@ -51,16 +52,6 @@ const VIDEO_RATIOS = ['9:16', '16:9', '1:1'];
 /* Flow offers 10s as well — omitting it meant the longest clip length was
    simply unreachable from Studio. */
 const DURATIONS = ['4s', '6s', '8s', '10s'];
-
-/* Grok Imagine's own sets, read off its controls. Its duration radio group
-   offers 6/10/15 and its resolution group 480/720/1080 — none of which
-   overlap Flow's, which is why they are separate lists rather than a merged
-   one that would offer a button Grok does not have. */
-const GROK_DURATIONS = ['6s', '10s', '15s'];
-const GROK_RESOLUTIONS = ['480p', '720p', '1080p'];
-const GROK_RATIOS = ['9:16', '16:9', '1:1'];
-/* What Extend offers on top of the clip you already have. */
-const GROK_EXTEND_STEPS = ['+6s', '+10s'];
 
 /** CSS aspect-ratio for the media area, so the node takes the shape of its output */
 function ratioToCss(ratio: string): string {
@@ -150,11 +141,11 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   /* Text output only makes sense on a chat platform — Flow has no chat. */
   const isText = isChat && mediaType === 'text';
   const models = isVideo ? VIDEO_MODELS : IMAGE_MODELS;
-  /* Grok offers its own values and only its own. Showing Flow's would let a
-     node ask for 4s or 4:3, which Imagine has no button for — the run would
-     keep whatever was already set and nothing would say why. */
-  const ratios = isGrok ? GROK_RATIOS : isVideo ? VIDEO_RATIOS : IMAGE_RATIOS;
-  const durations = isGrok ? GROK_DURATIONS : DURATIONS;
+  /* Flow's, and only Flow's. Imagine's live in GrokSettings, which is the
+     point of the split — these lists no longer have to know another platform
+     exists. */
+  const ratios = isVideo ? VIDEO_RATIOS : IMAGE_RATIOS;
+  const durations = DURATIONS;
   const ratio = nodeData.aspectRatio || '9:16';
   const progress = nodeData.progress || 0;
   const enabled = nodeData.enabled !== false;
@@ -485,105 +476,10 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               </div>
             </>
           )}
-          {/* Grok Imagine has no model list, but it does have the three
-              controls its own toolbar shows. */}
-          {isGrok && isVideo && (
-            <>
-              {/* Imagine can continue a finished clip instead of starting one.
-                  Extending replaces the shot settings — the framing is already
-                  decided — so the rest of the controls give way to a length. */}
-              <div className="sn-field sn-field--wide" title="Start a new clip, or continue the one before it">
-                <span className="sn-field__label">Mode</span>
-                <div className="sn-seg nodrag">
-                  {[['', 'New clip'], ['extend', 'Extend']].map(([value, label]) => (
-                    <button
-                      key={label}
-                      type="button"
-                      className={`sn-seg__btn ${(nodeData.extend ? 'extend' : '') === value ? 'sn-seg__btn--on' : ''}`}
-                      onClick={() => set('extend', value === 'extend')}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {nodeData.extend && (
-                <>
-                  <small className="sn-field__hint sn-field--wide">
-                    Wire the Grok clip to continue into 🖼 — Extend adds to it.
-                  </small>
-                  <div className="sn-field sn-field--wide" title="How much to add">
-                    <span className="sn-field__label">Add</span>
-                    <div className="sn-seg nodrag">
-                      {GROK_EXTEND_STEPS.map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          className={`sn-seg__btn ${(nodeData.extendSeconds || '+10s') === s ? 'sn-seg__btn--on' : ''}`}
-                          onClick={() => set('extendSeconds', s)}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {!nodeData.extend && (
-                <>
-              <div className="sn-field sn-field--wide" title="Clip length">
-                <span className="sn-field__label">Length</span>
-                <div className="sn-seg nodrag">
-                  {durations.map((d) => (
-                    <button
-                      key={d}
-                      type="button"
-                      className={`sn-seg__btn ${(nodeData.duration || '10s') === d ? 'sn-seg__btn--on' : ''}`}
-                      onClick={() => set('duration', d)}
-                    >
-                      {d}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="sn-field sn-field--wide" title="Resolution">
-                <span className="sn-field__label">Resolution</span>
-                <div className="sn-seg nodrag">
-                  {GROK_RESOLUTIONS.map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      className={`sn-seg__btn ${(nodeData.resolution || '720p') === r ? 'sn-seg__btn--on' : ''}`}
-                      onClick={() => set('resolution', r)}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="sn-field sn-field--wide" title="Aspect ratio">
-                <span className="sn-field__label">Ratio</span>
-                <div className="sn-seg nodrag">
-                  {ratios.map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      className={`sn-seg__btn ${ratio === r ? 'sn-seg__btn--on' : ''}`}
-                      onClick={() => set('aspectRatio', r)}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </div>
-                </>
-              )}
-            </>
-          )}
+          {/* Imagine's controls live in their own component: they share no
+              values with Flow's and no longer have to be told apart by a
+              platform test on every row. */}
+          {isGrok && isVideo && <GrokSettings nodeData={nodeData} set={set} />}
 
           {isChatGPT && (
             <span className="sn-bar__hint sn-field--wide">

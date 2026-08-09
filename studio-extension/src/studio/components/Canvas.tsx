@@ -365,6 +365,48 @@ function CanvasInner() {
   }, [addNode, nodes, guardAdd]);
 
   /**
+   * A generate node preconfigured for Grok Imagine.
+   *
+   * Same node type underneath — one execution path, one set of ports — but
+   * Grok and Flow have almost nothing in common to configure. Flow has a model
+   * list, ingredients and Start/End frames; Imagine has resolution, its own
+   * clip lengths, and Extend. Reaching Grok by adding a Flow node and changing
+   * two dropdowns made one node look like it did both jobs badly, which is the
+   * confusion this splits.
+   */
+  const addGrokNode = useCallback(() => {
+    if (!guardAdd()) return;
+    const id = `grok_${Date.now()}`;
+    addNode({
+      id,
+      type: 'generate',
+      position: { x: 620, y: 320 + nodes.length * 50 },
+      data: {
+        type: 'generate',
+        label: `Grok Clip ${nodes.filter((n) => {
+          const d = n.data as any;
+          return d.type === 'generate' && d.platform === 'grok';
+        }).length + 1}`,
+        platform: 'grok',
+        // Imagine's own defaults, so the node matches the page it drives.
+        mediaType: 'video',
+        model: '',
+        aspectRatio: '9:16',
+        duration: '10s',
+        resolution: '720p',
+        creationType: 'ingredients',
+        enabled: true,
+        status: 'idle',
+        resultUrl: null,
+        previewUrl: '',
+        resultTileId: null,
+        progress: 0,
+        errorMessage: null,
+      },
+    });
+  }, [addNode, nodes, guardAdd]);
+
+  /**
    * A generate node preconfigured to ask ChatGPT for text.
    *
    * Same node type underneath — it reuses the whole execution path — but
@@ -493,6 +535,10 @@ function CanvasInner() {
         <button className="studio-toolbar__btn" onClick={addAskNode} aria-label="Add Ask AI node">
           <span className="studio-toolbar__btn-icon" aria-hidden="true">💬</span>
           <span className="studio-toolbar__btn-label">Add Ask AI</span>
+        </button>
+        <button className="studio-toolbar__btn" onClick={addGrokNode} aria-label="Add Grok clip node">
+          <span className="studio-toolbar__btn-icon" aria-hidden="true">⚡</span>
+          <span className="studio-toolbar__btn-label">Add Grok</span>
         </button>
         <button className="studio-toolbar__btn studio-toolbar__btn--primary" onClick={addGenerateNode} aria-label="Add Generate node">
           <span className="studio-toolbar__btn-icon" aria-hidden="true">🎬</span>
