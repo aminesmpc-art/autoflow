@@ -158,3 +158,63 @@ describe('published presets', () => {
     }
   });
 });
+
+/* ============================================================
+   Two ways an empty subject used to change the brief's meaning.
+
+   Both were found in review, and both were the same mistake: a rule that
+   held for the bundled set was treated as a property of every set.
+   ============================================================ */
+describe('an empty subject', () => {
+  it('keeps the instruction the placeholder was attached to', () => {
+    /* The stated invariant — "{{subject}} always owns its line" — was simply
+       untrue. Three briefs end an instruction with it, so dropping the line
+       deleted the instruction and sent the model bare section headings. */
+    const out = composeAskPrompt('car_sheet', '', false);
+    expect(out).toMatch(/reference sheet/i);
+    expect(out).not.toContain('{{subject}}');
+  });
+
+  it('leaves no dangling label where the subject would have been', () => {
+    // "…of this exact car:" with nothing after it reads as a truncated prompt.
+    const out = composeAskPrompt('car_sheet', '', false);
+    expect(out).not.toMatch(/:\s*$/m);
+  });
+
+  it('still substitutes normally when a subject is given', () => {
+    const out = composeAskPrompt('car_sheet', 'BMW 525d', false);
+    expect(out).toContain('BMW 525d');
+    expect(out).toMatch(/reference sheet/i);
+  });
+
+  it('does not collapse a brief to nothing', () => {
+    for (const p of ASK_PRESETS.filter((p) => p.id !== 'none')) {
+      expect({ id: p.id, len: composeAskPrompt(p.id, '', false).length > 40 })
+        .toEqual({ id: p.id, len: true });
+    }
+  });
+});
+
+describe('an unknown preset id', () => {
+  afterEach(() => setAskPresets(null));
+
+  it('passes the text through instead of using whatever is first', () => {
+    /* findPreset fell back to activePresets[0]. That is `none` in the bundled
+       set, which is why it looked correct — but presets are published from the
+       cloud and nothing requires `none` to be present or first. A list
+       starting with a car brief would have wrapped every plain Ask AI prompt
+       in it and returned a confident answer about the wrong subject. */
+    setAskPresets([
+      { id: 'car_sheet', name: 'Car', hint: 'h', brief: 'CAR BRIEF: {{subject}}' },
+    ]);
+    expect(composeAskPrompt(undefined, 'a calico cat', false)).toBe('a calico cat');
+    expect(composeAskPrompt('does_not_exist', 'a calico cat', false)).toBe('a calico cat');
+  });
+
+  it('still resolves a preset that is present', () => {
+    setAskPresets([
+      { id: 'car_sheet', name: 'Car', hint: 'h', brief: 'CAR BRIEF: {{subject}}' },
+    ]);
+    expect(composeAskPrompt('car_sheet', 'BMW', false)).toBe('CAR BRIEF: BMW');
+  });
+});

@@ -262,7 +262,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           {status === 'running' && (
             <div className="sn-media__state sn-media__state--running">
               <div className="sn-spinner" />
-              <span>{isText ? 'Asking ChatGPT…' : `Generating ${isVideo ? 'video' : 'image'}…`}</span>
+              <span>{isText ? `Asking ${chatName}…` : `Generating ${isVideo ? 'video' : 'image'}…`}</span>
               <div className="sn-progress">
                 <div className="sn-progress__fill" style={{ width: `${progress}%` }} />
               </div>
@@ -345,7 +345,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           {/* ChatGPT can either draw or write. Asking it to write turns this
               node into a prompt writer whose answer feeds the next node. */}
           {isChatGPT && (
-            <label className="sn-field" title="Ask for an image, or for a written prompt">
+            <label className="sn-field" title={`Ask ${chatName} for an image, or for a written prompt`}>
               <span className="sn-field__label">Output</span>
               <select
                 className="sn-bar__sel nodrag"
@@ -427,7 +427,12 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                 <span className="sn-field__label">Model</span>
                 <select
                   className="sn-bar__sel nodrag"
-                  value={nodeData.model || models[0]}
+                  /* Fall back when the saved model is no longer offered.
+                     Imagen 4 left Flow's menu; a workflow saved with it kept
+                     rendering a select with a value not in its options, which
+                     shows blank and leaves setModel asking for a model that
+                     does not exist — so the run silently used Flow's default. */
+                  value={models.includes(nodeData.model) ? nodeData.model : models[0]}
                   onChange={(e) => set('model', e.target.value)}
                 >
                   {models.map((m) => <option key={m} value={m}>{m}</option>)}

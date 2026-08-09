@@ -233,8 +233,27 @@ export const ASK_PRESETS = BUILTIN_ASK_PRESETS;
 
 export const DEFAULT_PRESET_ID = 'none';
 
+/**
+ * Pass-through, for a caller that named nothing or named something this set
+ * does not have.
+ *
+ * Not `activePresets[0]`. That happens to be `none` in the bundled set, which
+ * is why it looked right — but presets are published from the cloud, nothing
+ * requires `none` to be present or first, and a list beginning with
+ * `car_sheet` would have wrapped every plain Ask AI prompt in a car brief and
+ * returned a confident answer about the wrong thing.
+ */
+const PASS_THROUGH: AskPreset = {
+  id: DEFAULT_PRESET_ID,
+  name: 'No preset',
+  hint: 'Sends what you type, unchanged.',
+  brief: '{{subject}}',
+};
+
 export const findPreset = (id?: string): AskPreset =>
-  activePresets.find((p) => p.id === id) || activePresets[0];
+  activePresets.find((p) => p.id === id)
+  || activePresets.find((p) => p.id === DEFAULT_PRESET_ID)
+  || PASS_THROUGH;
 
 /**
  * Problems with a published preset, in plain language. Empty means valid.
@@ -282,14 +301,31 @@ export function composeAskPrompt(
 
   /* An empty subject is normal for the image-led presets — "continue this
      shot" needs nothing but the frame. Substituting an empty string would
-     leave a dangling "Notes on the subject:" with nothing after it. */
-  /* Every template keeps {{subject}} on a line of its own, so dropping that
-     line when nothing was typed cannot take an instruction with it — which is
-     what happened to "The attached image is the LAST FRAME…" while the
-     placeholder was appended to the end of that sentence. */
+     leave a dangling "Notes on the subject:" with nothing after it.
+
+     Dropping the whole LINE was the previous answer, on the stated grounds
+     that every template keeps {{subject}} on a line of its own. That was
+     simply untrue: three briefs end an instruction with it —
+
+       "…reference sheet of this exact car: {{subject}}"
+       "Break this into a numbered sequence of shots: {{subject}}"
+       "Describe the visual style of: {{subject}}"
+
+     so an empty subject deleted the instruction and sent the model a set of
+     section headings with nothing to apply them to. Since an empty subject is
+     a supported state, that was reachable any time the prompt node feeding an
+     Ask AI node was cleared.
+
+     So: remove the placeholder, remove the label it was hanging off, and drop
+     the line only when nothing is left on it. */
   const filled = trimmed
     ? template.replace(/\{\{subject\}\}/g, trimmed)
-    : template.replace(/^[^\n]*\{\{subject\}\}[^\n]*\n?/gm, '');
+    : template
+        // "Notes on the subject: {{subject}}" → "Notes on the subject" is
+        // still noise, so take the trailing colon and its spacing with it.
+        .replace(/[ \t]*:?[ \t]*\{\{subject\}\}/g, '')
+        // Only now, and only if the line has nothing else on it.
+        .replace(/^[ \t]*\n/gm, '\n');
 
-  return filled.trim();
+  return filled.replace(/\n{3,}/g, '\n\n').trim();
 }

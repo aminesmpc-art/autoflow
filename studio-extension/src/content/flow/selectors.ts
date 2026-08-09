@@ -1225,7 +1225,11 @@ export function findRowForPrompt(prompt: string): FlowGenerationRow | null {
   const want = normalisePrompt(prompt);
   if (want.length < 8) return null; // too short to identify anything
 
-  const rows = readGenerationRows();
+  /* Newest first, because a node run twice with the same prompt has two
+     matching rows and the older one is already finished. Taking it would hand
+     this run the previous run's clip — green, plausible, and the wrong video.
+     readGenerationRows returns document order, so this reverses it. */
+  const rows = readGenerationRows().slice().reverse();
   const exact = rows.find((r) => normalisePrompt(r.prompt) === want);
   if (exact) return exact;
 

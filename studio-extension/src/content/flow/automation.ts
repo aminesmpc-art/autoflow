@@ -3337,7 +3337,14 @@ export class AutomationEngine {
     const clickWorked = async (): Promise<boolean> => {
       // Poll a few times — Flow's UI needs a moment to clear the prompt and start tiles
       for (let attempt = 0; attempt < 4; attempt++) {
-        await throwIfOutOfCredits();
+        /* Credits are NOT checked in here.
+           throwIfOutOfCredits opens Flow's alert popover — hover, click, wait
+           400ms — and this loop runs four times after every click strategy, so
+           a run with the alert icon on screen spent the better part of ten
+           seconds doing nothing but opening a popover. Worse, that popover
+           restores only the hover state, so one opened by click() can stay
+           open, and an open overlay swallows the next Generate click. Checked
+           once before the strategies and once after they are exhausted. */
         // Primary signal: prompt text CHANGED after submit.
         // We can't check for empty because Flow's Slate editor always has
         // placeholder text ("What do you want to create?") in textContent.
@@ -3436,6 +3443,10 @@ export class AutomationEngine {
       if (await clickWorked()) return;
     }
 
+    /* Now it is worth the popover: nothing worked, and "no credits" is the
+       one explanation that makes every strategy failing expected rather than
+       a bug in the strategies. */
+    await throwIfOutOfCredits();
     this.log('warn', 'All click strategies attempted — none confirmed');
     await humanDelay(500, 1000);
   }
