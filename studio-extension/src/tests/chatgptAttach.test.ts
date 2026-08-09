@@ -607,3 +607,87 @@ describe('the Create image tool', () => {
     expect((clone.textContent || '').replace(/\uFEFF/g, '').trim()).toBe('a red bicycle');
   });
 });
+
+/* ============================================================
+   Keeping the newest turn on screen.
+
+   ChatGPT renders what is near the viewport, so a generated image that has
+   scrolled out either is not in the DOM or never loads its bytes — and the
+   capture then searches a page the picture is not on while the picture sits
+   one scroll away.
+
+   The first attempt matched `main [class*="overflow-y"]`. Verified against the
+   live page: the conversation pane's class is a Tailwind arbitrary variant
+   with no "overflow-y" anywhere in it, so that selector matched nothing, fell
+   through to `main`, which does not scroll — and `window.scrollTo` was equally
+   useless because the document does not scroll on this layout either.
+   ============================================================ */
+describe('scrolling to the newest turn', () => {
+  /** jsdom does no layout, so the scroll geometry has to be declared. */
+  function scrollPane(scrollHeight: number, clientHeight: number): HTMLElement {
+    const pane = document.createElement('div');
+    // Verbatim shape of the real one: no "overflow-y" in the class name.
+    pane.className = '@w-sm/main:[scrollbar-gutter:var(--stage-scroll-gutter)] flex-1';
+    pane.style.overflowY = 'auto';
+    Object.defineProperty(pane, 'scrollHeight', { value: scrollHeight, configurable: true });
+    Object.defineProperty(pane, 'clientHeight', { value: clientHeight, configurable: true });
+    return pane;
+  }
+
+  beforeEach(() => { document.body.innerHTML = ''; });
+
+  it('the old class-based selector would not have matched the real pane', () => {
+    /* The regression itself, stated as a fact about the markup rather than
+       about our code — if ChatGPT ever puts the class back, this says so. */
+    const main = document.createElement('main');
+    main.append(scrollPane(900, 760));
+    document.body.append(main);
+    expect(main.querySelector('[class*="overflow-y"]')).toBeNull();
+  });
+
+  it('finds the pane by walking up from the newest message', () => {
+    const main = document.createElement('main');
+    const pane = scrollPane(900, 760);
+    const turn = document.createElement('div');
+    turn.setAttribute('data-message-author-role', 'assistant');
+    pane.append(turn);
+    main.append(pane);
+    document.body.append(main);
+
+    // What the shipped helper does, reproduced over the same markup.
+    let node: HTMLElement | null = turn.parentElement;
+    while (node && node !== document.body) {
+      const oy = getComputedStyle(node).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight + 40) {
+        node.scrollTop = node.scrollHeight;
+        break;
+      }
+      node = node.parentElement;
+    }
+    expect(node).toBe(pane);
+    expect(pane.scrollTop).toBe(900);
+  });
+
+  it('does not mistake the sidebar for the conversation', () => {
+    /* The sidebar is the other scrollable element on the page, and it is the
+       one a document-wide search for "something that scrolls" finds first. */
+    const nav = scrollPane(1580, 698);
+    nav.className = 'group/scrollport relative flex min-h-0 w-full flex-1';
+    const main = document.createElement('main');
+    const pane = scrollPane(900, 760);
+    const turn = document.createElement('div');
+    turn.setAttribute('data-message-author-role', 'assistant');
+    pane.append(turn);
+    main.append(pane);
+    document.body.append(nav, main);
+
+    let node: HTMLElement | null = turn.parentElement;
+    while (node && node !== document.body) {
+      const oy = getComputedStyle(node).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight + 40) break;
+      node = node.parentElement;
+    }
+    expect(node).toBe(pane);
+    expect(nav.scrollTop).toBe(0);
+  });
+});

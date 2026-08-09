@@ -187,10 +187,38 @@ async function selectCreateImageTool(): Promise<string | null> {
  * while the picture sat there, one scroll away.
  */
 function scrollToNewest(): void {
-  const target = document.querySelector<HTMLElement>('main [class*="overflow-y"], main');
-  if (target) target.scrollTop = target.scrollHeight;
-  // Some builds scroll the document instead of a pane.
-  window.scrollTo(0, document.body.scrollHeight);
+  /* Found by walking up from the newest message, not by matching a class.
+     The first attempt looked for `main [class*="overflow-y"]` and it never
+     matched anything: the conversation pane's class is a Tailwind arbitrary
+     variant — `@w-sm/main:[scrollbar-gutter:var(--stage-scroll-gutter)]…` —
+     with no "overflow-y" in it at all. The selector fell through to `main`,
+     which does not scroll, so the assignment was a no-op. `window.scrollTo`
+     was no better: on this layout the document itself does not scroll either.
+
+     Walking up asks the page which box actually scrolls instead of claiming
+     to know its name. It also skips the sidebar, which is the other scrollable
+     element on the page and the one a looser search finds first. */
+  const turns = document.querySelectorAll<HTMLElement>('[data-message-author-role]');
+  const last = turns[turns.length - 1];
+
+  let node: HTMLElement | null = last?.parentElement || null;
+  while (node && node !== document.body) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if ((overflowY === 'auto' || overflowY === 'scroll')
+        && node.scrollHeight > node.clientHeight + 40) {
+      node.scrollTop = node.scrollHeight;
+      return;
+    }
+    node = node.parentElement;
+  }
+
+  /* No scrolling ancestor: either everything fits, or this build scrolls the
+     document. Both are covered without needing to know which — and both are
+     feature-checked, because neither is guaranteed to exist. */
+  if (typeof last?.scrollIntoView === 'function') last.scrollIntoView({ block: 'end' });
+  if (typeof window.scrollTo === 'function') {
+    try { window.scrollTo(0, document.body.scrollHeight); } catch { /* not scrollable */ }
+  }
 }
 
 /**
