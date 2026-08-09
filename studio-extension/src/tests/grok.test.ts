@@ -337,6 +337,44 @@ describe('extending a clip', () => {
     expect(labelled('Cancel Extend')).toBeDefined();
   });
 
+  it('reads extend mode off the composer placeholder', () => {
+    /* What the working grok-auto extension checks, and the better signal: it
+       sits on the box about to be typed into, so it answers "will this prompt
+       extend the clip" rather than "is some button on screen". */
+    document.body.innerHTML =
+      '<div class="tiptap ProseMirror" contenteditable="true">'
+      + '<p data-placeholder="Extend video"><br></p></div>';
+    const inExtend = Array.from(document.querySelectorAll('[data-placeholder]'))
+      .some((el) => /extend/i.test(el.getAttribute('data-placeholder') || ''));
+    expect(inExtend).toBe(true);
+  });
+
+  it('does not read the ordinary composer as extend mode', () => {
+    document.body.innerHTML =
+      '<div class="tiptap ProseMirror" contenteditable="true">'
+      + '<p data-placeholder="Type to imagine"><br></p></div>';
+    const inExtend = Array.from(document.querySelectorAll('[data-placeholder]'))
+      .some((el) => /extend/i.test(el.getAttribute('data-placeholder') || ''));
+    expect(inExtend).toBe(false);
+  });
+
+  it('finds Extend video in the More options menu', () => {
+    /* The proven entry point: entries are div[role="menuitem"], not buttons,
+       so a button search finds nothing. */
+    document.body.innerHTML = `
+      <button aria-label="More options">...</button>
+      <div role="menuitem">Download</div>
+      <div role="menuitem">Extend video</div>
+      <div role="menuitem">Delete</div>`;
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>('*'))) {
+      (el as any).getBoundingClientRect = box(200, 36);
+    }
+    expect(document.querySelectorAll('button[role="menuitem"]')).toHaveLength(0);
+    const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find((el) => /extend/i.test(el.textContent || ''));
+    expect(item!.textContent).toBe('Extend video');
+  });
+
   it('finds the clip to extend by the generation id in its URL', () => {
     // Labels repeat across clips; the id does not.
     mountViewer();

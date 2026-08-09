@@ -263,8 +263,24 @@ const buttonByLabel = (label: string): HTMLElement | null =>
     .find((b) => (b.getAttribute('aria-label') || '').trim().toLowerCase() === label.toLowerCase()
       && isVisible(b)) || null;
 
-/** Whether the composer is currently in extend mode. */
-const inExtendMode = (): boolean => !!buttonByLabel('Cancel Extend');
+/**
+ * Whether the composer is in extend mode.
+ *
+ * The composer's placeholder becomes "Extend video" — that is the signal the
+ * working grok-auto extension uses, and it is better than the one this file
+ * originally had: it sits on the box we are about to type into, so it answers
+ * "will this prompt extend the clip" rather than "is a button on screen
+ * somewhere". The Cancel Extend button is kept as a second opinion.
+ */
+function inExtendMode(): boolean {
+  for (const p of Array.from(document.querySelectorAll('[data-placeholder]'))) {
+    if (/extend/i.test(p.getAttribute('data-placeholder') || '')) return true;
+  }
+  if (buttonByLabel('Cancel Extend')) return true;
+  // The "× Extend Video" chip beside the composer.
+  return Array.from(document.querySelectorAll<HTMLElement>('button'))
+    .some((b) => /extend video/i.test((b.textContent || '').trim()) && isVisible(b));
+}
 
 /**
  * Open the clip this node is extending.
@@ -306,16 +322,43 @@ async function startExtend(videoUrl: string, seconds: string | undefined): Promi
       return 'Could not open the clip to extend — it is not in Grok\'s history on this page';
     }
 
-    const extend = buttonByLabel('Extend');
-    if (!extend) return 'Grok is not offering Extend on this clip';
-    extend.click();
+    /* Two ways in, because Grok offers two.
+       The proven one — taken from the working grok-auto extension — is the
+       "More options" menu: its entries are div[role="menuitem"], and the one
+       we want contains "extend". The panel button beside Regenerate/Share is
+       the other, and is what this file was originally written against. Trying
+       the menu first because that is the path with a track record. */
+    let opened = false;
 
+    const more = buttonByLabel('More options');
+    if (more) {
+      more.click();
+      await sleep(900);
+      const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+        .find((el) => /extend/i.test(el.textContent || '') && isVisible(el));
+      if (item) {
+        item.click();
+        opened = true;
+      } else {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      }
+    }
+
+    if (!opened) {
+      const extend = buttonByLabel('Extend');
+      if (!extend) return 'Grok is not offering Extend on this clip';
+      extend.click();
+    }
+
+    /* 15s, and it is not generous: entering extend mode re-renders the
+       composer and grok-auto found it needed the room. */
     let engaged = false;
-    for (let i = 0; i < 20 && !engaged; i++) {
+    for (let i = 0; i < 50 && !engaged; i++) {
       await sleep(300);
       engaged = inExtendMode();
     }
     if (!engaged) return 'Clicked Extend but Grok did not switch into extend mode';
+    await sleep(800); // let the re-render settle before anything is typed
   }
 
   /* Optional. A node that names no length keeps whatever Imagine offers by
@@ -474,6 +517,24 @@ function fillComposer(el: HTMLElement, text: string): boolean {
     setter?.call(el, text);
     el.dispatchEvent(new Event('input', { bubbles: true }));
     return el.value.trim().length > 0;
+  }
+
+  /* Put the caret in the editor's paragraph before typing.
+     Focus alone is not enough in extend mode: entering it re-renders the
+     composer around a fresh <p data-placeholder="Extend video"> holding a
+     trailing <br>, and execCommand acts on the selection rather than on the
+     focused element. The working grok-auto extension does this for the same
+     reason, and clears the break first so the text does not land after it. */
+  const para = el.querySelector('p[data-placeholder]') || el.querySelector('p');
+  if (para) {
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(para);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    } catch { /* selection APIs unavailable — the paths below still try */ }
   }
 
   const enough = () =>
