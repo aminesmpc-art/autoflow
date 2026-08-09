@@ -31,7 +31,10 @@ console.log('[AutoFlow Grok] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
 
-const GENERATION_TIMEOUT_MS = 6 * 60 * 1000;
+/* Ten minutes, not six. Imagine takes minutes on a long clip, and the cost of
+   the two limits is not symmetric: waiting too long wastes time, giving up too
+   early throws away a generation that was going to succeed. */
+const GENERATION_TIMEOUT_MS = 10 * 60 * 1000;
 const TEXT_TIMEOUT_MS = 90 * 1000;
 const POLL_MS = 2000;
 const UPLOAD_TIMEOUT_MS = 45 * 1000;
@@ -162,26 +165,28 @@ function looksSignedOut(): boolean {
 function isGenerating(): boolean {
   if (findStopButton()) return true;
 
-  /* Grok Imagine shows generation progress inside the result article area
-     rather than on the composer form. Look for loading text or progress
-     indicators there — without this the poller reads "idle" the whole time
-     and can latch onto a half-loaded result. */
-  const article = document.querySelector('article');
-  if (article) {
-    const text = article.innerText || '';
-    if (/generating|creating your|loading/i.test(text)) return true;
-    if (article.querySelector('[role="progressbar"], .animate-spin, [class*="spinner"]')) return true;
+  /* Searched across the result area, not inside `article`.
+     The previous version scoped to document.querySelector('article'), an
+     element never confirmed to exist on /imagine — so this returned false for
+     the entire render, every time. That alone was harmless; combined with a
+     stall detector that read "no visible progress" as "failed", it killed
+     nodes at sixty seconds while Grok was still working and the clip arrived
+     minutes later. */
+  const composer = composerRegion();
+  const scope = document.querySelector<HTMLElement>('main') || document.body;
+
+  for (const el of Array.from(scope.querySelectorAll<HTMLElement>(
+    '[role="progressbar"], [class*="spinner"], [class*="skeleton"], '
+    + '[class*="animate-pulse"], [class*="animate-spin"]'
+  ))) {
+    if (composer && composer.contains(el)) continue;
+    if (isVisible(el)) return true;
   }
 
-  /* Deliberately NOT "the submit button is disabled".
-     On /imagine that button is always in the DOM and is disabled whenever the
-     composer is empty — which is precisely the state the page rests in after
-     a submit. Reading it as busy would mean `stable && !isGenerating()` could
-     never pass and every node would run to its timeout with the finished
-     video on screen. The real completion signal is a new result holding
-     still; this is only the secondary guard, so it stays conservative. */
-  const form = findComposer()?.closest('form');
-  return !!form?.querySelector('[aria-busy="true"]');
+  const text = scope.innerText || '';
+  if (/generating|creating your|rendering|queued|in progress|processing/i.test(text)) return true;
+
+  return false;
 }
 
 /* ── Grok Imagine ──────────────────────────────────────────────
@@ -974,7 +979,8 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
 }
 
 /** Consecutive quiet polls before a silent page is called a failure. */
-const STALL_POLLS = 30; // 30 x 2s = a minute of nothing
+/** Polls of silence before the log says so. Diagnostic only — see below. */
+const STALL_POLLS = 45; // 45 x 2s = 90s
 
 /**
  * Grok refusing to show what it made.
@@ -1057,19 +1063,24 @@ async function trackVideoGeneration(nodeId: string, preexisting: Set<string>): P
          generating — is never cut off; only a page that has gone quiet is.
          Six minutes of an unchanging screen is not patience, it is the run
          failing slowly and then reporting the wrong cause. */
+      /* Counted and reported, never acted on.
+         This block used to END the node after a minute of "nothing visible is
+         happening", which inverted the burden of proof: not being able to SEE
+         progress is not evidence there is none. Grok renders a clip for
+         minutes with no indicator this script can reliably find, so that
+         check failed good generations at sixty seconds and reported them as
+         refusals — while the clip arrived later and sat on screen, exactly as
+         asked for.
+
+         A generation now ends early only on positive evidence — a refusal
+         notice — and otherwise runs to its full budget. Slow and right beats
+         fast and wrong: the timeout costs minutes, a false refusal costs the
+         generation AND every node downstream of it. */
       if (!isGenerating()) stalled++; else stalled = 0;
 
-      if (!explained && stalled === STALL_POLLS / 2) {
+      if (!explained && stalled >= STALL_POLLS) {
         explained = true;
-        logLine(`No clip yet and nothing is streaming. ${describePage()}`);
-      }
-      if (stalled >= STALL_POLLS) {
-        send('STUDIO_NODE_ERROR', {
-          nodeId,
-          error: 'Grok produced nothing and stopped working — the generation was most '
-            + `likely refused. Check the Grok tab. (${describePage()})`,
-        });
-        return;
+        logLine(`Still waiting, nothing visibly streaming. ${describePage()}`);
       }
       continue;
     }

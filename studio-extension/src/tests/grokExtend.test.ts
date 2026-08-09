@@ -10,6 +10,9 @@
    because the node, the validator and the runner each ask the same question.
    ============================================================ */
 
+/// <reference types="node" />
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import {
   extendChain, affordableExtendSteps, secondsOf, validateTemplate,
   GROK_MAX_TOTAL_SECONDS, GROK_MAX_EXTENDS, NODE_PORTS,
@@ -219,5 +222,63 @@ describe('which URL extend needs', () => {
     const upstream = { videoUrl: REAL, previewVideoUrl: REAL, imageUrl: REAL };
     const chosen = upstream.videoUrl || upstream.imageUrl || upstream.previewVideoUrl || '';
     expect(generationId(chosen)).toBe('eeac2e93');
+  });
+});
+
+
+/* ============================================================
+   Never fail a generation for lack of visible progress.
+
+   A stall detector once ended a Grok node after sixty seconds of "nothing is
+   visibly happening" and reported it as a refusal. Nothing was wrong: Grok
+   renders a clip for minutes without an indicator this script could find, and
+   isGenerating() was scoped to an `article` element that /imagine does not
+   have — so it read false for the whole render, every time.
+
+   The result was the worst available outcome: the clip generated fine, the
+   node failed, and every node downstream failed with it. The costs are not
+   symmetric — waiting too long spends minutes, giving up early spends the
+   generation — so a node now ends early only on positive evidence.
+   ============================================================ */
+describe('waiting for a Grok clip', () => {
+  const SOURCE = readFileSync(join(__dirname, '../content/grok/index.ts'), 'utf8');
+  const tracker = SOURCE.slice(
+    SOURCE.indexOf('async function trackVideoGeneration'),
+    SOURCE.indexOf('async function trackTextReply')
+  );
+
+  it('does not end the node from the stall branch', () => {
+    /* The stall counter may log. It must not error: absence of an indicator
+       is not evidence of absence of work. */
+    const stallBranch = tracker.slice(
+      tracker.indexOf('if (!isGenerating()) stalled++'),
+      tracker.indexOf('continue;', tracker.indexOf('if (!isGenerating()) stalled++'))
+    );
+    expect(stallBranch).not.toMatch(/STUDIO_NODE_ERROR/);
+  });
+
+  it('still ends the node on an explicit refusal', () => {
+    // Positive evidence remains a fast failure — that is the whole point.
+    expect(tracker).toMatch(/readWithheldNotice\(\)/);
+    const withheld = tracker.slice(tracker.indexOf('readWithheldNotice()'));
+    expect(withheld.slice(0, 400)).toMatch(/STUDIO_NODE_ERROR/);
+  });
+
+  it('does not scope progress detection to an article element', () => {
+    /* /imagine has no <article>, so that scope made isGenerating() a constant
+       false — the input the stall detector was trusting. */
+    const isGen = SOURCE.slice(
+      SOURCE.indexOf('function isGenerating()'),
+      SOURCE.indexOf('function composerRegion()')
+    // Comments stripped: this asserts what the function DOES, and the comment
+    // above it names the old scope in order to explain why it was wrong.
+    ).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '');
+    expect(isGen).not.toMatch(/querySelector\('article'\)/);
+  });
+
+  it('gives a clip longer than a minute to arrive', () => {
+    // Sixty seconds was shorter than a normal Grok render.
+    const m = /GENERATION_TIMEOUT_MS = (\d+) \* 60 \* 1000/.exec(SOURCE);
+    expect(Number(m![1])).toBeGreaterThanOrEqual(10);
   });
 });
