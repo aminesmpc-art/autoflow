@@ -316,7 +316,17 @@ async function findExtendControl(): Promise<HTMLElement | null> {
 
 async function openClipForExtend(videoUrl: string): Promise<boolean> {
   const id = /generated\/([^/]+)\//.exec(videoUrl || '')?.[1] || '';
-  if (!id) return false;
+  if (!id) {
+    /* No generation id in the address. The one way this happens is a data:
+       URL — the inlined copy of the clip made for playback — which identifies
+       nothing on Grok. Named, because "not in Grok's history" sent the last
+       two investigations to the page instead of to the value. */
+    logLine(
+      `Cannot locate the clip to extend: its address carries no generation id `
+      + `(${(videoUrl || '(empty)').slice(0, 40)}…)`
+    );
+    return false;
+  }
 
   const already = document.querySelector<HTMLVideoElement>(`video[src*="${id}"]`);
   // Already open in the viewer? Extend is only offered on an open clip.
@@ -1118,6 +1128,12 @@ async function trackVideoGeneration(nodeId: string, preexisting: Set<string>): P
       send('STUDIO_NODE_RESULT', {
         nodeId,
         tileId: '',
+        /* The clip's own address on Grok, ALWAYS the real URL and never the
+           inlined copy. Extend needs it to find this clip again in Grok's
+           history, and it locates it by the generation id in the path — which
+           a data: URL does not have. Inlining the bytes for playback was
+           therefore enough to break extending, at two layers at once. */
+        videoUrl: candidate.src,
         imageUrl: videoDataUrl || referenceUrl || candidate.src,
         thumbnailUrl: referenceUrl || poster,
         previewUrl: referenceUrl || poster,

@@ -588,8 +588,15 @@ export class WorkflowRunner {
 
       const srcId = inputs.get('video')?.[0];
       const upstream = srcId ? this.nodeResults.get(srcId) : undefined;
-      extendFromVideo = upstream?.previewVideoUrl || upstream?.videoUrl || upstream?.imageUrl || '';
-      if (!extendFromVideo || !/\.mp4|generated_video/.test(extendFromVideo)) {
+      /* videoUrl FIRST, because it is the only field guaranteed to be the
+         clip's address on Grok. previewVideoUrl holds the inlined data: URL
+         whenever the clip was small enough to travel — which is the normal
+         case — and a data: URL is useless here: extend finds the clip again by
+         the generation id in its path. Reading it first meant a clip that
+         played perfectly in the node could not be extended, and the reason
+         given was that no Grok video had been produced. */
+      extendFromVideo = upstream?.videoUrl || upstream?.imageUrl || upstream?.previewVideoUrl || '';
+      if (!extendFromVideo || !/generated_video|assets\.grok\.com|\.mp4($|\?)/.test(extendFromVideo)) {
         throw new Error(
           'Extend has no clip to continue — the node before it produced no Grok video'
         );

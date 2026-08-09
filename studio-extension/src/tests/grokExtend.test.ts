@@ -167,3 +167,57 @@ describe('templates using extend', () => {
     expect(validateTemplate(over).join(' ')).toMatch(/past Grok/);
   });
 });
+
+/* ============================================================
+   The clip's address, and why the inlined copy is not one.
+
+   A finished Grok clip is handed downstream twice over: previewVideoUrl
+   carries the bytes inlined as a data: URL so the node can play it, and
+   videoUrl carries its address on Grok. Extend needs the address — it finds
+   the clip again by the generation id in the path — and a data: URL has no
+   path at all.
+
+   Reading previewVideoUrl first therefore broke extending for exactly the
+   clips that worked best: small enough to inline, playing perfectly in the
+   node, and impossible to continue. The reported reason was that no Grok
+   video had been produced.
+   ============================================================ */
+describe('which URL extend needs', () => {
+  const REAL = 'https://assets.grok.com/users/u1/generated/eeac2e93/generated_video.mp4?cache=1';
+  const INLINED = 'data:video/mp4;base64,AAAAIGZ0eXBpc29t';
+
+  /** The runner's own test for "is this a Grok clip". */
+  const looksLikeAClip = (url: string) =>
+    /generated_video|assets\.grok\.com|\.mp4($|\?)/.test(url);
+
+  /** How openClipForExtend finds the clip again. */
+  const generationId = (url: string) =>
+    /generated\/([^/]+)\//.exec(url || '')?.[1] || '';
+
+  it('accepts the real address', () => {
+    expect(looksLikeAClip(REAL)).toBe(true);
+    expect(generationId(REAL)).toBe('eeac2e93');
+  });
+
+  it('rejects the inlined copy', () => {
+    /* Both halves fail, which is why the bug survived a fix to one of them:
+       "data:video/mp4" has no dot before mp4, and no /generated/<id>/ path. */
+    expect(looksLikeAClip(INLINED)).toBe(false);
+    expect(generationId(INLINED)).toBe('');
+  });
+
+  it('prefers videoUrl over the inlined preview', () => {
+    // The ordering the runner applies.
+    const upstream = { videoUrl: REAL, previewVideoUrl: INLINED, imageUrl: INLINED };
+    const chosen = upstream.videoUrl || upstream.imageUrl || upstream.previewVideoUrl || '';
+    expect(chosen).toBe(REAL);
+    expect(looksLikeAClip(chosen)).toBe(true);
+  });
+
+  it('still works when nothing was inlined', () => {
+    // A clip too big to travel leaves previewVideoUrl holding the real URL.
+    const upstream = { videoUrl: REAL, previewVideoUrl: REAL, imageUrl: REAL };
+    const chosen = upstream.videoUrl || upstream.imageUrl || upstream.previewVideoUrl || '';
+    expect(generationId(chosen)).toBe('eeac2e93');
+  });
+});
