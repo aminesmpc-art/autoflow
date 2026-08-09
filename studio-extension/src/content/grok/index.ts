@@ -352,6 +352,28 @@ async function openClipForExtend(videoUrl: string): Promise<boolean> {
  * generation would produce a brand-new clip that looks like a success and
  * breaks the continuity the node existed for.
  */
+/**
+ * Why Grok is not offering Extend, when it is not.
+ *
+ * Measured on a live account: Extend appears on a 10s clip and a 20s clip and
+ * is absent on a 30s one. Grok removes the control once a clip reaches its
+ * limit — the same 30s ceiling the Extend node computes against, arrived at
+ * from the other side. So an absent button is usually not a broken selector,
+ * and saying "not offering Extend" sends the next investigation to the DOM
+ * for a page that is behaving correctly.
+ */
+function extendUnavailableReason(): string {
+  const viewer = Array.from(document.querySelectorAll('video'))
+    .filter(isVisible)
+    .sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0];
+  const seconds = viewer && isFinite(viewer.duration) ? Math.round(viewer.duration) : 0;
+
+  if (seconds >= 30) {
+    return `this clip is already ${seconds}s, and Grok stops offering Extend at its 30s limit`;
+  }
+  return 'Grok is not offering Extend on this clip';
+}
+
 async function startExtend(videoUrl: string, seconds: string | undefined): Promise<string | null> {
   if (!inExtendMode()) {
     if (!(await openClipForExtend(videoUrl))) {
@@ -377,17 +399,14 @@ async function startExtend(videoUrl: string, seconds: string | undefined): Promi
       extend.click();
     } else {
       const more = buttonByLabel('More options');
-      if (!more) {
-        return 'Grok is not offering Extend on this clip — no Extend button, '
-          + 'no Post actions panel and no More options menu';
-      }
+      if (!more) return extendUnavailableReason();
       more.click();
       await sleep(900);
       const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
         .find((el) => /extend/i.test(el.textContent || '') && isVisible(el));
       if (!item) {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-        return 'Grok is not offering Extend on this clip';
+        return extendUnavailableReason();
       }
       item.click();
     }
