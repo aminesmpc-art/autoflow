@@ -17,6 +17,10 @@
 
    - Which tools are on. An agent's behaviour is mostly decided by what it can
      reach, so that list belongs on the node rather than three clicks away.
+
+   The chrome — wrapper, external label, toggle, ports — is deliberately the
+   same markup GenerateNode uses. The first version of this file invented its
+   own class names and rendered as unstyled white boxes on a dark canvas.
    ============================================================ */
 
 import { memo, useCallback } from 'react';
@@ -46,15 +50,24 @@ const STEP_ICON: Record<string, string> = {
   error: '⚠',
 };
 
+const PLATFORM_LABEL: Record<string, string> = {
+  chatgpt: 'ChatGPT',
+  gemini: 'Gemini',
+  grok: 'Grok',
+};
+
 /** Iteration caps offered. Ten matches n8n's default ceiling; four is a
-    sensible starting point when every step costs a generation. */
+    sensible start when every step costs a generation. */
 const CAPS = [2, 4, 6, 10];
 
 function AgentNodeComponent({ id, data, selected }: NodeProps) {
   const nodeData = data as any;
   const updateNodeData = useStudioStore((s) => s.updateNodeData);
+  const removeNode = useStudioStore((s) => s.removeNode);
+  const duplicateNode = useStudioStore((s) => s.duplicateNode);
 
   const status: NodeStatus = nodeData.status || 'idle';
+  const enabled = nodeData.enabled !== false;
   const steps: AgentStep[] = nodeData.agentSteps || [];
   const enabledTools: string[] = nodeData.tools?.length ? nodeData.tools : ['read_canvas'];
   const maxIterations: number = nodeData.maxIterations || 4;
@@ -77,79 +90,79 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
   const toolsRun = steps.filter((s) => s.kind === 'tool').length;
 
   return (
-    <div className={`studio-node sn sn--agent ${statusClass(status)} ${selected ? 'sn--selected' : ''}`}>
-      <Handle type="target" position={Position.Left} id="text" className="sn-handle sn-handle--text" />
-
-      <div className="sn-head">
-        <span className="sn-head__icon">🧠</span>
-        <input
-          className="sn-head__title nodrag"
-          value={nodeData.label || 'Agent'}
-          onChange={(e) => set({ label: e.target.value })}
-          placeholder="Agent"
-        />
-        <label className="sn-switch nodrag" title="Skip this node when running">
-          <input
-            type="checkbox"
-            checked={nodeData.enabled !== false}
-            onChange={(e) => set({ enabled: e.target.checked })}
-          />
-          <span className="sn-switch__track" />
-        </label>
+    <div className={`sn-wrap sn-wrap--kind-chat ${selected ? 'sn-wrap--selected' : ''}`}>
+      <div className="sn-actions">
+        <button className="sn-actions__btn" onClick={() => duplicateNode(id)} title="Duplicate node">⧉</button>
+        <button className="sn-actions__btn sn-actions__btn--danger" onClick={() => removeNode(id)} title="Delete node">🗑</button>
       </div>
 
-      {/* ── The log. The reason this node is legible at all. ── */}
-      <div className="sn-agent__log">
-        {steps.length === 0 && (
-          <div className="sn-agent__empty">
-            {status === 'running' ? 'Thinking…' : 'Ready — press Run'}
+      <div className="sn-label">
+        <span className="sn-label__icon" aria-hidden="true">🧠</span>
+        <span className="sn-label__text">{nodeData.label || 'Agent'}</span>
+        {!enabled && <span className="sn-label__skip">SKIPPED</span>}
+        <button
+          className={`sn-toggle ${enabled ? 'sn-toggle--on' : ''}`}
+          onClick={() => set({ enabled: !enabled })}
+          title={enabled ? 'Node enabled — click to skip it on run' : 'Node skipped — click to enable'}
+          aria-label="Toggle node"
+        >
+          <span className="sn-toggle__knob" />
+        </button>
+      </div>
+
+      <div className={`sn ${statusClass(status)} ${!enabled ? 'sn--disabled' : ''}`}>
+
+        {/* ── The log. The reason this node is legible at all. ── */}
+        <div className="sn-agent__log">
+          {steps.length === 0 && (
+            <div className="sn-agent__empty">
+              {status === 'running' ? 'Thinking…' : 'Ready — press Run'}
+            </div>
+          )}
+          {steps.map((s, i) => (
+            <div key={i} className={`sn-agent__step sn-agent__step--${s.kind}`} title={s.detail}>
+              <span className="sn-agent__step-n">{s.iteration}</span>
+              <span className="sn-agent__step-icon">{STEP_ICON[s.kind] || '·'}</span>
+              <span className="sn-agent__step-text">{s.summary}</span>
+            </div>
+          ))}
+        </div>
+
+        {status === 'error' && (
+          <div className="sn-agent__error" title={nodeData.errorMessage}>
+            ⚠ {nodeData.errorMessage}
+            <button
+              type="button"
+              className="sn-retry-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(new CustomEvent('studio:retry-node', { detail: id }));
+              }}
+            >↻ Retry</button>
           </div>
         )}
-        {steps.map((s, i) => (
-          <div key={i} className={`sn-agent__step sn-agent__step--${s.kind}`} title={s.detail}>
-            <span className="sn-agent__step-n">{s.iteration}</span>
-            <span className="sn-agent__step-icon">{STEP_ICON[s.kind] || '·'}</span>
-            <span className="sn-agent__step-text">{s.summary}</span>
+
+        {status === 'done' && nodeData.resultText && (
+          <div className="sn-agent__answer" title={nodeData.resultText}>
+            {nodeData.resultText}
           </div>
-        ))}
-      </div>
+        )}
 
-      {status === 'error' && (
-        <div className="sn-agent__error" title={nodeData.errorMessage}>
-          ⚠ {nodeData.errorMessage}
-          <button
-            type="button"
-            className="sn-retry-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              window.dispatchEvent(new CustomEvent('studio:retry-node', { detail: id }));
-            }}
-          >↻ Retry</button>
-        </div>
-      )}
-
-      {status === 'done' && nodeData.resultText && (
-        <div className="sn-agent__answer" title={nodeData.resultText}>
-          {nodeData.resultText}
-        </div>
-      )}
-
-      <div className="sn-body">
-        <div className="sn-row">
-          <div className="sn-field" title="Which chat drives the loop">
+        <div className="sn-bar sn-bar--grid">
+          <label className="sn-field" title="Which chat drives the loop">
             <span className="sn-field__label">Platform</span>
             <select
-              className="sn-select nodrag"
+              className="sn-bar__sel nodrag"
               value={platform}
               onChange={(e) => set({ platform: e.target.value })}
             >
               {CHAT_PLATFORMS.map((p) => (
-                <option key={p} value={p}>{p === 'chatgpt' ? 'ChatGPT' : p === 'gemini' ? 'Gemini' : 'Grok'}</option>
+                <option key={p} value={p}>{PLATFORM_LABEL[p] || p}</option>
               ))}
             </select>
-          </div>
+          </label>
 
-          <div className="sn-field" title="Every iteration is a real generation">
+          <div className="sn-field" title="Every step is a real generation">
             <span className="sn-field__label">Max steps</span>
             <div className="sn-seg nodrag">
               {CAPS.map((c) => (
@@ -164,20 +177,22 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
           </div>
         </div>
 
-        <div className="sn-field sn-field--wide" title="What the agent is allowed to do">
-          <span className="sn-field__label">Tools</span>
-          <div className="sn-agent__tools nodrag">
-            {AGENT_TOOLS.map((t) => (
-              <button
-                key={t.name}
-                type="button"
-                title={t.description}
-                className={`sn-agent__tool ${enabledTools.includes(t.name) ? 'sn-agent__tool--on' : ''}`}
-                onClick={() => toggleTool(t.name)}
-              >
-                {t.name}
-              </button>
-            ))}
+        <div className="sn-bar">
+          <div className="sn-field sn-field--wide" title="What the agent is allowed to do">
+            <span className="sn-field__label">Tools</span>
+            <div className="sn-agent__tools nodrag">
+              {AGENT_TOOLS.map((t) => (
+                <button
+                  key={t.name}
+                  type="button"
+                  title={t.description}
+                  className={`sn-agent__tool ${enabledTools.includes(t.name) ? 'sn-agent__tool--on' : ''}`}
+                  onClick={() => toggleTool(t.name)}
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -194,9 +209,26 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
             ? `${toolsRun} tool call${toolsRun === 1 ? '' : 's'} · up to ${maxIterations} steps`
             : `Goal comes from the T input · up to ${maxIterations} steps`}
         </div>
-      </div>
 
-      <Handle type="source" position={Position.Right} id="text" className="sn-handle sn-handle--text" />
+        <Handle
+          type="target"
+          position={Position.Left}
+          id="text"
+          className="sn-port sn-port--text"
+          style={{ top: '50%' }}
+        >
+          <span className="sn-port__glyph">T</span>
+        </Handle>
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="text"
+          className="sn-port sn-port--text"
+          style={{ top: '50%' }}
+        >
+          <span className="sn-port__glyph">T</span>
+        </Handle>
+      </div>
     </div>
   );
 }

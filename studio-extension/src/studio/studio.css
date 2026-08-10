@@ -2044,9 +2044,10 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
 /* ── Agent node ──
    The step log is the node's face, not a detail panel: an agent that spends
    four generations silently is not debuggable after the fact. */
-.sn--agent { min-width: 320px; }
-
+/* Widened via the log rather than a class on the card: the card is a plain
+   .sn like every other node, which is what keeps its chrome consistent. */
 .sn-agent__log {
+  min-width: 296px;
   margin: 8px 12px 0;
   padding: 8px;
   max-height: 168px;
