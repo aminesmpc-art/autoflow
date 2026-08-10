@@ -549,6 +549,13 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       isDirty: true,
       saveState: 'idle',
     });
+    /* Persist immediately. Autosave deliberately skips workflows it has never
+       seen saved (see scheduleAutosave), and an import is exactly that — so
+       without this the file the user just picked sits on the canvas, unsaved,
+       missing from My Workflows, and gone on the next reload with no warning.
+       Importing something is a clear enough statement that they want to keep
+       it. */
+    await get().saveWorkflow();
   },
 }));
 

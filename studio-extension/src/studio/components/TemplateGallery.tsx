@@ -27,28 +27,66 @@ export default function TemplateGallery() {
   const {
     setView, setNodes, setEdges, setWorkflowName,
     savedWorkflows, listWorkflows, loadWorkflow, deleteWorkflow,
-    newWorkflow, importWorkflow,
+    newWorkflow, importWorkflow, saveWorkflow,
   } = useStudioStore();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string>('All');
   const [importError, setImportError] = useState<string | null>(null);
+  const [importOk, setImportOk] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { listWorkflows(); }, [listWorkflows]);
 
-  const handleImport = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      e.target.value = ''; // allow re-picking the same file
+  /* One path for both the button and the drop zone. Reports success as well as
+     failure: importing now writes to storage, and a silent success is what made
+     the old flow feel like nothing had happened. */
+  const takeFile = useCallback(
+    async (file: File | undefined | null) => {
       if (!file) return;
+      setImportError(null);
+      setImportOk(null);
+      if (!/\.json$/i.test(file.name) && file.type !== 'application/json') {
+        setImportError(`"${file.name}" is not a .json workflow file`);
+        return;
+      }
       try {
-        setImportError(null);
         await importWorkflow(file);
+        setImportOk(`Imported "${file.name}" — saved to My Workflows`);
       } catch (err: any) {
         setImportError(err?.message || 'Could not import that file');
       }
     },
     [importWorkflow]
+  );
+
+  const handleImport = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = ''; // allow re-picking the same file
+      await takeFile(file);
+    },
+    [takeFile]
+  );
+
+  /* Drag and drop straight onto the gallery. dragOver must be cancelled or the
+     browser navigates to the file instead, which loses the whole panel. */
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(true);
+  }, []);
+  const onDragLeave = useCallback((e: React.DragEvent) => {
+    // Ignore the flicker from crossing child elements.
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setDragging(false);
+  }, []);
+  const onDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragging(false);
+      await takeFile(e.dataTransfer?.files?.[0]);
+    },
+    [takeFile]
   );
 
   const loadTemplate = useCallback(
@@ -70,6 +108,11 @@ export default function TemplateGallery() {
         JSON.parse(JSON.stringify(template.nodes)),
         JSON.parse(JSON.stringify(template.edges))
       );
+      /* Mint a fresh id BEFORE the nodes land. Opening a template used to keep
+         whatever id was already in the store, so autosave would write the
+         template over the saved workflow the user had open a moment earlier.
+         Same reasoning as startBlank. */
+      newWorkflow();
       // Open the canvas immediately; bundled reference images fill in a moment
       // later so a slow asset read never delays the click.
       setNodes(clonedNodes);
@@ -79,8 +122,13 @@ export default function TemplateGallery() {
 
       const withAssets = await resolveAssets(clonedNodes);
       if (withAssets !== clonedNodes) setNodes(withAssets);
+      /* Save once the reference images are in, so the stored copy is the whole
+         workflow. Until this runs the template is invisible to autosave, which
+         only touches workflows it has already seen saved — which is how an
+         opened template could vanish on reload. */
+      await saveWorkflow();
     },
-    [setView, setNodes, setEdges, setWorkflowName]
+    [setView, setNodes, setEdges, setWorkflowName, newWorkflow, saveWorkflow]
   );
 
   const startBlank = useCallback(() => {
@@ -133,7 +181,18 @@ export default function TemplateGallery() {
   }, [query, category, templates]);
 
   return (
-    <div className="studio-gallery">
+    <div
+      className={`studio-gallery ${dragging ? 'studio-gallery--dropping' : ''}`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {dragging && (
+        <div className="studio-gallery__dropzone">
+          <span className="studio-gallery__dropzone-icon">⭱</span>
+          <p>Drop a workflow .json to import it</p>
+        </div>
+      )}
       {/* Header */}
       <div className="studio-gallery__header">
         <div className="studio-gallery__brand">
@@ -170,6 +229,10 @@ export default function TemplateGallery() {
 
       {importError && (
         <div className="studio-gallery__error">⚠ {importError}</div>
+      )}
+
+      {importOk && (
+        <div className="studio-gallery__ok">✓ {importOk}</div>
       )}
 
       {/* Category Tabs */}
