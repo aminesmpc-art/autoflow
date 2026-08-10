@@ -107,6 +107,61 @@ function findComposer(): HTMLElement | null {
   return hinted || candidates[0] || null;
 }
 
+/** Messages in the thread on screen. Zero means a fresh, unused chat. */
+function messageCount(): number {
+  return document.querySelectorAll('[data-message-author-role]').length;
+}
+
+/**
+ * The sidebar's New Chat control.
+ *
+ * Matched on data-testid, which is ChatGPT's own hook — the Tailwind class
+ * soup on the same anchor churns between builds and the testid does not.
+ * A collapsed sidebar hides it but the anchor still routes on click, so a
+ * hidden control beats staying in the previous thread.
+ */
+function findNewChatButton(): HTMLElement | null {
+  const all = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-testid="create-new-chat-button"]')
+  );
+  return all.find(isVisible) || all[0] || null;
+}
+
+/**
+ * Start a fresh thread before running a node.
+ *
+ * Without this every node in a run appends to one conversation, so ChatGPT
+ * answers the fourth prompt in the light of the previous three — the graph
+ * says these are independent steps and the transcript says they are not.
+ * Reference images are the worst of it: an earlier attachment stays in
+ * context and quietly influences the next node's answer.
+ *
+ * Soft-fails on purpose. Losing isolation is bad; refusing to run because a
+ * sidebar button moved is worse, and the log line says which happened.
+ */
+async function startNewChat(): Promise<boolean> {
+  if (messageCount() === 0) {
+    logLine('Already on an empty chat — reusing it');
+    return true;
+  }
+  const btn = findNewChatButton();
+  if (!btn) {
+    logLine('WARNING: New Chat control not found — continuing in the current thread, so this answer may be influenced by the previous one');
+    return false;
+  }
+  btn.click();
+  // The SPA tears down the thread and remounts the composer.
+  for (let i = 0; i < 24; i++) {
+    await sleep(250);
+    if (messageCount() === 0 && findComposer()) {
+      logLine('Started a new chat');
+      return true;
+    }
+  }
+  logLine('WARNING: new chat did not settle in 6s — continuing anyway');
+  return false;
+}
+
 function findSendButton(): HTMLElement | null {
   const testId = document.querySelector<HTMLElement>('button[data-testid="send-button"]');
   if (testId && isVisible(testId)) return testId;
@@ -584,6 +639,12 @@ async function handleExecute(payload: any): Promise<any> {
 
   logLine(`Executing node ${nodeId} (${config?.mediaType || 'image'}, prompt ${prompt.length} chars)`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 10 });
+
+  /* Isolate this node before anything else touches the page. It has to happen
+     ahead of the composer lookup and the baseline snapshots below, because
+     clicking New Chat remounts the composer and empties the thread — doing it
+     later would invalidate both. */
+  await startNewChat();
 
   // A freshly opened tab may still be mounting, so give the composer a
   // few seconds to appear before declaring it missing.
