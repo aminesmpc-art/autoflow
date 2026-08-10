@@ -202,6 +202,74 @@ function isGenerating(): boolean {
    only a <span> of text, so both are matched.
    ──────────────────────────────────────────────────────────── */
 
+/**
+ * Turns rendered in the chat thread. Zero means a fresh chat.
+ *
+ * `.message-bubble` — read off a live conversation, where it counted 2 against
+ * 0 on an empty one. Both user and assistant turns carry it.
+ */
+function chatTurnCount(): number {
+  return document.querySelectorAll('.message-bubble').length;
+}
+
+/**
+ * The chat surface's New Chat control.
+ *
+ * Two anchors point at "/": the logo, which carries aria-label="Home page",
+ * and New Chat, which carries no label at all. Taking the first visible one
+ * picks the logo — it happens to land on a fresh chat today, but it is the
+ * wrong element and would follow the logo anywhere it is later pointed. So
+ * the unlabelled anchor is preferred, which distinguishes them without
+ * depending on the words, since "New Chat" is localised and this account's
+ * browser is not in English.
+ */
+function findNewChatControl(): HTMLElement | null {
+  const labelled = Array.from(
+    document.querySelectorAll<HTMLElement>('a[aria-label], button[aria-label]')
+  ).find((el) => /new chat/i.test(el.getAttribute('aria-label') || '') && isVisible(el));
+  if (labelled) return labelled;
+
+  const roots = Array.from(document.querySelectorAll<HTMLElement>('a[href="/"]')).filter(isVisible);
+  const byText = roots.find((a) => /new chat/i.test((a.textContent || '').trim()));
+  if (byText) return byText;
+
+  const unlabelled = roots.find((a) => !a.getAttribute('aria-label'));
+  return unlabelled || roots[0] || null;
+}
+
+/**
+ * Start a fresh chat before a text node.
+ *
+ * Text runs on the chat surface, where the thread persists between runs, so
+ * without this Grok answers each node in the light of the previous ones —
+ * the same defect fixed in the ChatGPT and Gemini adapters.
+ *
+ * Deliberately not applied to image or video. Those run on /imagine, whose
+ * reset is "New Generation", and clearing it would also throw away the clip
+ * an Extend node is about to continue.
+ */
+async function startNewChat(): Promise<boolean> {
+  if (chatTurnCount() === 0) {
+    logLine('Already on an empty chat — reusing it');
+    return true;
+  }
+  const control = findNewChatControl();
+  if (!control) {
+    logLine('WARNING: New Chat control not found — continuing in the current thread, so this answer may be influenced by the previous one');
+    return false;
+  }
+  control.click();
+  for (let i = 0; i < 24; i++) {
+    await sleep(250);
+    if (chatTurnCount() === 0 && findComposer()) {
+      logLine('Started a new chat');
+      return true;
+    }
+  }
+  logLine('WARNING: new chat did not settle in 6s — continuing anyway');
+  return false;
+}
+
 function findRadioGroup(label: string): HTMLElement | null {
   const group = document.querySelector<HTMLElement>(`[role="radiogroup"][aria-label="${label}"]`);
   return group && isVisible(group) ? group : null;
@@ -228,15 +296,57 @@ async function selectRadio(groupLabel: string, value: string): Promise<boolean> 
   return false;
 }
 
+/**
+ * A pointerdown the menu library will accept.
+ *
+ * The listener is keyed on the event *type*, and Radix's handler additionally
+ * checks `button === 0`, which MouseEvent carries — so MouseEvent is a working
+ * stand-in where PointerEvent is missing. Chrome always has PointerEvent; the
+ * fallback exists because an unguarded constructor throwing here would fail
+ * the whole node over a menu that could have been opened.
+ */
+function pointerDown(): Event {
+  const Ctor: any = (globalThis as any).PointerEvent || MouseEvent;
+  return new Ctor('pointerdown', { bubbles: true, cancelable: true, button: 0 });
+}
+
+/**
+ * Open a menu trigger and wait until it says it is open.
+ *
+ * click() does not open these. Measured on the live page: after a click the
+ * trigger still reads aria-expanded="false" / data-state="closed" and the
+ * document contains no menuitem at all. After pointerdown it reads "open" and
+ * five items exist. Radix binds the open to pointerdown, and a synthetic click
+ * never produces one.
+ *
+ * That is why the aspect ratio silently never applied — the item lookup ran
+ * against a menu that had not opened, found nothing, and reported "not
+ * offered, left as is" while the ratio stayed on whatever Grok had.
+ *
+ * data-state is the confirmation rather than a fixed sleep: the menu animates,
+ * and the old 500ms guess was both slower than the common case and too short
+ * for a loaded page.
+ */
+async function openMenuTrigger(trigger: HTMLElement): Promise<boolean> {
+  if (trigger.getAttribute('data-state') === 'open') return true;
+  trigger.dispatchEvent(pointerDown());
+  for (let i = 0; i < 12; i++) {
+    await sleep(100);
+    if (trigger.getAttribute('data-state') === 'open') return true;
+  }
+  return false;
+}
+
 /** Aspect ratio lives behind a menu rather than in a radio group. */
 async function selectAspectRatio(value: string): Promise<boolean> {
   const trigger = Array.from(document.querySelectorAll<HTMLElement>('button[aria-label="Aspect Ratio"]'))
     .find(isVisible);
   if (!trigger) return false;
+  // The trigger shows the current value, so this is already-correct, not a skip.
   if ((trigger.textContent || '').includes(value)) return true;
 
-  trigger.click();
-  await sleep(500);
+  if (!(await openMenuTrigger(trigger))) return false;
+
   const item = Array.from(
     document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"], [role="option"]')
   ).find((el) => (el.textContent || '').trim().includes(value));
@@ -246,6 +356,7 @@ async function selectAspectRatio(value: string): Promise<boolean> {
   }
   item.click();
   await sleep(400);
+  // Confirmed from the trigger's own label, which is what the generator reads.
   return (trigger.textContent || '').includes(value);
 }
 
@@ -763,6 +874,14 @@ async function handleExecute(payload: any): Promise<any> {
 
   console.log(`[AutoFlow Grok] Executing node ${nodeId}`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 10 });
+
+  /* Text nodes only, and before the composer lookup and the baselines below,
+     since the reset remounts the composer and empties the thread. Image and
+     video are left alone on purpose: they run on /imagine, where the reset
+     would also discard the clip an Extend node is about to continue. */
+  if (config?.mediaType === 'text') {
+    await startNewChat();
+  }
 
   let composer = findComposer();
   for (let i = 0; !composer && i < 10; i++) {
