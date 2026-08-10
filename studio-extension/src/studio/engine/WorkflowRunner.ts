@@ -292,6 +292,15 @@ export class WorkflowRunner {
           break;
         }
 
+        /* All three take the same path: check they are enabled and their
+           inputs survived, then run with the retry and usage handling below.
+           An agent differs only inside executeGenerateNode, which sends it to
+           its loop instead of a single generation.
+
+           Missing from this list, an agent node fell through to `default` and
+           was logged as an unknown type — counted in the progress total, then
+           silently skipped. The run finished instantly having done nothing. */
+        case 'agent':
         case 'extend':
         case 'generate': {
           // Nodes toggled off are skipped without consuming a generation

@@ -53,6 +53,17 @@ describe('nobody re-hardcodes the check', () => {
     expect(src).toContain('isRunnableType');
   });
 
+  it('the runner dispatches every runnable type', () => {
+    /* The filter said agents run; the switch had no case for one, so it fell
+       through to `default` and was skipped as an unknown type — counted in
+       the progress total and never executed. Two lists, one of them wrong,
+       and no error anywhere. */
+    const src = read('studio/engine/WorkflowRunner.ts');
+    for (const t of RUNNABLE_NODE_TYPES) {
+      expect(src).toContain(`case '${t}':`);
+    }
+  });
+
   it('Canvas gates Run on the predicate, not on generate alone', () => {
     const src = read('studio/components/Canvas.tsx');
     const canRun = src.split('\n').find((l) => l.includes('const canRun'));
