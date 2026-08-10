@@ -50,6 +50,20 @@ export const NODE_PORTS: Record<string, { in: string[]; out: string[] }> = {
 };
 
 /**
+ * Node types that actually execute.
+ *
+ * One list, because it was four scattered `type === 'generate'` checks and
+ * they drifted the moment a new runnable type appeared: adding the agent left
+ * the Run button disabled on a canvas made entirely of agents, the retry
+ * filter unable to re-run one, and the runner's own step filter the only
+ * place that knew. Prompt, image and frame carry data and never run.
+ */
+export const RUNNABLE_NODE_TYPES = ['generate', 'extend', 'agent'] as const;
+
+export const isRunnableType = (type: unknown): boolean =>
+  typeof type === 'string' && (RUNNABLE_NODE_TYPES as readonly string[]).includes(type);
+
+/**
  * Whether a generate node's dropdowns put it in Start/End frames mode.
  *
  * Flow only — the slots are Flow's video composer. The platform check matters

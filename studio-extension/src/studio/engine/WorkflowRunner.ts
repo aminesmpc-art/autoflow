@@ -18,7 +18,7 @@ import { composeAskPrompt } from '../presets';
 import { runAgent, type AgentStep } from './agent';
 import { toolsByName } from './tools';
 import {
-  isFramesMode, extendChain, secondsOf, GROK_MAX_TOTAL_SECONDS,
+  isFramesMode, extendChain, secondsOf, isRunnableType, GROK_MAX_TOTAL_SECONDS,
 } from '../templates/validate';
 
 export type RunnerState = 'idle' | 'running' | 'paused' | 'stopped' | 'done' | 'error';
@@ -133,7 +133,7 @@ export class WorkflowRunner {
          retry neither re-runs it nor pulls in the clip it continues — and it
          then fails with "no clip to continue" against a canvas that is wired
          correctly. */
-      return (d?.type === 'generate' || d?.type === 'extend') && d?.enabled !== false;
+      return isRunnableType(d?.type) && d?.enabled !== false;
     };
 
     const set = new Set<string>();
@@ -189,7 +189,7 @@ export class WorkflowRunner {
     // counting them would leave the progress bar short of its total.
     const generateSteps = steps.filter((s) => {
       // An extend is a generation: its own prompt, its own clip, its own wait.
-      if (s.nodeType !== 'generate' && s.nodeType !== 'extend' && s.nodeType !== 'agent') return false;
+      if (!isRunnableType(s.nodeType)) return false;
       if (only && !only.has(s.nodeId)) return false;
       const n = nodes.find((x) => x.id === s.nodeId);
       return (n?.data as any)?.enabled !== false;

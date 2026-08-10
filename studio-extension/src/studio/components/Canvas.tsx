@@ -29,6 +29,7 @@ import { AgentNode } from '../nodes/AgentNode';
 import { NodeBoundary } from './NodeBoundary';
 import { runner } from '../engine/WorkflowRunner';
 import { bridge } from '../engine/bridge';
+import { isRunnableType } from '../templates/validate';
 
 /* Register custom node types */
 /* Each node type wrapped so a render error is contained to its own card.
@@ -109,8 +110,10 @@ function CanvasInner() {
     [fitView]
   );
 
-  /* Only Generate nodes actually execute — a canvas of prompts alone can't run */
-  const canRun = nodes.some((n) => (n.data as any)?.type === 'generate');
+  /* Only runnable nodes execute — a canvas of prompts alone can't run.
+     Asking the shared list rather than testing for 'generate': an agent-only
+     canvas is a real workflow, and this check silently disabled Run on one. */
+  const canRun = nodes.some((n) => isRunnableType((n.data as any)?.type));
 
   /* Connect bridge on mount */
   useEffect(() => {
@@ -161,11 +164,17 @@ function CanvasInner() {
   const handleRun = useCallback(async () => {
     if (isRunning || !canRun) return;
 
-    // Only enabled Generate nodes reach Flow — Prompt/Image nodes just carry
-    // data, so charging for them would over-bill the user.
+    /* Only enabled runnable nodes reach a service — Prompt/Image nodes just
+       carry data, so charging for them would over-bill the user.
+
+       An agent counts as one here, which is an UNDER-count: its loop can spend
+       up to maxIterations chat turns, each of them the same cost as an Ask AI
+       node. Counting the cap instead would gate a 10-step agent as ten
+       generations before it has done anything. Left at one deliberately rather
+       than decided quietly — it is a pricing call, not a code call. */
     const generateCount = nodes.filter((n) => {
       const d = n.data as any;
-      return d?.type === 'generate' && d?.enabled !== false;
+      return isRunnableType(d?.type) && d?.enabled !== false;
     }).length;
 
     const gate = await consumeStudioRun(nodes.length, generateCount);
@@ -223,7 +232,7 @@ function CanvasInner() {
       /* Extend nodes fail like generate nodes and must be offered in the same
          Retry failed set — left out, a failed extend had no way back except
          re-running the whole workflow and paying for the clips again. */
-      return (d?.type === 'generate' || d?.type === 'extend') && d?.status === 'error';
+      return isRunnableType(d?.type) && d?.status === 'error';
     })
     .map((n) => n.id);
 
