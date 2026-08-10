@@ -67,8 +67,48 @@ export const TOOL_INSPECT_CLIP: AgentTool = {
   ],
 };
 
+/* ── Acting on the workflow ───────────────────────────────────
+   The three above only look. These three are what make an agent worth
+   having: read why a node went wrong, rewrite its prompt, run it again.
+   That loop is the one a fixed canvas cannot do — today it is done by hand,
+   node by node, watching each render come back.
+   ──────────────────────────────────────────────────────────── */
+
+export const TOOL_READ_NODE: AgentTool = {
+  name: 'read_node',
+  description:
+    'Read one node in detail: its settings, its status, the error it failed '
+    + 'with, and the prompt it uses. Use read_canvas first to get the id.',
+  params: [{ name: 'node', description: 'The id of the node to read.' }],
+};
+
+export const TOOL_SET_PROMPT: AgentTool = {
+  name: 'set_prompt',
+  description:
+    'Replace the prompt a node uses. Give the FULL new prompt, not a patch — '
+    + 'it overwrites the old one. Read the node first so you know what you are '
+    + 'replacing. This only changes the text; the node does not run until you '
+    + 'ask it to.',
+  params: [
+    { name: 'node', description: 'The id of the node whose prompt to change.' },
+    { name: 'text', description: 'The complete new prompt.' },
+  ],
+};
+
+export const TOOL_RERUN_NODE: AgentTool = {
+  name: 'rerun_node',
+  description:
+    'Run one node again, using whatever prompt it has now. Costs a real '
+    + 'generation and takes minutes. The result is attached to the reply so '
+    + 'you can judge whether the fix worked.',
+  params: [{ name: 'node', description: 'The id of the node to run again.' }],
+};
+
 export const AGENT_TOOLS: AgentTool[] = [
   TOOL_READ_CANVAS,
+  TOOL_READ_NODE,
+  TOOL_SET_PROMPT,
+  TOOL_RERUN_NODE,
   TOOL_GENERATE_IMAGE,
   TOOL_INSPECT_CLIP,
 ];

@@ -299,3 +299,182 @@ describe('inspect_clip', () => {
     expect(chats[1].config.prompt).toMatch(/has not produced anything in this run/i);
   });
 });
+
+/* ============================================================
+   Acting on the workflow — read a node, fix its prompt, run it again.
+
+   The loop a fixed canvas cannot do, and the reason the agent exists at all:
+   today this is done by hand, node by node, watching each render come back.
+   ============================================================ */
+describe('fixing and re-running a node', () => {
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+
+  /** Canvas: a prompt feeding a Flow image node, plus the agent. */
+  function repairCanvas(nodeStatus = 'error', errorMessage = 'Content policy refusal') {
+    const nodes = [
+      {
+        id: 'p_shot', type: 'prompt', position: { x: 0, y: 0 },
+        data: { type: 'prompt', label: 'Shot Prompt', text: 'a sneaker' },
+      } as any,
+      {
+        id: 'g_shot', type: 'generate', position: { x: 400, y: 0 },
+        data: {
+          type: 'generate', label: 'Hero Shot', platform: 'flow', mediaType: 'image',
+          model: 'Nano Banana Pro', aspectRatio: '16:9', creationType: 'ingredients',
+          enabled: true, status: nodeStatus, errorMessage,
+        },
+      } as any,
+      {
+        id: 'p_goal', type: 'prompt', position: { x: 0, y: 400 },
+        data: { type: 'prompt', label: 'Goal', text: 'Fix the failed node.' },
+      } as any,
+      {
+        id: 'agent_1', type: 'agent', position: { x: 400, y: 400 },
+        data: {
+          type: 'agent', label: 'Fixer', platform: 'chatgpt', mediaType: 'text',
+          maxIterations: 8, tools: ['read_node', 'set_prompt', 'rerun_node'],
+          system: '', agentSteps: [], enabled: true, status: 'idle',
+        },
+      } as any,
+    ];
+    const edges = [
+      { id: 'e1', source: 'p_shot', target: 'g_shot', sourceHandle: 'text', targetHandle: 'text' },
+      { id: 'e2', source: 'p_goal', target: 'agent_1', sourceHandle: 'text', targetHandle: 'text' },
+    ] as any[];
+    useStudioStore.setState({ nodes, edges } as any);
+    return { nodes, edges };
+  }
+
+  it('reads the failure and the prompt behind it', async () => {
+    const { nodes, edges } = repairCanvas();
+    let turn = 0;
+    resultFor = () => ({
+      text: ++turn === 1 ? 'TOOL: read_node\n{"node": "g_shot"}' : 'DONE\nI see the problem.',
+    });
+
+    await runner.run(nodes, edges, { only: new Set(['agent_1']) });
+
+    const obs = sent[1].config.prompt;
+    expect(obs).toContain('status: error');
+    expect(obs).toContain('Content policy refusal');
+    // A generate node does not hold its prompt — the wire has to be followed.
+    expect(obs).toContain('held by node "p_shot"');
+    expect(obs).toContain('a sneaker');
+  });
+
+  it('rewrites the PROMPT node, not the generate node', async () => {
+    const { nodes, edges } = repairCanvas();
+    let turn = 0;
+    resultFor = () => ({
+      text: ++turn === 1
+        ? 'TOOL: set_prompt\n{"node": "g_shot", "text": "a red sneaker on wet concrete"}'
+        : 'DONE\nRewritten.',
+    });
+
+    await runner.run(nodes, edges, { only: new Set(['agent_1']) });
+
+    const after = useStudioStore.getState().nodes;
+    expect((after.find((n) => n.id === 'p_shot')!.data as any).text)
+      .toBe('a red sneaker on wet concrete');
+    // The generate node is untouched — it never held the text.
+    expect((after.find((n) => n.id === 'g_shot')!.data as any).text).toBeUndefined();
+    expect(sent[1].config.prompt).toMatch(/Rewrote "p_shot", the prompt feeding "g_shot"/);
+  });
+
+  it('re-runs with the NEW prompt, not the cached one', async () => {
+    /* The trap. The runner reads a node's prompt out of nodeResults, filled
+       when the Prompt node was visited at the start of the run. Updating only
+       the canvas would re-run the old text while the screen showed the new. */
+    const { nodes, edges } = repairCanvas();
+    (runner as any).nodeResults.set('p_shot', { tileId: '', imageUrl: 'a sneaker' });
+
+    const flowPrompts: string[] = [];
+    let turn = 0;
+    resultFor = (config) => {
+      if (config.platform === 'flow') {
+        flowPrompts.push(config.prompt);
+        return { previewUrl: PNG };
+      }
+      turn++;
+      if (turn === 1) return { text: 'TOOL: set_prompt\n{"node": "g_shot", "text": "a RED sneaker, wet concrete"}' };
+      if (turn === 2) return { text: 'TOOL: rerun_node\n{"node": "g_shot"}' };
+      return { text: 'DONE\nFixed and re-rendered.' };
+    };
+
+    await runner.run(nodes, edges, { only: new Set(['agent_1']) });
+
+    expect(flowPrompts).toEqual(['a RED sneaker, wet concrete']);
+    const g = useStudioStore.getState().nodes.find((n) => n.id === 'g_shot')!;
+    expect((g.data as any).status).toBe('done');
+    expect((g.data as any).errorMessage).toBeNull();
+    // The new render comes back attached, so the fix can be judged.
+    const chats = sent.filter((s) => s.config.platform === 'chatgpt');
+    expect(chats[2].config.referenceImageData).toEqual([PNG]);
+  });
+
+  it('refuses to re-run the agent itself', async () => {
+    const { nodes, edges } = repairCanvas();
+    let turn = 0;
+    resultFor = () => ({
+      text: ++turn === 1 ? 'TOOL: rerun_node\n{"node": "agent_1"}' : 'DONE\nStopped.',
+    });
+
+    await runner.run(nodes, edges, { only: new Set(['agent_1']) });
+
+    // An agent re-running itself spends a generation per turn until the cap.
+    expect(sent[1].config.prompt).toMatch(/cannot re-run itself/i);
+  });
+
+  it('caps how many nodes one run may re-render', async () => {
+    const { nodes, edges } = repairCanvas('done', '');
+    let turn = 0;
+    resultFor = (config) => {
+      if (config.platform === 'flow') return { previewUrl: PNG };
+      turn++;
+      return turn <= 6
+        ? { text: 'TOOL: rerun_node\n{"node": "g_shot"}' }
+        : { text: 'DONE\nEnough.' };
+    };
+
+    await runner.run(nodes, edges, { only: new Set(['agent_1']) });
+
+    const flows = sent.filter((s) => s.config.platform === 'flow');
+    expect(flows).toHaveLength(3);          // AGENT_MAX_RERUNS
+    expect(JSON.stringify(sent)).toMatch(/which is the limit/);
+  });
+
+  it('tells the model a failed re-run failed, instead of aborting', async () => {
+    const { nodes, edges } = repairCanvas();
+    let turn = 0;
+    resultFor = (config) => {
+      if (config.platform === 'flow') return { error: 'Flow tab was closed' };
+      turn++;
+      return turn === 1
+        ? { text: 'TOOL: rerun_node\n{"node": "g_shot"}' }
+        : { text: 'DONE\nIt still fails; the Flow tab is closed.' };
+    };
+
+    await runner.run(nodes, edges, { only: new Set(['agent_1']) });
+
+    // sent interleaves the Flow re-run with the chat turns, so filter.
+    const chats = sent.filter((s) => s.config.platform === 'chatgpt');
+    expect(chats[1].config.prompt).toMatch(/failed again: Flow tab was closed/);
+    const agent = useStudioStore.getState().nodes.find((n) => n.id === 'agent_1')!;
+    expect((agent.data as any).status).toBe('done');
+    // The node it tried to fix is left marked failed, not quietly "done".
+    const g = useStudioStore.getState().nodes.find((n) => n.id === 'g_shot')!;
+    expect((g.data as any).status).toBe('error');
+  });
+
+  it('will not re-run a node that carries data rather than running', async () => {
+    const { nodes, edges } = repairCanvas();
+    let turn = 0;
+    resultFor = () => ({
+      text: ++turn === 1 ? 'TOOL: rerun_node\n{"node": "p_shot"}' : 'DONE\nUnderstood.',
+    });
+
+    await runner.run(nodes, edges, { only: new Set(['agent_1']) });
+
+    expect(sent[1].config.prompt).toMatch(/is a prompt node/i);
+  });
+});

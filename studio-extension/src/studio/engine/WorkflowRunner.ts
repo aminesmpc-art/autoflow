@@ -36,6 +36,10 @@ export const CHAT_PLATFORMS = ['chatgpt', 'gemini', 'grok'];
 /** One extra attempt. Enough to ride out a blip, few enough that a node which
     is genuinely broken fails while the user is still watching. */
 const MAX_AUTO_RETRIES = 1;
+
+/** Nodes one agent run may re-run. Each is minutes and a real generation, so
+    a model that keeps "trying once more" has to hit a wall it cannot argue with. */
+const AGENT_MAX_RERUNS = 3;
 const AUTO_RETRY_DELAY_MS = 2500;
 
 /**
@@ -106,6 +110,9 @@ export class WorkflowRunner {
 
   /** Nodes that failed or were skipped — dependents must not run on partial input */
   private failedNodes = new Set<string>();
+
+  /** Re-runs the current agent node has spent. Reset when one starts. */
+  private agentReruns = 0;
 
   getState(): RunnerState {
     return this.state;
@@ -480,7 +487,7 @@ export class WorkflowRunner {
     /* An agent is not one round trip, so it leaves here before any of the
        generation machinery below applies to it. */
     if (node.type === 'agent' || nodeData.type === 'agent') {
-      return this.executeAgentNode(nodeId, nodeData, prompt);
+      return this.executeAgentNode(nodeId, nodeData, prompt, edges);
     }
 
     // Gather reference images from EVERY upstream image connection.
@@ -752,7 +759,7 @@ export class WorkflowRunner {
    * given stop reason means for the node.
    */
   private async executeAgentNode(
-    nodeId: string, nodeData: any, goal: string
+    nodeId: string, nodeData: any, goal: string, edges: Edge[]
   ): Promise<NodeResult> {
     const store = useStudioStore.getState();
 
@@ -767,6 +774,7 @@ export class WorkflowRunner {
     const maxIterations = Math.max(1, Math.min(10, Number(nodeData.maxIterations) || 4));
 
     const steps: AgentStep[] = [];
+    this.agentReruns = 0;
     store.updateNodeData(nodeId, { agentSteps: [], agentStopReason: null, resultText: '' });
 
     const result = await runAgent({
@@ -781,7 +789,7 @@ export class WorkflowRunner {
         store.updateNodeData(nodeId, { agentSteps: [...steps] });
       },
       ask: (message, ctx) => this.askAgent(nodeId, platform, message, ctx.firstTurn, ctx.attachments),
-      runTool: (name, args) => this.runAgentTool(nodeId, name, args),
+      runTool: (name, args) => this.runAgentTool(nodeId, name, args, edges),
     });
 
     store.updateNodeData(nodeId, {
@@ -849,7 +857,7 @@ export class WorkflowRunner {
 
   /** Perform one tool call and describe the outcome back to the model. */
   private async runAgentTool(
-    nodeId: string, name: string, args: Record<string, unknown>
+    nodeId: string, name: string, args: Record<string, unknown>, edges: Edge[]
   ): Promise<ToolOutcome> {
     if (name === 'read_canvas') {
       /* The tool the model cannot fake, which is the point of it: it has never
@@ -934,6 +942,141 @@ export class WorkflowRunner {
         attachments: [clip],
         attachmentNoun: 'clip' as const,
       };
+    }
+
+    /* ── Acting on the workflow ── */
+
+    const nodes = useStudioStore.getState().nodes;
+    const findNode = (id: string) => nodes.find((n) => n.id === id);
+    /* A generate node does not hold its own prompt — a Prompt node upstream
+       does. Reading or rewriting "the prompt of gen_sheet_A" therefore has to
+       resolve through the wire, or the agent edits a field nothing reads. */
+    const promptSourceFor = (id: string): Node | undefined => {
+      const srcId = getNodeInputs(id, edges).get('text')?.[0];
+      return srcId ? findNode(srcId) : undefined;
+    };
+
+    if (name === 'read_node') {
+      const id = String(args.node ?? '').trim();
+      const node = findNode(id);
+      if (!node) return `There is no node "${id}" on this canvas.`;
+      const d = node.data as any;
+
+      const out = [`id: ${id}`, `type: ${d.type || node.type}`, `label: ${d.label || '(none)'}`];
+      for (const [k, v] of [
+        ['platform', d.platform], ['makes', d.mediaType], ['model', d.model],
+        ['aspect', d.aspectRatio], ['duration', d.duration], ['resolution', d.resolution],
+      ] as Array<[string, unknown]>) {
+        if (v) out.push(`${k}: ${v}`);
+      }
+      out.push(`status: ${d.status || 'idle'}`);
+      if (d.errorMessage) out.push(`error: ${d.errorMessage}`);
+
+      if (d.type === 'prompt') {
+        out.push('prompt (held by this node):', d.text || '(empty)');
+      } else {
+        const src = promptSourceFor(id);
+        out.push(src
+          ? `prompt (held by node "${src.id}", change it there):`
+          : 'no prompt node is wired to this one');
+        if (src) out.push((src.data as any).text || '(empty)');
+      }
+      return out.join('\n');
+    }
+
+    if (name === 'set_prompt') {
+      const id = String(args.node ?? '').trim();
+      const text = String(args.text ?? '');
+      if (!text.trim()) throw new Error('set_prompt needs the new prompt text');
+
+      const node = findNode(id);
+      if (!node) return `There is no node "${id}" on this canvas.`;
+
+      const d = node.data as any;
+      const target = d.type === 'prompt' ? node : promptSourceFor(id);
+      if (!target) {
+        return `Node "${id}" has no Prompt node wired to its text input, so there `
+          + 'is nothing to rewrite.';
+      }
+
+      useStudioStore.getState().updateNodeData(target.id, { text });
+      /* And the cached copy. The runner reads a node's prompt out of
+         nodeResults, which was filled when the Prompt node was visited at the
+         start of the run — updating only the canvas would leave a re-run using
+         the OLD text while the node on screen showed the new one. */
+      this.nodeResults.set(target.id, { tileId: '', imageUrl: text });
+
+      return target.id === id
+        ? `Rewrote the prompt on "${id}". It is not running yet.`
+        : `Rewrote "${target.id}", the prompt feeding "${id}". It is not running yet.`;
+    }
+
+    if (name === 'rerun_node') {
+      const id = String(args.node ?? '').trim();
+      /* An agent re-running itself is an infinite loop that spends a
+         generation per turn until the cap. Refused outright. */
+      if (id === nodeId) throw new Error('An agent cannot re-run itself');
+
+      const node = findNode(id);
+      if (!node) return `There is no node "${id}" on this canvas.`;
+      const d = node.data as any;
+      if (!isRunnableType(d.type)) {
+        return `Node "${id}" is a ${d.type} node — it carries data and never runs. `
+          + 'Only generate, extend and agent nodes can be run.';
+      }
+      if (this.agentReruns >= AGENT_MAX_RERUNS) {
+        return `Already re-ran ${AGENT_MAX_RERUNS} nodes this run, which is the limit. `
+          + 'Report what you found instead of trying again.';
+      }
+      this.agentReruns++;
+
+      const store = useStudioStore.getState();
+      store.updateNodeData(id, { status: 'running', progress: 0, errorMessage: null });
+      try {
+        const result = await this.executeGenerateNode(id, node, edges);
+        this.nodeResults.set(id, d.mediaType === 'text'
+          ? { tileId: '', imageUrl: result.text || '' }
+          : result);
+        this.failedNodes.delete(id);
+        store.updateNodeData(id, {
+          status: 'done',
+          progress: 100,
+          resultUrl: result.videoUrl || result.imageUrl || result.thumbnailUrl || '',
+          previewUrl: result.previewUrl || '',
+          previewVideoUrl: result.previewVideoUrl || '',
+          resultTileId: result.tileId,
+          resultText: result.text || '',
+          errorMessage: null,
+        });
+
+        // Hand back what it produced, so the fix can be judged rather than assumed.
+        const still = [result.previewUrl, result.imageUrl]
+          .find((u): u is string => typeof u === 'string' && u.startsWith('data:'));
+        if (still) {
+          return {
+            observation: `Node "${id}" ran again.`,
+            attachments: [still],
+            attachmentNoun: 'image' as const,
+          };
+        }
+        const clip = [result.previewVideoUrl, result.videoUrl]
+          .find((u): u is string => typeof u === 'string' && u.startsWith('data:'));
+        if (clip) {
+          return {
+            observation: `Node "${id}" ran again.`,
+            attachments: [clip],
+            attachmentNoun: 'clip' as const,
+          };
+        }
+        return `Node "${id}" ran again${result.text ? `, and answered: ${short(result.text, 300)}` : ''}. `
+          + 'Nothing could be attached, so you cannot see the result — do not describe it.';
+      } catch (e: any) {
+        const message = e?.message || String(e);
+        this.failedNodes.add(id);
+        store.updateNodeData(id, { status: 'error', errorMessage: message });
+        // Information, not an abort: it can try a different prompt.
+        return `Node "${id}" failed again: ${message}`;
+      }
     }
 
     throw new Error(`${name} is not a tool this node can run`);
