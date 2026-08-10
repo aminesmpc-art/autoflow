@@ -554,7 +554,7 @@ async function handleExecute(payload: any): Promise<any> {
   // before a generation finishes. Results travel by sendMessage instead.
   startAntiThrottle();
   const work = wantsText
-    ? trackTextReply(nodeId, priorReply)
+    ? trackTextReply(nodeId, priorReply, config?.rawReply === true)
     : trackGeneration(nodeId, preexisting);
   work.finally(stopAntiThrottle);
   return { success: true };
@@ -622,7 +622,19 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
   });
 }
 
-async function trackTextReply(nodeId: string, priorReply: string): Promise<void> {
+/**
+ * @param raw  Return the reply verbatim and skip the prompt-shaped checks.
+ *
+ * An agent turn is a protocol message, not a prompt, and the prompt heuristic
+ * rejects anything under 20 characters. `TOOL: read_canvas {}` is exactly 20,
+ * which is the only reason the first live agent run worked at all — a shorter
+ * action name would have been reported as "not a usable prompt" and failed the
+ * node. Cleaning is skipped too: the agent parser does its own unwrapping, and
+ * cleanAssistantReply strips surrounding quotes, which can be part of the JSON.
+ */
+async function trackTextReply(
+  nodeId: string, priorReply: string, raw = false
+): Promise<void> {
   const startedAt = Date.now();
   let lastSeen = '';
   let stableCount = 0;
@@ -643,8 +655,8 @@ async function trackTextReply(nodeId: string, priorReply: string): Promise<void>
     else { lastSeen = current; stableCount = 0; }
 
     if (stableCount >= 2 && !isGenerating()) {
-      const cleaned = cleanAssistantReply(current);
-      if (!looksLikeUsablePrompt(cleaned)) {
+      const cleaned = raw ? current : cleanAssistantReply(current);
+      if (!raw && !looksLikeUsablePrompt(cleaned)) {
         send('STUDIO_NODE_ERROR', {
           nodeId,
           error: 'Gemini replied but not with a usable prompt — check the Gemini tab',

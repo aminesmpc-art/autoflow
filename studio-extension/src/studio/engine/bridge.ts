@@ -38,6 +38,17 @@ export interface NodeExecutionConfig {
    * opening turn leaves this unset.
    */
   newChat?: 'auto' | 'never';
+  /**
+   * Return the reply verbatim, skipping the "is this a usable prompt?" check.
+   *
+   * That check exists for Ask AI, where a two-word answer means ChatGPT asked
+   * a question instead of writing a prompt. An agent turn is a protocol
+   * message and is often shorter than its 20-character floor:
+   * `TOOL: read_canvas {}` is exactly 20, which is the only reason the first
+   * live agent run worked. A shorter action name would have been rejected as
+   * "not a usable prompt" and failed the node.
+   */
+  rawReply?: boolean;
 }
 
 export interface NodeResult {

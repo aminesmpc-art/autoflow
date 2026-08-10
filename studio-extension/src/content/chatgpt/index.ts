@@ -852,7 +852,7 @@ async function handleExecute(payload: any): Promise<any> {
   // chrome.runtime.sendMessage, same pattern as the Flow content script.
   startAntiThrottle();
   const work = wantsText
-    ? trackTextReply(nodeId, priorReply)
+    ? trackTextReply(nodeId, priorReply, config?.rawReply === true)
     : trackGeneration(nodeId, preexisting);
   work.finally(stopAntiThrottle);
   return { success: true };
@@ -984,7 +984,19 @@ function readLatestReply(): string {
  * to be byte-identical across consecutive polls avoids capturing a sentence
  * mid-render — the same trick the image path uses for swapping srcs.
  */
-async function trackTextReply(nodeId: string, priorReply: string): Promise<void> {
+/**
+ * @param raw  Return the reply verbatim and skip the prompt-shaped checks.
+ *
+ * An agent turn is a protocol message, not a prompt, and the prompt heuristic
+ * rejects anything under 20 characters. `TOOL: read_canvas {}` is exactly 20,
+ * which is the only reason the first live agent run worked at all — a shorter
+ * action name would have been reported as "not a usable prompt" and failed the
+ * node. Cleaning is skipped too: the agent parser does its own unwrapping, and
+ * cleanAssistantReply strips surrounding quotes, which can be part of the JSON.
+ */
+async function trackTextReply(
+  nodeId: string, priorReply: string, raw = false
+): Promise<void> {
   const startedAt = Date.now();
   let lastSeen = '';
   let stableCount = 0;
@@ -1010,8 +1022,8 @@ async function trackTextReply(nodeId: string, priorReply: string): Promise<void>
     }
 
     if (stableCount >= 2 && !isGenerating()) {
-      const cleaned = cleanAssistantReply(current);
-      if (!looksLikeUsablePrompt(cleaned)) {
+      const cleaned = raw ? current : cleanAssistantReply(current);
+      if (!raw && !looksLikeUsablePrompt(cleaned)) {
         // Usually ChatGPT asking a clarifying question instead of answering.
         send('STUDIO_NODE_ERROR', {
           nodeId,

@@ -835,6 +835,9 @@ export class WorkflowRunner {
       platform: platform as any,
       // Only the opening turn may reset — after that the thread is the memory.
       newChat: firstTurn ? 'auto' : 'never',
+      /* A TOOL block is not a prompt, and the prompt heuristic would reject a
+         short one outright. The agent parser does its own unwrapping. */
+      rawReply: true,
       /* The rendered image, so "did this come out right?" is a question about
          a picture in context rather than about a sentence describing one. */
       referenceImageData: images?.length ? images : undefined,

@@ -195,3 +195,26 @@ test('a rendered image comes back attached, so the agent can judge it', async ()
   const node = useStudioStore.getState().nodes.find((n) => n.id === 'agent_1')!;
   expect((node.data as any).status).toBe('done');
 });
+
+test('a short TOOL block is not rejected as "not a usable prompt"', async () => {
+  /* The adapters guard Ask AI against half-streamed replies with a
+     20-character floor. An agent turn is a protocol message, not a prompt:
+     `TOOL: read_canvas {}` is exactly 20 characters, so the first live run
+     passed by one character. A shorter action name would have been failed as
+     unusable. The agent therefore asks for the reply verbatim. */
+  let turn = 0;
+  resultFor = () => ({
+    text: ++turn === 1 ? 'TOOL: read_canvas\n{}' : 'DONE\nok',
+  });
+
+  const { nodes, edges } = workflow();
+  await runner.run(nodes, edges);
+
+  for (const s of sent) {
+    expect(s.config.rawReply).toBe(true);
+  }
+  const node = useStudioStore.getState().nodes.find((n) => n.id === 'agent_1')!;
+  // 'DONE\nok' has a 2-character answer — well under the prompt floor.
+  expect((node.data as any).status).toBe('done');
+  expect((node.data as any).resultText).toBe('ok');
+});
