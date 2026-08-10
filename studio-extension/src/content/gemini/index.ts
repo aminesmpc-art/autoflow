@@ -97,6 +97,75 @@ function findComposer(): HTMLElement | null {
  * `ql-editor.ql-blank`). Anything reading "is there a send button" as a
  * health check has to account for that.
  */
+/**
+ * Turns rendered in the thread. Zero means a fresh, unused chat.
+ *
+ * `user-query, model-response` — NOT `conversation-container`, which was the
+ * obvious guess and is wrong: measured on a live hydrated thread, that element
+ * is absent while these two are present. A count built on it reads every
+ * conversation as empty, so the reset below would never fire and the bug it
+ * exists to fix would look fixed.
+ */
+function turnCount(): number {
+  return document.querySelectorAll('user-query, model-response').length;
+}
+
+/**
+ * Gemini's New Chat control.
+ *
+ * The side-nav sparkle carries a data-test-id, so it is matched first: the
+ * other control identifies itself only by aria-label="New chat", which is
+ * localised and would miss on a non-English account. The href fallback is
+ * structural for the same reason — no translation table to keep current.
+ */
+function findNewChatControl(): HTMLElement | null {
+  const sparkle = document.querySelector<HTMLElement>(
+    'a[data-test-id="side-nav-sparkle-button"]'
+  );
+  if (sparkle && isVisible(sparkle)) return sparkle;
+
+  const byHref = Array.from(document.querySelectorAll<HTMLElement>('a[href="/app"]'))
+    .find(isVisible);
+  return byHref || sparkle || null;
+}
+
+/**
+ * Start a fresh thread before running a node.
+ *
+ * Same reasoning as the ChatGPT adapter: without it every node appends to one
+ * conversation, so Gemini answers each prompt in the light of the previous
+ * ones and a reference image attached for one node stays in context for the
+ * next. It matters more here than for text — an image model given a stale
+ * picture in context will happily blend it into the new one.
+ *
+ * Clicks rather than assigning location: these are Angular router links, and a
+ * real navigation would tear down this content script mid-run.
+ *
+ * Soft-fails. Losing isolation is bad; refusing to run because a nav control
+ * moved is worse, and the log says which happened.
+ */
+async function startNewChat(): Promise<boolean> {
+  if (turnCount() === 0) {
+    console.log('[AutoFlow Gemini] Already on an empty chat — reusing it');
+    return true;
+  }
+  const control = findNewChatControl();
+  if (!control) {
+    console.warn('[AutoFlow Gemini] WARNING: New Chat control not found — continuing in the current thread, so this answer may be influenced by the previous one');
+    return false;
+  }
+  control.click();
+  for (let i = 0; i < 24; i++) {
+    await sleep(250);
+    if (turnCount() === 0 && findComposer()) {
+      console.log('[AutoFlow Gemini] Started a new chat');
+      return true;
+    }
+  }
+  console.warn('[AutoFlow Gemini] WARNING: new chat did not settle in 6s — continuing anyway');
+  return false;
+}
+
 function findSendButton(): HTMLElement | null {
   const known = document.querySelector<HTMLElement>(
     'button.send-button, [data-test-id="send-button"]'
@@ -406,6 +475,13 @@ async function handleExecute(payload: any): Promise<any> {
 
   console.log(`[AutoFlow Gemini] Executing node ${nodeId}`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 10 });
+
+  /* Isolate this node first. It has to happen before the composer lookup and
+     before the baseline snapshots below, because the reset remounts the
+     composer and empties the thread — doing it after would invalidate both,
+     and the "what is new on screen" baselines would be taken against the
+     previous conversation. */
+  await startNewChat();
 
   let composer = findComposer();
   for (let i = 0; !composer && i < 10; i++) {
