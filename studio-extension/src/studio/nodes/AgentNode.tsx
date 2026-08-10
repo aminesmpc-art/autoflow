@@ -204,6 +204,14 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
           rows={2}
         />
 
+        {/* Watching a clip needs a model that reads video. ChatGPT does not,
+            so this combination spends a run to discover it — said here instead. */}
+        {enabledTools.includes('inspect_clip') && platform !== 'gemini' && (
+          <div className="sn-agent__hint">
+            inspect_clip needs a model that can watch video — switch Platform to Gemini
+          </div>
+        )}
+
         <div className="sn-agent__foot">
           {toolsRun > 0
             ? `${toolsRun} tool call${toolsRun === 1 ? '' : 's'} · up to ${maxIterations} steps`

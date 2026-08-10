@@ -172,9 +172,17 @@ function findSendButton(): HTMLElement | null {
   );
   if (known && isVisible(known)) return known;
 
-  // Angular Material draws its icons as ligature text on mat-icon, so the
-  // glyph name is readable and does not translate.
-  const byIcon = Array.from(document.querySelectorAll<HTMLElement>('mat-icon[fonticon="send"]'))
+  /* Angular Material draws its icons as ligature text on mat-icon, so the
+     glyph name is readable and does not translate.
+
+     Both names, because Gemini changed it. Measured on the live composer:
+     the control is now aria-label="Send message" with fonticon="arrow_upward",
+     and no fonticon="send" exists anywhere on the page. With only the old
+     name, this rung and the .send-button rung above are both dead, leaving a
+     localised aria-label as the sole way to find the send button. */
+  const byIcon = Array.from(document.querySelectorAll<HTMLElement>(
+    'mat-icon[fonticon="send"], mat-icon[fonticon="arrow_upward"]'
+  ))
     .map((i) => i.closest('button') as HTMLElement | null)
     .find((b) => b && isVisible(b));
   if (byIcon) return byIcon;

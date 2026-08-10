@@ -780,7 +780,7 @@ export class WorkflowRunner {
         // Copied, not pushed in place: the store compares by reference.
         store.updateNodeData(nodeId, { agentSteps: [...steps] });
       },
-      ask: (message, ctx) => this.askAgent(nodeId, platform, message, ctx.firstTurn, ctx.images),
+      ask: (message, ctx) => this.askAgent(nodeId, platform, message, ctx.firstTurn, ctx.attachments),
       runTool: (name, args) => this.runAgentTool(nodeId, name, args),
     });
 
@@ -820,12 +820,13 @@ export class WorkflowRunner {
 
   /** One turn of the agent's conversation. The thread stays open after the first. */
   private async askAgent(
-    nodeId: string, platform: string, message: string, firstTurn: boolean, images?: string[]
+    nodeId: string, platform: string, message: string, firstTurn: boolean,
+    attachments?: string[]
   ): Promise<string> {
-    /* Uploading a reference can take the adapter most of a minute before the
-       question is even asked, so a turn carrying one gets the longer budget
-       an Ask AI node with references gets. */
-    const timeoutMs = images?.length ? 5 * 60 * 1000 : 3 * 60 * 1000;
+    /* Uploading can take the adapter most of a minute before the question is
+       even asked, and a clip is far bigger than a still, so a turn carrying
+       one gets a longer budget than an Ask AI node with references. */
+    const timeoutMs = attachments?.length ? 6 * 60 * 1000 : 3 * 60 * 1000;
     const res = await this.awaitBridge(nodeId, {
       prompt: message,
       model: '',
@@ -838,10 +839,11 @@ export class WorkflowRunner {
       /* A TOOL block is not a prompt, and the prompt heuristic would reject a
          short one outright. The agent parser does its own unwrapping. */
       rawReply: true,
-      /* The rendered image, so "did this come out right?" is a question about
-         a picture in context rather than about a sentence describing one. */
-      referenceImageData: images?.length ? images : undefined,
-    }, timeoutMs, images?.length ? '5 minutes' : '3 minutes');
+      /* The rendered file, so "did this come out right?" is a question about
+         something in context rather than about a sentence describing it. The
+         adapter field is named for images but carries any data: URL. */
+      referenceImageData: attachments?.length ? attachments : undefined,
+    }, timeoutMs, attachments?.length ? '6 minutes' : '3 minutes');
     return res.text || '';
   }
 
@@ -892,7 +894,8 @@ export class WorkflowRunner {
       return inspectable.length
         ? {
           observation: 'Image rendered on Flow.',
-          images: [inspectable[0]],
+          attachments: [inspectable[0]],
+          attachmentNoun: 'image' as const,
         }
         : {
           observation:
@@ -900,6 +903,37 @@ export class WorkflowRunner {
             + 'so you cannot judge how it came out. Do not describe it. Treat this as '
             + 'rendered-but-unverified.',
         };
+    }
+
+    if (name === 'inspect_clip') {
+      const id = String(args.node ?? '').trim();
+      if (!id) throw new Error('inspect_clip needs a node id');
+
+      const res = this.nodeResults.get(id);
+      if (!res) {
+        /* Named rather than guessed at: the model picked this id from
+           read_canvas, and a node that has not run yet is a different problem
+           from one that does not exist. */
+        return `Node "${id}" has not produced anything in this run. `
+          + 'Only nodes that already ran have a clip to watch.';
+      }
+
+      /* previewVideoUrl is the captured bytes; videoUrl is an address on the
+         generating site that a chat tab cannot fetch. Only the former can be
+         attached, and without it the honest answer is that the clip cannot be
+         watched — not a description of one nobody saw. */
+      const clip = [res.previewVideoUrl, res.videoUrl]
+        .find((u): u is string => typeof u === 'string' && u.startsWith('data:'));
+      if (!clip) {
+        return `Node "${id}" produced no clip that can be attached, so you `
+          + 'cannot watch it. Do not describe it. Say that it could not be inspected.';
+      }
+
+      return {
+        observation: `Clip from node "${id}".`,
+        attachments: [clip],
+        attachmentNoun: 'clip' as const,
+      };
     }
 
     throw new Error(`${name} is not a tool this node can run`);

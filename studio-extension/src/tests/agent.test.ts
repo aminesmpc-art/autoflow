@@ -508,13 +508,13 @@ describe('images from a tool reach the next turn', () => {
     await runAgent({
       goal: 'render a sneaker', tools: IMG_TOOL, maxIterations: 4,
       ask: async (m, ctx) => {
-        seen.push(ctx.images);
+        seen.push(ctx.attachments);
         if (++turn === 1) return 'TOOL: generate_image\n{"prompt": "a sneaker"}';
         // The model can only say this if the picture is in front of it.
         expect(m).toMatch(/attached to this message/i);
         return 'DONE\nLooks right.';
       },
-      runTool: async () => ({ observation: 'Image rendered on Flow.', images: [PNG] }),
+      runTool: async () => ({ observation: 'Image rendered on Flow.', attachments: [PNG] }),
     });
 
     expect(seen[0]).toBeUndefined();   // nothing to show on the opening turn
@@ -527,13 +527,13 @@ describe('images from a tool reach the next turn', () => {
     await runAgent({
       goal: 'g', tools: IMG_TOOL, maxIterations: 6,
       ask: async (_m, ctx) => {
-        seen.push(ctx.images);
+        seen.push(ctx.attachments);
         turn++;
         if (turn === 1) return 'TOOL: generate_image\n{"prompt": "one"}';
         if (turn === 2) return 'DONE\nfine';
         return 'DONE\nfine';
       },
-      runTool: async () => ({ observation: 'rendered', images: [PNG] }),
+      runTool: async () => ({ observation: 'rendered', attachments: [PNG] }),
     });
     // Attached once, on the turn straight after the tool ran.
     expect(seen.filter((s) => s?.length).length).toBe(1);
@@ -553,7 +553,7 @@ describe('images from a tool reach the next turn', () => {
       },
       runTool: async (_n, args) => {
         prompts.push(String(args.prompt));
-        return { observation: 'rendered', images: [PNG] };
+        return { observation: 'rendered', attachments: [PNG] };
       },
     });
 
@@ -568,7 +568,7 @@ describe('images from a tool reach the next turn', () => {
     await runAgent({
       goal: 'g', tools: IMG_TOOL, maxIterations: 4,
       ask: async (_m, ctx) => {
-        seen.push(ctx.images);
+        seen.push(ctx.attachments);
         return ++turn === 1 ? 'TOOL: generate_image\n{"prompt": "x"}' : 'DONE\nok';
       },
       runTool: async () => 'rendered, nothing to look at',

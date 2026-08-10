@@ -2137,3 +2137,15 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   color: #64748b;
   font-size: 10px;
 }
+
+/* A combination that will fail, said before it costs a run. */
+.sn-agent__hint {
+  margin: 6px 12px 0;
+  padding: 6px 9px;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.32);
+  border-radius: 8px;
+  color: #fbbf24;
+  font-size: 10px;
+  line-height: 1.4;
+}

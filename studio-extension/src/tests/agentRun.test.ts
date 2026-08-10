@@ -218,3 +218,84 @@ test('a short TOOL block is not rejected as "not a usable prompt"', async () => 
   expect((node.data as any).status).toBe('done');
   expect((node.data as any).resultText).toBe('ok');
 });
+
+describe('inspect_clip', () => {
+  const MP4 = 'data:video/mp4;base64,AAAAIGZ0eXBpc29t';
+
+  /** A canvas with a finished video node the agent can be pointed at. */
+  function withClip(result: Record<string, unknown>) {
+    const nodes = [
+      ...workflow().nodes,
+      {
+        id: 'gen_vid', type: 'generate', position: { x: 0, y: 600 },
+        data: { type: 'generate', label: 'Commercial Clip', mediaType: 'video', enabled: false },
+      } as any,
+    ];
+    useStudioStore.setState({ nodes, edges: workflow().edges } as any);
+    /* Pretend that node already ran. Seeded AFTER the clear that run() does
+       on a full run, which is why every test here goes through the retry path
+       — the realistic case anyway: the clip exists, the agent is re-run. */
+    (runner as any).nodeResults.set('gen_vid', result);
+    return nodes;
+  }
+
+  function agentWith(nodes: any[], tools: string[]) {
+    return nodes.map((n) => (n.id === 'agent_1'
+      ? { ...n, data: { ...n.data, tools } }
+      : n));
+  }
+
+  it('attaches the clip and asks the model to watch it', async () => {
+    const nodes = agentWith(withClip({ tileId: '', previewVideoUrl: MP4, videoUrl: 'https://grok/x.mp4' }),
+      ['inspect_clip']);
+    let turn = 0;
+    resultFor = () => ({
+      text: ++turn === 1
+        ? 'TOOL: inspect_clip\n{"node": "gen_vid"}'
+        : 'DONE\nThe product stays consistent across the shot.',
+    });
+
+    await runner.run(nodes as any, workflow().edges as any, { only: new Set(['agent_1']) });
+
+    const chats = sent.filter((s) => s.config.platform === 'chatgpt');
+    expect(chats[1].config.referenceImageData).toEqual([MP4]);
+    // "Watch it", not "look at it" — and never the remote URL.
+    expect(chats[1].config.prompt).toMatch(/The clip is attached/i);
+    expect(chats[1].config.prompt).toMatch(/Watch it/i);
+    expect(JSON.stringify(chats[1].config)).not.toContain('https://grok');
+  });
+
+  it('says a clip cannot be watched rather than letting it be described', async () => {
+    // Only a remote URL — nothing a chat tab can open.
+    const nodes = agentWith(withClip({ tileId: '', videoUrl: 'https://grok.com/generated_video/x.mp4' }),
+      ['inspect_clip']);
+    let turn = 0;
+    resultFor = () => ({
+      text: ++turn === 1
+        ? 'TOOL: inspect_clip\n{"node": "gen_vid"}'
+        : 'DONE\nIt could not be inspected.',
+    });
+
+    await runner.run(nodes as any, workflow().edges as any, { only: new Set(['agent_1']) });
+
+    const chats = sent.filter((s) => s.config.platform === 'chatgpt');
+    expect(chats[1].config.referenceImageData).toBeUndefined();
+    expect(chats[1].config.prompt).toMatch(/cannot watch it. Do not describe it/i);
+  });
+
+  it('distinguishes a node that has not run from one that does not exist', async () => {
+    const nodes = agentWith(workflow().nodes, ['inspect_clip']);
+    useStudioStore.setState({ nodes } as any);
+    let turn = 0;
+    resultFor = () => ({
+      text: ++turn === 1
+        ? 'TOOL: inspect_clip\n{"node": "gen_vid"}'
+        : 'DONE\nNothing to inspect yet.',
+    });
+
+    await runner.run(nodes as any, workflow().edges as any);
+
+    const chats = sent.filter((s) => s.config.platform === 'chatgpt');
+    expect(chats[1].config.prompt).toMatch(/has not produced anything in this run/i);
+  });
+});

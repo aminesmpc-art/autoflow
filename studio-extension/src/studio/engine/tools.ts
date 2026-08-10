@@ -45,7 +45,33 @@ export const TOOL_GENERATE_IMAGE: AgentTool = {
   ],
 };
 
-export const AGENT_TOOLS: AgentTool[] = [TOOL_READ_CANVAS, TOOL_GENERATE_IMAGE];
+/**
+ * Watch a clip a node produced.
+ *
+ * The check that costs real time today: did the product survive the shot, did
+ * the match cut land, did the camera do what the prompt asked. A still cannot
+ * answer any of those, and reading a description of a clip answers none of
+ * them honestly.
+ *
+ * Gemini is the platform to point this at — it reads video, and ChatGPT does
+ * not. The node's Platform dropdown is where that choice lives.
+ */
+export const TOOL_INSPECT_CLIP: AgentTool = {
+  name: 'inspect_clip',
+  description:
+    'Watch a video that a node on this canvas already produced. The clip is '
+    + 'attached to the reply so you can judge it. Use read_canvas first to find '
+    + 'the node id. Requires a platform that can read video, such as Gemini.',
+  params: [
+    { name: 'node', description: 'The id of the node whose clip to watch.' },
+  ],
+};
+
+export const AGENT_TOOLS: AgentTool[] = [
+  TOOL_READ_CANVAS,
+  TOOL_GENERATE_IMAGE,
+  TOOL_INSPECT_CLIP,
+];
 
 /** Look up the definitions a node has switched on, in registry order. */
 export function toolsByName(names: string[] | undefined): AgentTool[] {
