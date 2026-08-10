@@ -15,7 +15,7 @@ import { trackUsage } from '../../shared/api';
 import { bridge, type NodeExecutionConfig, type NodeResult } from './bridge';
 import { useStudioStore } from '../store';
 import { composeAskPrompt } from '../presets';
-import { runAgent, type AgentStep } from './agent';
+import { runAgent, type AgentStep, type ToolOutcome } from './agent';
 import { toolsByName } from './tools';
 import {
   isFramesMode, extendChain, secondsOf, isRunnableType, GROK_MAX_TOTAL_SECONDS,
@@ -780,7 +780,7 @@ export class WorkflowRunner {
         // Copied, not pushed in place: the store compares by reference.
         store.updateNodeData(nodeId, { agentSteps: [...steps] });
       },
-      ask: (message, ctx) => this.askAgent(nodeId, platform, message, ctx.firstTurn),
+      ask: (message, ctx) => this.askAgent(nodeId, platform, message, ctx.firstTurn, ctx.images),
       runTool: (name, args) => this.runAgentTool(nodeId, name, args),
     });
 
@@ -820,8 +820,12 @@ export class WorkflowRunner {
 
   /** One turn of the agent's conversation. The thread stays open after the first. */
   private async askAgent(
-    nodeId: string, platform: string, message: string, firstTurn: boolean
+    nodeId: string, platform: string, message: string, firstTurn: boolean, images?: string[]
   ): Promise<string> {
+    /* Uploading a reference can take the adapter most of a minute before the
+       question is even asked, so a turn carrying one gets the longer budget
+       an Ask AI node with references gets. */
+    const timeoutMs = images?.length ? 5 * 60 * 1000 : 3 * 60 * 1000;
     const res = await this.awaitBridge(nodeId, {
       prompt: message,
       model: '',
@@ -831,14 +835,17 @@ export class WorkflowRunner {
       platform: platform as any,
       // Only the opening turn may reset — after that the thread is the memory.
       newChat: firstTurn ? 'auto' : 'never',
-    }, 3 * 60 * 1000, '3 minutes');
+      /* The rendered image, so "did this come out right?" is a question about
+         a picture in context rather than about a sentence describing one. */
+      referenceImageData: images?.length ? images : undefined,
+    }, timeoutMs, images?.length ? '5 minutes' : '3 minutes');
     return res.text || '';
   }
 
   /** Perform one tool call and describe the outcome back to the model. */
   private async runAgentTool(
     nodeId: string, name: string, args: Record<string, unknown>
-  ): Promise<string> {
+  ): Promise<ToolOutcome> {
     if (name === 'read_canvas') {
       /* The tool the model cannot fake, which is the point of it: it has never
          seen this canvas, so an invented answer is immediately wrong. */
@@ -863,11 +870,33 @@ export class WorkflowRunner {
         creationType: 'ingredients',
         platform: 'flow',
       }, 8 * 60 * 1000, '8 minutes');
+
       const url = res.imageUrl || res.thumbnailUrl || '';
-      // Reported honestly: "it finished" and "it produced something" differ.
-      return url
-        ? 'Image rendered successfully on Flow.'
-        : 'The generation finished but returned no image.';
+      if (!url) {
+        // "It finished" and "it produced something" are different facts.
+        return 'The generation finished but returned no image.';
+      }
+
+      /* Hand back the picture, not a sentence about it. Only a data: URL can
+         be attached to a chat turn — previewUrl is the captured bytes, while
+         imageUrl is an address on Flow the chat cannot fetch. When there is no
+         data: URL the honest move is to say the image cannot be inspected,
+         because the alternative is the model confidently reviewing an image it
+         never saw. */
+      const inspectable = [res.previewUrl, res.imageUrl]
+        .filter((u): u is string => typeof u === 'string' && u.startsWith('data:'));
+
+      return inspectable.length
+        ? {
+          observation: 'Image rendered on Flow.',
+          images: [inspectable[0]],
+        }
+        : {
+          observation:
+            'Image rendered on Flow, but it could not be attached for you to look at, '
+            + 'so you cannot judge how it came out. Do not describe it. Treat this as '
+            + 'rendered-but-unverified.',
+        };
     }
 
     throw new Error(`${name} is not a tool this node can run`);

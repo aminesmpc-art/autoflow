@@ -33,6 +33,26 @@ export interface AgentTool {
   }>;
 }
 
+/**
+ * What a tool hands back.
+ *
+ * A plain string when there is only something to say. The object form exists
+ * for the case that makes an agent worth having: a tool that produced a
+ * picture, which the model has to actually SEE to judge. Those images ride on
+ * the next turn as attachments, so "did this come out right?" is a question
+ * about an image in context rather than about a sentence describing one.
+ */
+export interface ToolResult {
+  observation: string;
+  /** data: URLs. Anything else cannot be attached to a chat turn. */
+  images?: string[];
+}
+
+export type ToolOutcome = string | ToolResult;
+
+const asToolResult = (out: ToolOutcome): ToolResult =>
+  typeof out === 'string' ? { observation: out } : out;
+
 export type AgentDirective =
   | { kind: 'tool'; name: string; args: Record<string, unknown>; raw: string }
   | { kind: 'done'; answer: string; raw: string }
@@ -82,10 +102,18 @@ export interface AgentRunOptions {
   maxIterations: number;
   /** Reformat attempts allowed across the whole run. Default 2. */
   maxRepairs?: number;
-  /** Put a message in the chat, return the reply. */
-  ask: (message: string, ctx: { firstTurn: boolean; iteration: number }) => Promise<string>;
-  /** Perform a tool call, return a short description of what happened. */
-  runTool: (name: string, args: Record<string, unknown>) => Promise<string>;
+  /**
+   * Put a message in the chat and return the reply.
+   *
+   * `images` are data: URLs a tool just produced. They must be attached to
+   * this turn, or the model is being asked to judge something it cannot see.
+   */
+  ask: (
+    message: string,
+    ctx: { firstTurn: boolean; iteration: number; images?: string[] }
+  ) => Promise<string>;
+  /** Perform a tool call. Return what happened, and anything to look at. */
+  runTool: (name: string, args: Record<string, unknown>) => Promise<ToolOutcome>;
   onStep?: (step: AgentStep) => void;
   shouldAbort?: () => boolean;
 }
@@ -170,10 +198,23 @@ export function buildOpeningMessage(opts: {
 }
 
 /** What we send back after a tool ran. */
-export function buildObservationMessage(toolName: string, observation: string): string {
+export function buildObservationMessage(
+  toolName: string, observation: string, imageCount = 0
+): string {
   return [
     `Result of ${toolName}:`,
     observation,
+    /* Say the picture is there. Attached without a word about it, a model
+       narrates the prompt it asked for rather than what actually arrived —
+       which is precisely the mistake this tool exists to catch. */
+    ...(imageCount
+      ? [
+        '',
+        `${imageCount === 1 ? 'The image is' : `${imageCount} images are`} attached to this message. `
+        + 'Look at it and judge whether it matches what was asked for. If it does '
+        + 'not, say what is wrong and ask for it again with a corrected prompt.',
+      ]
+      : []),
     '',
     'Continue. Reply with the next TOOL block, or DONE if the task is complete.',
   ].join('\n');
@@ -355,14 +396,18 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
   let repairsLeft = maxRepairs;
   let iteration = 0;
   let toolsRun = 0;
+  /* Produced by the last tool, attached to the next turn, then cleared —
+     re-sending them every turn would re-upload the same picture each time. */
+  let pendingImages: string[] | undefined;
   let challengedEmptyCompletion = false;
 
   while (iteration < maxIterations) {
     if (shouldAbort?.()) return finish('', 'aborted', iteration);
 
     iteration++;
-    const reply = await ask(message, { firstTurn, iteration });
+    const reply = await ask(message, { firstTurn, iteration, images: pendingImages });
     firstTurn = false;
+    pendingImages = undefined;
 
     const directive = parseAgentReply(reply, names);
 
@@ -433,7 +478,9 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
 
     let observation: string;
     try {
-      observation = await runTool(directive.name, directive.args);
+      const out = asToolResult(await runTool(directive.name, directive.args));
+      observation = out.observation;
+      pendingImages = out.images?.length ? out.images : undefined;
       toolsRun++;
     } catch (e: any) {
       /* Told to the model rather than thrown. A tool that fails is information
@@ -448,7 +495,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
       summary: truncate(observation, 80),
       detail: observation,
     });
-    message = buildObservationMessage(directive.name, observation);
+    message = buildObservationMessage(directive.name, observation, pendingImages?.length || 0);
   }
 
   record({

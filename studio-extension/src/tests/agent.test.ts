@@ -14,6 +14,7 @@
 
 import {
   parseAgentReply, runAgent, buildOpeningMessage, buildRepairMessage,
+  buildObservationMessage,
   type AgentTool, type AgentStep,
 } from '../studio/engine/agent';
 
@@ -482,5 +483,108 @@ describe('the live ChatGPT transcript', () => {
     expect(r.answer).toContain('2 nodes');
     // The canvas listing must reach the model, or the answer is a guess.
     expect(observed[1]).toContain('p_goal (prompt): Goal');
+  });
+});
+
+/* ============================================================
+   Seeing its own work.
+
+   This is the loop a fixed canvas cannot do: render, LOOK at what came back,
+   and re-prompt when it is wrong. It only works if the picture reaches the
+   model — an observation that merely says "image rendered" leaves it
+   reviewing a sentence, and it will happily approve something it never saw.
+   ============================================================ */
+describe('images from a tool reach the next turn', () => {
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+  const IMG_TOOL: AgentTool[] = [{
+    name: 'generate_image',
+    description: 'Render one image.',
+    params: [{ name: 'prompt', description: 'What to draw.' }],
+  }];
+
+  it('attaches what the tool produced, and says it is there', async () => {
+    const seen: Array<string[] | undefined> = [];
+    let turn = 0;
+    await runAgent({
+      goal: 'render a sneaker', tools: IMG_TOOL, maxIterations: 4,
+      ask: async (m, ctx) => {
+        seen.push(ctx.images);
+        if (++turn === 1) return 'TOOL: generate_image\n{"prompt": "a sneaker"}';
+        // The model can only say this if the picture is in front of it.
+        expect(m).toMatch(/attached to this message/i);
+        return 'DONE\nLooks right.';
+      },
+      runTool: async () => ({ observation: 'Image rendered on Flow.', images: [PNG] }),
+    });
+
+    expect(seen[0]).toBeUndefined();   // nothing to show on the opening turn
+    expect(seen[1]).toEqual([PNG]);
+  });
+
+  it('does not re-attach the same image on later turns', async () => {
+    const seen: Array<string[] | undefined> = [];
+    let turn = 0;
+    await runAgent({
+      goal: 'g', tools: IMG_TOOL, maxIterations: 6,
+      ask: async (_m, ctx) => {
+        seen.push(ctx.images);
+        turn++;
+        if (turn === 1) return 'TOOL: generate_image\n{"prompt": "one"}';
+        if (turn === 2) return 'DONE\nfine';
+        return 'DONE\nfine';
+      },
+      runTool: async () => ({ observation: 'rendered', images: [PNG] }),
+    });
+    // Attached once, on the turn straight after the tool ran.
+    expect(seen.filter((s) => s?.length).length).toBe(1);
+  });
+
+  it('re-prompts when it judges the render wrong', async () => {
+    /* The whole point. A DAG renders once and hands you whatever came out. */
+    const prompts: string[] = [];
+    let turn = 0;
+    const r = await runAgent({
+      goal: 'a red sneaker on concrete', tools: IMG_TOOL, maxIterations: 6,
+      ask: async () => {
+        turn++;
+        if (turn === 1) return 'TOOL: generate_image\n{"prompt": "a sneaker"}';
+        if (turn === 2) return 'TOOL: generate_image\n{"prompt": "a RED sneaker on wet concrete"}';
+        return 'DONE\nSecond render is correct.';
+      },
+      runTool: async (_n, args) => {
+        prompts.push(String(args.prompt));
+        return { observation: 'rendered', images: [PNG] };
+      },
+    });
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain('RED');
+    expect(r.stopReason).toBe('done');
+  });
+
+  it('a plain string tool result still works and attaches nothing', async () => {
+    const seen: Array<string[] | undefined> = [];
+    let turn = 0;
+    await runAgent({
+      goal: 'g', tools: IMG_TOOL, maxIterations: 4,
+      ask: async (_m, ctx) => {
+        seen.push(ctx.images);
+        return ++turn === 1 ? 'TOOL: generate_image\n{"prompt": "x"}' : 'DONE\nok';
+      },
+      runTool: async () => 'rendered, nothing to look at',
+    });
+    expect(seen.every((s) => s === undefined)).toBe(true);
+  });
+
+  it('tells the model NOT to describe an image it could not be shown', async () => {
+    // The runner sends this when no data: URL exists to attach.
+    const msg = buildObservationMessage(
+      'generate_image',
+      'Image rendered on Flow, but it could not be attached for you to look at, '
+      + 'so you cannot judge how it came out. Do not describe it.',
+      0
+    );
+    expect(msg).not.toMatch(/attached to this message/i);
+    expect(msg).toMatch(/Do not describe it/);
   });
 });
