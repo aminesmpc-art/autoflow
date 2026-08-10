@@ -400,8 +400,31 @@ function triggerFileInputChange(input: HTMLInputElement): void {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-const attachmentCount = () =>
-  (composerRegion() || document.body).querySelectorAll('img').length;
+/**
+ * Attachments sitting in the composer, waiting to be sent.
+ *
+ * Counted from Gemini's own preview component, not by looking for <img> inside
+ * the composer. Measured on the live page: the chip renders in
+ * `.attachment-preview-wrapper`, which is a SIBLING of `rich-textarea`, so a
+ * count scoped to composerRegion() returned zero no matter what had uploaded.
+ * Every reference therefore spun the whole 45s and was reported as a failed
+ * upload while the file sat attached and visible on screen.
+ *
+ * A clip renders the same chip with a duration badge ("0:06") instead of a
+ * thumbnail, which is the other reason this counts the component rather than
+ * the picture inside it — video uploads have no <img> at all.
+ *
+ * `uploader-file-preview` is an Angular component tag, in the same family as
+ * `model-response`: those have outlasted several redesigns, where classes have
+ * not. The wrapper fallback covers a rename of the tag.
+ */
+function attachmentCount(): number {
+  const chips = document.querySelectorAll('uploader-file-preview, .file-preview-chip');
+  if (chips.length) return chips.length;
+  return document.querySelectorAll(
+    '.attachment-preview-wrapper img, .attachment-preview-wrapper video'
+  ).length;
+}
 
 /**
  * Attach references and confirm they are on screen before returning.

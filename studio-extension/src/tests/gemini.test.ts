@@ -31,6 +31,8 @@ interface Harness {
   sendBtn: HTMLButtonElement;
   fileInput: HTMLInputElement;
   host: HTMLElement;
+  /** Where Gemini really puts attachment chips: beside the composer. */
+  attachWrapper: HTMLElement;
   sent: any[];
   execute: (payload: any) => Promise<any>;
 }
@@ -54,8 +56,16 @@ function buildHarness(): Harness {
   sendBtn.className = 'send-button';
   sendBtn.setAttribute('aria-label', 'Send message');
 
+  /* The attachment chips do NOT live inside rich-textarea. Measured on the
+     live page, they render in `.attachment-preview-wrapper`, a sibling of it —
+     which is why a count scoped to the composer saw zero however many files
+     had landed, and why this fixture used to hide the bug by putting the
+     thumbnail in the wrong place. */
+  const attachWrapper = document.createElement('div');
+  attachWrapper.className = 'attachment-preview-wrapper';
+
   host.append(composer, fileInput, sendBtn);
-  document.body.append(host);
+  document.body.append(attachWrapper, host);
   for (const el of [host, composer, sendBtn, fileInput]) {
     (el as any).getBoundingClientRect = box(400, 40);
   }
@@ -92,7 +102,7 @@ function buildHarness(): Harness {
       }
     });
 
-  return { composer, sendBtn, fileInput, host, sent, execute };
+  return { composer, sendBtn, fileInput, host, attachWrapper, sent, execute };
 }
 
 /**
@@ -228,9 +238,16 @@ describe('Gemini adapter', () => {
 
   it('uploads a reference before sending', async () => {
     const h = buildHarness();
-    // Stand in for Gemini accepting the file and showing a thumbnail.
+    /* Stand in for Gemini accepting the file: it renders an
+       <uploader-file-preview class="file-preview-chip"> in the wrapper beside
+       the composer — not an <img> inside it. */
     h.fileInput.addEventListener('change', () => {
-      setTimeout(() => resultImage(h.host, 'blob:thumb'), 100);
+      setTimeout(() => {
+        const chip = document.createElement('uploader-file-preview');
+        chip.className = 'file-preview-chip';
+        chip.append(resultImage(h.attachWrapper, 'blob:thumb'));
+        h.attachWrapper.append(chip);
+      }, 100);
     });
 
     await h.execute({
