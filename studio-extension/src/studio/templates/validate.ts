@@ -41,6 +41,12 @@ export const NODE_PORTS: Record<string, { in: string[]; out: string[] }> = {
      out — so a second extend can chain from the first. `video` rather than
      `image_ref` because a still is exactly what this cannot take. */
   extend: { in: ['text', 'video'], out: ['result'] },
+  /* The agent takes a goal and returns its final answer, so it wires exactly
+     where an Ask AI node does — text in, text out. What happens between is a
+     loop rather than one round trip, but nothing on the canvas needs to know
+     that, and giving it a distinct port shape would make it un-swappable with
+     the node it is meant to grow out of. */
+  agent: { in: ['text'], out: ['text'] },
 };
 
 /**

@@ -28,6 +28,9 @@ const PORTS: Record<string, { in: string[]; out: string[] }> = {
   // text, everything else emits a result. Both take reference images.
   generate: { in: ['text', 'image_ref'], out: ['result'] },
   'generate:text': { in: ['text', 'image_ref'], out: ['text'] },
+  // An agent wires exactly where an Ask AI node does — a goal in, its final
+  // answer out — so it can be swapped for one without redrawing anything.
+  agent: { in: ['text'], out: ['text'] },
 };
 
 const portsFor = (node: any) => {

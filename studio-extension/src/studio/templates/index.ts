@@ -477,6 +477,15 @@ const PRODUCT_LANES = [
    PRODUCT_CLEAN],
 ] as const;
 
+/* The goal for the agent smoke test.
+   Deliberately unanswerable without the tool: the model has never seen this
+   canvas, so a confident guess is wrong in a way that is obvious on screen. */
+const AGENT_SMOKE_GOAL =
+  'Tell me exactly what is on this Studio canvas right now: how many nodes ' +
+  'there are, and the id and type of each one. You have never seen this ' +
+  'canvas, so read it before answering. Then give a one-line summary of what ' +
+  'this workflow appears to do.';
+
 /* ── Dental macro restoration ──
    A structured-JSON prompt package rather than prose. Macro medical work is
    the case where that pays: the camera block, the lighting and the framing
@@ -1206,6 +1215,44 @@ export const BUILTIN_TEMPLATES: Template[] = [
       tEdge(`ask_clip_${key}`, `g_clip_${key}`),
       iEdge(`g_sheet_${key}`, `g_clip_${key}`),
     ]),
+  },
+  {
+    id: 'tpl_agent_smoke_test',
+    name: 'Agent: Does It Actually Call Tools?',
+    description: 'A one-node test of the agent loop, using the one tool a model cannot fake.',
+    useCase:
+      'Run this before trusting an agent with anything real. It asks the agent a question it cannot possibly answer from its own knowledge — what is on your canvas — so the only way to a correct reply is an actual tool call. That matters because a chat model asked to do something it can already do will do it itself: told to produce an image, live ChatGPT produced the image rather than calling the tool, four times, and more insistently the harder it was told not to. A pass here means the loop works on your account and your platform. A fail is worth knowing in ten seconds rather than halfway through a real workflow. Read the step log on the node: ⚙ is a tool call, ← is its result, ↻ means the model broke the format and was asked again. If it finishes without a single ⚙, the node fails on purpose rather than passing you an answer it invented.',
+    category: 'Utility',
+    difficulty: 'Easy',
+    nodeCount: 2,
+    thumbnail: '🧠',
+    nodes: [
+      promptNode('p_goal', 'Goal', AGENT_SMOKE_GOAL, 40, 200),
+      {
+        id: 'agent',
+        type: 'agent',
+        position: { x: 520, y: 160 },
+        data: {
+          type: 'agent',
+          label: 'Canvas Agent',
+          platform: 'chatgpt',
+          mediaType: 'text',
+          maxIterations: 4,
+          /* read_canvas only. generate_image is deliberately left off: it is
+             the tool the model bypasses, and including it here would turn a
+             clean test of the loop into a test of whether ChatGPT feels like
+             cooperating. */
+          tools: ['read_canvas'],
+          system: '',
+          agentSteps: [],
+          enabled: true,
+          status: 'idle',
+          progress: 0,
+          errorMessage: null,
+        },
+      },
+    ],
+    edges: [tEdge('p_goal', 'agent')],
   },
   {
     id: 'tpl_dental_macro',

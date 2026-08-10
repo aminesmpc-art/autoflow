@@ -2040,3 +2040,99 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   margin-top: -3px;
   padding-left: 2px;
 }
+
+/* ── Agent node ──
+   The step log is the node's face, not a detail panel: an agent that spends
+   four generations silently is not debuggable after the fact. */
+.sn--agent { min-width: 320px; }
+
+.sn-agent__log {
+  margin: 8px 12px 0;
+  padding: 8px;
+  max-height: 168px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.sn-agent__empty { color: #94a3b8; text-align: center; padding: 14px 0; }
+
+.sn-agent__step {
+  display: grid;
+  grid-template-columns: 16px 14px 1fr;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 0;
+  color: #cbd5e1;
+}
+.sn-agent__step-n { color: #64748b; text-align: right; font-variant-numeric: tabular-nums; }
+.sn-agent__step-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sn-agent__step--tool .sn-agent__step-icon { color: #818cf8; }
+.sn-agent__step--observation { color: #94a3b8; }
+.sn-agent__step--done .sn-agent__step-icon { color: #34d399; }
+/* Amber, not green: a repair means the model did not follow the format. */
+.sn-agent__step--repair { color: #fbbf24; }
+.sn-agent__step--error { color: #f87171; }
+
+.sn-agent__error {
+  margin: 8px 12px 0;
+  padding: 8px 10px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 9px;
+  color: #f87171;
+  font-size: 11px;
+}
+
+.sn-agent__answer {
+  margin: 8px 12px 0;
+  padding: 8px 10px;
+  max-height: 76px;
+  overflow-y: auto;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 9px;
+  color: #a7f3d0;
+  font-size: 11px;
+}
+
+.sn-agent__tools { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.sn-agent__tool {
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: transparent;
+  color: #94a3b8;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.sn-agent__tool--on {
+  border-color: rgba(129, 140, 248, 0.75);
+  background: rgba(129, 140, 248, 0.18);
+  color: #c7d2fe;
+}
+
+.sn-agent__system {
+  width: calc(100% - 24px);
+  margin: 8px 12px 0;
+  padding: 7px 9px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 9px;
+  color: #e2e8f0;
+  font-family: inherit;
+  font-size: 11px;
+  resize: vertical;
+}
+
+.sn-agent__foot {
+  margin: 6px 12px 10px;
+  color: #64748b;
+  font-size: 10px;
+}

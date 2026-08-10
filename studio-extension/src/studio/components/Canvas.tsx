@@ -25,6 +25,7 @@ import { ImageNode } from '../nodes/ImageNode';
 import { GenerateNode } from '../nodes/GenerateNode';
 import { FrameNode } from '../nodes/FrameNode';
 import { ExtendNode } from '../nodes/ExtendNode';
+import { AgentNode } from '../nodes/AgentNode';
 import { NodeBoundary } from './NodeBoundary';
 import { runner } from '../engine/WorkflowRunner';
 import { bridge } from '../engine/bridge';
@@ -50,6 +51,7 @@ const nodeTypes = {
   generate: guarded(GenerateNode, 'Generate'),
   frame: guarded(FrameNode, 'Last Frame'),
   extend: guarded(ExtendNode, 'Extend'),
+  agent: guarded(AgentNode, 'Agent'),
 };
 
 function CanvasInner() {
@@ -435,6 +437,37 @@ function CanvasInner() {
    * the arithmetic that caps it becomes something you can see rather than
    * something a run discovers.
    */
+  /**
+   * An agent: a goal in, a loop, an answer out.
+   *
+   * Starts with read_canvas only. Tested against live ChatGPT, a model asked
+   * to produce an image produced it itself rather than calling the tool - so
+   * the default tool is the one it cannot fake, and generate_image is opt-in.
+   */
+  const addAgentNode = useCallback(() => {
+    if (!guardAdd()) return;
+    const id = `agent_${Date.now()}`;
+    addNode({
+      id,
+      type: 'agent',
+      position: { x: 620, y: 260 + nodes.length * 50 },
+      data: {
+        type: 'agent',
+        label: `Agent ${nodes.filter((n) => (n.data as any).type === 'agent').length + 1}`,
+        platform: 'chatgpt',
+        mediaType: 'text',
+        maxIterations: 4,
+        tools: ['read_canvas'],
+        system: '',
+        agentSteps: [],
+        enabled: true,
+        status: 'idle',
+        progress: 0,
+        errorMessage: null,
+      },
+    });
+  }, [addNode, nodes, guardAdd]);
+
   const addExtendNode = useCallback(() => {
     if (!guardAdd()) return;
     const id = `extend_${Date.now()}`;
@@ -604,6 +637,9 @@ function CanvasInner() {
           <button className="studio-toolbar__btn" onClick={addFrameNode} aria-label="Add Last Frame node">
             <span className="studio-toolbar__btn-icon" aria-hidden="true">🎞</span>
             <span className="studio-toolbar__btn-label">Last frame</span>
+          </button>
+          <button className="studio-toolbar__btn" onClick={addAgentNode} aria-label="Add Agent node">
+            🧠 Agent
           </button>
           <button className="studio-toolbar__btn" onClick={addExtendNode} aria-label="Add Extend node">
             <span className="studio-toolbar__btn-icon" aria-hidden="true">⏱</span>

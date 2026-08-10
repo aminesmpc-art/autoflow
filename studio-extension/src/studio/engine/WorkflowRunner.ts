@@ -15,6 +15,8 @@ import { trackUsage } from '../../shared/api';
 import { bridge, type NodeExecutionConfig, type NodeResult } from './bridge';
 import { useStudioStore } from '../store';
 import { composeAskPrompt } from '../presets';
+import { runAgent, type AgentStep } from './agent';
+import { toolsByName } from './tools';
 import {
   isFramesMode, extendChain, secondsOf, GROK_MAX_TOTAL_SECONDS,
 } from '../templates/validate';
@@ -187,7 +189,7 @@ export class WorkflowRunner {
     // counting them would leave the progress bar short of its total.
     const generateSteps = steps.filter((s) => {
       // An extend is a generation: its own prompt, its own clip, its own wait.
-      if (s.nodeType !== 'generate' && s.nodeType !== 'extend') return false;
+      if (s.nodeType !== 'generate' && s.nodeType !== 'extend' && s.nodeType !== 'agent') return false;
       if (only && !only.has(s.nodeId)) return false;
       const n = nodes.find((x) => x.id === s.nodeId);
       return (n?.data as any)?.enabled !== false;
@@ -466,6 +468,12 @@ export class WorkflowRunner {
       }
     }
 
+    /* An agent is not one round trip, so it leaves here before any of the
+       generation machinery below applies to it. */
+    if (node.type === 'agent' || nodeData.type === 'agent') {
+      return this.executeAgentNode(nodeId, nodeData, prompt);
+    }
+
     // Gather reference images from EVERY upstream image connection.
     // Flow accepts multiple ingredients, and the canvas allows several edges
     // into image_ref — previously only one survived.
@@ -647,7 +655,23 @@ export class WorkflowRunner {
     const timeoutMs = isTextNode ? 3 * 60 * 1000 : isVideoNode ? 22 * 60 * 1000 : 8 * 60 * 1000;
     const timeoutLabel = isTextNode ? '3 minutes' : isVideoNode ? '22 minutes' : '8 minutes';
 
-    // Send to Flow via bridge
+    return this.awaitBridge(nodeId, config, timeoutMs, timeoutLabel);
+  }
+
+  /**
+   * Send one command over the bridge and wait for its result.
+   *
+   * Extracted so the agent loop can reuse it: an agent turn is the same
+   * round trip a node makes, just many times over with the thread held open.
+   * Results are matched on nodeId, so callers must not overlap two of these
+   * for the same node — the loop is sequential, which is why it can.
+   */
+  private awaitBridge(
+    nodeId: string,
+    config: NodeExecutionConfig,
+    timeoutMs: number,
+    timeoutLabel: string
+  ): Promise<NodeResult> {
     return new Promise<NodeResult>((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
@@ -710,6 +734,136 @@ export class WorkflowRunner {
     });
   }
 
+  /**
+   * Run an agent node: one goal, a loop, one answer.
+   *
+   * The loop lives in engine/agent.ts and knows nothing about canvases or
+   * bridges. This binds it to both — `ask` is a chat turn with the thread held
+   * open after the first, `runTool` is a real action — and then decides what a
+   * given stop reason means for the node.
+   */
+  private async executeAgentNode(
+    nodeId: string, nodeData: any, goal: string
+  ): Promise<NodeResult> {
+    const store = useStudioStore.getState();
+
+    if (!goal.trim()) {
+      throw new Error('No goal connected — link a Prompt node to the T input');
+    }
+
+    const tools = toolsByName(nodeData.tools);
+    const platform = CHAT_PLATFORMS.includes(nodeData.platform) ? nodeData.platform : 'chatgpt';
+    /* Every iteration is a real generation with a real cost, so the cap is
+       clamped here rather than trusted from node data. */
+    const maxIterations = Math.max(1, Math.min(10, Number(nodeData.maxIterations) || 4));
+
+    const steps: AgentStep[] = [];
+    store.updateNodeData(nodeId, { agentSteps: [], agentStopReason: null, resultText: '' });
+
+    const result = await runAgent({
+      goal,
+      system: nodeData.system || undefined,
+      tools,
+      maxIterations,
+      shouldAbort: () => this.abortRequested,
+      onStep: (s) => {
+        steps.push(s);
+        // Copied, not pushed in place: the store compares by reference.
+        store.updateNodeData(nodeId, { agentSteps: [...steps] });
+      },
+      ask: (message, ctx) => this.askAgent(nodeId, platform, message, ctx.firstTurn),
+      runTool: (name, args) => this.runAgentTool(nodeId, name, args),
+    });
+
+    store.updateNodeData(nodeId, {
+      agentSteps: [...steps],
+      agentStopReason: result.stopReason,
+      resultText: result.answer,
+    });
+
+    /* A claim is not a result.
+       Live ChatGPT said "Two images produced" having called nothing, twice,
+       and more insistently after being corrected. Passing that answer to the
+       next node would put a fabricated success into the workflow, so the node
+       fails instead and says what was claimed. */
+    if (result.stopReason === 'done-without-tools') {
+      throw new Error(
+        'The agent said it had finished but never ran a tool, so nothing was produced. '
+        + `It claimed: "${short(result.answer)}"`
+      );
+    }
+    if (result.stopReason === 'max-iterations') {
+      throw new Error(
+        `The agent used all ${maxIterations} iterations without finishing. `
+        + 'Raise the limit, or give it a smaller goal.'
+      );
+    }
+    if (result.stopReason === 'format') {
+      throw new Error(
+        'The agent would not answer in the required format. Its last reply: '
+        + `"${short(result.answer)}"`
+      );
+    }
+    if (result.stopReason === 'aborted') throw new Error('Stopped');
+
+    return { tileId: '', text: result.answer };
+  }
+
+  /** One turn of the agent's conversation. The thread stays open after the first. */
+  private async askAgent(
+    nodeId: string, platform: string, message: string, firstTurn: boolean
+  ): Promise<string> {
+    const res = await this.awaitBridge(nodeId, {
+      prompt: message,
+      model: '',
+      mediaType: 'text',
+      aspectRatio: '16:9',
+      creationType: 'ingredients',
+      platform: platform as any,
+      // Only the opening turn may reset — after that the thread is the memory.
+      newChat: firstTurn ? 'auto' : 'never',
+    }, 3 * 60 * 1000, '3 minutes');
+    return res.text || '';
+  }
+
+  /** Perform one tool call and describe the outcome back to the model. */
+  private async runAgentTool(
+    nodeId: string, name: string, args: Record<string, unknown>
+  ): Promise<string> {
+    if (name === 'read_canvas') {
+      /* The tool the model cannot fake, which is the point of it: it has never
+         seen this canvas, so an invented answer is immediately wrong. */
+      const { nodes } = useStudioStore.getState();
+      if (!nodes.length) return 'The canvas is empty.';
+      return nodes
+        .map((n) => {
+          const d = n.data as any;
+          return `- ${n.id} (${d?.type || n.type}): ${d?.label || 'untitled'}`;
+        })
+        .join('\n');
+    }
+
+    if (name === 'generate_image') {
+      const prompt = String(args.prompt ?? '').trim();
+      if (!prompt) throw new Error('generate_image was called with no prompt');
+      const res = await this.awaitBridge(nodeId, {
+        prompt,
+        model: 'Nano Banana Pro',
+        mediaType: 'image',
+        aspectRatio: '16:9',
+        creationType: 'ingredients',
+        platform: 'flow',
+      }, 8 * 60 * 1000, '8 minutes');
+      const url = res.imageUrl || res.thumbnailUrl || '';
+      // Reported honestly: "it finished" and "it produced something" differ.
+      return url
+        ? 'Image rendered successfully on Flow.'
+        : 'The generation finished but returned no image.';
+    }
+
+    throw new Error(`${name} is not a tool this node can run`);
+  }
+
   /** Pause the workflow */
   pause(): void {
     this.pauseRequested = true;
@@ -732,6 +886,12 @@ export class WorkflowRunner {
   private sleep(ms: number): Promise<void> {
     return new Promise((r) => setTimeout(r, ms));
   }
+}
+
+/** One line of a model's answer, for an error message that has to stay readable. */
+function short(s: string, n = 120): string {
+  const one = (s || '').replace(/\s+/g, ' ').trim();
+  return one.length > n ? `${one.slice(0, n - 1)}…` : one;
 }
 
 /** Singleton runner instance */
