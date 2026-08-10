@@ -51,6 +51,16 @@ export interface AgentStep {
 
 export type AgentStopReason =
   | 'done'
+  /**
+   * It said it finished, but no tool ever ran.
+   *
+   * Live ChatGPT replied "DONE / Two images produced" on its first turn,
+   * having called nothing. That is well formed, non-empty, and false — the
+   * parser cannot catch it, because only the loop knows whether any work
+   * happened. Reported separately so a caller never shows a fabricated
+   * completion as a success.
+   */
+  | 'done-without-tools'
   | 'max-iterations'
   | 'aborted'
   | 'format'
@@ -98,6 +108,15 @@ const PROTOCOL = [
   '- Tool arguments must be one JSON object on the lines after TOOL.',
   '- Call one tool at a time and wait for its result before the next.',
   '- Do not explain what you are about to do. Just emit the block.',
+  /* Both of these are here because ChatGPT replied with a bare "DONE" on the
+     first turn, having called nothing. It reads the task, cannot render an
+     image itself, and closes the conversation — so it has to be told that the
+     tools genuinely execute, and that DONE is a report of finished work
+     rather than a way to decline it. */
+  '- The tools are real: they execute, and their results are sent back to you.',
+  '- Do not reply DONE until the work is actually finished. DONE must be',
+  '  followed by your final answer — DONE on its own is not an answer.',
+  '- If the task needs a tool and none has run yet, call the tool.',
 ].join('\n');
 
 function describeTools(tools: AgentTool[]): string {
@@ -260,7 +279,21 @@ export function parseAgentReply(reply: string, knownTools: string[] = []): Agent
 
   if (doneAt !== -1) {
     const after = s.slice(doneAt).replace(/^[ \t]*DONE\b[ \t]*[:\-]?[ \t]*/i, '');
-    return { kind: 'done', answer: after.trim(), raw };
+    const answer = after.trim();
+    /* A bare DONE is not a finished task, it is a refusal that happens to be
+       well formatted. ChatGPT sent exactly this — four characters, no tool
+       call, on the first turn — and taking it at face value returned
+       stopReason 'done' with an empty answer: a run that reported success
+       having rendered nothing. Treated as malformed so the repair turn can
+       tell it to either do the work or say why not. */
+    if (!answer) {
+      return {
+        kind: 'malformed',
+        reason: 'DONE was given with no final answer — if the task is not finished, call a tool instead',
+        raw,
+      };
+    }
+    return { kind: 'done', answer, raw };
   }
 
   return {
@@ -298,6 +331,8 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
   let firstTurn = true;
   let repairsLeft = maxRepairs;
   let iteration = 0;
+  let toolsRun = 0;
+  let challengedEmptyCompletion = false;
 
   while (iteration < maxIterations) {
     if (shouldAbort?.()) return finish('', 'aborted', iteration);
@@ -309,6 +344,37 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
     const directive = parseAgentReply(reply, names);
 
     if (directive.kind === 'done') {
+      /* Challenge a completion that produced nothing.
+         A model will describe work it did not do — "Two images produced",
+         first turn, zero tool calls — and that claim is well formed, so the
+         parser passes it through. Only here is it checkable. Challenged once
+         rather than refused outright, because a task genuinely may not need a
+         tool; if it insists, the answer is kept but reported as
+         done-without-tools so nothing downstream mistakes it for work. */
+      if (tools.length && toolsRun === 0) {
+        if (!challengedEmptyCompletion) {
+          challengedEmptyCompletion = true;
+          record({
+            iteration, kind: 'repair',
+            summary: 'Claimed completion without running anything — challenging',
+            detail: directive.answer,
+          });
+          message = [
+            'You replied DONE, but no tool has run yet, so nothing has actually',
+            'been produced. Do not describe work that has not happened.',
+            '',
+            `Call a tool now (${names.join(', ')}), or if the task genuinely`,
+            'cannot be done, reply DONE with the reason it cannot.',
+          ].join('\n');
+          continue;
+        }
+        record({
+          iteration, kind: 'error',
+          summary: 'Finished without running any tool',
+          detail: directive.answer,
+        });
+        return finish(directive.answer, 'done-without-tools', iteration);
+      }
       record({ iteration, kind: 'done', summary: 'Finished', detail: directive.answer });
       return finish(directive.answer, 'done', iteration);
     }
@@ -345,6 +411,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
     let observation: string;
     try {
       observation = await runTool(directive.name, directive.args);
+      toolsRun++;
     } catch (e: any) {
       /* Told to the model rather than thrown. A tool that fails is information
          the agent can act on — pick different arguments, or give up and say

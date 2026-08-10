@@ -244,19 +244,42 @@ describe('the loop', () => {
     expect(h.ran).toHaveLength(0);
   });
 
-  it('reports a failing tool to the model rather than aborting', async () => {
+  it('reports a failing tool to the model, which can then retry', async () => {
     const asked: string[] = [];
     let call = 0;
+    let attempts = 0;
     const r = await runAgent({
-      goal: 'g', tools: TOOLS, maxIterations: 5,
+      goal: 'g', tools: TOOLS, maxIterations: 6,
       ask: async (m) => {
         asked.push(m);
-        return ++call === 1 ? 'TOOL: generate_image\n{"prompt": "x"}' : 'DONE\nrecovered';
+        call++;
+        if (call <= 2) return 'TOOL: generate_image\n{"prompt": "x"}';
+        return 'DONE\nRendered on the second attempt.';
       },
+      runTool: async () => {
+        if (++attempts === 1) throw new Error('Flow tab was closed');
+        return 'rendered';
+      },
+    });
+    // The failure is information, not a reason to abort: it reaches the model,
+    // which tries again and succeeds.
+    expect(asked[1]).toContain('Flow tab was closed');
+    expect(attempts).toBe(2);
+    expect(r.stopReason).toBe('done');
+  });
+
+  it('does not call it done when every tool attempt failed', async () => {
+    /* A tool that threw produced nothing, so a DONE after it is a claim about
+       work that did not happen — the same case as never calling one. It is
+       still not an abort: the run finishes and keeps what the model said. */
+    let call = 0;
+    const r = await runAgent({
+      goal: 'g', tools: TOOLS, maxIterations: 6,
+      ask: async () => (++call === 1 ? 'TOOL: generate_image\n{"prompt": "x"}' : 'DONE\nI could not render it.'),
       runTool: async () => { throw new Error('Flow tab was closed'); },
     });
-    expect(r.stopReason).toBe('done');
-    expect(asked[1]).toContain('Flow tab was closed');
+    expect(r.stopReason).toBe('done-without-tools');
+    expect(r.answer).toContain('could not render');
   });
 
   it('stops when asked to abort', async () => {
@@ -281,5 +304,126 @@ describe('the loop', () => {
     });
     expect(h.steps.map((s) => s.kind)).toEqual(['tool', 'observation', 'done']);
     expect(h.steps.every((s) => s.iteration >= 1)).toBe(true);
+  });
+});
+
+/* ============================================================
+   Found by running the protocol against live ChatGPT rather than a script.
+
+   Its entire first reply was "DONE" — four characters, no tool call, no
+   answer. Well formatted and completely empty. The parser accepted it, so the
+   loop returned stopReason 'done' with an empty answer and the run reported
+   success having rendered nothing. Scripted models never do this; they only
+   do what the script says.
+   ============================================================ */
+describe('a bare DONE is a refusal, not a result', () => {
+  it('rejects DONE with nothing after it', () => {
+    const d = parseAgentReply('DONE', NAMES);
+    expect(d.kind).toBe('malformed');
+    if (d.kind !== 'malformed') return;
+    expect(d.reason).toMatch(/no final answer/);
+  });
+
+  it('rejects DONE: with only whitespace after it', () => {
+    expect(parseAgentReply('DONE:   \n  ', NAMES).kind).toBe('malformed');
+  });
+
+  it('never reports success with an empty answer', async () => {
+    /* The guarantee that matters: whatever the model does, a run that says
+       'done' has something to hand downstream. */
+    const r = await runAgent({
+      goal: 'g', tools: TOOLS, maxIterations: 4, maxRepairs: 1,
+      ask: async () => 'DONE',
+      runTool: async () => 'ok',
+    });
+    expect(r.stopReason).not.toBe('done');
+  });
+
+  it('still accepts DONE when an answer follows', () => {
+    expect(parseAgentReply('DONE\nBoth images are rendered.', NAMES).kind).toBe('done');
+  });
+
+  it('tells the model the tools are real and DONE needs an answer', () => {
+    const msg = buildOpeningMessage({ goal: 'g', tools: TOOLS });
+    expect(msg).toMatch(/tools are real/i);
+    expect(msg).toMatch(/DONE on its own is not an answer/i);
+  });
+});
+
+/* ============================================================
+   Also found live, and worse than the bare DONE.
+
+   Second attempt, with the prompt strengthened, ChatGPT replied:
+
+       DONE
+       Two images produced: a
+
+   Zero tool calls. Well formed, non-empty, and describing work that never
+   happened — so the parser passes it, because the text is fine. Only the loop
+   knows nothing ran.
+   ============================================================ */
+describe('a completion that produced nothing', () => {
+  it('challenges DONE when no tool has run', async () => {
+    const asked: string[] = [];
+    let turn = 0;
+    const ran: string[] = [];
+    const r = await runAgent({
+      goal: 'make two images', tools: TOOLS, maxIterations: 6,
+      ask: async (m) => {
+        asked.push(m);
+        turn++;
+        if (turn === 1) return 'DONE\nTwo images produced.';
+        if (turn === 2) return 'TOOL: generate_image\n{"prompt": "hero shot"}';
+        return 'DONE\nOne image rendered.';
+      },
+      runTool: async (n) => { ran.push(n); return 'ok'; },
+    });
+
+    expect(asked[1]).toMatch(/no tool has run/);
+    expect(ran).toEqual(['generate_image']);
+    expect(r.stopReason).toBe('done');   // recovered into real work
+  });
+
+  it('never reports plain success for work that never happened', async () => {
+    const r = await runAgent({
+      goal: 'make two images', tools: TOOLS, maxIterations: 6,
+      ask: async () => 'DONE\nTwo images produced: a',   // the live reply
+      runTool: async () => 'ok',
+    });
+    expect(r.stopReason).toBe('done-without-tools');
+    expect(r.stopReason).not.toBe('done');
+    // The claim is kept so the caller can show what was said, not hide it.
+    expect(r.answer).toContain('Two images produced');
+  });
+
+  it('challenges only once, so an honest refusal can still finish', async () => {
+    /* A task may genuinely need no tool. After one challenge the answer is
+       accepted, but flagged, rather than looping to the iteration cap. */
+    const r = await runAgent({
+      goal: 'just answer', tools: TOOLS, maxIterations: 8,
+      ask: async () => 'DONE\nThis cannot be done: Flow is not reachable.',
+      runTool: async () => 'ok',
+    });
+    expect(r.iterationsUsed).toBe(2);
+    expect(r.stopReason).toBe('done-without-tools');
+  });
+
+  it('leaves a genuine tool-backed completion alone', async () => {
+    let turn = 0;
+    const r = await runAgent({
+      goal: 'g', tools: TOOLS, maxIterations: 6,
+      ask: async () => (++turn === 1 ? 'TOOL: generate_image\n{"prompt": "x"}' : 'DONE\nRendered.'),
+      runTool: async () => 'ok',
+    });
+    expect(r.stopReason).toBe('done');
+  });
+
+  it('does not challenge when there are no tools to run', async () => {
+    const r = await runAgent({
+      goal: 'g', tools: [], maxIterations: 4,
+      ask: async () => 'DONE\nNothing to do here.',
+      runTool: async () => 'ok',
+    });
+    expect(r.stopReason).toBe('done');
   });
 });
