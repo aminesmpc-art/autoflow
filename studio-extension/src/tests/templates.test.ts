@@ -231,3 +231,23 @@ describe('ASMR styrofoam carving', () => {
     expect(sourceTypes).not.toContain('generate');
   });
 });
+
+/* A template ships with real prompts, not blanks — a leftover angle-bracket
+   placeholder is not a compile error and not a validation error, it is just
+   text that gets submitted to a model verbatim. Caught one in the dental
+   still prompt, which is why this exists. */
+describe('prompt text is ready to run', () => {
+  const PLACEHOLDER = /<fill[^>]*>|<insert[^>]*>|\bTODO\b|\bFIXME\b|\bLOREM\b|\bXXX\b/i;
+
+  it('ships no unfilled placeholder in any prompt node', () => {
+    const offenders: string[] = [];
+    for (const tpl of TEMPLATES as any[]) {
+      for (const n of tpl.nodes) {
+        if (typeof n.data?.text !== 'string') continue;
+        const hit = n.data.text.match(PLACEHOLDER);
+        if (hit) offenders.push(`${tpl.id} / ${n.id}: "${hit[0]}"`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

@@ -440,6 +440,232 @@ const CAR_STYLE =
    the car. */
 const CAR_SUBJECT = 'BMW M3 E46, 2003, Laguna Seca Blue';
 
+/* ── Product commercial ──
+   The brief the Ask node sends with the photos attached. It asks for a prompt,
+   not an image: the node downstream is what renders. The "EXACTLY as
+   photographed" clause is load-bearing — without it every model quietly
+   improves the product, and an ad for a product that does not exist is worse
+   than no ad. */
+const PRODUCT_FIDELITY =
+  'Keep the product EXACTLY as photographed — same colourway, same materials, ' +
+  'same proportions, same branding and placement. Do not restyle, redesign, ' +
+  'recolour or "improve" it. If a detail is not visible in the photos, leave ' +
+  'it out rather than inventing it.';
+
+const PRODUCT_CLEAN =
+  'No text on screen, no added logos, no watermarks, no faces.\n\n' +
+  'Output only the prompt itself — no title, no preamble, no explanation.';
+
+/** [key, label, the sheet brief for that lane] */
+const PRODUCT_LANES = [
+  ['day', 'Daylight Studio',
+   'The attached photos are the product. Write ONE image-generation prompt for ' +
+   'a 2x2 storyboard sheet for a premium cinematic commercial, with these four ' +
+   'beats in this order: the box or packaging opening, the hero product shot, ' +
+   'a macro detail of its texture and construction, and a lifestyle beat in ' +
+   'use.\n\n' +
+   PRODUCT_FIDELITY + '\n\n' +
+   'Studio lighting, shallow depth of field, clean neutral backdrop.\n\n' +
+   PRODUCT_CLEAN],
+  ['night', 'Wet Street Night',
+   'The attached photos are the product. Write ONE image-generation prompt for ' +
+   'a 2x2 storyboard sheet for the same commercial, this time at night on a ' +
+   'wet city street: reflected neon on the pavement, a low tracking beat, a ' +
+   'splash detail, and a final hero beat under a streetlight.\n\n' +
+   PRODUCT_FIDELITY + '\n\n' +
+   'Cinematic contrast, practical light sources, deep blacks.\n\n' +
+   PRODUCT_CLEAN],
+] as const;
+
+/* ── Dental macro restoration ──
+   A structured-JSON prompt package rather than prose. Macro medical work is
+   the case where that pays: the camera block, the lighting and the framing
+   have to come back byte-identical across three clips or the cut reads as
+   three different mouths. Prose drifts between generations; a fixed JSON
+   block with one field swapped does not. */
+
+/** Step 1 of the brief — brainstorming, deliberately not wired downstream. */
+const DENTAL_IDEAS =
+  'Suggest 5 different cleaning methods for removing debris and decay from a ' +
+  'severely damaged molar.\n\n' +
+  'Rules:\n' +
+  '- Focus ONLY on cleaning the cavity, not the filling or restoration stage.\n' +
+  '- Each idea must describe the visual appearance of the decay and debris ' +
+  'inside the tooth.\n' +
+  '- The cavity should contain organic debris, food fibers, dark decay or ' +
+  'trapped particles, like a heavily damaged tooth.\n' +
+  '- Each idea must use a different dental cleaning technique.\n' +
+  '- Clinical, realistic, documentary style — not cinematic.\n' +
+  '- One molar in the centre with two neighbouring molars visible.\n\n' +
+  'For each idea give: the cleaning tool used, the appearance of the decay, ' +
+  'and the type of debris or residue inside the cavity.\n\n' +
+  'Format each as:\n' +
+  '1. <Tool name> — <one line describing the cavity, the decay colour and ' +
+  'texture, and what the tool does to it>\n\n' +
+  'Output only the numbered list.';
+
+/* The one line the whole workflow keys off. Swapping the tool here and in the
+   two cleaning prompts is the entire per-video edit. */
+const DENTAL_METHOD =
+  'CLEANING METHOD: High-pressure dental water jet cleaning — deep dark ' +
+  'cavity filled with tangled green food fibers and soft brown decay. A ' +
+  'high-pressure dental water jet flushes the organic debris and loose ' +
+  'particles out of the cavity.\n\n' +
+  'Rewrite the "center_tooth" and "tools" fields below so they match the ' +
+  'method above, and return the completed JSON. Change nothing else — every ' +
+  'other field is fixed across the whole series. The two fields are already ' +
+  'filled in for the method above, so if you are not changing the method, ' +
+  'return the JSON unchanged.\n\n' +
+  `{
+  "model": "image_generation",
+  "format": {
+    "aspect_ratio": "9:16",
+    "resolution": "1080x1920",
+    "style": "Medical Documentary / Extreme Macro Dentistry"
+  },
+  "camera": {
+    "POV": "Top-down macro inside mouth",
+    "lens_mm": "100mm macro lens",
+    "focus": "Three lower molars in frame",
+    "stability": "Tripod-stable macro shot",
+    "depth_of_field": "Shallow macro depth with center tooth sharp"
+  },
+  "setting": {
+    "location": "Dental clinic treatment environment",
+    "lighting": "Bright cool surgical dental lighting",
+    "environment": "Inside an open human mouth with saliva reflections and moist gums"
+  },
+  "subjects": {
+    "teeth_layout": "Three adjacent lower molars visible side-by-side",
+    "center_tooth": "Severely decayed molar with a deep dark cavity packed with tangled green food fibers and soft brown decay",
+    "side_teeth": "Two healthy molars visible on both sides",
+    "tools": "High-pressure dental water jet entering frame, preparing to flush debris from the center tooth"
+  },
+  "visual_details": {
+    "textures": "Realistic enamel translucency, porous dentin decay, wet gums",
+    "materials": "Subsurface scattering in gums, glossy enamel reflections",
+    "style": "Clinical dental macro realism"
+  },
+  "composition": {
+    "framing": "Decayed tooth centered with two neighboring molars visible",
+    "focus_priority": "Sharp focus on the damaged tooth"
+  },
+  "negative_prompt": "cartoon, CGI, illustration, unrealistic teeth, blood, gore, blur, watermark, text, logo"
+}` +
+  '\n\nOutput only the JSON — no preamble, no explanation, no markdown fence.';
+
+/** Parts 1 and 2 differ only in the tool line and the two timeline actions. */
+const dentalClip = (
+  targetTooth: string, tool: string, stability: string, movements: string,
+  environment: string, a0: string, a4: string, materials: string, lighting: string
+): string => `{
+  "model": "video_generation",
+  "format": {
+    "aspect_ratio": "9:16",
+    "duration": "8 seconds",
+    "fps": 30,
+    "resolution": "1080p",
+    "style": "Medical Documentary / Macro Dentistry"
+  },
+  "camera": {
+    "POV": "Top-down extreme macro",
+    "lens_mm": "100mm macro",
+    "stability": "${stability}",
+    "movements": "${movements}",
+    "forbidden": "No pans, no tilts, no zoom"
+  },
+  "setting": {
+    "location": "Dental surgery environment",
+    "lighting": "Bright surgical dental lighting",
+    "environment": "${environment}"
+  },
+  "subjects": {
+    "target_tooth": "${targetTooth}",
+    "side_teeth": "Two healthy neighboring molars",
+    "tool": "${tool}"
+  },
+  "action_timeline": [
+    { "time": "00:00 - 00:04", "action": "${a0}" },
+    { "time": "00:04 - 00:08", "action": "${a4}" }
+  ],
+  "physics_and_realism": {
+    "materials": "${materials}",
+    "lighting": "${lighting}"
+  },
+  "negative_prompt": "cartoon, CGI, blur, text, watermark"
+}`;
+
+const DENTAL_PART1 = dentalClip(
+  'Center molar with large cavity filled with debris and decay',
+  'High-pressure dental water jet',
+  'Fixed tripod with micro vibrations',
+  'Static framing on three molars',
+  'Inside human mouth with wet enamel and saliva reflections',
+  'Cleaning tool begins removing loose debris from the cavity',
+  'Tool continues deeper cleaning revealing darker decay layers',
+  'Real enamel reflections and gum translucency',
+  'Sharp surgical shadows inside cavity',
+);
+
+const DENTAL_PART2 = dentalClip(
+  'Center molar partially cleaned',
+  'Same cleaning tool continuing the process',
+  'Fixed tripod continuation shot',
+  'Static framing identical to part one',
+  'Inside human mouth with wet enamel',
+  'Remaining decay and debris are removed from the cavity',
+  'The cavity appears fully cleaned and ready for restoration',
+  'Realistic enamel reflections and gum textures',
+  'Dental surgical light reflections',
+);
+
+/* Part 3 is fixed by the brief and must never change — it is the payoff every
+   video in the series ends on, so it is written out in full rather than
+   generated, and deliberately does not go through the helper above. */
+const DENTAL_PART3 = `{
+  "model": "video_generation",
+  "format": {
+    "aspect_ratio": "9:16",
+    "duration": "8 seconds",
+    "fps": 30,
+    "resolution": "1080p",
+    "style": "Medical Documentary / Macro Photography"
+  },
+  "camera": {
+    "POV": "Top-down extreme macro",
+    "lens_mm": "100mm macro",
+    "stability": "Fixed tripod with micro-vibrations for realism",
+    "movements": "Static framing on the three molars",
+    "forbidden": "No pans, no tilts, no zoom jumps"
+  },
+  "setting": {
+    "location": "Dental surgery environment",
+    "environment": "Inside a human mouth, wet mucous membranes, pink gum tissue, saliva presence"
+  },
+  "subjects": {
+    "target_tooth": "Center lower molar with cleaned cavity ready for filling",
+    "side_teeth": "Two healthy neighboring molars",
+    "tools": "Composite application tool and blue UV curing dental light",
+    "materials": "Thick bright white composite resin"
+  },
+  "action_timeline": [
+    { "time": "00:00 - 00:03", "action": "Composite applicator slowly injects thick bright white composite resin into the cavity." },
+    { "time": "00:03 - 00:06", "action": "Dental sculpting tool shapes the resin to match natural molar anatomy." },
+    { "time": "00:06 - 00:07", "action": "Blue UV curing light hardens the composite filling." },
+    { "time": "00:07 - 00:08", "action": "Final macro shot of the restored healthy molar." }
+  ],
+  "negative_prompt": "cartoon, CGI, blur, text, watermark, blood, gore"
+}`;
+
+/** Same clip brief both lanes — the sheet wired into it is what differs. */
+const CLIP_BRIEF =
+  'The attached image is a four-beat storyboard sheet. Write ONE prompt for a ' +
+  '10-second commercial that plays those beats in the order they appear.\n\n' +
+  'For each beat give the camera move (push in, orbit, tilt, tracking) and how ' +
+  'it cuts to the next. Keep the product identical to the sheet. Real-world ' +
+  'physics, no morphing, no impossible transformations.\n\n' +
+  PRODUCT_CLEAN;
+
 /** [key, label, the ten seconds — ending on the state the next clip inherits] */
 const CAR_STAGES = [
   ['block', '1. Rough Carving',
@@ -917,6 +1143,134 @@ export const BUILTIN_TEMPLATES: Template[] = [
       // Both clips inherit the approved composite
       iEdge('g1', 'g2'), tEdge('p1', 'g2'),
       iEdge('g1', 'g3'), tEdge('p2', 'g3'),
+    ],
+  },
+  {
+    id: 'tpl_product_commercial',
+    name: 'Product Photos → Storyboard → Commercial',
+    description: 'Drop in photos of a real product. Two lanes storyboard it, then film it — daylight and night.',
+    useCase:
+      'The workflow for a product you actually own. Photograph it from four angles, wire the shots in, and ChatGPT reads them before writing anything — so the sheet prompt describes your product rather than a generic one of its category. The storyboard sheet is the cheap checkpoint: four beats on one image, approved before a single second of video is spent. Then the same sheet drives the clip, so the commercial plays the beats you already signed off on. Two lanes because the second look is nearly free once the photos are wired — daylight studio and wet-street night, from the same references. Keep the "EXACTLY as photographed" lines: without them the model quietly restyles the product, which is the one thing a product ad cannot do.',
+    category: 'Marketing',
+    difficulty: 'Advanced',
+    nodeCount: 16,
+    thumbnail: '👟',
+    nodes: [
+      /* Four angles, shared by both lanes. Empty on purpose — this template is
+         only worth running against a real product. The hints say which angle
+         goes where, because they are not interchangeable: the detail shot is
+         what stops the macro beat inventing stitching. */
+      imageNode('i1', 'Product — 3/4 view', 40, 40, 'three-quarter hero angle'),
+      imageNode('i2', 'Product — side', 40, 300, 'straight side profile'),
+      imageNode('i3', 'Product — detail', 40, 560, 'close macro: texture, seams, sole'),
+      imageNode('i4', 'Product — back', 40, 820, 'rear or underside'),
+
+      ...PRODUCT_LANES.flatMap(([key, label, sheetBrief], i) => {
+        const y = i * 860;
+        return [
+          promptNode(`p_sheet_${key}`, `Sheet Brief — ${label}`, sheetBrief, 520, y + 40),
+          // No preset: the brief above is already product-specific, and the
+          // photos ride in on image_ref so ChatGPT describes THIS product.
+          askNode(`ask_sheet_${key}`, 'Write the Sheet Prompt', 940, y + 60),
+          genNode(`g_sheet_${key}`, {
+            label: `Storyboard Sheet — ${label}`,
+            mediaType: 'image',
+            aspectRatio: '16:9',
+            model: 'Nano Banana Pro',
+          }, 1360, y + 60),
+          promptNode(`p_clip_${key}`, `Clip Brief — ${label}`, CLIP_BRIEF, 1780, y + 40),
+          askNode(`ask_clip_${key}`, 'Write the Clip Prompt', 2200, y + 60),
+          genNode(`g_clip_${key}`, {
+            label: `Commercial — ${label}`,
+            mediaType: 'video',
+            aspectRatio: '16:9',
+            duration: '10s',
+            model: 'Omni Flash',
+          }, 2620, y + 60),
+        ];
+      }),
+    ],
+    edges: PRODUCT_LANES.flatMap(([key]) => [
+      tEdge(`p_sheet_${key}`, `ask_sheet_${key}`),
+      /* Every photo reaches BOTH the writer and the renderer. The writer needs
+         them to describe the product; the renderer needs them to draw it. */
+      ...['i1', 'i2', 'i3', 'i4'].flatMap((img) => [
+        iEdge(img, `ask_sheet_${key}`, 'image'),
+        iEdge(img, `g_sheet_${key}`, 'image'),
+      ]),
+      tEdge(`ask_sheet_${key}`, `g_sheet_${key}`),
+      tEdge(`p_clip_${key}`, `ask_clip_${key}`),
+      // The approved sheet is the only thing the clip inherits, so the beats
+      // in the video are the beats that were signed off.
+      iEdge(`g_sheet_${key}`, `ask_clip_${key}`),
+      tEdge(`ask_clip_${key}`, `g_clip_${key}`),
+      iEdge(`g_sheet_${key}`, `g_clip_${key}`),
+    ]),
+  },
+  {
+    id: 'tpl_dental_macro',
+    name: 'Dental Macro: Clean → Restore (24s)',
+    description: 'Medical-macro dental series. One still, then three 8-second clips chained by last frame.',
+    useCase:
+      'The satisfying-restoration format, built the way it has to be built to survive the cut. Three clips of the same mouth only read as one procedure if the camera block never moves, so the prompts are structured JSON rather than prose — the lens, the framing and the lighting come back byte-identical every generation, and one field changes. Clip 2 starts from clip 1\'s closing frame and clip 3 from clip 2\'s, so the cavity that gets filled is the cavity that was cleaned, not a fresh interpretation of one. Per video you edit exactly one thing: the cleaning method line, in the still prompt and in the two cleaning clips. The restoration clip is fixed on purpose — it is the payoff the whole series ends on, and it stays identical so the ending is recognisable across every upload. The Brainstorm node up top is off to one side, wired to nothing: run it alone, read the five methods it returns, then paste the one you want into Cleaning Method.',
+    category: 'Content',
+    difficulty: 'Advanced',
+    nodeCount: 13,
+    thumbnail: '🦷',
+    nodes: [
+      /* Off to the side and connected to nothing downstream: it returns five
+         options for a human to choose between, and a graph cannot make that
+         choice. Running it alone costs one text generation. */
+      promptNode('p_ideas', '1. Brainstorm Methods', DENTAL_IDEAS, 40, 40),
+      askNode('ask_ideas', 'Five Cleaning Methods', 520, 60),
+
+      // The one line that changes per video, plus the fixed image block.
+      promptNode('p_method', '2. Cleaning Method', DENTAL_METHOD, 40, 460),
+      askNode('ask_image', 'Write the Still Prompt', 520, 520),
+      genNode('g_still', {
+        label: 'Establishing Macro Still',
+        mediaType: 'image',
+        aspectRatio: '9:16',
+        model: 'Nano Banana Pro',
+      }, 1000, 520),
+
+      promptNode('p_part1', 'Part 1 — Cleaning', DENTAL_PART1, 1000, 980),
+      genNode('g_part1', {
+        label: 'Clip 1 — Cleaning',
+        mediaType: 'video', aspectRatio: '9:16', duration: '8s', model: 'Omni Flash',
+      }, 1480, 520),
+      frameNode('f_part1', 'Ends on →', 1900, 560),
+
+      promptNode('p_part2', 'Part 2 — Deeper Clean', DENTAL_PART2, 1900, 980),
+      genNode('g_part2', {
+        label: 'Clip 2 — Cavity Cleared',
+        mediaType: 'video', aspectRatio: '9:16', duration: '8s', model: 'Omni Flash',
+      }, 2320, 520),
+      frameNode('f_part2', 'Ends on →', 2740, 560),
+
+      // Never edited. Same ending on every video in the series.
+      promptNode('p_part3', 'Part 3 — Restoration (fixed)', DENTAL_PART3, 2740, 980),
+      genNode('g_part3', {
+        label: 'Clip 3 — Filling & Cure',
+        mediaType: 'video', aspectRatio: '9:16', duration: '8s', model: 'Omni Flash',
+      }, 3160, 520),
+    ],
+    edges: [
+      tEdge('p_ideas', 'ask_ideas'),
+
+      tEdge('p_method', 'ask_image'),
+      tEdge('ask_image', 'g_still'),
+
+      // Clip 1 opens on the approved still.
+      tEdge('p_part1', 'g_part1'), iEdge('g_still', 'g_part1'),
+      /* Each clip after the first starts from the previous clip's closing
+         frame. This is what makes it one procedure instead of three takes —
+         and it is visible on the canvas, so a bad handoff is caught before
+         the next generation is spent. */
+      iEdge('g_part1', 'f_part1'),
+      tEdge('p_part2', 'g_part2'), iEdge('f_part1', 'g_part2', 'image'),
+      iEdge('g_part2', 'f_part2'),
+      tEdge('p_part3', 'g_part3'), iEdge('f_part2', 'g_part3', 'image'),
     ],
   },
   {
