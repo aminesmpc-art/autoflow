@@ -92,35 +92,58 @@ export interface AgentRunOptions {
 
 /* ── The protocol ─────────────────────────────────────────── */
 
+/**
+ * The framing, which turned out to matter more than the format.
+ *
+ * The first version headed this "TOOLS AVAILABLE". ChatGPT read that as a
+ * claim about its own built-in tool system, correctly observed that
+ * read_canvas is not in it, and refused three times running:
+ *
+ *   "read_canvas is not available among the tools provided to me in this
+ *    conversation."
+ *
+ * Honest, and a dead end. The fix is to stop describing capabilities the
+ * model is supposed to have and describe the other party instead: a program
+ * is listening, the program acts, the model only has to emit text. Reworded
+ * that way it emitted `TOOL: read_canvas {}` on the first turn, used the
+ * result, and answered correctly.
+ *
+ * So the word "tool" is deliberately avoided in the framing even though the
+ * marker is still TOOL: — the marker is a token, the framing is an argument
+ * about who does what.
+ */
+const PREAMBLE = [
+  'You are talking to a program, not a person. The program reads your reply',
+  'and acts on it. You do not need any built-in capability for this — you only',
+  'need to output text in the format below. The program does the doing.',
+].join('\n');
+
 const PROTOCOL = [
   'Reply with EXACTLY ONE of the following, and nothing else.',
   '',
-  'To use a tool:',
-  'TOOL: <tool_name>',
+  'To ask the program to act:',
+  'TOOL: <action_name>',
   '{"arg": "value"}',
   '',
-  'To finish:',
+  'To give your final answer:',
   'DONE',
   '<your final answer>',
   '',
   'Rules:',
   '- The marker (TOOL: or DONE) must be the first thing in your reply.',
-  '- Tool arguments must be one JSON object on the lines after TOOL.',
-  '- Call one tool at a time and wait for its result before the next.',
+  '- Arguments must be one JSON object on the lines after TOOL.',
+  '- Ask for one action at a time and wait for its result before the next.',
   '- Do not explain what you are about to do. Just emit the block.',
-  /* Both of these are here because ChatGPT replied with a bare "DONE" on the
-     first turn, having called nothing. It reads the task, cannot render an
-     image itself, and closes the conversation — so it has to be told that the
-     tools genuinely execute, and that DONE is a report of finished work
-     rather than a way to decline it. */
-  '- The tools are real: they execute, and their results are sent back to you.',
+  '- The program is waiting for one of those two blocks. Anything else stalls it.',
+  /* Here because ChatGPT twice replied DONE having done nothing — once as four
+     bare characters, once describing images it had not produced. */
   '- Do not reply DONE until the work is actually finished. DONE must be',
   '  followed by your final answer — DONE on its own is not an answer.',
-  '- If the task needs a tool and none has run yet, call the tool.',
+  '- If the task needs an action and none has run yet, ask for it.',
 ].join('\n');
 
 function describeTools(tools: AgentTool[]): string {
-  if (!tools.length) return 'You have no tools. Answer with DONE.';
+  if (!tools.length) return 'The program cannot perform any action. Answer with DONE.';
   return tools
     .map((t) => {
       const args = t.params
@@ -139,8 +162,8 @@ export function buildOpeningMessage(opts: {
 }): string {
   const parts = [];
   if (opts.system?.trim()) parts.push(opts.system.trim(), '');
-  parts.push('You are completing a task by calling tools one at a time.', '');
-  parts.push('TOOLS AVAILABLE:', describeTools(opts.tools), '');
+  parts.push(PREAMBLE, '');
+  parts.push('ACTIONS THE PROGRAM CAN PERFORM FOR YOU:', describeTools(opts.tools), '');
   parts.push(PROTOCOL, '');
   parts.push('TASK:', opts.goal.trim());
   return parts.join('\n');

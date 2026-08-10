@@ -343,9 +343,14 @@ describe('a bare DONE is a refusal, not a result', () => {
     expect(parseAgentReply('DONE\nBoth images are rendered.', NAMES).kind).toBe('done');
   });
 
-  it('tells the model the tools are real and DONE needs an answer', () => {
+  it('frames the other party as a program, and pins DONE to an answer', () => {
+    /* The framing is load-bearing. Headed "TOOLS AVAILABLE", live ChatGPT read
+       it as a claim about its own tool system and refused three times:
+       "read_canvas is not available among the tools provided to me". */
     const msg = buildOpeningMessage({ goal: 'g', tools: TOOLS });
-    expect(msg).toMatch(/tools are real/i);
+    expect(msg).toMatch(/talking to a program/i);
+    expect(msg).toMatch(/ACTIONS THE PROGRAM CAN PERFORM/i);
+    expect(msg).not.toMatch(/TOOLS AVAILABLE/);
     expect(msg).toMatch(/DONE on its own is not an answer/i);
   });
 });
@@ -425,5 +430,57 @@ describe('a completion that produced nothing', () => {
       runTool: async () => 'ok',
     });
     expect(r.stopReason).toBe('done');
+  });
+});
+
+/* ============================================================
+   The transcript that actually worked, kept verbatim.
+
+   Live ChatGPT, reframed prompt, two turns: it asked for the action, read the
+   result, and answered from it. These are the exact strings it produced — if
+   the parser ever stops accepting them, the loop is broken on the one path
+   proven to work.
+   ============================================================ */
+describe('the live ChatGPT transcript', () => {
+  const CANVAS = ['read_canvas'];
+
+  it('accepts the tool call it emitted', () => {
+    const d = parseAgentReply('TOOL: read_canvas\n{}', CANVAS);
+    expect(d.kind).toBe('tool');
+    if (d.kind !== 'tool') return;
+    expect(d.name).toBe('read_canvas');
+    expect(d.args).toEqual({});          // no-arg actions send {}
+  });
+
+  it('accepts the answer it gave from the result', () => {
+    const d = parseAgentReply(
+      'DONE\n2 nodes: p_goal (prompt), agent (agent). The workflow appears to '
+      + 'pass a goal prompt into a canvas agent.',
+      CANVAS
+    );
+    expect(d.kind).toBe('done');
+    if (d.kind !== 'done') return;
+    expect(d.answer).toContain('2 nodes');
+  });
+
+  it('runs the whole exchange end to end', async () => {
+    let turn = 0;
+    const observed: string[] = [];
+    const r = await runAgent({
+      goal: 'Report what is on the canvas.',
+      tools: [{ name: 'read_canvas', description: 'Read the canvas.', params: [] }],
+      maxIterations: 4,
+      ask: async (m) => {
+        observed.push(m);
+        return ++turn === 1
+          ? 'TOOL: read_canvas\n{}'
+          : 'DONE\n2 nodes: p_goal (prompt), agent (agent).';
+      },
+      runTool: async () => '- p_goal (prompt): Goal\n- agent (agent): Canvas Agent',
+    });
+    expect(r.stopReason).toBe('done');
+    expect(r.answer).toContain('2 nodes');
+    // The canvas listing must reach the model, or the answer is a guess.
+    expect(observed[1]).toContain('p_goal (prompt): Goal');
   });
 });
