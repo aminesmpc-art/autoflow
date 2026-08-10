@@ -117,8 +117,11 @@ function messageCount(): number {
  *
  * Matched on data-testid, which is ChatGPT's own hook — the Tailwind class
  * soup on the same anchor churns between builds and the testid does not.
- * A collapsed sidebar hides it but the anchor still routes on click, so a
- * hidden control beats staying in the previous thread.
+ *
+ * Measured on the live page: two of these are mounted at once, and both stay
+ * visible when the sidebar is collapsed. Either routes, so take the first
+ * visible one. The unfiltered fallback covers a layout that hides both — it
+ * has never been observed, and a hidden anchor still routes on click.
  */
 function findNewChatButton(): HTMLElement | null {
   const all = Array.from(
