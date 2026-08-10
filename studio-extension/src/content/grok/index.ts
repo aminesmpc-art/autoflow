@@ -879,7 +879,8 @@ async function handleExecute(payload: any): Promise<any> {
      since the reset remounts the composer and empties the thread. Image and
      video are left alone on purpose: they run on /imagine, where the reset
      would also discard the clip an Extend node is about to continue. */
-  if (config?.mediaType === 'text') {
+  // 'never' is the agent loop mid-run — there the thread is the memory.
+  if (config?.mediaType === 'text' && config?.newChat !== 'never') {
     await startNewChat();
   }
 

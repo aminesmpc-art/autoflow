@@ -646,8 +646,15 @@ async function handleExecute(payload: any): Promise<any> {
   /* Isolate this node before anything else touches the page. It has to happen
      ahead of the composer lookup and the baseline snapshots below, because
      clicking New Chat remounts the composer and empties the thread — doing it
-     later would invalidate both. */
-  await startNewChat();
+     later would invalidate both.
+
+     'never' is the agent loop mid-run: there the thread is the memory, and
+     resetting it between turns would drop the tool results it just read. */
+  if (config?.newChat !== 'never') {
+    await startNewChat();
+  } else {
+    logLine('Continuing the current thread (agent turn)');
+  }
 
   // A freshly opened tab may still be mounting, so give the composer a
   // few seconds to appear before declaring it missing.

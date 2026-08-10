@@ -480,8 +480,15 @@ async function handleExecute(payload: any): Promise<any> {
      before the baseline snapshots below, because the reset remounts the
      composer and empties the thread — doing it after would invalidate both,
      and the "what is new on screen" baselines would be taken against the
-     previous conversation. */
-  await startNewChat();
+     previous conversation.
+
+     'never' is the agent loop mid-run: there the thread is the memory, and
+     resetting between turns would drop the tool results it just read. */
+  if (config?.newChat !== 'never') {
+    await startNewChat();
+  } else {
+    console.log('[AutoFlow Gemini] Continuing the current thread (agent turn)');
+  }
 
   let composer = findComposer();
   for (let i = 0; !composer && i < 10; i++) {

@@ -26,6 +26,18 @@ export interface NodeExecutionConfig {
   referenceImageData?: string[]; // base64 fallback
   /** Target platform — the service worker routes by this. Default 'flow'. */
   platform?: 'flow' | 'chatgpt' | 'gemini' | 'grok';
+  /**
+   * Whether this step may reset the chat thread first.
+   *
+   * 'auto' (the default) is what an ordinary node wants: a clean thread, so
+   * its answer is not conditioned on the node that ran before it.
+   *
+   * 'never' is for the agent loop, which is the one case where the opposite
+   * is true — the loop IS a conversation, and resetting between turns would
+   * make the agent forget the tool results it just read. Only the agent's
+   * opening turn leaves this unset.
+   */
+  newChat?: 'auto' | 'never';
 }
 
 export interface NodeResult {
