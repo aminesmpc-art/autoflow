@@ -44,6 +44,8 @@ interface Harness {
   execute: (payload: any) => Promise<any>;
   /** Grok only mounts a submit button once there is something to submit. */
   showSubmit: () => HTMLButtonElement;
+  /** What the composer held each time Submit was pressed. */
+  sentText: string[];
 }
 
 function buildHarness(): Harness {
@@ -72,6 +74,11 @@ function buildHarness(): Harness {
     get: () => composer.textContent || '', configurable: true,
   });
 
+  /* What the composer held at the moment Submit was pressed. The prompt can
+     no longer be read off the composer after a run, because accepting a
+     prompt empties it — so the fixture records it on the way past. */
+  const sentText: string[] = [];
+
   const showSubmit = (): HTMLButtonElement => {
     const existing = document.querySelector<HTMLButtonElement>('button[type="submit"]');
     if (existing) return existing;
@@ -79,9 +86,22 @@ function buildHarness(): Harness {
     btn.type = 'submit';
     btn.setAttribute('aria-label', 'Submit');
     (btn as any).getBoundingClientRect = box(32, 32);
+    /* Grok empties the composer when it accepts a prompt, and that is now the
+       adapter's evidence the press landed — without it, submitPrompt is right
+       to press again and then report a refusal. A fixture whose button does
+       nothing is not a simpler version of the real one, it is the broken one. */
+    btn.addEventListener('click', () => {
+      sentText.push(composer.textContent || '');
+      composer.textContent = '';
+    });
     form.append(btn);
     return btn;
   };
+
+  // Same on the Enter path, for the same reason.
+  composer.addEventListener('keydown', (e: any) => {
+    if (e.key === 'Enter') setTimeout(() => { composer.textContent = ''; }, 0);
+  });
 
   const sent: any[] = [];
   const listeners: Listener[] = [];
@@ -112,7 +132,7 @@ function buildHarness(): Harness {
       }
     });
 
-  return { composer, fileInput, form, sent, execute, showSubmit };
+  return { composer, fileInput, form, sent, execute, showSubmit, sentText };
 }
 
 const errorsFrom = (sent: any[]) =>
@@ -139,8 +159,9 @@ describe('submitting', () => {
   it('types the prompt into the ProseMirror composer', async () => {
     h.showSubmit();
     await h.execute({ nodeId: 'n1', config: { prompt: 'a tired detective in the rain' } });
-    expect(h.composer.textContent).toBe('a tired detective in the rain');
-  });
+    // Read from the press, not from the composer: Grok empties it on accept.
+    expect(h.sentText).toEqual(['a tired detective in the rain']);
+  }, 20_000);
 
   it('clicks Submit once the composer has text', async () => {
     /* The button does not exist before this point on the real page, which is
@@ -150,7 +171,7 @@ describe('submitting', () => {
     btn.addEventListener('click', () => clicked++);
     await h.execute({ nodeId: 'n1', config: { prompt: 'hello' } });
     expect(clicked).toBe(1);
-  });
+  }, 20_000);
 
   it('falls back to Enter when no submit button appeared', async () => {
     // No showSubmit() — the page never mounts one.
@@ -158,7 +179,11 @@ describe('submitting', () => {
     h.composer.addEventListener('keydown', (e: any) => { if (e.key === 'Enter') entered++; });
     await h.execute({ nodeId: 'n1', config: { prompt: 'hello' } });
     expect(entered).toBe(1);
-  });
+    /* Longer than jest's default: the adapter gives the page six seconds to
+       mount a send button before falling back, because on the real page the
+       button is mounted late and was previously clicked while still
+       disabled. A page that never mounts one pays that full wait. */
+  }, 20_000);
 
   it('refuses an empty prompt instead of sending one', async () => {
     // An empty submit spends a generation and returns something unusable.

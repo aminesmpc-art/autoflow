@@ -11,9 +11,19 @@
    exclusion that is too broad turns a node that returns a stranger's picture
    into a node that returns nothing, which is different but not better.
 
-   The page below is /imagine as measured: a masonry feed of other people's
-   posts, <img alt="Generated image"> inside
-   div#imagine-masonry-section-0 > .group/media-post-masonry-card.
+   The page below is /imagine as measured on a COMPLETED render, which is not
+   what this file first assumed. Our own results sit in the very same
+   component as the Discover feed —
+
+     div#imagine-masonry-section-N > div.min-h-[100vh] > div
+       > div.relative.group/media-post-masonry-card > div > img
+
+   — so the original fixture, which put the genuine result outside the masonry
+   markup, was testing a page that does not exist, and it passed a filter that
+   rejected every real image on the live site.
+
+   The one difference is a chip: the section holding our generation carries the
+   prompt we submitted, and Discover sections carry none.
 
    The feed is the whole difficulty, and only because it lazy loads. A tile
    already on screen at submit lands in the baseline and is diffed away; a
@@ -37,6 +47,7 @@ const BUNDLE = join(__dirname, '../../dist/grok-content.js');
 type Listener = (msg: any, sender: any, respond: (r: any) => void) => boolean | void;
 
 const RESULT_URL = 'https://grok.example/my-result.png';
+const PROMPT = 'a red apple on a white plate';
 const strangerUrl = (n: number) => `https://discover.example/stranger-${n}.png`;
 
 const box = (w: number, h: number) => () =>
@@ -67,19 +78,28 @@ interface Harness {
   checkedMode: () => string | undefined;
 }
 
+/** One masonry card, the shape both Discover and our results are built from. */
+function card(src: string): HTMLElement {
+  const outer = document.createElement('div');
+  outer.className = 'relative group/media-post-masonry-card select-none cursor-pointer';
+  const inner = document.createElement('div');
+  inner.append(bigImage(src));
+  outer.append(inner);
+  return outer;
+}
+
 function buildPage(): Harness {
   document.body.innerHTML = '';
   const state = { submits: 0 };
 
-  /* Discover: four of other people's posts, already rendered at submit. */
+  /* Discover: four of other people's posts, already rendered at submit, in a
+     section carrying no prompt chip. */
   const masonry = document.createElement('div');
-  masonry.id = 'imagine-masonry-section-0';
-  for (let i = 0; i < 4; i++) {
-    const card = document.createElement('div');
-    card.className = 'relative group/media-post-masonry-card';
-    card.append(bigImage(strangerUrl(i)));
-    masonry.append(card);
-  }
+  masonry.id = 'imagine-masonry-section-3';
+  const masonryInner = document.createElement('div');
+  masonryInner.className = 'min-h-[100vh]';
+  for (let i = 0; i < 4; i++) masonryInner.append(card(strangerUrl(i)));
+  masonry.append(masonryInner);
 
   const composer = document.createElement('div');
   composer.setAttribute('contenteditable', 'true');
@@ -90,7 +110,12 @@ function buildPage(): Harness {
   const submit = document.createElement('button');
   submit.setAttribute('type', 'submit');
   (submit as any).getBoundingClientRect = box(40, 40);
-  submit.addEventListener('click', () => { state.submits++; });
+  submit.addEventListener('click', () => {
+    state.submits++;
+    // Grok clears the composer when it takes the prompt, and the adapter now
+    // reads that as confirmation the press landed rather than assuming it.
+    composer.textContent = '';
+  });
 
   /* Mode starts on Video, so a run that never switches is visible. */
   const modeGroup = document.createElement('div');
@@ -141,13 +166,23 @@ function buildPage(): Harness {
   return {
     sent,
     submits: () => state.submits,
-    lazyLoadDiscoverTile: (n: number) => {
-      const card = document.createElement('div');
-      card.className = 'relative group/media-post-masonry-card';
-      card.append(bigImage(strangerUrl(n)));
-      masonry.append(card);
+    lazyLoadDiscoverTile: (n: number) => { masonryInner.append(card(strangerUrl(n))); },
+    /* Ours: a NEW section carrying the submitted prompt as a chip, holding the
+       finished image — same markup as Discover, told apart only by the chip. */
+    addResult: (src = RESULT_URL) => {
+      const mine = document.createElement('div');
+      mine.id = 'imagine-masonry-section-0';
+      const chipWrap = document.createElement('div');
+      chipWrap.className = 'bg-surface-l1 px-4 py-2';
+      const chip = document.createElement('span');
+      chip.textContent = PROMPT;
+      chipWrap.append(chip);
+      const inner = document.createElement('div');
+      inner.className = 'min-h-[100vh]';
+      inner.append(card(src));
+      mine.append(chipWrap, inner);
+      document.body.append(mine);
     },
-    addResult: (src = RESULT_URL) => { document.body.append(bigImage(src)); },
     execute: (config, nodeId = 'n1') => {
       for (const fn of listeners) {
         fn({ type: 'STUDIO_EXECUTE_NODE', payload: { nodeId, config } }, {}, () => {});
@@ -183,7 +218,7 @@ beforeAll(() => {
 describe('a Grok image node with the Discover feed on the page', () => {
   it('captures the generated image, not a tile that lazy-loaded beside it', async () => {
     const h = buildPage();
-    h.execute({ mediaType: 'image', prompt: 'a red apple on a white plate' });
+    h.execute({ mediaType: 'image', prompt: PROMPT });
 
     expect(await waitFor(() => h.submits() > 0, 15_000)).toBe(true);
     // Mode is set before the prompt goes in; a still asked of Video mode is
@@ -207,7 +242,7 @@ describe('a Grok image node with the Discover feed on the page', () => {
        someone else's posts scroll into view. Before the exclusion, the first
        of them was captured and sent as this node's output. */
     const h = buildPage();
-    h.execute({ mediaType: 'image', prompt: 'a red apple on a white plate' }, 'n2');
+    h.execute({ mediaType: 'image', prompt: PROMPT }, 'n2');
 
     expect(await waitFor(() => h.submits() > 0, 15_000)).toBe(true);
     h.lazyLoadDiscoverTile(98);

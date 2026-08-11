@@ -15,6 +15,10 @@ export interface NodeExecutionConfig {
   duration?: string;
   /** Grok Imagine only — 480p / 720p / 1080p. Flow has no such control. */
   resolution?: string;
+  /** Grok Imagine stills only — how many to render: Auto, 2, 4, 8, 12. */
+  imageCount?: string;
+  /** Grok Imagine stills only — 'Speed' or 'Quality'. Its own radio pair. */
+  quality?: string;
   /* Grok Imagine's Extend: continue an existing clip rather than start one.
      extendFromVideo is the mp4 URL of the clip being continued, which is how
      the content script finds it again in Grok's history. */

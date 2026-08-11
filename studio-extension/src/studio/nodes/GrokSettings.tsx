@@ -17,12 +17,29 @@
 const DURATIONS = ['6s', '10s', '15s'];
 /** Its resolution radio group. */
 const RESOLUTIONS = ['480p', '720p', '1080p'];
-/** Its aspect-ratio menu. */
+/** Its aspect-ratio menu, as a clip offers it. */
 const RATIOS = ['9:16', '16:9', '1:1'];
+
+/* ── Stills ──
+   Imagine's toolbar carries three controls for an image, and until now a Grok
+   image node rendered none of them: GenerateNode gated this whole component on
+   `isVideo`, so the one platform with the most settings showed the fewest.
+   Every value below is read off the live menus. */
+
+/** The full aspect-ratio menu — a still gets five, not the clip's three. */
+const IMAGE_RATIOS = ['2:3', '3:2', '1:1', '9:16', '16:9'];
+/** button[aria-label="Image Count"] — how many renders per press. */
+const COUNTS = ['Auto', '2', '4', '8', '12'];
+/** Its speed/quality radio pair. Labelled "Quality (2.0)" on the page; the
+    adapter matches on the leading word, so the version can move without
+    breaking the match. */
+const QUALITIES = ['Speed', 'Quality'];
 
 interface Props {
   nodeData: any;
   set: (field: string, value: unknown) => void;
+  /** Stills and clips share almost no controls, so the split is explicit. */
+  isVideo: boolean;
 }
 
 /** One row of segmented pills — the shape every Imagine control takes. */
@@ -54,10 +71,38 @@ function Segmented({
   );
 }
 
-export function GrokSettings({ nodeData, set }: Props) {
+export function GrokSettings({ nodeData, set, isVideo }: Props) {
   /* No Extend here. It used to be a mode on this node, which hid what it is:
      a second generation, with its own prompt, its own result and a chain that
      can only reach 30 seconds. It is the Extend node now — see ExtendNode. */
+  if (!isVideo) {
+    return (
+      <>
+        <Segmented
+          label="Ratio"
+          title="Aspect ratio"
+          options={IMAGE_RATIOS}
+          value={nodeData.aspectRatio || '1:1'}
+          onPick={(v) => set('aspectRatio', v)}
+        />
+        <Segmented
+          label="Count"
+          title="How many images Imagine renders per press"
+          options={COUNTS}
+          value={nodeData.imageCount || 'Auto'}
+          onPick={(v) => set('imageCount', v)}
+        />
+        <Segmented
+          label="Speed"
+          title="Imagine's speed/quality trade-off"
+          options={QUALITIES}
+          value={nodeData.quality || 'Quality'}
+          onPick={(v) => set('quality', v)}
+        />
+      </>
+    );
+  }
+
   return (
     <>
       <Segmented

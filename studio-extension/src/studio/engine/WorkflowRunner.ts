@@ -640,6 +640,11 @@ export class WorkflowRunner {
       duration: nodeData.duration || '6s',
       // Grok reads these; Flow ignores them.
       resolution: isExtendNode ? undefined : (nodeData.resolution || undefined),
+      /* Imagine's still controls. Undefined means "leave the toolbar alone",
+         which is the honest default — the adapter only touches a control the
+         node actually asked for. */
+      imageCount: nodeData.imageCount || undefined,
+      quality: nodeData.quality || undefined,
       extend: isExtendNode ? true : undefined,
       extendSeconds: isExtendNode ? (nodeData.extendSeconds || '+10s') : undefined,
       extendFromVideo,

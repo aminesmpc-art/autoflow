@@ -487,7 +487,10 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           {/* Imagine's controls live in their own component: they share no
               values with Flow's and no longer have to be told apart by a
               platform test on every row. */}
-          {isGrok && isVideo && <GrokSettings nodeData={nodeData} set={set} />}
+          {/* Stills too. This was `isGrok && isVideo`, so a Grok Image node —
+              the case with the most controls on Imagine's toolbar — rendered
+              none of them, and the Ratio the runner sent was never applied. */}
+          {isGrok && !isText && <GrokSettings nodeData={nodeData} set={set} isVideo={isVideo} />}
 
           {isChatGPT && (
             <span className="sn-bar__hint sn-field--wide">

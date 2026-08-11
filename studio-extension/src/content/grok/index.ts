@@ -624,28 +624,84 @@ function readLatestReply(): string {
  * mean an image rendered anywhere else is invisible rather than ambiguous, and
  * invisible is the failure that wastes six minutes.
  */
+/**
+ * The prompt this tab is currently generating for.
+ *
+ * Module-level because the result view is identified by carrying this text,
+ * and the poller runs long after handleExecute has returned.
+ */
+let activePrompt = '';
+
+/**
+ * The masonry section holding OUR generation.
+ *
+ * On a finished render Grok puts the submitted prompt in a chip at the top of
+ * the section that holds its results — `div.bg-surface-l1 > span` with the
+ * prompt as its only text. Discover sections have no such chip. That is the
+ * one thing on the page that distinguishes our images from other people's,
+ * since the markup around them is byte-for-byte the same component.
+ *
+ * Long prompts may be shortened in the chip, so a chip that is a prefix of
+ * what we sent counts — but only a substantial one, so a two-word chip cannot
+ * claim a section by accident.
+ */
+function ourResultSection(): Element | null {
+  const norm = (s: string | null) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const want = norm(activePrompt);
+  if (!want) return null;
+
+  for (const section of Array.from(document.querySelectorAll('[id^="imagine-masonry-section"]'))) {
+    for (const el of Array.from(section.querySelectorAll('span, p, h1, h2, h3'))) {
+      if (el.children.length) continue;
+      const text = norm(el.textContent);
+      if (!text) continue;
+      if (text === want) return section;
+      // Truncated by the chip, or by Grok's own rewrite of a long prompt.
+      const stem = text.replace(/[.…]+$/, '');
+      if (stem.length >= 24 && want.startsWith(stem)) return section;
+    }
+  }
+  return null;
+}
+
 function collectResultImages(): HTMLImageElement[] {
   const composer = composerRegion();
+  const ourSection = ourResultSection();
 
   const usable = (img: HTMLImageElement): boolean => {
     const src = img.currentSrc || img.src || '';
     if (!src) return false;
     if (src.startsWith('data:') && src.length < 2000) return false; // inline icons
     if (composer && composer.contains(img)) return false;
-    /* Discover, not your generation.
-       /imagine renders a masonry feed of other people's public posts, and its
-       tiles are <img alt="Generated image"> data URLs at 256x256 — they pass
-       every test below. Measured on the live page after a real render: four
-       Discover tiles were returned as the result while the actual image sat
-       in History.
+    /* Discover, not your generation — but only when it really is Discover.
 
-       The baseline diff hides this only while the feed is static. It lazy
-       loads as it scrolls, so a tile arriving during the wait is NEW, and
-       gets captured as the node's output — a stranger's picture, silently,
-       reported as a success. */
-    if (img.closest('[id^="imagine-masonry-section"], [class*="media-post-masonry-card"]')) {
-      return false;
-    }
+       /imagine renders a masonry feed of other people's public posts whose
+       tiles pass every other test here, and a tile that lazy-loads during the
+       wait is NEW, so the baseline diff does not stop it: a stranger's picture
+       returned as the node's output, silently, reported as a success.
+
+       The first attempt at this excluded the masonry markup outright. That was
+       wrong, and wrong in the worse direction. Measured on a real completed
+       render: OUR results sit in exactly the same component —
+
+         div#imagine-masonry-section-0 > div.min-h-[100vh] > div
+           > div.relative.group/media-post-masonry-card > div > img
+
+       — identical to the Discover tiles, because it is the same component.
+       So the blanket exclusion rejected every genuine result too, and the
+       node waited out its timeout with two finished images on screen. The
+       earlier "4 matches became 0" reading was not the filter working; it was
+       the same component showing Discover at that moment.
+
+       What actually separates them is on the page: the result view carries a
+       chip holding the prompt we just submitted, and Discover carries none.
+       So a section proven to be ours is searched, and any other section is
+       skipped. With no prompt to match — a text node, an unknown state — the
+       old exclusion stands, which errs toward returning nothing rather than
+       returning someone else's picture. */
+    const inMasonry = img.closest('[id^="imagine-masonry-section"]');
+    if (inMasonry && inMasonry !== ourSection) return false;
+    if (!inMasonry && img.closest('[class*="media-post-masonry-card"]')) return false;
     /* Grok Imagine results are hosted at assets.grok.com — recognise them
        even while still loading, since the URL alone confirms they are results
        rather than UI chrome. The old size check rejected them during the
@@ -880,6 +936,133 @@ async function captureImage(img: HTMLImageElement): Promise<string> {
   return blobToDataUrl(blob);
 }
 
+/**
+ * Imagine's image-only controls.
+ *
+ * Read off the live toolbar, which carries three things a still can set and
+ * that nothing in this extension was touching:
+ *
+ *   button[aria-label="Image Count"]     menu: Auto ×2 ×4 ×8 ×12
+ *   button[aria-label="Aspect Ratio"]    menu: 2:3 3:2 1:1 9:16 16:9
+ *   [role="radiogroup"][aria-label="Image generation speed"]   Speed | Quality (2.0)
+ *
+ * Aspect ratio was already wired, but only inside the video branch, so an
+ * image node asked for 9:16 and silently got whatever the toolbar was last
+ * left on. The speed radios carry no aria-label — only a text span — which
+ * `selectRadio` already handles, since it matches on either.
+ */
+async function selectImageCount(value: string): Promise<boolean> {
+  const trigger = Array.from(document.querySelectorAll<HTMLElement>('button[aria-label="Image Count"]'))
+    .find(isVisible);
+  if (!trigger) return false;
+
+  // The multiplication sign is U+00D7, not the letter x, in both the trigger
+  // and the menu — normalise so a config of "x4" or "4" still matches.
+  const norm = (s: string) => s.replace(/[×x]/gi, '').trim().toLowerCase();
+  const want = norm(value);
+  if (norm(trigger.textContent || '') === want) return true;
+
+  if (!(await openMenuTrigger(trigger))) return false;
+
+  const item = Array.from(document.querySelectorAll<HTMLElement>(
+    '[role="menuitem"], [role="menuitemradio"], [role="option"]'
+  )).find((el) => norm(el.textContent || '') === want);
+  if (!item) {
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return false;
+  }
+  item.click();
+  await sleep(400);
+  return norm(trigger.textContent || '') === want;
+}
+
+/**
+ * Send the prompt, and confirm Grok took it.
+ *
+ * Grok disables the submit button whenever the composer is empty, and it
+ * re-enables on React's next render rather than on the DOM mutation. Measured
+ * on the live page: 646ms between the paste landing and `disabled` clearing.
+ * The old code slept a flat 400ms and clicked whatever `findSendButton()`
+ * returned — a disabled button, which swallows a click in complete silence.
+ * Nothing threw, nothing logged, and the tracker then sat out its full ten
+ * minutes waiting for a generation that had never been requested. That is the
+ * node stuck at 52%.
+ *
+ * So: wait for enabled rather than guess at a delay, then verify the submit
+ * was actually accepted. Grok clears the composer when it accepts, which is
+ * the one signal available before the result exists.
+ *
+ * Returns an error string, or null when the prompt is away.
+ */
+async function submitPrompt(composer: HTMLElement): Promise<string | null> {
+  const typed = (composer.innerText || composer.textContent || '').trim();
+  /* Any evidence that the press landed, not just the one signal.
+
+     A cleared composer is what grok.com does today and is the clearest tell,
+     but resting the whole thing on it would turn a Grok that keeps the text
+     around — a re-prompt view, a variant flow — into a false "refused", which
+     is the opposite of the failure being fixed here. A send button that went
+     back to disabled, a stop button, or a page that started working all mean
+     the same thing: it took the prompt. */
+  const accepted = () => {
+    const now = (composer.innerText || composer.textContent || '').trim();
+    if (now.length === 0 || now !== typed) return true;
+    const send = findSendButton();
+    if (send && (send as HTMLButtonElement).disabled) return true;
+    return !!findStopButton() || isGenerating();
+  };
+
+  /* Enabled, not merely present. `findSendButton()` answers "is there a
+     button", which was never the question. */
+  let btn: HTMLElement | null = null;
+  for (let i = 0; i < 40; i++) {          // up to 6s
+    const candidate = findSendButton();
+    if (candidate && !(candidate as HTMLButtonElement).disabled) { btn = candidate; break; }
+    await sleep(150);
+  }
+
+  if (!btn) {
+    /* Enter is the fallback, and it is a real one — but if it also fails we
+       must say so now rather than time out in six minutes. */
+    composer.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', code: 'Enter', bubbles: true, cancelable: true,
+    }));
+    for (let i = 0; i < 20; i++) { await sleep(150); if (accepted()) return null; }
+    return 'Grok never enabled its send button for this prompt, and Enter did '
+      + 'not submit either — the prompt is still sitting in the Grok composer.';
+  }
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    /* A full pointer sequence, not a bare .click(). Grok's controls are Radix,
+       and its menus bind to pointerdown — the aspect-ratio menu does not open
+       for a synthetic click at all. The submit button does respond to .click(),
+       but sending the same sequence everywhere removes one difference between
+       the paths that work and the paths that do not. */
+    const r = btn.getBoundingClientRect();
+    const o: any = {
+      bubbles: true, cancelable: true, composed: true,
+      clientX: r.x + r.width / 2, clientY: r.y + r.height / 2,
+      button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse', isPrimary: true, detail: 1,
+    };
+    const Ptr: any = (globalThis as any).PointerEvent || MouseEvent;
+    btn.dispatchEvent(new Ptr('pointerdown', o));
+    btn.dispatchEvent(new MouseEvent('mousedown', o));
+    btn.dispatchEvent(new Ptr('pointerup', { ...o, buttons: 0 }));
+    btn.dispatchEvent(new MouseEvent('mouseup', { ...o, buttons: 0 }));
+    (btn as HTMLButtonElement).click();
+
+    for (let i = 0; i < 24; i++) {        // up to 3.6s for the composer to clear
+      await sleep(150);
+      if (accepted()) return null;
+    }
+    if (attempt === 0) logLine('Grok did not take the prompt on the first press — trying once more');
+  }
+
+  return 'Grok did not accept the prompt — the send button was pressed twice '
+    + 'and the composer still holds the text. Check the Grok tab: this usually '
+    + 'means Imagine is refusing new generations for this account right now.';
+}
+
 /* ── Execution ── */
 
 async function handleExecute(payload: any): Promise<any> {
@@ -894,6 +1077,10 @@ async function handleExecute(payload: any): Promise<any> {
 
   console.log(`[AutoFlow Grok] Executing node ${nodeId}`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 10 });
+
+  /* What the result view will be carrying if it is ours. Set before anything
+     else touches the page, and cleared by the next node's run. */
+  activePrompt = prompt;
 
   /* Text nodes only, and before the composer lookup and the baselines below,
      since the reset remounts the composer and empties the thread. Image and
@@ -976,6 +1163,25 @@ async function handleExecute(payload: any): Promise<any> {
     composer = findComposer() || composer;
   }
 
+  /* Image settings. These exist on the toolbar and were never applied — an
+     image node's Ratio pill moved a value that reached the runner, went into
+     the config, and stopped there, because the only call site was the video
+     branch below. */
+  if (config?.mediaType === 'image') {
+    if (config?.aspectRatio) {
+      const ok = await selectAspectRatio(config.aspectRatio);
+      console.log(`[AutoFlow Grok] Aspect ratio: ${config.aspectRatio}${ok ? '' : ' — not offered, left as is'}`);
+    }
+    if (config?.imageCount) {
+      const ok = await selectImageCount(config.imageCount);
+      console.log(`[AutoFlow Grok] Image count: ${config.imageCount}${ok ? '' : ' — not offered, left as is'}`);
+    }
+    if (config?.quality) {
+      const ok = await selectRadio('Image generation speed', config.quality);
+      console.log(`[AutoFlow Grok] Speed: ${config.quality}${ok ? '' : ' — not offered, left as is'}`);
+    }
+  }
+
   if (wantsVideo && !wantsExtend) {
     // Optional: a node that names none of these keeps whatever Grok has.
     for (const [group, value] of [
@@ -1025,16 +1231,11 @@ async function handleExecute(payload: any): Promise<any> {
     send('STUDIO_NODE_ERROR', { nodeId, error: 'Could not type into the Grok prompt box' });
     return { success: false };
   }
-  await sleep(400);
 
-  // The button only exists now that the composer has text.
-  const btn = findSendButton();
-  if (btn) {
-    btn.click();
-  } else {
-    composer.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter', code: 'Enter', bubbles: true, cancelable: true,
-    }));
+  const refused = await submitPrompt(composer);
+  if (refused) {
+    send('STUDIO_NODE_ERROR', { nodeId, error: refused });
+    return { success: false };
   }
 
   console.log(`[AutoFlow Grok] Submitted — waiting for the ${wantsText ? 'reply' : 'image'}...`);
