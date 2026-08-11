@@ -270,6 +270,43 @@ async function startNewChat(): Promise<boolean> {
   return false;
 }
 
+/**
+ * Put the generator's controls back on screen.
+ *
+ * A finished video leaves the tab on /imagine/post/<id>?conversation=<id>.
+ * Measured there: `[role="radiogroup"]` matches NOTHING — no mode, no
+ * resolution, no duration — while the composer is still present and still
+ * accepts a prompt. So the mode guard found no group, declined to fire, and
+ * the next node typed into that composer and generated in whatever mode the
+ * previous run had left. An image node after a video node made a video, spent
+ * the credits, and handed a clip to something expecting a still.
+ *
+ * The sidebar's New Generation button goes back to /imagine and the controls
+ * return in about 800ms — measured — as a client-side navigation, so this
+ * script survives it. Assigning location.href would reload the tab and kill
+ * the run in progress instead.
+ */
+async function ensureGeneratorControls(): Promise<boolean> {
+  if (findRadioGroup('Generation mode')) return true;
+
+  const control =
+    Array.from(document.querySelectorAll<HTMLElement>('button[aria-label], a[aria-label]'))
+      .find((el) => /new generation/i.test(el.getAttribute('aria-label') || '') && isVisible(el))
+    // The result view's own way out, kept as the fallback: it is an anchor to
+    // /imagine rather than a button, so it survives a sidebar redesign.
+    || Array.from(document.querySelectorAll<HTMLElement>('a[href="/imagine"]')).find(isVisible);
+
+  if (!control) return false;
+
+  logLine('This view has no generator controls — returning to /imagine first');
+  control.click();
+  for (let i = 0; i < 30; i++) {          // up to 6s
+    await sleep(200);
+    if (findRadioGroup('Generation mode')) return true;
+  }
+  return false;
+}
+
 function findRadioGroup(label: string): HTMLElement | null {
   const group = document.querySelector<HTMLElement>(`[role="radiogroup"][aria-label="${label}"]`);
   return group && isVisible(group) ? group : null;
@@ -1228,13 +1265,40 @@ async function handleExecute(payload: any): Promise<any> {
      rather than assuming: a mode that did not take produces a still where a
      clip was asked for, and nothing downstream can tell the difference. */
   if (wantsVideo || config?.mediaType === 'image') {
+    /* Extend continues a clip that lives on the view we are standing on, so
+       it must not be sent back to a blank generator. Every other node needs
+       the controls, and a view without them is not a view to type into. */
+    if (!config?.extend && !findRadioGroup('Generation mode')) {
+      if (await ensureGeneratorControls()) {
+        // New Generation replaces the page: the composer found earlier is
+        // detached, and the baseline was taken against a document that is gone.
+        composer = findComposer() || composer;
+        preexisting = snapshot();
+      }
+    }
+
     const mode = wantsVideo ? 'Video' : 'Image';
     if (await selectRadio('Generation mode', mode)) {
       console.log(`[AutoFlow Grok] Mode: ${mode}`);
-    } else if (findRadioGroup('Generation mode')) {
+    } else if (config?.extend) {
+      /* Extend stands on the clip's own view, which carries no mode control
+         and does not need one — the clip already fixes the medium, and
+         startExtend below enters Imagine's extend flow from there. Refusing
+         here would block the one node that is legitimately on that page. */
+      logLine('Extending from the clip view — no mode control here, and none needed');
+    } else {
+      /* Unconditional now. This used to fire only when a mode group existed,
+         so the one case that actually happens — no group at all, on the post
+         view a video leaves behind — fell through and generated in the wrong
+         mode without a word. Refusing costs a node; guessing costs a
+         generation and returns the wrong kind of media. */
       send('STUDIO_NODE_ERROR', {
         nodeId,
-        error: `Could not switch Grok to ${mode} mode — it is still set to something else`,
+        error: findRadioGroup('Generation mode')
+          ? `Could not switch Grok to ${mode} mode — it is still set to something else`
+          : `Grok is showing a view with no mode controls (${location.pathname}) and `
+            + 'returning to /imagine did not bring them back, so this node cannot '
+            + `confirm it would generate ${mode.toLowerCase()}. Open Grok Imagine and run it again.`,
       });
       return { success: false };
     }
