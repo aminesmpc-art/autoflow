@@ -53,7 +53,7 @@ beforeAll(() => {
 beforeEach(mountPanel);
 
 describe('hidden actually hides', () => {
-  const VIEWS = ['view-run', 'view-templates', 'view-prompts'];
+  const VIEWS = ['view-run', 'view-templates', 'view-build', 'view-prompts'];
 
   it('shows exactly one view at rest', () => {
     expect(VIEWS.filter(shown)).toEqual(['view-run']);
@@ -97,6 +97,7 @@ describe('the panel markup keeps the contract index.ts relies on', () => {
     'btn-account', 'acct-close', 'acct-modal', 'top-avatar',
     'foot-plan', 'foot-acct', 'foot-runs',
     'sp-nav', 'tpl-search', 'tpl-pills', 'tpl-grid', 'tpl-count', 'preset-list',
+    'build-idea', 'build-reply', 'build-copy', 'build-go', 'build-ai', 'build-out',
   ];
 
   it.each(REQUIRED)('has #%s', (id) => {
@@ -112,7 +113,7 @@ describe('the panel markup keeps the contract index.ts relies on', () => {
 
   it('wires each tab to a panel that exists', () => {
     const tabs = Array.from(document.querySelectorAll<HTMLElement>('.sp-nav__tab'));
-    expect(tabs.length).toBe(3);
+    expect(tabs.length).toBe(4);
     for (const t of tabs) {
       expect(document.getElementById(`view-${t.dataset.view}`)).not.toBeNull();
       expect(t.getAttribute('role')).toBe('tab');

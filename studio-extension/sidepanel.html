@@ -38,6 +38,11 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>
       Templates
     </button>
+    <button class="sp-nav__tab" data-view="build"
+            role="tab" aria-selected="false" aria-controls="view-build">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M3 12h3M18 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/><circle cx="12" cy="12" r="3.2"/></svg>
+      Build
+    </button>
     <button class="sp-nav__tab" data-view="prompts"
             role="tab" aria-selected="false" aria-controls="view-prompts">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM15 3v5h4M9 12h7M9 16h5"/></svg>
@@ -144,6 +149,41 @@
       </div>
       <div class="sp-count" id="tpl-count"></div>
       <div class="sp-grid" id="tpl-grid"></div>
+    </div>
+
+    <!-- ══ BUILD ════════════════════════════════════════════════
+         Describe an idea, have any AI chat turn it into a plan, paste the
+         reply back. The chat is not driven from here on purpose: the same
+         three steps work with DeepSeek and Claude, which this extension has
+         no adapter for, so the feature is not limited to the sites it can
+         automate. -->
+    <div class="sp-view" id="view-build" role="tabpanel" hidden>
+      <div class="sp-step">
+        <span class="sp-step__n">1</span>
+        <label class="sp-step__label" for="build-idea">Describe what you want to make</label>
+      </div>
+      <textarea id="build-idea" class="sp-area" rows="4"
+                placeholder="A 3-shot vertical ad for a coffee brand — a pour, a close-up of the beans, and the cup on a table."></textarea>
+
+      <div class="sp-step">
+        <span class="sp-step__n">2</span>
+        <span class="sp-step__label">Copy the brief into any AI chat</span>
+      </div>
+      <div class="sp-row">
+        <button id="build-copy" class="sp-btn sp-btn--primary">Copy brief</button>
+      </div>
+      <div class="sp-ai" id="build-ai"></div>
+
+      <div class="sp-step">
+        <span class="sp-step__n">3</span>
+        <label class="sp-step__label" for="build-reply">Paste the reply back</label>
+      </div>
+      <textarea id="build-reply" class="sp-area sp-area--mono" rows="5"
+                placeholder="Paste the whole reply — fenced code, prose around it, all fine."></textarea>
+      <div class="sp-row">
+        <button id="build-go" class="sp-btn sp-btn--primary">Build workflow</button>
+      </div>
+      <div id="build-out" class="sp-buildout" hidden></div>
     </div>
 
     <!-- ══ PROMPTS ══════════════════════════════════════════════ -->

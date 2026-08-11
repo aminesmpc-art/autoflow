@@ -647,6 +647,78 @@ body {
 .sp-tpl--locked { opacity: 0.9; }
 
 /* ════════════════════════════════════════════════
+   Build
+   ════════════════════════════════════════════════ */
+.sp-step { display: flex; align-items: center; gap: 7px; margin-top: 2px; }
+.sp-step__n {
+  display: grid;
+  place-items: center;
+  width: 17px; height: 17px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent-14);
+  border: 1px solid var(--accent-30);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+}
+.sp-step__label { font-size: 11.5px; font-weight: 600; color: var(--text-2); }
+
+.sp-area {
+  width: 100%;
+  padding: 9px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.sp-area::placeholder { color: var(--text-3); }
+.sp-area:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-8); }
+.sp-area--mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }
+
+/* The five chats, as links rather than as automation. Grok, ChatGPT and
+   Gemini could be driven from here; DeepSeek and Claude could not, and a
+   builder that worked with three of the five would be the wrong feature. */
+.sp-ai { display: flex; flex-wrap: wrap; gap: 5px; }
+.sp-ai__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 11px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.sp-ai__link:hover { border-color: var(--accent-30); color: var(--text); background: var(--surface-2); }
+.sp-ai__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); }
+.sp-ai__link:hover .sp-ai__dot { background: var(--accent); }
+
+.sp-buildout {
+  padding: 10px;
+  border-radius: var(--r-ctrl);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.sp-buildout--ok { border-color: var(--accent-30); background: var(--accent-8); }
+.sp-buildout--bad { border-left: 3px solid var(--bad); background: var(--bad-12); color: #fca5a5; }
+.sp-buildout__title { font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.sp-buildout--bad .sp-buildout__title { color: #fca5a5; }
+.sp-buildout ul { margin: 6px 0 0; padding-left: 16px; }
+.sp-buildout li { margin-bottom: 3px; }
+
+/* ════════════════════════════════════════════════
    Prompts
    ════════════════════════════════════════════════ */
 .sp-note { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--text-3); }

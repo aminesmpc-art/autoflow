@@ -15,6 +15,9 @@ import { login, logout, isLoggedIn, getProfile } from '../shared/api';
 import { loadTemplates, refreshTemplates } from '../studio/templates/loader';
 import type { Template } from '../studio/templates';
 import { getAskPresets } from '../studio/presets';
+import { buildSpec } from '../studio/builder/spec';
+import { buildFromReply } from '../studio/builder/plan';
+import { isRunnableType } from '../studio/templates/validate';
 
 /**
  * Element by id, loudly.
@@ -428,7 +431,136 @@ function boot(): void {
    thing the panel could not help with.
    ============================================================ */
 
-type PanelView = 'run' | 'templates' | 'prompts';
+type PanelView = 'run' | 'templates' | 'build' | 'prompts';
+
+/* ── The builder ──
+   An idea in, a workflow out, with any AI chat in the middle.
+
+   The chat is not driven from here, and that is the design rather than a
+   shortcut. Three of these five have adapters in this extension; DeepSeek and
+   Claude do not, and writing two more content scripts to reach them would
+   make the feature depend on five sites keeping their DOM still. Copy, paste,
+   done works with all five today and with whatever is popular next year.
+
+   The model's half is small on purpose — see builder/spec.ts. Everything
+   mechanical is computed by compilePlan, which puts its output through the
+   same validator every shipped template passes. */
+const AI_CHATS: Array<[string, string]> = [
+  ['ChatGPT', 'https://chatgpt.com/'],
+  ['Grok', 'https://grok.com/'],
+  ['Gemini', 'https://gemini.google.com/app'],
+  ['DeepSeek', 'https://chat.deepseek.com/'],
+  ['Claude', 'https://claude.ai/new'],
+];
+
+function renderAiLinks(): void {
+  const host = document.getElementById('build-ai');
+  if (!host) return;
+  host.innerHTML = '';
+  for (const [name, url] of AI_CHATS) {
+    const a = document.createElement('button');
+    a.type = 'button';
+    a.className = 'sp-ai__link';
+    a.title = `Open ${name} in a new tab`;
+    const dot = document.createElement('span');
+    dot.className = 'sp-ai__dot';
+    const label = document.createElement('span');
+    label.textContent = name;
+    a.append(dot, label);
+    a.addEventListener('click', () => { chrome.tabs.create({ url }).catch(() => {}); });
+    host.append(a);
+  }
+}
+
+/** One place to say how it went, so a failure cannot look like nothing. */
+function buildSays(kind: 'ok' | 'bad' | 'info', title: string, lines: string[] = []): void {
+  const box = document.getElementById('build-out');
+  if (!box) return;
+  box.hidden = false;
+  box.className = `sp-buildout ${kind === 'ok' ? 'sp-buildout--ok' : kind === 'bad' ? 'sp-buildout--bad' : ''}`;
+  box.innerHTML = '';
+  const h = document.createElement('div');
+  h.className = 'sp-buildout__title';
+  h.textContent = title;
+  box.append(h);
+  if (lines.length) {
+    const ul = document.createElement('ul');
+    for (const line of lines) {
+      const li = document.createElement('li');
+      li.textContent = line;
+      ul.append(li);
+    }
+    box.append(ul);
+  }
+}
+
+function wireBuilder(): void {
+  renderAiLinks();
+
+  const idea = document.getElementById('build-idea') as HTMLTextAreaElement | null;
+  const reply = document.getElementById('build-reply') as HTMLTextAreaElement | null;
+  const copy = document.getElementById('build-copy');
+  const go = document.getElementById('build-go');
+  if (!idea || !reply || !copy || !go) return;
+
+  // What was typed survives the panel closing; an idea is worth keeping.
+  chrome.storage.local.get('af_build_idea')
+    .then(({ af_build_idea }) => { if (af_build_idea && !idea.value) idea.value = af_build_idea; })
+    .catch(() => {});
+  idea.addEventListener('input', () => {
+    chrome.storage.local.set({ af_build_idea: idea.value }).catch(() => {});
+  });
+
+  copy.addEventListener('click', async () => {
+    const text = idea.value.trim();
+    if (!text) {
+      buildSays('bad', 'Describe the idea first.');
+      idea.focus();
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(buildSpec(text));
+      buildSays('ok', 'Brief copied — paste it into any chat above.');
+    } catch {
+      /* Clipboard can be refused. Putting the brief in the reply box is a
+         worse place for it than the clipboard but a much better place than
+         nowhere: it can still be selected and copied by hand. */
+      reply.value = buildSpec(text);
+      reply.select();
+      buildSays('info', 'Clipboard blocked — the brief is in the box below, selected. Copy it, then paste the reply over it.');
+    }
+  });
+
+  go.addEventListener('click', async () => {
+    const text = reply.value.trim();
+    if (!text) {
+      buildSays('bad', 'Paste the chat reply first.');
+      reply.focus();
+      return;
+    }
+
+    const { template, problems } = buildFromReply(text);
+    if (!template) {
+      buildSays('bad', 'That reply could not be turned into a workflow', problems);
+      return;
+    }
+
+    /* Parked whole rather than by id: the gallery looks an id up in the
+       published list, and this workflow exists nowhere but here. */
+    try {
+      await chrome.storage.local.set({ af_pending_workflow: template });
+    } catch {
+      buildSays('bad', 'Could not hand the workflow to the canvas — storage is unavailable.');
+      return;
+    }
+    const steps = template.nodes.filter((n: any) => isRunnableType(n.type)).length;
+    buildSays('ok', `Built "${template.name}"`, [
+      `${template.nodes.length} nodes, ${steps} of them run`,
+      'Opening the canvas…',
+    ]);
+    chrome.runtime.sendMessage({ type: 'PANEL_OPEN_STUDIO' }).catch(() => {});
+  });
+}
 
 /** Templates currently shown, and the category filter over them. */
 let panelTemplates: Template[] = [];
@@ -436,7 +568,7 @@ let panelCategory = 'All';
 let panelQuery = '';
 
 function showView(view: PanelView): void {
-  for (const id of ['run', 'templates', 'prompts'] as PanelView[]) {
+  for (const id of ['run', 'templates', 'build', 'prompts'] as PanelView[]) {
     const el = document.getElementById(`view-${id}`);
     if (el) (el as HTMLElement).hidden = id !== view;
   }
@@ -622,6 +754,7 @@ function wireShell(): void {
 
   renderPresets();
   renderTemplates();
+  wireBuilder();
 
   /* Templates come from the cache, the bundle, or the backend — the loader
      never waits on the network, so the grid fills immediately and improves. */

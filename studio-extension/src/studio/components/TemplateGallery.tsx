@@ -157,9 +157,18 @@ export default function TemplateGallery() {
          so it parks an id in storage and asks for the canvas to open; this is
          where that choice is collected. Cleared immediately, or every later
          visit to the gallery would reopen the same template. */
-      chrome.storage.local.get('af_pending_template')
-        .then(({ af_pending_template: pending }) => {
-          if (!live || !pending) return undefined;
+      chrome.storage.local.get(['af_pending_template', 'af_pending_workflow'])
+        .then(({ af_pending_template: pending, af_pending_workflow: built }) => {
+          if (!live) return undefined;
+          /* A workflow built from a description in the panel's Build tab. It
+             is parked whole rather than by id, because it exists nowhere but
+             in that panel — there is no published list to look it up in. */
+          if (built) {
+            return chrome.storage.local.remove('af_pending_workflow').then(() => {
+              loadTemplate(built as Template);
+            });
+          }
+          if (!pending) return undefined;
           return chrome.storage.local.remove('af_pending_template').then(() => {
             const wanted = t.find((x) => x.id === pending);
             if (wanted) loadTemplate(wanted);
