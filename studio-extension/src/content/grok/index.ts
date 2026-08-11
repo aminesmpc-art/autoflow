@@ -313,15 +313,27 @@ function findRadioGroup(label: string): HTMLElement | null {
 }
 
 /** Set one radio group, and confirm from aria-checked that it took. */
-async function selectRadio(groupLabel: string, value: string): Promise<boolean> {
+/**
+ * @param loose also accept a button whose label merely STARTS WITH the value.
+ *
+ * For the speed pair only, whose second option carries a model version in its
+ * text: it read "Quality (2.0)" this morning and "Quality (v2.0)" this
+ * evening. Exact matching found neither, so `quality` silently did nothing and
+ * the node's Speed setting never reached the page — visible as a node saying
+ * Quality beside a Grok toolbar saying Speed. Left off everywhere else, where
+ * exact values like "6s" and "720p" should not match a longer neighbour.
+ */
+async function selectRadio(groupLabel: string, value: string, loose = false): Promise<boolean> {
   const group = findRadioGroup(groupLabel);
   if (!group) return false;
 
   const want = value.trim().toLowerCase();
-  const btn = Array.from(group.querySelectorAll<HTMLElement>('[role="radio"]')).find((b) =>
+  const label = (b: Element) => ((b.getAttribute('aria-label') || b.textContent || '')).trim().toLowerCase();
+  const radios = Array.from(group.querySelectorAll<HTMLElement>('[role="radio"]'));
+  const btn = radios.find((b) =>
     (b.getAttribute('aria-label') || '').trim().toLowerCase() === want ||
     (b.textContent || '').trim().toLowerCase() === want
-  );
+  ) || (loose ? radios.find((b) => label(b).startsWith(want)) : undefined);
   if (!btn) return false;
   if (btn.getAttribute('aria-checked') === 'true') return true;
 
@@ -669,6 +681,10 @@ function readLatestReply(): string {
  */
 let activePrompt = '';
 
+/** The node this tab is currently working for. Stamped on messages that carry
+    no nodeId of their own, so a caller can tell whose ask it is. */
+let activeNodeId = '';
+
 /**
  * The masonry section holding OUR generation.
  *
@@ -682,8 +698,11 @@ let activePrompt = '';
  * what we sent counts — but only a substantial one, so a two-word chip cannot
  * claim a section by accident.
  */
+/** Whitespace-collapsed, case-folded — how prompt text is compared here. */
+const normText = (s: string | null) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
 function ourResultSection(): Element | null {
-  const norm = (s: string | null) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const norm = normText;
   const want = norm(activePrompt);
   if (!want) return null;
 
@@ -1034,27 +1053,45 @@ async function selectImageCount(value: string): Promise<boolean> {
 async function submitPrompt(composer: HTMLElement): Promise<string | null> {
   const typed = (composer.innerText || composer.textContent || '').trim();
   const urlBefore = location.href;
-  /* Any evidence that the press landed, not just the one signal.
 
-     A cleared composer is the clearest tell on the image flow, but it is NOT
-     universal, and assuming it was would have been expensive: a video submit
-     succeeds while LEAVING the prompt in the box. Measured — a synthetic press
-     in Video mode produced a real ten-second clip and navigated to
-     /imagine/post/<id>?conversation=<id>, with "a paper boat drifting across a
-     still pud…" still sitting in the composer afterwards. Keying only on the
-     composer would have asked the user to press a button for a generation
-     already running, which is worse than the bug this replaced.
+  /* Positive evidence that GROK TOOK THIS PROMPT — nothing weaker.
 
-     So: the URL moving to a post is acceptance, and so is a cleared composer,
-     a send button back to disabled, a stop button, or a page visibly working. */
-  const accepted = () => {
-    if (location.href !== urlBefore) return true;
-    const now = (composer.innerText || composer.textContent || '').trim();
-    if (now.length === 0 || now !== typed) return true;
-    const send = findSendButton();
-    if (send && (send as HTMLButtonElement).disabled) return true;
-    return !!findStopButton() || isGenerating();
+     The previous version accepted a cleared composer, and a send button back
+     to disabled, and anything that looked busy. Every one of those is produced
+     by the failure it was meant to catch: a rejected image submit empties the
+     composer, drops the page on Discover, and disables the button again,
+     exactly as a successful one would. So `accepted()` returned true on the
+     first poll, the handover never ran, no line reached the panel, and the
+     node went back to waiting out its ten minutes. That is the hang, restored
+     by the fix for the hang.
+
+     What actually separates the two, measured on both paths:
+
+       success (image)  the page starts showing OUR prompt — the result chip,
+                        and the tab title, which flips within a second of a
+                        real click
+       success (video)  the URL moves to /imagine/post/<id>
+       failure          title goes to "Imagine - Grok", no chip, URL unchanged
+
+     A false positive costs ten minutes of silence; a false negative costs one
+     needless button press. So this asks for proof, not for the absence of
+     contradiction. */
+  const promptOnPage = () => {
+    const want = normText(typed);
+    if (!want) return false;
+    // "<prompt> - Grok" — and Grok truncates a long one, so a prefix counts.
+    const title = normText(document.title.replace(/\s*[-–—]\s*grok\s*$/i, ''));
+    if (title && title !== 'imagine') {
+      const stem = title.replace(/[.…]+$/, '');
+      if (stem === want || (stem.length >= 24 && want.startsWith(stem))) return true;
+    }
+    return !!ourResultSection();
   };
+
+  const accepted = () =>
+    location.href !== urlBefore     // the video flow navigates to a post
+    || promptOnPage()               // the image flow starts showing the prompt
+    || !!findStopButton();          // and anything mid-flight offers a stop
 
   /* Enabled, not merely present. `findSendButton()` answers "is there a
      button", which was never the question. */
@@ -1148,6 +1185,7 @@ async function awaitUserSubmit(
      an extension cannot produce one. Say that once, plainly, rather than
      letting it look like the extension is broken. */
   send('STUDIO_NEEDS_CLICK', {
+    nodeId: activeNodeId,
     platform: 'Grok',
     message: 'Press the ↑ arrow in the Grok tab to start this generation.',
   });
@@ -1224,6 +1262,7 @@ async function handleExecute(payload: any): Promise<any> {
   /* What the result view will be carrying if it is ours. Set before anything
      else touches the page, and cleared by the next node's run. */
   activePrompt = prompt;
+  activeNodeId = nodeId;
 
   /* Text nodes only, and before the composer lookup and the baselines below,
      since the reset remounts the composer and empties the thread. Image and
@@ -1347,7 +1386,8 @@ async function handleExecute(payload: any): Promise<any> {
       console.log(`[AutoFlow Grok] Image count: ${config.imageCount}${ok ? '' : ' — not offered, left as is'}`);
     }
     if (config?.quality) {
-      const ok = await selectRadio('Image generation speed', config.quality);
+      // loose: the label carries a model version — 'Quality (v2.0)'.
+      const ok = await selectRadio('Image generation speed', config.quality, true);
       console.log(`[AutoFlow Grok] Speed: ${config.quality}${ok ? '' : ' — not offered, left as is'}`);
     }
   }

@@ -48,8 +48,12 @@ interface Harness {
  * @param deadButton the button enables but pressing it does nothing — what
  *        grok.com actually did on 2026-08-11, for a real click too.
  */
+let harnessSeq = 0;
+
 function buildPage(enableAfterMs: number, deadButton = false): Harness {
   document.body.innerHTML = '';
+  document.title = 'Imagine - Grok';       // what a refused submit leaves behind
+  const nodeId = `n${++harnessSeq}`;
   const state = { clicks: 0, acceptedAt: null as number | null, t0: Date.now() };
 
   const composer = document.createElement('div');
@@ -78,9 +82,15 @@ function buildPage(enableAfterMs: number, deadButton = false): Harness {
     // so the guard here is what makes this fixture honest.
     if (submit.disabled) return;
     state.clicks++;
-    if (deadButton) return;                     // pressed, ignored — see above
+    /* A REJECTED image submit still empties the composer and still leaves the
+       button disabled — measured on grok.com, the page simply drops onto
+       Discover with no generation. That is why acceptance cannot be read from
+       either of those, and why this fixture clears the box in both branches.
+       Getting this wrong is what let the hang come back. */
+    composer.textContent = '';
+    if (deadButton) return;                     // cleared, but nothing generated
     state.acceptedAt = Date.now() - state.t0;
-    composer.textContent = '';                  // Grok clears on accept
+    document.title = (composer.dataset.lastPrompt || '') + ' - Grok';
   });
 
   const modeGroup = document.createElement('div');
@@ -110,13 +120,22 @@ function buildPage(enableAfterMs: number, deadButton = false): Harness {
   (globalThis as any).chrome = {
     runtime: {
       onMessage: { addListener: (fn: Listener) => listeners.push(fn) },
-      sendMessage: (msg: any) => { sent.push(msg); return Promise.resolve(); },
+      sendMessage: (msg: any) => {
+        // Only this harness's node. See harnessSeq above.
+        const id = msg?.payload?.nodeId;
+        if (!id || id === nodeId) sent.push(msg);
+        return Promise.resolve();
+      },
     },
   };
   (document as any).execCommand = (cmd: string, _ui: boolean, value: string) => {
-    if (cmd === 'insertText') composer.textContent = value;
+    if (cmd === 'insertText') { composer.textContent = value; composer.dataset.lastPrompt = value; }
     return true;
   };
+  composer.addEventListener('paste', (e: any) => {
+    const t = e.clipboardData?.getData('text/plain') || '';
+    if (t) { composer.textContent = t; composer.dataset.lastPrompt = t; }
+  });
   (globalThis as any).fetch = () => Promise.resolve({
     ok: true, blob: () => Promise.resolve(new Blob(['x'], { type: 'image/png' })),
   });
@@ -132,6 +151,8 @@ function buildPage(enableAfterMs: number, deadButton = false): Harness {
     acceptByHand: () => {
       state.acceptedAt = Date.now() - state.t0;
       composer.textContent = '';
+      // A real click makes Grok show the prompt — the tab title flips at once.
+      document.title = (composer.dataset.lastPrompt || '') + ' - Grok';
     },
     navigateLikeVideo: () => {
       window.history.pushState({}, '', '/imagine/post/0bcba547?conversation=2adba0bf');
@@ -139,7 +160,7 @@ function buildPage(enableAfterMs: number, deadButton = false): Harness {
     acceptedAt: () => state.acceptedAt,
     execute: (config) => {
       for (const fn of listeners) {
-        fn({ type: 'STUDIO_EXECUTE_NODE', payload: { nodeId: 'n1', config } }, {}, () => {});
+        fn({ type: 'STUDIO_EXECUTE_NODE', payload: { nodeId, config } }, {}, () => {});
       }
     },
   };

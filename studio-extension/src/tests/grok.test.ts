@@ -50,6 +50,7 @@ interface Harness {
 
 function buildHarness(): Harness {
   document.body.innerHTML = '';
+  document.title = 'Imagine - Grok';   // what a page with nothing running says
 
   const form = document.createElement('form');
   const composer = document.createElement('div');
@@ -86,13 +87,17 @@ function buildHarness(): Harness {
     btn.type = 'submit';
     btn.setAttribute('aria-label', 'Submit');
     (btn as any).getBoundingClientRect = box(32, 32);
-    /* Grok empties the composer when it accepts a prompt, and that is now the
-       adapter's evidence the press landed — without it, submitPrompt is right
-       to press again and then report a refusal. A fixture whose button does
-       nothing is not a simpler version of the real one, it is the broken one. */
+    /* Accepting a prompt does two things on the real page, and the adapter
+       needs the second one: Grok empties the composer AND starts showing the
+       prompt — the tab title flips to "<prompt> - Grok" within a second.
+       Clearing alone is NOT acceptance, because a refused image submit clears
+       it too and generates nothing; keying on that is what let the silent
+       ten-minute hang come back. So the fixture does both. */
     btn.addEventListener('click', () => {
-      sentText.push(composer.textContent || '');
+      const text = composer.textContent || '';
+      sentText.push(text);
       composer.textContent = '';
+      document.title = `${text} - Grok`;
     });
     form.append(btn);
     return btn;
@@ -100,7 +105,11 @@ function buildHarness(): Harness {
 
   // Same on the Enter path, for the same reason.
   composer.addEventListener('keydown', (e: any) => {
-    if (e.key === 'Enter') setTimeout(() => { composer.textContent = ''; }, 0);
+    if (e.key === 'Enter') setTimeout(() => {
+      const text = composer.textContent || '';
+      composer.textContent = '';
+      document.title = `${text} - Grok`;
+    }, 0);
   });
 
   const sent: any[] = [];
