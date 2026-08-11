@@ -1032,7 +1032,27 @@ async function submitPrompt(composer: HTMLElement): Promise<string | null> {
       + 'not submit either — the prompt is still sitting in the Grok composer.';
   }
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  /* One press, then hand over.
+
+     Grok gates generation on transient user activation, and nothing a content
+     script dispatches carries it. Measured on the live page, same prompt and
+     same settings, three ways:
+
+       synthetic pointer sequence  composer cleared, went to Discover, nothing
+       bare .click()               composer cleared, went to Discover, nothing
+       real click                  two images in about ten seconds
+
+     and at the moment of a synthetic submit, navigator.userActivation reads
+     { isActive: false }. Enter fails identically. So this is not a selector to
+     find or a delay to tune — it is a deliberate gate, and pressing harder
+     cannot pass it.
+
+     The press below is still worth making: it costs nothing, and if Grok ever
+     drops the gate the node goes back to being hands-off with no code change.
+     When it does not take, the run does not fail — everything else is already
+     set up, so the one thing left is a click, and asking for it beats throwing
+     the prepared prompt away. */
+  for (let attempt = 0; attempt < 1; attempt++) {
     /* A full pointer sequence, not a bare .click(). Grok's controls are Radix,
        and its menus bind to pointerdown — the aspect-ratio menu does not open
        for a synthetic click at all. The submit button does respond to .click(),
@@ -1055,12 +1075,91 @@ async function submitPrompt(composer: HTMLElement): Promise<string | null> {
       await sleep(150);
       if (accepted()) return null;
     }
-    if (attempt === 0) logLine('Grok did not take the prompt on the first press — trying once more');
   }
 
-  return 'Grok did not accept the prompt — the send button was pressed twice '
-    + 'and the composer still holds the text. Check the Grok tab: this usually '
-    + 'means Imagine is refusing new generations for this account right now.';
+  return awaitUserSubmit(btn, accepted);
+}
+
+/** How long the run waits for the click before giving the prompt back. */
+const HANDOFF_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Ask for the one click only a person can make, and wait for it.
+ *
+ * Everything else is done by the time this runs: the tab is open, the mode is
+ * Image, the ratio, count and quality are set, and the prompt is in the box.
+ * The alternative to waiting is discarding all of that and failing, which is
+ * strictly worse for the user than being asked to press one button.
+ *
+ * The button is marked and scrolled into view, because "press the arrow in
+ * Grok" is no use to someone looking at the canvas in another tab — the panel
+ * line and the pulsing ring have to meet in the same place.
+ */
+async function awaitUserSubmit(
+  btn: HTMLElement,
+  accepted: () => boolean,
+): Promise<string | null> {
+  logLine('Grok needs your click — the prompt and settings are ready, press the ↑ arrow in the Grok tab');
+  /* Grok blocks generation unless the click carries real user activation, and
+     an extension cannot produce one. Say that once, plainly, rather than
+     letting it look like the extension is broken. */
+  send('STUDIO_NEEDS_CLICK', {
+    platform: 'Grok',
+    message: 'Press the ↑ arrow in the Grok tab to start this generation.',
+  });
+
+  /* The ring is a courtesy; the waiting below is the substance. Wrapped
+     because decoration must never be able to fail a run — an unguarded
+     scrollIntoView threw on a page shape that did not implement it and took
+     the whole handover down with it, turning "press this button" into "Grok
+     step failed". */
+  let ring: HTMLElement | null = null;
+  let style: HTMLElement | null = null;
+  try {
+    btn.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    ring = document.createElement('div');
+    ring.setAttribute('data-autoflow-hint', '1');
+    const r = btn.getBoundingClientRect();
+    Object.assign(ring.style, {
+      position: 'fixed',
+      left: `${r.left - 6}px`, top: `${r.top - 6}px`,
+      width: `${r.width + 12}px`, height: `${r.height + 12}px`,
+      border: '2px solid #b5f602', borderRadius: '999px',
+      boxShadow: '0 0 0 4px rgba(181,246,2,0.25)',
+      pointerEvents: 'none', zIndex: '2147483647',
+      animation: 'autoflow-pulse 1.2s ease-in-out infinite',
+    } as Partial<CSSStyleDeclaration>);
+    style = document.createElement('style');
+    style.textContent = '@keyframes autoflow-pulse{0%,100%{opacity:1}50%{opacity:.35}}';
+    document.documentElement.append(style, ring);
+  } catch { /* no highlight, still waiting */ }
+
+  const started = Date.now();
+  try {
+    while (Date.now() - started < HANDOFF_TIMEOUT_MS) {
+      await sleep(400);
+      if (accepted()) {
+        logLine(`Thanks — Grok took it after ${Math.round((Date.now() - started) / 1000)}s`);
+        return null;
+      }
+      // The composer re-renders; keep the ring on the button wherever it went.
+      const live = ring && findSendButton();
+      if (live && ring) {
+        const b2 = live.getBoundingClientRect();
+        ring.style.left = `${b2.left - 6}px`;
+        ring.style.top = `${b2.top - 6}px`;
+        ring.style.width = `${b2.width + 12}px`;
+        ring.style.height = `${b2.height + 12}px`;
+      }
+    }
+  } finally {
+    ring?.remove();
+    style?.remove();
+  }
+
+  return 'Grok was ready but nobody pressed send within 5 minutes. Grok only '
+    + 'starts a generation on a real click — an extension cannot make one — so '
+    + 'this node needs the ↑ arrow pressed in the Grok tab while it runs.';
 }
 
 /* ── Execution ── */

@@ -36,6 +36,8 @@ interface Harness {
   clicks: () => number;
   acceptedAt: () => number | null;
   execute: (config: Record<string, unknown>) => void;
+  /** The one thing only a person can do: a click carrying user activation. */
+  acceptByHand: () => void;
 }
 
 /**
@@ -118,6 +120,10 @@ function buildPage(enableAfterMs: number, deadButton = false): Harness {
   return {
     sent,
     clicks: () => state.clicks,
+    acceptByHand: () => {
+      state.acceptedAt = Date.now() - state.t0;
+      composer.textContent = '';
+    },
     acceptedAt: () => state.acceptedAt,
     execute: (config) => {
       for (const fn of listeners) {
@@ -162,21 +168,36 @@ describe('submitting to Grok', () => {
     expect(errorOf(h)).toBeUndefined();
   }, 40_000);
 
-  it('reports a refusal instead of waiting out the timeout', async () => {
-    /* grok.com on 2026-08-11: button enabled, prompt present, pressing it —
-       by script AND by hand — did nothing at all. No toast, no console error,
-       no request. The node used to sit at 52% for ten minutes. It has to fail
-       in seconds, and say what it saw. */
+  it('asks for a click instead of failing when Grok ignores the press', async () => {
+    /* Measured on grok.com: generation is gated on transient user activation,
+       so a synthetic press clears the composer and goes nowhere, while a real
+       one produces images in about ten seconds. navigator.userActivation reads
+       isActive:false at the moment of a scripted submit, and Enter behaves the
+       same. Pressing twice would not help; the run hands over instead. */
     const h = buildPage(300, true);
     h.execute({ mediaType: 'image', prompt: 'a red apple on a white plate' });
 
-    expect(await waitFor(() => !!errorOf(h), 25_000)).toBe(true);
-    expect(errorOf(h).payload.error).toMatch(/did not accept the prompt/i);
-    // Pressed twice before giving up, not once.
-    expect(h.clicks()).toBe(2);
-    // And it never claimed success.
+    const ask = () => h.sent.find((m: any) => m.type === 'STUDIO_NEEDS_CLICK');
+    expect(await waitFor(() => !!ask(), 25_000)).toBe(true);
+    expect(ask().payload.message).toMatch(/press the ↑ arrow/i);
+    // One press, then the handover — not a retry loop.
+    expect(h.clicks()).toBe(1);
+    // Still running: no error, and above all no invented success.
+    expect(errorOf(h)).toBeUndefined();
     expect(h.sent.some((m: any) => m.type === 'STUDIO_NODE_RESULT')).toBe(false);
   }, 40_000);
+
+  it('carries on the moment the person presses it', async () => {
+    const h = buildPage(300, true);
+    h.execute({ mediaType: 'image', prompt: 'a red apple on a white plate' });
+    expect(await waitFor(() => h.sent.some((m: any) => m.type === 'STUDIO_NEEDS_CLICK'), 25_000)).toBe(true);
+
+    // The person presses it. Grok clears the composer, as it does on accept.
+    h.acceptByHand();
+
+    expect(await waitFor(() => h.acceptedAt() !== null, 15_000)).toBe(true);
+    expect(errorOf(h)).toBeUndefined();
+  }, 45_000);
 });
 
 describe('the shipped bundle carries the image controls', () => {

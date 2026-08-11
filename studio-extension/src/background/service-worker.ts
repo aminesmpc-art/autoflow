@@ -560,6 +560,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
 
+  /* ── A node that cannot finish itself ──
+     Grok only starts a generation on a click carrying real user activation,
+     which no extension can produce. When a node reaches that point everything
+     else is already set up, so the run pauses for one press rather than
+     throwing the prepared prompt away. The ask is useless if it lands in a
+     background tab, so bring that tab forward — this is the one case where
+     stealing focus is the entire point. */
+  if (msg?.type === 'STUDIO_NEEDS_CLICK' && sender.tab) {
+    const line = msg.payload?.message || 'Your click is needed to continue.';
+    const entry = { ts: Date.now(), source: msg.payload?.platform || 'Grok', line };
+    diagLog.push(entry);
+    if (diagLog.length > DIAG_LOG_MAX) diagLog.shift();
+    chrome.runtime.sendMessage({ type: 'PANEL_LOG_PUSH', payload: entry }).catch(() => {});
+    chrome.runtime.sendMessage({ type: 'PANEL_NEEDS_CLICK', payload: msg.payload }).catch(() => {});
+    patchRunState({ lastError: line });
+    if (sender.tab.id != null) {
+      chrome.tabs.update(sender.tab.id, { active: true }).catch(() => {});
+      if (sender.tab.windowId != null) {
+        chrome.windows.update(sender.tab.windowId, { focused: true }).catch(() => {});
+      }
+    }
+    replyToStudio(msg);
+    return false;
+  }
+
   // Results arrive from a content script; forward them to the Studio window.
   if (msg?.type?.startsWith?.('STUDIO_') && sender.tab) {
     replyToStudio(msg);
