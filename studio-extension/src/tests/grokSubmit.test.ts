@@ -36,6 +36,8 @@ interface Harness {
   clicks: () => number;
   acceptedAt: () => number | null;
   execute: (config: Record<string, unknown>) => void;
+  /** How many times the React handler was invoked directly. */
+  reactPresses: () => number;
   /** The one thing only a person can do: a click carrying user activation. */
   acceptByHand: () => void;
   /** Grok's video flow: navigate to a post, leaving the composer alone. */
@@ -50,11 +52,11 @@ interface Harness {
  */
 let harnessSeq = 0;
 
-function buildPage(enableAfterMs: number, deadButton = false): Harness {
+function buildPage(enableAfterMs: number, deadButton = false, reactWorks = false): Harness {
   document.body.innerHTML = '';
   document.title = 'Imagine - Grok';       // what a refused submit leaves behind
   const nodeId = `n${++harnessSeq}`;
-  const state = { clicks: 0, acceptedAt: null as number | null, t0: Date.now() };
+  const state = { clicks: 0, reactPresses: 0, acceptedAt: null as number | null, t0: Date.now() };
 
   const composer = document.createElement('div');
   composer.setAttribute('contenteditable', 'true');
@@ -124,6 +126,18 @@ function buildPage(enableAfterMs: number, deadButton = false): Harness {
         // Only this harness's node. See harnessSeq above.
         const id = msg?.payload?.nodeId;
         if (!id || id === nodeId) sent.push(msg);
+        /* The worker answers REACT_TRIGGER by calling the button's React
+           onClick in the page's own world. Standing in for it here decides
+           whether this fixture is a Grok that yields to that press or one
+           that refuses everything. */
+        if (msg?.type === 'REACT_TRIGGER') {
+          if (!reactWorks) return Promise.resolve({ found: true, success: false });
+          state.reactPresses++;
+          composer.textContent = '';
+          document.title = `${composer.dataset.lastPrompt || ''} - Grok`;
+          state.acceptedAt = Date.now() - state.t0;
+          return Promise.resolve({ found: true, success: true });
+        }
         return Promise.resolve();
       },
     },
@@ -148,6 +162,7 @@ function buildPage(enableAfterMs: number, deadButton = false): Harness {
   return {
     sent,
     clicks: () => state.clicks,
+    reactPresses: () => state.reactPresses,
     acceptByHand: () => {
       state.acceptedAt = Date.now() - state.t0;
       composer.textContent = '';
@@ -201,7 +216,23 @@ describe('submitting to Grok', () => {
     expect(errorOf(h)).toBeUndefined();
   }, 40_000);
 
-  it('asks for a click instead of failing when Grok ignores the press', async () => {
+  it('falls through to the React handler when the ordinary press is ignored', async () => {
+    /* The live behaviour: a dispatched press on the image flow clears the
+       composer and generates nothing, while calling the button's React onClick
+       directly — the route the Flow adapter already uses — produced two images
+       in about a second. Verified on grok.com/imagine, onClick at depth 0. */
+    const h = buildPage(300, true, true);
+    h.execute({ mediaType: 'image', prompt: 'a folded paper crane on a windowsill' });
+
+    expect(await waitFor(() => h.acceptedAt() !== null, 25_000)).toBe(true);
+    expect(h.clicks()).toBe(1);          // ordinary press tried first
+    expect(h.reactPresses()).toBe(1);    // then the React one, once
+    // Fully automatic: nobody was asked for anything.
+    expect(h.sent.some((m: any) => m.type === 'STUDIO_NEEDS_CLICK')).toBe(false);
+    expect(errorOf(h)).toBeUndefined();
+  }, 45_000);
+
+  it('asks for a click only when the React handler is refused too', async () => {
     /* Measured on grok.com: generation is gated on transient user activation,
        so a synthetic press clears the composer and goes nowhere, while a real
        one produces images in about ten seconds. navigator.userActivation reads

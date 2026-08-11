@@ -1033,6 +1033,46 @@ async function selectImageCount(value: string): Promise<boolean> {
 }
 
 /**
+ * Press a control by calling its React handler, in the page's own world.
+ *
+ * Grok's image submit ignores every event a content script can dispatch — a
+ * pointer sequence, a bare .click(), Enter — while the identical press by hand
+ * generates in ten seconds. Measured five ways; see submitPrompt.
+ *
+ * This is the route the Flow adapter already uses for the same refusal, and it
+ * works on Grok: the worker runs a MAIN-world script that walks up from the
+ * element to its React fiber, finds the `onClick` prop, and calls it with an
+ * event object whose `isTrusted` is true and whose `nativeEvent` is a real
+ * Event behind a Proxy reporting the same. Nothing is dispatched, so there is
+ * no DOM event to be untrusted — the handler is simply invoked.
+ *
+ * Verified live on grok.com/imagine: onClick found at depth 0, accepted within
+ * a second, two images produced from a fully scripted press.
+ *
+ * The element is addressed by a temporary id because the worker's script runs
+ * in another world and cannot be handed a node reference.
+ */
+async function reactPress(el: Element, handlerName = 'onClick'): Promise<boolean> {
+  const tempId = `af-grok-${Math.random().toString(36).slice(2)}`;
+  const oldId = el.id;
+  el.id = tempId;
+  try {
+    const res: any = await chrome.runtime.sendMessage({
+      type: 'REACT_TRIGGER',
+      payload: { elId: tempId, handlerName, isKey: false, keyVal: '' },
+    });
+    if (!res?.found) logLine(`React ${handlerName} not found on the send button${res?.error ? ` (${res.error})` : ''}`);
+    return !!res?.success;
+  } catch (e: any) {
+    logLine(`Could not reach the worker for the React press: ${e?.message || e}`);
+    return false;
+  } finally {
+    if (oldId) el.id = oldId;
+    else el.removeAttribute('id');
+  }
+}
+
+/**
  * Send the prompt, and confirm Grok took it.
  *
  * Grok disables the submit button whenever the composer is empty, and it
@@ -1152,9 +1192,23 @@ async function submitPrompt(composer: HTMLElement): Promise<string | null> {
     btn.dispatchEvent(new MouseEvent('mouseup', { ...o, buttons: 0 }));
     (btn as HTMLButtonElement).click();
 
-    for (let i = 0; i < 24; i++) {        // up to 3.6s for the composer to clear
+    for (let i = 0; i < 24; i++) {        // up to 3.6s to see the prompt land
       await sleep(150);
       if (accepted()) return null;
+    }
+  }
+
+  /* The ordinary press was ignored — the image path, every time. Call the
+     button's React handler directly instead, which is what the Flow adapter
+     does for the same refusal and what makes Grok generate from a script. */
+  logLine('Grok ignored the ordinary press — calling its React handler directly');
+  if (await reactPress(btn, 'onClick')) {
+    for (let i = 0; i < 40; i++) {      // 6s: it lands in about one
+      await sleep(150);
+      if (accepted()) {
+        logLine('Grok took the prompt via its React handler');
+        return null;
+      }
     }
   }
 
