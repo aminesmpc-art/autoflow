@@ -1372,11 +1372,15 @@
 }
 .sn-field__label {
   padding-left: 2px;
-  font-size: 8.5px;
+  /* 8.5px at #55555f measured about 3:1 against the card, under the 4.5:1
+     small text needs — and uppercase at that size is the hardest thing on
+     the node to read. Nudged up rather than restyled: the label still has to
+     read as a caption for the control under it, not compete with it. */
+  font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
-  color: #55555f;
+  color: #7a7a88;
 }
 /* .sn-field is a COLUMN flex container, so a flex-basis meant for the row
    (--grow) would apply to height and stretch the select to 130px tall.
@@ -1457,7 +1461,10 @@
   flex: 1;
   padding: 0 4px;
   font-size: 10.5px;
-  color: #55555f;
+  /* Same contrast problem as sn-field__label. This one carries the sentence
+     that explains what the preset will do to your text, so it was the least
+     readable part of the node and the part most worth reading. */
+  color: #8a8a96;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -639,6 +639,14 @@ function CanvasInner() {
             <span className="studio-toolbar__btn-icon" aria-hidden="true">💬</span>
             <span className="studio-toolbar__btn-label">Ask AI</span>
           </button>
+          {/* An agent belongs here, not under "Continue a clip". It starts
+              work rather than continuing a clip, and it spends generations
+              like everything else in this group — it sat between Last frame
+              and Extend, which both genuinely continue one. */}
+          <button className="studio-toolbar__btn" onClick={addAgentNode} aria-label="Add Agent node">
+            <span className="studio-toolbar__btn-icon" aria-hidden="true">🧠</span>
+            <span className="studio-toolbar__btn-label">Agent</span>
+          </button>
         </div>
 
         <div className="studio-toolbar__group">
@@ -646,9 +654,6 @@ function CanvasInner() {
           <button className="studio-toolbar__btn" onClick={addFrameNode} aria-label="Add Last Frame node">
             <span className="studio-toolbar__btn-icon" aria-hidden="true">🎞</span>
             <span className="studio-toolbar__btn-label">Last frame</span>
-          </button>
-          <button className="studio-toolbar__btn" onClick={addAgentNode} aria-label="Add Agent node">
-            🧠 Agent
           </button>
           <button className="studio-toolbar__btn" onClick={addExtendNode} aria-label="Add Extend node">
             <span className="studio-toolbar__btn-icon" aria-hidden="true">⏱</span>
