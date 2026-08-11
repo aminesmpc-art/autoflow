@@ -216,19 +216,33 @@ describe('submitting to Grok', () => {
     expect(errorOf(h)).toBeUndefined();
   }, 40_000);
 
-  it('falls through to the React handler when the ordinary press is ignored', async () => {
-    /* The live behaviour: a dispatched press on the image flow clears the
-       composer and generates nothing, while calling the button's React onClick
-       directly — the route the Flow adapter already uses — produced two images
-       in about a second. Verified on grok.com/imagine, onClick at depth 0. */
+  it('presses the React handler FIRST, without spending the prompt on a dispatched click', async () => {
+    /* Order is the whole fix. A dispatched press does reach Grok's submit
+       handler; the handler sees an untrusted event and answers by clearing the
+       composer and dropping the page on Discover WITHOUT generating. It
+       consumes the prompt. Doing it first left the React press nothing to
+       submit — the panel showed "calling its React handler directly" and then
+       "Grok needs your click" six seconds later, composer empty behind it.
+
+       So on the happy path the dispatched press must not fire at all. */
     const h = buildPage(300, true, true);
     h.execute({ mediaType: 'image', prompt: 'a folded paper crane on a windowsill' });
 
     expect(await waitFor(() => h.acceptedAt() !== null, 25_000)).toBe(true);
-    expect(h.clicks()).toBe(1);          // ordinary press tried first
-    expect(h.reactPresses()).toBe(1);    // then the React one, once
+    expect(h.reactPresses()).toBe(1);
+    expect(h.clicks()).toBe(0);          // the prompt was never spent
     // Fully automatic: nobody was asked for anything.
     expect(h.sent.some((m: any) => m.type === 'STUDIO_NEEDS_CLICK')).toBe(false);
+    expect(errorOf(h)).toBeUndefined();
+  }, 45_000);
+
+  it('still uses a dispatched press when React props are gone', async () => {
+    // reactWorks=false, deadButton=false: no React route, ordinary press works.
+    const h = buildPage(300, false, false);
+    h.execute({ mediaType: 'image', prompt: 'a folded paper crane on a windowsill' });
+
+    expect(await waitFor(() => h.acceptedAt() !== null, 25_000)).toBe(true);
+    expect(h.clicks()).toBe(1);
     expect(errorOf(h)).toBeUndefined();
   }, 45_000);
 

@@ -1173,12 +1173,51 @@ async function submitPrompt(composer: HTMLElement): Promise<string | null> {
      When it does not take, the run does not fail — everything else is already
      set up, so the one thing left is a click, and asking for it beats throwing
      the prepared prompt away. */
-  for (let attempt = 0; attempt < 1; attempt++) {
-    /* A full pointer sequence, not a bare .click(). Grok's controls are Radix,
-       and its menus bind to pointerdown — the aspect-ratio menu does not open
-       for a synthetic click at all. The submit button does respond to .click(),
-       but sending the same sequence everywhere removes one difference between
-       the paths that work and the paths that do not. */
+  /* React handler FIRST, dispatched events second.
+
+     Order matters, and getting it backwards wasted a run. A dispatched press
+     does reach Grok's submit handler — the handler runs, sees an untrusted
+     event, and responds by clearing the composer and dropping the page on
+     Discover WITHOUT generating. That is a destructive no-op: it consumes the
+     prompt. Pressing the React handler afterwards then finds an empty composer
+     on the wrong view and can do nothing, which is exactly what the panel
+     showed — "calling its React handler directly" at 23:03:11, "Grok needs
+     your click" six seconds later, with the composer empty behind it.
+
+     Called first, on a page still holding the prompt, the same React handler
+     generates. Measured on grok.com/imagine: onClick at depth 0, accepted in
+     about a second, two images. So the strongest press goes first, and the
+     dispatched one is kept only as the fallback for a Grok that stops
+     exposing React props. */
+  const confirm = async (polls: number): Promise<boolean> => {
+    for (let i = 0; i < polls; i++) {
+      await sleep(150);
+      if (accepted()) return true;
+    }
+    return false;
+  };
+
+  if (await reactPress(btn, 'onClick')) {
+    if (await confirm(40)) {            // 6s; it lands in about one
+      logLine('Submitted via Grok’s React handler');
+      return null;
+    }
+  }
+
+  /* Fallback. Only reached when the React route is gone, and the composer may
+     have been emptied by then, so put the prompt back before pressing. */
+  const stillTyped = (composer.innerText || composer.textContent || '').trim();
+  if (!stillTyped && typed) {
+    logLine('React press did not take — refilling the prompt for one ordinary press');
+    fillComposer(composer, typed);
+    for (let i = 0; i < 40; i++) {
+      const b = findSendButton();
+      if (b && !(b as HTMLButtonElement).disabled) { btn = b; break; }
+      await sleep(150);
+    }
+  }
+
+  {
     const r = btn.getBoundingClientRect();
     const o: any = {
       bubbles: true, cancelable: true, composed: true,
@@ -1191,25 +1230,7 @@ async function submitPrompt(composer: HTMLElement): Promise<string | null> {
     btn.dispatchEvent(new Ptr('pointerup', { ...o, buttons: 0 }));
     btn.dispatchEvent(new MouseEvent('mouseup', { ...o, buttons: 0 }));
     (btn as HTMLButtonElement).click();
-
-    for (let i = 0; i < 24; i++) {        // up to 3.6s to see the prompt land
-      await sleep(150);
-      if (accepted()) return null;
-    }
-  }
-
-  /* The ordinary press was ignored — the image path, every time. Call the
-     button's React handler directly instead, which is what the Flow adapter
-     does for the same refusal and what makes Grok generate from a script. */
-  logLine('Grok ignored the ordinary press — calling its React handler directly');
-  if (await reactPress(btn, 'onClick')) {
-    for (let i = 0; i < 40; i++) {      // 6s: it lands in about one
-      await sleep(150);
-      if (accepted()) {
-        logLine('Grok took the prompt via its React handler');
-        return null;
-      }
-    }
+    if (await confirm(24)) return null;
   }
 
   return awaitUserSubmit(btn, accepted);
