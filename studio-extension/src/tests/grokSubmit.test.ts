@@ -38,6 +38,8 @@ interface Harness {
   execute: (config: Record<string, unknown>) => void;
   /** The one thing only a person can do: a click carrying user activation. */
   acceptByHand: () => void;
+  /** Grok's video flow: navigate to a post, leaving the composer alone. */
+  navigateLikeVideo: () => void;
 }
 
 /**
@@ -91,6 +93,13 @@ function buildPage(enableAfterMs: number, deadButton = false): Harness {
     b.setAttribute('aria-label', label);
     b.setAttribute('aria-checked', String(label === 'Image'));
     (b as any).getBoundingClientRect = box(60, 30);
+    // The radios have to actually switch, or a video node fails on mode before
+    // it ever reaches the submit this file is about.
+    b.addEventListener('click', () => {
+      modeGroup.querySelectorAll('[role="radio"]')
+        .forEach((o) => o.setAttribute('aria-checked', 'false'));
+      b.setAttribute('aria-checked', 'true');
+    });
     modeGroup.append(b);
   }
 
@@ -123,6 +132,9 @@ function buildPage(enableAfterMs: number, deadButton = false): Harness {
     acceptByHand: () => {
       state.acceptedAt = Date.now() - state.t0;
       composer.textContent = '';
+    },
+    navigateLikeVideo: () => {
+      window.history.pushState({}, '', '/imagine/post/0bcba547?conversation=2adba0bf');
     },
     acceptedAt: () => state.acceptedAt,
     execute: (config) => {
@@ -186,6 +198,24 @@ describe('submitting to Grok', () => {
     expect(errorOf(h)).toBeUndefined();
     expect(h.sent.some((m: any) => m.type === 'STUDIO_NODE_RESULT')).toBe(false);
   }, 40_000);
+
+  it('treats a video-style navigation as accepted, prompt still in the box', async () => {
+    /* Grok's video flow succeeds WITHOUT clearing the composer: measured, a
+       synthetic press in Video mode produced a real ten-second clip, moved to
+       /imagine/post/<id>, and left the prompt sitting there. Keying acceptance
+       on the composer alone would ask the user to press a button for a
+       generation already running. */
+    const h = buildPage(300, true);   // "dead" button: never clears the composer
+    h.execute({ mediaType: 'video', prompt: 'a paper boat drifting across a still puddle' });
+
+    await waitFor(() => h.clicks() > 0, 20_000);
+    h.navigateLikeVideo();            // URL moves to a post, composer untouched
+
+    // No handover, because nothing needs a human here.
+    const quiet = await waitFor(() => h.sent.some((m: any) => m.type === 'STUDIO_NEEDS_CLICK'), 8_000);
+    expect(quiet).toBe(false);
+    expect(errorOf(h)).toBeUndefined();
+  }, 45_000);
 
   it('carries on the moment the person presses it', async () => {
     const h = buildPage(300, true);

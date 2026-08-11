@@ -996,15 +996,22 @@ async function selectImageCount(value: string): Promise<boolean> {
  */
 async function submitPrompt(composer: HTMLElement): Promise<string | null> {
   const typed = (composer.innerText || composer.textContent || '').trim();
+  const urlBefore = location.href;
   /* Any evidence that the press landed, not just the one signal.
 
-     A cleared composer is what grok.com does today and is the clearest tell,
-     but resting the whole thing on it would turn a Grok that keeps the text
-     around — a re-prompt view, a variant flow — into a false "refused", which
-     is the opposite of the failure being fixed here. A send button that went
-     back to disabled, a stop button, or a page that started working all mean
-     the same thing: it took the prompt. */
+     A cleared composer is the clearest tell on the image flow, but it is NOT
+     universal, and assuming it was would have been expensive: a video submit
+     succeeds while LEAVING the prompt in the box. Measured — a synthetic press
+     in Video mode produced a real ten-second clip and navigated to
+     /imagine/post/<id>?conversation=<id>, with "a paper boat drifting across a
+     still pud…" still sitting in the composer afterwards. Keying only on the
+     composer would have asked the user to press a button for a generation
+     already running, which is worse than the bug this replaced.
+
+     So: the URL moving to a post is acceptance, and so is a cleared composer,
+     a send button back to disabled, a stop button, or a page visibly working. */
   const accepted = () => {
+    if (location.href !== urlBefore) return true;
     const now = (composer.innerText || composer.textContent || '').trim();
     if (now.length === 0 || now !== typed) return true;
     const send = findSendButton();
