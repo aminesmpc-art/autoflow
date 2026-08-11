@@ -7,122 +7,168 @@
   <link rel="stylesheet" href="sidepanel.css" />
 </head>
 <body>
-  <header class="sp-head">
-    <span class="sp-mark">▶</span>
-    <div class="sp-head__text">
-      <div class="sp-head__name">AutoFlow Studio</div>
-      <div class="sp-head__sub" id="head-sub">Node workflows</div>
-    </div>
+  <!-- ── Top bar ── -->
+  <header class="sp-top">
+    <span class="sp-top__logo">⚡</span>
+    <span class="sp-top__name">AutoFlow Studio</span>
     <span id="plan-badge" class="sp-badge" hidden>Free</span>
+    <div class="sp-top__actions">
+      <a class="sp-top__icon" id="lnk-docs" title="Documentation"
+         href="https://auto-flow.studio/docs" target="_blank" rel="noopener noreferrer">📄</a>
+      <a class="sp-top__icon" title="auto-flow.studio"
+         href="https://auto-flow.studio" target="_blank" rel="noopener noreferrer">🌐</a>
+      <button class="sp-top__icon" id="btn-account" title="Account">
+        <span id="top-avatar">👤</span>
+      </button>
+    </div>
   </header>
 
-  <!-- ── Run ──
-       The reason the panel exists: during a run the canvas is behind the
-       platform tab, so this is the only view of what is happening. It leads,
-       and grows into the live state rather than sitting in a uniform card. -->
-  <section class="sp-run" id="run-card">
-    <div id="run-idle" class="sp-run__idle">
-      <div class="sp-run__idle-icon">◇</div>
-      <div class="sp-run__idle-text">Nothing running</div>
-      <div class="sp-run__idle-hint" id="run-idle-hint">Open the canvas to build or run a workflow.</div>
-    </div>
+  <!-- ── Session bar: what is open on the canvas, and how to get there ── -->
+  <div class="sp-session">
+    <span class="sp-session__mark">✦</span>
+    <span class="sp-session__name" id="head-sub">Node workflows</span>
+    <button id="open-studio" class="sp-session__open">Open canvas</button>
+  </div>
 
-    <div id="run-live" hidden>
-      <div class="sp-run__top">
-        <span class="sp-run__pulse"></span>
-        <span class="sp-run__node" id="run-node">—</span>
-        <span class="sp-run__elapsed" id="run-elapsed">0:00</span>
-      </div>
-      <div class="sp-bar"><div class="sp-bar__fill" id="run-bar"></div></div>
-      <div class="sp-run__meta">
-        <span id="run-count">0 / 0</span>
-        <span id="run-pct">0%</span>
-      </div>
-      <div class="sp-row">
-        <button id="btn-pause" class="sp-btn sp-btn--ghost">Pause</button>
-        <button id="btn-stop" class="sp-btn sp-btn--danger">Stop</button>
-      </div>
-    </div>
+  <!-- ── Primary navigation ── -->
+  <nav class="sp-nav" id="sp-nav">
+    <button class="sp-nav__tab sp-nav__tab--on" data-view="run">▶ Run</button>
+    <button class="sp-nav__tab" data-view="templates">▦ Templates</button>
+    <button class="sp-nav__tab" data-view="prompts">📝 Prompts</button>
+  </nav>
 
-    <div id="run-error" class="sp-error" hidden></div>
-
-    <!-- What the content scripts are doing, without opening devtools on a
-         third-party site to read it. -->
-    <details id="diag" class="sp-diag">
-      <summary class="sp-diag__summary">Diagnostics</summary>
-      <div id="diag-log" class="sp-diag__log">Nothing logged yet.</div>
-    </details>
-  </section>
-
-  <button id="open-studio" class="sp-btn sp-btn--primary sp-btn--wide">
-    Open Studio canvas
-  </button>
-
-  <!-- Whether the sites a run needs are open, checked before a node finds out
-       three minutes in. Rows are clickable so it is also the fix, not just the
-       diagnosis. -->
-  <section class="sp-card">
-    <div class="sp-card__title">Platforms</div>
-    <ul class="sp-plat" id="plat-list">
-      <li data-plat="flow" tabindex="0" role="button">
-        <span class="sp-dot"></span>
-        <span class="sp-plat__name">Google Flow</span>
-        <span class="sp-plat__state">—</span>
-      </li>
-      <li data-plat="chatgpt" tabindex="0" role="button">
-        <span class="sp-dot"></span>
-        <span class="sp-plat__name">ChatGPT</span>
-        <span class="sp-plat__state">—</span>
-      </li>
-      <li data-plat="gemini" tabindex="0" role="button">
-        <span class="sp-dot"></span>
-        <span class="sp-plat__name">Gemini</span>
-        <span class="sp-plat__state">—</span>
-      </li>
-      <li data-plat="grok" tabindex="0" role="button">
-        <span class="sp-dot"></span>
-        <span class="sp-plat__name">Grok</span>
-        <span class="sp-plat__state">—</span>
-      </li>
-    </ul>
-  </section>
-
-  <!-- ── Diagnostics ──
-       Recent log lines from content scripts, so you can see what happened
-       without opening devtools on a third-party site. -->
-  <section class="sp-card sp-card--diag">
-    <div class="sp-card__title">Diagnostics</div>
-    <div id="diag-log" class="sp-diag">
-      <div class="sp-diag__empty">No log entries yet.</div>
-    </div>
-  </section>
-
-  <section class="sp-card">
-    <div class="sp-card__title">Account</div>
-
-    <div id="acct-out">
-      <input id="email" class="sp-input" type="email" placeholder="you@example.com" autocomplete="username" />
-      <input id="password" class="sp-input" type="password" placeholder="Password" autocomplete="current-password" />
-      <button id="btn-login" class="sp-btn sp-btn--primary sp-btn--wide">Sign in</button>
-      <p class="sp-note">Your AutoFlow account — runs and limits are shared.</p>
-      <p id="auth-error" class="sp-error" hidden></p>
-    </div>
-
-    <div id="acct-in" hidden>
-      <div class="sp-acct">
-        <span class="sp-avatar" id="acct-initial">·</span>
-        <span class="sp-acct__email" id="acct-email">—</span>
-      </div>
-      <div class="sp-usage" id="usage-block">
-        <div class="sp-usage__row">
-          <span id="usage-label">Studio runs</span>
-          <span id="usage-count">—</span>
+  <main class="sp-main">
+    <!-- ══ RUN ══════════════════════════════════════════════════ -->
+    <div class="sp-view" id="view-run">
+      <!-- The reason the panel exists: during a run the canvas is behind the
+           platform tab, so this is the only view of what is happening. -->
+      <section class="sp-run" id="run-card">
+        <div id="run-idle" class="sp-run__idle">
+          <div class="sp-run__idle-icon">◇</div>
+          <div class="sp-run__idle-text">Nothing running</div>
+          <div class="sp-run__idle-hint" id="run-idle-hint">Open the canvas to build or run a workflow.</div>
         </div>
-        <div class="sp-bar sp-bar--thin"><div class="sp-bar__fill" id="usage-bar"></div></div>
-      </div>
-      <button id="btn-logout" class="sp-btn sp-btn--ghost sp-btn--wide">Sign out</button>
+
+        <div id="run-live" hidden>
+          <div class="sp-run__top">
+            <span class="sp-run__pulse"></span>
+            <span class="sp-run__node" id="run-node">—</span>
+            <span class="sp-run__elapsed" id="run-elapsed">0:00</span>
+          </div>
+          <div class="sp-bar"><div class="sp-bar__fill" id="run-bar"></div></div>
+          <div class="sp-run__meta">
+            <span id="run-count">0 / 0</span>
+            <span id="run-pct">0%</span>
+          </div>
+          <div class="sp-row">
+            <button id="btn-pause" class="sp-btn sp-btn--ghost">Pause</button>
+            <button id="btn-stop" class="sp-btn sp-btn--danger">Stop</button>
+          </div>
+        </div>
+
+        <div id="run-error" class="sp-error" hidden></div>
+      </section>
+
+      <!-- Whether the sites a run needs are open, checked before a node finds
+           out three minutes in. Rows are clickable so it is also the fix. -->
+      <section class="sp-card">
+        <div class="sp-card__title">Platforms</div>
+        <ul class="sp-plat" id="plat-list">
+          <li data-plat="flow" tabindex="0" role="button">
+            <span class="sp-dot"></span>
+            <span class="sp-plat__name">Google Flow</span>
+            <span class="sp-plat__state">—</span>
+          </li>
+          <li data-plat="chatgpt" tabindex="0" role="button">
+            <span class="sp-dot"></span>
+            <span class="sp-plat__name">ChatGPT</span>
+            <span class="sp-plat__state">—</span>
+          </li>
+          <li data-plat="gemini" tabindex="0" role="button">
+            <span class="sp-dot"></span>
+            <span class="sp-plat__name">Gemini</span>
+            <span class="sp-plat__state">—</span>
+          </li>
+          <li data-plat="grok" tabindex="0" role="button">
+            <span class="sp-dot"></span>
+            <span class="sp-plat__name">Grok</span>
+            <span class="sp-plat__state">—</span>
+          </li>
+        </ul>
+      </section>
+
+      <!-- What the content scripts are doing, without opening devtools on a
+           third-party site to read it.
+
+           ONE of these. There used to be two elements sharing id="diag-log" —
+           a <details> here and a card below it — so every getElementById call
+           found the first and the card stayed empty forever, permanently
+           reading "No log entries yet" while lines were written above it. -->
+      <section class="sp-card">
+        <div class="sp-card__title">Diagnostics</div>
+        <div id="diag-log" class="sp-diag__log">
+          <div class="sp-diag__empty">No log entries yet.</div>
+        </div>
+      </section>
     </div>
-  </section>
+
+    <!-- ══ TEMPLATES ════════════════════════════════════════════ -->
+    <div class="sp-view" id="view-templates" hidden>
+      <div class="sp-filter">
+        <input id="tpl-search" class="sp-input sp-input--search" type="search"
+               placeholder="Search templates…" />
+      </div>
+      <div class="sp-pills" id="tpl-pills"></div>
+      <div class="sp-grid" id="tpl-grid"></div>
+    </div>
+
+    <!-- ══ PROMPTS ══════════════════════════════════════════════ -->
+    <div class="sp-view" id="view-prompts" hidden>
+      <p class="sp-note sp-note--intro">
+        A preset wraps what you type in a brief — the angles, the lighting, and
+        the trap to avoid. Pick one on any Ask AI node.
+      </p>
+      <div id="preset-list"></div>
+    </div>
+  </main>
+
+  <!-- ── Footer: the plan, and what is left of it ── -->
+  <footer class="sp-foot">
+    <span class="sp-foot__plan" id="foot-plan">FREE</span>
+    <button class="sp-foot__acct" id="foot-acct">Sign in</button>
+    <span class="sp-foot__stat" id="foot-runs">—</span>
+  </footer>
+
+  <!-- ── Account ── -->
+  <div class="sp-modal" id="acct-modal" hidden>
+    <div class="sp-modal__card">
+      <button class="sp-modal__x" id="acct-close" aria-label="Close">✕</button>
+
+      <div id="acct-out">
+        <div class="sp-modal__title">Sign in</div>
+        <p class="sp-note">Your AutoFlow account — runs and limits are shared.</p>
+        <input id="email" class="sp-input" type="email" placeholder="you@example.com" autocomplete="username" />
+        <input id="password" class="sp-input" type="password" placeholder="Password" autocomplete="current-password" />
+        <button id="btn-login" class="sp-btn sp-btn--primary sp-btn--wide">Sign in</button>
+        <p id="auth-error" class="sp-error" hidden></p>
+      </div>
+
+      <div id="acct-in" hidden>
+        <div class="sp-acct">
+          <span class="sp-avatar" id="acct-initial">·</span>
+          <span class="sp-acct__email" id="acct-email">—</span>
+        </div>
+        <div class="sp-usage" id="usage-block">
+          <div class="sp-usage__row">
+            <span id="usage-label">Studio runs</span>
+            <span id="usage-count">—</span>
+          </div>
+          <div class="sp-bar sp-bar--thin"><div class="sp-bar__fill" id="usage-bar"></div></div>
+        </div>
+        <button id="btn-logout" class="sp-btn sp-btn--ghost sp-btn--wide">Sign out</button>
+      </div>
+    </div>
+  </div>
 
   <script src="sidepanel.js"></script>
 </body>

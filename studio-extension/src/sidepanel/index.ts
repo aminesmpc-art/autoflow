@@ -12,6 +12,9 @@
 
 import './sidepanel.css';
 import { login, logout, isLoggedIn, getProfile } from '../shared/api';
+import { loadTemplates, refreshTemplates } from '../studio/templates/loader';
+import type { Template } from '../studio/templates';
+import { getAskPresets } from '../studio/presets';
 
 /**
  * Element by id, loudly.
@@ -220,6 +223,7 @@ async function refreshAccount(): Promise<void> {
 
   if (!signedIn) {
     badge.hidden = true;
+    renderFooter(null, false, 0, FREE_RUNS_PER_MONTH);
     return;
   }
 
@@ -251,6 +255,9 @@ async function refreshAccount(): Promise<void> {
   badge.className = `sp-badge ${pro ? 'sp-badge--pro' : ''}`;
 
   await renderUsage(pro);
+  // The footer is the always-visible copy of this, so it moves with it.
+  const usedNow = await studioRunsUsed();
+  renderFooter(profile.email, pro, usedNow, FREE_RUNS_PER_MONTH);
 }
 
 /**
@@ -263,6 +270,17 @@ async function refreshAccount(): Promise<void> {
 const runKey = () => `studio_runs_${new Date().toISOString().slice(0, 7)}`;
 const FREE_RUNS_PER_MONTH = 15;
 
+/** Runs recorded for this month. One reader, so the usage bar and the footer
+    cannot show different numbers. */
+async function studioRunsUsed(): Promise<number> {
+  try {
+    const key = runKey();
+    return (await chrome.storage.local.get(key))?.[key] || 0;
+  } catch {
+    return 0;   // show zero rather than nothing
+  }
+}
+
 async function renderUsage(isPro: boolean): Promise<void> {
   const bar = $('usage-bar') as HTMLElement;
 
@@ -274,11 +292,7 @@ async function renderUsage(isPro: boolean): Promise<void> {
     return;
   }
 
-  let used = 0;
-  try {
-    const key = runKey();
-    used = (await chrome.storage.local.get(key))?.[key] || 0;
-  } catch { /* show zero rather than nothing */ }
+  const used = await studioRunsUsed();
 
   const pct = Math.min(100, Math.round((used / FREE_RUNS_PER_MONTH) * 100));
   $('usage-label').textContent = 'Studio runs this month';
@@ -391,7 +405,204 @@ function boot(): void {
   }
 }
 
+
+/* ============================================================
+   The shell: navigation, templates, prompts, footer, account.
+
+   The panel used to be one long column of cards — run, platforms,
+   diagnostics, account — all competing for a strip about 380px wide. Now the
+   run view keeps that stack (it is the panel's reason to exist during a run)
+   and everything else lives behind a tab, with the plan pinned to the bottom
+   where it cannot scroll away.
+
+   Templates are rendered here rather than only on the canvas: choosing what
+   to build is the one thing you do BEFORE opening it, and it was the one
+   thing the panel could not help with.
+   ============================================================ */
+
+type PanelView = 'run' | 'templates' | 'prompts';
+
+/** Templates currently shown, and the category filter over them. */
+let panelTemplates: Template[] = [];
+let panelCategory = 'All';
+let panelQuery = '';
+
+function showView(view: PanelView): void {
+  for (const id of ['run', 'templates', 'prompts'] as PanelView[]) {
+    const el = document.getElementById(`view-${id}`);
+    if (el) (el as HTMLElement).hidden = id !== view;
+  }
+  document.querySelectorAll('.sp-nav__tab').forEach((b) => {
+    b.classList.toggle('sp-nav__tab--on', (b as HTMLElement).dataset.view === view);
+  });
+}
+
+/**
+ * Hand a template to the canvas.
+ *
+ * The panel cannot mount the canvas's React tree, so it parks the choice and
+ * asks for the canvas to open; TemplateGallery picks it up on mount. Storage
+ * rather than a message because the canvas may not exist yet to receive one.
+ */
+async function openTemplate(id: string): Promise<void> {
+  try { await chrome.storage.local.set({ af_pending_template: id }); } catch { /* best effort */ }
+  chrome.runtime.sendMessage({ type: 'PANEL_OPEN_STUDIO' }).catch(() => {});
+}
+
+function renderPills(): void {
+  const host = document.getElementById('tpl-pills');
+  if (!host) return;
+  const cats = ['All', ...Array.from(new Set(panelTemplates.map((t) => t.category))).sort()];
+  host.innerHTML = '';
+  for (const cat of cats) {
+    const b = document.createElement('button');
+    b.className = `sp-pill ${cat === panelCategory ? 'sp-pill--on' : ''}`;
+    b.textContent = cat;
+    b.addEventListener('click', () => { panelCategory = cat; renderPills(); renderTemplates(); });
+    host.append(b);
+  }
+}
+
+function renderTemplates(): void {
+  const grid = document.getElementById('tpl-grid');
+  if (!grid) return;
+
+  const q = panelQuery.trim().toLowerCase();
+  const visible = panelTemplates.filter((t) => {
+    if (panelCategory !== 'All' && t.category !== panelCategory) return false;
+    if (!q) return true;
+    return `${t.name} ${t.description} ${t.useCase} ${t.category}`.toLowerCase().includes(q);
+  });
+
+  grid.innerHTML = '';
+  if (!visible.length) {
+    const empty = document.createElement('div');
+    empty.className = 'sp-diag__empty';
+    empty.textContent = panelTemplates.length
+      ? 'No templates match that search.'
+      : 'Loading templates…';
+    grid.append(empty);
+    return;
+  }
+
+  for (const t of visible) {
+    const card = document.createElement('button');
+    card.className = `sp-tpl ${(t as any).locked ? 'sp-tpl--locked' : ''}`;
+    card.title = t.useCase;
+
+    const thumb = document.createElement('div');
+    thumb.className = 'sp-tpl__thumb';
+    thumb.textContent = t.thumbnail;
+
+    const name = document.createElement('div');
+    name.className = 'sp-tpl__name';
+    name.textContent = t.name;
+
+    const meta = document.createElement('div');
+    meta.className = 'sp-tpl__meta';
+    /* Only what the template actually declares. No ratings and no install
+       counts: nothing in this extension or the backend records either, and a
+       card claiming "4.8 from 660 users" would be inventing them. */
+    const cat = document.createElement('span');
+    cat.className = 'sp-tpl__tag';
+    cat.textContent = t.category;
+    const nodes = document.createElement('span');
+    nodes.textContent = `⚙ ${t.nodeCount}`;
+    meta.append(cat, nodes);
+
+    card.append(thumb, name, meta);
+    if ((t as any).locked) {
+      const lock = document.createElement('span');
+      lock.className = 'sp-tpl__lock';
+      lock.textContent = 'PRO';
+      card.append(lock);
+    }
+    card.addEventListener('click', () => openTemplate(t.id));
+    grid.append(card);
+  }
+}
+
+function renderPresets(): void {
+  const host = document.getElementById('preset-list');
+  if (!host) return;
+  host.innerHTML = '';
+  for (const p of getAskPresets()) {
+    const row = document.createElement('div');
+    row.className = 'sp-preset';
+    const head = document.createElement('div');
+    head.className = 'sp-preset__head';
+    const nm = document.createElement('span');
+    nm.className = 'sp-preset__name';
+    nm.textContent = p.name;
+    const id = document.createElement('code');
+    id.className = 'sp-preset__id';
+    id.textContent = p.id;
+    head.append(nm, id);
+    const hint = document.createElement('p');
+    hint.className = 'sp-preset__hint';
+    hint.textContent = p.hint;
+    row.append(head, hint);
+    host.append(row);
+  }
+}
+
+/** The footer states the plan and what is left of it. */
+function renderFooter(email: string | null, isPro: boolean, used: number, limit: number): void {
+  const plan = document.getElementById('foot-plan');
+  if (plan) {
+    plan.textContent = isPro ? 'PRO' : 'FREE';
+    plan.classList.toggle('sp-foot__plan--pro', isPro);
+  }
+  const acct = document.getElementById('foot-acct');
+  if (acct) acct.textContent = email || 'Sign in';
+  const runs = document.getElementById('foot-runs');
+  // A Pro account has no monthly ceiling, so "n/15" against it would be false.
+  if (runs) runs.textContent = isPro ? '⚡ Unlimited' : `⚡ ${used}/${limit} runs`;
+  const avatar = document.getElementById('top-avatar');
+  if (avatar) avatar.textContent = email ? email.charAt(0).toUpperCase() : '👤';
+}
+
+function wireShell(): void {
+  document.getElementById('sp-nav')?.addEventListener('click', (e) => {
+    const tab = (e.target as HTMLElement).closest('.sp-nav__tab') as HTMLElement | null;
+    if (tab?.dataset.view) showView(tab.dataset.view as PanelView);
+  });
+
+  const modal = document.getElementById('acct-modal');
+  const openModal = () => { if (modal) (modal as HTMLElement).hidden = false; };
+  const closeModal = () => { if (modal) (modal as HTMLElement).hidden = true; };
+  document.getElementById('btn-account')?.addEventListener('click', openModal);
+  document.getElementById('foot-acct')?.addEventListener('click', openModal);
+  document.getElementById('acct-close')?.addEventListener('click', closeModal);
+  modal?.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+  const search = document.getElementById('tpl-search') as HTMLInputElement | null;
+  search?.addEventListener('input', () => { panelQuery = search.value; renderTemplates(); });
+
+  renderPresets();
+  renderTemplates();
+
+  /* Templates come from the cache, the bundle, or the backend — the loader
+     never waits on the network, so the grid fills immediately and improves. */
+  loadTemplates()
+    .then(({ templates }) => {
+      panelTemplates = templates;
+      renderPills();
+      renderTemplates();
+      return refreshTemplates();
+    })
+    .then((fresher) => {
+      if (!fresher) return;
+      panelTemplates = fresher.templates;
+      renderPills();
+      renderTemplates();
+    })
+    .catch(() => { /* the bundle is the floor; a failed refresh changes nothing */ });
+}
+
 boot();
+wireShell();
 
 // Tabs open and close without telling us; a slow poll keeps the dots honest.
 setInterval(() => { refreshPlatforms().catch(() => {}); }, 5000);
@@ -426,5 +637,8 @@ async function refreshLog(): Promise<void> {
   out.scrollTop = out.scrollHeight;
 }
 
-document.getElementById('diag')?.addEventListener('toggle', () => { refreshLog().catch(() => {}); });
+/* The <details> wrapper is gone — the log is a card in the Run view now, and
+   there were two elements sharing id="diag-log" so only the first was ever
+   written to. Refreshed on the interval below, and when Run is reopened. */
+document.getElementById('sp-nav')?.addEventListener('click', () => { refreshLog().catch(() => {}); });
 setInterval(() => { refreshLog().catch(() => {}); }, 2000);

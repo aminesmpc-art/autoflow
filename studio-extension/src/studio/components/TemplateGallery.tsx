@@ -206,6 +206,20 @@ export default function TemplateGallery() {
       setTemplates(t);
       setSource(s);
       console.log(`[Templates] Showing ${t.length} from ${s}`);
+      /* A template chosen in the side panel. The panel cannot mount this tree,
+         so it parks an id in storage and asks for the canvas to open; this is
+         where that choice is collected. Cleared immediately, or every later
+         visit to the gallery would reopen the same template. */
+      chrome.storage.local.get('af_pending_template')
+        .then(({ af_pending_template: pending }) => {
+          if (!live || !pending) return;
+          return chrome.storage.local.remove('af_pending_template').then(() => {
+            const wanted = t.find((x) => x.id === pending);
+            if (wanted) loadTemplate(wanted);
+          });
+        })
+        .catch(() => { /* nothing parked, or storage unavailable */ });
+
       // Then see if the backend has anything newer, without blocking the above.
       refreshTemplates().then((fresher) => {
         if (!live || !fresher) return;
@@ -215,7 +229,9 @@ export default function TemplateGallery() {
       });
     });
     return () => { live = false; };
-  }, []);
+    // loadTemplate is stable via useCallback; listed so the pending pickup
+    // cannot call a stale copy of it.
+  }, [loadTemplate]);
 
   /* Search covers the use-case line too — people look for "ad" or
      "consistency", not the template's proper name. */
