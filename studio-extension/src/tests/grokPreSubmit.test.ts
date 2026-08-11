@@ -293,3 +293,111 @@ describe('text nodes get their own chat', () => {
     expect(h.clicksOnNewChat).toBe(0);
   });
 });
+
+/* ============================================================
+   Discover is not your generation.
+
+   Found by running a real image generation on grok.com/imagine. The page
+   renders a masonry feed of other people's public posts, and its tiles are
+   <img alt="Generated image"> data URLs at 256x256 — which pass every test
+   collectResultImages applies. Measured live, immediately after a render:
+
+     usable() matched 4 images
+     all 4 were <div id="imagine-masonry-section-0"> tiles
+     the actual result was in History, not in that list
+
+   The baseline diff hides this only while the feed holds still. It lazy
+   loads on scroll, so a tile that arrives during the wait is NEW and gets
+   captured as the node's output: a stranger's picture, returned as a
+   success, with nothing in the log to say otherwise.
+
+   The ancestry below is copied from the live DOM.
+   ============================================================ */
+describe('Grok result detection ignores the Discover feed', () => {
+  const DATA_URL = `data:image/png;base64,${'A'.repeat(4000)}`;
+
+  /** One Discover masonry tile, as /imagine renders it. */
+  function discoverTile(): HTMLImageElement {
+    const section = document.createElement('div');
+    section.id = 'imagine-masonry-section-0';
+    const card = document.createElement('div');
+    card.className = 'relative group/media-post-masonry-card';
+    const img = document.createElement('img');
+    img.alt = 'Generated image';
+    img.className = 'opacity-1 transition-opacity';
+    Object.defineProperty(img, 'currentSrc', { value: DATA_URL, configurable: true });
+    Object.defineProperty(img, 'complete', { value: true, configurable: true });
+    Object.defineProperty(img, 'naturalWidth', { value: 256, configurable: true });
+    Object.defineProperty(img, 'naturalHeight', { value: 256, configurable: true });
+    (img as any).getBoundingClientRect = () => ({ width: 346, height: 352, top: 0, left: 0, bottom: 352, right: 346, x: 0, y: 0, toJSON() {} });
+    card.append(img);
+    section.append(card);
+    document.body.append(section);
+    return img;
+  }
+
+  /** A genuine result, outside the feed. */
+  function realResult(): HTMLImageElement {
+    const img = document.createElement('img');
+    Object.defineProperty(img, 'currentSrc', { value: DATA_URL, configurable: true });
+    Object.defineProperty(img, 'complete', { value: true, configurable: true });
+    Object.defineProperty(img, 'naturalWidth', { value: 1024, configurable: true });
+    Object.defineProperty(img, 'naturalHeight', { value: 1024, configurable: true });
+    (img as any).getBoundingClientRect = () => ({ width: 512, height: 512, top: 0, left: 0, bottom: 512, right: 512, x: 0, y: 0, toJSON() {} });
+    document.body.append(img);
+    return img;
+  }
+
+  /** The shipped predicate, mirrored. */
+  const usable = (img: HTMLImageElement): boolean => {
+    const src = img.currentSrc || img.src || '';
+    if (!src) return false;
+    if (src.startsWith('data:') && src.length < 2000) return false;
+    if (img.closest('[id^="imagine-masonry-section"], [class*="media-post-masonry-card"]')) return false;
+    if (/assets\.grok\.com\/users\/.*\/(preview_image|generated_image)/i.test(src)) return true;
+    const r = img.getBoundingClientRect();
+    if (r.width < 180 && r.height < 180) return false;
+    return img.complete && img.naturalWidth >= 256 && img.naturalHeight >= 256;
+  };
+
+  beforeEach(() => { document.body.innerHTML = ''; });
+
+  it('rejects a Discover tile that passes every other test', () => {
+    const tile = discoverTile();
+    // Everything the old rule looked at says "result".
+    expect(tile.complete).toBe(true);
+    expect(tile.naturalWidth).toBeGreaterThanOrEqual(256);
+    expect(usable(tile)).toBe(false);
+  });
+
+  it('still accepts a genuine result outside the feed', () => {
+    expect(usable(realResult())).toBe(true);
+  });
+
+  it('picks only the result when both are on the page', () => {
+    discoverTile(); discoverTile(); discoverTile(); discoverTile();
+    const mine = realResult();
+    const found = Array.from(document.querySelectorAll('img')).filter(usable);
+    expect(found).toEqual([mine]);
+  });
+
+  it('rejects a tile matched by card class alone, without the section id', () => {
+    // The feed is virtualised; a card can outlive its section wrapper.
+    const card = document.createElement('div');
+    card.className = 'relative group/media-post-masonry-card';
+    const img = realResult();
+    card.append(img);
+    document.body.append(card);
+    expect(usable(img)).toBe(false);
+  });
+});
+
+describe('the shipped Grok bundle excludes the feed', () => {
+  it('carries the masonry exclusion', () => {
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '../../dist/grok-content.js'), 'utf8'
+    );
+    expect(src).toContain('imagine-masonry-section');
+    expect(src).toContain('media-post-masonry-card');
+  });
+});

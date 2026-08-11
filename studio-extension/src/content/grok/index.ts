@@ -329,8 +329,14 @@ function pointerDown(): Event {
  */
 async function openMenuTrigger(trigger: HTMLElement): Promise<boolean> {
   if (trigger.getAttribute('data-state') === 'open') return true;
-  trigger.dispatchEvent(pointerDown());
+  /* Re-sent while waiting, not fired once and hoped for.
+     Switching Generation mode remounts this row, and a pointerdown that
+     lands during that remount goes to an element already thrown away — the
+     poll then runs out against a trigger that never heard it. Seen exactly
+     once live, immediately after switching to Image, and it worked on the
+     next attempt with nothing else changed. */
   for (let i = 0; i < 12; i++) {
+    if (i % 3 === 0) trigger.dispatchEvent(pointerDown());
     await sleep(100);
     if (trigger.getAttribute('data-state') === 'open') return true;
   }
@@ -626,6 +632,20 @@ function collectResultImages(): HTMLImageElement[] {
     if (!src) return false;
     if (src.startsWith('data:') && src.length < 2000) return false; // inline icons
     if (composer && composer.contains(img)) return false;
+    /* Discover, not your generation.
+       /imagine renders a masonry feed of other people's public posts, and its
+       tiles are <img alt="Generated image"> data URLs at 256x256 — they pass
+       every test below. Measured on the live page after a real render: four
+       Discover tiles were returned as the result while the actual image sat
+       in History.
+
+       The baseline diff hides this only while the feed is static. It lazy
+       loads as it scrolls, so a tile arriving during the wait is NEW, and
+       gets captured as the node's output — a stranger's picture, silently,
+       reported as a success. */
+    if (img.closest('[id^="imagine-masonry-section"], [class*="media-post-masonry-card"]')) {
+      return false;
+    }
     /* Grok Imagine results are hosted at assets.grok.com — recognise them
        even while still loading, since the URL alone confirms they are results
        rather than UI chrome. The old size check rejected them during the
