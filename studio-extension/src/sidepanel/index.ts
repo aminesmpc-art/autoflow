@@ -181,12 +181,16 @@ async function refreshPlatforms(): Promise<void> {
     reachedWorker = false;
   }
 
+  const rows = Array.from(document.querySelectorAll<HTMLButtonElement>('#plat-list button'));
+  const summary = document.getElementById('plat-count');
+
   if (!reachedWorker) {
-    for (const li of Array.from(document.querySelectorAll<HTMLLIElement>('#plat-list li'))) {
-      li.classList.remove('is-open');
-      const state = li.querySelector('.sp-plat__state');
+    for (const row of rows) {
+      row.classList.remove('is-open', 'is-blocked');
+      const state = row.querySelector('.sp-plat__state');
       if (state) state.textContent = 'no worker';
     }
+    if (summary) summary.textContent = 'unknown';
     const err = $('run-error');
     err.hidden = false;
     err.textContent =
@@ -194,23 +198,29 @@ async function refreshPlatforms(): Promise<void> {
     return;
   }
 
-  for (const li of Array.from(document.querySelectorAll<HTMLLIElement>('#plat-list li'))) {
-    const key = li.dataset.plat || '';
+  let openCount = 0;
+  for (const row of rows) {
+    const key = row.dataset.plat || '';
     const value = status[key];
     // Older workers answered with booleans; treat that as before.
     const open = value === 'open' || value === true as any;
     const blocked = value === 'blocked';
-    li.classList.toggle('is-open', open);
-    li.classList.toggle('is-blocked', blocked);
-    const state = li.querySelector('.sp-plat__state');
+    if (open) openCount++;
+    row.classList.toggle('is-open', open);
+    row.classList.toggle('is-blocked', blocked);
+    const state = row.querySelector('.sp-plat__state');
     if (state) state.textContent = open ? 'open' : blocked ? 'no access' : 'not open';
     /* Clicking a blocked row opens another tab that will read the same way,
        so say where the switch actually is. */
-    li.title = blocked
+    row.title = blocked
       ? 'The tab is there but this extension has no access to the site. '
         + 'Open chrome://extensions, find AutoFlow Studio, and set Site access to "On all sites".'
       : '';
   }
+
+  /* The answer, beside the heading. Four dots require reading four rows to
+     learn the one thing you came for — whether the run can start. */
+  if (summary) summary.textContent = `${openCount} of ${rows.length} open`;
 }
 
 /* ── Account ── */
@@ -317,9 +327,12 @@ function wire(): void {
       err.textContent = res.error || 'Could not reach Studio';
     }
   };
-  // A row that reports a missing tab may as well open it.
-  for (const li of Array.from(document.querySelectorAll<HTMLLIElement>('#plat-list li'))) {
-    const open = () => {
+  /* A row that reports a missing tab may as well open it. Real <button>s now,
+     so Enter and Space come free — the previous version was an <li> carrying
+     role="button" and hand-rolled key handling, which is the same thing with
+     more code and one more place to get it wrong. */
+  for (const row of Array.from(document.querySelectorAll<HTMLButtonElement>('#plat-list button'))) {
+    row.addEventListener('click', () => {
       // Table rather than a ternary: with three platforms a chained
       // conditional sent Gemini's row to Flow.
       const url = ({
@@ -327,14 +340,9 @@ function wire(): void {
         gemini: 'https://gemini.google.com/app',
         grok: 'https://grok.com/imagine',
         flow: 'https://labs.google/fx/tools/flow',
-      } as Record<string, string>)[li.dataset.plat || 'flow']
+      } as Record<string, string>)[row.dataset.plat || 'flow']
         || 'https://labs.google/fx/tools/flow';
       chrome.tabs.create({ url }).catch(() => {});
-    };
-    li.addEventListener('click', open);
-    li.addEventListener('keydown', (e) => {
-      const key = (e as KeyboardEvent).key;
-      if (key === 'Enter' || key === ' ') { e.preventDefault(); open(); }
     });
   }
 
@@ -433,8 +441,14 @@ function showView(view: PanelView): void {
     if (el) (el as HTMLElement).hidden = id !== view;
   }
   document.querySelectorAll('.sp-nav__tab').forEach((b) => {
-    b.classList.toggle('sp-nav__tab--on', (b as HTMLElement).dataset.view === view);
+    const on = (b as HTMLElement).dataset.view === view;
+    b.classList.toggle('sp-nav__tab--on', on);
+    b.setAttribute('aria-selected', String(on));
   });
+  // A tab switch that leaves you where the last one was scrolled reads as the
+  // click having done nothing.
+  const main = document.querySelector('.sp-main');
+  if (main) main.scrollTop = 0;
 }
 
 /**
@@ -474,14 +488,17 @@ function renderTemplates(): void {
     return `${t.name} ${t.description} ${t.useCase} ${t.category}`.toLowerCase().includes(q);
   });
 
+  const count = document.getElementById('tpl-count');
+
   grid.innerHTML = '';
   if (!visible.length) {
     const empty = document.createElement('div');
-    empty.className = 'sp-diag__empty';
+    empty.className = 'sp-empty';
     empty.textContent = panelTemplates.length
       ? 'No templates match that search.'
       : 'Loading templates…';
     grid.append(empty);
+    if (count) count.textContent = '';
     return;
   }
 
@@ -494,6 +511,9 @@ function renderTemplates(): void {
     thumb.className = 'sp-tpl__thumb';
     thumb.textContent = t.thumbnail;
 
+    const body = document.createElement('div');
+    body.className = 'sp-tpl__body';
+
     const name = document.createElement('div');
     name.className = 'sp-tpl__name';
     name.textContent = t.name;
@@ -502,15 +522,21 @@ function renderTemplates(): void {
     meta.className = 'sp-tpl__meta';
     /* Only what the template actually declares. No ratings and no install
        counts: nothing in this extension or the backend records either, and a
-       card claiming "4.8 from 660 users" would be inventing them. */
-    const cat = document.createElement('span');
-    cat.className = 'sp-tpl__tag';
-    cat.textContent = t.category;
-    const nodes = document.createElement('span');
-    nodes.textContent = `⚙ ${t.nodeCount}`;
-    meta.append(cat, nodes);
+       card claiming "4.8 from 660 users" would be inventing them.
 
-    card.append(thumb, name, meta);
+       "8 steps" rather than "⚙ 8" — the glyph was doing the work of a word it
+       could not do, and rendered as a clock on this machine's emoji font. */
+    const cat = document.createElement('span');
+    cat.textContent = t.category;
+    const sep = document.createElement('span');
+    sep.className = 'sp-tpl__sep';
+    sep.textContent = '·';
+    const nodes = document.createElement('span');
+    nodes.textContent = `${t.nodeCount} ${t.nodeCount === 1 ? 'step' : 'steps'}`;
+    meta.append(cat, sep, nodes);
+
+    body.append(name, meta);
+    card.append(thumb, body);
     if ((t as any).locked) {
       const lock = document.createElement('span');
       lock.className = 'sp-tpl__lock';
@@ -519,6 +545,14 @@ function renderTemplates(): void {
     }
     card.addEventListener('click', () => openTemplate(t.id));
     grid.append(card);
+  }
+
+  /* How many of how many. Filtering used to give no feedback beyond the grid
+     getting shorter, which reads the same as a template having gone missing. */
+  if (count) {
+    count.textContent = visible.length === panelTemplates.length
+      ? `${visible.length} template${visible.length === 1 ? '' : 's'}`
+      : `${visible.length} of ${panelTemplates.length}`;
   }
 }
 
@@ -557,7 +591,13 @@ function renderFooter(email: string | null, isPro: boolean, used: number, limit:
   if (acct) acct.textContent = email || 'Sign in';
   const runs = document.getElementById('foot-runs');
   // A Pro account has no monthly ceiling, so "n/15" against it would be false.
-  if (runs) runs.textContent = isPro ? '⚡ Unlimited' : `⚡ ${used}/${limit} runs`;
+  if (runs) {
+    runs.textContent = isPro ? 'Unlimited' : `${used}/${limit} runs`;
+    /* Turns warm on the last three, matching the usage bar in the account
+       sheet. This is the number that decides whether the next Run is refused,
+       and it used to be 9px grey at 4:1 — present, but not readable. */
+    runs.classList.toggle('sp-foot__stat--low', !isPro && used >= limit - 3);
+  }
   const avatar = document.getElementById('top-avatar');
   if (avatar) avatar.textContent = email ? email.charAt(0).toUpperCase() : '👤';
 }
@@ -607,38 +647,11 @@ wireShell();
 // Tabs open and close without telling us; a slow poll keeps the dots honest.
 setInterval(() => { refreshPlatforms().catch(() => {}); }, 5000);
 
-/**
- * Diagnostics, pulled from the worker's buffer.
- *
- * Only while the section is open: this polls, and polling to render something
- * nobody has expanded is work for nothing.
- */
-async function refreshLog(): Promise<void> {
-  const box = document.getElementById('diag');
-  const out = document.getElementById('diag-log');
-  if (!box || !out || !(box as HTMLDetailsElement).open) return;
+/* Diagnostics are pushed, not polled.
 
-  let lines: Array<{ at: number; source: string; line: string }> = [];
-  try {
-    lines = (await chrome.runtime.sendMessage({ type: 'PANEL_LOG' })) || [];
-  } catch {
-    out.textContent = 'Background worker is not responding.';
-    return;
-  }
-
-  if (!lines.length) {
-    out.textContent = 'Nothing logged yet.';
-    return;
-  }
-
-  const stamp = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour12: false });
-  out.textContent = lines.map((l) => `${stamp(l.at)}  ${l.source}: ${l.line}`).join('\n');
-  // Newest at the bottom, so it reads like a log rather than needing a scroll.
-  out.scrollTop = out.scrollHeight;
-}
-
-/* The <details> wrapper is gone — the log is a card in the Run view now, and
-   there were two elements sharing id="diag-log" so only the first was ever
-   written to. Refreshed on the interval below, and when Run is reopened. */
-document.getElementById('sp-nav')?.addEventListener('click', () => { refreshLog().catch(() => {}); });
-setInterval(() => { refreshLog().catch(() => {}); }, 2000);
+   There used to be a second reader here — refreshLog(), on a 2s interval —
+   guarding on `document.getElementById('diag')`, a <details> element removed
+   when the log became a card. The guard was never satisfied, so the function
+   returned immediately every two seconds for the life of the panel and its
+   PANEL_LOG round trip never ran. The live path is refreshLogs() at boot for
+   the backlog, plus PANEL_LOG_PUSH for each new line. */

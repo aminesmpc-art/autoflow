@@ -7,54 +7,63 @@
   <link rel="stylesheet" href="sidepanel.css" />
 </head>
 <body>
-  <!-- ── Top bar ── -->
+  <!-- ── Header ──
+       One band, not two. There used to be a top bar and a session bar stacked
+       under the browser's own title bar, which spent 86px of a 720px panel
+       saying "AutoFlow Studio" twice. The run status moved into the run card,
+       where the run is; the docs and site links moved into the account sheet,
+       where a link that gets clicked once a month belongs. -->
   <header class="sp-top">
-    <span class="sp-top__logo">⚡</span>
-    <span class="sp-top__name">AutoFlow Studio</span>
+    <span class="sp-top__logo" aria-hidden="true">⚡</span>
+    <span class="sp-top__name">AutoFlow&nbsp;Studio</span>
     <span id="plan-badge" class="sp-badge" hidden>Free</span>
-    <div class="sp-top__actions">
-      <a class="sp-top__icon" id="lnk-docs" title="Documentation"
-         href="https://auto-flow.studio/docs" target="_blank" rel="noopener noreferrer">📄</a>
-      <a class="sp-top__icon" title="auto-flow.studio"
-         href="https://auto-flow.studio" target="_blank" rel="noopener noreferrer">🌐</a>
-      <button class="sp-top__icon" id="btn-account" title="Account">
-        <span id="top-avatar">👤</span>
-      </button>
-    </div>
+    <button id="open-studio" class="sp-top__open">
+      Open canvas
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
+    </button>
+    <button class="sp-top__icon" id="btn-account" title="Account" aria-label="Account">
+      <span id="top-avatar">👤</span>
+    </button>
   </header>
 
-  <!-- ── Session bar: what is open on the canvas, and how to get there ── -->
-  <div class="sp-session">
-    <span class="sp-session__mark">✦</span>
-    <span class="sp-session__name" id="head-sub">Node workflows</span>
-    <button id="open-studio" class="sp-session__open">Open canvas</button>
-  </div>
-
   <!-- ── Primary navigation ── -->
-  <nav class="sp-nav" id="sp-nav">
-    <button class="sp-nav__tab sp-nav__tab--on" data-view="run">▶ Run</button>
-    <button class="sp-nav__tab" data-view="templates">▦ Templates</button>
-    <button class="sp-nav__tab" data-view="prompts">📝 Prompts</button>
+  <nav class="sp-nav" id="sp-nav" role="tablist" aria-label="Panel sections">
+    <button class="sp-nav__tab sp-nav__tab--on" data-view="run"
+            role="tab" aria-selected="true" aria-controls="view-run">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+      Run
+    </button>
+    <button class="sp-nav__tab" data-view="templates"
+            role="tab" aria-selected="false" aria-controls="view-templates">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>
+      Templates
+    </button>
+    <button class="sp-nav__tab" data-view="prompts"
+            role="tab" aria-selected="false" aria-controls="view-prompts">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM15 3v5h4M9 12h7M9 16h5"/></svg>
+      Prompts
+    </button>
   </nav>
 
   <main class="sp-main">
     <!-- ══ RUN ══════════════════════════════════════════════════ -->
-    <div class="sp-view" id="view-run">
+    <div class="sp-view" id="view-run" role="tabpanel" aria-labelledby="tab-run">
       <!-- The reason the panel exists: during a run the canvas is behind the
            platform tab, so this is the only view of what is happening. -->
       <section class="sp-run" id="run-card">
         <div id="run-idle" class="sp-run__idle">
-          <div class="sp-run__idle-icon">◇</div>
-          <div class="sp-run__idle-text">Nothing running</div>
-          <div class="sp-run__idle-hint" id="run-idle-hint">Open the canvas to build or run a workflow.</div>
+          <span class="sp-run__idle-icon" aria-hidden="true">◇</span>
+          <span class="sp-run__idle-text">Nothing running</span>
+          <span class="sp-run__idle-hint" id="run-idle-hint">Open the canvas to build or run a workflow.</span>
         </div>
 
         <div id="run-live" hidden>
           <div class="sp-run__top">
-            <span class="sp-run__pulse"></span>
-            <span class="sp-run__node" id="run-node">—</span>
+            <span class="sp-run__pulse" aria-hidden="true"></span>
+            <span class="sp-run__state" id="head-sub">Running</span>
             <span class="sp-run__elapsed" id="run-elapsed">0:00</span>
           </div>
+          <div class="sp-run__node" id="run-node">—</div>
           <div class="sp-bar"><div class="sp-bar__fill" id="run-bar"></div></div>
           <div class="sp-run__meta">
             <span id="run-count">0 / 0</span>
@@ -70,30 +79,34 @@
       </section>
 
       <!-- Whether the sites a run needs are open, checked before a node finds
-           out three minutes in. Rows are clickable so it is also the fix. -->
+           out three minutes in. Rows are buttons because they are also the
+           fix — clicking one opens the tab it is reporting missing. -->
       <section class="sp-card">
-        <div class="sp-card__title">Platforms</div>
+        <div class="sp-card__head">
+          <h2 class="sp-card__title">Platforms</h2>
+          <span class="sp-card__count" id="plat-count">—</span>
+        </div>
         <ul class="sp-plat" id="plat-list">
-          <li data-plat="flow" tabindex="0" role="button">
-            <span class="sp-dot"></span>
+          <li><button type="button" data-plat="flow">
+            <span class="sp-dot" aria-hidden="true"></span>
             <span class="sp-plat__name">Google Flow</span>
             <span class="sp-plat__state">—</span>
-          </li>
-          <li data-plat="chatgpt" tabindex="0" role="button">
-            <span class="sp-dot"></span>
+          </button></li>
+          <li><button type="button" data-plat="chatgpt">
+            <span class="sp-dot" aria-hidden="true"></span>
             <span class="sp-plat__name">ChatGPT</span>
             <span class="sp-plat__state">—</span>
-          </li>
-          <li data-plat="gemini" tabindex="0" role="button">
-            <span class="sp-dot"></span>
+          </button></li>
+          <li><button type="button" data-plat="gemini">
+            <span class="sp-dot" aria-hidden="true"></span>
             <span class="sp-plat__name">Gemini</span>
             <span class="sp-plat__state">—</span>
-          </li>
-          <li data-plat="grok" tabindex="0" role="button">
-            <span class="sp-dot"></span>
+          </button></li>
+          <li><button type="button" data-plat="grok">
+            <span class="sp-dot" aria-hidden="true"></span>
             <span class="sp-plat__name">Grok</span>
             <span class="sp-plat__state">—</span>
-          </li>
+          </button></li>
         </ul>
       </section>
 
@@ -105,7 +118,9 @@
            found the first and the card stayed empty forever, permanently
            reading "No log entries yet" while lines were written above it. -->
       <section class="sp-card">
-        <div class="sp-card__title">Diagnostics</div>
+        <div class="sp-card__head">
+          <h2 class="sp-card__title">Diagnostics</h2>
+        </div>
         <div id="diag-log" class="sp-diag__log">
           <div class="sp-diag__empty">No log entries yet.</div>
         </div>
@@ -113,17 +128,26 @@
     </div>
 
     <!-- ══ TEMPLATES ════════════════════════════════════════════ -->
-    <div class="sp-view" id="view-templates" hidden>
-      <div class="sp-filter">
-        <input id="tpl-search" class="sp-input sp-input--search" type="search"
-               placeholder="Search templates…" />
+    <div class="sp-view" id="view-templates" role="tabpanel" hidden>
+      <!-- Pinned. Scrolling to row 14 and then wanting to filter used to mean
+           scrolling all the way back up, because the search box and the
+           category pills were part of the scrolling column. -->
+      <div class="sp-tplbar">
+        <div class="sp-search">
+          <svg class="sp-search__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="tpl-search" class="sp-search__input" type="search"
+                 placeholder="Search templates…" aria-label="Search templates" />
+        </div>
+        <!-- One line that scrolls sideways. Wrapping eight categories cost a
+             second 29px row permanently, on every width. -->
+        <div class="sp-pills" id="tpl-pills" role="group" aria-label="Filter by category"></div>
       </div>
-      <div class="sp-pills" id="tpl-pills"></div>
+      <div class="sp-count" id="tpl-count"></div>
       <div class="sp-grid" id="tpl-grid"></div>
     </div>
 
     <!-- ══ PROMPTS ══════════════════════════════════════════════ -->
-    <div class="sp-view" id="view-prompts" hidden>
+    <div class="sp-view" id="view-prompts" role="tabpanel" hidden>
       <p class="sp-note sp-note--intro">
         A preset wraps what you type in a brief — the angles, the lighting, and
         the trap to avoid. Pick one on any Ask AI node.
@@ -141,7 +165,7 @@
 
   <!-- ── Account ── -->
   <div class="sp-modal" id="acct-modal" hidden>
-    <div class="sp-modal__card">
+    <div class="sp-modal__card" role="dialog" aria-modal="true" aria-label="Account">
       <button class="sp-modal__x" id="acct-close" aria-label="Close">✕</button>
 
       <div id="acct-out">
@@ -166,6 +190,11 @@
           <div class="sp-bar sp-bar--thin"><div class="sp-bar__fill" id="usage-bar"></div></div>
         </div>
         <button id="btn-logout" class="sp-btn sp-btn--ghost sp-btn--wide">Sign out</button>
+      </div>
+
+      <div class="sp-modal__links">
+        <a id="lnk-docs" href="https://auto-flow.studio/docs" target="_blank" rel="noopener noreferrer">Documentation</a>
+        <a href="https://auto-flow.studio" target="_blank" rel="noopener noreferrer">auto-flow.studio</a>
       </div>
     </div>
   </div>
