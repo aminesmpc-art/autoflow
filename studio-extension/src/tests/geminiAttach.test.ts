@@ -134,3 +134,144 @@ describe('the shipped bundle uses these selectors', () => {
     expect(src).toContain('attachment-preview-wrapper');
   });
 });
+
+/* ============================================================
+   Waiting for the upload, not for the chip.
+
+   Measured on a live Gemini with a 119KB clip:
+
+     t=0     no chip,  1 spinner (a page-level one, unrelated)
+     t=400   chip,     2 spinners   <- still uploading
+     t=1200  chip,     1 spinner    <- upload done
+     send button: never disabled, at any point
+
+   So "a chip exists and the send button works" — the old readiness test — was
+   already true at 400ms, with the bytes still going up. Submitting there sends
+   the prompt alone and Gemini answers about a file it never received: a run
+   that looks perfect and is wrong. Bigger files widen the window.
+
+   The finished chip contains <gem-media-attachment>; the in-flight one carries
+   a progress spinner inside .attachment-preview-wrapper. The leftover
+   page-level spinner sits OUTSIDE that wrapper, which is why the check is
+   scoped to it and not to the document.
+   ============================================================ */
+describe('waiting for the upload to actually finish', () => {
+  const PROGRESS = 'mat-spinner, mat-progress-spinner, [role="progressbar"], '
+    + '.mat-mdc-progress-spinner, .mat-mdc-progress-bar';
+
+  /** The adapter's predicates, against the real markup. */
+  const attachmentCount = () => {
+    const chips = document.querySelectorAll('uploader-file-preview, .file-preview-chip');
+    if (chips.length) return chips.length;
+    return document.querySelectorAll(
+      '.attachment-preview-wrapper img, .attachment-preview-wrapper video'
+    ).length;
+  };
+  const uploadInProgress = () => {
+    const w = document.querySelector('.attachment-preview-wrapper');
+    return w ? w.querySelectorAll(PROGRESS).length > 0 : false;
+  };
+  const settled = () => {
+    const media = document.querySelectorAll('gem-media-attachment').length;
+    return media || (uploadInProgress() ? 0 : attachmentCount());
+  };
+
+  function page(): HTMLElement {
+    document.body.innerHTML = '';
+    // Gemini keeps an unrelated spinner mounted elsewhere on the page.
+    const stray = document.createElement('mat-progress-spinner');
+    stray.setAttribute('role', 'progressbar');
+    const wrapper = document.createElement('div');
+    wrapper.className = 'attachment-preview-wrapper';
+    const rich = document.createElement('rich-textarea');
+    document.body.append(stray, wrapper, rich);
+    return wrapper;
+  }
+
+  const addUploadingChip = (w: HTMLElement) => {
+    const chip = document.createElement('uploader-file-preview');
+    chip.className = 'file-preview-chip';
+    const spin = document.createElement('mat-progress-spinner');
+    spin.setAttribute('role', 'progressbar');
+    chip.append(spin);
+    w.append(chip);
+    return chip;
+  };
+
+  const finish = (chip: HTMLElement) => {
+    chip.querySelectorAll('mat-progress-spinner').forEach((s) => s.remove());
+    chip.append(document.createElement('gem-media-attachment'));
+  };
+
+  it('does not count a chip that is still uploading', () => {
+    const w = page();
+    addUploadingChip(w);
+
+    // The old rule would already be satisfied here.
+    expect(attachmentCount()).toBe(1);
+    // The new one is not.
+    expect(uploadInProgress()).toBe(true);
+    expect(settled()).toBe(0);
+  });
+
+  it('counts it once the upload completes', () => {
+    const w = page();
+    const chip = addUploadingChip(w);
+    finish(chip);
+
+    expect(uploadInProgress()).toBe(false);
+    expect(settled()).toBe(1);
+  });
+
+  it('ignores the page-level spinner outside the wrapper', () => {
+    /* Scoping matters: a document-wide spinner check never clears, so every
+       upload would run to the 45s timeout and be called a failure. */
+    const w = page();
+    const chip = addUploadingChip(w);
+    finish(chip);
+
+    expect(document.querySelectorAll(PROGRESS).length).toBe(1); // the stray one
+    expect(uploadInProgress()).toBe(false);
+  });
+
+  it('waits for the slowest of several files', () => {
+    const w = page();
+    const a = addUploadingChip(w);
+    const b = addUploadingChip(w);
+    finish(a);
+
+    // One done, one still going — not ready.
+    expect(uploadInProgress()).toBe(true);
+    expect(settled()).toBe(1);      // only the finished one counts
+
+    finish(b);
+    expect(settled()).toBe(2);
+  });
+
+  it('is zero on an empty composer, so the baseline delta holds', () => {
+    page();
+    expect(settled()).toBe(0);
+    expect(uploadInProgress()).toBe(false);
+  });
+
+  it('still settles for a non-media file with no gem-media-attachment', () => {
+    // A format that renders differently must not wait forever.
+    const w = page();
+    const chip = document.createElement('uploader-file-preview');
+    chip.className = 'file-preview-chip';
+    w.append(chip);
+
+    expect(document.querySelectorAll('gem-media-attachment')).toHaveLength(0);
+    expect(settled()).toBe(1);
+  });
+});
+
+describe('the shipped Gemini bundle waits on the upload', () => {
+  it('checks progress inside the attachment wrapper', () => {
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '../../dist/gemini-content.js'), 'utf8'
+    );
+    expect(src).toContain('gem-media-attachment');
+    expect(src).toContain('progressbar');
+  });
+});

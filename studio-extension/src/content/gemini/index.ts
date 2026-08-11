@@ -426,6 +426,43 @@ function attachmentCount(): number {
   ).length;
 }
 
+/** Progress indicators Angular Material can draw for an in-flight upload. */
+const PROGRESS = 'mat-spinner, mat-progress-spinner, [role="progressbar"], '
+  + '.mat-mdc-progress-spinner, .mat-mdc-progress-bar';
+
+/**
+ * Whether a file is still going up.
+ *
+ * The chip is NOT the finish line. Measured on a 119KB clip: the chip appears
+ * at ~400ms with a spinner on it and the upload only completes at ~1200ms, and
+ * the send button is never disabled at any point. So "a chip exists" plus "the
+ * send button works" — the old condition — was satisfiable while the file was
+ * still uploading, and submitting there sends the prompt alone. Gemini then
+ * answers about a file it never received, which reads as a working run with a
+ * wrong answer.
+ *
+ * Scoped to the attachment wrapper on purpose: Gemini keeps an unrelated
+ * page-level spinner mounted, so a document-wide check would never clear.
+ */
+function uploadInProgress(): boolean {
+  const wrapper = document.querySelector('.attachment-preview-wrapper');
+  if (!wrapper) return false;
+  return wrapper.querySelectorAll(PROGRESS).length > 0;
+}
+
+/**
+ * Attachments that have finished uploading.
+ *
+ * `gem-media-attachment` is what a finished image or clip chip contains — the
+ * positive signal, rather than inferring completion from an absent spinner.
+ * Falls back to the chip count for anything that is not media, so a format
+ * that renders differently is not stuck waiting forever.
+ */
+function settledAttachmentCount(): number {
+  const media = document.querySelectorAll('gem-media-attachment').length;
+  return media || (uploadInProgress() ? 0 : attachmentCount());
+}
+
 /**
  * Attach references and confirm they are on screen before returning.
  *
@@ -443,7 +480,8 @@ async function attachReferences(dataUrls: string[]): Promise<string | null> {
     return `Reference image could not be decoded: ${e.message}`;
   }
 
-  const baseline = attachmentCount();
+  // Measured the same way it is compared below, or the delta is nonsense.
+  const baseline = settledAttachmentCount();
   const dt = new DataTransfer();
   for (const f of files) dt.items.add(f);
   input.files = dt.files;
@@ -453,14 +491,21 @@ async function attachReferences(dataUrls: string[]): Promise<string | null> {
   let stable = 0;
   while (Date.now() < deadline) {
     await sleep(500);
-    const arrived = attachmentCount() - baseline;
+    /* SETTLED, not merely present. A chip appears the instant the file is
+       picked and sits there spinning while the bytes go up; counting chips
+       alone let a submit through mid-upload. */
+    const arrived = settledAttachmentCount() - baseline;
     /* Not-disabled, rather than present-and-enabled. References are attached
        before the prompt is typed, and Gemini renders no send button for an
        empty composer — requiring one here would have timed out every upload
-       at 45s and called a working attachment a failure. */
+       at 45s and called a working attachment a failure.
+
+       It is not a completion signal either way: measured live, this button
+       stays enabled throughout the upload, which is why the spinner check
+       above is doing the real work. */
     const btn = findSendButton() as HTMLButtonElement | null;
     const ready = !btn || (!btn.disabled && btn.getAttribute('aria-disabled') !== 'true');
-    if (arrived >= files.length && ready) {
+    if (arrived >= files.length && !uploadInProgress() && ready) {
       if (++stable >= 2) return null; // two clean polls, not one
     } else {
       stable = 0;
