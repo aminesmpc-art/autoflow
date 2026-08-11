@@ -1,16 +1,48 @@
 /* ============================================================
-   TemplateGallery — Home screen with template cards
+   TemplateGallery — Studio's home screen.
+
    Templates live in ../templates; this file is presentation only.
+
+   The shell is a toolbar, a session bar, two levels of navigation, a filter
+   row, the grid, and a footer that states the plan and what is left of it.
+   Everything it shows is something the app actually knows. There are no star
+   ratings and no install counts on the cards: no such data exists anywhere in
+   this codebase or the backend, and a card claiming "660 users, 4.8 stars"
+   would be inventing popularity for a template nobody has rated. The metrics
+   that ARE shown — category, node count, difficulty, which services a
+   template drives — are read off the template itself.
    ============================================================ */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useStudioStore, normalizeWorkflow, resolveAssets } from '../store';
+import { useStudioStore, normalizeWorkflow, resolveAssets, FREE_LIMITS } from '../store';
 import { CATEGORIES, type Template } from '../templates';
 import { loadTemplates, refreshTemplates, type TemplateSource } from '../templates/loader';
-import { getUpgradeTarget } from '../../shared/api';
+import { getAskPresets } from '../presets';
+import { getUpgradeTarget, getProfile } from '../../shared/api';
+import { AccountModal, type Account } from './AccountModal';
 
 /** Node-chain preview gets noisy past this many dots */
 const MAX_PREVIEW_DOTS = 8;
+
+/** The three things this screen can show. Sub-pills belong to Templates. */
+type Section = 'templates' | 'mine' | 'prompts';
+
+const DIFFICULTIES = ['All', 'Easy', 'Medium', 'Advanced'] as const;
+
+/** Which services a template drives, read from its own nodes. */
+function platformsOf(tpl: Template): string[] {
+  const seen = new Set<string>();
+  for (const n of tpl.nodes as any[]) {
+    const d = n?.data;
+    if (d?.type !== 'generate' && d?.type !== 'extend' && d?.type !== 'agent') continue;
+    seen.add(d.type === 'extend' ? 'grok' : (d.platform || 'flow'));
+  }
+  return [...seen];
+}
+
+const PLATFORM_LABEL: Record<string, string> = {
+  flow: 'Flow', chatgpt: 'ChatGPT', gemini: 'Gemini', grok: 'Grok',
+};
 
 const relativeTime = (ts: number): string => {
   if (!ts) return '';
@@ -29,14 +61,35 @@ export default function TemplateGallery() {
     savedWorkflows, listWorkflows, loadWorkflow, deleteWorkflow,
     newWorkflow, importWorkflow, saveWorkflow,
   } = useStudioStore();
+  const isPro = useStudioStore((s) => s.isPro);
+  const runsUsed = useStudioStore((s) => s.runsUsed);
+  const workflow = useStudioStore((s) => s.workflow);
+
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string>('All');
+  const [section, setSection] = useState<Section>('templates');
+  const [difficulty, setDifficulty] = useState<string>('All');
+  const [account, setAccount] = useState<Account | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importOk, setImportOk] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { listWorkflows(); }, [listWorkflows]);
+
+  /* Who is signed in. The footer states a plan and a remaining count, so it
+     has to know rather than guess — and the cached profile can be stale. */
+  useEffect(() => {
+    let live = true;
+    getProfile()
+      .then((p) => {
+        if (live && p) setAccount({ email: p.email, isPro: !!p.is_pro_active });
+      })
+      .catch(() => { /* signed out is a normal state, not an error */ });
+    return () => { live = false; };
+  }, []);
 
   /* One path for both the button and the drop zone. Reports success as well as
      failure: importing now writes to storage, and a silent success is what made
@@ -170,6 +223,7 @@ export default function TemplateGallery() {
     const q = query.trim().toLowerCase();
     return templates.filter((t) => {
       if (category !== 'All' && t.category !== category) return false;
+      if (difficulty !== 'All' && t.difficulty !== difficulty) return false;
       if (!q) return true;
       return (
         t.name.toLowerCase().includes(q) ||
@@ -178,7 +232,7 @@ export default function TemplateGallery() {
         t.category.toLowerCase().includes(q)
       );
     });
-  }, [query, category, templates]);
+  }, [query, category, difficulty, templates]);
 
   return (
     <div
@@ -193,69 +247,137 @@ export default function TemplateGallery() {
           <p>Drop a workflow .json to import it</p>
         </div>
       )}
-      {/* Header */}
-      <div className="studio-gallery__header">
-        <div className="studio-gallery__brand">
-          <span className="studio-gallery__logo">⚡</span>
-          <span className="studio-gallery__title">AutoFlow Studio</span>
+      {/* ── Top bar ── */}
+      <div className="sg-top">
+        <div className="sg-top__brand">
+          <span className="sg-top__logo">⚡</span>
+          <span className="sg-top__name">AutoFlow Studio</span>
         </div>
-        <div className="studio-gallery__actions">
-          <button className="studio-gallery__btn-ghost" onClick={() => fileRef.current?.click()}>
-            ⭱ Import
+        <div className="sg-top__actions">
+          <a
+            className="sg-top__icon" title="Documentation"
+            href="https://auto-flow.studio/docs" target="_blank" rel="noopener noreferrer"
+          >📄</a>
+          <a
+            className="sg-top__icon" title="auto-flow.studio"
+            href="https://auto-flow.studio" target="_blank" rel="noopener noreferrer"
+          >🌐</a>
+          <button
+            className="sg-top__icon"
+            title={account ? `Signed in as ${account.email}` : 'Sign in'}
+            onClick={() => setAccountOpen(true)}
+          >
+            {account
+              ? <span className="sg-top__avatar">{account.email.charAt(0).toUpperCase()}</span>
+              : '👤'}
           </button>
-          <button className="studio-gallery__btn-blank" onClick={startBlank}>
-            + Start Blank
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            style={{ display: 'none' }}
-            onChange={handleImport}
-          />
         </div>
       </div>
 
-      {/* Search */}
-      <div className="studio-gallery__search">
+      {/* ── Session bar: which workflow is open, and how to change it ── */}
+      <div className="sg-session">
+        <span className="sg-session__mark">✦</span>
+        <span className="sg-session__name" title={workflow.name}>{workflow.name}</span>
+        {workflow.updatedAt > 0 && (
+          <span className="sg-session__time">saved {relativeTime(workflow.updatedAt)}</span>
+        )}
+        <div className="sg-session__right">
+          <button
+            className="sg-session__btn nodrag"
+            onClick={() => setSwitcherOpen((v) => !v)}
+            title="Switch to a saved workflow"
+            aria-expanded={switcherOpen}
+          >▾</button>
+          <button className="sg-session__new" onClick={startBlank} title="New blank workflow">+</button>
+          {switcherOpen && (
+            <div className="sg-switcher">
+              {savedWorkflows.length === 0 && (
+                <div className="sg-switcher__empty">Nothing saved yet</div>
+              )}
+              {savedWorkflows.slice(0, 8).map((w) => (
+                <button
+                  key={w.id}
+                  className="sg-switcher__item"
+                  onClick={() => { setSwitcherOpen(false); loadWorkflow(w.id); }}
+                >
+                  <span className="sg-switcher__item-name">{w.name}</span>
+                  <span className="sg-switcher__item-meta">{w.nodeCount} nodes</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Primary navigation ── */}
+      <div className="sg-nav">
+        {([
+          ['templates', '▦', 'Templates'],
+          ['mine', '☍', `My Workflows${savedWorkflows.length ? ` (${savedWorkflows.length})` : ''}`],
+          ['prompts', '📝', 'Prompts'],
+        ] as Array<[Section, string, string]>).map(([id, icon, label]) => (
+          <button
+            key={id}
+            className={`sg-nav__tab ${section === id ? 'sg-nav__tab--on' : ''}`}
+            onClick={() => setSection(id)}
+          >
+            <span className="sg-nav__icon">{icon}</span>{label}
+          </button>
+        ))}
+        <div className="sg-nav__spacer" />
+        <button className="sg-nav__act" onClick={() => fileRef.current?.click()} title="Import a workflow .json">
+          ⭱ Import
+        </button>
+        <button className="sg-nav__act sg-nav__act--go" onClick={startBlank}>+ Blank</button>
         <input
-          className="studio-gallery__search-input"
-          placeholder="Search templates — try “ad”, “character”, “b-roll”…"
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          ref={fileRef}
+          type="file"
+          accept="application/json,.json"
+          style={{ display: 'none' }}
+          onChange={handleImport}
         />
       </div>
 
-      {importError && (
-        <div className="studio-gallery__error">⚠ {importError}</div>
-      )}
+      {importError && <div className="studio-gallery__error">⚠ {importError}</div>}
+      {importOk && <div className="studio-gallery__ok">✓ {importOk}</div>}
 
-      {importOk && (
-        <div className="studio-gallery__ok">✓ {importOk}</div>
-      )}
+      {/* ── Sub-pills + filters, for the template grid only ── */}
+      {section === 'templates' && (
+        <>
+          <div className="sg-pills">
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                className={`sg-pill ${category === cat ? 'sg-pill--on' : ''}`}
+                onClick={() => setCategory(cat)}
+              >{cat}</button>
+            ))}
+          </div>
 
-      {/* Category Tabs */}
-      <div className="studio-gallery__tabs">
-        {CATEGORIES.map((cat) => (
-          <button
-            key={cat}
-            className={`studio-gallery__tab ${category === cat ? 'studio-gallery__tab--active' : ''}`}
-            onClick={() => setCategory(cat)}
-          >
-            {cat}
-          </button>
-        ))}
-        <button
-          className={`studio-gallery__tab ${category === 'Mine' ? 'studio-gallery__tab--active' : ''}`}
-          onClick={() => setCategory('Mine')}
-        >
-          My Workflows{savedWorkflows.length > 0 && ` (${savedWorkflows.length})`}
-        </button>
-      </div>
+          <div className="sg-filter">
+            <input
+              className="sg-filter__search"
+              placeholder="Search templates — try “ad”, “character”, “b-roll”…"
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <select
+              className="sg-filter__select"
+              value={difficulty}
+              onChange={(e) => setDifficulty(e.target.value)}
+              title="Filter by difficulty"
+            >
+              {DIFFICULTIES.map((d) => (
+                <option key={d} value={d}>{d === 'All' ? 'All levels' : d}</option>
+              ))}
+            </select>
+          </div>
+        </>
+      )}
 
       {/* Saved workflows */}
-      {category === 'Mine' && (
+      {section === 'mine' && (
         <div className="studio-gallery__grid">
           {savedWorkflows.map((w) => (
             <div key={w.id} className="studio-gallery__saved" onClick={() => loadWorkflow(w.id)}>
@@ -288,8 +410,8 @@ export default function TemplateGallery() {
       )}
 
       {/* Template Grid */}
-      {category !== 'Mine' && (
-      <div className="studio-gallery__grid">
+      {section === 'templates' && (
+      <div className="studio-gallery__grid sg-grid">
         {visible.map((tpl) => (
           <div
             key={tpl.id}
@@ -340,6 +462,13 @@ Pro template — click to upgrade.` : tpl.useCase}
                 <span className={`studio-gallery__card-difficulty studio-gallery__card-difficulty--${tpl.difficulty.toLowerCase()}`}>
                   {tpl.difficulty}
                 </span>
+                {/* Which tabs this template will want open. Derived from the
+                    nodes themselves, so it cannot drift from what runs. */}
+                {platformsOf(tpl).map((pf) => (
+                  <span key={pf} className={`sg-card__pf sg-card__pf--${pf}`}>
+                    {PLATFORM_LABEL[pf] || pf}
+                  </span>
+                ))}
               </div>
             </div>
           </div>
@@ -356,6 +485,63 @@ Pro template — click to upgrade.` : tpl.useCase}
         )}
       </div>
       )}
+
+      {/* ── Prompts: the Ask AI briefs, which are real and were unfindable ── */}
+      {section === 'prompts' && (
+        <div className="sg-prompts">
+          <p className="sg-prompts__intro">
+            A preset wraps whatever you type in a brief — the angles, the lighting,
+            and the trap to avoid. Pick one on any Ask AI node.
+          </p>
+          {getAskPresets().map((p) => (
+            <div key={p.id} className="sg-prompt">
+              <div className="sg-prompt__head">
+                <span className="sg-prompt__name">{p.name}</span>
+                <code className="sg-prompt__id">{p.id}</code>
+              </div>
+              <p className="sg-prompt__hint">{p.hint}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Footer: the plan, and what is left of it ── */}
+      <div className="sg-foot">
+        <span className={`sg-foot__plan ${account?.isPro || isPro ? 'sg-foot__plan--pro' : ''}`}>
+          {account?.isPro || isPro ? 'PRO' : 'FREE'}
+        </span>
+        <button className="sg-foot__acct" onClick={() => setAccountOpen(true)}>
+          {account ? account.email : 'Sign in'}
+        </button>
+        <div className="sg-foot__stats">
+          {/* Only the numbers the app actually holds. A Pro account has no
+              monthly ceiling, so showing "n/15" against it would be a lie. */}
+          {account?.isPro || isPro ? (
+            <span className="sg-foot__stat">⚡ Unlimited runs</span>
+          ) : (
+            <span className="sg-foot__stat" title="Workflow runs used this month">
+              ⚡ {runsUsed}/{FREE_LIMITS.runsPerMonth} runs
+            </span>
+          )}
+          <span className="sg-foot__stat" title="Nodes allowed on one canvas">
+            ▦ {account?.isPro || isPro ? 'Unlimited' : `${FREE_LIMITS.nodes} nodes`}
+          </span>
+          <span className="sg-foot__stat sg-foot__stat--src" title={`Templates loaded from ${source}`}>
+            {source === 'network' ? '☁ Live' : source === 'cache' ? '☁ Cached' : '⦿ Built in'}
+          </span>
+        </div>
+      </div>
+
+      <AccountModal
+        open={accountOpen}
+        account={account}
+        onClose={() => setAccountOpen(false)}
+        onChanged={(a) => {
+          setAccount(a);
+          // The store drives the canvas's own limit checks, so refresh it too.
+          useStudioStore.getState().loadEntitlements();
+        }}
+      />
     </div>
   );
 }
