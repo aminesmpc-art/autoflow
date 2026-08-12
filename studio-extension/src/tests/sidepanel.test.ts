@@ -130,6 +130,8 @@ describe('the panel markup keeps the contract index.ts relies on', () => {
 
 describe('the stylesheet', () => {
   const css = () => readFileSync(CSS, 'utf8');
+  // The scale and palette live one level up, shared with the studio canvas.
+  const tokens = () => readFileSync(join(__dirname, '..', 'shared', 'tokens.css'), 'utf8');
 
   it('carries the rule that makes hidden win', () => {
     expect(css()).toMatch(/\[hidden\]\s*\{\s*display:\s*none\s*!important/);
@@ -152,9 +154,21 @@ describe('the stylesheet', () => {
   });
 
   it('sets no text smaller than 10px', () => {
-    const sizes = Array.from(css().matchAll(/font-size:\s*([\d.]+)px/g)).map((m) => Number(m[1]));
-    expect(sizes.length).toBeGreaterThan(10);
-    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(10);
+    /* Sizes come from the shared scale now, so there are no literals left in
+       this file to measure. The rule is unchanged and is checked where the
+       values actually live: every --t-* step, and the fact that nothing here
+       opts out of them with a raw px. */
+    const literals = Array.from(css().matchAll(/font-size:\s*([\d.]+)px/g)).map((m) => Number(m[1]));
+    expect(literals).toEqual([]);
+
+    const scale = Array.from(tokens().matchAll(/--t-[a-z]+:\s*([\d.]+)px/g)).map((m) => Number(m[1]));
+    expect(scale.length).toBeGreaterThan(4);
+    expect(Math.min(...scale)).toBeGreaterThanOrEqual(10);
+
+    const used = Array.from(css().matchAll(/font-size:\s*var\((--t-[a-z]+)\)/g)).map((m) => m[1]);
+    expect(used.length).toBeGreaterThan(10);
+    const defined = new Set(Array.from(tokens().matchAll(/(--t-[a-z]+):/g)).map((m) => m[1]));
+    expect(used.filter((t) => !defined.has(t))).toEqual([]);
   });
 });
 

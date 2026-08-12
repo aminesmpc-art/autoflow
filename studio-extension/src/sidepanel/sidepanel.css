@@ -7,53 +7,22 @@
    that scrolls, and a type scale that stops at 11px because 8px text in a
    docked panel is decoration, not information.
 
-   ONE palette. This file used to hold two — a neutral obsidian ramp for the
-   cards and Tailwind's blue-tinted slate for the shell that was bolted on
-   later, plus two different limes. Nothing looked broken in isolation and the
-   whole thing looked unresolved, which is the usual way that failure shows up.
+   ONE palette, and it is no longer defined here. Every colour, size, radius
+   and easing comes from shared/tokens.css, which the canvas imports too —
+   the two surfaces used to hold two different accents and disagree about
+   what a prompt node looks like. What stays in this file is only what is
+   genuinely true of a 320px docked strip and nothing else.
    ============================================================ */
+
+@import '../shared/tokens.css';
 
 *, *::before, *::after { box-sizing: border-box; }
 
 
+/* Panel-only. The type ramp stops at 11px because 8px text in a docked
+   strip is decoration, not information. */
 :root {
-  /* Surfaces — neutral, no blue cast. */
-  --bg:         #121214;
-  --surface:    #17171a;
-  --surface-2:  #1d1d21;
-  --sunken:     #0d0d0f;
-  --line:       #26262c;
-  --line-2:     #33333b;
-
-  /* Text. Every value below is measured against --bg or --surface:
-     --text 17.0:1, --text-2 9.1:1, --text-3 5.5:1. Nothing dimmer ships. */
-  --text:       #f4f4f6;
-  --text-2:     #b4b4be;
-  --text-3:     #8a8a95;
-
-  /* One accent. */
-  --accent:     #b5f602;
-  --accent-dim: #93c802;
-  --on-accent:  #0d1400;
-  --accent-8:   rgba(181, 246, 2, 0.08);
-  --accent-14:  rgba(181, 246, 2, 0.14);
-  --accent-30:  rgba(181, 246, 2, 0.30);
-
-  /* Status. Colour is never the only signal — each one carries a word too. */
-  --ok:         #4ade80;
-  --ok-16:      rgba(74, 222, 128, 0.16);
-  --warn:       #fbbf24;
-  --warn-16:    rgba(251, 191, 36, 0.16);
-  --bad:        #f87171;
-  --bad-12:     rgba(248, 113, 113, 0.12);
-  --bad-30:     rgba(248, 113, 113, 0.30);
-
-  --r-chip: 6px;
-  --r-ctrl: 8px;
-  --r-row:  10px;
-  --r-card: 12px;
-
-  --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  --panel-min: 320px;
 }
 
 body {
@@ -76,8 +45,8 @@ body {
 * { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: #45454f; }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: var(--r-pill); }
+::-webkit-scrollbar-thumb:hover { background: var(--line-2); }
 
 :focus-visible { outline: none; box-shadow: var(--focus); border-radius: var(--r-ctrl); }
 
@@ -101,13 +70,14 @@ body {
   width: 44px; height: 44px;
   margin: 0 auto 14px;
   display: grid; place-items: center;
-  border-radius: 13px;
+  border-radius: var(--r-card);
   background: var(--accent-14);
   border: 1px solid var(--accent-30);
-  font-size: 20px;
+  color: var(--accent);
 }
-.sp-gate__title { margin: 0 0 6px; font-size: 17px; font-weight: 700; color: var(--text); }
-.sp-gate__sub { margin: 0 0 20px; font-size: 12px; line-height: 1.5; color: var(--text-3); }
+.sp-gate__mark svg { width: 24px; height: 24px; }
+.sp-gate__title { margin: 0 0 6px; font-size: var(--t-lg); font-weight: 700; color: var(--text); }
+.sp-gate__sub { margin: 0 0 20px; font-size: var(--t-small); line-height: 1.5; color: var(--text-3); }
 
 /* Google's button, to Google's shape: white, their mark, their wording. A
    restyled one in the panel's palette is the kind of thing people have learned
@@ -120,23 +90,23 @@ body {
   width: 100%;
   height: 40px;
   border-radius: var(--r-ctrl);
-  border: 1px solid #dadce0;
-  background: #fff;
-  color: #1f1f1f;
+  border: 1px solid var(--google-line);
+  background: var(--google-face);
+  color: var(--google-ink);
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--t-body);
   font-weight: 600;
   cursor: pointer;
   transition: box-shadow 0.15s, background 0.15s;
 }
-.sp-gbtn:hover { background: #f7f8f8; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35); }
+.sp-gbtn:hover { background: var(--google-hover); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35); }
 .sp-gbtn:disabled { opacity: 0.6; cursor: default; }
 .sp-gbtn__g { width: 17px; height: 17px; flex: 0 0 auto; }
 
 .sp-gate__or {
   position: relative;
   margin: 16px 0 14px;
-  font-size: 11px;
+  font-size: var(--t-micro);
   color: var(--text-3);
 }
 .sp-gate__or::before {
@@ -147,7 +117,7 @@ body {
 .sp-gate__or span { position: relative; padding: 0 10px; background: var(--bg); }
 
 .sp-gate .sp-input { text-align: left; }
-.sp-gate__foot { margin: 14px 0 0; font-size: 11.5px; color: var(--text-3); }
+.sp-gate__foot { margin: 14px 0 0; font-size: var(--t-micro); color: var(--text-3); }
 .sp-gate__foot a { color: var(--accent); text-decoration: none; }
 .sp-gate__foot a:hover { text-decoration: underline; }
 
@@ -166,9 +136,12 @@ body {
   flex: 0 0 auto;
   border-bottom: 1px solid var(--line);
 }
-.sp-top__logo { font-size: 15px; line-height: 1; }
+/* The brand mark, not an emoji. An emoji carries its own colour and
+   stayed orange while every other accent went violet — a logo that
+   cannot match the palette is not a logo. */
+.sp-top__logo { width: 18px; height: 18px; color: var(--accent); flex: none; }
 .sp-top__name {
-  font-size: 13px;
+  font-size: var(--t-body);
   font-weight: 700;
   letter-spacing: -0.2px;
   color: var(--text);
@@ -187,7 +160,7 @@ body {
   background: var(--accent-14);
   color: var(--accent);
   font-weight: 600;
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   line-height: 1;
   font-family: inherit;
   white-space: nowrap;
@@ -211,15 +184,15 @@ body {
   border-radius: var(--r-ctrl);
   background: transparent;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: var(--t-body);
   cursor: pointer;
 }
 .sp-top__icon:hover { background: var(--surface-2); color: var(--text); }
 
 .sp-badge {
   padding: 3px 7px;
-  border-radius: 999px;
-  font-size: 10px;
+  border-radius: var(--r-pill);
+  font-size: var(--t-micro);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.6px;
@@ -255,7 +228,7 @@ body {
   background: transparent;
   color: var(--text-3);
   font-weight: 600;
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   line-height: 1;
   font-family: inherit;
   cursor: pointer;
@@ -331,25 +304,25 @@ body {
 }
 .sp-run__idle-icon {
   grid-row: span 2;
-  font-size: 17px;
+  font-size: var(--t-lg);
   color: var(--text-3);
   line-height: 1;
 }
-.sp-run__idle-text { font-weight: 600; font-size: 12.5px; color: var(--text-2); }
-.sp-run__idle-hint { font-size: 11.5px; color: var(--text-3); }
+.sp-run__idle-text { font-weight: 600; font-size: var(--t-small); color: var(--text-2); }
+.sp-run__idle-hint { font-size: var(--t-micro); color: var(--text-3); }
 
 .sp-run__top { display: flex; align-items: center; gap: 7px; }
 .sp-run__state {
   flex: 1;
   min-width: 0;
-  font-size: 11px;
+  font-size: var(--t-micro);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.7px;
   color: var(--accent);
 }
 .sp-run__elapsed {
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
@@ -358,7 +331,7 @@ body {
    became "Grok · Hero pr…" — the one string that says what is happening. */
 .sp-run__node {
   margin: 7px 0 9px;
-  font-size: 13px;
+  font-size: var(--t-body);
   font-weight: 600;
   color: var(--text);
   overflow: hidden;
@@ -383,18 +356,18 @@ body {
   display: flex;
   justify-content: space-between;
   margin-top: 7px;
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 
 /* ── Bars ── */
-.sp-bar { height: 5px; border-radius: 999px; background: var(--sunken); overflow: hidden; }
+.sp-bar { height: 5px; border-radius: var(--r-pill); background: var(--sunken); overflow: hidden; }
 .sp-bar--thin { height: 4px; }
 .sp-bar__fill {
   height: 100%;
   width: 0;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--accent);
   transition: width 0.35s ease;
 }
@@ -406,7 +379,7 @@ body {
   border-radius: var(--r-ctrl);
   border: 1px solid transparent;
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--t-small);
   line-height: 1;
   font-family: inherit;
   cursor: pointer;
@@ -458,7 +431,7 @@ body {
 }
 .sp-card__title {
   margin: 0;
-  font-size: 10px;
+  font-size: var(--t-micro);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.9px;
@@ -466,7 +439,7 @@ body {
 }
 /* "3 of 4 open" beside the heading, so the answer is readable without
    parsing four rows of dots. */
-.sp-card__count { margin-left: auto; font-size: 11px; color: var(--text-3); }
+.sp-card__count { margin-left: auto; font-size: var(--t-micro); color: var(--text-3); }
 
 /* ── Platforms ── */
 .sp-plat { list-style: none; margin: 0; padding: 0; }
@@ -487,9 +460,9 @@ body {
   transition: background 0.15s, border-color 0.15s;
 }
 .sp-plat button:hover { background: var(--surface-2); border-color: var(--line); }
-.sp-plat__name { flex: 1; min-width: 0; font-size: 12.5px; color: var(--text-2); }
+.sp-plat__name { flex: 1; min-width: 0; font-size: var(--t-small); color: var(--text-2); }
 .sp-plat button:hover .sp-plat__name { color: var(--text); }
-.sp-plat__state { font-size: 11px; color: var(--text-3); }
+.sp-plat__state { font-size: var(--t-micro); color: var(--text-3); }
 .sp-dot {
   width: 7px; height: 7px;
   border-radius: 50%;
@@ -506,7 +479,7 @@ body {
    click will do. */
 .sp-plat button::after {
   content: 'Open ↗';
-  font-size: 10.5px;
+  font-size: var(--t-micro);
   color: var(--accent);
   opacity: 0;
   transition: opacity 0.15s;
@@ -530,13 +503,13 @@ body {
   border-radius: var(--r-ctrl);
   background: var(--sunken);
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-size: var(--t-micro);
   line-height: 1.5;
 }
 .sp-diag__empty {
   padding: 10px 0;
   text-align: center;
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   /* Was 2.8:1 — legible as "there is text here", not as the text. */
   color: var(--text-3);
   font-family: inherit;
@@ -545,7 +518,7 @@ body {
   display: flex;
   gap: 7px;
   padding: 3px 4px;
-  border-radius: 4px;
+  border-radius: var(--r-chip);
   word-break: break-word;
 }
 .sp-diag__line:hover { background: rgba(255, 255, 255, 0.04); }
@@ -588,7 +561,7 @@ body {
   border: 1px solid var(--line);
   border-radius: var(--r-ctrl);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--t-small);
   line-height: 1;
   font-family: inherit;
 }
@@ -604,8 +577,8 @@ body {
   overflow-x: auto;
   scrollbar-width: none;
   scroll-snap-type: x proximity;
-  mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(90deg, rgb(0 0 0) calc(100% - 20px), transparent);
+  -webkit-mask-image: linear-gradient(90deg, rgb(0 0 0) calc(100% - 20px), transparent);
 }
 .sp-pills::-webkit-scrollbar { display: none; }
 .sp-pill {
@@ -613,12 +586,12 @@ body {
   scroll-snap-align: start;
   height: 24px;
   padding: 0 10px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text-3);
   font-weight: 500;
-  font-size: 11px;
+  font-size: var(--t-micro);
   line-height: 1;
   font-family: inherit;
   cursor: pointer;
@@ -632,13 +605,13 @@ body {
   font-weight: 600;
 }
 
-.sp-count { font-size: 11px; color: var(--text-3); padding: 0 2px; }
+.sp-count { font-size: var(--t-micro); color: var(--text-3); padding: 0 2px; }
 
 .sp-empty {
   grid-column: 1 / -1;
   padding: 24px 0;
   text-align: center;
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   color: var(--text-3);
 }
 
@@ -666,7 +639,7 @@ body {
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--t-small);
   font-family: inherit;
   text-align: left;
   cursor: pointer;
@@ -681,13 +654,13 @@ body {
   border-radius: var(--r-chip);
   background: var(--surface-2);
   border: 1px solid var(--line);
-  font-size: 17px;
+  font-size: var(--t-lg);
   line-height: 1;
 }
 .sp-tpl:hover .sp-tpl__thumb { border-color: var(--accent-30); }
 .sp-tpl__body { min-width: 0; }
 .sp-tpl__name {
-  font-size: 12px;
+  font-size: var(--t-small);
   font-weight: 600;
   line-height: 1.35;
   color: var(--text);
@@ -702,7 +675,7 @@ body {
   align-items: center;
   gap: 6px;
   color: var(--text-3);
-  font-size: 11px;
+  font-size: var(--t-micro);
 }
 .sp-tpl__sep { color: var(--line-2); }
 .sp-tpl__lock {
@@ -710,10 +683,10 @@ body {
   top: 6px;
   right: 6px;
   padding: 2px 5px;
-  border-radius: 4px;
+  border-radius: var(--r-chip);
   background: var(--accent);
   color: var(--on-accent);
-  font-size: 10px;
+  font-size: var(--t-micro);
   font-weight: 800;
   letter-spacing: 0.4px;
 }
@@ -732,10 +705,10 @@ body {
   background: var(--accent-14);
   border: 1px solid var(--accent-30);
   color: var(--accent);
-  font-size: 10px;
+  font-size: var(--t-micro);
   font-weight: 700;
 }
-.sp-step__label { font-size: 11.5px; font-weight: 600; color: var(--text-2); }
+.sp-step__label { font-size: var(--t-micro); font-weight: 600; color: var(--text-2); }
 
 .sp-area {
   width: 100%;
@@ -745,13 +718,13 @@ body {
   border-radius: var(--r-ctrl);
   color: var(--text);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--t-small);
   line-height: 1.5;
   resize: vertical;
 }
 .sp-area::placeholder { color: var(--text-3); }
 .sp-area:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-8); }
-.sp-area--mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }
+.sp-area--mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--t-micro); }
 
 /* The five chats, as links rather than as automation. Grok, ChatGPT and
    Gemini could be driven from here; DeepSeek and Claude could not, and a
@@ -763,11 +736,11 @@ body {
   gap: 5px;
   height: 26px;
   padding: 0 9px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text-2);
-  font-size: 11px;
+  font-size: var(--t-micro);
   text-decoration: none;
   cursor: pointer;
 }
@@ -780,14 +753,14 @@ body {
   border-radius: var(--r-ctrl);
   border: 1px solid var(--line);
   background: var(--surface);
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   line-height: 1.5;
   color: var(--text-2);
 }
 .sp-buildout--ok { border-color: var(--accent-30); background: var(--accent-8); }
-.sp-buildout--bad { border-left: 3px solid var(--bad); background: var(--bad-12); color: #fca5a5; }
+.sp-buildout--bad { border-left: 3px solid var(--bad); background: var(--bad-12); color: var(--bad); }
 .sp-buildout__title { font-weight: 700; color: var(--text); margin-bottom: 4px; }
-.sp-buildout--bad .sp-buildout__title { color: #fca5a5; }
+.sp-buildout--bad .sp-buildout__title { color: var(--bad); }
 .sp-buildout ul { margin: 6px 0 0; padding-left: 16px; }
 .sp-buildout li { margin-bottom: 3px; }
 
@@ -796,6 +769,10 @@ body {
    whole feature rather than a link out. */
 .sp-ai__link--auto { border-color: var(--accent-30); background: var(--accent-8); color: var(--text); }
 .sp-ai__link--auto .sp-ai__dot { background: var(--accent); }
+.sp-ai__link[data-key="chatgpt"] .sp-ai__dot { background: var(--brand-chatgpt); }
+.sp-ai__link[data-key="gemini"]  .sp-ai__dot { background: var(--brand-gemini); }
+.sp-ai__link[data-key="claude"]  .sp-ai__dot { background: var(--brand-claude); }
+.sp-ai__link[data-key="grok"]    .sp-ai__dot { background: var(--brand-grok); }
 .sp-ai__link--auto:hover { background: var(--accent-14); }
 .sp-ai__link:disabled { opacity: 0.5; cursor: default; }
 .sp-ai__link--busy .sp-ai__dot { animation: sp-pulse 1.2s ease-in-out infinite; }
@@ -805,12 +782,12 @@ body {
 .sp-ai__model {
   height: 26px;
   padding: 0 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text-2);
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--t-micro);
   cursor: pointer;
 }
 .sp-ai__model:hover { border-color: var(--line-2); color: var(--text); }
@@ -820,7 +797,7 @@ body {
 .sp-manual { margin-top: 2px; }
 .sp-manual > summary {
   cursor: pointer;
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   color: var(--text-3);
   padding: 4px 2px;
   list-style: none;
@@ -845,11 +822,11 @@ body {
 .sp-seg2__btn {
   height: 26px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-chip);
   background: transparent;
   color: var(--text-3);
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   font-weight: 600;
   cursor: pointer;
 }
@@ -868,19 +845,19 @@ body {
   background: transparent;
   color: var(--text-3);
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--t-micro);
   cursor: pointer;
 }
 .sp-like:hover { background: var(--surface-2); color: var(--text-2); }
-.sp-like--on { color: #f87171; }
+.sp-like--on { color: var(--bad); }
 .sp-like svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; }
 .sp-like--on svg { fill: currentColor; }
-.sp-installs { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.sp-installs { font-size: var(--t-micro); color: var(--text-3); font-variant-numeric: tabular-nums; }
 
 /* ════════════════════════════════════════════════
    Prompts
    ════════════════════════════════════════════════ */
-.sp-note { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--text-3); }
+.sp-note { margin: 0; font-size: var(--t-micro); line-height: 1.5; color: var(--text-3); }
 .sp-note--intro { margin-bottom: 2px; }
 .sp-preset {
   padding: 9px 10px;
@@ -890,7 +867,7 @@ body {
   background: var(--surface);
 }
 .sp-preset__head { display: flex; align-items: baseline; gap: 8px; }
-.sp-preset__name { color: var(--text); font-size: 12px; font-weight: 600; }
+.sp-preset__name { color: var(--text); font-size: var(--t-small); font-weight: 600; }
 /* The id is what you type on the node, so it must stay legible — but the name
    is what you read first. At 320px "Cinematic still" and "preset_cinematic"
    do not both fit, so the id is the one that gives way. */
@@ -901,10 +878,10 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-3);
-  font-size: 10.5px;
+  font-size: var(--t-micro);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-.sp-preset__hint { margin: 4px 0 0; color: var(--text-3); font-size: 11.5px; line-height: 1.5; }
+.sp-preset__hint { margin: 4px 0 0; color: var(--text-3); font-size: var(--t-micro); line-height: 1.5; }
 
 /* ════════════════════════════════════════════════
    Footer
@@ -924,7 +901,7 @@ body {
   border-radius: var(--r-chip);
   border: 1px solid var(--line-2);
   color: var(--text-3);
-  font-size: 10px;
+  font-size: var(--t-micro);
   font-weight: 800;
   letter-spacing: 0.5px;
 }
@@ -939,7 +916,7 @@ body {
   padding: 0;
   background: transparent;
   color: var(--text-2);
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   line-height: 1;
   font-family: inherit;
   text-align: left;
@@ -947,7 +924,7 @@ body {
 }
 .sp-foot__acct:hover { color: var(--text); text-decoration: underline; }
 /* Was 9px at 4.05:1. It is the number that tells you a run will be refused. */
-.sp-foot__stat { color: var(--text-3); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sp-foot__stat { color: var(--text-3); font-size: var(--t-micro); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sp-foot__stat--low { color: var(--warn); font-weight: 600; }
 
 /* ════════════════════════════════════════════════
@@ -961,7 +938,7 @@ body {
   border: 1px solid var(--line);
   border-radius: var(--r-ctrl);
   color: var(--text);
-  font-size: 12.5px;
+  font-size: var(--t-small);
   line-height: 1.4;
   font-family: inherit;
 }
@@ -974,18 +951,18 @@ body {
   border-radius: 50%;
   background: var(--accent);
   display: grid; place-items: center;
-  font-size: 12px; font-weight: 700; color: var(--on-accent);
+  font-size: var(--t-small); font-weight: 700; color: var(--on-accent);
   text-transform: uppercase; flex-shrink: 0;
 }
 .sp-acct__email {
   font-weight: 600; min-width: 0; color: var(--text);
-  font-size: 12.5px;
+  font-size: var(--t-small);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .sp-usage { margin: 12px 0; }
 .sp-usage__row {
   display: flex; justify-content: space-between;
-  font-size: 11.5px; color: var(--text-3); margin-bottom: 6px;
+  font-size: var(--t-micro); color: var(--text-3); margin-bottom: 6px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -995,8 +972,8 @@ body {
   border-radius: var(--r-ctrl);
   border-left: 3px solid var(--bad);
   background: var(--bad-12);
-  color: #fca5a5;
-  font-size: 11.5px;
+  color: var(--bad);
+  font-size: var(--t-micro);
   line-height: 1.45;
   word-break: break-word;
 }
@@ -1029,11 +1006,11 @@ body {
   border-radius: var(--r-chip);
   background: transparent;
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--t-small);
   cursor: pointer;
 }
 .sp-modal__x:hover { background: var(--surface-2); color: var(--text); }
-.sp-modal__title { margin-bottom: 4px; color: var(--text); font-size: 13.5px; font-weight: 700; }
+.sp-modal__title { margin-bottom: 4px; color: var(--text); font-size: var(--t-body); font-weight: 700; }
 .sp-modal__links {
   display: flex;
   gap: 12px;
@@ -1041,7 +1018,7 @@ body {
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
-.sp-modal__links a { color: var(--text-3); font-size: 11px; text-decoration: none; }
+.sp-modal__links a { color: var(--text-3); font-size: var(--t-micro); text-decoration: none; }
 .sp-modal__links a:hover { color: var(--accent); text-decoration: underline; }
 
 /* ════════════════════════════════════════════════
@@ -1069,3 +1046,44 @@ body {
    is last in the file so it also wins under a naive last-declaration-wins
    cascade — which is what jsdom implements, and therefore what the test that
    guards this can actually see. */
+
+
+/* ── Build starters ──────────────────────────────────────────
+   A list, not a grid of cards. At 320px a two-column grid of these gives
+   two words a line, and the whole point is that the sentence is readable
+   at a glance — it is going straight into the box above. */
+.sp-ideas {
+  margin-top: var(--s-4);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line);
+}
+.sp-ideas__head {
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: var(--s-2);
+}
+.sp-ideas__list { display: flex; flex-direction: column; gap: var(--s-1); }
+.sp-idea {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-ctrl);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--t-small);
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background var(--fast), border-color var(--fast), color var(--fast);
+}
+.sp-idea:hover {
+  background: var(--accent-8);
+  border-color: var(--accent-30);
+  color: var(--text);
+}
+.sp-idea:focus-visible { outline: none; box-shadow: var(--focus); }

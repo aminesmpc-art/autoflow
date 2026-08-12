@@ -221,7 +221,11 @@ export default function TemplateGallery() {
       {/* Header */}
       <div className="studio-gallery__header">
         <div className="studio-gallery__brand">
-          <span className="studio-gallery__logo">⚡</span>
+          <svg className="studio-gallery__logo" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M20.5 12a8.5 8.5 0 1 1-2.9-6.4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+            <path d="M15.2 3.4l3.1 2.1-2.1 3.1" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M10.3 8.9l5.4 3.1-5.4 3.1z" fill="currentColor" />
+          </svg>
           <span className="studio-gallery__title">AutoFlow Studio</span>
         </div>
         <div className="studio-gallery__actions">

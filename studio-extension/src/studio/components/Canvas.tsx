@@ -676,7 +676,7 @@ function CanvasInner() {
             >
               <span className="studio-toolbar__btn-icon" aria-hidden="true">▶</span>
               <span className="studio-toolbar__btn-label">
-                {canRun ? 'Run workflow' : 'Add a Generate node to run'}
+                {canRun ? 'Run workflow' : 'Add a node to run'}
               </span>
             </button>
             {/* Recovering from a failure shouldn't mean paying for the clips
@@ -730,10 +730,15 @@ function CanvasInner() {
             nodeBorderRadius={3}
             nodeColor={(n) => {
               const d = n.data as any;
-              if (d?.type === 'prompt') return '#f97316';
-              if (d?.type === 'image') return '#3b82f6';
-              if (d?.type === 'generate') return '#22c55e';
-              return '#4a4a52';
+              /* Mirrors the node-family tokens in shared/tokens.css. Literals
+                 because React Flow writes these to an SVG fill attribute, and
+                 presentation attributes do not resolve var(). These three were
+                 the old swapped mapping — prompt orange, generate green — so
+                 the minimap disagreed with the nodes it was a map of. */
+              if (d?.type === 'prompt') return '#22c55e';   /* --n-prompt */
+              if (d?.type === 'image') return '#60a5fa';    /* --n-image  */
+              if (d?.type === 'generate') return '#f97316'; /* --n-video  */
+              return '#33333b';                             /* --line-2   */
             }}
             maskColor="rgba(8,8,10,0.72)"
           />
@@ -743,7 +748,11 @@ function CanvasInner() {
         {nodes.length === 0 && (
           <Panel position="top-center">
             <div className="studio-empty">
-              <div className="studio-empty__icon">⚡</div>
+              <svg className="studio-empty__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M20.5 12a8.5 8.5 0 1 1-2.9-6.4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+                <path d="M15.2 3.4l3.1 2.1-2.1 3.1" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M10.3 8.9l5.4 3.1-5.4 3.1z" fill="currentColor" />
+              </svg>
               <h3 className="studio-empty__title">Start Building</h3>
               <p className="studio-empty__text">
                 Add nodes from the left toolbar, or go back to pick a template.

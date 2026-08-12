@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AutoFlow Studio</title>
-  <link rel="stylesheet" href="sidepanel.css" />
+  <script>document.write('<link rel="stylesheet" href="dist/sidepanel.css?v=' + Date.now() + '">')</script>
 </head>
 <body>
   <!-- ══ SIGN IN ══════════════════════════════════════════════
@@ -308,6 +308,33 @@
     </div>
   </div>
 
-  <script src="sidepanel.js"></script>
+  
+<script>
+const STORE = { af_settings: {}, af_workflows: [], af_recent: [],
+  autoflow_auth_tokens: { access: 'harness', refresh: 'harness' } };
+const noop = () => {};
+window.chrome = {
+  runtime: { id: 'harness', sendMessage: () => Promise.resolve({ ok: true }),
+    onMessage: { addListener: noop }, getURL: (p) => p, lastError: null },
+  storage: { local: {
+      get: (k) => Promise.resolve(typeof k === 'string' ? { [k]: STORE[k] } : STORE),
+      set: () => Promise.resolve(), remove: () => Promise.resolve(),
+      onChanged: { addListener: noop } }, onChanged: { addListener: noop } },
+  tabs: { query: () => Promise.resolve([]), create: () => Promise.resolve({}),
+    sendMessage: () => Promise.resolve({}), onUpdated: { addListener: noop } },
+  windows: { getCurrent: () => Promise.resolve({ id: 1 }) },
+  sidePanel: { open: () => Promise.resolve() },
+  identity: { launchWebAuthFlow: () => Promise.resolve('') },
+};
+</script>
+<script>document.write('<script src="dist/sidepanel.js?v=' + Date.now() + '"><\/script>')</script>
+<script>
+addEventListener('load', () => setTimeout(() => {
+  const gate = document.getElementById('gate') || document.querySelector('.sp-gate');
+  const app  = document.getElementById('app');
+  if (gate) gate.hidden = true;
+  if (app) app.hidden = false;
+}, 400));
+</script>
 </body>
 </html>

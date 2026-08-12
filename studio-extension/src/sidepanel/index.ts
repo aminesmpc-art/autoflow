@@ -695,6 +695,18 @@ function wireBuilder(): void {
     chrome.storage.local.set({ af_build_idea: idea.value }).catch(() => {});
   });
 
+  /* Starters fill the box rather than building straight away. The sentence is
+     a starting point, not the brief — most people want to change a word or
+     two first, and a button that skipped ahead would take that away. */
+  for (const btn of Array.from(document.querySelectorAll<HTMLButtonElement>('.sp-idea'))) {
+    btn.addEventListener('click', () => {
+      idea.value = (btn.textContent || '').trim();
+      chrome.storage.local.set({ af_build_idea: idea.value }).catch(() => {});
+      idea.focus();
+      idea.setSelectionRange(idea.value.length, idea.value.length);
+    });
+  }
+
   copy.addEventListener('click', async () => {
     const text = idea.value.trim();
     if (!text) {
