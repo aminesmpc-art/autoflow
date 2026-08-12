@@ -152,7 +152,15 @@ class CommunityLikeView(APIView):
 
         with transaction.atomic():
             try:
-                TemplateLike.objects.create(template=row, user=request.user)
+                # A SAVEPOINT, not just a try. On Postgres an IntegrityError
+                # poisons the enclosing transaction: every later query in the
+                # block raises TransactionManagementError, so the delete below
+                # — the whole unlike path — died with it. The inner atomic()
+                # rolls back only the failed insert and leaves the outer
+                # transaction usable. SQLite tolerates the naive version, which
+                # is exactly why this reached production before being found.
+                with transaction.atomic():
+                    TemplateLike.objects.create(template=row, user=request.user)
                 liked = True
             except IntegrityError:
                 TemplateLike.objects.filter(template=row, user=request.user).delete()
