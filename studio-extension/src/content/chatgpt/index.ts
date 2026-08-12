@@ -14,7 +14,23 @@ import { cleanAssistantReply, looksLikeUsablePrompt } from './chatgptReply';
 const GENERATION_TIMEOUT_MS = 6 * 60 * 1000; // ChatGPT image gen can take minutes
 // Writing a prompt is a chat round-trip, not a render — a node that hangs here
 // should surface quickly rather than stalling a workflow for six minutes.
+/* A reply is finished when it STOPS GROWING, not when a clock runs out.
+
+   This was a flat 90 seconds from the moment of asking. A workflow plan is a
+   long answer — Gemini streamed a fifteen-step JSON past that limit and the
+   node reported "did not finish answering in time" while the finished reply
+   sat on screen. Failing a request the site is still serving is the worst
+   shape of timeout: it wastes the work and blames the wrong thing.
+
+   So the budget is silence. While the text is still changing, or the page is
+   still visibly generating, there is nothing to give up on. The ceiling below
+   exists only to stop a wedged tab waiting forever. */
+/** Nominal budget, used for the progress bar only. */
 const TEXT_TIMEOUT_MS = 90 * 1000;
+/** No change and nothing running for this long means it is over. */
+const TEXT_QUIET_MS = 45 * 1000;
+/** Backstop for a wedged tab. */
+const TEXT_CEILING_MS = 10 * 60 * 1000;
 const POLL_MS = 2000;
 const MAX_CAPTURE_BYTES = 15 * 1024 * 1024;
 // Uploading happens before the question is even asked, so this is spent out of
@@ -999,9 +1015,10 @@ async function trackTextReply(
 ): Promise<void> {
   const startedAt = Date.now();
   let lastSeen = '';
+  let lastChangeAt = Date.now();
   let stableCount = 0;
 
-  while (Date.now() - startedAt < TEXT_TIMEOUT_MS) {
+  while (Date.now() - startedAt < TEXT_CEILING_MS) {
     await sleep(POLL_MS);
 
     const elapsed = Date.now() - startedAt;
@@ -1011,6 +1028,9 @@ async function trackTextReply(
     });
 
     const current = readLatestReply().trim();
+    /* Silence, and nothing in flight. Checked before the "has it started"
+       skip below, so a chat that never answers at all still ends. */
+    if (Date.now() - lastChangeAt > TEXT_QUIET_MS && !isGenerating()) break;
     // Unchanged from before we asked means our answer hasn't started yet.
     if (!current || current === priorReply) continue;
 

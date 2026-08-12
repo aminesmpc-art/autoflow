@@ -32,7 +32,23 @@ console.log('[AutoFlow Claude] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
 
-const TEXT_TIMEOUT_MS = 180 * 1000;
+/* A reply is finished when it STOPS GROWING, not when a clock runs out.
+
+   This was a flat 90 seconds from the moment of asking. A workflow plan is a
+   long answer — Gemini streamed a fifteen-step JSON past that limit and the
+   node reported "did not finish answering in time" while the finished reply
+   sat on screen. Failing a request the site is still serving is the worst
+   shape of timeout: it wastes the work and blames the wrong thing.
+
+   So the budget is silence. While the text is still changing, or the page is
+   still visibly generating, there is nothing to give up on. The ceiling below
+   exists only to stop a wedged tab waiting forever. */
+/** Nominal budget, used for the progress bar only. */
+const TEXT_TIMEOUT_MS = 90 * 1000;
+/** No change and nothing running for this long means it is over. */
+const TEXT_QUIET_MS = 45 * 1000;
+/** Backstop for a wedged tab. */
+const TEXT_CEILING_MS = 10 * 60 * 1000;
 const POLL_MS = 1000;
 
 chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
@@ -332,9 +348,10 @@ async function handleExecute(payload: any): Promise<any> {
 async function trackReply(nodeId: string, priorReply: string, raw: boolean): Promise<void> {
   const startedAt = Date.now();
   let stable = '';
+  let lastChangeAt = Date.now();
   let stableCount = 0;
 
-  while (Date.now() - startedAt < TEXT_TIMEOUT_MS) {
+  while (Date.now() - startedAt < TEXT_CEILING_MS) {
     await sleep(POLL_MS);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
@@ -342,10 +359,11 @@ async function trackReply(nodeId: string, priorReply: string, raw: boolean): Pro
     });
 
     const now = readLatestReply().trim();
+    if (Date.now() - lastChangeAt > TEXT_QUIET_MS && !isGenerating()) break;
     if (!now || now === priorReply) continue;
 
     if (now === stable) stableCount++;
-    else { stable = now; stableCount = 0; }
+    else { stable = now; stableCount = 0; lastChangeAt = Date.now(); }
 
     if (stableCount >= 2 && !isGenerating()) {
       /* raw for the workflow builder: cleanAssistantReply strips code fences
