@@ -94,7 +94,15 @@ export const portsFor = (node: any) => {
 };
 
 /** Node types this build can actually draw — Canvas.tsx's nodeTypes map. */
-export const RENDERABLE_NODE_TYPES = ['prompt', 'image', 'generate', 'frame', 'extend'] as const;
+/* What this build can actually draw and drive.
+   These two lists are a promise about the rest of the codebase, and both had
+   quietly stopped being true: 'agent' was missing while Canvas.tsx registered
+   an agent node and the rail offered the button, and 'claude' was missing
+   while claude-content.js shipped as a content script. Nothing failed loudly.
+   Templates needing either were just filtered out of the gallery with an
+   info-level log, so a published template simply never appeared.
+   capabilities.test.ts now checks both against the code and the manifest. */
+export const RENDERABLE_NODE_TYPES = ['prompt', 'image', 'generate', 'frame', 'extend', 'agent'] as const;
 
 /* ── Grok's extend arithmetic ──────────────────────────────────
    Imagine starts a clip at 6, 10 or 15 seconds and extends it by 6 or 10,
@@ -193,7 +201,7 @@ export const affordableExtendSteps = (secondsBefore: number): string[] =>
   GROK_EXTEND_STEPS.filter((s) => secondsBefore + secondsOf(s) <= GROK_MAX_TOTAL_SECONDS);
 
 /** Platforms this build has an adapter for. */
-export const SUPPORTED_PLATFORMS = ['flow', 'chatgpt', 'gemini', 'grok'] as const;
+export const SUPPORTED_PLATFORMS = ['flow', 'chatgpt', 'gemini', 'grok', 'claude'] as const;
 
 /**
  * Problems with a template, as a list of human-readable strings.

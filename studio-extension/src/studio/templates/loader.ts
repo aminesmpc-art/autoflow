@@ -22,7 +22,14 @@ import {
 const API_BASE = 'https://api.auto-flow.studio';
 const CACHE_KEY = 'af_templates_cache';
 /** Fetching more often than this buys nothing; templates change by the week. */
-const REFRESH_AFTER_MS = 6 * 60 * 60 * 1000;
+/* Ten minutes, not six hours.
+   The refresh sends If-None-Match, so the usual answer is a 304 costing a few
+   hundred bytes — there was never much to save by not asking. What the long
+   window did cost was correctness: publish a template and the gallery could
+   not show it for six hours, with nothing in the UI to hurry it along and no
+   way to tell a stale gallery from a complete one. This window now only
+   guards against re-asking while the panel is opened and closed repeatedly. */
+const REFRESH_AFTER_MS = 10 * 60 * 1000;
 
 /** The payload shape the backend serves. */
 export interface TemplatePayload {
