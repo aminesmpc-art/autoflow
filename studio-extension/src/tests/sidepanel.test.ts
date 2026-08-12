@@ -53,10 +53,12 @@ beforeAll(() => {
 beforeEach(mountPanel);
 
 describe('hidden actually hides', () => {
-  const VIEWS = ['view-run', 'view-templates', 'view-build', 'view-prompts'];
+  const VIEWS = ['view-build', 'view-templates', 'view-run'];
 
   it('shows exactly one view at rest', () => {
-    expect(VIEWS.filter(shown)).toEqual(['view-run']);
+    // Build leads: the panel used to open on Run, which is empty until
+    // something is already running.
+    expect(VIEWS.filter(shown)).toEqual(['view-build']);
   });
 
   it.each(VIEWS)('shows only %s when the others carry hidden', (want) => {
@@ -115,7 +117,7 @@ describe('the panel markup keeps the contract index.ts relies on', () => {
 
   it('wires each tab to a panel that exists', () => {
     const tabs = Array.from(document.querySelectorAll<HTMLElement>('.sp-nav__tab'));
-    expect(tabs.length).toBe(4);
+    expect(tabs.length).toBe(3);
     for (const t of tabs) {
       expect(document.getElementById(`view-${t.dataset.view}`)).not.toBeNull();
       expect(t.getAttribute('role')).toBe('tab');

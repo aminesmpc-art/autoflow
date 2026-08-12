@@ -473,7 +473,7 @@ function boot(): void {
    thing the panel could not help with.
    ============================================================ */
 
-type PanelView = 'run' | 'templates' | 'build' | 'prompts';
+type PanelView = 'build' | 'templates' | 'run';
 
 /* ── The builder ──
    An idea in, a workflow out, with any AI chat in the middle.
@@ -725,7 +725,7 @@ let panelCategory = 'All';
 let panelQuery = '';
 
 function showView(view: PanelView): void {
-  for (const id of ['run', 'templates', 'build', 'prompts'] as PanelView[]) {
+  for (const id of ['build', 'templates', 'run'] as PanelView[]) {
     const el = document.getElementById(`view-${id}`);
     if (el) (el as HTMLElement).hidden = id !== view;
   }

@@ -79,6 +79,10 @@ function build(width, view, opts = {}) {
   const panel = document.createElement('div');
   panel.className = 'panel';
   panel.innerHTML = BODY;
+  /* The gate ships visible and the shell hidden. This harness renders the
+     signed-in shell, so flip them. */
+  const gate = panel.querySelector('#gate'); if (gate) gate.hidden = true;
+  const app = panel.querySelector('#app'); if (app) app.hidden = false;
   frame.append(panel);
   col.append(note, frame);
   const q = (s) => panel.querySelector(s);
@@ -190,7 +194,7 @@ h.append(
   build(400, 'templates'),
   build(650, 'run', { live: true, signedIn: true }),
   build(650, 'templates'),
-  build(320, 'prompts'),
+  build(320, 'build'),
 );
 </script>
 </body>

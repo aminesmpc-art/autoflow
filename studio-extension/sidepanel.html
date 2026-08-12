@@ -61,32 +61,37 @@
   </header>
 
   <!-- ── Primary navigation ── -->
+  <!-- ── Primary navigation ──
+       Three, and Build first.
+
+       It was four — Run, Templates, Build, Prompts — opening on Run, which is
+       the one tab that has nothing in it until a workflow is already running.
+       The panel opened on an empty state every time. Build is why someone
+       opens this, so it leads and it is the default. Templates and Prompts
+       were both "pick something from a list", so they are one Library.
+       Run became Activity, which is what it actually shows: the run, the
+       platform tabs, and the log. -->
   <nav class="sp-nav" id="sp-nav" role="tablist" aria-label="Panel sections">
-    <button class="sp-nav__tab sp-nav__tab--on" data-view="run"
-            role="tab" aria-selected="true" aria-controls="view-run">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
-      Run
+    <button class="sp-nav__tab sp-nav__tab--on" data-view="build"
+            role="tab" aria-selected="true" aria-controls="view-build">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M3 12h3M18 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/><circle cx="12" cy="12" r="3.2"/></svg>
+      Build
     </button>
     <button class="sp-nav__tab" data-view="templates"
             role="tab" aria-selected="false" aria-controls="view-templates">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>
-      Templates
+      Library
     </button>
-    <button class="sp-nav__tab" data-view="build"
-            role="tab" aria-selected="false" aria-controls="view-build">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M3 12h3M18 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/><circle cx="12" cy="12" r="3.2"/></svg>
-      Build
-    </button>
-    <button class="sp-nav__tab" data-view="prompts"
-            role="tab" aria-selected="false" aria-controls="view-prompts">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM15 3v5h4M9 12h7M9 16h5"/></svg>
-      Prompts
+    <button class="sp-nav__tab" data-view="run"
+            role="tab" aria-selected="false" aria-controls="view-run">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+      Activity
     </button>
   </nav>
 
   <main class="sp-main">
     <!-- ══ RUN ══════════════════════════════════════════════════ -->
-    <div class="sp-view" id="view-run" role="tabpanel" aria-labelledby="tab-run">
+    <div class="sp-view" id="view-run" role="tabpanel" hidden>
       <!-- The reason the panel exists: during a run the canvas is behind the
            platform tab, so this is the only view of what is happening. -->
       <section class="sp-run" id="run-card">
@@ -183,6 +188,19 @@
       </div>
       <div class="sp-count" id="tpl-count"></div>
       <div class="sp-grid" id="tpl-grid"></div>
+
+      <!-- Prompt presets. A reference list, not a destination — it had a tab
+           of its own and was the least visited thing in the panel. -->
+      <details class="sp-manual" id="preset-fold">
+        <summary>Prompt presets</summary>
+
+      <p class="sp-note sp-note--intro">
+        A preset wraps what you type in a brief — the angles, the lighting, and
+        the trap to avoid. Pick one on any Ask AI node.
+      </p>
+      <div id="preset-list"></div>
+          </details>
+
     </div>
 
     <!-- ══ BUILD ════════════════════════════════════════════════
@@ -191,7 +209,7 @@
          three steps work with DeepSeek and Claude, which this extension has
          no adapter for, so the feature is not limited to the sites it can
          automate. -->
-    <div class="sp-view" id="view-build" role="tabpanel" hidden>
+    <div class="sp-view" id="view-build" role="tabpanel">
       <div class="sp-step">
         <span class="sp-step__n">1</span>
         <label class="sp-step__label" for="build-idea">Describe what you want to make</label>
@@ -228,15 +246,7 @@
       </details>
     </div>
 
-    <!-- ══ PROMPTS ══════════════════════════════════════════════ -->
-    <div class="sp-view" id="view-prompts" role="tabpanel" hidden>
-      <p class="sp-note sp-note--intro">
-        A preset wraps what you type in a brief — the angles, the lighting, and
-        the trap to avoid. Pick one on any Ask AI node.
-      </p>
-      <div id="preset-list"></div>
-    </div>
-  </main>
+</main>
 
   <!-- ── Footer: the plan, and what is left of it ── -->
   <footer class="sp-foot">
