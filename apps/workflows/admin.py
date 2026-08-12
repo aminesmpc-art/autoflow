@@ -154,3 +154,41 @@ def _shape_problem(payload) -> str:
     if broken:
         return f"These templates are missing id, nodes or edges: {', '.join(broken[:5])}"
     return ""
+
+
+# ── Community templates ──
+# A moderation queue, not an editor. The payload is a node graph authored in
+# the extension; the only decisions worth making here are publish, reject, and
+# what the gallery calls it.
+from .community import CommunityTemplate, TemplateLike  # noqa: E402
+
+
+@admin.register(CommunityTemplate)
+class CommunityTemplateAdmin(ModelAdmin):
+    list_display = ("name", "author_name", "status", "node_count", "like_count", "install_count", "created_at")
+    list_filter = ("status", "category")
+    search_fields = ("name", "description", "author_name")
+    readonly_fields = ("node_count", "like_count", "install_count", "created_at", "updated_at", "payload")
+    actions = ("approve", "reject")
+    # Newest pending first: the queue is the job, the leaderboard is not.
+    ordering = ("status", "-created_at")
+
+    @admin.action(description="Publish — visible to every user")
+    def approve(self, request, queryset):
+        n = queryset.update(status=CommunityTemplate.Status.PUBLISHED)
+        messages.success(request, f"Published {n} template(s). They appear in the gallery on the next refresh.")
+
+    @admin.action(description="Reject — hide from the gallery")
+    def reject(self, request, queryset):
+        n = queryset.update(status=CommunityTemplate.Status.REJECTED)
+        messages.info(request, f"Rejected {n} template(s).")
+
+
+@admin.register(TemplateLike)
+class TemplateLikeAdmin(ModelAdmin):
+    """Here to make the count auditable — a like_count that disagrees with
+    these rows is the bug worth being able to see."""
+
+    list_display = ("template", "user", "created_at")
+    search_fields = ("template__name",)
+    readonly_fields = ("template", "user", "created_at")
