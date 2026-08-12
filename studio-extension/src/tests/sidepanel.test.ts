@@ -99,6 +99,7 @@ describe('the panel markup keeps the contract index.ts relies on', () => {
     'sp-nav', 'tpl-search', 'tpl-pills', 'tpl-grid', 'tpl-count', 'preset-list',
     'build-idea', 'build-reply', 'build-copy', 'build-go', 'build-ai', 'build-out',
     'build-ai-manual', 'build-manual',
+    'gate', 'app', 'gate-google',
   ];
 
   it.each(REQUIRED)('has #%s', (id) => {
@@ -151,5 +152,32 @@ describe('the stylesheet', () => {
     const sizes = Array.from(css().matchAll(/font-size:\s*([\d.]+)px/g)).map((m) => Number(m[1]));
     expect(sizes.length).toBeGreaterThan(10);
     expect(Math.min(...sizes)).toBeGreaterThanOrEqual(10);
+  });
+});
+
+describe('the panel is gated behind sign-in', () => {
+  it('shows the gate and hides the app before anyone signs in', () => {
+    /* The signed-out panel used to be the whole tab bar over controls that
+       could not do anything, which reads as broken rather than locked. */
+    expect(shown('gate')).toBe(true);
+    expect(shown('app')).toBe(false);
+  });
+
+  it('swaps them the moment the app is revealed', () => {
+    document.getElementById('gate')!.hidden = true;
+    document.getElementById('app')!.hidden = false;
+    expect(shown('gate')).toBe(false);
+    expect(shown('app')).toBe(true);
+  });
+
+  it('offers Google before the password form', () => {
+    const html = readFileSync(HTML, 'utf8');
+    expect(html.indexOf('gate-google')).toBeLessThan(html.indexOf('id="password"'));
+  });
+
+  it('keeps the sign-in fields the api wiring needs', () => {
+    for (const id of ['email', 'password', 'btn-login', 'auth-error']) {
+      expect(document.getElementById(id)).not.toBeNull();
+    }
   });
 });

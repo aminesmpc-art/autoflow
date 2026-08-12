@@ -15,6 +15,7 @@ import { login, logout, isLoggedIn, getProfile } from '../shared/api';
 import { loadTemplates, refreshTemplates } from '../studio/templates/loader';
 import type { Template } from '../studio/templates';
 import { getAskPresets } from '../studio/presets';
+import { signInWithGoogle } from './googleSignIn';
 import { buildSpec } from '../studio/builder/spec';
 import { buildFromReply } from '../studio/builder/plan';
 import { isRunnableType } from '../studio/templates/validate';
@@ -228,8 +229,24 @@ async function refreshPlatforms(): Promise<void> {
 
 /* ── Account ── */
 
+/**
+ * Show the panel, or the gate.
+ *
+ * Everything behind the gate spends a run against an account's quota, so
+ * there is nothing honest to show someone we cannot count runs for. The
+ * previous shape — the whole tab bar over controls that could not do anything
+ * — reads as a broken app rather than a locked one.
+ */
+function showGate(signedIn: boolean): void {
+  const gate = document.getElementById('gate');
+  const app = document.getElementById('app');
+  if (gate) (gate as HTMLElement).hidden = signedIn;
+  if (app) (app as HTMLElement).hidden = !signedIn;
+}
+
 async function refreshAccount(): Promise<void> {
   const signedIn = await isLoggedIn();
+  showGate(signedIn);
   $('acct-out').hidden = signedIn;
   $('acct-in').hidden = !signedIn;
   const badge = $('plan-badge');
@@ -245,6 +262,7 @@ async function refreshAccount(): Promise<void> {
     // A token that no longer works is worse than none — it silently fails
     // every limit check. Drop it and show the form again.
     await logout();
+    showGate(false);
     $('acct-out').hidden = false;
     $('acct-in').hidden = true;
     badge.hidden = true;
@@ -352,6 +370,27 @@ function wire(): void {
   $('btn-pause').addEventListener('click', () => control('pause'));
   $('btn-stop').addEventListener('click', () => control('stop'));
 
+  const gbtn = document.getElementById('gate-google') as HTMLButtonElement | null;
+  gbtn?.addEventListener('click', async () => {
+    const err = $('auth-error');
+    err.hidden = true;
+    gbtn.disabled = true;
+    const original = gbtn.textContent;
+    gbtn.textContent = 'Opening Google…';
+    try {
+      const res = await signInWithGoogle();
+      if (!res.ok) {
+        // Closing the window is a decision, not a failure worth shouting about.
+        if (!res.cancelled) { err.hidden = false; err.textContent = res.message; }
+        return;
+      }
+      await refreshAccount();
+    } finally {
+      gbtn.disabled = false;
+      gbtn.textContent = original;
+    }
+  });
+
   $('btn-login').addEventListener('click', async () => {
     const email = ($('email') as HTMLInputElement).value.trim();
     const password = ($('password') as HTMLInputElement).value;
@@ -382,6 +421,9 @@ function wire(): void {
 
   $('btn-logout').addEventListener('click', async () => {
     await logout();
+    // Close the sheet first, or it hangs over the gate behind it.
+    const modal = document.getElementById('acct-modal');
+    if (modal) (modal as HTMLElement).hidden = true;
     // Otherwise the canvas keeps granting Pro to a signed-out browser.
     try { await chrome.storage.local.remove('af_cached_profile'); } catch { /* best effort */ }
     await refreshAccount();

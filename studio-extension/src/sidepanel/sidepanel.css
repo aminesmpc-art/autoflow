@@ -81,6 +81,79 @@ body {
 
 :focus-visible { outline: none; box-shadow: var(--focus); border-radius: var(--r-ctrl); }
 
+
+/* ════════════════════════════════════════════════
+   Sign-in gate
+   ════════════════════════════════════════════════ */
+/* One screen, centred, nothing else competing. The signed-out panel used to
+   be the full tab bar over controls that could not do anything, which reads
+   as a broken app rather than a locked one. */
+.sp-gate {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px;
+  overflow-y: auto;
+}
+.sp-gate__inner { width: 100%; max-width: 300px; text-align: center; }
+.sp-gate__mark {
+  width: 44px; height: 44px;
+  margin: 0 auto 14px;
+  display: grid; place-items: center;
+  border-radius: 13px;
+  background: var(--accent-14);
+  border: 1px solid var(--accent-30);
+  font-size: 20px;
+}
+.sp-gate__title { margin: 0 0 6px; font-size: 17px; font-weight: 700; color: var(--text); }
+.sp-gate__sub { margin: 0 0 20px; font-size: 12px; line-height: 1.5; color: var(--text-3); }
+
+/* Google's button, to Google's shape: white, their mark, their wording. A
+   restyled one in the panel's palette is the kind of thing people have learned
+   to distrust on a sign-in screen. */
+.sp-gbtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 40px;
+  border-radius: var(--r-ctrl);
+  border: 1px solid #dadce0;
+  background: #fff;
+  color: #1f1f1f;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: box-shadow 0.15s, background 0.15s;
+}
+.sp-gbtn:hover { background: #f7f8f8; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35); }
+.sp-gbtn:disabled { opacity: 0.6; cursor: default; }
+.sp-gbtn__g { width: 17px; height: 17px; flex: 0 0 auto; }
+
+.sp-gate__or {
+  position: relative;
+  margin: 16px 0 14px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.sp-gate__or::before {
+  content: '';
+  position: absolute; left: 0; right: 0; top: 50%;
+  border-top: 1px solid var(--line);
+}
+.sp-gate__or span { position: relative; padding: 0 10px; background: var(--bg); }
+
+.sp-gate .sp-input { text-align: left; }
+.sp-gate__foot { margin: 14px 0 0; font-size: 11.5px; color: var(--text-3); }
+.sp-gate__foot a { color: var(--accent); text-decoration: none; }
+.sp-gate__foot a:hover { text-decoration: underline; }
+
+/* The signed-in shell, which is everything else. */
+.sp-app { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+
 /* ════════════════════════════════════════════════
    Header
    ════════════════════════════════════════════════ */
