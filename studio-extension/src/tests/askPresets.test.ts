@@ -47,16 +47,43 @@ describe('the preset set', () => {
     }
   });
 
+/* Presets whose answer is NOT wired into another node.
+
+   Every other preset returns one prompt, which a downstream node renders
+   verbatim — so "Sure! Here's a prompt:" would end up in the shot. A director
+   brief is the opposite: it runs a session with a person, answers with five
+   ideas and code blocks, and its output is read rather than rendered.
+   Exempting it is the honest option; appending "output only the prompt" would
+   contradict the brief it is attached to. */
+const SESSION_BRIEFS = new Set(['none', 'room_transform_director']);
+
+describe('presets that hold a session rather than write one prompt', () => {
+  it('are the only ones exempt from the output rule', () => {
+    // A list that grows silently is how a real prompt-writer slips the check.
+    expect([...SESSION_BRIEFS].sort()).toEqual(['none', 'room_transform_director']);
+  });
+
+  it('still say not to answer with a bare acknowledgement', () => {
+    const director = ASK_PRESETS.find((p) => p.id === 'room_transform_director');
+    if (!director) return;   // published set may not carry it yet
+    expect(director.brief).toMatch(/code blocks/i);
+    expect(director.brief).toMatch(/exactly 5/i);
+  });
+});
+
+describe('the preset set, continued', () => {
   it('tells the model to answer with only the prompt', () => {
     /* An answer is fed straight to another node as its prompt, so "Sure!
        Here's a prompt:" gets rendered as if it were part of the shot. */
-    for (const p of ASK_PRESETS.filter((p) => p.id !== 'none')) {
+    for (const p of ASK_PRESETS.filter((p) => !SESSION_BRIEFS.has(p.id))) {
       const both = p.brief + (p.withImage || '');
       expect({ id: p.id, constrained: /output only|no preamble/i.test(both) })
         .toEqual({ id: p.id, constrained: true });
     }
   });
+});
 
+describe('the preset set, resumed', () => {
   it('falls back to the first preset for an unknown id', () => {
     // A workflow saved with a preset later removed must still open.
     expect(findPreset('tpl_does_not_exist').id).toBe(ASK_PRESETS[0].id);
@@ -217,4 +244,5 @@ describe('an unknown preset id', () => {
     ]);
     expect(composeAskPrompt('car_sheet', 'BMW', false)).toBe('CAR BRIEF: BMW');
   });
+});
 });
