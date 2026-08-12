@@ -155,6 +155,26 @@ const CONTINUITY =
   'Same character as the reference: identical face, hairstyle, outfit, ' +
   'body proportions, colour palette and art style. Do not restyle or reset the character.';
 
+/* ── Fantasy room transformation ──
+   Repeated verbatim in both clips. Every line is a failure this format hits
+   without it: the camera drifting, the girl changing, materials installing
+   themselves, finished work vanishing between halves. */
+const MOTION_RULES =
+  'Vertical 9:16. Ultra-realistic. The ENTIRE clip is extreme fast hyperlapse — no '
+  + 'normal-speed action, no slow walking, no waiting, no cinematic pacing, no cuts.\n\n'
+  + 'ONE fixed medium-wide camera INSIDE a large, wide, spacious room. No zoom, no rotation, '
+  + 'no dolly, no orbit, no push-in, no angle change. The frame shows floor, main wall, '
+  + 'ceiling, the girl working and the hero furniture area, and stays visually full.\n\n'
+  + 'The same young female designer throughout: bright red sporty tracksuit, white sneakers, '
+  + 'blonde ponytail.\n\n'
+  + 'Every tool or material enters the frame IN HER HANDS before it changes anything. She '
+  + 'physically places, sprays, pours, mounts, connects, spreads or styles it. Nothing appears, '
+  + 'builds, floats or installs itself.\n\n'
+  + 'Everything completed stays visible and active — installed lights keep glowing, layers stay '
+  + 'in place, nothing is removed, reset, hidden, turned off or replaced.\n\n'
+  + 'No clutter: only the tool being used right now is on the floor. Every second shows a large '
+  + 'visible change, not a small detail.';
+
 /* ── ASMR styrofoam carving ──
    Repeated in every clip so the workshop, the hands and the audio character
    don't drift between steps. The subject line names a concrete example because
@@ -1734,6 +1754,114 @@ export const BUILTIN_TEMPLATES: Template[] = [
       // ChatGPT's answer becomes the clip's prompt.
       tEdge(`ask${n}`, `clip${n}`),
     ]),
+  },
+  /* ── Fantasy room transformation ──
+     The director brief as a canvas.
+
+     The brief is a conversation — ideas, then a storyboard, then motion — and
+     a canvas is not. Each node is one round trip, so the session collapses to
+     the three things it actually produces: the storyboard poster, Part 1, and
+     Part 2.
+
+     The two-reference contract maps exactly onto nodes, which is why this is
+     worth being a template rather than a preset. Reference 1 is the storyboard
+     still, wired into both clips. Reference 2 is the Last Frame of Part 1,
+     wired into Part 2 — so Part 2 literally begins on the frame Part 1 ended
+     on, instead of being asked in words not to restart.
+
+     The Ask AI node carries the director preset, so the user types a room idea
+     and gets back a storyboard prompt with all the rules already applied. */
+  {
+    id: 'tpl_room_transform',
+    name: 'Fantasy Room Transformation (20s)',
+    description:
+      'A room idea becomes a storyboard poster, then two continuous 10s hyperlapse clips.',
+    useCase:
+      'Viral TikTok/Reels room transformations. The storyboard holds the design and the '
+      + 'Last Frame node holds the continuity, which is what stops Part 2 rebuilding the room.',
+    category: 'Content',
+    difficulty: 'Medium',
+    nodeCount: 8,
+    thumbnail: '🏠',
+    nodes: [
+      promptNode(
+        'idea',
+        'Room idea',
+        'A candy-themed lounge: wide rectangular room, tall ceiling, large window wall on the '
+        + 'left, glossy pink and mint palette, hero furniture is an oversized cloud-shaped couch, '
+        + 'wall feature is a giant lollipop arch, ceiling is floating cotton-candy clouds.',
+        40, 60,
+      ),
+      askNode('story', 'Write the storyboard', 520, 60, 'room_transform_director'),
+      genNode(
+        'board',
+        { label: 'Storyboard poster', mediaType: 'image', platform: 'chatgpt', aspectRatio: '9:16' },
+        1000, 60,
+      ),
+      promptNode(
+        'p1',
+        'Part 1 motion (00:00–00:10)',
+        MOTION_RULES
+        + '\n\nUSE THE ATTACHED STORYBOARD AS A DESIGN REFERENCE ONLY. It is a blueprint: do not '
+        + 'animate its panels, borders, text, numbers or captions. Show a real room.\n\n'
+        + '00:00–00:04 Scene 01. Start on the empty large spacious room, camera already fixed. '
+        + 'The girl walks in carrying the floor light rails and lays them across most of the '
+        + 'floor, connecting them by hand until they glow.\n'
+        + '00:04–00:08 Scene 02. She carries in the fantasy material, sprays and spreads it over '
+        + 'the lit floor, then pours the glossy transparent top layer by hand. The floor lights '
+        + 'stay glowing through it.\n'
+        + '00:08–00:10 Scene 03 begins. She carries the first wall piece in and presses it onto '
+        + 'the main wall.\n\n'
+        + 'End on a clean readable frame showing everything built so far and the girl mid-action '
+        + 'at the wall, with only the next wall pieces near her.',
+        1000, 480,
+      ),
+      genNode(
+        'part1',
+        { label: 'Part 1 — 10s', mediaType: 'video', platform: 'flow', aspectRatio: '9:16', duration: '10s' },
+        1480, 300,
+      ),
+      frameNode('handoff', 'Ends on → Reference 2', 1960, 300),
+      promptNode(
+        'p2',
+        'Part 2 motion (00:10–00:20)',
+        MOTION_RULES
+        + '\n\nTWO REFERENCES. The storyboard is the design blueprint — never animate its panels, '
+        + 'text or numbers. The Last Frame image is the exact starting frame.\n\n'
+        + 'CONTINUE from that frame. Do not restart, do not return to an empty room, do not '
+        + 'rebuild Scene 01 or Scene 02, do not change the room, camera or the girl, and do not '
+        + 'remove or turn off anything already built.\n\n'
+        + '00:00–00:04 Finish Scene 03. She mounts the remaining wall pieces and connects the '
+        + 'final cable until the wall feature is complete and dominant.\n'
+        + '00:04–00:07 Scene 04. She carries in a ladder, climbs it, and installs the ceiling '
+        + 'feature by hand. The finished floor and wall stay visible below.\n'
+        + '00:07–00:10 Scene 05. She brings in the hero furniture, positions it herself, places '
+        + 'the rug and pillows, and switches on the final lights.\n\n'
+        + 'End on the completed room with the girl beside the hero furniture. Everything built '
+        + 'across both parts is visible and lit.',
+        1960, 660,
+      ),
+      genNode(
+        'part2',
+        { label: 'Part 2 — 10s', mediaType: 'video', platform: 'flow', aspectRatio: '9:16', duration: '10s' },
+        2440, 480,
+      ),
+    ],
+    edges: [
+      tEdge('idea', 'story'),
+      tEdge('story', 'board'),
+      tEdge('p1', 'part1'),
+      // Reference 1: the storyboard holds the design for both halves.
+      iEdge('board', 'part1'),
+      iEdge('board', 'part2'),
+      // Reference 2: the frame Part 1 ended on, so Part 2 cannot restart.
+      iEdge('part1', 'handoff'),
+      iEdge('handoff', 'part2', 'image'),
+      tEdge('p2', 'part2'),
+    ],
+    requiresNodeTypes: ['prompt', 'generate', 'frame'],
+    requiresPlatforms: ['chatgpt', 'flow'],
+    tier: 'free',
   },
 ];
 
