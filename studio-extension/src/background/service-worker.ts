@@ -248,6 +248,93 @@ function nodeError(nodeId: unknown, error: string): void {
   replyToStudio({ type: 'STUDIO_NODE_ERROR', payload: { nodeId, error } });
 }
 
+/* ── Asking a chat model for a workflow plan ──────────────────
+   The Build tab needs one text answer from one chat tab. Studio's runner
+   cannot do it — the runner executes canvas nodes, and at this point there is
+   no canvas — and the panel cannot do it either, because opening the tab,
+   waiting for it to be ready and re-injecting a content script into a tab
+   that predates the extension all live here.
+
+   So the panel asks, and the worker runs exactly the same STUDIO_EXECUTE_NODE
+   it would run for a node, then hands the reply straight back rather than
+   posting it to a Studio window that may not be open. */
+
+interface PlanWaiter { resolve: (r: { text?: string; error?: string }) => void; timer: any }
+const planWaiters = new Map<string, PlanWaiter>();
+
+/** A text answer from a chat platform, or the reason there is none. */
+async function askChatForPlan(platform: Platform, prompt: string): Promise<{ text?: string; error?: string }> {
+  const cfg = PLATFORMS[platform];
+  if (!cfg) return { error: `Unknown platform "${platform}".` };
+
+  const tabId = await ensurePlatformTab(platform);
+  if (!tabId) return { error: `Could not open a ${cfg.name} tab. Check you are signed in.` };
+
+  if (!(await waitForTabReady(tabId, 30_000))) {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files: [cfg.script] });
+      await waitForTabReady(tabId, 10_000);
+    } catch { /* the send below reports it properly */ }
+  }
+
+  const nodeId = `plan_${Date.now().toString(36)}`;
+  const answer = new Promise<{ text?: string; error?: string }>((resolve) => {
+    planWaiters.set(nodeId, {
+      resolve,
+      /* Longer than the adapters' own text budget, so their message wins and
+         the user is told what the site did rather than "timed out here". */
+      timer: setTimeout(() => {
+        planWaiters.delete(nodeId);
+        resolve({ error: `${cfg.name} did not answer within three minutes.` });
+      }, 180_000),
+    });
+  });
+
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      type: 'STUDIO_EXECUTE_NODE',
+      payload: {
+        nodeId,
+        config: {
+          platform,
+          mediaType: 'text',
+          prompt,
+          /* Raw. The text adapters otherwise run the reply through
+             cleanAssistantReply, which strips code fences and leading lines —
+             reasonable for a prompt, destructive for JSON. */
+          rawReply: true,
+          newChat: 'auto',
+          model: '',
+          aspectRatio: '1:1',
+          creationType: 'ingredients',
+        },
+      },
+    });
+  } catch (e: any) {
+    const w = planWaiters.get(nodeId);
+    if (w) { clearTimeout(w.timer); planWaiters.delete(nodeId); }
+    return { error: `${cfg.name} tab is not reachable: ${e?.message || e}` };
+  }
+
+  return answer;
+}
+
+/** True when this result belonged to a Build request rather than to a node. */
+function settlePlan(msg: any): boolean {
+  const nodeId = msg?.payload?.nodeId;
+  const waiter = nodeId && planWaiters.get(nodeId);
+  if (!waiter) return false;
+  if (msg.type === 'STUDIO_NODE_PROGRESS') return true;   // ours, but not an answer
+  clearTimeout(waiter.timer);
+  planWaiters.delete(nodeId);
+  waiter.resolve(
+    msg.type === 'STUDIO_NODE_RESULT'
+      ? { text: msg.payload?.text || '' }
+      : { error: msg.payload?.error || 'The chat did not return an answer.' }
+  );
+  return true;
+}
+
 /* ── Studio port ── */
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -585,6 +672,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
 
+  /* A Build request's answer, which belongs to the panel rather than to a
+     canvas node. Checked before the relay below, or it would be posted to a
+     Studio window that is very often not open during a build. */
+  if (msg?.type?.startsWith?.('STUDIO_NODE_') && sender.tab && settlePlan(msg)) {
+    return false;
+  }
+
   // Results arrive from a content script; forward them to the Studio window.
   if (msg?.type?.startsWith?.('STUDIO_') && sender.tab) {
     replyToStudio(msg);
@@ -607,6 +701,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'PANEL_GET_LOGS') {
     sendResponse(diagLog);
     return false;
+  }
+
+  if (msg?.type === 'PANEL_BUILD') {
+    askChatForPlan(msg.platform, msg.prompt)
+      .then(sendResponse)
+      .catch((e) => sendResponse({ error: e?.message || String(e) }));
+    return true;   // async
   }
 
   if (msg?.type === 'PANEL_OPEN_STUDIO') {

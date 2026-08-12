@@ -167,23 +167,31 @@
 
       <div class="sp-step">
         <span class="sp-step__n">2</span>
-        <span class="sp-step__label">Copy the brief into any AI chat</span>
+        <span class="sp-step__label">Build it</span>
       </div>
-      <div class="sp-row">
-        <button id="build-copy" class="sp-btn sp-btn--primary">Copy brief</button>
-      </div>
+      <!-- One press. The extension opens the chat, asks, reads the answer and
+           loads the workflow. Only the three with content scripts can be
+           driven; DeepSeek and Claude are below, by hand. -->
       <div class="sp-ai" id="build-ai"></div>
-
-      <div class="sp-step">
-        <span class="sp-step__n">3</span>
-        <label class="sp-step__label" for="build-reply">Paste the reply back</label>
-      </div>
-      <textarea id="build-reply" class="sp-area sp-area--mono" rows="5"
-                placeholder="Paste the whole reply — fenced code, prose around it, all fine."></textarea>
-      <div class="sp-row">
-        <button id="build-go" class="sp-btn sp-btn--primary">Build workflow</button>
-      </div>
       <div id="build-out" class="sp-buildout" hidden></div>
+
+      <details class="sp-manual" id="build-manual">
+        <summary>Use DeepSeek, Claude, or another chat</summary>
+        <p class="sp-note">
+          These have no adapter here, so it is copy and paste — the same brief,
+          the same result.
+        </p>
+        <div class="sp-row">
+          <button id="build-copy" class="sp-btn sp-btn--ghost">Copy brief</button>
+        </div>
+        <div class="sp-ai" id="build-ai-manual"></div>
+        <label class="sp-step__label" for="build-reply">Paste the reply back</label>
+        <textarea id="build-reply" class="sp-area sp-area--mono" rows="4"
+                  placeholder="Paste the whole reply — fenced code, prose around it, all fine."></textarea>
+        <div class="sp-row">
+          <button id="build-go" class="sp-btn sp-btn--ghost">Build from pasted reply</button>
+        </div>
+      </details>
     </div>
 
     <!-- ══ PROMPTS ══════════════════════════════════════════════ -->

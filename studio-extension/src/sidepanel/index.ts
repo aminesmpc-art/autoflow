@@ -445,30 +445,122 @@ type PanelView = 'run' | 'templates' | 'build' | 'prompts';
    The model's half is small on purpose — see builder/spec.ts. Everything
    mechanical is computed by compilePlan, which puts its output through the
    same validator every shipped template passes. */
-const AI_CHATS: Array<[string, string]> = [
-  ['ChatGPT', 'https://chatgpt.com/'],
-  ['Grok', 'https://grok.com/'],
-  ['Gemini', 'https://gemini.google.com/app'],
+/** Chats the extension can drive end to end — these have content scripts. */
+const AUTO_CHATS: Array<{ key: 'chatgpt' | 'gemini' | 'grok'; name: string }> = [
+  { key: 'chatgpt', name: 'ChatGPT' },
+  { key: 'gemini', name: 'Gemini' },
+  { key: 'grok', name: 'Grok' },
+];
+
+/** Chats it cannot, which is why the manual path stays below them. */
+const MANUAL_CHATS: Array<[string, string]> = [
   ['DeepSeek', 'https://chat.deepseek.com/'],
   ['Claude', 'https://claude.ai/new'],
 ];
 
-function renderAiLinks(): void {
-  const host = document.getElementById('build-ai');
-  if (!host) return;
-  host.innerHTML = '';
-  for (const [name, url] of AI_CHATS) {
-    const a = document.createElement('button');
-    a.type = 'button';
-    a.className = 'sp-ai__link';
-    a.title = `Open ${name} in a new tab`;
-    const dot = document.createElement('span');
-    dot.className = 'sp-ai__dot';
-    const label = document.createElement('span');
-    label.textContent = name;
-    a.append(dot, label);
-    a.addEventListener('click', () => { chrome.tabs.create({ url }).catch(() => {}); });
-    host.append(a);
+function renderAiButtons(idea: () => string): void {
+  const auto = document.getElementById('build-ai');
+  if (auto) {
+    auto.innerHTML = '';
+    for (const entry of AUTO_CHATS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sp-ai__link sp-ai__link--auto';
+      b.dataset.key = entry.key;
+      b.title = `Ask ${entry.name} and load the workflow`;
+      const dot = document.createElement('span');
+      dot.className = 'sp-ai__dot';
+      const label = document.createElement('span');
+      label.textContent = entry.name;
+      b.append(dot, label);
+      b.addEventListener('click', () => {
+        const text = idea().trim();
+        if (!text) { buildSays('bad', 'Describe the idea first.'); return; }
+        autoBuild(entry.key, entry.name, text);
+      });
+      auto.append(b);
+    }
+  }
+
+  const manual = document.getElementById('build-ai-manual');
+  if (manual) {
+    manual.innerHTML = '';
+    for (const [name, url] of MANUAL_CHATS) {
+      const a = document.createElement('button');
+      a.type = 'button';
+      a.className = 'sp-ai__link';
+      a.title = `Open ${name} in a new tab`;
+      const dot = document.createElement('span');
+      dot.className = 'sp-ai__dot';
+      const label = document.createElement('span');
+      label.textContent = name;
+      a.append(dot, label);
+      a.addEventListener('click', () => { chrome.tabs.create({ url }).catch(() => {}); });
+      manual.append(a);
+    }
+  }
+}
+
+/** Hand a finished workflow to the canvas and open it. */
+async function openBuilt(template: any): Promise<void> {
+  /* Parked whole rather than by id: the gallery looks an id up in the
+     published list, and this workflow exists nowhere but here. */
+  await chrome.storage.local.set({ af_pending_workflow: template });
+  const steps = template.nodes.filter((n: any) => isRunnableType(n.type)).length;
+  buildSays('ok', `Built "${template.name}"`, [
+    `${template.nodes.length} nodes, ${steps} of them run`,
+    'Opening the canvas…',
+  ]);
+  chrome.runtime.sendMessage({ type: 'PANEL_OPEN_STUDIO' }).catch(() => {});
+}
+
+/** Disable every build button, so one run cannot be started twice. */
+function setBuilding(on: boolean, activeKey?: string): void {
+  for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('#build-ai button'))) {
+    b.disabled = on;
+    b.classList.toggle('sp-ai__link--busy', on && b.dataset.key === activeKey);
+  }
+}
+
+/**
+ * The whole thing, unattended: open the chat, ask, read the answer, compile
+ * it, load it.
+ *
+ * The worker owns the tab rather than the panel, because it already knows how
+ * to find or open one, wait for it to be ready, and re-inject a content script
+ * into a tab that predates the extension. Duplicating that here would be a
+ * second copy of the part most likely to be wrong.
+ */
+async function autoBuild(key: string, name: string, idea: string): Promise<void> {
+  setBuilding(true, key);
+  buildSays('info', `Asking ${name}…`, ['This takes a few seconds. Leave the panel open.']);
+  try {
+    const res: any = await chrome.runtime.sendMessage({
+      type: 'PANEL_BUILD', platform: key, prompt: buildSpec(idea),
+    });
+    if (!res || res.error) {
+      buildSays('bad', `${name} could not answer`, [res?.error || 'No reply from the extension worker.']);
+      return;
+    }
+    const { template, problems } = buildFromReply(String(res.text || ''));
+    if (!template) {
+      /* Keep the reply rather than throw it away: a near miss is worth
+         editing by hand, and the manual box is where that happens. */
+      const box = document.getElementById('build-reply') as HTMLTextAreaElement | null;
+      if (box) box.value = String(res.text || '');
+      const details = document.getElementById('build-manual') as HTMLDetailsElement | null;
+      if (details) details.open = true;
+      buildSays('bad', `${name} replied, but it was not a usable plan`, [
+        ...problems,
+        'The reply is in the box below if you want to fix it and build again.',
+      ]);
+      return;
+    }
+    await openBuilt(template);
+  } catch (e: any) {
+    buildSays('bad', 'The build could not run', [e?.message || String(e)]);
+  } finally {
+    setBuilding(false);
   }
 }
 
@@ -495,13 +587,13 @@ function buildSays(kind: 'ok' | 'bad' | 'info', title: string, lines: string[] =
 }
 
 function wireBuilder(): void {
-  renderAiLinks();
-
   const idea = document.getElementById('build-idea') as HTMLTextAreaElement | null;
   const reply = document.getElementById('build-reply') as HTMLTextAreaElement | null;
   const copy = document.getElementById('build-copy');
   const go = document.getElementById('build-go');
   if (!idea || !reply || !copy || !go) return;
+
+  renderAiButtons(() => idea.value);
 
   // What was typed survives the panel closing; an idea is worth keeping.
   chrome.storage.local.get('af_build_idea')
@@ -545,20 +637,11 @@ function wireBuilder(): void {
       return;
     }
 
-    /* Parked whole rather than by id: the gallery looks an id up in the
-       published list, and this workflow exists nowhere but here. */
     try {
-      await chrome.storage.local.set({ af_pending_workflow: template });
+      await openBuilt(template);
     } catch {
       buildSays('bad', 'Could not hand the workflow to the canvas — storage is unavailable.');
-      return;
     }
-    const steps = template.nodes.filter((n: any) => isRunnableType(n.type)).length;
-    buildSays('ok', `Built "${template.name}"`, [
-      `${template.nodes.length} nodes, ${steps} of them run`,
-      'Opening the canvas…',
-    ]);
-    chrome.runtime.sendMessage({ type: 'PANEL_OPEN_STUDIO' }).catch(() => {});
   });
 }
 

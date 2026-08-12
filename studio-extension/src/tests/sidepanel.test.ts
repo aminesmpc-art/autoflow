@@ -98,6 +98,7 @@ describe('the panel markup keeps the contract index.ts relies on', () => {
     'foot-plan', 'foot-acct', 'foot-runs',
     'sp-nav', 'tpl-search', 'tpl-pills', 'tpl-grid', 'tpl-count', 'preset-list',
     'build-idea', 'build-reply', 'build-copy', 'build-go', 'build-ai', 'build-out',
+    'build-ai-manual', 'build-manual',
   ];
 
   it.each(REQUIRED)('has #%s', (id) => {

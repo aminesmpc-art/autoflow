@@ -718,6 +718,30 @@ body {
 .sp-buildout ul { margin: 6px 0 0; padding-left: 16px; }
 .sp-buildout li { margin-bottom: 3px; }
 
+
+/* The three the extension can drive: filled, because pressing one is the
+   whole feature rather than a link out. */
+.sp-ai__link--auto { border-color: var(--accent-30); background: var(--accent-8); color: var(--text); }
+.sp-ai__link--auto .sp-ai__dot { background: var(--accent); }
+.sp-ai__link--auto:hover { background: var(--accent-14); }
+.sp-ai__link:disabled { opacity: 0.5; cursor: default; }
+.sp-ai__link--busy .sp-ai__dot { animation: sp-pulse 1.2s ease-in-out infinite; }
+
+/* The manual path, folded away — it is the exception, not the route. */
+.sp-manual { margin-top: 2px; }
+.sp-manual > summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--text-3);
+  padding: 4px 2px;
+  list-style: none;
+}
+.sp-manual > summary::-webkit-details-marker { display: none; }
+.sp-manual > summary::before { content: "▸ "; }
+.sp-manual[open] > summary::before { content: "▾ "; }
+.sp-manual > summary:hover { color: var(--text-2); }
+.sp-manual > *:not(summary) { margin-top: 8px; }
+
 /* ════════════════════════════════════════════════
    Prompts
    ════════════════════════════════════════════════ */
