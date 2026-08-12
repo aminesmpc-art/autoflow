@@ -217,3 +217,86 @@ describe('the brief given to the model', () => {
     expect(validateTemplate(template)).toEqual([]);
   });
 });
+
+describe('the nodes the plan can now reach', () => {
+  it('wires a last frame from a clip into the next clip', () => {
+    /* The continuity tool, and the one the first brief could not express:
+       shot two literally begins on the image shot one ended on. */
+    const { template, problems } = compilePlan({
+      name: 'Two continuous shots',
+      steps: [
+        { id: 'a', type: 'generate', media: 'video', platform: 'flow', prompt: 'Push in on the plinth.' },
+        { id: 'f', type: 'frame', label: 'Ends on', inputs: ['a'] },
+        { id: 'b', type: 'generate', media: 'video', platform: 'flow', prompt: 'Continue from this frame, drifting closer.', inputs: ['f'] },
+      ],
+    });
+    expect(problems).toEqual([]);
+    expect(validateTemplate(template)).toEqual([]);
+    // Clip -> frame on image_ref, frame -> clip on image (not result).
+    const intoFrame = template!.edges.find((e: any) => e.target === 'f')!;
+    expect(intoFrame).toMatchObject({ source: 'a', sourceHandle: 'result', targetHandle: 'image_ref' });
+    const outOfFrame = template!.edges.find((e: any) => e.source === 'f')!;
+    expect(outOfFrame).toMatchObject({ target: 'b', sourceHandle: 'image', targetHandle: 'image_ref' });
+  });
+
+  it('refuses a frame taken from a still', () => {
+    const { template, problems } = compilePlan({
+      steps: [
+        { id: 'a', type: 'generate', media: 'image', platform: 'grok', prompt: 'A plinth.' },
+        { id: 'f', type: 'frame', inputs: ['a'] },
+      ],
+    });
+    expect(template).toBeNull();
+    expect(problems.join(' ')).toMatch(/rather than video/i);
+  });
+
+  it('refuses a frame fed by two clips', () => {
+    const { problems } = compilePlan({
+      steps: [
+        { id: 'a', type: 'generate', media: 'video', platform: 'flow', prompt: 'One.' },
+        { id: 'b', type: 'generate', media: 'video', platform: 'flow', prompt: 'Two.' },
+        { id: 'f', type: 'frame', inputs: ['a', 'b'] },
+      ],
+    });
+    expect(problems.join(' ')).toMatch(/needs exactly one/i);
+  });
+});
+
+describe('the brief teaches the canvas, not just the schema', () => {
+  const spec = buildSpec('a 3-shot ad for a coffee brand');
+
+  it('names every node type a plan can use', () => {
+    for (const t of ['image', 'generate', 'frame', 'extend', 'agent']) {
+      expect(spec).toContain(t);
+    }
+  });
+
+  it('states the two patterns the best models found unaided', () => {
+    expect(spec).toMatch(/still first, then move it/i);
+    expect(spec).toMatch(/frame\s*->\s*clip B|clip A\s*->\s*frame/i);
+  });
+
+  it('forbids the failure the weakest model produced', () => {
+    // DeepSeek folded a three-shot ad into a single generation.
+    expect(spec).toMatch(/one step per shot/i);
+    expect(spec).toMatch(/never fold several shots/i);
+  });
+
+  it('asks the model to decide before it writes', () => {
+    expect(spec).toContain('"thinking"');
+    expect(spec).toMatch(/fill in "thinking" first/i);
+  });
+
+  it('still compiles its own example, now that the example uses a frame', () => {
+    const { template, problems } = buildFromReply(spec.slice(spec.indexOf('EXAMPLE')));
+    expect(problems).toEqual([]);
+    expect(validateTemplate(template)).toEqual([]);
+    expect(template!.nodes.some((n: any) => n.type === 'frame')).toBe(true);
+  });
+
+  it('ignores the thinking block when compiling', () => {
+    // It exists to slow the model down, not to reach the canvas.
+    const { template } = buildFromReply(spec.slice(spec.indexOf('EXAMPLE')));
+    expect(JSON.stringify(template)).not.toContain('continuity');
+  });
+});

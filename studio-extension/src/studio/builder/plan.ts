@@ -24,8 +24,8 @@
 import { validateTemplate, isRunnableType } from '../templates/validate';
 import type { Template } from '../templates';
 
-/** What a plan may ask for. Deliberately smaller than the node types. */
-export type PlanStepType = 'image' | 'generate' | 'extend';
+/** What a plan may ask for. One name per node type the canvas can draw. */
+export type PlanStepType = 'image' | 'generate' | 'extend' | 'frame' | 'agent';
 
 export interface PlanStep {
   id: string;
@@ -138,9 +138,23 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
   }
   if (problems.length) return { template: null, problems };
 
+  const TYPES: PlanStepType[] = ['image', 'generate', 'extend', 'frame', 'agent'];
   for (const s of byId.values()) {
-    if (!['image', 'generate', 'extend'].includes(s.type)) {
-      problems.push(`Step "${s.id}" has type "${s.type}", which is not image, generate or extend.`);
+    if (!TYPES.includes(s.type)) {
+      problems.push(`Step "${s.id}" has type "${s.type}"; use one of ${TYPES.join(', ')}.`);
+    }
+    /* A frame is the last still of one clip. Two clips into it is not a
+       richer frame, it is an unanswerable question about which clip. */
+    if (s.type === 'frame') {
+      const from = (s.inputs || []).map((i) => byId.get(i)).filter(Boolean);
+      if (from.length !== 1) {
+        problems.push(`Step "${s.id}" is a frame and takes ${from.length} inputs; it needs exactly one.`);
+      } else if (from[0]!.media !== 'video') {
+        problems.push(
+          `Step "${s.id}" takes its frame from "${from[0]!.id}", which makes `
+          + `${from[0]!.media || 'an image'} rather than video.`
+        );
+      }
     }
     if (s.platform && !PLATFORMS.includes(s.platform)) {
       problems.push(`Step "${s.id}" names platform "${s.platform}"; use one of ${PLATFORMS.join(', ')}.`);
@@ -183,7 +197,19 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
       continue;
     }
 
-    const media = step.media || 'image';
+    /* Last frame of a clip, as a still. The continuity tool: shot two starts
+       exactly where shot one stopped, which no amount of prompt wording can
+       promise on its own. */
+    if (step.type === 'frame') {
+      nodes.push({
+        id: step.id, type: 'frame', position: { x, y: nextY(col) },
+        data: { type: 'frame', label: step.label || 'Last frame', frameUrl: '' },
+      });
+      for (const m of step.inputs || []) edge(m, step.id, 'result', 'image_ref', '#3b82f6');
+      continue;
+    }
+
+    const media = step.type === 'agent' ? 'text' : (step.media || 'image');
     const platform = step.platform || 'flow';
 
     /* Where the node's text comes from. An upstream step that writes text
@@ -240,7 +266,7 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
 
     for (const m of mediaInputs) {
       const from = byId.get(m)!;
-      const sourceHandle = from.type === 'image' ? 'image' : 'result';
+      const sourceHandle = from.type === 'image' || from.type === 'frame' ? 'image' : 'result';
       const targetHandle = step.type === 'extend' ? 'video' : 'image_ref';
       edge(m, step.id, sourceHandle, targetHandle, '#3b82f6');
     }
