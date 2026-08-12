@@ -9,7 +9,7 @@
    surface with no purpose here and every reason to rot.
    ============================================================ */
 
-type Platform = 'flow' | 'chatgpt' | 'gemini' | 'grok';
+type Platform = 'flow' | 'chatgpt' | 'gemini' | 'grok' | 'claude';
 
 /** The Studio window's long-lived port. Null whenever Studio is closed. */
 let studioPort: chrome.runtime.Port | null = null;
@@ -113,6 +113,14 @@ const PLATFORMS: Record<Platform, { match: string; open: string; script: string;
     open: 'https://grok.com/imagine',
     script: 'grok-content.js',
     name: 'Grok',
+  },
+  /* Text only — Claude draws nothing. Opened on /new so a build starts on a
+     clean thread rather than continuing whatever was last discussed. */
+  claude: {
+    match: 'https://claude.ai/*',
+    open: 'https://claude.ai/new',
+    script: 'claude-content.js',
+    name: 'Claude',
   },
 };
 
@@ -263,7 +271,7 @@ interface PlanWaiter { resolve: (r: { text?: string; error?: string }) => void; 
 const planWaiters = new Map<string, PlanWaiter>();
 
 /** A text answer from a chat platform, or the reason there is none. */
-async function askChatForPlan(platform: Platform, prompt: string): Promise<{ text?: string; error?: string }> {
+async function askChatForPlan(platform: Platform, prompt: string, model = ''): Promise<{ text?: string; error?: string }> {
   const cfg = PLATFORMS[platform];
   if (!cfg) return { error: `Unknown platform "${platform}".` };
 
@@ -304,7 +312,7 @@ async function askChatForPlan(platform: Platform, prompt: string): Promise<{ tex
              reasonable for a prompt, destructive for JSON. */
           rawReply: true,
           newChat: 'auto',
-          model: '',
+          model,
           aspectRatio: '1:1',
           creationType: 'ingredients',
         },
@@ -704,7 +712,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg?.type === 'PANEL_BUILD') {
-    askChatForPlan(msg.platform, msg.prompt)
+    askChatForPlan(msg.platform, msg.prompt, msg.model || '')
       .then(sendResponse)
       .catch((e) => sendResponse({ error: e?.message || String(e) }));
     return true;   // async

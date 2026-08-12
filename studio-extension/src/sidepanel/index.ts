@@ -445,17 +445,22 @@ type PanelView = 'run' | 'templates' | 'build' | 'prompts';
    The model's half is small on purpose — see builder/spec.ts. Everything
    mechanical is computed by compilePlan, which puts its output through the
    same validator every shipped template passes. */
-/** Chats the extension can drive end to end — these have content scripts. */
-const AUTO_CHATS: Array<{ key: 'chatgpt' | 'gemini' | 'grok'; name: string }> = [
+/** Chats the extension can drive end to end — these have content scripts.
+    `models` is offered in a picker beside the button; the first is the
+    default, and an empty value means "leave whatever the site is on". */
+const AUTO_CHATS: Array<{ key: string; name: string; models?: string[] }> = [
   { key: 'chatgpt', name: 'ChatGPT' },
   { key: 'gemini', name: 'Gemini' },
   { key: 'grok', name: 'Grok' },
+  /* Claude's picker reads "Sonnet 5 Max" and the suffix moves, so these are
+     matched loosely by the adapter — "Opus" finds "Opus 5" and whatever it
+     becomes next. */
+  { key: 'claude', name: 'Claude', models: ['', 'Sonnet', 'Opus', 'Haiku'] },
 ];
 
 /** Chats it cannot, which is why the manual path stays below them. */
 const MANUAL_CHATS: Array<[string, string]> = [
   ['DeepSeek', 'https://chat.deepseek.com/'],
-  ['Claude', 'https://claude.ai/new'],
 ];
 
 function renderAiButtons(idea: () => string): void {
@@ -476,9 +481,31 @@ function renderAiButtons(idea: () => string): void {
       b.addEventListener('click', () => {
         const text = idea().trim();
         if (!text) { buildSays('bad', 'Describe the idea first.'); return; }
-        autoBuild(entry.key, entry.name, text);
+        autoBuild(entry.key, entry.name, text, pickedModel(entry.key));
       });
       auto.append(b);
+
+      /* Only where the site has a picker worth driving. A select on every
+         button would imply a choice the other adapters do not make. */
+      if (entry.models && entry.models.length > 1) {
+        const sel = document.createElement('select');
+        sel.className = 'sp-ai__model nodrag';
+        sel.id = `build-model-${entry.key}`;
+        sel.title = `Model for ${entry.name}`;
+        for (const m of entry.models) {
+          const o = document.createElement('option');
+          o.value = m;
+          o.textContent = m || 'Default model';
+          sel.append(o);
+        }
+        sel.addEventListener('change', () => {
+          chrome.storage.local.set({ [`af_model_${entry.key}`]: sel.value }).catch(() => {});
+        });
+        chrome.storage.local.get(`af_model_${entry.key}`)
+          .then((r) => { const v = r[`af_model_${entry.key}`]; if (typeof v === 'string') sel.value = v; })
+          .catch(() => {});
+        auto.append(sel);
+      }
     }
   }
 
@@ -531,12 +558,17 @@ function setBuilding(on: boolean, activeKey?: string): void {
  * into a tab that predates the extension. Duplicating that here would be a
  * second copy of the part most likely to be wrong.
  */
-async function autoBuild(key: string, name: string, idea: string): Promise<void> {
+function pickedModel(key: string): string {
+  const sel = document.getElementById(`build-model-${key}`) as HTMLSelectElement | null;
+  return sel ? sel.value : '';
+}
+
+async function autoBuild(key: string, name: string, idea: string, model = ''): Promise<void> {
   setBuilding(true, key);
   buildSays('info', `Asking ${name}…`, ['This takes a few seconds. Leave the panel open.']);
   try {
     const res: any = await chrome.runtime.sendMessage({
-      type: 'PANEL_BUILD', platform: key, prompt: buildSpec(idea),
+      type: 'PANEL_BUILD', platform: key, prompt: buildSpec(idea), model,
     });
     if (!res || res.error) {
       buildSays('bad', `${name} could not answer`, [res?.error || 'No reply from the extension worker.']);

@@ -20,7 +20,8 @@
     "https://api.auto-flow.studio/*",
     "https://chatgpt.com/*",
     "https://gemini.google.com/*",
-    "https://grok.com/*"
+    "https://grok.com/*",
+    "https://claude.ai/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -84,6 +85,15 @@
       ],
       "js": [
         "grok-content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "claude-content.js"
       ],
       "run_at": "document_idle"
     }

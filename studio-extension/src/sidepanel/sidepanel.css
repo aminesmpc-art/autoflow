@@ -727,6 +727,22 @@ body {
 .sp-ai__link:disabled { opacity: 0.5; cursor: default; }
 .sp-ai__link--busy .sp-ai__dot { animation: sp-pulse 1.2s ease-in-out infinite; }
 
+
+/* Model picker, only where the site has one worth driving. */
+.sp-ai__model {
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.sp-ai__model:hover { border-color: var(--line-2); color: var(--text); }
+.sp-ai__model:focus { outline: none; border-color: var(--accent); }
+
 /* The manual path, folded away — it is the exception, not the route. */
 .sp-manual { margin-top: 2px; }
 .sp-manual > summary {

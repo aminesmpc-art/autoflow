@@ -270,6 +270,45 @@ async function startNewChat(): Promise<boolean> {
   return false;
 }
 
+/** Imagine is the generator. Text does not live there. */
+const onImagine = () => /^\/imagine/.test(location.pathname);
+
+/**
+ * Move to the chat surface, where a text node belongs.
+ *
+ * Grok is two products behind one host. /imagine generates pictures and clips;
+ * grok.com/ is the chat that answers in words. The worker opens the tab at
+ * /imagine because that is where most nodes go, and ensurePlatformTab reuses
+ * ANY grok.com tab — so a text node almost always arrives on the generator.
+ *
+ * Submitting there does not fail. It generates an image of the prompt. The
+ * Build tab asked Grok for a workflow plan and got a picture, which is a
+ * silently wrong result of the worst kind: everything reported success.
+ *
+ * The sidebar's Chat link is a client-side navigation, so the content script
+ * survives it — the same reason ensureGeneratorControls uses New Generation
+ * rather than assigning location.href.
+ */
+async function ensureChatSurface(): Promise<boolean> {
+  if (!onImagine()) return true;
+
+  const control = Array.from(
+    document.querySelectorAll<HTMLElement>('a[aria-label], button[aria-label], a, button')
+  ).find((el) => {
+    const name = (el.getAttribute('aria-label') || el.textContent || '').trim();
+    return /^chat$/i.test(name) && isVisible(el);
+  });
+  if (!control) return false;
+
+  logLine('Text runs on Grok chat, not Imagine — switching surface');
+  control.click();
+  for (let i = 0; i < 30; i++) {          // up to 6s
+    await sleep(200);
+    if (!onImagine() && findComposer()) return true;
+  }
+  return false;
+}
+
 /**
  * Put the generator's controls back on screen.
  *
@@ -1343,9 +1382,22 @@ async function handleExecute(payload: any): Promise<any> {
      since the reset remounts the composer and empties the thread. Image and
      video are left alone on purpose: they run on /imagine, where the reset
      would also discard the clip an Extend node is about to continue. */
-  // 'never' is the agent loop mid-run — there the thread is the memory.
-  if (config?.mediaType === 'text' && config?.newChat !== 'never') {
-    await startNewChat();
+  if (config?.mediaType === 'text') {
+    /* The right surface first. A prompt submitted on /imagine is drawn, not
+       answered — the Build tab asked for a workflow plan and Grok returned a
+       picture of one, reporting success the whole way. */
+    if (!(await ensureChatSurface())) {
+      send('STUDIO_NODE_ERROR', {
+        nodeId,
+        error: 'This node wants a written answer, but the Grok tab is on Imagine '
+          + `(${location.pathname}) and the Chat link could not be found. Open `
+          + 'grok.com in that tab and run it again — submitting here would generate '
+          + 'a picture instead of an answer.',
+      });
+      return { success: false };
+    }
+    // 'never' is the agent loop mid-run — there the thread is the memory.
+    if (config?.newChat !== 'never') await startNewChat();
   }
 
   let composer = findComposer();
