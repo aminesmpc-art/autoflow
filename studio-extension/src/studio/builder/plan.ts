@@ -42,6 +42,12 @@ export interface PlanStep {
   duration?: string;
   /** Grok extend only. */
   extendSeconds?: string;
+  /* Flow's Start/End frames. Given both, Flow moves between them — the match
+     cut. Kept separate from `inputs` because two entries there means two
+     reference pictures, which is a different instruction with a different
+     result, and a model that meant the move would get the references. */
+  startFrame?: string;
+  endFrame?: string;
 }
 
 export interface Plan {
@@ -156,6 +162,27 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
         );
       }
     }
+    const pair = [s.startFrame, s.endFrame].filter(Boolean) as string[];
+    if (pair.length === 1) {
+      problems.push(`Step "${s.id}" gives only one of startFrame and endFrame; Flow needs both.`);
+    }
+    if (pair.length === 2) {
+      if (s.media !== 'video') {
+        problems.push(`Step "${s.id}" has start and end frames but is not video.`);
+      }
+      if ((s.platform || 'flow') !== 'flow') {
+        problems.push(`Step "${s.id}" uses start and end frames, which only flow can do.`);
+      }
+      for (const f of pair) {
+        if (!byId.has(f)) problems.push(`Step "${s.id}" names frame "${f}", which is not a step.`);
+      }
+      if ((s.inputs || []).length) {
+        problems.push(
+          `Step "${s.id}" has start and end frames AND inputs. Use one: the move between `
+          + 'two stills, or reference pictures.'
+        );
+      }
+    }
     if (s.platform && !PLATFORMS.includes(s.platform)) {
       problems.push(`Step "${s.id}" names platform "${s.platform}"; use one of ${PLATFORMS.join(', ')}.`);
     }
@@ -216,8 +243,9 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
        supplies it; otherwise the plan's literal prompt becomes a prompt node.
        Both at once would give the node two text edges, and the runner reads
        one — so the wire wins and the literal is dropped, with a note. */
-    const textInputs = (step.inputs || []).filter((i) => byId.get(i)?.media === 'text');
-    const mediaInputs = (step.inputs || []).filter((i) => byId.get(i)?.media !== 'text');
+    const mediaOf = (s?: PlanStep) => (s?.type === 'agent' ? 'text' : s?.media);
+    const textInputs = (step.inputs || []).filter((i) => mediaOf(byId.get(i)) === 'text');
+    const mediaInputs = (step.inputs || []).filter((i) => mediaOf(byId.get(i)) !== 'text');
 
     if (textInputs.length > 1) {
       problems.push(`Step "${step.id}" takes written text from ${textInputs.length} steps; it can use one.`);
@@ -245,7 +273,7 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
         model: media === 'video' ? 'Omni Flash' : 'Nano Banana Pro',
         aspectRatio: step.aspectRatio || (media === 'video' ? '9:16' : '1:1'),
         duration: step.duration || '6s',
-        creationType: 'ingredients',
+        creationType: step.startFrame && step.endFrame ? 'frames' : 'ingredients',
         ...(step.type === 'extend' ? { extendSeconds: step.extendSeconds || '+10s' } : {}),
         enabled: true, status: 'idle', resultUrl: null, previewUrl: '',
         resultTileId: null, progress: 0, errorMessage: null,
@@ -263,6 +291,14 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
       edge(pid, step.id, 'text', 'text', '#8b5cf6');
     }
     for (const t of textInputs.slice(0, 1)) edge(t, step.id, 'text', 'text', '#8b5cf6');
+
+    if (step.startFrame && step.endFrame) {
+      /* Frames mode swaps the one reference port for two named ones — which
+         image is first cannot be answered by edge order. */
+      const handleOf = (id: string) => (byId.get(id)!.type === 'generate' ? 'result' : 'image');
+      edge(step.startFrame, step.id, handleOf(step.startFrame), 'frame_start', '#22c55e');
+      edge(step.endFrame, step.id, handleOf(step.endFrame), 'frame_end', '#f97316');
+    }
 
     for (const m of mediaInputs) {
       const from = byId.get(m)!;

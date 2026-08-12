@@ -70,10 +70,19 @@ const NODE_MANUAL = `THE NODES, AND WHAT EACH IS FOR
             one continuous action that outgrows a single generation — not for
             cutting to a new shot, which is a new step.
 
-  agent     Asks a chat model to work something out and answer in text.
+  agent     A LOOP that can inspect and repair the canvas while it runs.
             Takes: a goal.
-            Emits: text, which a later step can use as its prompt.
-            Use when a prompt must be reasoned about rather than written now.
+            Emits: its final answer, as text.
+            Its tools: read_canvas, read_node, set_prompt, rerun_node,
+            generate_image, inspect_clip. So it can look at what another node
+            produced, rewrite that node's prompt, and run it again.
+
+            DO NOT use it to write a prompt. That is what a generate step with
+            media "text" is for, and it is cheaper, faster and predictable.
+            An agent is for work that needs to SEE a result and react to it —
+            "watch the clip and fix the prompt if the car changed colour". If
+            your step just needs words written before the shot, it is a
+            generate/text step, not an agent.
 
 HOW THEY GO TOGETHER
 
@@ -98,7 +107,15 @@ HOW THEY GO TOGETHER
   Writing a prompt with a model.
       generate text  ->  generate image (inputs: that text step)
     The text step's answer BECOMES the next step's prompt. A step fed this way
-    must not also carry its own "prompt".`;
+    must not also carry its own "prompt".
+
+  A shot that must START on one image and END on another.
+      "startFrame": "id", "endFrame": "id"     (flow only)
+    Flow can be given both ends of a clip and will move between them. This is
+    how a match cut works — the miniature at the start, the real thing at the
+    end, one continuous move. Use startFrame/endFrame for that, NOT two
+    entries in "inputs": inputs are reference pictures, which is a different
+    instruction and will not produce the move.`;
 
 const EXAMPLE = `{
   "thinking": {
@@ -187,7 +204,9 @@ A step:
     "inputs": ["ids of steps that feed this one"],
     "aspectRatio": "1:1" | "9:16" | "16:9" | "2:3" | "3:2",
     "duration": "6s" | "10s",
-    "extendSeconds": "+6s" | "+10s"
+    "extendSeconds": "+6s" | "+10s",
+    "startFrame": "id of the still this clip begins on",
+    "endFrame": "id of the still this clip ends on"
   }
 
 RULES
@@ -197,6 +216,10 @@ RULES
   Never write instructions to the user in it — nobody reads it but the model.
 - A step fed by a "text" step must NOT also have its own "prompt".
 - "frame" takes exactly one video step, and nothing else.
+- "startFrame"/"endFrame" are flow only, are used together, and replace
+  "inputs" for that step. Do not pass two pictures in "inputs" hoping for a
+  start and an end — that is two references, not a move between them.
+- "agent" is for reacting to a result, never for writing a prompt.
 - "extend" is Grok only, and a clip cannot pass 30 seconds in total.
 - Only "image" steps are things the user uploads. If the idea does not need an
   upload, do not invent one.

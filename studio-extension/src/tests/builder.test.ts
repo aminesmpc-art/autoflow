@@ -300,3 +300,93 @@ describe('the brief teaches the canvas, not just the schema', () => {
     expect(JSON.stringify(template)).not.toContain('continuity');
   });
 });
+
+describe('the two things the car-carving plan exposed', () => {
+  it('gives a match cut real start and end frames, not two references', () => {
+    /* The model reasoned "nothing else takes a start frame and an end frame"
+       and then wrote inputs: [a, b], because the format had no way to say it.
+       Both would have been wired to image_ref — two reference pictures, which
+       is a different instruction with a different result. */
+    const { template, problems } = compilePlan({
+      name: 'Match cut',
+      steps: [
+        { id: 'mini', type: 'generate', media: 'image', platform: 'grok', prompt: 'A carved wooden car.' },
+        { id: 'real', type: 'generate', media: 'image', platform: 'grok', prompt: 'The real car on wet asphalt.' },
+        {
+          id: 'cut', type: 'generate', media: 'video', platform: 'flow',
+          prompt: 'The world changes scale around the car in one unbroken move.',
+          startFrame: 'mini', endFrame: 'real', duration: '6s',
+        },
+      ],
+    });
+    expect(problems).toEqual([]);
+    expect(validateTemplate(template)).toEqual([]);
+
+    const node = template!.nodes.find((n: any) => n.id === 'cut')!;
+    expect(node.data.creationType).toBe('frames');
+    const into = template!.edges.filter((e: any) => e.target === 'cut');
+    expect(into.find((e: any) => e.targetHandle === 'frame_start')!.source).toBe('mini');
+    expect(into.find((e: any) => e.targetHandle === 'frame_end')!.source).toBe('real');
+    // And nothing landed on the reference port.
+    expect(into.some((e: any) => e.targetHandle === 'image_ref')).toBe(false);
+  });
+
+  it('refuses start/end frames alongside inputs rather than guessing', () => {
+    const { template, problems } = compilePlan({
+      steps: [
+        { id: 'a', type: 'generate', media: 'image', platform: 'grok', prompt: 'One.' },
+        { id: 'b', type: 'generate', media: 'image', platform: 'grok', prompt: 'Two.' },
+        { id: 'c', type: 'generate', media: 'video', platform: 'flow', prompt: 'Move.', startFrame: 'a', endFrame: 'b', inputs: ['a'] },
+      ],
+    });
+    expect(template).toBeNull();
+    expect(problems.join(' ')).toMatch(/use one/i);
+  });
+
+  it('refuses start/end frames on a platform that cannot do them', () => {
+    const { problems } = compilePlan({
+      steps: [
+        { id: 'a', type: 'generate', media: 'image', platform: 'grok', prompt: 'One.' },
+        { id: 'b', type: 'generate', media: 'image', platform: 'grok', prompt: 'Two.' },
+        { id: 'c', type: 'generate', media: 'video', platform: 'grok', prompt: 'Move.', startFrame: 'a', endFrame: 'b' },
+      ],
+    });
+    expect(problems.join(' ')).toMatch(/only flow/i);
+  });
+
+  it('treats an agent as text even when the plan forgets to say so', () => {
+    /* A model that writes {"type":"agent"} with no media used to have its
+       output wired as a picture — onto a node whose only output is text. */
+    const { template, problems } = compilePlan({
+      steps: [
+        { id: 'think', type: 'agent', platform: 'chatgpt', prompt: 'Watch the clip and describe what changed.' },
+        { id: 'shot', type: 'generate', media: 'image', platform: 'grok', inputs: ['think'] },
+      ],
+    });
+    expect(problems).toEqual([]);
+    expect(validateTemplate(template)).toEqual([]);
+    const into = template!.edges.find((e: any) => e.target === 'shot' && e.source === 'think')!;
+    expect(into).toMatchObject({ sourceHandle: 'text', targetHandle: 'text' });
+  });
+});
+
+describe('the brief describes the agent it actually has', () => {
+  const spec = buildSpec('anything');
+
+  it('names the agent tools rather than calling it a text step', () => {
+    for (const tool of ['read_canvas', 'set_prompt', 'rerun_node', 'inspect_clip']) {
+      expect(spec).toContain(tool);
+    }
+  });
+
+  it('tells the model not to use an agent for prompt writing', () => {
+    // Which is exactly what a model did when the description said "answers in text".
+    expect(spec).toMatch(/do not use it to write a prompt/i);
+  });
+
+  it('offers start and end frames as their own fields', () => {
+    expect(spec).toContain('startFrame');
+    expect(spec).toContain('endFrame');
+    expect(spec).toMatch(/not two\s*\n?\s*entries in "inputs"/i);
+  });
+});
