@@ -610,3 +610,86 @@ export async function confirmPasswordReset(email: string, code: string, newPassw
   }
 }
 
+
+/* ── Community templates ──
+   Workflows other people published. A separate endpoint from the official
+   bundle, and a separate failure: if this 500s the gallery still has every
+   curated template, which is why the two are never merged server-side. */
+
+export interface CommunityCard {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  thumbnail: string;
+  nodeCount: number;
+  author: string;
+  likes: number;
+  installs: number;
+  liked: boolean;
+  community: true;
+  /** Only on the detail call — the list deliberately omits it. */
+  payload?: any;
+}
+
+/** The published community gallery. Never throws; an empty list is the floor. */
+export async function listCommunityTemplates(
+  sort: 'top' | 'new' | 'installs' = 'top',
+): Promise<CommunityCard[]> {
+  try {
+    const res = await apiFetch(`/api/templates/community?sort=${sort}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.templates) ? data.templates : [];
+  } catch {
+    return [];
+  }
+}
+
+/** One template, with its graph. Opening it is what counts as an install. */
+export async function getCommunityTemplate(id: string): Promise<CommunityCard | null> {
+  const numeric = String(id).replace(/^community_/, '');
+  try {
+    const res = await apiFetch(`/api/templates/community/${numeric}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Toggle a like. Returns the server's count, which is the authority. */
+export async function likeCommunityTemplate(
+  id: string,
+): Promise<{ ok: boolean; liked?: boolean; likes?: number; message?: string }> {
+  const numeric = String(id).replace(/^community_/, '');
+  try {
+    const res = await apiFetch(`/api/templates/community/${numeric}/like`, { method: 'POST' });
+    if (res.status === 401) return { ok: false, message: 'Sign in to like a template.' };
+    if (!res.ok) return { ok: false, message: 'Could not reach AutoFlow.' };
+    const data = await res.json();
+    return { ok: true, liked: !!data.liked, likes: Number(data.likes) || 0 };
+  } catch {
+    return { ok: false, message: 'Could not reach AutoFlow.' };
+  }
+}
+
+/** Share a workflow. It lands pending, never live — see apps/workflows. */
+export async function submitCommunityTemplate(
+  template: any,
+  authorName: string,
+): Promise<{ ok: boolean; message: string }> {
+  try {
+    const res = await apiFetch('/api/templates/community/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ template, author_name: authorName, name: template?.name }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) return { ok: false, message: 'Sign in to share a template.' };
+    if (!res.ok) return { ok: false, message: extractError(data, 'Could not share that template.') };
+    return { ok: true, message: data.detail || 'Shared — it appears once a moderator approves it.' };
+  } catch {
+    return { ok: false, message: 'Could not reach AutoFlow. Check your connection.' };
+  }
+}

@@ -102,6 +102,7 @@ describe('the panel markup keeps the contract index.ts relies on', () => {
     'build-idea', 'build-reply', 'build-copy', 'build-go', 'build-ai', 'build-out',
     'build-ai-manual', 'build-manual',
     'gate', 'app', 'gate-google',
+    'src-official', 'src-community',
   ];
 
   it.each(REQUIRED)('has #%s', (id) => {
@@ -181,5 +182,24 @@ describe('the panel is gated behind sign-in', () => {
     for (const id of ['email', 'password', 'btn-login', 'auth-error']) {
       expect(document.getElementById(id)).not.toBeNull();
     }
+  });
+});
+
+describe('community templates sit beside the official ones, not among them', () => {
+  it('offers a source switch with Official selected first', () => {
+    /* Two sets with different authors and different guarantees. A merged list
+       would imply we vouch for all of them. */
+    const off = document.getElementById('src-official')!;
+    const com = document.getElementById('src-community')!;
+    expect(off.getAttribute('aria-selected')).toBe('true');
+    expect(com.getAttribute('aria-selected')).toBe('false');
+    expect(off.className).toContain('sp-seg2__btn--on');
+  });
+
+  it('puts the switch above the search, inside the pinned bar', () => {
+    const bar = document.querySelector('.sp-tplbar')!;
+    expect(bar.querySelector('#src-community')).not.toBeNull();
+    const html = bar.innerHTML;
+    expect(html.indexOf('src-official')).toBeLessThan(html.indexOf('tpl-search'));
   });
 });

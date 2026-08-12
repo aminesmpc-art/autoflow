@@ -11,7 +11,11 @@
    ============================================================ */
 
 import './sidepanel.css';
-import { login, logout, isLoggedIn, getProfile } from '../shared/api';
+import {
+  login, logout, isLoggedIn, getProfile,
+  listCommunityTemplates, getCommunityTemplate, likeCommunityTemplate,
+  submitCommunityTemplate, type CommunityCard,
+} from '../shared/api';
 import { loadTemplates, refreshTemplates } from '../studio/templates/loader';
 import type { Template } from '../studio/templates';
 import { getAskPresets } from '../studio/presets';
@@ -580,6 +584,20 @@ async function openBuilt(template: any): Promise<void> {
     `${template.nodes.length} nodes, ${steps} of them run`,
     'Opening the canvas…',
   ]);
+  /* Offered here because this is the moment someone has something worth
+     sharing, and the panel has the finished template in hand. */
+  const box = document.getElementById('build-out');
+  if (box) {
+    const share = document.createElement('button');
+    share.className = 'sp-btn sp-btn--ghost';
+    share.style.marginTop = '8px';
+    share.textContent = 'Share to community';
+    share.addEventListener('click', () => {
+      share.disabled = true;
+      shareBuilt(template);
+    });
+    box.append(share);
+  }
   chrome.runtime.sendMessage({ type: 'PANEL_OPEN_STUDIO' }).catch(() => {});
 }
 
@@ -752,6 +770,166 @@ async function openTemplate(id: string): Promise<void> {
   chrome.runtime.sendMessage({ type: 'PANEL_OPEN_STUDIO' }).catch(() => {});
 }
 
+/* ── Community templates ──────────────────────────────────────
+   Other people's workflows. Kept in their own list and behind their own tab
+   rather than merged into the official grid: the two have different authors,
+   different guarantees and different failure modes, and a card that does not
+   say which it is invites the assumption that we vouch for all of them.
+
+   Everything here degrades to the official gallery. A failed fetch returns an
+   empty list rather than throwing, because the curated templates are always
+   there and losing them to a community outage would be the worse bug. */
+
+type TemplateSourceTab = 'official' | 'community';
+let templateSource: TemplateSourceTab = 'official';
+let communityCards: CommunityCard[] = [];
+let communityLoaded = false;
+
+function heartSvg(): string {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.35-7-9a4 4 0 0 1 7-2.65A4 4 0 0 1 19 11c0 4.65-7 9-7 9z"/></svg>';
+}
+
+/** Open a community template: fetch the graph, then hand it to the canvas. */
+async function openCommunity(card: CommunityCard): Promise<void> {
+  const count = document.getElementById('tpl-count');
+  if (count) count.textContent = `Opening "${card.name}"…`;
+
+  const full = await getCommunityTemplate(card.id);
+  if (!full?.payload) {
+    if (count) count.textContent = 'That template could not be loaded.';
+    return;
+  }
+  /* Given a fresh id so it cannot collide with a bundled template, and so
+     opening the same shared workflow twice does not reuse one canvas. */
+  const template = { ...full.payload, id: `community_${Date.now().toString(36)}` };
+  try {
+    await chrome.storage.local.set({ af_pending_workflow: template });
+    chrome.runtime.sendMessage({ type: 'PANEL_OPEN_STUDIO' }).catch(() => {});
+    if (count) count.textContent = `Opened "${card.name}" on the canvas.`;
+  } catch {
+    if (count) count.textContent = 'Could not hand that template to the canvas.';
+  }
+}
+
+function renderCommunity(): void {
+  const grid = document.getElementById('tpl-grid');
+  const count = document.getElementById('tpl-count');
+  if (!grid) return;
+
+  const q = panelQuery.trim().toLowerCase();
+  const visible = communityCards.filter(
+    (c) => !q || `${c.name} ${c.description} ${c.author}`.toLowerCase().includes(q),
+  );
+
+  grid.innerHTML = '';
+  if (!visible.length) {
+    const empty = document.createElement('div');
+    empty.className = 'sp-empty';
+    empty.textContent = communityLoaded
+      ? (communityCards.length ? 'Nothing matches that search.' : 'Nobody has shared a template yet.')
+      : 'Loading shared templates…';
+    grid.append(empty);
+    if (count) count.textContent = '';
+    return;
+  }
+  if (count) count.textContent = `${visible.length} shared`;
+
+  for (const card of visible) {
+    const el = document.createElement('button');
+    el.className = 'sp-tpl';
+    el.title = card.description || card.name;
+
+    const thumb = document.createElement('div');
+    thumb.className = 'sp-tpl__thumb';
+    thumb.textContent = card.thumbnail || '🧩';
+
+    const body = document.createElement('div');
+    body.className = 'sp-tpl__body';
+    const name = document.createElement('div');
+    name.className = 'sp-tpl__name';
+    name.textContent = card.name;
+
+    const meta = document.createElement('div');
+    meta.className = 'sp-tpl__meta';
+    const by = document.createElement('span');
+    by.className = 'sp-tpl__by';
+    by.textContent = `by ${card.author}`;
+    const sep = document.createElement('span');
+    sep.className = 'sp-tpl__sep';
+    sep.textContent = '·';
+    const steps = document.createElement('span');
+    steps.textContent = `${card.nodeCount} ${card.nodeCount === 1 ? 'step' : 'steps'}`;
+
+    const stats = document.createElement('span');
+    stats.className = 'sp-tpl__stats';
+
+    const like = document.createElement('span');
+    like.className = `sp-like ${card.liked ? 'sp-like--on' : ''}`;
+    like.setAttribute('role', 'button');
+    like.tabIndex = 0;
+    like.title = card.liked ? 'Remove your like' : 'Like this template';
+    like.innerHTML = `${heartSvg()}<span>${card.likes}</span>`;
+    /* Stops the card opening. A like is not a request to load the workflow,
+       and treating it as one would spend an install on every tap. */
+    const toggle = async (e: Event) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const res = await likeCommunityTemplate(card.id);
+      if (!res.ok) { if (count) count.textContent = res.message || 'Could not like that.'; return; }
+      card.liked = !!res.liked;
+      card.likes = res.likes ?? card.likes;
+      like.className = `sp-like ${card.liked ? 'sp-like--on' : ''}`;
+      like.innerHTML = `${heartSvg()}<span>${card.likes}</span>`;
+    };
+    like.addEventListener('click', toggle);
+    like.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ') toggle(e);
+    });
+
+    const installs = document.createElement('span');
+    installs.className = 'sp-installs';
+    installs.textContent = `${card.installs} used`;
+
+    stats.append(like, installs);
+    meta.append(by, sep, steps, stats);
+    body.append(name, meta);
+    el.append(thumb, body);
+    el.addEventListener('click', () => openCommunity(card));
+    grid.append(el);
+  }
+}
+
+async function loadCommunity(force = false): Promise<void> {
+  if (communityLoaded && !force) { renderCommunity(); return; }
+  renderCommunity();                       // shows the loading line
+  communityCards = await listCommunityTemplates('top');
+  communityLoaded = true;
+  renderCommunity();
+}
+
+function setTemplateSource(next: TemplateSourceTab): void {
+  templateSource = next;
+  for (const [id, key] of [['src-official', 'official'], ['src-community', 'community']] as const) {
+    const b = document.getElementById(id);
+    if (!b) continue;
+    b.classList.toggle('sp-seg2__btn--on', key === next);
+    b.setAttribute('aria-selected', String(key === next));
+  }
+  // Categories filter the official set only; they mean nothing to the other.
+  const pills = document.getElementById('tpl-pills');
+  if (pills) (pills as HTMLElement).hidden = next === 'community';
+
+  if (next === 'community') loadCommunity();
+  else renderTemplates();
+}
+
+/** Share the workflow the Build tab just made. */
+async function shareBuilt(template: any): Promise<void> {
+  const who = (document.getElementById('foot-acct')?.textContent || '').trim();
+  const res = await submitCommunityTemplate(template, who.includes('@') ? who.split('@')[0] : who);
+  buildSays(res.ok ? 'ok' : 'bad', res.message);
+}
+
 function renderPills(): void {
   const host = document.getElementById('tpl-pills');
   if (!host) return;
@@ -907,7 +1085,13 @@ function wireShell(): void {
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
   const search = document.getElementById('tpl-search') as HTMLInputElement | null;
-  search?.addEventListener('input', () => { panelQuery = search.value; renderTemplates(); });
+  search?.addEventListener('input', () => {
+    panelQuery = search.value;
+    if (templateSource === 'community') renderCommunity();
+    else renderTemplates();
+  });
+  document.getElementById('src-official')?.addEventListener('click', () => setTemplateSource('official'));
+  document.getElementById('src-community')?.addEventListener('click', () => setTemplateSource('community'));
 
   renderPresets();
   renderTemplates();

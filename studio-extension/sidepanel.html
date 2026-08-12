@@ -177,6 +177,13 @@
            scrolling all the way back up, because the search box and the
            category pills were part of the scrolling column. -->
       <div class="sp-tplbar">
+        <!-- Two sets, never merged. Official templates ship with the app and
+             are curated; community ones are other people's, moderated but not
+             ours. Blending them into one list would hide which is which. -->
+        <div class="sp-seg2" role="tablist" aria-label="Template source">
+          <button id="src-official" class="sp-seg2__btn sp-seg2__btn--on" role="tab" aria-selected="true">Official</button>
+          <button id="src-community" class="sp-seg2__btn" role="tab" aria-selected="false">Community</button>
+        </div>
         <div class="sp-search">
           <svg class="sp-search__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
           <input id="tpl-search" class="sp-search__input" type="search"
