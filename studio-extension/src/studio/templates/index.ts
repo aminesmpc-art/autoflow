@@ -131,6 +131,20 @@ const askNode = (id: string, label: string, x: number, y: number, preset?: strin
   return node;
 };
 
+/** A Story node: one chat writes the prompts for every node it feeds. */
+const storyNode = (id: string, label: string, x: number, y: number, preset?: string): Node => ({
+  id,
+  type: 'story',
+  position: { x, y },
+  data: {
+    type: 'story',
+    label,
+    platform: 'chatgpt',
+    mediaType: 'text',
+    ...(preset ? { preset } : {}),
+  },
+} as unknown as Node);
+
 /** text edge (orange) */
 const tEdge = (source: string, target: string): Edge => ({
   id: `e_${source}_${target}_t`,
@@ -1798,7 +1812,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
         { label: 'Storyboard poster', mediaType: 'image', platform: 'chatgpt', aspectRatio: '9:16' },
         1000, 60,
       ),
-      askNode('motion', 'Write both motion prompts', 1000, 560, 'room_motion_director'),
+      storyNode('motion', 'Story — both clips', 1000, 560, 'room_motion_director'),
       genNode(
         'part1',
         { label: 'Part 1 — 10s', mediaType: 'video', platform: 'flow', aspectRatio: '9:16', duration: '10s' },
@@ -1828,7 +1842,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
       iEdge('part1', 'handoff'),
       iEdge('handoff', 'part2', 'image'),
     ],
-    requiresNodeTypes: ['prompt', 'generate', 'frame'],
+    requiresNodeTypes: ['prompt', 'generate', 'frame', 'story'],
     requiresPlatforms: ['chatgpt', 'flow'],
     tier: 'free',
   },

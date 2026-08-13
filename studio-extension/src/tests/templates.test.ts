@@ -31,6 +31,12 @@ const PORTS: Record<string, { in: string[]; out: string[] }> = {
   // An agent wires exactly where an Ask AI node does — a goal in, its final
   // answer out — so it can be swapped for one without redrawing anything.
   agent: { in: ['text'], out: ['text'] },
+  /* A Story node: the idea in, prompts out to every node it writes for. No
+     image_ref — it plans the words, and the references belong to the nodes
+     that generate. This map is a deliberate second copy of the one in
+     validate.ts: a test that imported the implementation's map would agree
+     with it by construction and prove nothing. */
+  story: { in: ['text'], out: ['text'] },
 };
 
 const portsFor = (node: any) => {
