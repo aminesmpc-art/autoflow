@@ -2467,3 +2467,44 @@ video.sn-media__img { object-fit: contain; background: var(--canvas); cursor: de
 .sn--prompt { border-left: 2px solid var(--n-prompt); }
 .sn--image  { border-left: 2px solid var(--n-image); }
 .sn--story  { border-left: 2px solid var(--accent); }
+
+/* ── Roles and rules ─────────────────────────────────────────
+   The role badge explains the graph back to you: a still wired into a clip is
+   that clip's reference, not a shot in the story, and until it said so the
+   only place that fact existed was in the wire. */
+.sn-story__role {
+  flex: none;
+  padding: 0 var(--s-1);
+  border-radius: var(--r-chip);
+  background: var(--accent-14);
+  color: var(--accent);
+  font-size: var(--t-micro);
+  letter-spacing: 0.2px;
+}
+.sn-story__rule {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  font-size: var(--t-micro);
+  line-height: 1.4;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.sn-story__rule:hover { color: var(--text); }
+.sn-story__check {
+  flex: none;
+  margin-top: 1px;
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* Section labels stop shouting. They were uppercase and heavy enough to
+   compete with the content they label, which made the node read as a form. */
+.sn--story .sn-field__label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  color: var(--text-3);
+}

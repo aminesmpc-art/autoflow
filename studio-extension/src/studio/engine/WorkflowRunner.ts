@@ -536,6 +536,7 @@ export class WorkflowRunner {
         look: nodeData.look || '',
         structure: nodeData.structure || DEFAULT_STORY.structure,
         beats: Number(nodeData.beats) || 0,
+        rules: Array.isArray(nodeData.rules) ? nodeData.rules : [],
       };
       const extra = nodeData.preset ? composeAskPrompt(nodeData.preset, '', false) : '';
       const brief = storyBrief(prompt, settings, targets) + (extra ? `\n${extra}` : '');

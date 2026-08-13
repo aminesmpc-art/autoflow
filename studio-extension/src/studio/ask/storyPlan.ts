@@ -36,7 +36,46 @@ export interface StorySettings {
   structure: StructureId;
   /** Story beats across the whole piece. 0 means derive it from the clips. */
   beats: number;
+  /** Continuity rules, by id. Each one is a line in the brief. */
+  rules: RuleId[];
 }
+
+export type RuleId = 'cumulative' | 'fixedCamera' | 'samePerson' | 'inHand';
+
+/**
+ * The rules the room template used to hardcode, as switches.
+ *
+ * Each is a real failure this kind of piece hits without it, which is why
+ * they are a short fixed list rather than a free-text box: a rule that can be
+ * written any way cannot also be checked, and these are worth checking.
+ */
+export const RULES: Array<{ id: RuleId; name: string; line: string }> = [
+  {
+    id: 'cumulative',
+    name: 'Nothing already built disappears',
+    line: 'Everything completed stays visible and active for the rest of the piece — '
+      + 'installed lights keep glowing, layers stay in place, nothing is removed, reset, '
+      + 'hidden, turned off or replaced.',
+  },
+  {
+    id: 'fixedCamera',
+    name: 'The camera never moves',
+    line: 'ONE fixed camera for the whole piece. No zoom, rotation, dolly, orbit, push-in '
+      + 'or angle change, and no cuts.',
+  },
+  {
+    id: 'samePerson',
+    name: 'The same person throughout',
+    line: 'The same person appears in every shot they are in, described identically each '
+      + 'time — same face, build, clothing and hair.',
+  },
+  {
+    id: 'inHand',
+    name: 'Things arrive in someone’s hands',
+    line: 'Every tool or material enters the frame in a person’s hands before it changes '
+      + 'anything. Nothing appears, builds, floats or installs itself.',
+  },
+];
 
 export type StructureId = 'hook' | 'transform' | 'loop' | 'free';
 
@@ -78,7 +117,7 @@ export const STRUCTURES: Array<{ id: StructureId; name: string; hint: string; sh
 ];
 
 export const DEFAULT_STORY: StorySettings = {
-  cast: [], world: '', look: '', structure: 'hook', beats: 0,
+  cast: [], world: '', look: '', structure: 'hook', beats: 0, rules: [],
 };
 
 /** Seconds in a target, or 0 for a still. */
@@ -177,6 +216,13 @@ export function storyBrief(
   if (structure.shape.length) {
     out.push(`STRUCTURE — ${structure.name}`);
     for (const line of structure.shape) out.push(line);
+    out.push('');
+  }
+
+  const chosen = RULES.filter((r) => s.rules.includes(r.id));
+  if (chosen.length) {
+    out.push('RULES — these hold for every shot without exception.');
+    for (const r of chosen) out.push(`  · ${r.line}`);
     out.push('');
   }
 

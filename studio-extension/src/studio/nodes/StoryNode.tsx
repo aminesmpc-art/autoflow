@@ -29,7 +29,7 @@ import { useStudioStore } from '../store';
 import { getAskPresets } from '../presets';
 import { orderShotTargets } from '../ask/storyboard';
 import {
-  STRUCTURES, DEFAULT_STORY, beatSummary, beatsFor, hasStory,
+  STRUCTURES, RULES, DEFAULT_STORY, beatSummary, beatsFor, hasStory,
   type CastMember, type StorySettings, type StructureId,
 } from '../ask/storyPlan';
 
@@ -40,6 +40,7 @@ function readStory(d: any): StorySettings {
     look: typeof d.look === 'string' ? d.look : '',
     structure: (d.structure as StructureId) || DEFAULT_STORY.structure,
     beats: Number(d.beats) || 0,
+    rules: Array.isArray(d.rules) ? d.rules : DEFAULT_STORY.rules,
   };
 }
 
@@ -105,6 +106,18 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                     {[t.media === 'video' ? 'clip' : 'still', t.aspectRatio, t.duration]
                       .filter(Boolean).join(' · ')}
                   </span>
+                  {/* Read off the wiring, so it explains the graph back to
+                      you: a still feeding a clip is a reference, not a shot. */}
+                  {t.role === 'reference' && (
+                    <span className="sn-story__role" title={`Reference for ${t.referenceFor}`}>
+                      reference
+                    </span>
+                  )}
+                  {t.role === 'continuation' && (
+                    <span className="sn-story__role" title={`Continues ${t.continues}`}>
+                      continues
+                    </span>
+                  )}
                   {written[i] && <span className="sn-story__done">✓</span>}
                 </li>
               ))}
@@ -229,6 +242,25 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 placeholder="Colours, lighting, camera feel — the AI will fill this in"
                 onChange={(e) => set({ look: e.target.value })}
               />
+            </div>
+
+            <div className="sn-story__section">
+              <div className="sn-story__section-head"><span>Rules for every shot</span></div>
+              {RULES.map((r) => (
+                <label key={r.id} className="sn-story__rule">
+                  <input
+                    type="checkbox"
+                    className="sn-story__check nodrag"
+                    checked={story.rules.includes(r.id)}
+                    onChange={(e) => set({
+                      rules: e.target.checked
+                        ? [...story.rules, r.id]
+                        : story.rules.filter((x) => x !== r.id),
+                    })}
+                  />
+                  <span>{r.name}</span>
+                </label>
+              ))}
             </div>
 
             <div className="sn-story__section">

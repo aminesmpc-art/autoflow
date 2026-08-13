@@ -58,6 +58,17 @@ export interface ShotTarget {
   hasEndFrame?: boolean;
   /** How many reference images are wired in. */
   references?: number;
+
+  /* What this node is FOR, read off the wiring rather than its media type.
+     An image node feeding a video node is not a shot in the story — it is the
+     character being built so the clip has something to look like. Told only
+     that it is "a still image", a writer describes a moment from the story
+     and produces a reference nobody can use. */
+  role?: 'reference' | 'continuation' | 'shot';
+  /** For a reference: the shot it is being made for. */
+  referenceFor?: string;
+  /** For a continuation: the shot it picks up from. */
+  continues?: string;
 }
 
 export interface Problem {
@@ -141,6 +152,30 @@ export function shotContract(targets: ShotTarget[], extraFields = ''): string {
     const head = `  ${i + 1}. ${t.label || `Shot ${i + 1}`} — ${kind}${spec ? ` (${spec})` : ''}`;
 
     const notes: string[] = [];
+
+    /* The job first, because it changes what the prompt should even be. A
+       reference still described as a story moment is a reference nobody can
+       use: the later shot needs a clear view of the subject, not a dramatic
+       angle on it. */
+    if (t.role === 'reference') {
+      notes.push(
+        `     NOT a moment in the story. This builds the subject that "${t.referenceFor}"`
+        + ' will look like, so write a clean, evenly lit, unambiguous view of it —'
+        + ' whole subject in frame, plain background, no action, no drama, no cropping.',
+      );
+      notes.push(
+        '     Describe the subject in the same words the shots use for it, so the'
+        + ' picture and the prompts agree.',
+      );
+    }
+    if (t.role === 'continuation' && t.continues) {
+      notes.push(
+        `     Picks up exactly where "${t.continues}" ended. Do not restart, do not`
+        + ' return to an earlier state, and describe everything already built as'
+        + ' already present — the generator cannot see the previous clip.',
+      );
+    }
+
     if (t.mode === 'frames' && t.hasStartFrame) {
       notes.push(
         '     Its FIRST frame is already fixed by an image wired into this node.'
@@ -321,7 +356,7 @@ export function checkShots(shots: Shot[], targets: ShotTarget[], anchor?: string
       if (rule.re.test(p)) problems.push({ shot: n, code: rule.code, detail: `The prompt ${rule.detail}` });
     }
 
-    if (target?.media === 'video' && !MOTION.test(p)) {
+    if (target?.media === 'video' && target?.role !== 'reference' && !MOTION.test(p)) {
       problems.push({
         shot: n, code: 'static',
         detail: 'This one becomes a moving clip but nothing in it moves. Say what the camera or the subject does.',
@@ -456,6 +491,79 @@ export function summarise(problems: Problem[]): string {
  * Pure, and given the nodes rather than reaching for the store, so it can be
  * checked against a real template instead of only at runtime.
  */
+/**
+ * What a node is for, from what it is wired to.
+ *
+ * Three jobs, and the wiring says which without anyone configuring it:
+ *
+ *   reference    Its output feeds another node's image or frame port. It is
+ *                not a moment in the story; it is the character, product or
+ *                set being built so the shots have something to match. It
+ *                should be a clean, unambiguous view — not a dramatic angle.
+ *   continuation Its first frame comes from another shot, directly or through
+ *                a Last Frame node. It must begin in that picture.
+ *   shot         Everything else.
+ *
+ * A frame node is followed through rather than treated as a wall: "clip A →
+ * Last Frame → clip B" is one relationship with a box drawn in the middle of
+ * it, and stopping at the box would lose the only fact that matters.
+ */
+function roleOf(
+  id: string,
+  nodes: Array<{ id: string; type?: string; data?: any }>,
+  edges: Array<{ source: string; target: string; targetHandle?: string | null }>,
+): { role: 'reference' | 'continuation' | 'shot'; referenceFor?: string; continues?: string } {
+  const nodeOf = (x: string) => nodes.find((n) => n.id === x);
+  const labelOf = (x: string) => String(nodeOf(x)?.data?.label || x);
+  const REF_PORTS = new Set(['image', 'image_ref', 'frame_start', 'frame_end']);
+
+  /* Where does this node's output land? A frame node in between is passed
+     through, since it forwards a still rather than being a destination. */
+  const consumers: Array<{ id: string; handle: string }> = [];
+  const walk = (from: string, depth = 0) => {
+    if (depth > 3) return;
+    for (const e of edges) {
+      if (e.source !== from) continue;
+      const handle = e.targetHandle || 'default';
+      const t = nodeOf(e.target);
+      if (t?.type === 'frame') { walk(e.target, depth + 1); continue; }
+      consumers.push({ id: e.target, handle });
+    }
+  };
+  walk(id);
+
+  const feedsAnImagePort = consumers.find((c) => REF_PORTS.has(c.handle));
+  if (feedsAnImagePort && nodeOf(id)?.data?.mediaType !== 'video') {
+    return { role: 'reference', referenceFor: labelOf(feedsAnImagePort.id) };
+  }
+
+  // Does something upstream pin this node's opening frame?
+  const back = (to: string, depth = 0): string | null => {
+    if (depth > 3) return null;
+    for (const e of edges) {
+      if (e.target !== to) continue;
+      const handle = e.targetHandle || 'default';
+      /* The same set the forward walk uses. Checking only 'image' and
+         'frame_start' passed a synthetic test built from the handles I
+         assumed, and found nothing in the real room template, which wires its
+         Last Frame node through 'image_ref'. */
+      if (depth === 0 && !REF_PORTS.has(handle)) continue;
+      const src = nodeOf(e.source);
+      if (src?.type === 'frame') {
+        const deeper = back(e.source, depth + 1);
+        if (deeper) return deeper;
+        continue;
+      }
+      if (src?.data?.mediaType === 'video') return e.source;
+    }
+    return null;
+  };
+  const from = back(id);
+  if (from) return { role: 'continuation', continues: labelOf(from) };
+
+  return { role: 'shot' };
+}
+
 export function orderShotTargets(
   askId: string,
   nodes: Array<{ id: string; type?: string; position?: { x: number; y: number }; data?: any }>,
@@ -491,6 +599,7 @@ export function orderShotTargets(
     out.push({
       id: node.id,
       media: d.mediaType === 'video' ? 'video' : d.mediaType === 'text' ? 'text' : 'image',
+      ...roleOf(node.id, nodes, edges),
       platform: String(d.platform || 'flow'),
       label: String(d.label || '').trim() || undefined,
       aspectRatio: d.aspectRatio || undefined,

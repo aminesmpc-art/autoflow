@@ -9,7 +9,7 @@
  */
 
 import {
-  storyBrief, beatsFor, beatSummary, hasStory, STRUCTURES, DEFAULT_STORY,
+  storyBrief, beatsFor, beatSummary, hasStory, STRUCTURES, RULES, DEFAULT_STORY,
   type StorySettings,
 } from '../studio/ask/storyPlan';
 import type { ShotTarget } from '../studio/ask/storyboard';
@@ -125,5 +125,29 @@ describe('housekeeping', () => {
   it('offers a structure for each way these pieces are actually built', () => {
     expect(STRUCTURES.map((s) => s.id)).toEqual(['hook', 'transform', 'loop', 'free']);
     for (const s of STRUCTURES) expect(s.name.length).toBeGreaterThan(3);
+  });
+});
+
+describe('continuity rules', () => {
+  const targets = clips(2, '10s');
+
+  it('says nothing when none are on', () => {
+    expect(storyBrief('x', settings(), targets)).not.toContain('RULES —');
+  });
+
+  it('states each one it was given, and only those', () => {
+    const b = storyBrief('x', settings({ rules: ['cumulative', 'fixedCamera'] }), targets);
+    expect(b).toContain('RULES —');
+    expect(b).toContain('nothing is removed, reset');
+    expect(b).toContain('ONE fixed camera');
+    expect(b).not.toContain('enters the frame in a person');
+  });
+
+  it('offers exactly the failures this format actually hits', () => {
+    /* A short fixed list rather than a free-text box: a rule that can be
+       written any way cannot also be checked, and these are worth checking. */
+    expect(RULES.map((r) => r.id))
+      .toEqual(['cumulative', 'fixedCamera', 'samePerson', 'inHand']);
+    for (const r of RULES) expect(r.line.length).toBeGreaterThan(40);
   });
 });
