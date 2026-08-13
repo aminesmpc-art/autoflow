@@ -19,6 +19,7 @@ import {
   shotContract, parseShots, checkShots, repairMessage, summarise,
   orderShotTargets, type ShotTarget,
 } from '../ask/storyboard';
+import { storyBrief, STORY_FIELDS, DEFAULT_STORY, type StorySettings } from '../ask/storyPlan';
 import { runAgent, type AgentStep, type ToolOutcome } from './agent';
 import { toolsByName } from './tools';
 import {
@@ -525,8 +526,20 @@ export class WorkflowRunner {
       if (!prompt.trim()) {
         throw new Error('No idea connected — link a Prompt node to the T input');
       }
-      const brief = composeAskPrompt(nodeData.preset, prompt, false);
-      return this.executeStoryboardAsk(nodeId, nodeData, brief, targets);
+      /* The story settings first, then whatever extra brief the preset adds.
+         Order matters: the cast and world are the fixed part, and a preset is
+         craft applied on top of them. */
+      const settings: StorySettings = {
+        ...DEFAULT_STORY,
+        ...(nodeData.cast ? { cast: nodeData.cast } : {}),
+        world: nodeData.world || '',
+        look: nodeData.look || '',
+        structure: nodeData.structure || DEFAULT_STORY.structure,
+        beats: Number(nodeData.beats) || 0,
+      };
+      const extra = nodeData.preset ? composeAskPrompt(nodeData.preset, '', false) : '';
+      const brief = storyBrief(prompt, settings, targets) + (extra ? `\n${extra}` : '');
+      return this.executeStoryboardAsk(nodeId, nodeData, brief, targets, true);
     }
 
     // Gather reference images from EVERY upstream image connection.
@@ -935,13 +948,15 @@ export class WorkflowRunner {
     nodeId: string,
     nodeData: any,
     brief: string,
-    targets: ShotTarget[]
+    targets: ShotTarget[],
+    /** Story nodes also ask for the cast, world and look, and lock them. */
+    isStory = false
   ): Promise<NodeResult> {
     const store = useStudioStore.getState();
     const platform = CHAT_PLATFORMS.includes(nodeData.platform) ? nodeData.platform : 'chatgpt';
     const MAX_REPAIRS = 2;
 
-    let message = brief + '\n' + shotContract(targets);
+    let message = brief + '\n' + shotContract(targets, isStory ? STORY_FIELDS : '');
     let best: { shots: string[]; problems: number; story: string } | null = null;
 
     for (let round = 0; round <= MAX_REPAIRS; round++) {
@@ -955,7 +970,10 @@ export class WorkflowRunner {
       });
 
       const reply = await this.askAgent(nodeId, platform, message, round === 0);
-      const { shots, anchor, story, problem } = parseShots(reply);
+      const {
+        shots, anchor, story, problem,
+        cast: parsedCast, world: parsedWorld, look: parsedLook,
+      } = parseShots(reply);
 
       if (problem) {
         console.warn(`[Runner] Storyboard: ${problem}`);
@@ -970,6 +988,16 @@ export class WorkflowRunner {
 
       if (!best || problems.length < best.problems) {
         best = { shots: shots.map((sh) => sh.prompt), problems: problems.length, story: story || '' };
+        /* Written back so the next run does not re-decide who the character
+           is. Only what the user has not already locked — a field they typed
+           outranks anything the model returns. */
+        if (isStory) {
+          const patch: Record<string, unknown> = {};
+          if (parsedCast && !(nodeData.cast || []).length) patch.cast = parsedCast;
+          if (parsedWorld && !nodeData.world) patch.world = parsedWorld;
+          if (parsedLook && !nodeData.look) patch.look = parsedLook;
+          if (Object.keys(patch).length) store.updateNodeData(nodeId, patch);
+        }
       }
       if (!problems.length) break;
       if (round === MAX_REPAIRS) break;

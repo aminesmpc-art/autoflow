@@ -2287,3 +2287,100 @@ video.sn-media__img { object-fit: contain; background: var(--canvas); cursor: de
    holding the story together. */
 .sn-wrap--kind-story .sn { border-color: var(--accent-30); }
 .sn-wrap--kind-story .sn-label__icon { color: var(--accent); }
+
+/* ── Story node, expanded ────────────────────────────────────
+   Collapsed by default. Cast, world and look are empty until the first run
+   fills them, and a column of blank inputs on a canvas reads as work to do
+   rather than as something already handled. */
+.sn-story__beats {
+  float: right;
+  color: var(--text-3);
+}
+.sn-story__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: var(--s-2);
+  padding: var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--t-micro);
+  cursor: pointer;
+}
+.sn-story__toggle:hover { border-color: var(--accent-30); color: var(--text); }
+.sn-story__toggle-state {
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-size: var(--t-micro);
+}
+.sn-story__panel {
+  margin-top: var(--s-2);
+  padding: var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  background: var(--sunken);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.sn-story__note {
+  font-size: var(--t-micro);
+  line-height: 1.45;
+  color: var(--text-3);
+}
+.sn-story__section { display: flex; flex-direction: column; gap: var(--s-1); }
+.sn-story__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.sn-story__add,
+.sn-story__del {
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--t-micro);
+  padding: 2px var(--s-2);
+  cursor: pointer;
+}
+.sn-story__add:hover { border-color: var(--accent-30); color: var(--accent); }
+.sn-story__del:hover { border-color: var(--bad-30); color: var(--bad); }
+.sn-story__blank { font-size: var(--t-micro); color: var(--text-3); }
+.sn-story__cast {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding: var(--s-2);
+  border-radius: var(--r-chip);
+  background: var(--surface);
+}
+.sn-story__cast-row { display: flex; gap: var(--s-2); }
+.sn-story__input,
+.sn-story__area {
+  width: 100%;
+  padding: var(--s-1) var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--t-micro);
+  line-height: 1.45;
+}
+.sn-story__area { resize: vertical; }
+.sn-story__input:focus,
+.sn-story__area:focus { outline: none; border-color: var(--accent); }
+.sn-story__input--num { width: 64px; flex: none; }
+.sn-story__beatrow { display: flex; align-items: center; gap: var(--s-2); }

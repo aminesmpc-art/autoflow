@@ -127,7 +127,7 @@ const MOTION = /\b(camera|pan|tilt|dolly|zoom|track(?:ing)?|orbit|push(?:es|ing)
  * checker below rejects all of it, and it is cheaper to say so once here than
  * to spend a repair round on it.
  */
-export function shotContract(targets: ShotTarget[]): string {
+export function shotContract(targets: ShotTarget[], extraFields = ''): string {
   /* Each target described by what it is configured to do, not just what kind
      of thing it is. A writer that knows the node is 9:16, ten seconds long and
      pinned to a start frame writes a different — correct — prompt. */
@@ -191,6 +191,7 @@ export function shotContract(targets: ShotTarget[]): string {
     'Reply with ONE JSON object and nothing else — no preamble, no code fence:',
     '',
     '{',
+    ...(extraFields ? extraFields.split('\n') : []),
     ...(many
       ? [
         '  "story": "one sentence on what carries through all of them",',
@@ -216,7 +217,19 @@ export function shotContract(targets: ShotTarget[]): string {
 }
 
 /** Pull the envelope out of a reply that may be wrapped in anything. */
-export function parseShots(reply: string): { shots: Shot[]; story?: string; anchor?: string; problem?: string } {
+export interface ParsedReply {
+  shots: Shot[];
+  story?: string;
+  anchor?: string;
+  /* The story behind the shots, so a Story node can lock it and stop
+     asking. Optional: an ordinary Ask AI never sends these. */
+  cast?: Array<{ name: string; look: string }>;
+  world?: string;
+  look?: string;
+  problem?: string;
+}
+
+export function parseShots(reply: string): ParsedReply {
   const text = (reply || '').trim();
   if (!text) return { shots: [], problem: 'The reply was empty.' };
 
@@ -244,10 +257,19 @@ export function parseShots(reply: string): { shots: Shot[]; story?: string; anch
       title: String(s?.title || `Shot ${i + 1}`).trim(),
       prompt: String(s?.prompt ?? s?.text ?? '').trim(),
     }));
+    const cast = Array.isArray(parsed?.cast)
+      ? parsed.cast
+        .map((c: any) => ({ name: String(c?.name || '').trim(), look: String(c?.look || '').trim() }))
+        .filter((c: any) => c.name || c.look)
+      : undefined;
+
     return {
       shots,
       story: typeof parsed?.story === 'string' ? parsed.story : undefined,
       anchor: typeof parsed?.anchor === 'string' ? parsed.anchor : undefined,
+      cast: cast && cast.length ? cast : undefined,
+      world: typeof parsed?.world === 'string' && parsed.world.trim() ? parsed.world.trim() : undefined,
+      look: typeof parsed?.look === 'string' && parsed.look.trim() ? parsed.look.trim() : undefined,
     };
   }
   return { shots: [], problem: 'No JSON object with a "shots" array was found in the reply.' };
