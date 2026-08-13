@@ -18,6 +18,8 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
+import { Icon } from './Icon';
+import { BrandIcon } from './BrandIcon';
 import { useStudioStore, FREE_LIMITS } from '../store';
 import { consumeStudioRun } from '../../shared/api';
 import { PromptNode } from '../nodes/PromptNode';
@@ -539,7 +541,7 @@ function CanvasInner() {
       <div className="studio-topbar">
         <div className="studio-topbar__left">
           <button className="studio-topbar__back" onClick={() => setView('gallery')} title="Back to Gallery">
-            ←
+            <Icon name="back" className="studio-topbar__glyph" />
           </button>
           <input
             className="studio-topbar__name"
@@ -554,7 +556,7 @@ function CanvasInner() {
         <div className="studio-topbar__right">
           {isPro ? (
             <span className="studio-topbar__stat">
-              ⚡ Nodes {nodes.length} · <span className="studio-topbar__pro">PRO</span>
+              Nodes {nodes.length} · <span className="studio-topbar__pro">PRO</span>
             </span>
           ) : (
             <>
@@ -570,7 +572,7 @@ function CanvasInner() {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                ⬆ Upgrade
+                <Icon name="upgrade" className="studio-topbar__glyph" /> Upgrade
               </a>
             </>
           )}
@@ -580,7 +582,7 @@ function CanvasInner() {
             disabled={nodes.length === 0}
             title="Export workflow as JSON"
           >
-            ⭳
+            <Icon name="import" className="studio-topbar__glyph" />
           </button>
           <button
             className={`studio-topbar__save ${saveState === 'error' ? 'studio-topbar__save--error' : ''} ${saveState === 'saved' ? 'studio-topbar__save--ok' : ''}`}
@@ -588,10 +590,11 @@ function CanvasInner() {
             disabled={nodes.length === 0 || saveState === 'saving'}
             title={saveError || 'Save workflow (Ctrl+S)'}
           >
-            {saveState === 'saving' ? 'Saving…'
-              : saveState === 'saved' ? '✓ Saved'
-              : saveState === 'error' ? '⚠ Failed'
-              : isDirty ? '● Save' : 'Save'}
+            {saveState === 'saving' ? <>Saving…</>
+              : saveState === 'saved' ? <><Icon name="check" className="studio-topbar__glyph" /> Saved</>
+              : saveState === 'error' ? <><Icon name="alert" className="studio-topbar__glyph" /> Failed</>
+              : isDirty ? <><Icon name="dot" className="studio-topbar__glyph studio-topbar__glyph--dirty" /> Save</>
+              : <>Save</>}
           </button>
         </div>
       </div>
@@ -616,11 +619,11 @@ function CanvasInner() {
         <div className="studio-toolbar__group">
           <div className="studio-toolbar__heading">Inputs</div>
           <button className="studio-toolbar__btn studio-toolbar__btn--add" onClick={addPromptNode} aria-label="Add Prompt node">
-            <span className="studio-toolbar__btn-icon" aria-hidden="true">✏️</span>
+            <Icon name="prompt" kind="prompt" className="studio-toolbar__btn-icon" />
             <span className="studio-toolbar__btn-label">Prompt</span>
           </button>
           <button className="studio-toolbar__btn" onClick={addImageNode} aria-label="Add Image node">
-            <span className="studio-toolbar__btn-icon" aria-hidden="true">🖼️</span>
+            <Icon name="image" kind="image" className="studio-toolbar__btn-icon" />
             <span className="studio-toolbar__btn-label">Image</span>
           </button>
         </div>
@@ -628,15 +631,15 @@ function CanvasInner() {
         <div className="studio-toolbar__group">
           <div className="studio-toolbar__heading">Generate</div>
           <button className="studio-toolbar__btn studio-toolbar__btn--primary" onClick={addGenerateNode} aria-label="Add Generate node">
-            <span className="studio-toolbar__btn-icon" aria-hidden="true">🎬</span>
+            <BrandIcon name="flow" className="studio-toolbar__btn-icon studio-toolbar__btn-icon--brand" />
             <span className="studio-toolbar__btn-label">Flow clip</span>
           </button>
           <button className="studio-toolbar__btn" onClick={addGrokNode} aria-label="Add Grok clip node">
-            <span className="studio-toolbar__btn-icon" aria-hidden="true">⚡</span>
+            <BrandIcon name="grok" className="studio-toolbar__btn-icon studio-toolbar__btn-icon--brand" />
             <span className="studio-toolbar__btn-label">Grok clip</span>
           </button>
           <button className="studio-toolbar__btn" onClick={addAskNode} aria-label="Add Ask AI node">
-            <span className="studio-toolbar__btn-icon" aria-hidden="true">💬</span>
+            <Icon name="chat" kind="ask" className="studio-toolbar__btn-icon" />
             <span className="studio-toolbar__btn-label">Ask AI</span>
           </button>
           {/* An agent belongs here, not under "Continue a clip". It starts
@@ -644,7 +647,7 @@ function CanvasInner() {
               like everything else in this group — it sat between Last frame
               and Extend, which both genuinely continue one. */}
           <button className="studio-toolbar__btn" onClick={addAgentNode} aria-label="Add Agent node">
-            <span className="studio-toolbar__btn-icon" aria-hidden="true">🧠</span>
+            <Icon name="agent" kind="agent" className="studio-toolbar__btn-icon" />
             <span className="studio-toolbar__btn-label">Agent</span>
           </button>
         </div>
@@ -652,11 +655,11 @@ function CanvasInner() {
         <div className="studio-toolbar__group">
           <div className="studio-toolbar__heading">Continue a clip</div>
           <button className="studio-toolbar__btn" onClick={addFrameNode} aria-label="Add Last Frame node">
-            <span className="studio-toolbar__btn-icon" aria-hidden="true">🎞</span>
+            <Icon name="frame" kind="frame" className="studio-toolbar__btn-icon" />
             <span className="studio-toolbar__btn-label">Last frame</span>
           </button>
           <button className="studio-toolbar__btn" onClick={addExtendNode} aria-label="Add Extend node">
-            <span className="studio-toolbar__btn-icon" aria-hidden="true">⏱</span>
+            <Icon name="extend" kind="frame" className="studio-toolbar__btn-icon" />
             <span className="studio-toolbar__btn-label">Extend</span>
           </button>
         </div>
@@ -674,7 +677,7 @@ function CanvasInner() {
               disabled={!canRun}
               aria-label="Run workflow"
             >
-              <span className="studio-toolbar__btn-icon" aria-hidden="true">▶</span>
+              <Icon name="play" className="studio-toolbar__btn-icon" />
               <span className="studio-toolbar__btn-label">
                 {canRun ? 'Run workflow' : 'Add a node to run'}
               </span>

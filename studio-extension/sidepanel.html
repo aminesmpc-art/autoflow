@@ -56,7 +56,7 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
     </button>
     <button class="sp-top__icon" id="btn-account" title="Account" aria-label="Account">
-      <span id="top-avatar">👤</span>
+      <span id="top-avatar"><svg class="sp-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.4" r="3.7"/><path d="M4.6 20.2a7.4 7.4 0 0 1 14.8 0"/></svg></span>
     </button>
   </header>
 
@@ -96,7 +96,7 @@
            platform tab, so this is the only view of what is happening. -->
       <section class="sp-run" id="run-card">
         <div id="run-idle" class="sp-run__idle">
-          <span class="sp-run__idle-icon" aria-hidden="true">◇</span>
+          <svg class="sp-run__idle-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.6"/><path d="M10.2 8.6 15.6 12l-5.4 3.4z" fill="currentColor" stroke="none"/></svg>
           <span class="sp-run__idle-text">Nothing running</span>
           <span class="sp-run__idle-hint" id="run-idle-hint">Open the canvas to build or run a workflow.</span>
         </div>
@@ -282,7 +282,7 @@
   <!-- ── Account ── -->
   <div class="sp-modal" id="acct-modal" hidden>
     <div class="sp-modal__card" role="dialog" aria-modal="true" aria-label="Account">
-      <button class="sp-modal__x" id="acct-close" aria-label="Close">✕</button>
+      <button class="sp-modal__x" id="acct-close" aria-label="Close"><svg class="sp-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 6.4l11.2 11.2M17.6 6.4L6.4 17.6"/></svg></button>
 
       <div id="acct-out" hidden></div>
 

@@ -304,7 +304,7 @@ body {
 }
 .sp-run__idle-icon {
   grid-row: span 2;
-  font-size: var(--t-lg);
+  width: 20px; height: 20px;
   color: var(--text-3);
   line-height: 1;
 }
@@ -1087,3 +1087,20 @@ body {
   color: var(--text);
 }
 .sp-idea:focus-visible { outline: none; box-shadow: var(--focus); }
+
+/* Shared shape for the panel's inline marks, matching the nav tabs and the
+   canvas rail — one grid, one weight, everywhere. */
+.sp-glyph, .sp-run__idle-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+.sp-glyph { width: 15px; height: 15px; }
+.sp-modal__x .sp-glyph { width: 13px; height: 13px; }
+
+/* The platform's own mark, sized to sit with the label rather than tower over
+   it. Brand marks keep their own colour, so nothing here tints them. */
+.sp-ai__mark { width: 13px; height: 13px; flex: none; }

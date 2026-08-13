@@ -667,12 +667,43 @@
 }
 .studio-toolbar__btn:disabled:hover { background: transparent; }
 
+/* A box, not a glyph. These were emoji sized with font-size, which put them
+   on a text baseline inside a flex row that wanted a centred square — and
+   left them whatever colour the platform's emoji font decided. */
 .studio-toolbar__btn-icon {
   flex: 0 0 18px;
-  font-size: var(--t-lg);
-  line-height: 1;
-  text-align: center;
+  width: 18px;
+  height: 18px;
+  color: var(--text-3);
+  transition: color var(--fast);
 }
+
+/* Tinted with the family of the node the button adds, so the rail teaches the
+   same colour language the canvas speaks: a green prompt icon here makes a
+   green prompt header there mean something. Held slightly back at rest and
+   brought to full on hover — the colour is a label, not an alarm. */
+.studio-toolbar__btn-icon[data-kind='prompt'] { color: var(--n-prompt); }
+.studio-toolbar__btn-icon[data-kind='image']  { color: var(--n-image); }
+.studio-toolbar__btn-icon[data-kind='video']  { color: var(--n-video); }
+.studio-toolbar__btn-icon[data-kind='ask']    { color: var(--n-ask); }
+.studio-toolbar__btn-icon[data-kind='agent']  { color: var(--n-agent); }
+.studio-toolbar__btn-icon[data-kind='frame']  { color: var(--n-frame); }
+.studio-toolbar__btn-icon[data-kind] { opacity: 0.78; }
+.studio-toolbar__btn:hover .studio-toolbar__btn-icon[data-kind],
+.studio-toolbar__btn--primary .studio-toolbar__btn-icon[data-kind] { opacity: 1; }
+
+/* Brand marks bring their own colour, so the family tint and the muting must
+   not touch them — a half-opacity OpenAI knot is just a faded logo. */
+.studio-toolbar__btn-icon--brand { opacity: 1; }
+
+.studio-topbar__glyph {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+  flex: none;
+}
+.studio-topbar__glyph--dirty { width: 8px; height: 8px; color: var(--accent); }
+.studio-topbar__back .studio-topbar__glyph { width: 17px; height: 17px; vertical-align: -4px; }
 
 .studio-toolbar__btn-label {
   flex: 1 1 auto;

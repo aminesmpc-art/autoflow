@@ -17,6 +17,7 @@ import {
   submitCommunityTemplate, type CommunityCard,
 } from '../shared/api';
 import { loadTemplates, refreshTemplates } from '../studio/templates/loader';
+import { BRAND_MARKS } from '../studio/components/brandMarks';
 import type { Template } from '../studio/templates';
 import { getAskPresets } from '../studio/presets';
 import { signInWithGoogle } from './googleSignIn';
@@ -509,6 +510,28 @@ const MANUAL_CHATS: Array<[string, string]> = [
   ['DeepSeek', 'https://chat.deepseek.com/'],
 ];
 
+/** The platform's own mark, or a neutral dot when we do not have one.
+ *  Four identical dots said nothing about which chat was about to get the
+ *  brief; the logo is the fastest way to read that, and people already know
+ *  these shapes. */
+function brandMark(key: string): Element {
+  const mark = (BRAND_MARKS as Record<string, { viewBox: string; body: string; color: string }>)[key];
+  if (!mark) {
+    const dot = document.createElement('span');
+    dot.className = 'sp-ai__dot';
+    return dot;
+  }
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'sp-ai__mark');
+  svg.setAttribute('viewBox', mark.viewBox);
+  svg.setAttribute('fill', mark.color);
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  // Build-time constants generated from assets/brands — no untrusted input.
+  svg.innerHTML = mark.body;
+  return svg;
+}
+
 function renderAiButtons(idea: () => string): void {
   const auto = document.getElementById('build-ai');
   if (auto) {
@@ -519,11 +542,9 @@ function renderAiButtons(idea: () => string): void {
       b.className = 'sp-ai__link sp-ai__link--auto';
       b.dataset.key = entry.key;
       b.title = `Ask ${entry.name} and load the workflow`;
-      const dot = document.createElement('span');
-      dot.className = 'sp-ai__dot';
       const label = document.createElement('span');
       label.textContent = entry.name;
-      b.append(dot, label);
+      b.append(brandMark(entry.key), label);
       b.addEventListener('click', () => {
         const text = idea().trim();
         if (!text) { buildSays('bad', 'Describe the idea first.'); return; }
@@ -563,11 +584,9 @@ function renderAiButtons(idea: () => string): void {
       a.type = 'button';
       a.className = 'sp-ai__link';
       a.title = `Open ${name} in a new tab`;
-      const dot = document.createElement('span');
-      dot.className = 'sp-ai__dot';
       const label = document.createElement('span');
       label.textContent = name;
-      a.append(dot, label);
+      a.append(brandMark(name.toLowerCase().replace(/[^a-z]/g, '')), label);
       a.addEventListener('click', () => { chrome.tabs.create({ url }).catch(() => {}); });
       manual.append(a);
     }

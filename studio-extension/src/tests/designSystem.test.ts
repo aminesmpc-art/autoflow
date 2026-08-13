@@ -113,3 +113,45 @@ describe('one design system', () => {
     }
   });
 });
+
+describe('platform marks are the real marks', () => {
+  it('keeps the source files it was generated from', () => {
+    /* The generated module is not the record — assets/brands/ is. Keeping the
+       downloads means the next person can diff them against a fresh fetch
+       instead of trusting that a path was transcribed correctly. */
+    const dir = join(SRC, '..', 'assets', 'brands');
+    for (const f of ['chatgpt.svg', 'googlegemini.svg', 'grok.svg', 'claude.svg', 'flow.svg']) {
+      const svg = readFileSync(join(dir, f), 'utf8');
+      expect({ [f]: svg.slice(0, 4) }).toEqual({ [f]: '<svg' });
+      expect(svg.length).toBeGreaterThan(200);
+    }
+  });
+
+  it('carries real geometry for every platform it drives', () => {
+    // Read the module, not its text. Regexing generated source only tests the
+    // regex — the first attempt at this passed a broken pattern for the same
+    // reason `\s` collapses to `s` inside a template literal.
+    const { BRAND_MARKS } = require('../studio/components/brandMarks');
+    for (const name of ['chatgpt', 'gemini', 'grok', 'claude', 'flow']) {
+      const mark = BRAND_MARKS[name];
+      expect({ name, present: !!mark }).toEqual({ name, present: true });
+      expect({ name, viewBox: /^[-\d.]+( [-\d.]+){3}$/.test(mark.viewBox) })
+        .toEqual({ name, viewBox: true });
+      // A mark with no drawing commands is a blank square nobody would notice.
+      expect({ name, drawn: mark.body.length > 120 && mark.body.includes('<path') })
+        .toEqual({ name, drawn: true });
+      expect({ name, colour: /^#[0-9A-F]{6}$/i.test(mark.color) })
+        .toEqual({ name, colour: true });
+    }
+  });
+
+  it('does not let brand colours leak into the token system', () => {
+    /* Brand marks are exempt from the palette on purpose, which only works if
+       the exemption stays inside brandMarks.ts. A vendor hex turning up in a
+       stylesheet means someone has started theming with it. */
+    for (const [surface, css] of [['panel', panel()], ['studio', studio()]] as const) {
+      const leaked = (css.match(/#8E75B2|#D97757|#10A37F/gi) || []);
+      expect({ [surface]: leaked }).toEqual({ [surface]: [] });
+    }
+  });
+});
