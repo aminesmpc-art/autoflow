@@ -973,6 +973,36 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
 }
 
 /**
+ * Whether the newest assistant turn has finished, or null if it cannot be told.
+ *
+ * ChatGPT renders the action bar — copy, rate, share — only once a turn is
+ * complete, so `copy-turn-action-button` is a positive statement that the
+ * answer is finished. Everything else available here is an absence: the stop
+ * button is gone, the text has not changed for two polls. Absences lie. The
+ * stop button disappears between chunks while the model thinks, and a pause
+ * mid-answer looks exactly like a settled one, which is how a half-written
+ * prompt reached a generator.
+ *
+ * Scoped to the LAST turn, because every earlier turn has a copy button too
+ * and a page-wide query would report "finished" the moment the conversation
+ * had any history at all — which is every run after the first.
+ *
+ * Returns null rather than false when no turn containers can be found. A
+ * redesign that renames the wrapper should fall back to the old signals, not
+ * wait forever for a button it can no longer locate.
+ */
+function turnFinished(): boolean | null {
+  const turns = Array.from(document.querySelectorAll<HTMLElement>(
+    'article, [data-testid^="conversation-turn"]'
+  ));
+  for (let i = turns.length - 1; i >= 0; i--) {
+    if (!turns[i].querySelector('[data-message-author-role="assistant"]')) continue;
+    return !!turns[i].querySelector('[data-testid="copy-turn-action-button"]');
+  }
+  return null;
+}
+
+/**
  * The newest assistant turn's text.
  *
  * Found structurally rather than by class name: ChatGPT's styling churns
@@ -1030,7 +1060,8 @@ async function trackTextReply(
     const current = readLatestReply().trim();
     /* Silence, and nothing in flight. Checked before the "has it started"
        skip below, so a chat that never answers at all still ends. */
-    if (Date.now() - lastChangeAt > TEXT_QUIET_MS && !isGenerating()) break;
+    if (Date.now() - lastChangeAt > TEXT_QUIET_MS && !isGenerating()
+        && turnFinished() !== false) break;
     // Unchanged from before we asked means our answer hasn't started yet.
     if (!current || current === priorReply) continue;
 
@@ -1041,7 +1072,10 @@ async function trackTextReply(
       stableCount = 0;
     }
 
-    if (stableCount >= 2 && !isGenerating()) {
+    /* The action bar is the only positive signal that the turn is over, so it
+       has the deciding vote when it can be read. false means still writing —
+       keep waiting even though the text looks settled. */
+    if (stableCount >= 2 && !isGenerating() && turnFinished() !== false) {
       const cleaned = raw ? current : cleanAssistantReply(current);
       if (!raw && !looksLikeUsablePrompt(cleaned)) {
         // Usually ChatGPT asking a clarifying question instead of answering.
