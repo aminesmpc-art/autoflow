@@ -78,15 +78,22 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
           )}
         </div>
 
+        <div className="sn-story__what">
+          Writes the prompts for the nodes you connect — all in one go, so they
+          match each other.
+        </div>
+
         {/* ── What it will write, straight from the wires ── */}
         {targets.length === 0 ? (
           <div className="sn-story__empty">
-            Wire this to the nodes it should write for.
+            <strong>Not connected yet.</strong>
+            Drag from the dot on the right to each video or image node you want
+            it to write.
           </div>
         ) : (
           <div className="sn-story__targets">
             <div className="sn-story__count">
-              {targets.length} prompt{targets.length === 1 ? '' : 's'}, one reply
+              Will write {targets.length} prompt{targets.length === 1 ? '' : 's'}
               <span className="sn-story__beats">{beatSummary(targets, story.beats)}</span>
             </div>
             <ol className="sn-story__list">
@@ -106,7 +113,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
         )}
 
         <div className="sn-field">
-          <label className="sn-field__label">Platform</label>
+          <label className="sn-field__label">Which AI writes them</label>
           <select
             className="sn-field__select nodrag"
             value={d.platform || 'chatgpt'}
@@ -120,7 +127,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
         </div>
 
         <div className="sn-field">
-          <label className="sn-field__label">Structure</label>
+          <label className="sn-field__label">How the story flows</label>
           <select
             className="sn-field__select nodrag"
             value={story.structure}
@@ -142,25 +149,26 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
           onClick={() => setOpen(!open)}
           aria-expanded={open}
         >
-          <span>{open ? '▾' : '▸'} Cast, world and look</span>
+          <span>{open ? '▾' : '▸'} Who is in it, and where</span>
           <span className="sn-story__toggle-state">
             {/* hasStory ignores the empty row the + button adds: pressing Add
                 and typing nothing has locked nothing, and saying otherwise
                 would claim the AI is being held to a blank description. */}
-            {hasStory(story) ? 'locked' : 'AI decides'}
+            {hasStory(story) ? 'You set this' : 'AI will choose'}
           </span>
         </button>
 
         {open && (
           <div className="sn-story__panel">
             <div className="sn-story__note">
-              Anything left empty is decided on the first run and written back here,
-              where you can correct it. Filled fields are held to in every prompt.
+              Leave these empty and the AI decides them on the first run, then fills
+              them in here so you can change a word. Anything you write is used
+              exactly as written, in every prompt.
             </div>
 
             <div className="sn-story__section">
               <div className="sn-story__section-head">
-                <span>Cast</span>
+                <span>People</span>
                 <button
                   type="button"
                   className="sn-story__add nodrag"
@@ -170,7 +178,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 </button>
               </div>
               {story.cast.length === 0 && (
-                <div className="sn-story__blank">No one locked — the AI will decide.</div>
+                <div className="sn-story__blank">Nobody set — the AI will choose.</div>
               )}
               {story.cast.map((c, i) => (
                 <div key={i} className="sn-story__cast">
@@ -194,7 +202,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                     className="sn-story__area nodrag"
                     rows={2}
                     value={c.look}
-                    placeholder="Everything that must be identical every time they appear"
+                    placeholder="What they look like — repeated in every shot so they stay the same person"
                     onChange={(e) => setCast(i, { look: e.target.value })}
                   />
                 </div>
@@ -202,29 +210,29 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
             </div>
 
             <div className="sn-story__section">
-              <div className="sn-story__section-head"><span>World</span></div>
+              <div className="sn-story__section-head"><span>Place</span></div>
               <textarea
                 className="sn-story__area nodrag"
                 rows={2}
                 value={story.world}
-                placeholder="The place, described once — the AI will fill this in"
+                placeholder="Where it happens — the AI will fill this in"
                 onChange={(e) => set({ world: e.target.value })}
               />
             </div>
 
             <div className="sn-story__section">
-              <div className="sn-story__section-head"><span>Look</span></div>
+              <div className="sn-story__section-head"><span>Style</span></div>
               <textarea
                 className="sn-story__area nodrag"
                 rows={2}
                 value={story.look}
-                placeholder="Palette, lens, lighting — the AI will fill this in"
+                placeholder="Colours, lighting, camera feel — the AI will fill this in"
                 onChange={(e) => set({ look: e.target.value })}
               />
             </div>
 
             <div className="sn-story__section">
-              <div className="sn-story__section-head"><span>Beats</span></div>
+              <div className="sn-story__section-head"><span>How many moments</span></div>
               <div className="sn-story__beatrow">
                 <input
                   className="sn-story__input sn-story__input--num nodrag"
@@ -237,14 +245,14 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 />
                 <span className="sn-story__blank">
                   {story.beats
-                    ? 'Set by you.'
-                    : `Auto from the clips — ${beatSummary(targets)}.`}
+                    ? 'You set this.'
+                    : `Worked out from the clip lengths — ${beatSummary(targets)}.`}
                 </span>
               </div>
             </div>
 
             <div className="sn-field">
-              <label className="sn-field__label">Extra brief</label>
+              <label className="sn-field__label">Extra instructions (optional)</label>
               <select
                 className="sn-field__select nodrag"
                 value={d.preset || ''}
