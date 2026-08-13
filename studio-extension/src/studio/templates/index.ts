@@ -1781,7 +1781,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
       + 'Last Frame node holds the continuity, which is what stops Part 2 rebuilding the room.',
     category: 'Content',
     difficulty: 'Medium',
-    nodeCount: 8,
+    nodeCount: 7,
     thumbnail: '🏠',
     nodes: [
       promptNode(
@@ -1798,49 +1798,13 @@ export const BUILTIN_TEMPLATES: Template[] = [
         { label: 'Storyboard poster', mediaType: 'image', platform: 'chatgpt', aspectRatio: '9:16' },
         1000, 60,
       ),
-      promptNode(
-        'p1',
-        'Part 1 motion (00:00–00:10)',
-        MOTION_RULES
-        + '\n\nUSE THE ATTACHED STORYBOARD AS A DESIGN REFERENCE ONLY. It is a blueprint: do not '
-        + 'animate its panels, borders, text, numbers or captions. Show a real room.\n\n'
-        + '00:00–00:04 Scene 01. Start on the empty large spacious room, camera already fixed. '
-        + 'The girl walks in carrying the floor light rails and lays them across most of the '
-        + 'floor, connecting them by hand until they glow.\n'
-        + '00:04–00:08 Scene 02. She carries in the fantasy material, sprays and spreads it over '
-        + 'the lit floor, then pours the glossy transparent top layer by hand. The floor lights '
-        + 'stay glowing through it.\n'
-        + '00:08–00:10 Scene 03 begins. She carries the first wall piece in and presses it onto '
-        + 'the main wall.\n\n'
-        + 'End on a clean readable frame showing everything built so far and the girl mid-action '
-        + 'at the wall, with only the next wall pieces near her.',
-        1000, 480,
-      ),
+      askNode('motion', 'Write both motion prompts', 1000, 560, 'room_motion_director'),
       genNode(
         'part1',
         { label: 'Part 1 — 10s', mediaType: 'video', platform: 'flow', aspectRatio: '9:16', duration: '10s' },
         1480, 300,
       ),
       frameNode('handoff', 'Ends on → Reference 2', 1960, 300),
-      promptNode(
-        'p2',
-        'Part 2 motion (00:10–00:20)',
-        MOTION_RULES
-        + '\n\nTWO REFERENCES. The storyboard is the design blueprint — never animate its panels, '
-        + 'text or numbers. The Last Frame image is the exact starting frame.\n\n'
-        + 'CONTINUE from that frame. Do not restart, do not return to an empty room, do not '
-        + 'rebuild Scene 01 or Scene 02, do not change the room, camera or the girl, and do not '
-        + 'remove or turn off anything already built.\n\n'
-        + '00:00–00:04 Finish Scene 03. She mounts the remaining wall pieces and connects the '
-        + 'final cable until the wall feature is complete and dominant.\n'
-        + '00:04–00:07 Scene 04. She carries in a ladder, climbs it, and installs the ceiling '
-        + 'feature by hand. The finished floor and wall stay visible below.\n'
-        + '00:07–00:10 Scene 05. She brings in the hero furniture, positions it herself, places '
-        + 'the rug and pillows, and switches on the final lights.\n\n'
-        + 'End on the completed room with the girl beside the hero furniture. Everything built '
-        + 'across both parts is visible and lit.',
-        1960, 660,
-      ),
       genNode(
         'part2',
         { label: 'Part 2 — 10s', mediaType: 'video', platform: 'flow', aspectRatio: '9:16', duration: '10s' },
@@ -1850,14 +1814,19 @@ export const BUILTIN_TEMPLATES: Template[] = [
     edges: [
       tEdge('idea', 'story'),
       tEdge('story', 'board'),
-      tEdge('p1', 'part1'),
+      /* The motion writer reads the storyboard concept, then feeds BOTH
+         clips. Two text consumers is what puts the Ask AI node into writing
+         the whole set in one reply — which is the only way Part 2 can be
+         written knowing what Part 1 ends on. */
+      tEdge('story', 'motion'),
+      tEdge('motion', 'part1'),
+      tEdge('motion', 'part2'),
       // Reference 1: the storyboard holds the design for both halves.
       iEdge('board', 'part1'),
       iEdge('board', 'part2'),
       // Reference 2: the frame Part 1 ended on, so Part 2 cannot restart.
       iEdge('part1', 'handoff'),
       iEdge('handoff', 'part2', 'image'),
-      tEdge('p2', 'part2'),
     ],
     requiresNodeTypes: ['prompt', 'generate', 'frame'],
     requiresPlatforms: ['chatgpt', 'flow'],

@@ -17,7 +17,7 @@ import { useStudioStore } from '../store';
 import { composeAskPrompt } from '../presets';
 import {
   shotContract, parseShots, checkShots, repairMessage, summarise,
-  type ShotTarget,
+  orderShotTargets, type ShotTarget,
 } from '../ask/storyboard';
 import { runAgent, type AgentStep, type ToolOutcome } from './agent';
 import { toolsByName } from './tools';
@@ -615,7 +615,15 @@ export class WorkflowRunner {
        most. `askMode: 'single'` opts out for anyone who wants the old way. */
     if (nodeData.mediaType === 'text' && nodeData.askMode !== 'single') {
       const targets = this.shotTargetsFor(nodeId, edges);
-      if (targets.length >= 2) {
+      /* One target or ten, the reply comes back as JSON and gets checked.
+         A single ask used to hand its raw prose straight to a generator, so
+         "Here's a prompt for your poster:" was typed into the composer along
+         with the prompt. The envelope removes that whole class of problem, and
+         the checker catches the rest before anything is spent.
+
+         Zero targets means the node feeds a person or another writer, not a
+         generator — there is no format to hold it to, so it stays free text. */
+      if (targets.length >= 1) {
         return this.executeStoryboardAsk(nodeId, nodeData, askPrompt, targets);
       }
     }
@@ -876,32 +884,9 @@ export class WorkflowRunner {
    * connection would silently renumber every shot after it.
    */
   private shotTargetsFor(askId: string, edges: Edge[]): ShotTarget[] {
-    const nodes = useStudioStore.getState().nodes;
-    const seen = new Set<string>();
-    const out: Array<ShotTarget & { x: number; y: number }> = [];
-
-    for (const e of edges) {
-      if (e.source !== askId) continue;
-      if ((e.targetHandle || 'default') !== 'text') continue;
-      if (seen.has(e.target)) continue;
-      const node = nodes.find((n) => n.id === e.target);
-      if (!node) continue;
-      const d = node.data as any;
-      // Only nodes that will actually generate something from the words.
-      if (node.type !== 'generate' && d?.type !== 'generate') continue;
-      seen.add(e.target);
-      out.push({
-        id: node.id,
-        media: d?.mediaType === 'video' ? 'video' : d?.mediaType === 'text' ? 'text' : 'image',
-        platform: String(d?.platform || 'flow'),
-        label: String(d?.label || '').trim() || undefined,
-        x: node.position?.x ?? 0,
-        y: node.position?.y ?? 0,
-      });
-    }
-    out.sort((a, b) => (a.x - b.x) || (a.y - b.y));
-    return out.map(({ x: _x, y: _y, ...t }) => t);
+    return orderShotTargets(askId, useStudioStore.getState().nodes as any, edges as any);
   }
+
 
   /** This node's own shot, or null when the source did not write a set. */
   private shotFor(sourceId: string, nodeId: string, edges: Edge[]): string | null {
@@ -913,8 +898,8 @@ export class WorkflowRunner {
   }
 
   /**
-   * Write every prompt in one conversation, then refuse to hand over a set
-   * that will not survive the composer.
+   * Get the prompts as JSON, then refuse to hand over a set that will not
+   * survive the composer.
    *
    * The loop is the point. A single request produces a usable set most of the
    * time, and the rest of the time it produces one with a code fence in shot 2

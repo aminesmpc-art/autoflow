@@ -222,6 +222,55 @@ export const BUILTIN_ASK_PRESETS: AskPreset[] = [
      Kept as a preset rather than a workflow template on purpose: it produces
      prompts for a person to use, it does not describe nodes and edges, and
      compilePlan would have nothing to compile. */
+  /* The motion half of the room-transformation session, as a preset.
+
+     It exists because the template used to carry these two prompts as static
+     text: I wrote them once, for one imaginary room, and every user after
+     that was editing my candy lounge by hand. The rules below are the part
+     worth keeping — they are all failures this format hits without them —
+     and the specific room is the part the model should be writing.
+
+     It is deliberately a TWO-shot brief. Part 2 has to begin on the frame
+     Part 1 ended on, and the only way both prompts can agree about what that
+     frame contains is for one reply to write both. The Ask AI node detects
+     that from the two generators wired to it and asks for them together. */
+  {
+    id: 'room_motion_director',
+    name: 'Room motion (both halves)',
+    hint: 'Writes Part 1 and Part 2 together so the second continues the first.',
+    brief:
+      'You are writing the two motion prompts for a 20-second fantasy room ' +
+      'transformation, split into two 10-second clips.\n' +
+      'RULES THAT APPLY TO BOTH, and must be written into BOTH prompts in full:\n' +
+      'Vertical 9:16. Ultra-realistic. The ENTIRE clip is extreme fast hyperlapse — no ' +
+      'normal-speed action, no slow walking, no waiting, no cinematic pacing, no cuts.\n' +
+      'ONE fixed medium-wide camera INSIDE a large, wide, spacious room. No zoom, rotation, ' +
+      'dolly, orbit, push-in or angle change. The frame shows floor, main wall, ceiling, the ' +
+      'girl working and the hero furniture area, and stays visually full.\n' +
+      'The same young female designer throughout: bright red sporty tracksuit, white ' +
+      'sneakers, blonde ponytail. Describe her the same way in both prompts.\n' +
+      'Every tool or material enters the frame IN HER HANDS before it changes anything. She ' +
+      'physically places, sprays, pours, mounts, connects, spreads or styles it. Nothing ' +
+      'appears, builds, floats or installs itself.\n' +
+      'Everything completed stays visible and active — installed lights keep glowing, layers ' +
+      'stay in place, nothing is removed, reset, hidden, turned off or replaced.\n' +
+      'No clutter: only the tool being used right now is on the floor. Every second shows a ' +
+      'large visible change, not a small detail.\n' +
+      'The attached storyboard is a DESIGN REFERENCE ONLY. Never describe its panels, ' +
+      'borders, labels, numbers or captions — describe the real room it depicts.\n' +
+      'PART 1 covers 00:00–00:10: the empty room, the glowing floor base, the fantasy floor ' +
+      'layer, and the beginning of the main wall. It must END on a clean, readable frame ' +
+      'showing everything built so far with the girl mid-action at the wall — that frame ' +
+      'becomes the first frame of Part 2, so describe it precisely.\n' +
+      'PART 2 covers 00:10–00:20 and CONTINUES from that exact frame: it finishes the wall, ' +
+      'transforms the ceiling, brings in the hero furniture and ends on the completed room. ' +
+      'It must never restart, never return to an empty room, never rebuild the floor, and ' +
+      'never remove or dim anything Part 1 installed. Because the generator cannot see Part ' +
+      '1, Part 2 must describe everything already built as already present.\n' +
+      'The room, its palette, its hero furniture and its wall and ceiling features come from ' +
+      'this concept:\n{{subject}}\n\n' +
+      'Output only the prompts themselves — no preamble, no commentary, no notes after them.',
+  },
   {
     id: 'room_transform_director',
     name: 'Room transformation director',
