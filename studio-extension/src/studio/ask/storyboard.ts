@@ -159,13 +159,13 @@ export function shotContract(targets: ShotTarget[], extraFields = ''): string {
        angle on it. */
     if (t.role === 'reference') {
       notes.push(
-        `     NOT a moment in the story. This builds the subject that "${t.referenceFor}"`
-        + ' will look like, so write a clean, evenly lit, unambiguous view of it —'
-        + ' whole subject in frame, plain background, no action, no drama, no cropping.',
+        `     NOT a moment in the story. This is the reference ${t.referenceFor} must`
+        + ' match, so make it clear and complete rather than dramatic: everything those'
+        + ' shots need to see, evenly lit, nothing important cropped or hidden.',
       );
       notes.push(
-        '     Describe the subject in the same words the shots use for it, so the'
-        + ' picture and the prompts agree.',
+        '     Use the same words for the subject that the shots use, or the picture'
+        + ' and the prompts will describe two different things.',
       );
     }
     if (t.role === 'continuation' && t.continues) {
@@ -367,7 +367,12 @@ export function checkShots(shots: Shot[], targets: ShotTarget[], anchor?: string
        the distinctive words in it have to survive into every prompt — this is
        the exact failure that made asking for all the shots at once worth
        doing, so it would be strange not to verify it. */
-    if (anchor && target?.media !== 'text') {
+    /* Not applied to a reference. The continuity rule exists to catch a SHOT
+       that dropped the shared identity, and a reference is the thing that
+       identity is being defined by — the shots must match it, not it them.
+       Checking it the other way failed a room design sheet for not containing
+       a description of the person who walks into the room. */
+    if (anchor && target?.media !== 'text' && target?.role !== 'reference') {
       const keys = anchorKeys(anchor);
       const missing = keys.filter((k) => !new RegExp(`\\b${escapeRe(k)}`, 'i').test(p));
       if (keys.length >= 2 && missing.length > keys.length / 2) {
@@ -532,9 +537,13 @@ function roleOf(
   };
   walk(id);
 
-  const feedsAnImagePort = consumers.find((c) => REF_PORTS.has(c.handle));
-  if (feedsAnImagePort && nodeOf(id)?.data?.mediaType !== 'video') {
-    return { role: 'reference', referenceFor: labelOf(feedsAnImagePort.id) };
+  const feeds = consumers.filter((c) => REF_PORTS.has(c.handle));
+  if (feeds.length && nodeOf(id)?.data?.mediaType !== 'video') {
+    const names = Array.from(new Set(feeds.map((c) => labelOf(c.id))));
+    const listed = names.length > 1
+      ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+      : names[0];
+    return { role: 'reference', referenceFor: listed };
   }
 
   // Does something upstream pin this node's opening frame?

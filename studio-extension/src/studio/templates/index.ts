@@ -132,7 +132,10 @@ const askNode = (id: string, label: string, x: number, y: number, preset?: strin
 };
 
 /** A Story node: one chat writes the prompts for every node it feeds. */
-const storyNode = (id: string, label: string, x: number, y: number, preset?: string): Node => ({
+const storyNode = (
+  id: string, label: string, x: number, y: number,
+  extra: Record<string, unknown> = {},
+): Node => ({
   id,
   type: 'story',
   position: { x, y },
@@ -141,7 +144,7 @@ const storyNode = (id: string, label: string, x: number, y: number, preset?: str
     label,
     platform: 'chatgpt',
     mediaType: 'text',
-    ...(preset ? { preset } : {}),
+    ...extra,
   },
 } as unknown as Node);
 
@@ -1795,24 +1798,36 @@ export const BUILTIN_TEMPLATES: Template[] = [
       + 'Last Frame node holds the continuity, which is what stops Part 2 rebuilding the room.',
     category: 'Content',
     difficulty: 'Medium',
-    nodeCount: 7,
+    nodeCount: 6,
     thumbnail: '🏠',
     nodes: [
       promptNode(
         'idea',
         'Room idea',
         'A candy-themed lounge: wide rectangular room, tall ceiling, large window wall on the '
-        + 'left, glossy pink and mint palette, hero furniture is an oversized cloud-shaped couch, '
-        + 'wall feature is a giant lollipop arch, ceiling is floating cotton-candy clouds.',
-        40, 60,
+        + 'left, glossy pink and mint palette, hero furniture is an oversized cloud-shaped '
+        + 'couch, wall feature is a giant lollipop arch, ceiling is floating cotton-candy clouds.',
+        40, 240,
       ),
-      askNode('story', 'Write the storyboard', 520, 60, 'room_transform_director'),
+      /* One director for all three. The poster is not a separate conversation
+         any more: it feeds both clips, so the Story node reads it as their
+         reference and briefs it as one — a design to match rather than a
+         moment in the story. The two writers this replaces could not agree
+         about the room because neither could see the other's answer. */
+      storyNode('story', 'Story — poster and both clips', 520, 240, {
+        preset: 'room_motion_director',
+        // A transformation, not a hook: before, the work, the reveal.
+        structure: 'transform',
+        /* The four rules this format fails without, which this template used
+           to carry as prose inside a preset. As settings they also become
+           visible and switchable. */
+        rules: ['cumulative', 'fixedCamera', 'samePerson', 'inHand'],
+      }),
       genNode(
         'board',
         { label: 'Storyboard poster', mediaType: 'image', platform: 'chatgpt', aspectRatio: '9:16' },
-        1000, 60,
+        1000, 40,
       ),
-      storyNode('motion', 'Story — both clips', 1000, 560, 'room_motion_director'),
       genNode(
         'part1',
         { label: 'Part 1 — 10s', mediaType: 'video', platform: 'flow', aspectRatio: '9:16', duration: '10s' },
@@ -1822,20 +1837,20 @@ export const BUILTIN_TEMPLATES: Template[] = [
       genNode(
         'part2',
         { label: 'Part 2 — 10s', mediaType: 'video', platform: 'flow', aspectRatio: '9:16', duration: '10s' },
-        2440, 480,
+        2440, 300,
       ),
     ],
     edges: [
       tEdge('idea', 'story'),
+      /* One writer, three prompts. The poster feeds both clips, so the Story
+         node sees it as their reference and writes it as a design sheet; Part
+         2's first frame comes from Part 1 through the Last Frame node, so it
+         is written as a continuation. Neither fact is configured anywhere —
+         both are read off these wires. */
       tEdge('story', 'board'),
-      /* The motion writer reads the storyboard concept, then feeds BOTH
-         clips. Two text consumers is what puts the Ask AI node into writing
-         the whole set in one reply — which is the only way Part 2 can be
-         written knowing what Part 1 ends on. */
-      tEdge('story', 'motion'),
-      tEdge('motion', 'part1'),
-      tEdge('motion', 'part2'),
-      // Reference 1: the storyboard holds the design for both halves.
+      tEdge('story', 'part1'),
+      tEdge('story', 'part2'),
+      // Reference 1: the poster holds the design for both halves.
       iEdge('board', 'part1'),
       iEdge('board', 'part2'),
       // Reference 2: the frame Part 1 ended on, so Part 2 cannot restart.

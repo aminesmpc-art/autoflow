@@ -66,10 +66,10 @@ describe('an image node that feeds a clip', () => {
   it('is briefed as a reference, in the words a reference needs', () => {
     const c = shotContract(targets);
     expect(c).toContain('NOT a moment in the story');
-    expect(c).toContain('"Dance clip" will look like');
-    expect(c).toContain('plain background, no action');
+    expect(c).toContain('the reference Dance clip must match');
+    expect(c).toContain('nothing important cropped');
     // And it must use the same words the clip uses, or the two disagree.
-    expect(c).toContain('same words the shots use');
+    expect(c).toContain('same words for the subject that the shots use');
   });
 
   it('attaches the reference note to the still, not to the clip', () => {
@@ -146,19 +146,67 @@ describe('the real Fantasy Room template', () => {
      The template uses 'image_ref', so the first version of the back-walk
      found nothing here while passing every test in this file. */
   const room: any = (BUILTIN_TEMPLATES as any[]).find((t) => t.id === 'tpl_room_transform');
-  const targets = orderShotTargets('motion', room.nodes, room.edges);
+  const targets = orderShotTargets('story', room.nodes, room.edges);
 
-  it('sees that Part 2 continues Part 1 through the Last Frame node', () => {
+  it('reads all three jobs off the wiring', () => {
     expect(targets.map((t) => [t.id, t.role])).toEqual([
+      ['board', 'reference'],
       ['part1', 'shot'],
       ['part2', 'continuation'],
     ]);
-    expect(targets[1].continues).toBe('Part 1 — 10s');
+  });
+
+  it('knows the poster is the reference for BOTH clips', () => {
+    // It feeds each of them, and naming only the first is how it read before.
+    expect(targets[0].referenceFor).toBe('Part 1 — 10s and Part 2 — 10s');
+  });
+
+  it('sees that Part 2 continues Part 1 through the Last Frame node', () => {
+    expect(targets[2].continues).toBe('Part 1 — 10s');
   });
 
   it('briefs Part 2 not to restart the room', () => {
     const c = shotContract(targets);
     expect(c).toContain('Picks up exactly where "Part 1 — 10s" ended');
     expect(c).toContain('already built as already present');
+  });
+
+  it('ships the rules and the structure the format needs', () => {
+    const d = room.nodes.find((n: any) => n.id === 'story').data;
+    expect(d.structure).toBe('transform');
+    expect(d.rules).toEqual(['cumulative', 'fixedCamera', 'samePerson', 'inHand']);
+  });
+});
+
+describe('a reference is not held to the shots', () => {
+  const targets = orderShotTargets('story', characterFirst.nodes as any, characterFirst.edges as any);
+  const anchor = 'a young dancer in a red tracksuit on a polished studio floor under warm light';
+
+  it('is not failed for continuity', () => {
+    /* The rule catches a SHOT that dropped the shared identity. A reference
+       is what that identity is defined BY — the shots match it, not it them.
+       Backwards, it failed a room design sheet for not describing the person
+       who walks into the room. */
+    const ref = 'A plain grey studio backdrop with even light and a marked floor, nothing else '
+      + 'in frame, shot straight on so the whole space reads clearly.';
+    const clip = 'The young dancer in the red tracksuit spins across the polished floor under '
+      + 'warm light as the camera holds steady.';
+    const problems = checkShots(
+      [{ n: 1, title: 'Ref', prompt: ref }, { n: 2, title: 'Dance', prompt: clip }],
+      targets, anchor,
+    );
+    expect(problems.filter((p) => p.shot === 1)).toEqual([]);
+  });
+
+  it('still holds the shots to it', () => {
+    const ref = 'A plain grey studio backdrop with even light and a marked floor, nothing else '
+      + 'in frame, shot straight on so the whole space reads clearly.';
+    const drifted = 'A man in a grey suit strides through a dark marble lobby while the camera '
+      + 'tracks him past a row of tall windows.';
+    const problems = checkShots(
+      [{ n: 1, title: 'Ref', prompt: ref }, { n: 2, title: 'Dance', prompt: drifted }],
+      targets, anchor,
+    );
+    expect(problems.filter((p) => p.code === 'continuity').map((p) => p.shot)).toEqual([2]);
   });
 });
