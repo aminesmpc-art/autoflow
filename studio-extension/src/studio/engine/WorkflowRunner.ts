@@ -15,6 +15,10 @@ import { trackUsage } from '../../shared/api';
 import { bridge, type NodeExecutionConfig, type NodeResult } from './bridge';
 import { useStudioStore } from '../store';
 import { composeAskPrompt } from '../presets';
+import {
+  shotContract, parseShots, checkShots, repairMessage, summarise,
+  type ShotTarget,
+} from '../ask/storyboard';
 import { runAgent, type AgentStep, type ToolOutcome } from './agent';
 import { toolsByName } from './tools';
 import {
@@ -107,6 +111,12 @@ export class WorkflowRunner {
 
   /** Results from each node (nodeId → result) */
   private nodeResults = new Map<string, NodeResult>();
+
+  /* Prompts written by one Ask AI node for several downstream nodes at once,
+     in the order the contract listed them. Separate from nodeResults because
+     the ask has ONE result and the consumers need one each — putting them in
+     the result would mean every reader had to know it might be an array. */
+  private shotPlans = new Map<string, string[]>();
 
   /** Nodes that failed or were skipped — dependents must not run on partial input */
   private failedNodes = new Set<string>();
@@ -478,9 +488,18 @@ export class WorkflowRunner {
     let prompt = '';
     const textSourceId = inputs.get('text')?.[0];
     if (textSourceId) {
-      const textResult = this.nodeResults.get(textSourceId);
-      if (textResult) {
-        prompt = textResult.imageUrl || ''; // imageUrl stores text for prompt nodes
+      /* When the upstream Ask AI wrote the whole set in one pass, this node
+         gets the one addressed to it rather than all of them. Falls through to
+         the plain reply whenever there is no plan, which is every ordinary
+         single-answer Ask AI node. */
+      const mine = this.shotFor(textSourceId, nodeId, edges);
+      if (mine !== null) {
+        prompt = mine;
+      } else {
+        const textResult = this.nodeResults.get(textSourceId);
+        if (textResult) {
+          prompt = textResult.imageUrl || ''; // imageUrl stores text for prompt nodes
+        }
       }
     }
 
@@ -577,13 +596,29 @@ export class WorkflowRunner {
        whether a reference image actually resolved — "character sheet from a
        photo" and "from a description" are different briefs, and only this
        point knows which one applies. */
-    const askPrompt = nodeData.mediaType === 'text'
+    let askPrompt = nodeData.mediaType === 'text'
       ? composeAskPrompt(
           nodeData.preset,
           prompt,
           referenceImageData.length > 0 || referenceImageIds.length > 0
         )
       : prompt;
+
+    /* One Ask AI feeding several generators is a storyboard, not a question.
+       Asking it once for all of them is the only way the prompts can agree
+       with each other — the model can see shot 2 while it writes shot 3,
+       which no amount of separate conversations will give you.
+
+       Detected from the graph rather than a switch. A node wired to four
+       generators is already saying what it is, and a setting that had to be
+       found and turned on would be off in exactly the workflows that need it
+       most. `askMode: 'single'` opts out for anyone who wants the old way. */
+    if (nodeData.mediaType === 'text' && nodeData.askMode !== 'single') {
+      const targets = this.shotTargetsFor(nodeId, edges);
+      if (targets.length >= 2) {
+        return this.executeStoryboardAsk(nodeId, nodeData, askPrompt, targets);
+      }
+    }
 
     /* Grok's Extend continues a clip rather than making one, so the node needs
        the clip itself — not a still of it. Taken from the upstream node's
@@ -832,6 +867,140 @@ export class WorkflowRunner {
   }
 
   /** One turn of the agent's conversation. The thread stays open after the first. */
+  /**
+   * The generate nodes this Ask AI writes for, in canvas order.
+   *
+   * Order has to be stable and it has to match what the contract told the
+   * model, or shot 3 lands on the node expecting shot 1. Sorted by position
+   * rather than edge order: edges are stored in creation order, so rewiring a
+   * connection would silently renumber every shot after it.
+   */
+  private shotTargetsFor(askId: string, edges: Edge[]): ShotTarget[] {
+    const nodes = useStudioStore.getState().nodes;
+    const seen = new Set<string>();
+    const out: Array<ShotTarget & { x: number; y: number }> = [];
+
+    for (const e of edges) {
+      if (e.source !== askId) continue;
+      if ((e.targetHandle || 'default') !== 'text') continue;
+      if (seen.has(e.target)) continue;
+      const node = nodes.find((n) => n.id === e.target);
+      if (!node) continue;
+      const d = node.data as any;
+      // Only nodes that will actually generate something from the words.
+      if (node.type !== 'generate' && d?.type !== 'generate') continue;
+      seen.add(e.target);
+      out.push({
+        id: node.id,
+        media: d?.mediaType === 'video' ? 'video' : d?.mediaType === 'text' ? 'text' : 'image',
+        platform: String(d?.platform || 'flow'),
+        label: String(d?.label || '').trim() || undefined,
+        x: node.position?.x ?? 0,
+        y: node.position?.y ?? 0,
+      });
+    }
+    out.sort((a, b) => (a.x - b.x) || (a.y - b.y));
+    return out.map(({ x: _x, y: _y, ...t }) => t);
+  }
+
+  /** This node's own shot, or null when the source did not write a set. */
+  private shotFor(sourceId: string, nodeId: string, edges: Edge[]): string | null {
+    const plan = this.shotPlans.get(sourceId);
+    if (!plan) return null;
+    const idx = this.shotTargetsFor(sourceId, edges).findIndex((t) => t.id === nodeId);
+    if (idx < 0 || idx >= plan.length) return null;
+    return plan[idx];
+  }
+
+  /**
+   * Write every prompt in one conversation, then refuse to hand over a set
+   * that will not survive the composer.
+   *
+   * The loop is the point. A single request produces a usable set most of the
+   * time, and the rest of the time it produces one with a code fence in shot 2
+   * — which is only discovered when that clip renders three backticks. Here
+   * the fence is found before anything is spent, described back to the model
+   * in the same thread, and fixed for the cost of one more turn.
+   *
+   * It gives up rather than degrading. A set that still fails after the
+   * repairs would produce broken clips at full price, and "ran and wasted your
+   * generations" is worse than "stopped and said why".
+   */
+  private async executeStoryboardAsk(
+    nodeId: string,
+    nodeData: any,
+    brief: string,
+    targets: ShotTarget[]
+  ): Promise<NodeResult> {
+    const store = useStudioStore.getState();
+    const platform = CHAT_PLATFORMS.includes(nodeData.platform) ? nodeData.platform : 'chatgpt';
+    const MAX_REPAIRS = 2;
+
+    let message = brief + '\n' + shotContract(targets);
+    let best: { shots: string[]; problems: number; story: string } | null = null;
+
+    for (let round = 0; round <= MAX_REPAIRS; round++) {
+      if (this.abortRequested) throw new Error('Stopped');
+
+      store.updateNodeData(nodeId, {
+        status: 'running',
+        statusNote: round === 0
+          ? `Writing ${targets.length} prompts…`
+          : `Fixing the format (${round} of ${MAX_REPAIRS})…`,
+      });
+
+      const reply = await this.askAgent(nodeId, platform, message, round === 0);
+      const { shots, anchor, story, problem } = parseShots(reply);
+
+      if (problem) {
+        console.warn(`[Runner] Storyboard: ${problem}`);
+        if (round === MAX_REPAIRS) break;
+        message = `${problem}\n\nSend only the JSON object described earlier — `
+          + `no prose around it, no code fence.`;
+        continue;
+      }
+
+      const problems = checkShots(shots, targets, anchor);
+      console.log(`[Runner] Storyboard round ${round + 1}: ${summarise(problems)}`);
+
+      if (!best || problems.length < best.problems) {
+        best = { shots: shots.map((sh) => sh.prompt), problems: problems.length, story: story || '' };
+      }
+      if (!problems.length) break;
+      if (round === MAX_REPAIRS) break;
+      message = repairMessage(problems, targets);
+    }
+
+    if (!best || !best.shots.length) {
+      throw new Error(
+        `Could not get ${targets.length} usable prompts from ${platform} after `
+        + `${MAX_REPAIRS + 1} attempts — open the chat tab to see what it replied`
+      );
+    }
+    if (best.problems > 0) {
+      throw new Error(
+        `The prompts still fail the format check after ${MAX_REPAIRS} repairs `
+        + `(${best.problems} problem${best.problems === 1 ? '' : 's'}). Stopping rather than `
+        + `spending ${targets.length} generations on prompts that will not render correctly.`
+      );
+    }
+    if (best.shots.length < targets.length) {
+      throw new Error(
+        `Only ${best.shots.length} of ${targets.length} prompts came back — nothing was run`
+      );
+    }
+
+    this.shotPlans.set(nodeId, best.shots);
+
+    /* The node itself shows the whole set, because that is what was written
+       here; each generator shows the one it received. */
+    const combined = best.shots
+      .map((p, i) => `${targets[i].label || `Shot ${i + 1}`}\n${p}`)
+      .join('\n\n');
+    store.updateNodeData(nodeId, { statusNote: '', resultText: combined });
+    return { tileId: '', text: combined };
+  }
+
   private async askAgent(
     nodeId: string, platform: string, message: string, firstTurn: boolean,
     attachments?: string[]
