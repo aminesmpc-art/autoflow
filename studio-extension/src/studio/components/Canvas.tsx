@@ -19,6 +19,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { Icon } from './Icon';
+import { StoryNode } from '../nodes/StoryNode';
 import { BrandIcon } from './BrandIcon';
 import { useStudioStore, FREE_LIMITS } from '../store';
 import { consumeStudioRun } from '../../shared/api';
@@ -55,6 +56,7 @@ const nodeTypes = {
   frame: guarded(FrameNode, 'Last Frame'),
   extend: guarded(ExtendNode, 'Extend'),
   agent: guarded(AgentNode, 'Agent'),
+  story: guarded(StoryNode, 'Story'),
 };
 
 function CanvasInner() {
@@ -505,6 +507,27 @@ function CanvasInner() {
    * reaching it by adding a Generate node and changing two dropdowns meant
    * nobody found it. As its own button it is a thing you can add.
    */
+  /* One director for the whole workflow. Its own node rather than a mode on
+     Ask AI, because a node that writes the whole set has to see the graph, and
+     five wires leaving a box says that better than a checkbox does. */
+  const addStoryNode = useCallback(() => {
+    if (!guardAdd()) return;
+    const id = `story_${Date.now()}`;
+    addNode({
+      id,
+      type: 'story',
+      position: { x: 300, y: 250 + nodes.length * 50 },
+      data: {
+        type: 'story',
+        label: `Story ${nodes.filter((x) => x.type === 'story').length + 1}`,
+        platform: 'chatgpt',
+        mediaType: 'text',
+        preset: '',
+        status: 'idle',
+      },
+    } as any);
+  }, [addNode, nodes, guardAdd]);
+
   const addAskNode = useCallback(() => {
     if (!guardAdd()) return;
     const id = `ask_${Date.now()}`;
@@ -646,6 +669,10 @@ function CanvasInner() {
               work rather than continuing a clip, and it spends generations
               like everything else in this group — it sat between Last frame
               and Extend, which both genuinely continue one. */}
+          <button className="studio-toolbar__btn" onClick={addStoryNode} aria-label="Add Story node">
+            <Icon name="agent" kind="agent" className="studio-toolbar__btn-icon" />
+            <span className="studio-toolbar__btn-label">Story</span>
+          </button>
           <button className="studio-toolbar__btn" onClick={addAgentNode} aria-label="Add Agent node">
             <Icon name="agent" kind="agent" className="studio-toolbar__btn-icon" />
             <span className="studio-toolbar__btn-label">Agent</span>

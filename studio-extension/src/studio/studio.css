@@ -2216,3 +2216,74 @@ video.sn-media__img { object-fit: contain; background: var(--canvas); cursor: de
   font-size: var(--t-micro);
   line-height: 1.4;
 }
+
+/* ── Story node ──────────────────────────────────────────────
+   It is a plan, not a prompt, so it shows the plan: who it writes for, in the
+   order it will write them, and a tick against each one it covered. A node
+   responsible for five other nodes should look like it. */
+.sn--story { min-width: 260px; }
+
+.sn-story__targets {
+  margin-top: var(--s-2);
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--line);
+}
+.sn-story__empty {
+  font-size: var(--t-micro);
+  color: var(--warn);
+  line-height: 1.45;
+}
+.sn-story__count {
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  margin-bottom: var(--s-1);
+}
+.sn-story__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sn-story__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  min-width: 0;
+}
+.sn-story__n {
+  flex: none;
+  width: 16px; height: 16px;
+  display: grid; place-items: center;
+  border-radius: var(--r-pill);
+  background: var(--accent-14);
+  color: var(--accent);
+  font-size: var(--t-micro);
+  font-weight: 700;
+}
+.sn-story__name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sn-story__meta { flex: none; color: var(--text-3); }
+.sn-story__done { flex: none; color: var(--ok); }
+.sn-story__error {
+  margin-top: var(--s-2);
+  padding: var(--s-2);
+  border-radius: var(--r-ctrl);
+  border-left: 3px solid var(--bad);
+  background: var(--bad-12);
+  color: var(--bad);
+  font-size: var(--t-micro);
+  line-height: 1.45;
+}
+
+/* Its own family colour, so a glance at the canvas says which box is the one
+   holding the story together. */
+.sn-wrap--kind-story .sn { border-color: var(--accent-30); }
+.sn-wrap--kind-story .sn-label__icon { color: var(--accent); }

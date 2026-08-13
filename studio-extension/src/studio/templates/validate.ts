@@ -28,6 +28,10 @@ export const NODE_PORTS: Record<string, { in: string[]; out: string[] }> = {
   generate: { in: ['text', 'image_ref', 'frame_start', 'frame_end'], out: ['result'] },
   // A prompt writer emits text rather than a result.
   'generate:text': { in: ['text', 'image_ref'], out: ['text'] },
+  /* The Story node: one idea in, prompts out to every node it writes for.
+     No image_ref — it plans the words, and the references belong to the
+     nodes that actually generate. */
+  story: { in: ['text'], out: ['text'] },
   /* Frames mode swaps the one image port for the two frame ports. It is a
      swap rather than an addition: in this mode the runner reads only
      frame_start and frame_end, so leaving image_ref on the node would offer a
@@ -58,7 +62,7 @@ export const NODE_PORTS: Record<string, { in: string[]; out: string[] }> = {
  * filter unable to re-run one, and the runner's own step filter the only
  * place that knew. Prompt, image and frame carry data and never run.
  */
-export const RUNNABLE_NODE_TYPES = ['generate', 'extend', 'agent'] as const;
+export const RUNNABLE_NODE_TYPES = ['generate', 'extend', 'agent', 'story'] as const;
 
 export const isRunnableType = (type: unknown): boolean =>
   typeof type === 'string' && (RUNNABLE_NODE_TYPES as readonly string[]).includes(type);
@@ -102,7 +106,7 @@ export const portsFor = (node: any) => {
    Templates needing either were just filtered out of the gallery with an
    info-level log, so a published template simply never appeared.
    capabilities.test.ts now checks both against the code and the manifest. */
-export const RENDERABLE_NODE_TYPES = ['prompt', 'image', 'generate', 'frame', 'extend', 'agent'] as const;
+export const RENDERABLE_NODE_TYPES = ['prompt', 'image', 'generate', 'frame', 'extend', 'agent', 'story'] as const;
 
 /* ── Grok's extend arithmetic ──────────────────────────────────
    Imagine starts a clip at 6, 10 or 15 seconds and extends it by 6 or 10,

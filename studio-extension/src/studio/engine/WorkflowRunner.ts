@@ -318,6 +318,7 @@ export class WorkflowRunner {
            was logged as an unknown type — counted in the progress total, then
            silently skipped. The run finished instantly having done nothing. */
         case 'agent':
+        case 'story':
         case 'extend':
         case 'generate': {
           // Nodes toggled off are skipped without consuming a generation
@@ -507,6 +508,25 @@ export class WorkflowRunner {
        generation machinery below applies to it. */
     if (node.type === 'agent' || nodeData.type === 'agent') {
       return this.executeAgentNode(nodeId, nodeData, prompt, edges);
+    }
+
+    /* A Story node writes for other nodes, so it leaves here too. It is the
+       explicit form of what an Ask AI node was doing by inference: the user
+       wires it to the nodes it is responsible for, and it writes all of them
+       in one reply having been shown what each of them is configured to do. */
+    if (node.type === 'story' || nodeData.type === 'story') {
+      const targets = this.shotTargetsFor(nodeId, edges);
+      if (!targets.length) {
+        throw new Error(
+          'This Story node is not wired to anything — connect its output to the '
+          + 'nodes whose prompts it should write'
+        );
+      }
+      if (!prompt.trim()) {
+        throw new Error('No idea connected — link a Prompt node to the T input');
+      }
+      const brief = composeAskPrompt(nodeData.preset, prompt, false);
+      return this.executeStoryboardAsk(nodeId, nodeData, brief, targets);
     }
 
     // Gather reference images from EVERY upstream image connection.
@@ -982,7 +1002,12 @@ export class WorkflowRunner {
     const combined = best.shots
       .map((p, i) => `${targets[i].label || `Shot ${i + 1}`}\n${p}`)
       .join('\n\n');
-    store.updateNodeData(nodeId, { statusNote: '', resultText: combined });
+    store.updateNodeData(nodeId, {
+      statusNote: '',
+      resultText: combined,
+      // Shown on the Story node as a tick beside each target it covered.
+      shotTitles: targets.map((t, i) => t.label || `Shot ${i + 1}`),
+    });
     return { tileId: '', text: combined };
   }
 
