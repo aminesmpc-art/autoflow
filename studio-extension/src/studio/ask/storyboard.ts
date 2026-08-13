@@ -282,21 +282,61 @@ export function checkShots(shots: Shot[], targets: ShotTarget[], anchor?: string
   return problems;
 }
 
-/** Distinctive words from the anchor line, minus the ones that carry no signal. */
+/**
+ * The words in an anchor that identify the subject, not the format.
+ *
+ * The first version took the first six words of five letters or more, which
+ * a live reply immediately showed to be the wrong six. Claude's anchor opened
+ * with the camera specification — "Vertical 9:16, ultra-realistic, one fixed
+ * medium-wide camera inside the room…" — so the continuity check compared two
+ * prompts on words that are in every prompt by construction, and passed
+ * whatever it was given. The identity words it should have been checking
+ * (tracksuit, ponytail, peppermint, lollipop) were 300 characters further in
+ * and never looked at.
+ *
+ * Two changes, both from that reply. Format vocabulary is excluded, because a
+ * word that appears in every prompt cannot distinguish between them. And keys
+ * are sampled across the whole anchor rather than taken from the front, so a
+ * long anchor's later half is represented at all.
+ */
 function anchorKeys(anchor: string): string[] {
   const STOP = new Set([
+    // Ordinary connective words.
     'the', 'and', 'with', 'that', 'this', 'must', 'same', 'every', 'their', 'them', 'from',
     'into', 'over', 'across', 'stay', 'stays', 'remain', 'remains', 'identical', 'shot',
     'shots', 'prompt', 'prompts', 'scene', 'throughout', 'consistent', 'always', 'each',
+    'before', 'after', 'anything', 'everything', 'nothing', 'something', 'while', 'where',
+    'there', 'these', 'those', 'other', 'another', 'still', 'currently', 'entire',
+    // Camera and format. These are in every prompt by construction, so they
+    // cannot tell one apart from another — including them is what made the
+    // check pass on a reply it had not actually inspected.
+    'vertical', 'horizontal', 'ultra-realistic', 'realistic', 'photorealistic',
+    'camera', 'medium-wide', 'wide-angle', 'close-up', 'lens', 'angle', 'frame',
+    'framing', 'fixed', 'locked', 'static', 'handheld', 'zooming', 'rotating',
+    'dollying', 'orbiting', 'panning', 'tilting', 'cutting', 'cinematic', 'pacing',
+    'hyperlapse', 'timelapse', 'time-lapse', 'motion', 'normal-speed', 'speed',
+    'second', 'seconds', 'clip', 'video', 'footage', 'aspect', 'ratio', 'resolution',
+    'standing', 'height', 'eye-height', 'never', 'moving',
   ]);
-  return Array.from(
+
+  const words = Array.from(
     new Set(
       anchor
         .toLowerCase()
         .split(/[^a-z0-9-]+/)
         .filter((w) => w.length >= 5 && !STOP.has(w)),
     ),
-  ).slice(0, 6);
+  );
+
+  /* Spread across the anchor instead of taking the front. A 774-character
+     anchor — which is what a model actually writes — puts the character and
+     the palette well past whatever the first few words are. */
+  const WANT = 8;
+  if (words.length <= WANT) return words;
+  const stride = words.length / WANT;
+  const picked: string[] = [];
+  for (let i = 0; i < WANT; i++) picked.push(words[Math.floor(i * stride)]);
+  return Array.from(new Set(picked));
 }
 
 function escapeRe(s: string): string {
