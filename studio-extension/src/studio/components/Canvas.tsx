@@ -20,6 +20,7 @@ import '@xyflow/react/dist/style.css';
 
 import { Icon } from './Icon';
 import { StoryNode } from '../nodes/StoryNode';
+import { canConnect, connectionProblem } from '../canvas/connect';
 import { BrandIcon } from './BrandIcon';
 import { useStudioStore, FREE_LIMITS } from '../store';
 import { consumeStudioRun } from '../../shared/api';
@@ -303,8 +304,15 @@ function CanvasInner() {
   }, []);
 
   /* Handle new connections */
+  /* Refuse a wire that cannot work, and say why.
+     Without this any port connected to any port: React Flow drew the edge,
+     nothing complained, and the run failed later pointing at a node that
+     looked correctly connected because there was a line going into it. */
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
+      const problem = connectionProblem(connection as any);
+      if (problem) { setLimitMsg(problem); return; }
+      setLimitMsg(null);
       setEdges(addEdge({
         ...connection,
         type: 'default',
@@ -737,6 +745,10 @@ function CanvasInner() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        /* React Flow greys the wire mid-drag when this returns false, so the
+           answer to "what does this connect to" arrives while the question is
+           being asked rather than after the drop. */
+        isValidConnection={(c) => canConnect(c as any)}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
