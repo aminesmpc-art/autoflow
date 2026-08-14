@@ -279,6 +279,41 @@ function composerRegion(): HTMLElement | null {
 }
 
 /**
+ * Whether the newest reply has finished, or null if it cannot be told.
+ *
+ * Gemini renders its footer — Good response, Bad response, Redo, Copy — only
+ * once a turn is complete, so the copy control is a positive statement that
+ * the answer is over. Everything else here is an absence: no stop control,
+ * text unchanged for two polls. Absences lie. A pause mid-answer is
+ * indistinguishable from a finished one, and this adapter has no persistent
+ * stop button to fall back on, which makes the guess weaker here than on
+ * ChatGPT rather than stronger.
+ *
+ * Matched on the icon first. fonticon="copy" is semantic and survives
+ * translation; aria-label="Copy" does not, and a French or German UI would
+ * silently never finish. Nothing here reads the Angular class names in that
+ * markup — _ngcontent-ng-c2488831720 is a build id that changes on every
+ * Gemini deploy — nor the jslog attribute, which is telemetry.
+ *
+ * Scoped to the LAST model-response, because every earlier one carries a copy
+ * button too and a page-wide query would report "finished" the moment the
+ * conversation had any history at all.
+ *
+ * Returns null when no model-response exists, so a renamed element falls back
+ * to the old signals rather than waiting forever for a button it cannot find.
+ */
+function turnFinished(): boolean | null {
+  const turns = document.querySelectorAll<HTMLElement>('model-response');
+  if (!turns.length) return null;
+  const last = turns[turns.length - 1];
+  if (last.querySelector('mat-icon[fonticon="copy"], mat-icon[data-mat-icon-name="copy"]')) {
+    return true;
+  }
+  return !!Array.from(last.querySelectorAll<HTMLElement>('button'))
+    .find((b) => /^\s*copy\s*$/i.test(b.getAttribute('aria-label') || ''));
+}
+
+/**
  * The newest model turn's text.
  *
  * Read from `message-content` rather than the whole `model-response`. The
@@ -689,7 +724,10 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
     if (src === stableSrc) stableCount++;
     else { stableSrc = src; stableCount = 0; }
 
-    if (stableCount >= 2 && !isGenerating()) {
+    /* The footer is the only positive signal that the turn is over, so it has
+       the deciding vote when it can be read. false means still writing — keep
+       waiting even though the text looks settled. */
+    if (stableCount >= 2 && !isGenerating() && turnFinished() !== false) {
       try {
         const dataUrl = await captureImage(candidate);
         send('STUDIO_NODE_RESULT', {
@@ -750,7 +788,10 @@ async function trackTextReply(
     if (current === lastSeen) stableCount++;
     else { lastSeen = current; stableCount = 0; lastChangeAt = Date.now(); }
 
-    if (stableCount >= 2 && !isGenerating()) {
+    /* The footer is the only positive signal that the turn is over, so it has
+       the deciding vote when it can be read. false means still writing — keep
+       waiting even though the text looks settled. */
+    if (stableCount >= 2 && !isGenerating() && turnFinished() !== false) {
       const cleaned = raw ? current : cleanAssistantReply(current);
       if (!raw && !looksLikeUsablePrompt(cleaned)) {
         send('STUDIO_NODE_ERROR', {
