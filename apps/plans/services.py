@@ -30,8 +30,11 @@ FREE_FULL_DAILY_LIMIT_RUNS = getattr(settings, "FREE_FULL_DAILY_LIMIT_RUNS", 1)
 # Studio workflow limits (visual builder) — runs per MONTH, plus a node cap.
 # Node count is enforced server-side too: the client-side cap lives in
 # chrome.storage and is trivially editable.
-FREE_STUDIO_MONTHLY_LIMIT = getattr(settings, "FREE_STUDIO_MONTHLY_LIMIT", 15)
-FREE_STUDIO_MAX_NODES = getattr(settings, "FREE_STUDIO_MAX_NODES", 5)
+FREE_STUDIO_MONTHLY_LIMIT = getattr(settings, "FREE_STUDIO_MONTHLY_LIMIT", 10)
+# 0 means no cap. Free is now "ten runs, build whatever you like": the node
+# limit punished the workflows the product is for — a five-node ceiling made
+# every interesting template Pro-only, so free users could never see one work.
+FREE_STUDIO_MAX_NODES = getattr(settings, "FREE_STUDIO_MAX_NODES", 0)
 # Keep legacy constant for backward compat
 FREE_DAILY_LIMIT = FREE_TEXT_DAILY_LIMIT
 
@@ -139,6 +142,20 @@ def grant_reward_credits(
 # ── Entitlement snapshot ──
 
 
+def _next_month_start(now):
+    """Midnight on the first of next month, in the current timezone.
+
+    The monthly allowance resets when the MonthlyUsage row for the new
+    year/month is created, which is the first time anything is consumed in it
+    — so this is the boundary, not a scheduled job.
+    """
+    if now.month == 12:
+        return now.replace(year=now.year + 1, month=1, day=1,
+                           hour=0, minute=0, second=0, microsecond=0)
+    return now.replace(month=now.month + 1, day=1,
+                       hour=0, minute=0, second=0, microsecond=0)
+
+
 def get_entitlement_snapshot(user) -> dict:
     """Full snapshot of a user's current entitlement state."""
     profile = Profile.objects.select_related("user").get(user=user)
@@ -215,7 +232,11 @@ def get_entitlement_snapshot(user) -> dict:
             999 if profile.is_pro
             else max(0, FREE_STUDIO_MONTHLY_LIMIT - monthly.studio_runs_used)
         ),
-        "studio_max_nodes": 999 if profile.is_pro else FREE_STUDIO_MAX_NODES,
+        # 0 = no cap, for Pro and now for free too.
+        "studio_max_nodes": 0 if profile.is_pro else FREE_STUDIO_MAX_NODES,
+        # When the monthly allowance resets, because "why can I not run"
+        # is always followed by "when can I".
+        "studio_reset_at": _next_month_start(now).isoformat(),
     }
 
 
@@ -740,7 +761,10 @@ def consume_studio_run(user, node_count: int = 1, generate_count: int = None) ->
         usage = DailyUsage.objects.select_for_update().get(user=user, date=today)
 
         if not profile.is_pro:
-            if node_count > FREE_STUDIO_MAX_NODES:
+            # Node count is no longer gated. FREE_STUDIO_MAX_NODES of 0 means
+            # no cap; a non-zero value still enforces one, so the limit can be
+            # brought back from settings without a deploy.
+            if FREE_STUDIO_MAX_NODES and node_count > FREE_STUDIO_MAX_NODES:
                 return {
                     "allowed": False,
                     "used": monthly.studio_runs_used,

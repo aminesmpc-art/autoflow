@@ -586,8 +586,10 @@ function CanvasInner() {
               <span className={`studio-topbar__stat ${runsUsed >= FREE_LIMITS.runsPerMonth ? 'studio-topbar__stat--maxed' : ''}`}>
                 Runs {Math.min(runsUsed, FREE_LIMITS.runsPerMonth)}/{FREE_LIMITS.runsPerMonth}
               </span>
-              <span className={`studio-topbar__stat ${nodes.length >= FREE_LIMITS.nodes ? 'studio-topbar__stat--maxed' : ''}`}>
-                Nodes {nodes.length}/{FREE_LIMITS.nodes}
+              <span className={`studio-topbar__stat ${
+                FREE_LIMITS.nodes && nodes.length >= FREE_LIMITS.nodes ? 'studio-topbar__stat--maxed' : ''
+              }`}>
+                Nodes {nodes.length}{FREE_LIMITS.nodes ? `/${FREE_LIMITS.nodes}` : ''}
               </span>
               <a
                 className="studio-topbar__upgrade"

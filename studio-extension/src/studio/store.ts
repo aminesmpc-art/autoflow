@@ -93,7 +93,13 @@ interface StudioState {
 }
 
 /** Free-tier ceilings. Pro is unlimited. */
-export const FREE_LIMITS = { nodes: 5, runsPerMonth: 15 } as const;
+/* Free is ten runs, and build whatever you like.
+   `nodes: 0` means no cap. The five-node ceiling punished exactly the
+   workflows this product exists for — every template worth seeing has more
+   than five nodes, so a free user could never watch one work, which is a
+   strange way to sell the thing that makes them work. The server agrees:
+   FREE_STUDIO_MAX_NODES is 0 there too, and it is the authoritative gate. */
+export const FREE_LIMITS = { nodes: 0, runsPerMonth: 10 } as const;
 
 /** Runs are counted per calendar month, keyed so a new month resets itself */
 const runKey = () => `studio_runs_${new Date().toISOString().slice(0, 7)}`;
@@ -367,7 +373,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   runBlockedReason: () => {
     const { isPro, runsUsed, nodes } = get();
     if (isPro) return null;
-    if (nodes.length > FREE_LIMITS.nodes) {
+    if (FREE_LIMITS.nodes && nodes.length > FREE_LIMITS.nodes) {
       return `This workflow has ${nodes.length} nodes. Free runs up to ${FREE_LIMITS.nodes} — upgrade to Pro for unlimited.`;
     }
     if (runsUsed >= FREE_LIMITS.runsPerMonth) {
@@ -378,7 +384,9 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
   canAddNode: () => {
     const { isPro, nodes } = get();
-    return isPro || nodes.length < FREE_LIMITS.nodes;
+    // 0 means no cap, so a free user builds whatever the story needs.
+    if (isPro || !FREE_LIMITS.nodes) return true;
+    return nodes.length < FREE_LIMITS.nodes;
   },
 
   /* ── Persistence ── */
