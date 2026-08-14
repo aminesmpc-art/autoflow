@@ -2508,3 +2508,8 @@ video.sn-media__img { object-fit: contain; background: var(--canvas); cursor: de
   font-weight: 500;
   color: var(--text-3);
 }
+
+/* A frame node that ran and captured nothing is not the same as one nobody
+   wired, and they used to render identically. */
+.fn-empty--missed { color: var(--warn); }
+.fn-empty--missed .fn-empty__icon { color: var(--warn); }

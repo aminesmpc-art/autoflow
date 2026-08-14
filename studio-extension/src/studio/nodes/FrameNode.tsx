@@ -25,6 +25,10 @@ function FrameNodeComponent({ id, data, selected }: NodeProps) {
   const [zoomed, setZoomed] = useState(false);
 
   const frame: string = nodeData.frameUrl || '';
+  /* The runner writes frameUrl on every run, empty string included, so an
+     empty string that EXISTS means the capture was attempted and came back
+     with nothing. Undefined means it has never run. */
+  const ranEmpty = !frame && typeof nodeData.frameUrl === 'string';
 
   return (
     <div className={`fn-wrap sn-wrap--kind-frame ${selected ? 'fn-wrap--selected' : ''}`}>
@@ -49,9 +53,18 @@ function FrameNodeComponent({ id, data, selected }: NodeProps) {
               title="Click to view full size"
             />
           ) : (
-            <div className="fn-empty">
-              <span className="fn-empty__icon">⇥</span>
-              <small>Connect a video node — its last frame appears here after it runs</small>
+            <div className={`fn-empty ${ranEmpty ? 'fn-empty--missed' : ''}`}>
+              <span className="fn-empty__icon">{ranEmpty ? '⚠' : '⇥'}</span>
+              {/* "Nothing here" and "tried, got nothing" looked identical, so a
+                  clip that ran and failed to give up its last frame was
+                  indistinguishable from a node nobody had wired yet — while
+                  every node downstream failed for a reason this box knew. */}
+              <small>
+                {ranEmpty
+                  ? 'The clip above ran but gave up no last frame. Anything chained from '
+                    + 'here has no reference — see Diagnostics in the side panel.'
+                  : 'Connect a video node — its last frame appears here after it runs'}
+              </small>
             </div>
           )}
         </div>

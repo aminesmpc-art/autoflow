@@ -1623,11 +1623,16 @@ async function sendStudioResult(
     isVideo: !!videoEl,
   });
   if (videoEl && !referenceUrl) {
+    logLine('Last frame: nothing captured from this clip — anything chained from it will have no reference');
     console.warn(
       '[AutoFlow Studio] No end frame captured for this clip. Anything chained ' +
       'from it will report a missing reference rather than silently restarting ' +
       'from the opening frame.'
     );
+  }
+
+  if (videoEl && referenceUrl) {
+    logLine(`Last frame captured (${Math.round(referenceUrl.length / 1024)}KB)`);
   }
 
   try {
@@ -1731,6 +1736,11 @@ async function captureVideoEndFrame(video: HTMLVideoElement): Promise<string> {
 
      Loading it is the whole fix. The element is left as we found it. */
   if (!(await ensureVideoLoaded(video))) {
+    /* Diagnostics, not just the console. This is the moment a Last Frame node
+       is decided, and until now the only record of it was a warning in the
+       Flow tab — so the panel showed an empty frame box, the dependent clip
+       failed, and nothing anywhere said the two were connected. */
+    logLine('Last frame: the clip would not load, so no end frame was captured');
     console.warn('[AutoFlow Studio] Clip would not load, so no end frame could be captured');
     return '';
   }
