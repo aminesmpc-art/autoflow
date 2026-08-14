@@ -91,3 +91,45 @@ describe('the capability lists match the build', () => {
     expect(hidden).toEqual([]);
   });
 });
+
+describe('the chat list matches the adapters that ship', () => {
+  /* CHAT_PLATFORMS decides which chats a Story, Ask AI or Agent node can be
+     pointed at. It said ['chatgpt', 'gemini', 'grok'] while claude-content.js
+     shipped in the manifest and the worker knew claude.ai — so choosing Claude
+     silently ran the brief on ChatGPT. Everything "worked", on the wrong
+     platform, and the only symptom was that the answer did not sound like
+     Claude. Third list in this codebase to quietly stop being true. */
+  const adapters = (): string[] => {
+    const scripts: string[] = (manifest().content_scripts || []).flatMap((cs: any) => cs.js || []);
+    return scripts
+      .map((f) => /^([a-z]+)-content\.js$/.exec(f)?.[1])
+      .filter((n): n is string => !!n);
+  };
+
+  it('offers every chat adapter that ships', () => {
+    const { CHAT_PLATFORMS } = require('../studio/engine/WorkflowRunner');
+    // Flow is a generator, not a chat; everything else with an adapter is one.
+    const chats = adapters().filter((p) => p !== 'flow');
+    expect(chats.length).toBeGreaterThan(2);
+    const missing = chats.filter((p) => !CHAT_PLATFORMS.includes(p));
+    expect({ shippedButNotOffered: missing }).toEqual({ shippedButNotOffered: [] });
+  });
+
+  it('offers no chat that has no adapter', () => {
+    const { CHAT_PLATFORMS } = require('../studio/engine/WorkflowRunner');
+    const shipped = adapters();
+    const phantom = (CHAT_PLATFORMS as string[]).filter((p) => !shipped.includes(p));
+    expect({ offeredWithNoAdapter: phantom }).toEqual({ offeredWithNoAdapter: [] });
+  });
+
+  it('matches what the Story node lets you pick', () => {
+    /* A dropdown offering a platform the runner will not honour is the same
+       bug wearing a different hat. */
+    const src = readFileSync(join(ROOT, 'src', 'studio', 'nodes', 'StoryNode.tsx'), 'utf8');
+    const offered = Array.from(src.matchAll(/<option value="([a-z]+)">/g)).map((m) => m[1])
+      .filter((v) => v && v !== '');
+    const { CHAT_PLATFORMS } = require('../studio/engine/WorkflowRunner');
+    const unhonoured = offered.filter((p) => !CHAT_PLATFORMS.includes(p));
+    expect({ inTheDropdownButNotDrivable: unhonoured }).toEqual({ inTheDropdownButNotDrivable: [] });
+  });
+});

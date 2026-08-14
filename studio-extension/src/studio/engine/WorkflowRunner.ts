@@ -36,7 +36,28 @@ export type RunnerState = 'idle' | 'running' | 'paused' | 'stopped' | 'done' | '
  * was missed sent every Gemini node to Flow — silently, because Flow accepts
  * any prompt. Grok would have been the same bug a second time.
  */
-export const CHAT_PLATFORMS = ['chatgpt', 'gemini', 'grok'];
+export const CHAT_PLATFORMS = ['chatgpt', 'gemini', 'grok', 'claude'];
+
+/**
+ * The chat a node asked for, or ChatGPT if we cannot drive that one.
+ *
+ * Loud, because the silent version of this hid a real bug: 'claude' was
+ * missing from the list above while claude-content.js shipped in the manifest
+ * and the worker knew its URL, so choosing Claude on a Story node quietly sent
+ * the brief to ChatGPT instead. Everything worked, on the wrong platform, and
+ * the only symptom was that the answer did not sound like Claude.
+ */
+function chatPlatform(requested: unknown): string {
+  const want = String(requested || '');
+  if (CHAT_PLATFORMS.includes(want)) return want;
+  if (want) {
+    console.warn(
+      `[Runner] "${want}" is not a chat this build can drive `
+      + `(${CHAT_PLATFORMS.join(', ')}) — using ChatGPT instead`
+    );
+  }
+  return 'chatgpt';
+}
 
 /** One extra attempt. Enough to ride out a blip, few enough that a node which
     is genuinely broken fails while the user is still watching. */
@@ -850,7 +871,7 @@ export class WorkflowRunner {
     }
 
     const tools = toolsByName(nodeData.tools);
-    const platform = CHAT_PLATFORMS.includes(nodeData.platform) ? nodeData.platform : 'chatgpt';
+    const platform = chatPlatform(nodeData.platform);
     /* Every iteration is a real generation with a real cost, so the cap is
        clamped here rather than trusted from node data. */
     const maxIterations = Math.max(1, Math.min(10, Number(nodeData.maxIterations) || 4));
@@ -954,7 +975,7 @@ export class WorkflowRunner {
     isStory = false
   ): Promise<NodeResult> {
     const store = useStudioStore.getState();
-    const platform = CHAT_PLATFORMS.includes(nodeData.platform) ? nodeData.platform : 'chatgpt';
+    const platform = chatPlatform(nodeData.platform);
     const MAX_REPAIRS = 2;
 
     let message = brief + '\n' + shotContract(targets, isStory ? STORY_FIELDS : '');
