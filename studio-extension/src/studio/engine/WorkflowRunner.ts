@@ -757,6 +757,10 @@ export class WorkflowRunner {
       extendSeconds: isExtendNode ? (nodeData.extendSeconds || '+10s') : undefined,
       extendFromVideo,
       creationType: nodeData.creationType || 'ingredients',
+      /* Flow's voice picker. Left out of this payload the node's dropdown
+         would set a field nothing ever read — the control would look like it
+         worked and change nothing about the clip. */
+      voice: nodeData.voice || undefined,
       referenceImageIds: referenceImageIds.length > 0 ? referenceImageIds : undefined,
       referenceImageData: referenceImageData.length > 0 ? referenceImageData : undefined,
     };

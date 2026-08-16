@@ -137,7 +137,7 @@ export function getStudioTileState(tile: Element): StudioTileState {
 }
 
 /** Flow's own progress badge ("24%") from a generating tile, or null */
-function extractTileProgress(tile: Element): number | null {
+export function extractTileProgress(tile: Element): number | null {
   const walker = document.createTreeWalker(tile, NodeFilter.SHOW_TEXT);
   let textNode: Text | null;
   while ((textNode = walker.nextNode() as Text | null)) {
@@ -149,7 +149,7 @@ function extractTileProgress(tile: Element): number | null {
 }
 
 /** Largest real <img> src inside a tile (skips tiny data: placeholders) */
-function findLargestImgSrc(tile: Element): string {
+export function findLargestImgSrc(tile: Element): string {
   const imgs = tile.querySelectorAll('img[src]');
   let bestSrc = '';
   let bestArea = 0;

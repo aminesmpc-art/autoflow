@@ -13,6 +13,7 @@ import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS, modelHasDuration } from '../.
 import { getAskPresets, DEFAULT_PRESET_ID, findPreset } from '../presets';
 import { portsFor, retargetImagePorts } from '../templates/validate';
 import { CHAT_PLATFORMS } from '../engine/WorkflowRunner';
+import { FLOW_VOICES, NO_VOICE, voiceLabel } from '../flowVoices';
 import { GrokSettings } from './GrokSettings';
 import { NodeInfoBadge } from './NodeInfoBadge';
 
@@ -121,6 +122,14 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
      the store, so the node can answer this itself rather than being told. */
   const hasPrompt = useStudioStore(
     (st) => st.edges.some((e) => e.target === id && e.targetHandle === 'text')
+  );
+
+  /* Whether any still is wired in — the ingredient tray, or either end of a
+     Frames pair. Flow gives a voice to a character, so this decides whether
+     the Voice control below can do anything at all. */
+  const hasImageInput = useStudioStore(
+    (st) => st.edges.some((e) => e.target === id
+      && ['image_ref', 'image', 'frame_start', 'frame_end'].includes(e.targetHandle || '')),
   );
 
   const status: NodeStatus = nodeData.status || 'idle';
@@ -465,6 +474,39 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                     ))}
                   </div>
                 </div>
+              )}
+
+              {/* Flow attaches a voice to a CHARACTER in the ingredient tray,
+                  so this is a video-with-a-reference-image control and nothing
+                  else. Shown on any Flow video node rather than only wired
+                  ones, because the node is usually configured before it is
+                  connected — but it says plainly when it will not apply, which
+                  is the part that would otherwise waste a generation. */}
+              {isVideo && !isGrok && (
+                <label className="sn-field sn-field--wide" title="Voice for the character in this shot">
+                  <span className="sn-field__label">Voice</span>
+                  <select
+                    className="sn-bar__sel nodrag"
+                    value={nodeData.voice || NO_VOICE}
+                    onChange={(e) => set('voice', e.target.value)}
+                  >
+                    <option value={NO_VOICE}>None — no spoken voice</option>
+                    {FLOW_VOICES.map((v) => (
+                      <option key={v.id} value={v.id}>{voiceLabel(v)}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {/* The one thing a dropdown of names cannot tell you. Without an
+                  image in the tray the picker has no character to speak
+                  through and the clip comes back silent — a failure with no
+                  error, spotted only by watching the output. */}
+              {isVideo && !isGrok && nodeData.voice && nodeData.voice !== NO_VOICE && !hasImageInput && (
+                <small className="sn-field__hint sn-field--wide">
+                  Wire an image into this node — Flow gives the voice to a character,
+                  so without one the clip is generated silent.
+                </small>
               )}
 
               {/* Pills rather than a dropdown: there are only three or five,

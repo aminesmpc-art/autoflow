@@ -18,6 +18,7 @@ import { matchesFlowText } from './flowStrings';
 import { registerStudioImage, releaseStudioImages } from './studioImages';
 import { pickReferenceStill } from './studioFrames';
 import { captureVideoFrame, captureVideoEndFrame } from './videoFrames';
+import { effectiveVoice } from '../../studio/flowVoices';
 import { getStudioTileState, extractTileProgress, findLargestImgSrc } from './tileState';
 
 // أ¢â€‌â‚¬أ¢â€‌â‚¬ Singleton engine أ¢â€‌â‚¬أ¢â€‌â‚¬
@@ -1129,7 +1130,13 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
       // Honour the node's duration — this was pinned to '8s', so every
       // Studio video ran 8s no matter what the node's dropdown said.
       duration: (config.duration || '6s'),
-      voiceIngredient: 'none',
+      /* The node's voice, if the shot has a character to give it to.
+         Pinned to 'none' since Studio was written, so the whole feature —
+         built, working, and shipping in the original extension — was
+         unreachable from a node. effectiveVoice holds the "needs an image"
+         rule, because a voice applied to a shot with an empty ingredient tray
+         is silently dropped by Flow and the clip comes back mute. */
+      voiceIngredient: effectiveVoice(config.voice, refImages.length > 0),
       stopOnError: false,
       automationMode: 'lite',
       waitMinSec: 1,

@@ -1892,7 +1892,15 @@ export class AutomationEngine {
     // 3. Type the voice name into the search box to filter the list.
     //    This is critical because voice lists can be virtualized (lazy-loaded)
     //    and the target voice may not be in the DOM until searched.
-    const searchInput = document.querySelector('input[placeholder*="Search"], input[placeholder*="Rechercher"], input[placeholder*="Buscar"], input[placeholder*="Suchen"], input[placeholder*="Cerca"], input[placeholder*="Pesquisar"]') as HTMLInputElement;
+    /* #add-menu-input first. The placeholder list below it is a guess at
+       which languages Flow has been translated into — "Search assets" becomes
+       "Rechercher" for a French user and anything not on the list finds no
+       input at all, so the voice list is never filtered and a name below the
+       virtualised fold is never in the DOM to click. The id is not translated
+       and is not a styled-components hash, so it survives both a redesign and
+       a locale. */
+    const searchInput = (document.querySelector('#add-menu-input')
+      || document.querySelector('input[aria-label*="Search"], input[placeholder*="Search"], input[placeholder*="Rechercher"], input[placeholder*="Buscar"], input[placeholder*="Suchen"], input[placeholder*="Cerca"], input[placeholder*="Pesquisar"]')) as HTMLInputElement;
     if (searchInput && isVisible(searchInput)) {
       this.log('info', `Searching for voice "${voiceName}"...`);
       searchInput.focus();

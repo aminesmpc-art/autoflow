@@ -26,6 +26,8 @@ export interface NodeExecutionConfig {
   extendSeconds?: string;
   extendFromVideo?: string;
   creationType: 'ingredients' | 'frames';
+  /** Flow's voice picker — which voice the character in this shot speaks in. */
+  voice?: string;
   referenceImageIds?: string[];
   referenceImageData?: string[]; // base64 fallback
   /** Target platform — the service worker routes by this. Default 'flow'. */
