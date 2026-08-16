@@ -36,53 +36,94 @@
 
 /** Platforms a built workflow may name, and what each is actually for. */
 const PLATFORM_NOTES = [
-  '- "flow"    Google Flow. The best motion, and the only one that can start a',
-  '            clip from one still and end it on another. Default for video.',
-  '- "grok"    Grok Imagine. Fast stills, and short clips that "extend" can',
-  '            continue. Use for stills, and for video only when extending.',
-  '- "chatgpt" ChatGPT. Stills, and writing text for a later step to use.',
-  '- "gemini"  Gemini. Stills, and reading an image or clip to describe it.',
+  '- "flow"    Google Flow (Veo / Omni). The premier platform for video generation.',
+  '            Best physical motion, realistic dynamics, and the only platform that',
+  '            can interpolate between two stills (startFrame & endFrame match cuts).',
+  '            Models: Omni Flash (supports 10s clips), Veo 3.1 (Lite, Fast, Quality).',
+  '            Default choice for all standard AI video generations.',
+  '- "grok"    Grok Imagine. Ultra-fast stills and short video clips (6s, 10s, 15s).',
+  '            Exclusive capability: "extend" nodes can lengthen existing clips up to',
+  '            30 seconds total in one unbroken continuous take. Excellent for quick',
+  '            concept stills and extended uncut action.',
+  '- "chatgpt" OpenAI ChatGPT (DALL-E & GPT). Creates high-detail images or writes',
+  '            prompts for downstream nodes (media: "text"). Best for prompt-writing',
+  '            steps that need creative ideation before generating.',
+  '- "gemini"  Google Gemini (Imagen & Flash). High-fidelity stills and deep multimodal',
+  '            reasoning. Can inspect clips and images to describe or verify results.',
+  '- "zai"     Z.AI (GLM-4 / GLM-5). Fast structured text generation and creative reasoning.',
 ].join('\n');
 
 const NODE_MANUAL = `THE NODES, AND WHAT EACH IS FOR
 
-  image     A slot the user fills with their own picture.
-            Emits: a still.
-            Use only when the idea depends on something the user owns — their
-            product, their face, their logo. Never invent one.
+  image     USER UPLOAD SLOT
+            A place for the user to upload their own reference picture.
+            Takes:  Nothing (user file upload).
+            Emits:  A still image reference.
+            When:   Use ONLY when the project strictly requires a real asset the user
+                    already owns — their physical product photo, real face portrait,
+                    brand logo, or specific artwork. Never invent image slots for
+                    generic concepts (generate an image instead).
 
-  generate  One generation. media is "image", "video" or "text".
-            Takes: a prompt, plus optional stills as reference.
-            Emits: a still, a clip, or written text.
-            This is most of any workflow.
+  generate  THE PRIMARY WORKHORSE NODE
+            Executes one AI generation for a still image, video clip, or prompt text.
+            Takes:  A prompt (or a text input from another node), plus optional
+                    reference stills in "inputs".
+            Emits:  A still image, a video clip, or written prompt text.
+            Fields:
+              - media: "image" | "video" | "text"
+              - platform: "flow" | "grok" | "chatgpt" | "gemini"
+              - aspectRatio: "9:16" (vertical/TikTok/Reels), "16:9" (cinematic/YouTube),
+                             "1:1" (square), "2:3", "3:2", "4:3", "3:4"
+              - duration: "4s" | "6s" | "8s" | "10s" (video only)
+              - startFrame / endFrame: node IDs of stills for match cuts (Flow only)
+            When:   This forms 80%+ of any workflow. Every shot or image is a generate step.
 
-  frame     The LAST FRAME of a clip, as a still.
-            Takes: exactly one video step.
-            Emits: a still.
-            This is the continuity tool. Shot two literally begins on the
-            image shot one ended on, which no wording in a prompt can
-            promise. Use it whenever two clips must feel continuous.
+  frame     LAST FRAME CONTINUITY EXTRACTOR
+            Extracts the exact final frame of a rendered video clip as a still image.
+            Takes:  Exactly ONE video step in "inputs".
+            Emits:  A still image reference.
+            When:   The key tool for cinematic shot-to-shot continuity. Shot B literally
+                    opens on the exact frame Shot A ended on. Use it whenever two
+                    consecutive scenes must feel seamless in lighting, position, and space.
 
-  extend    Makes an existing Grok clip longer, in the same shot.
-            Takes: one Grok video step, and a prompt for what happens next.
-            Emits: the longer clip.
-            Grok only, and the finished clip cannot pass 30 seconds. Use for
-            one continuous action that outgrows a single generation — not for
-            cutting to a new shot, which is a new step.
+  extend    GROK CLIP LENGTHENER (UNCUT ACTION)
+            Continues an existing Grok video clip forward in time in one unbroken take.
+            Takes:  One Grok video step in "inputs", and a prompt for what happens next.
+            Emits:  The longer video clip.
+            Fields:
+              - extendSeconds: "+6s" | "+10s" (Total clip duration cannot exceed 30s).
+            When:   Grok only. Use for a single continuous event that needs more than 10s
+                    (e.g., an ASMR craft, slow reveal, continuous walk). Not for scene cuts.
 
-  agent     A LOOP that can inspect and repair the canvas while it runs.
-            Takes: a goal.
-            Emits: its final answer, as text.
-            Its tools: read_canvas, read_node, set_prompt, rerun_node,
-            generate_image, inspect_clip. So it can look at what another node
-            produced, rewrite that node's prompt, and run it again.
+  agent     AUTONOMOUS INSPECTION & REPAIR LOOP
+            An AI loop with tools that can read the canvas, check outputs, and fix prompts.
+            Takes:  A goal in "prompt".
+            Emits:  Its final answer as text.
+            Tools:  read_canvas, read_node, set_prompt, rerun_node, generate_image, inspect_clip.
+            When:   Use ONLY when a step must LOOK at a generated result and react or repair it
+                    (e.g., "watch the clip and fix the prompt if the car changed colour").
+                    DO NOT use it to write a prompt. That is what a generate step with
+                    media "text" is for, and it is cheaper, faster and predictable.
+                    If your step just needs words written before the shot, it is a
+                    generate/text step, not an agent.
 
-            DO NOT use it to write a prompt. That is what a generate step with
-            media "text" is for, and it is cheaper, faster and predictable.
-            An agent is for work that needs to SEE a result and react to it —
-            "watch the clip and fix the prompt if the car changed colour". If
-            your step just needs words written before the shot, it is a
-            generate/text step, not an agent.
+  story     STORY DIRECTOR (ONE WRITER FOR ALL SHOTS)
+            An orchestrator node that writes synchronized prompts for every connected
+            shot in a single AI pass.
+            Takes:  An optional story brief/idea in "prompt" or via T input.
+            Emits:  Tailored prompts fed directly to downstream Generate nodes.
+            Fields:
+              - platform: "chatgpt" | "gemini" | "grok" | "claude"
+              - cast: [ { "name": "Name", "look": "Appearance description", "role": "position/role" } ]
+              - world: "Setting and environment description"
+              - look: "Visual style, camera aesthetics, and lighting rules"
+              - structure: "hook" | "transform" | "loop" | "free"
+              - cameraProgression: "dynamic" | "establishingToClose" | "actionTracking" | "fixed"
+              - audioMode: "cinematic" | "ambient" | "dialogue" | "none"
+              - visualPreset: "liveAction" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime"
+            When:   Use whenever building a multi-shot story, episodic series, or
+                    reusable story template where one director should coordinate
+                    all scene prompts at runtime.
 
 HOW THEY GO TOGETHER
 
@@ -96,7 +137,8 @@ HOW THEY GO TOGETHER
   Continuity between shots.
       clip A  ->  frame  ->  clip B (inputs: that frame)
     Use this whenever the viewer should believe two shots are the same moment,
-    the same room, the same object.
+    the same room, the same object. The last frame of clip A becomes the starting
+    reference for clip B, preventing character and environment drift across cuts.
 
   One subject, many shots.
     Put the subject's description, word for word, in every prompt that shows
@@ -104,7 +146,7 @@ HOW THEY GO TOGETHER
     together across steps. Where the subject is a real thing the user owns,
     use an "image" step and feed it to every shot instead.
 
-  Writing a prompt with a model.
+  Writing a prompt with a model (Prompt Writer).
       generate text  ->  generate image (inputs: that text step)
     The text step's answer BECOMES the next step's prompt. A step fed this way
     must not also carry its own "prompt".
@@ -115,16 +157,26 @@ HOW THEY GO TOGETHER
     how a match cut works — the miniature at the start, the real thing at the
     end, one continuous move. Use startFrame/endFrame for that, NOT two
     entries in "inputs": inputs are reference pictures, which is a different
-    instruction and will not produce the move.`;
+    instruction and will not produce the move.
+
+  Extended continuous action (Grok exclusive).
+      generate video (grok)  ->  extend (+10s)  ->  extend (+10s)
+    Lengthens a single camera take up to Grok's 30s ceiling without cutting.
+
+  Director for the whole story (Story Node).
+      story  ->  [shot1, shot2, shot3, shot4]
+    Connect one story node to every generate node in your scene. It inspects
+    their formats (media, ratio, duration) and writes all prompts together
+    so characters, setting, and pacing match across the entire sequence.`;
 
 const EXAMPLE = `{
   "thinking": {
     "shots": [
-      "1. Hero product on a plinth, slow push in",
-      "2. Macro across the surface, continuing from shot 1"
+      "1. Hero product on a dark stone plinth, slow push in (still -> video)",
+      "2. Macro pan across the product surface, continuing from shot 1's final frame"
     ],
-    "continuity": "Shot 2 starts on the last frame of shot 1, so the lighting and angle carry over.",
-    "platforms": "Stills on grok because they are quick and I want to check the frame; motion on flow.",
+    "continuity": "Shot 2 starts on the last frame of shot 1, so the lighting and angle carry over seamlessly.",
+    "platforms": "Stills on grok because they are quick and high fidelity; motion on flow for the cleanest camera push.",
     "risks": "The product must not change shape between shots, so the reference photo feeds both stills."
   },
   "name": "Product photo to two-shot ad",
@@ -196,14 +248,29 @@ A step:
 
   {
     "id": "unique_id",
+    "type": "story",
+    "platform": "chatgpt" | "gemini" | "grok" | "claude" | "zai",
+    "label": "Story Director",
+    "prompt": "optional story premise or brief",
+    "cast": [ { "name": "Name", "look": "Appearance description", "role": "optional role" } ],
+    "world": "Setting description",
+    "look": "Lighting & style description",
+    "structure": "hook" | "transform" | "loop" | "free",
+    "cameraProgression": "dynamic" | "establishingToClose" | "actionTracking" | "fixed",
+    "audioMode": "cinematic" | "ambient" | "dialogue" | "none",
+    "visualPreset": "liveAction" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime"
+  }
+
+  {
+    "id": "unique_id",
     "type": "generate" | "extend" | "agent",
     "media": "image" | "video" | "text",
-    "platform": "flow" | "chatgpt" | "gemini" | "grok",
+    "platform": "flow" | "chatgpt" | "gemini" | "grok" | "zai",
     "label": "short name for the node",
     "prompt": "the actual prompt text, written out in full",
     "inputs": ["ids of steps that feed this one"],
-    "aspectRatio": "1:1" | "9:16" | "16:9" | "2:3" | "3:2",
-    "duration": "6s" | "10s",
+    "aspectRatio": "1:1" | "9:16" | "16:9" | "2:3" | "3:2" | "4:3" | "3:4",
+    "duration": "4s" | "6s" | "8s" | "10s",
     "extendSeconds": "+6s" | "+10s",
     "startFrame": "id of the still this clip begins on",
     "endFrame": "id of the still this clip ends on"

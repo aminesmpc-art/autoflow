@@ -13,11 +13,10 @@
  *                  or what is on screen.
  *   STRUCTURE      Action. The only layer allowed to differ per shot.
  *
- * A caveat worth keeping in the code rather than only in a chat message:
- * text cannot guarantee consistency. Diffusion models re-roll per-pixel
- * randomness on every generation, so identical descriptions still produce
- * visibly different people. Reference images do the heavy lifting; this
- * reduces drift, it does not remove it. The UI should never imply otherwise.
+ * Upgraded with:
+ *   - Camera Progression (Director's Coverage: Wide ➜ Medium ➜ Detail ➜ Reaction)
+ *   - Layered Native Audio & Dialogue (Ambience + SFX + Dialogue for Veo 3.1 & Flow)
+ *   - Visual Style & Negative Guardrails Presets
  */
 
 import type { ShotTarget } from './storyboard';
@@ -27,7 +26,150 @@ export interface CastMember {
   name: string;
   /** Everything that must be identical every time they appear. */
   look: string;
+  /** Screen blocking or role: e.g. "center", "left", "lead", "creature". */
+  role?: string;
 }
+
+export type CameraProgressionId = 'dynamic' | 'establishingToClose' | 'actionTracking' | 'fixed';
+
+export interface CameraProgressionOption {
+  id: CameraProgressionId;
+  name: string;
+  hint: string;
+  rules: string[];
+}
+
+export const CAMERA_PROGRESSIONS: CameraProgressionOption[] = [
+  {
+    id: 'dynamic',
+    name: 'Director Coverage',
+    hint: 'Varies shot angles intelligently across the narrative arc.',
+    rules: [
+      'SHOT COVERAGE: Vary camera distance and angles across shots to feel like a directed film.',
+      '  · Shot 1: Wide establishing context or subject entrance.',
+      '  · Middle shots: Dynamic medium tracking or over-the-shoulder action.',
+      '  · Climax/Final shot: Punchy close-up, high-impact angle, or dramatic pull-back.',
+    ],
+  },
+  {
+    id: 'establishingToClose',
+    name: 'Establishing ➜ Push In',
+    hint: 'Opens broad and pushes closer with each successive shot.',
+    rules: [
+      'PROGRESSIVE LENS: Move camera closer with each consecutive shot.',
+      '  · Start wide with full room/landscape, step into medium, and end in tight macro/close-up.',
+    ],
+  },
+  {
+    id: 'actionTracking',
+    name: 'Action Tracking',
+    hint: 'Steadicam, handheld tracking, and energetic subject movement.',
+    rules: [
+      'MOTION CAMERA: Keep camera actively tracking, dollying, or following the primary subject with dynamic steadicam or handheld motion.',
+    ],
+  },
+  {
+    id: 'fixed',
+    name: 'Locked Tripod',
+    hint: 'Locked-off camera for precise hyperlapses and room builds.',
+    rules: [
+      'ONE fixed camera for the entire sequence. No pan, tilt, zoom, or camera movement.',
+    ],
+  },
+];
+
+export type AudioModeId = 'cinematic' | 'ambient' | 'dialogue' | 'none';
+
+export interface AudioModeOption {
+  id: AudioModeId;
+  name: string;
+  hint: string;
+  guide: string[];
+}
+
+export const AUDIO_MODES: AudioModeOption[] = [
+  {
+    id: 'cinematic',
+    name: 'Layered Cinematic Audio',
+    hint: 'Full sound design layer with room tone, physical foley, and spoken lines.',
+    guide: [
+      'NATIVE SOUND DESIGN: Include a dedicated "Audio:" section at the end of each video prompt with 3 distinct sound layers:',
+      '  1. [Ambience/Environment]: (e.g. "Audio: Quiet kitchen room tone, gentle rain on glass")',
+      '  2. [Foley/SFX]: (e.g. "distinct clicking claws, jar lid squeak, sudden sizzle")',
+      '  3. [Dialogue/Vocalization]: Character speech in quotes or creature vocalizations (e.g. "whispers: \'Look at that\', playful squeak").',
+    ],
+  },
+  {
+    id: 'ambient',
+    name: 'Environment & Foley',
+    hint: 'Atmospheric room tone, footsteps, and physical interactions.',
+    guide: [
+      'NATIVE SOUND DESIGN: Include an "Audio:" note with environmental tone and physical interaction sounds (foley, weather, mechanical clicks). No spoken dialogue.',
+    ],
+  },
+  {
+    id: 'dialogue',
+    name: 'Dialogue & Voice',
+    hint: 'Clear spoken character lines with delivery notes.',
+    guide: [
+      'NATIVE SOUND DESIGN: Include an "Audio:" section specifying crisp spoken character lines in quotes with emotional delivery tags (e.g. "Audio: Character says urgently: \'We have to leave now.\'").',
+    ],
+  },
+  {
+    id: 'none',
+    name: 'Visual Only',
+    hint: 'Focus prompt strictly on visuals and motion.',
+    guide: [],
+  },
+];
+
+export type VisualPresetId = 'liveAction' | 'smartphonePOV' | 'cinema35mm' | 'cgi3d' | 'anime' | 'none';
+
+export interface VisualPresetOption {
+  id: VisualPresetId;
+  name: string;
+  stylePrompt: string;
+  negativePrompt: string;
+}
+
+export const VISUAL_PRESETS: VisualPresetOption[] = [
+  {
+    id: 'liveAction',
+    name: 'Live-Action 8K',
+    stylePrompt: 'Photorealistic 8K live-action cinematography, natural cinematic lighting, rich depth of field, authentic textures.',
+    negativePrompt: 'No 3D render look, no cartoon styling, no distorted anatomy, no plastic skin.',
+  },
+  {
+    id: 'smartphonePOV',
+    name: 'Smartphone POV (TikTok)',
+    stylePrompt: 'Authentic vertical 9:16 handheld smartphone POV camera, natural everyday indoor/outdoor lighting, raw realism, viral social video aesthetic.',
+    negativePrompt: 'No Hollywood tripod rigidity, no artificial stage lighting, no subtitles.',
+  },
+  {
+    id: 'cinema35mm',
+    name: '35mm Kodak Film',
+    stylePrompt: 'Shot on 35mm anamorphic lens, moody volumetric lighting, fine film grain, Kodak film stock color science, shallow focus.',
+    negativePrompt: 'No clean digital video sheen, no oversaturated cartoon colors.',
+  },
+  {
+    id: 'cgi3d',
+    name: '3D CGI Animation',
+    stylePrompt: 'High-end stylized 3D feature animation aesthetic, subsurface scattering on skin, vibrant expressive lighting, Pixar/Dreamworks level character fidelity.',
+    negativePrompt: 'No live-action photography, no uncanny valley distortion.',
+  },
+  {
+    id: 'anime',
+    name: 'Cinematic Anime',
+    stylePrompt: 'Modern cinematic anime aesthetic, hand-painted atmospheric backgrounds, expressive cel-shaded character art, Makoto Shinkai lighting.',
+    negativePrompt: 'No western 3D CGI, no live-action photos.',
+  },
+  {
+    id: 'none',
+    name: 'Custom (Defined in Look)',
+    stylePrompt: '',
+    negativePrompt: '',
+  },
+];
 
 export interface StorySettings {
   cast: CastMember[];
@@ -38,16 +180,18 @@ export interface StorySettings {
   beats: number;
   /** Continuity rules, by id. Each one is a line in the brief. */
   rules: RuleId[];
+  /** Camera progression across shots. */
+  cameraProgression?: CameraProgressionId;
+  /** Sound design and dialogue generation mode. */
+  audioMode?: AudioModeId;
+  /** Visual style preset. */
+  visualPreset?: VisualPresetId;
 }
 
 export type RuleId = 'cumulative' | 'fixedCamera' | 'samePerson' | 'inHand';
 
 /**
  * The rules the room template used to hardcode, as switches.
- *
- * Each is a real failure this kind of piece hits without it, which is why
- * they are a short fixed list rather than a free-text box: a rule that can be
- * written any way cannot also be checked, and these are worth checking.
  */
 export const RULES: Array<{ id: RuleId; name: string; line: string }> = [
   {
@@ -117,7 +261,15 @@ export const STRUCTURES: Array<{ id: StructureId; name: string; hint: string; sh
 ];
 
 export const DEFAULT_STORY: StorySettings = {
-  cast: [], world: '', look: '', structure: 'hook', beats: 0, rules: [],
+  cast: [],
+  world: '',
+  look: '',
+  structure: 'hook',
+  beats: 0,
+  rules: [],
+  cameraProgression: 'dynamic',
+  audioMode: 'cinematic',
+  visualPreset: 'none',
 };
 
 /** Seconds in a target, or 0 for a still. */
@@ -128,12 +280,6 @@ function secondsOf(t: ShotTarget): number {
 
 /**
  * How many beats the piece should hold.
- *
- * About four seconds each, which is where short-form advice lands and what
- * the room template already assumed — five scenes across twenty seconds.
- * Derived rather than typed, because the durations are on the canvas and
- * asking someone to keep a number in sync with them is asking for it to be
- * wrong.
  */
 export function beatsFor(targets: ShotTarget[], override = 0): number {
   if (override > 0) return override;
@@ -157,11 +303,6 @@ export const hasStory = (s: StorySettings): boolean =>
 /**
  * The brief, assembled from what the user has locked plus what the canvas
  * already knows.
- *
- * Anything left empty is asked for rather than invented silently: the model
- * fills it, the run writes it back to the node, and from then on it is a
- * locked field the user can correct. Describing a cast once and editing one
- * word beats retyping it into five prompts.
  */
 export function storyBrief(
   idea: string,
@@ -184,7 +325,8 @@ export function storyBrief(
     out.push('A generator reads one prompt at a time and remembers nothing, so a reference');
     out.push('to "the same woman as before" produces a stranger.');
     for (const c of named) {
-      out.push(`  · ${c.name.trim() || 'Unnamed'}: ${c.look.trim() || '(describe them)'}`);
+      const roleStr = c.role ? ` [Role/Position: ${c.role}]` : '';
+      out.push(`  · ${c.name.trim() || 'Unnamed'}${roleStr}: ${c.look.trim() || '(describe them)'}`);
     }
     out.push('');
   } else {
@@ -203,13 +345,40 @@ export function storyBrief(
     out.push('');
   }
 
-  if (s.look.trim()) {
+  // Visual Preset + Look
+  const preset = s.visualPreset && s.visualPreset !== 'none'
+    ? VISUAL_PRESETS.find((p) => p.id === s.visualPreset)
+    : undefined;
+  const lookParts: string[] = [];
+  if (preset && preset.stylePrompt) lookParts.push(preset.stylePrompt);
+  if (s.look.trim()) lookParts.push(s.look.trim());
+
+  if (lookParts.length) {
     out.push('LOOK — applies to every shot without changing what is in them.');
-    out.push(`  ${s.look.trim()}`);
+    out.push(`  ${lookParts.join(' ')}`);
+    if (preset?.negativePrompt) {
+      out.push(`  Guardrails (Negative): ${preset.negativePrompt}`);
+    }
     out.push('');
   } else {
     out.push('LOOK — decide the palette, lens and lighting, apply it to all shots, and');
     out.push('return it in the "look" field.');
+    out.push('');
+  }
+
+  // Camera Progression
+  const cameraMode = CAMERA_PROGRESSIONS.find((c) => c.id === (s.cameraProgression || 'dynamic'));
+  if (cameraMode && cameraMode.rules.length) {
+    out.push(`CINEMATOGRAPHY & CAMERA — ${cameraMode.name}`);
+    for (const line of cameraMode.rules) out.push(line);
+    out.push('');
+  }
+
+  // Audio Mode
+  const audio = AUDIO_MODES.find((a) => a.id === (s.audioMode || 'cinematic'));
+  if (audio && audio.guide.length) {
+    out.push(`AUDIO & SOUND DESIGN — ${audio.name}`);
+    for (const line of audio.guide) out.push(line);
     out.push('');
   }
 
@@ -227,8 +396,8 @@ export function storyBrief(
   }
 
   out.push(`BEATS — ${beats} across the whole piece, distributed over the shots below in`);
-  out.push('proportion to their length. A shot long enough for two beats gets two; a still');
-  out.push('gets one. Every beat is a visible change, not a mood.');
+  out.push('proportion to their length. A 4s shot gets a single punchy action; a 6-8s shot gets');
+  out.push('a 2-stage build; a 10s shot gets a 3-stage progression (Setup ➜ Escalation ➜ Payoff).');
   out.push('');
 
   return out.join('\n');
@@ -236,13 +405,9 @@ export function storyBrief(
 
 /**
  * The extra envelope fields a Story node asks for on top of the shots.
- *
- * Appended to shotContract's object so one reply carries both the prompts and
- * the story that produced them — which is what lets the node lock the cast
- * and world afterwards instead of asking again next run.
  */
 export const STORY_FIELDS = [
-  '  "cast": [ { "name": "short name", "look": "everything that must stay identical" } ],',
+  '  "cast": [ { "name": "short name", "look": "everything that must stay identical", "role": "optional position or role" } ],',
   '  "world": "the place, described once",',
   '  "look": "palette, lens, lighting",',
 ].join('\n');

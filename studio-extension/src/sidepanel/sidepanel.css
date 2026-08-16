@@ -1,26 +1,12 @@
 /* ============================================================
-   Side panel — Obsidian & Lime.
-
-   A side panel is a strip the user drags between about 320px and whatever
-   their screen allows, sitting beside the site a run is driving. Everything
-   here follows from that: two bands of chrome rather than four, one column
-   that scrolls, and a type scale that stops at 11px because 8px text in a
-   docked panel is decoration, not information.
-
-   ONE palette, and it is no longer defined here. Every colour, size, radius
-   and easing comes from shared/tokens.css, which the canvas imports too —
-   the two surfaces used to hold two different accents and disagree about
-   what a prompt node looks like. What stays in this file is only what is
-   genuinely true of a 320px docked strip and nothing else.
+   AutoFlow Studio — Side Panel UI & Design System.
+   Optimized for docked 320px+ browser side panels.
    ============================================================ */
 
 @import '../shared/tokens.css';
 
 *, *::before, *::after { box-sizing: border-box; }
 
-
-/* Panel-only. The type ramp stops at 11px because 8px text in a docked
-   strip is decoration, not information. */
 :root {
   --panel-min: 320px;
 }
@@ -29,66 +15,99 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  /* No padding. It used to be 16px, which under `height: 100vh` and
-     `overflow: hidden` cost 32px of a 320px panel and clipped the bottom. */
   margin: 0;
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.5 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: var(--t-body);
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Thin, self-coloured, everywhere. The default Windows scrollbar is a wide
-   light-grey slab, and against a near-black panel it was the brightest thing
-   on screen. */
-* { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
-::-webkit-scrollbar { width: 8px; height: 8px; }
+/* ── Custom Scrollbars ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: var(--r-pill); }
-::-webkit-scrollbar-thumb:hover { background: var(--line-2); }
+::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: var(--r-pill);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--accent-30); }
 
-:focus-visible { outline: none; box-shadow: var(--focus); border-radius: var(--r-ctrl); }
-
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+  border-radius: var(--r-ctrl);
+}
 
 /* ════════════════════════════════════════════════
-   Sign-in gate
+   1. SIGN-IN GATE
    ════════════════════════════════════════════════ */
-/* One screen, centred, nothing else competing. The signed-out panel used to
-   be the full tab bar over controls that could not do anything, which reads
-   as a broken app rather than a locked one. */
-.sp-gate {
+.sp-gate:not([hidden]) {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px 20px;
+  padding: var(--s-5) var(--s-4);
   overflow-y: auto;
+  position: relative;
+  background: radial-gradient(circle at 50% 15%, var(--accent-8) 0%, transparent 70%), var(--bg);
 }
-.sp-gate__inner { width: 100%; max-width: 300px; text-align: center; }
+
+.sp-gate__inner {
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
 .sp-gate__mark {
-  width: 44px; height: 44px;
-  margin: 0 auto 14px;
-  display: grid; place-items: center;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto var(--s-3);
+  display: grid;
+  place-items: center;
   border-radius: var(--r-card);
-  background: var(--accent-14);
+  background: var(--surface);
   border: 1px solid var(--accent-30);
   color: var(--accent);
+  box-shadow: var(--glow-accent-sm), inset 0 1px 0 var(--glass-highlight);
+  transition: transform var(--base), box-shadow var(--base);
 }
-.sp-gate__mark svg { width: 24px; height: 24px; }
-.sp-gate__title { margin: 0 0 6px; font-size: var(--t-lg); font-weight: 700; color: var(--text); }
-.sp-gate__sub { margin: 0 0 20px; font-size: var(--t-small); line-height: 1.5; color: var(--text-3); }
+.sp-gate__mark:hover {
+  transform: scale(1.05);
+  box-shadow: var(--glow-accent);
+}
+.sp-gate__mark svg { width: 28px; height: 28px; }
 
-/* Google's button, to Google's shape: white, their mark, their wording. A
-   restyled one in the panel's palette is the kind of thing people have learned
-   to distrust on a sign-in screen. */
+.sp-gate__title {
+  margin: 0 0 var(--s-1);
+  font-size: var(--t-title);
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  color: var(--text);
+}
+
+.sp-gate__sub {
+  margin: 0 0 var(--s-4);
+  font-size: var(--t-small);
+  line-height: 1.45;
+  color: var(--text-3);
+}
+
 .sp-gbtn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
   width: 100%;
-  height: 40px;
+  height: 42px;
   border-radius: var(--r-ctrl);
   border: 1px solid var(--google-line);
   background: var(--google-face);
@@ -97,64 +116,122 @@ body {
   font-size: var(--t-body);
   font-weight: 600;
   cursor: pointer;
-  transition: box-shadow 0.15s, background 0.15s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: box-shadow var(--fast), background var(--fast), transform var(--fast);
 }
-.sp-gbtn:hover { background: var(--google-hover); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35); }
-.sp-gbtn:disabled { opacity: 0.6; cursor: default; }
-.sp-gbtn__g { width: 17px; height: 17px; flex: 0 0 auto; }
+.sp-gbtn:hover:not(:disabled) {
+  background: var(--google-hover);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  transform: translateY(-1px);
+}
+.sp-gbtn:active:not(:disabled) { transform: scale(0.985); }
+.sp-gbtn:disabled { opacity: 0.65; cursor: not-allowed; }
+.sp-gbtn__g { width: 18px; height: 18px; flex-shrink: 0; }
 
 .sp-gate__or {
   position: relative;
-  margin: 16px 0 14px;
+  margin: var(--s-4) 0 var(--s-3);
   font-size: var(--t-micro);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   color: var(--text-3);
 }
 .sp-gate__or::before {
   content: '';
-  position: absolute; left: 0; right: 0; top: 50%;
+  position: absolute;
+  left: 0; right: 0; top: 50%;
   border-top: 1px solid var(--line);
 }
-.sp-gate__or span { position: relative; padding: 0 10px; background: var(--bg); }
+.sp-gate__or span {
+  position: relative;
+  padding: 0 10px;
+  background: var(--bg);
+}
 
-.sp-gate .sp-input { text-align: left; }
-.sp-gate__foot { margin: 14px 0 0; font-size: var(--t-micro); color: var(--text-3); }
-.sp-gate__foot a { color: var(--accent); text-decoration: none; }
-.sp-gate__foot a:hover { text-decoration: underline; }
+.sp-gate__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
 
-/* The signed-in shell, which is everything else. */
-.sp-app { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.sp-gate__foot {
+  margin: var(--s-4) 0 0;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+}
+.sp-gate__foot a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+  transition: color var(--fast);
+}
+.sp-gate__foot a:hover { text-decoration: underline; color: var(--text); }
 
 /* ════════════════════════════════════════════════
-   Header
+   2. APP SHELL & HEADER
    ════════════════════════════════════════════════ */
+.sp-app:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
 .sp-top {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  height: 44px;
-  flex: 0 0 auto;
+  justify-content: space-between;
+  padding: 0 var(--s-3);
+  height: 48px;
+  flex-shrink: 0;
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  z-index: 10;
 }
-/* The brand mark, not an emoji. An emoji carries its own colour and
-   stayed orange while every other accent went violet — a logo that
-   cannot match the palette is not a logo. */
-.sp-top__logo { width: 18px; height: 18px; color: var(--accent); flex: none; }
+
+.sp-top__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.sp-top__logo {
+  width: 20px;
+  height: 20px;
+  color: var(--accent);
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 8px var(--accent-30));
+}
+
 .sp-top__name {
   font-size: var(--t-body);
   font-weight: 700;
   letter-spacing: -0.2px;
   color: var(--text);
+  white-space: nowrap;
 }
-/* Pushed right, and the only filled control in the chrome — the panel has
-   exactly one navigation action and this is it. */
+.sp-top__name-studio {
+  color: var(--accent);
+  margin-left: 2px;
+}
+
+.sp-top__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .sp-top__open {
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   height: 28px;
-  padding: 0 10px;
+  padding: 0 var(--s-2);
   border-radius: var(--r-ctrl);
   border: 1px solid var(--accent-30);
   background: var(--accent-14);
@@ -165,32 +242,56 @@ body {
   font-family: inherit;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--fast), border-color var(--fast), transform var(--fast), box-shadow var(--fast);
 }
-.sp-top__open:hover { background: var(--accent-30); border-color: var(--accent); }
+.sp-top__open:hover {
+  background: var(--accent-30);
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: var(--glow-accent-sm);
+  transform: translateY(-0.5px);
+}
+.sp-top__open:active { transform: scale(0.98); }
 .sp-top__open svg {
-  width: 12px; height: 12px;
-  fill: none; stroke: currentColor; stroke-width: 2;
-  stroke-linecap: round; stroke-linejoin: round;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--fast);
 }
+.sp-top__open:hover svg { transform: translate(1px, -1px); }
+
 .sp-top__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
-  flex: 0 0 auto;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: var(--r-ctrl);
-  background: transparent;
+  background: var(--surface-2);
   color: var(--text-2);
-  font-size: var(--t-body);
   cursor: pointer;
+  transition: background var(--fast), color var(--fast), border-color var(--fast);
 }
-.sp-top__icon:hover { background: var(--surface-2); color: var(--text); }
+.sp-top__icon:hover {
+  background: var(--surface-3);
+  color: var(--text);
+  border-color: var(--line-2);
+}
+
+.sp-top__avatar {
+  font-size: var(--t-micro);
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
 
 .sp-badge {
-  padding: 3px 7px;
+  padding: 2px 7px;
   border-radius: var(--r-pill);
   font-size: var(--t-micro);
   font-weight: 700;
@@ -205,26 +306,30 @@ body {
   background: var(--accent-14);
   color: var(--accent);
   border-color: var(--accent-30);
+  box-shadow: 0 0 8px var(--accent-14);
 }
 
 /* ════════════════════════════════════════════════
-   Navigation
+   3. NAVIGATION TABS
    ════════════════════════════════════════════════ */
 .sp-nav {
   display: flex;
-  flex: 0 0 auto;
-  padding: 0 6px;
+  flex-shrink: 0;
+  padding: 4px var(--s-2);
+  background: var(--sunken);
   border-bottom: 1px solid var(--line);
+  gap: 4px;
 }
+
 .sp-nav__tab {
   flex: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  height: 34px;
-  border: 0;
-  border-bottom: 2px solid transparent;
+  gap: 6px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--r-ctrl);
   background: transparent;
   color: var(--text-3);
   font-weight: 600;
@@ -232,331 +337,483 @@ body {
   line-height: 1;
   font-family: inherit;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  position: relative;
+  transition: color var(--fast), background var(--fast), border-color var(--fast);
 }
 .sp-nav__tab svg {
-  width: 13px; height: 13px;
-  fill: none; stroke: currentColor; stroke-width: 1.8;
-  stroke-linecap: round; stroke-linejoin: round;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--fast);
 }
-/* The Run glyph is a solid triangle; a stroked one reads as an outline at
-   13px and stops looking like play. */
 .sp-nav__tab[data-view="run"] svg { fill: currentColor; stroke: none; }
-.sp-nav__tab:hover { color: var(--text-2); }
-.sp-nav__tab--on { color: var(--accent); border-bottom-color: var(--accent); }
-.sp-nav__tab:focus-visible { box-shadow: none; outline: 2px solid var(--accent); outline-offset: -3px; }
+.sp-nav__tab:hover {
+  color: var(--text-2);
+  background: var(--surface);
+}
+.sp-nav__tab--on {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--line-2);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+.sp-nav__tab--on svg { color: var(--accent); }
+.sp-nav__tab:focus-visible { outline: 2px solid var(--accent); }
 
-/* Only the middle scrolls.
+.sp-nav__live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 8px var(--ok);
+  animation: sp-pulse 1.4s ease-in-out infinite;
+}
 
-   `container-type: inline-size` so the layout below can ask how wide THIS
-   panel is rather than how wide the window is. In the shipped extension the
-   two are the same number, but a media query cannot be checked in a harness
-   that renders several panel widths side by side on one page — it answers for
-   the page every time. A container query answers for the panel, which is the
-   question the layout is actually asking. */
+/* ════════════════════════════════════════════════
+   4. MAIN VIEW CONTAINER
+   ════════════════════════════════════════════════ */
 .sp-main {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   container-type: inline-size;
   container-name: panel;
+  background: var(--bg);
 }
 
-/* ── The bug this file existed to hide ──
-   `.sp-view { display: flex }` is author-origin, so it beat the user agent's
-   `[hidden] { display: none }` — origin wins before specificity is even
-   consulted. Every tab rendered at once, stacked, on top of each other's
-   scroll. The panel had a 2000px column behind a 560px window, the search box
-   scrolled off the top of Templates, and Diagnostics sat below two other
-   views. The tabs moved a highlight and nothing else.
-
-   Stated in this direction it cannot regress into the same failure: the
-   default is hidden, and only the absence of the attribute reveals a view. */
 .sp-view:not([hidden]) {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 10px;
+  gap: var(--s-3);
+  padding: var(--s-3);
 }
 
 /* ════════════════════════════════════════════════
-   Run
+   5. BUILD TAB COMPONENTS
    ════════════════════════════════════════════════ */
-.sp-run {
-  border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  padding: 12px;
-  background: var(--surface);
-  transition: border-color 0.25s, background 0.25s;
+.sp-hero {
+  text-align: center;
+  padding: var(--s-1) 0 var(--s-1);
 }
-.sp-run:has(#run-live:not([hidden])) {
-  border-color: var(--accent-30);
-  background: linear-gradient(160deg, var(--accent-8), var(--surface) 65%);
-}
-
-/* Idle is two lines, not a 128px poster. Nothing is happening; saying so
-   should cost the space of saying so. */
-.sp-run__idle:not([hidden]) {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 1px 9px;
-  align-items: center;
-}
-.sp-run__idle-icon {
-  grid-row: span 2;
-  width: 20px; height: 20px;
-  color: var(--text-3);
-  line-height: 1;
-}
-.sp-run__idle-text { font-weight: 600; font-size: var(--t-small); color: var(--text-2); }
-.sp-run__idle-hint { font-size: var(--t-micro); color: var(--text-3); }
-
-.sp-run__top { display: flex; align-items: center; gap: 7px; }
-.sp-run__state {
-  flex: 1;
-  min-width: 0;
+.sp-hero__badge {
+  display: inline-block;
   font-size: var(--t-micro);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.7px;
+  letter-spacing: 0.5px;
   color: var(--accent);
-}
-.sp-run__elapsed {
-  font-size: var(--t-micro);
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-}
-/* The node label gets its own line. Sharing a row with the timer clipped it
-   to about fourteen characters at 320px, and "Grok · Hero product still"
-   became "Grok · Hero pr…" — the one string that says what is happening. */
-.sp-run__node {
-  margin: 7px 0 9px;
-  font-size: var(--t-body);
-  font-weight: 600;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sp-run__pulse {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex-shrink: 0;
-  animation: sp-pulse 1.6s ease-in-out infinite;
-}
-@keyframes sp-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--accent-30); }
-  50% { opacity: 0.5; box-shadow: 0 0 0 5px rgba(181, 246, 2, 0); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .sp-run__pulse { animation: none; }
-}
-.sp-run__meta {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 7px;
-  font-size: var(--t-micro);
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── Bars ── */
-.sp-bar { height: 5px; border-radius: var(--r-pill); background: var(--sunken); overflow: hidden; }
-.sp-bar--thin { height: 4px; }
-.sp-bar__fill {
-  height: 100%;
-  width: 0;
+  background: var(--accent-8);
+  border: 1px solid var(--accent-14);
+  padding: 3px 9px;
   border-radius: var(--r-pill);
-  background: var(--accent);
-  transition: width 0.35s ease;
+  margin-bottom: 6px;
 }
-.sp-bar__fill--full { background: var(--warn); }
-
-/* ── Buttons ── */
-.sp-btn {
-  padding: 8px 12px;
-  border-radius: var(--r-ctrl);
-  border: 1px solid transparent;
-  font-weight: 600;
-  font-size: var(--t-small);
-  line-height: 1;
-  font-family: inherit;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-.sp-btn--wide { width: 100%; }
-.sp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.sp-btn--primary {
-  background: var(--accent);
-  color: var(--on-accent);
+.sp-hero__title {
+  margin: 0;
+  font-size: var(--t-lg);
   font-weight: 700;
-  margin: 10px 0;
+  color: var(--text);
+  letter-spacing: -0.3px;
 }
-.sp-btn--primary:hover:not(:disabled) { background: var(--accent-dim); }
-.sp-btn--ghost {
-  background: var(--surface-2);
-  border-color: var(--line);
-  color: var(--text-2);
+.sp-hero__sub {
+  margin: 3px 0 0;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.4;
 }
-.sp-btn--ghost:hover { border-color: var(--line-2); color: var(--text); }
-.sp-btn--danger {
-  background: var(--bad-12);
-  border-color: var(--bad-30);
-  color: var(--bad);
-}
-.sp-btn--danger:hover { background: rgba(248, 113, 113, 0.2); }
-.sp-row { display: flex; gap: 8px; margin-top: 10px; }
-.sp-row .sp-btn { flex: 1; }
 
-/* ════════════════════════════════════════════════
-   Cards
-   ════════════════════════════════════════════════ */
-.sp-card {
+.sp-prompt-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sp-area {
+  width: 100%;
+  padding: 10px var(--s-3);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  padding: 10px;
+  border-radius: var(--r-ctrl);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--t-small);
+  line-height: 1.5;
+  resize: vertical;
+  transition: border-color var(--fast), box-shadow var(--fast), background var(--fast);
 }
-.sp-card__head {
+.sp-area::placeholder { color: var(--text-3); }
+.sp-area:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface-2);
+  box-shadow: 0 0 0 3px var(--accent-8), var(--glow-accent-sm);
+}
+.sp-area--hero {
+  border-color: var(--line-2);
+  background: var(--sunken);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35);
+  min-height: 76px;
+}
+.sp-area--mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--t-micro);
+}
+
+.sp-prompt-bar {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 6px;
+  align-items: center;
+  justify-content: space-between;
   padding: 0 2px;
 }
-.sp-card__title {
-  margin: 0;
+.sp-prompt-tip {
+  font-size: var(--t-micro);
+  color: var(--text-3);
+}
+.sp-prompt-clear {
+  background: transparent;
+  border: 0;
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--r-chip);
+}
+.sp-prompt-clear:hover { color: var(--text); background: var(--surface-2); }
+
+/* ── Engines Card ── */
+.sp-engines-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  padding: var(--s-3);
+  box-shadow: var(--e-1);
+}
+.sp-engines__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--s-2);
+}
+.sp-engines__label {
   font-size: var(--t-micro);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.9px;
+  letter-spacing: 0.6px;
+  color: var(--text-2);
+}
+.sp-engines__sublabel {
+  font-size: var(--t-micro);
   color: var(--text-3);
 }
-/* "3 of 4 open" beside the heading, so the answer is readable without
-   parsing four rows of dots. */
-.sp-card__count { margin-left: auto; font-size: var(--t-micro); color: var(--text-3); }
 
-/* ── Platforms ── */
-.sp-plat { list-style: none; margin: 0; padding: 0; }
-.sp-plat button {
+.sp-ai {
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sp-ai__link {
+  display: inline-flex;
   align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 7px 8px;
-  border: 1px solid transparent;
-  border-radius: var(--r-row);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-.sp-plat button:hover { background: var(--surface-2); border-color: var(--line); }
-.sp-plat__name { flex: 1; min-width: 0; font-size: var(--t-small); color: var(--text-2); }
-.sp-plat button:hover .sp-plat__name { color: var(--text); }
-.sp-plat__state { font-size: var(--t-micro); color: var(--text-3); }
-.sp-dot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  background: var(--line-2);
-  flex-shrink: 0;
-  transition: background 0.2s, box-shadow 0.2s;
-}
-.sp-plat .is-open .sp-dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-16); }
-.sp-plat .is-open .sp-plat__state { color: var(--ok); font-weight: 600; }
-.sp-plat .is-blocked .sp-dot { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-16); }
-.sp-plat .is-blocked .sp-plat__state { color: var(--warn); font-weight: 600; }
-
-/* A closed row is the one you act on, so it is the one that says what the
-   click will do. */
-.sp-plat button::after {
-  content: 'Open ↗';
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text-2);
   font-size: var(--t-micro);
-  color: var(--accent);
-  opacity: 0;
-  transition: opacity 0.15s;
+  font-weight: 600;
+  font-family: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color var(--fast), color var(--fast), background var(--fast), transform var(--fast);
 }
-.sp-plat button:hover::after, .sp-plat button:focus-visible::after { opacity: 1; }
-.sp-plat button:hover .sp-plat__state, .sp-plat button:focus-visible .sp-plat__state { display: none; }
-.sp-plat .is-open::after { content: 'Focus ↗'; }
-
-/* Two up once there is room. A full-width row at 650px puts "Google Flow" on
-   the left edge and "open" on the right with 500px of nothing between them,
-   and the pair stops reading as one fact. Halves the height too. */
-@container panel (min-width: 520px) {
-  .sp-plat { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 10px; }
+.sp-ai__link:hover:not(:disabled) {
+  border-color: var(--accent-30);
+  color: var(--text);
+  background: var(--surface-3);
+  transform: translateY(-0.5px);
 }
+.sp-ai__link:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* ── Diagnostics ── */
-.sp-diag__log {
-  max-height: 168px;
-  overflow-y: auto;
-  padding: 6px;
+.sp-ai__link--auto {
+  border-color: var(--accent-30);
+  background: var(--accent-8);
+  color: var(--text);
+}
+.sp-ai__link--auto:hover:not(:disabled) {
+  background: var(--accent-14);
+  border-color: var(--accent);
+  box-shadow: var(--glow-accent-sm);
+}
+.sp-ai__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+  flex-shrink: 0;
+}
+.sp-ai__link--auto .sp-ai__dot { background: var(--accent); }
+.sp-ai__link[data-key="chatgpt"] .sp-ai__dot { background: var(--brand-chatgpt); }
+.sp-ai__link[data-key="gemini"]  .sp-ai__dot { background: var(--brand-gemini); }
+.sp-ai__link[data-key="claude"]  .sp-ai__dot { background: var(--brand-claude); }
+.sp-ai__link[data-key="grok"]    .sp-ai__dot { background: var(--brand-grok); }
+
+.sp-ai__model {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: var(--t-micro);
+  cursor: pointer;
+}
+.sp-ai__model:hover { border-color: var(--line-2); color: var(--text); }
+.sp-ai__model:focus { outline: none; border-color: var(--accent); }
+
+/* ── Build Status Output ── */
+.sp-buildout {
+  padding: var(--s-3);
   border-radius: var(--r-ctrl);
-  background: var(--sunken);
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  border: 1px solid var(--line);
+  background: var(--surface);
   font-size: var(--t-micro);
   line-height: 1.5;
+  color: var(--text-2);
 }
-.sp-diag__empty {
-  padding: 10px 0;
-  text-align: center;
-  font-size: var(--t-micro);
-  /* Was 2.8:1 — legible as "there is text here", not as the text. */
-  color: var(--text-3);
-  font-family: inherit;
+.sp-buildout--ok {
+  border-color: var(--accent-30);
+  background: var(--accent-8);
 }
-.sp-diag__line {
+.sp-buildout--bad {
+  border-left: 3px solid var(--bad);
+  background: var(--bad-12);
+  color: var(--bad);
+}
+.sp-buildout__title {
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.sp-buildout--bad .sp-buildout__title { color: var(--bad); }
+.sp-buildout ul { margin: 6px 0 0; padding-left: 16px; }
+.sp-buildout li { margin-bottom: 3px; }
+
+/* ── Quick Ideas Blueprints ── */
+.sp-ideas {
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--line);
+}
+.sp-ideas__head {
   display: flex;
-  gap: 7px;
-  padding: 3px 4px;
-  border-radius: var(--r-chip);
-  word-break: break-word;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--s-2);
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-3);
 }
-.sp-diag__line:hover { background: rgba(255, 255, 255, 0.04); }
-.sp-diag__ts { color: var(--text-3); flex-shrink: 0; font-variant-numeric: tabular-nums; }
-.sp-diag__src { color: var(--accent); flex-shrink: 0; font-weight: 600; }
-.sp-diag__msg { color: var(--text-2); min-width: 0; }
+.sp-ideas__count {
+  font-weight: 500;
+  text-transform: none;
+}
+
+.sp-ideas__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+@container panel (max-width: 330px) {
+  .sp-ideas__list { grid-template-columns: 1fr; }
+}
+
+.sp-idea {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  text-align: left;
+  padding: 8px var(--s-2);
+  border-radius: var(--r-ctrl);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color var(--fast), background var(--fast), box-shadow var(--fast), transform var(--fast);
+}
+.sp-idea:hover {
+  border-color: var(--accent-30);
+  background: var(--surface-2);
+  box-shadow: var(--e-card-hover);
+  transform: translateY(-1px);
+}
+.sp-idea:active { transform: scale(0.985); }
+
+.sp-idea__icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-chip);
+  font-size: var(--t-mid);
+  line-height: 1;
+  background: var(--surface-2);
+}
+.sp-idea__icon--warm  { background: rgba(249, 115, 22, 0.16); }
+.sp-idea__icon--blue  { background: rgba(96, 165, 250, 0.16); }
+.sp-idea__icon--green { background: rgba(74, 222, 128, 0.16); }
+.sp-idea__icon--amber { background: rgba(251, 191, 36, 0.16); }
+.sp-idea__icon--pink  { background: rgba(236, 72, 153, 0.16); }
+.sp-idea__icon--violet{ background: var(--accent-14); }
+
+.sp-idea__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.sp-idea__title-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sp-idea__text {
+  font-size: var(--t-micro);
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sp-idea__tag {
+  font-size: var(--t-micro);
+  color: var(--accent);
+  opacity: 0.85;
+}
+.sp-idea__sub {
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sp-idea__arrow {
+  flex-shrink: 0;
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity var(--fast), transform var(--fast);
+}
+.sp-idea:hover .sp-idea__arrow {
+  opacity: 1;
+  transform: translateX(0);
+  color: var(--accent);
+}
+
+/* ── Manual Accordion ── */
+.sp-manual {
+  margin-top: 2px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  padding: 2px var(--s-2);
+}
+.sp-manual > summary {
+  cursor: pointer;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  color: var(--text-3);
+  padding: 8px 4px;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sp-manual > summary::-webkit-details-marker { display: none; }
+.sp-manual > summary::before { content: "▸ "; color: var(--accent); }
+.sp-manual[open] > summary::before { content: "▾ "; }
+.sp-manual > summary:hover { color: var(--text-2); }
+.sp-manual__content {
+  padding: var(--s-1) 2px var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
 
 /* ════════════════════════════════════════════════
-   Templates
+   6. LIBRARY & TEMPLATES
    ════════════════════════════════════════════════ */
 .sp-tplbar {
   position: sticky;
-  top: -10px;              /* cancels the view's padding, so it pins flush */
-  z-index: 2;
+  top: -12px;
+  z-index: 5;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: -10px -10px 0;
-  padding: 10px;
+  margin: -12px -12px 0;
+  padding: 12px;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+}
+
+.sp-seg2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-ctrl);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+}
+.sp-seg2__btn {
+  height: 28px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--text-3);
+  font-family: inherit;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--fast), color var(--fast);
+}
+.sp-seg2__btn--on {
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
 
 .sp-search { position: relative; display: flex; }
 .sp-search__icon {
   position: absolute;
-  left: 9px;
+  left: 10px;
   top: 50%;
   transform: translateY(-50%);
-  width: 13px; height: 13px;
-  fill: none; stroke: var(--text-3); stroke-width: 2;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--text-3);
+  stroke-width: 2;
   stroke-linecap: round;
   pointer-events: none;
 }
 .sp-search__input {
   width: 100%;
-  height: 32px;
-  padding: 0 10px 0 28px;
+  height: 34px;
+  padding: 0 10px 0 32px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-ctrl);
@@ -564,13 +821,16 @@ body {
   font-size: var(--t-small);
   line-height: 1;
   font-family: inherit;
+  transition: border-color var(--fast), box-shadow var(--fast);
 }
 .sp-search__input::placeholder { color: var(--text-3); }
-.sp-search__input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-8); }
+.sp-search__input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-8);
+}
 .sp-search__input::-webkit-search-cancel-button { filter: invert(0.6); cursor: pointer; }
 
-/* One line, scrolled sideways rather than wrapped. The mask says there is
-   more without spending a row on saying it. */
 .sp-pills {
   display: flex;
   gap: 5px;
@@ -584,46 +844,36 @@ body {
 .sp-pill {
   flex: 0 0 auto;
   scroll-snap-align: start;
-  height: 24px;
-  padding: 0 10px;
+  height: 26px;
+  padding: 0 var(--s-2);
   border-radius: var(--r-pill);
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text-3);
-  font-weight: 500;
+  font-weight: 600;
   font-size: var(--t-micro);
   line-height: 1;
   font-family: inherit;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  transition: color var(--fast), border-color var(--fast), background var(--fast);
 }
 .sp-pill:hover { color: var(--text-2); border-color: var(--line-2); }
 .sp-pill--on {
   border-color: var(--accent-30);
   background: var(--accent-14);
   color: var(--accent);
-  font-weight: 600;
 }
 
-.sp-count { font-size: var(--t-micro); color: var(--text-3); padding: 0 2px; }
-
-.sp-empty {
-  grid-column: 1 / -1;
-  padding: 24px 0;
-  text-align: center;
+.sp-count {
   font-size: var(--t-micro);
   color: var(--text-3);
+  padding: 0 2px;
 }
 
-/* Rows, not a card grid.
-
-   The grid gave every template a 46px box holding one emoji — 42% of each
-   card was that box — and clamped the name to two lines of 11px, which is
-   where "Product Photos → Storyboard → Commercial" went to die. A row shows
-   the whole name, states the two facts that are true (category, step count),
-   and fits ten of them in the space six cards took. Two columns once there is
-   width for two full names. */
-.sp-grid { display: grid; gap: 6px; }
+.sp-grid {
+  display: grid;
+  gap: var(--s-2);
+}
 @container panel (min-width: 520px) {
   .sp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -631,10 +881,10 @@ body {
 .sp-tpl {
   position: relative;
   display: grid;
-  grid-template-columns: 34px 1fr;
+  grid-template-columns: 38px 1fr;
   align-items: center;
   gap: 10px;
-  padding: 8px;
+  padding: 10px;
   border-radius: var(--r-row);
   border: 1px solid var(--line);
   background: var(--surface);
@@ -643,21 +893,30 @@ body {
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color var(--fast), background var(--fast), transform var(--fast), box-shadow var(--fast);
 }
-.sp-tpl:hover { border-color: var(--accent-30); background: var(--surface-2); }
+.sp-tpl:hover {
+  border-color: var(--accent-30);
+  background: var(--surface-2);
+  box-shadow: var(--e-card-hover);
+  transform: translateY(-1px);
+}
+.sp-tpl:active { transform: scale(0.985); }
+
 .sp-tpl__thumb {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--r-chip);
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-ctrl);
   background: var(--surface-2);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-2);
   font-size: var(--t-lg);
   line-height: 1;
+  transition: border-color var(--fast);
 }
 .sp-tpl:hover .sp-tpl__thumb { border-color: var(--accent-30); }
+
 .sp-tpl__body { min-width: 0; }
 .sp-tpl__name {
   font-size: var(--t-small);
@@ -670,7 +929,7 @@ body {
   overflow: hidden;
 }
 .sp-tpl__meta {
-  margin-top: 2px;
+  margin-top: 3px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -680,9 +939,9 @@ body {
 .sp-tpl__sep { color: var(--line-2); }
 .sp-tpl__lock {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  padding: 2px 5px;
+  top: 8px;
+  right: 8px;
+  padding: 2px 6px;
   border-radius: var(--r-chip);
   background: var(--accent);
   color: var(--on-accent);
@@ -692,147 +951,6 @@ body {
 }
 .sp-tpl--locked { opacity: 0.9; }
 
-/* ════════════════════════════════════════════════
-   Build
-   ════════════════════════════════════════════════ */
-.sp-step { display: flex; align-items: center; gap: 7px; margin-top: 2px; }
-.sp-step__n {
-  display: grid;
-  place-items: center;
-  width: 17px; height: 17px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--accent-14);
-  border: 1px solid var(--accent-30);
-  color: var(--accent);
-  font-size: var(--t-micro);
-  font-weight: 700;
-}
-.sp-step__label { font-size: var(--t-micro); font-weight: 600; color: var(--text-2); }
-
-.sp-area {
-  width: 100%;
-  padding: 9px 10px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r-ctrl);
-  color: var(--text);
-  font-family: inherit;
-  font-size: var(--t-small);
-  line-height: 1.5;
-  resize: vertical;
-}
-.sp-area::placeholder { color: var(--text-3); }
-.sp-area:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-8); }
-.sp-area--mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--t-micro); }
-
-/* The five chats, as links rather than as automation. Grok, ChatGPT and
-   Gemini could be driven from here; DeepSeek and Claude could not, and a
-   builder that worked with three of the five would be the wrong feature. */
-.sp-ai { display: flex; flex-wrap: wrap; gap: 5px; }
-.sp-ai__link {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 9px;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--text-2);
-  font-size: var(--t-micro);
-  text-decoration: none;
-  cursor: pointer;
-}
-.sp-ai__link:hover { border-color: var(--accent-30); color: var(--text); background: var(--surface-2); }
-.sp-ai__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); }
-.sp-ai__link:hover .sp-ai__dot { background: var(--accent); }
-
-.sp-buildout {
-  padding: 10px;
-  border-radius: var(--r-ctrl);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  font-size: var(--t-micro);
-  line-height: 1.5;
-  color: var(--text-2);
-}
-.sp-buildout--ok { border-color: var(--accent-30); background: var(--accent-8); }
-.sp-buildout--bad { border-left: 3px solid var(--bad); background: var(--bad-12); color: var(--bad); }
-.sp-buildout__title { font-weight: 700; color: var(--text); margin-bottom: 4px; }
-.sp-buildout--bad .sp-buildout__title { color: var(--bad); }
-.sp-buildout ul { margin: 6px 0 0; padding-left: 16px; }
-.sp-buildout li { margin-bottom: 3px; }
-
-
-/* The three the extension can drive: filled, because pressing one is the
-   whole feature rather than a link out. */
-.sp-ai__link--auto { border-color: var(--accent-30); background: var(--accent-8); color: var(--text); }
-.sp-ai__link--auto .sp-ai__dot { background: var(--accent); }
-.sp-ai__link[data-key="chatgpt"] .sp-ai__dot { background: var(--brand-chatgpt); }
-.sp-ai__link[data-key="gemini"]  .sp-ai__dot { background: var(--brand-gemini); }
-.sp-ai__link[data-key="claude"]  .sp-ai__dot { background: var(--brand-claude); }
-.sp-ai__link[data-key="grok"]    .sp-ai__dot { background: var(--brand-grok); }
-.sp-ai__link--auto:hover { background: var(--accent-14); }
-.sp-ai__link:disabled { opacity: 0.5; cursor: default; }
-.sp-ai__link--busy .sp-ai__dot { animation: sp-pulse 1.2s ease-in-out infinite; }
-
-
-/* Model picker, only where the site has one worth driving. */
-.sp-ai__model {
-  height: 26px;
-  padding: 0 6px;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--text-2);
-  font-family: inherit;
-  font-size: var(--t-micro);
-  cursor: pointer;
-}
-.sp-ai__model:hover { border-color: var(--line-2); color: var(--text); }
-.sp-ai__model:focus { outline: none; border-color: var(--accent); }
-
-/* The manual path, folded away — it is the exception, not the route. */
-.sp-manual { margin-top: 2px; }
-.sp-manual > summary {
-  cursor: pointer;
-  font-size: var(--t-micro);
-  color: var(--text-3);
-  padding: 4px 2px;
-  list-style: none;
-}
-.sp-manual > summary::-webkit-details-marker { display: none; }
-.sp-manual > summary::before { content: "▸ "; }
-.sp-manual[open] > summary::before { content: "▾ "; }
-.sp-manual > summary:hover { color: var(--text-2); }
-.sp-manual > *:not(summary) { margin-top: 8px; }
-
-
-/* Official / Community switch. */
-.sp-seg2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2px;
-  padding: 2px;
-  border-radius: var(--r-ctrl);
-  background: var(--sunken);
-  border: 1px solid var(--line);
-}
-.sp-seg2__btn {
-  height: 26px;
-  border: 0;
-  border-radius: var(--r-chip);
-  background: transparent;
-  color: var(--text-3);
-  font-family: inherit;
-  font-size: var(--t-micro);
-  font-weight: 600;
-  cursor: pointer;
-}
-.sp-seg2__btn--on { background: var(--surface-2); color: var(--text); }
-
-/* A community card carries who made it and how it is doing. */
 .sp-tpl__by { color: var(--text-3); }
 .sp-tpl__stats { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .sp-like {
@@ -840,13 +958,14 @@ body {
   align-items: center;
   gap: 4px;
   border: 0;
-  padding: 2px 4px;
+  padding: 2px 6px;
   border-radius: var(--r-chip);
   background: transparent;
   color: var(--text-3);
   font-family: inherit;
   font-size: var(--t-micro);
   cursor: pointer;
+  transition: background var(--fast), color var(--fast);
 }
 .sp-like:hover { background: var(--surface-2); color: var(--text-2); }
 .sp-like--on { color: var(--bad); }
@@ -854,50 +973,394 @@ body {
 .sp-like--on svg { fill: currentColor; }
 .sp-installs { font-size: var(--t-micro); color: var(--text-3); font-variant-numeric: tabular-nums; }
 
-/* ════════════════════════════════════════════════
-   Prompts
-   ════════════════════════════════════════════════ */
-.sp-note { margin: 0; font-size: var(--t-micro); line-height: 1.5; color: var(--text-3); }
-.sp-note--intro { margin-bottom: 2px; }
+/* ── Presets ── */
 .sp-preset {
-  padding: 9px 10px;
+  padding: 10px var(--s-3);
   margin-bottom: 6px;
-  border-radius: var(--r-row);
+  border-radius: var(--r-ctrl);
   border: 1px solid var(--line);
   background: var(--surface);
 }
 .sp-preset__head { display: flex; align-items: baseline; gap: 8px; }
-.sp-preset__name { color: var(--text); font-size: var(--t-small); font-weight: 600; }
-/* The id is what you type on the node, so it must stay legible — but the name
-   is what you read first. At 320px "Cinematic still" and "preset_cinematic"
-   do not both fit, so the id is the one that gives way. */
+.sp-preset__name { color: var(--text); font-size: var(--t-small); font-weight: 700; }
 .sp-preset__id {
   margin-left: auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-3);
+  color: var(--accent);
   font-size: var(--t-micro);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: 'JetBrains Mono', monospace;
 }
-.sp-preset__hint { margin: 4px 0 0; color: var(--text-3); font-size: var(--t-micro); line-height: 1.5; }
+.sp-preset__hint { margin: 4px 0 0; color: var(--text-3); font-size: var(--t-micro); line-height: 1.45; }
 
 /* ════════════════════════════════════════════════
-   Footer
+   7. ACTIVITY & RUN TRACKER
+   ════════════════════════════════════════════════ */
+.sp-run {
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  padding: var(--s-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+  transition: border-color var(--base), background var(--base);
+}
+.sp-run:has(#run-live:not([hidden])) {
+  border-color: var(--accent-30);
+  background: linear-gradient(165deg, var(--accent-8), var(--surface) 70%);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), var(--glow-accent-sm);
+}
+
+.sp-run__idle:not([hidden]) {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  align-items: center;
+  padding: var(--s-1) 0;
+}
+.sp-run__idle-graphic {
+  grid-row: span 2;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-ctrl);
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  display: grid;
+  place-items: center;
+}
+.sp-run__idle-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--text-3);
+}
+.sp-run__idle-text { font-weight: 700; font-size: var(--t-small); color: var(--text-2); }
+.sp-run__idle-hint { font-size: var(--t-micro); color: var(--text-3); line-height: 1.35; }
+
+.sp-run__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--s-2);
+}
+.sp-run__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  background: var(--accent-14);
+  border: 1px solid var(--accent-30);
+}
+.sp-run__state {
+  font-size: var(--t-micro);
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: var(--accent);
+}
+.sp-run__timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.sp-run__timer svg { width: 13px; height: 13px; }
+
+.sp-run__node-wrapper {
+  margin: var(--s-2) 0 var(--s-3);
+}
+.sp-run__node-label {
+  font-size: var(--t-micro);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-3);
+}
+.sp-run__node {
+  margin-top: 2px;
+  font-size: var(--t-mid);
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-run__pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: sp-pulse 1.4s ease-in-out infinite;
+}
+@keyframes sp-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.3); }
+}
+
+.sp-run__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--s-2);
+  font-size: var(--t-micro);
+  color: var(--text-3);
+}
+.sp-run__pct-badge {
+  font-weight: 800;
+  color: var(--accent);
+  font-size: var(--t-small);
+}
+
+.sp-run__controls {
+  margin-top: var(--s-3);
+}
+
+/* ── Progress Bars ── */
+.sp-bar {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--sunken);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  position: relative;
+}
+.sp-bar--thin { height: 5px; }
+.sp-bar__fill {
+  height: 100%;
+  width: 0;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-30);
+  transition: width 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+.sp-bar__fill--full { background: var(--warn); box-shadow: 0 0 10px var(--warn-16); }
+
+/* ── Cards General ── */
+.sp-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  padding: var(--s-3);
+  box-shadow: var(--e-1);
+}
+.sp-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--s-2);
+  padding: 0 2px;
+}
+.sp-card__title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sp-card__title {
+  margin: 0;
+  font-size: var(--t-micro);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-2);
+}
+.sp-card__count {
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+/* ── Platforms List ── */
+.sp-plat { list-style: none; margin: 0; padding: 0; }
+.sp-plat button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px var(--s-2);
+  border: 1px solid transparent;
+  border-radius: var(--r-row);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--fast), border-color var(--fast);
+}
+.sp-plat button:hover {
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+.sp-plat__name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-small);
+  font-weight: 500;
+  color: var(--text-2);
+}
+.sp-plat button:hover .sp-plat__name { color: var(--text); }
+.sp-plat__state { font-size: var(--t-micro); color: var(--text-3); }
+
+.sp-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line-2);
+  flex-shrink: 0;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.sp-plat .is-open .sp-dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-16); }
+.sp-plat .is-open .sp-plat__state { color: var(--ok); font-weight: 600; }
+.sp-plat .is-blocked .sp-dot { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-16); }
+.sp-plat .is-blocked .sp-plat__state { color: var(--warn); font-weight: 600; }
+
+.sp-plat button::after {
+  content: 'Open ↗';
+  font-size: var(--t-micro);
+  color: var(--accent);
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity var(--fast);
+}
+.sp-plat button:hover::after, .sp-plat button:focus-visible::after { opacity: 1; }
+.sp-plat button:hover .sp-plat__state, .sp-plat button:focus-visible .sp-plat__state { display: none; }
+.sp-plat .is-open::after { content: 'Focus ↗'; }
+
+@container panel (min-width: 520px) {
+  .sp-plat { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 10px; }
+}
+
+/* ── Diagnostics ── */
+.sp-diag__badge {
+  font-size: var(--t-micro);
+  font-weight: 700;
+  color: var(--ok);
+  background: var(--ok-16);
+  padding: 2px 6px;
+  border-radius: var(--r-chip);
+}
+.sp-diag__log {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 8px;
+  border-radius: var(--r-ctrl);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--t-micro);
+  line-height: 1.5;
+}
+.sp-diag__empty {
+  padding: var(--s-3) 0;
+  text-align: center;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  font-family: inherit;
+}
+.sp-diag__line {
+  display: flex;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: var(--r-chip);
+  word-break: break-word;
+}
+.sp-diag__line:hover { background: rgba(255, 255, 255, 0.04); }
+.sp-diag__ts { color: var(--text-3); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.sp-diag__src { color: var(--accent); flex-shrink: 0; font-weight: 700; }
+.sp-diag__msg { color: var(--text-2); min-width: 0; }
+
+/* ════════════════════════════════════════════════
+   8. BUTTONS & INPUTS
+   ════════════════════════════════════════════════ */
+.sp-btn {
+  padding: 8px var(--s-3);
+  border-radius: var(--r-ctrl);
+  border: 1px solid transparent;
+  font-weight: 600;
+  font-size: var(--t-small);
+  line-height: 1;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background var(--fast), border-color var(--fast), color var(--fast), transform var(--fast), box-shadow var(--fast);
+}
+.sp-btn--wide { width: 100%; }
+.sp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.sp-btn--primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+  box-shadow: var(--glow-accent-sm);
+}
+.sp-btn--primary:hover:not(:disabled) {
+  background: var(--accent-dim);
+  box-shadow: var(--glow-accent);
+}
+.sp-btn--ghost {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--text-2);
+}
+.sp-btn--ghost:hover:not(:disabled) {
+  border-color: var(--line-2);
+  background: var(--surface-3);
+  color: var(--text);
+}
+.sp-btn--danger {
+  background: var(--bad-12);
+  border-color: var(--bad-30);
+  color: var(--bad);
+}
+.sp-btn--danger:hover:not(:disabled) {
+  background: var(--bad-30);
+}
+.sp-row { display: flex; gap: var(--s-2); }
+.sp-row .sp-btn { flex: 1; }
+
+.sp-input {
+  width: 100%;
+  padding: 10px var(--s-3);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  color: var(--text);
+  font-size: var(--t-small);
+  line-height: 1.4;
+  font-family: inherit;
+  transition: border-color var(--fast), box-shadow var(--fast);
+}
+.sp-input::placeholder { color: var(--text-3); }
+.sp-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-8);
+}
+
+/* ════════════════════════════════════════════════
+   9. FOOTER
    ════════════════════════════════════════════════ */
 .sp-foot {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 10px;
-  flex: 0 0 auto;
+  gap: var(--s-2);
+  height: 36px;
+  padding: 0 var(--s-3);
+  flex-shrink: 0;
   border-top: 1px solid var(--line);
   background: var(--surface);
 }
 .sp-foot__plan {
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: var(--r-chip);
   border: 1px solid var(--line-2);
   color: var(--text-3);
@@ -905,7 +1368,11 @@ body {
   font-weight: 800;
   letter-spacing: 0.5px;
 }
-.sp-foot__plan--pro { border-color: var(--accent-30); background: var(--accent-14); color: var(--accent); }
+.sp-foot__plan--pro {
+  border-color: var(--accent-30);
+  background: var(--accent-14);
+  color: var(--accent);
+}
 .sp-foot__acct {
   flex: 1;
   min-width: 0;
@@ -923,52 +1390,129 @@ body {
   cursor: pointer;
 }
 .sp-foot__acct:hover { color: var(--text); text-decoration: underline; }
-/* Was 9px at 4.05:1. It is the number that tells you a run will be refused. */
-.sp-foot__stat { color: var(--text-3); font-size: var(--t-micro); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.sp-foot__stat--low { color: var(--warn); font-weight: 600; }
+.sp-foot__stat {
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.sp-foot__stat--low { color: var(--warn); }
 
 /* ════════════════════════════════════════════════
-   Account
+   10. ACCOUNT MODAL
    ════════════════════════════════════════════════ */
-.sp-input {
-  width: 100%;
-  padding: 9px 11px;
-  margin-bottom: 8px;
-  background: var(--sunken);
-  border: 1px solid var(--line);
-  border-radius: var(--r-ctrl);
-  color: var(--text);
-  font-size: var(--t-small);
-  line-height: 1.4;
-  font-family: inherit;
+.sp-modal:not([hidden]) {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-4);
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
 }
-.sp-input::placeholder { color: var(--text-3); }
-.sp-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-8); }
+.sp-modal__card {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  padding: var(--s-4);
+  border-radius: var(--r-card);
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  box-shadow: var(--e-3);
+}
+.sp-modal__header { margin-bottom: var(--s-3); }
+.sp-modal__title {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--t-mid);
+  font-weight: 700;
+}
+.sp-modal__x {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.sp-modal__x:hover { background: var(--surface-2); color: var(--text); }
 
-.sp-acct { display: flex; align-items: center; gap: 10px; }
+.sp-acct {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2);
+  background: var(--surface-2);
+  border-radius: var(--r-ctrl);
+  border: 1px solid var(--line);
+}
+.sp-avatar-wrap { flex-shrink: 0; }
 .sp-avatar {
-  width: 28px; height: 28px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: var(--accent);
-  display: grid; place-items: center;
-  font-size: var(--t-small); font-weight: 700; color: var(--on-accent);
-  text-transform: uppercase; flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-size: var(--t-mid);
+  font-weight: 800;
+  color: var(--on-accent);
+  text-transform: uppercase;
 }
+.sp-acct__info { min-width: 0; flex: 1; }
 .sp-acct__email {
-  font-weight: 600; min-width: 0; color: var(--text);
+  font-weight: 700;
+  color: var(--text);
   font-size: var(--t-small);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
 }
-.sp-usage { margin: 12px 0; }
-.sp-usage__row {
-  display: flex; justify-content: space-between;
-  font-size: var(--t-micro); color: var(--text-3); margin-bottom: 6px;
-  font-variant-numeric: tabular-nums;
+.sp-acct__status {
+  font-size: var(--t-micro);
+  color: var(--ok);
+  font-weight: 600;
 }
 
-.sp-error {
-  margin-top: 10px;
-  padding: 8px 10px;
+.sp-usage { margin: var(--s-4) 0; }
+.sp-usage__row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  margin-bottom: var(--s-1);
+}
+.sp-usage__val { font-weight: 700; color: var(--text); }
+
+.sp-modal__links {
+  display: flex;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line);
+}
+.sp-modal__links a {
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  text-decoration: none;
+  font-weight: 600;
+}
+.sp-modal__links a:hover { color: var(--accent); }
+
+/* ── Error Banner ── */
+.sp-error:not([hidden]) {
+  margin-top: var(--s-2);
+  padding: var(--s-2) var(--s-3);
   border-radius: var(--r-ctrl);
   border-left: 3px solid var(--bad);
   background: var(--bad-12);
@@ -978,258 +1522,22 @@ body {
   word-break: break-word;
 }
 
-.sp-modal:not([hidden]) {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  background: rgba(0, 0, 0, 0.7);
-}
-.sp-modal__card {
-  position: relative;
-  width: 100%;
-  max-width: 300px;
-  padding: 18px;
-  border-radius: var(--r-card);
-  border: 1px solid var(--line-2);
-  background: var(--surface);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
-}
-.sp-modal__x {
-  position: absolute;
-  top: 8px; right: 8px;
-  width: 24px; height: 24px;
-  border: 0;
-  border-radius: var(--r-chip);
-  background: transparent;
-  color: var(--text-3);
-  font-size: var(--t-small);
-  cursor: pointer;
-}
-.sp-modal__x:hover { background: var(--surface-2); color: var(--text); }
-.sp-modal__title { margin-bottom: 4px; color: var(--text); font-size: var(--t-body); font-weight: 700; }
-.sp-modal__links {
-  display: flex;
-  gap: 12px;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-.sp-modal__links a { color: var(--text-3); font-size: var(--t-micro); text-decoration: none; }
-.sp-modal__links a:hover { color: var(--accent); text-decoration: underline; }
-
-/* ════════════════════════════════════════════════
-   Last word
-   ════════════════════════════════════════════════ */
-/* ── `hidden` means hidden ──
-   The user agent's `[hidden] { display: none }` is user-agent origin, so ANY
-   author rule setting `display` on the same element beats it outright —
-   origin is decided before specificity is consulted. That is not a subtle
-   trap: this panel shipped with `.sp-view { display: flex }`, which made all
-   three tabs render at once, stacked, behind a scrollbar 2000px long. Then it
-   happened a second time within the hour, to `.sp-run__idle { display: grid }`
-   — "Nothing running" printed directly above a live progress bar.
-
-   Both were invisible in the source and obvious the moment a harness rendered
-   them, which is the tell for a rule that needs enforcing rather than
-   remembering. `!important` is the blunt instrument on purpose: every element
-   this panel hides, it hides because it must not be seen, and no layout rule
-   added later gets a vote. */
-[hidden] { display: none !important; }
-
-/* Every rule above that sets `display` on something this panel hides is
-   written as `:not([hidden])`, so the attribute and the layout never compete.
-   The blanket rule stays as the backstop for whatever gets added next, and it
-   is last in the file so it also wins under a naive last-declaration-wins
-   cascade — which is what jsdom implements, and therefore what the test that
-   guards this can actually see. */
-
-
-/* ── Hero welcome ── */
-.sp-hero {
-  text-align: center;
-  padding: var(--s-1) 0 0;
-}
-.sp-hero__title {
-  margin: 0;
-  font-size: var(--t-lg);
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: -0.3px;
-}
-.sp-hero__sub {
-  margin: 2px 0 0;
-  font-size: var(--t-micro);
-  color: var(--text-3);
-}
-
-/* ── Elevated prompt textarea ── */
-.sp-area--hero {
-  border-color: var(--line-2);
-  background: var(--sunken);
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.3);
-}
-.sp-area--hero:focus {
-  border-color: var(--accent);
-  box-shadow:
-    inset 0 2px 6px rgba(0, 0, 0, 0.3),
-    0 0 0 3px var(--accent-8),
-    0 0 20px var(--accent-8);
-}
-
-/* ── AI Engines Row ── */
-.sp-engines {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  flex-wrap: wrap;
-}
-.sp-engines__label {
-  font-size: var(--t-micro);
-  font-weight: 600;
-  color: var(--text-3);
-  flex: none;
-}
-
-/* ── Quick Start Formula Cards ── */
-.sp-ideas {
-  padding-top: var(--s-2);
-  border-top: 1px solid var(--line);
-}
-.sp-ideas__head {
-  font-size: var(--t-micro);
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: var(--text-3);
-  margin-bottom: var(--s-2);
-}
-.sp-ideas__list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--s-2);
-}
-
-.sp-idea {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  width: 100%;
-  text-align: left;
-  padding: 8px;
-  border-radius: var(--r-ctrl);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
-  transition: border-color var(--fast), background var(--fast), box-shadow var(--fast), transform var(--fast);
-}
-.sp-idea:hover {
-  border-color: var(--accent-30);
-  background: var(--surface-2);
-  box-shadow: var(--e-2);
-  transform: translateY(-1px);
-}
-.sp-idea:active { transform: translateY(0); box-shadow: none; }
-
-/* Colored icon wells — each formula has its own tint */
-.sp-idea__icon {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 28px; height: 28px;
-  border-radius: var(--r-chip);
-  font-size: var(--t-mid);
-  line-height: 1;
-  background: var(--surface-2);
-}
-.sp-idea__icon--warm  { background: rgba(249, 115, 22, 0.14); }
-.sp-idea__icon--blue  { background: rgba(96, 165, 250, 0.14); }
-.sp-idea__icon--green { background: rgba(74, 222, 128, 0.14); }
-.sp-idea__icon--amber { background: rgba(251, 191, 36, 0.14); }
-.sp-idea__icon--pink  { background: rgba(236, 72, 153, 0.14); }
-.sp-idea__icon--violet{ background: rgba(160, 122, 253, 0.14); }
-
-.sp-idea__body {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-  flex: 1;
-}
-.sp-idea__text {
-  font-size: var(--t-micro);
-  font-weight: 600;
-  line-height: 1.25;
-  color: var(--text);
-}
-.sp-idea__sub {
-  font-size: var(--t-micro);
-  color: var(--text-3);
-  line-height: 1.2;
-}
-.sp-idea__arrow {
-  flex: none;
-  color: var(--text-3);
-  font-size: var(--t-micro);
-  opacity: 0;
-  transform: translateX(-4px);
-  transition: opacity var(--fast), transform var(--fast);
-}
-.sp-idea:hover .sp-idea__arrow { opacity: 1; transform: translateX(0); }
-
-.sp-idea:focus-visible { outline: none; box-shadow: var(--focus); }
-
-/* Shared shape for the panel's inline marks, matching the nav tabs and the
-   canvas rail — one grid, one weight, everywhere. */
-.sp-glyph, .sp-run__idle-icon {
+.sp-glyph {
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.8;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
-  flex: none;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
 }
-.sp-glyph { width: 15px; height: 15px; }
-.sp-modal__x .sp-glyph { width: 13px; height: 13px; }
 
-/* The platform's own mark, sized to sit with the label rather than tower over
-   it. Brand marks keep their own colour, so nothing here tints them. */
-.sp-ai__mark { width: 13px; height: 13px; flex: none; }
+.sp-ai__mark { width: 14px; height: 14px; flex-shrink: 0; }
 
-/* ============================================================
-   Motion.
-
-   The panel already had 64 animated elements and still felt static, because
-   every one of them animated colour. Colour alone reads as a state change;
-   movement reads as a response. Nothing lifted under the cursor, nothing gave
-   way when pressed, and switching tabs replaced the content instantly with no
-   sense that anything had travelled.
-
-   Three rules here, and they are what keeps this from becoming noise:
-
-     1. Transform and opacity only. Both are composited, so none of this
-        touches layout or costs a reflow in a panel that is often open beside
-        a page doing real work.
-     2. Movement is small and fast. 1-2px and 120ms is felt rather than
-        watched. Anything a user has time to notice is too slow to sit behind
-        every hover in the product.
-     3. Entrances play once. A list that re-animates on every render draws the
-        eye back to something the reader has already read.
-
-   All of it is switched off by the prefers-reduced-motion block in
-   shared/tokens.css, which zeroes every duration globally — so this cannot
-   become an accessibility problem without that rule being deleted first.
-   ============================================================ */
-
-/* ── Press ──
-   The one piece of feedback nothing had. A control that does not move when
-   clicked leaves the user unsure the click landed, which on a slow build is
-   exactly when they press it again. */
+/* ════════════════════════════════════════════════
+   11. MOTION & TRANSITIONS
+   ════════════════════════════════════════════════ */
 .sp-btn:active:not(:disabled),
 .sp-idea:active,
 .sp-tpl:active,
@@ -1237,36 +1545,12 @@ body {
 .sp-seg2__btn:active,
 .sp-pill:active { transform: scale(0.985); }
 
-.sp-btn, .sp-idea, .sp-tpl, .sp-ai__link, .sp-seg2__btn, .sp-pill {
-  transition:
-    background var(--fast), border-color var(--fast), color var(--fast),
-    transform var(--fast), box-shadow var(--fast);
-}
-
-/* ── Lift ──
-   Only on the things that are a choice — starters and templates. Buttons in a
-   row do not lift, or the whole panel floats. */
-.sp-idea:hover, .sp-tpl:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--e-2);
-}
-.sp-idea:hover .sp-idea__icon { transform: scale(1.06); }
-.sp-idea__icon { transition: transform var(--base); }
-
-/* ── Tab switching ──
-   The panel is three views in one column, and swapping them instantly gives
-   no sense of having moved between them. A short rise settles that without
-   making the user wait for it. */
 .sp-view:not([hidden]) { animation: sp-view-in var(--base) both; }
 @keyframes sp-view-in {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: none; }
 }
 
-/* ── The quick-start grid ──
-   Staggered, once, on the tab that opens first. Six cards appearing together
-   is a wall; six arriving in sequence is a list you read. Capped at six so a
-   longer list never turns into a slow reveal. */
 .sp-ideas__list > .sp-idea { animation: sp-rise var(--base) both; }
 .sp-ideas__list > .sp-idea:nth-child(1) { animation-delay: 20ms; }
 .sp-ideas__list > .sp-idea:nth-child(2) { animation-delay: 45ms; }
@@ -1279,11 +1563,6 @@ body {
   to   { opacity: 1; transform: none; }
 }
 
-/* ── The run card ──
-   A run takes minutes with nothing to look at. A slow breath on the progress
-   bar is the difference between "working" and "frozen", and it is the only
-   looping animation in the panel — everything else plays once and stops. */
-.sp-bar__fill { transition: width var(--base); }
 .sp-bar__fill::after {
   content: '';
   position: absolute;
@@ -1291,13 +1570,12 @@ body {
   background: linear-gradient(90deg, transparent, var(--accent-30), transparent);
   animation: sp-sheen 1.8s ease-in-out infinite;
 }
-.sp-bar__fill { position: relative; overflow: hidden; }
 @keyframes sp-sheen {
   from { transform: translateX(-100%); }
   to   { transform: translateX(100%); }
 }
 
-/* ── Errors ──
-   Arrives rather than appears. An error that is simply present looks like it
-   was always there and gets read as part of the furniture. */
-.sp-error:not([hidden]) { animation: sp-rise var(--base) both; }
+/* ════════════════════════════════════════════════
+   12. MANDATORY CASCADE BACKSTOP: [hidden]
+   ════════════════════════════════════════════════ */
+[hidden] { display: none !important; }

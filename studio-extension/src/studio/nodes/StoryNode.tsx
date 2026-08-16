@@ -6,32 +6,25 @@
  * actually is: media, platform, aspect ratio, duration, and whether its first
  * frame is already pinned by an image you connected.
  *
- * It never edits the canvas. The nodes are yours; this fills them in.
- *
- * ADAPTIVE, in three senses, because a node that shows everything at all
- * times is a form, and nobody reads a form on a canvas:
- *
- *   · It shows what it knows. Shot count, durations and beat arithmetic come
- *     from the wires, so none of it is typed twice — and the beat count is
- *     derived rather than entered, because a number you have to keep in sync
- *     with the canvas is a number that will be wrong.
- *   · It shows what is missing. Empty cast, world and look read as "the AI
- *     will decide" rather than as blank inputs, because that is what happens.
- *   · It fills in as it learns. After a run the model's cast, world and look
- *     are written back as locked, editable fields. Describe once, correct one
- *     word, and every later run holds to it.
+ * Upgraded with:
+ *   · Modern tabbed Director Panel (Director | Flow & Beats | Cast & World)
+ *   · Cinematic Camera Progression & Audio Mode
+ *   · Shot Sequencer Ribbon
+ *   · Compact 2-column settings grid
  */
 
 import { memo, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { Icon } from '../components/Icon';
 import { useStudioStore } from '../store';
-import { getAskPresets } from '../presets';
 import { orderShotTargets } from '../ask/storyboard';
 import {
-  STRUCTURES, RULES, DEFAULT_STORY, beatSummary, beatsFor, hasStory,
+  STRUCTURES, RULES, DEFAULT_STORY, beatSummary, beatsFor,
+  CAMERA_PROGRESSIONS, AUDIO_MODES, VISUAL_PRESETS,
   type CastMember, type StorySettings, type StructureId,
+  type CameraProgressionId, type AudioModeId, type VisualPresetId,
 } from '../ask/storyPlan';
+import { NodeInfoBadge } from './NodeInfoBadge';
 
 function readStory(d: any): StorySettings {
   return {
@@ -41,15 +34,20 @@ function readStory(d: any): StorySettings {
     structure: (d.structure as StructureId) || DEFAULT_STORY.structure,
     beats: Number(d.beats) || 0,
     rules: Array.isArray(d.rules) ? d.rules : DEFAULT_STORY.rules,
+    cameraProgression: (d.cameraProgression as CameraProgressionId) || DEFAULT_STORY.cameraProgression || 'dynamic',
+    audioMode: (d.audioMode as AudioModeId) || DEFAULT_STORY.audioMode || 'cinematic',
+    visualPreset: (d.visualPreset as VisualPresetId) || DEFAULT_STORY.visualPreset || 'liveAction',
   };
 }
 
 function StoryNodeInner({ id, data, selected }: NodeProps) {
   const d = data as any;
   const updateNodeData = useStudioStore((s) => s.updateNodeData);
+  const removeNode = useStudioStore((s) => s.removeNode);
+  const duplicateNode = useStudioStore((s) => s.duplicateNode);
   const nodes = useStudioStore((s) => s.nodes);
   const edges = useStudioStore((s) => s.edges);
-  const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'direct' | 'flow' | 'cast'>('direct');
 
   const story = readStory(d);
   const targets = orderShotTargets(id, nodes as any, edges as any);
@@ -63,135 +61,242 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
 
   return (
     <div className={`sn-wrap sn-wrap--kind-story ${selected ? 'sn-wrap--selected' : ''}`}>
-      <Handle type="target" position={Position.Left} id="text" className="sn-port sn-port--text" />
+      <div className="sn-actions">
+        <button className="sn-actions__btn" onClick={() => duplicateNode(id)} title="Duplicate node">⧉</button>
+        <button className="sn-actions__btn sn-actions__btn--danger" onClick={() => removeNode(id)} title="Delete node">🗑</button>
+      </div>
+
+      <Handle type="target" position={Position.Left} id="text" className="sn-port sn-port--text" style={{ top: 22 }}>
+        <span className="sn-port__glyph">T</span>
+      </Handle>
 
       <div className="sn sn--story">
         <div className="sn-bar">
           <Icon name="agent" kind="agent" className="sn-label__icon" />
           <input
-            className="sn-label__name"
-            value={d.label || 'Story'}
+            className="sn-label__name nodrag"
+            value={d.label || 'Story Director'}
             onChange={(e) => updateNodeData(id, { label: e.target.value })}
-            placeholder="Story"
+            placeholder="Story Director"
           />
-          {d.status === 'running' && (
-            <span className="sn-count">{d.statusNote || 'Writing…'}</span>
+          <NodeInfoBadge type="story" />
+          {d.status === 'running' ? (
+            <span className="sn-count sn-count--running">{d.statusNote || 'Writing…'}</span>
+          ) : (
+            <span className="sn-story__badge">
+              {targets.length ? `${targets.length} shots` : 'Unwired'}
+            </span>
           )}
         </div>
 
-        <div className="sn-story__what">
-          Writes the prompts for the nodes you connect — all in one go, so they
-          match each other.
-        </div>
-
-        {/* ── What it will write, straight from the wires ── */}
+        {/* ── Connected Shot Sequencer Ribbon ── */}
         {targets.length === 0 ? (
           <div className="sn-story__empty">
             <strong>Not connected yet.</strong>
-            Drag from the dot on the right to each video or image node you want
-            it to write.
+            Connect the dot on the right to video or image nodes.
           </div>
         ) : (
           <div className="sn-story__targets">
             <div className="sn-story__count">
-              Will write {targets.length} prompt{targets.length === 1 ? '' : 's'}
+              <span>Connected Sequence</span>
               <span className="sn-story__beats">{beatSummary(targets, story.beats)}</span>
             </div>
-            <ol className="sn-story__list">
+            <div className="sn-story__ribbon">
               {targets.map((t, i) => (
-                <li key={t.id} className="sn-story__item">
+                <div key={t.id} className="sn-story__item">
                   <span className="sn-story__n">{i + 1}</span>
                   <span className="sn-story__name">{t.label || t.id}</span>
                   <span className="sn-story__meta">
                     {[t.media === 'video' ? 'clip' : 'still', t.aspectRatio, t.duration]
                       .filter(Boolean).join(' · ')}
                   </span>
-                  {/* Read off the wiring, so it explains the graph back to
-                      you: a still feeding a clip is a reference, not a shot. */}
                   {t.role === 'reference' && (
                     <span className="sn-story__role" title={`Reference for ${t.referenceFor}`}>
-                      reference
+                      ref
                     </span>
                   )}
                   {t.role === 'continuation' && (
                     <span className="sn-story__role" title={`Continues ${t.continues}`}>
-                      continues
+                      cont
                     </span>
                   )}
                   {written[i] && <span className="sn-story__done">✓</span>}
-                </li>
+                </div>
               ))}
-            </ol>
+            </div>
           </div>
         )}
 
-        <div className="sn-field">
-          <label className="sn-field__label">Which AI writes them</label>
-          <select
-            className="sn-field__select nodrag"
-            value={d.platform || 'chatgpt'}
-            onChange={(e) => updateNodeData(id, { platform: e.target.value })}
+        {/* ── Directorial Segmented Tabs ── */}
+        <div className="sn-story__tabs">
+          <button
+            type="button"
+            className={`sn-story__tab nodrag ${activeTab === 'direct' ? 'sn-story__tab--active' : ''}`}
+            onClick={() => setActiveTab('direct')}
           >
-            <option value="chatgpt">ChatGPT</option>
-            <option value="gemini">Gemini</option>
-            <option value="grok">Grok</option>
-            <option value="claude">Claude</option>
-          </select>
+            🎬 Director
+          </button>
+          <button
+            type="button"
+            className={`sn-story__tab nodrag ${activeTab === 'flow' ? 'sn-story__tab--active' : ''}`}
+            onClick={() => setActiveTab('flow')}
+          >
+            📐 Flow & Beats
+          </button>
+          <button
+            type="button"
+            className={`sn-story__tab nodrag ${activeTab === 'cast' ? 'sn-story__tab--active' : ''}`}
+            onClick={() => setActiveTab('cast')}
+          >
+            👥 Cast & World {story.cast.length > 0 && `(${story.cast.length})`}
+          </button>
         </div>
 
-        <div className="sn-field">
-          <label className="sn-field__label">How the story flows</label>
-          <select
-            className="sn-field__select nodrag"
-            value={story.structure}
-            onChange={(e) => set({ structure: e.target.value as StructureId })}
-          >
-            {STRUCTURES.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-          </select>
-          <div className="sn-field__hint">
-            {STRUCTURES.find((x) => x.id === story.structure)?.hint}
+        {/* ── TAB 1: Director Settings ── */}
+        {activeTab === 'direct' && (
+          <div className="sn-story__panel">
+            <div className="sn-story__grid">
+              <div className="sn-field">
+                <label className="sn-field__label">AI Engine</label>
+                <select
+                  className="sn-bar__sel nodrag"
+                  value={d.platform || 'chatgpt'}
+                  onChange={(e) => updateNodeData(id, { platform: e.target.value })}
+                >
+                  <option value="chatgpt">ChatGPT</option>
+                  <option value="gemini">Gemini</option>
+                  <option value="grok">Grok</option>
+                  <option value="claude">Claude</option>
+                  <option value="zai">Z.AI</option>
+                </select>
+              </div>
+
+              <div className="sn-field">
+                <label className="sn-field__label">Visual Style</label>
+                <select
+                  className="sn-bar__sel nodrag"
+                  value={story.visualPreset || 'liveAction'}
+                  onChange={(e) => set({ visualPreset: e.target.value as VisualPresetId })}
+                >
+                  {VISUAL_PRESETS.map((x) => (
+                    <option key={x.id} value={x.id}>{x.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="sn-field">
+                <label className="sn-field__label">Camera Coverage</label>
+                <select
+                  className="sn-bar__sel nodrag"
+                  value={story.cameraProgression || 'dynamic'}
+                  onChange={(e) => set({ cameraProgression: e.target.value as CameraProgressionId })}
+                >
+                  {CAMERA_PROGRESSIONS.map((x) => (
+                    <option key={x.id} value={x.id}>{x.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="sn-field">
+                <label className="sn-field__label">Sound & Audio</label>
+                <select
+                  className="sn-bar__sel nodrag"
+                  value={story.audioMode || 'cinematic'}
+                  onChange={(e) => set({ audioMode: e.target.value as AudioModeId })}
+                >
+                  {AUDIO_MODES.map((x) => (
+                    <option key={x.id} value={x.id}>{x.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="sn-story__hint">
+              {CAMERA_PROGRESSIONS.find((x) => x.id === story.cameraProgression)?.hint}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* ── The story itself. Collapsed until asked for, because it is empty
-             until the first run and a row of blank inputs on a canvas reads as
-             work to do rather than as something already handled. ── */}
-        <button
-          type="button"
-          className="sn-story__toggle nodrag"
-          onClick={() => setOpen(!open)}
-          aria-expanded={open}
-        >
-          <span>{open ? '▾' : '▸'} Who is in it, and where</span>
-          <span className="sn-story__toggle-state">
-            {/* hasStory ignores the empty row the + button adds: pressing Add
-                and typing nothing has locked nothing, and saying otherwise
-                would claim the AI is being held to a blank description. */}
-            {hasStory(story) ? 'You set this' : 'AI will choose'}
-          </span>
-        </button>
+        {/* ── TAB 2: Story Flow & Beats ── */}
+        {activeTab === 'flow' && (
+          <div className="sn-story__panel">
+            <div className="sn-field">
+              <label className="sn-field__label">Story Progression Arc</label>
+              <select
+                className="sn-bar__sel nodrag"
+                value={story.structure}
+                onChange={(e) => set({ structure: e.target.value as StructureId })}
+              >
+                {STRUCTURES.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+              <div className="sn-story__hint">
+                {STRUCTURES.find((x) => x.id === story.structure)?.hint}
+              </div>
+            </div>
 
-        {open && (
+            <div className="sn-story__section">
+              <div className="sn-story__section-head"><span>Directorial Rules</span></div>
+              <div className="sn-story__rules-grid">
+                {RULES.map((r) => (
+                  <label key={r.id} className="sn-story__rule">
+                    <input
+                      type="checkbox"
+                      className="sn-story__check nodrag"
+                      checked={story.rules.includes(r.id)}
+                      onChange={(e) => set({
+                        rules: e.target.checked
+                          ? [...story.rules, r.id]
+                          : story.rules.filter((x) => x !== r.id),
+                      })}
+                    />
+                    <span>{r.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="sn-story__section">
+              <div className="sn-story__section-head"><span>Pacing & Beats</span></div>
+              <div className="sn-story__beatrow">
+                <input
+                  className="sn-story__input sn-story__input--num nodrag"
+                  type="number"
+                  min={0}
+                  max={40}
+                  value={story.beats || ''}
+                  placeholder={String(beatsFor(targets))}
+                  onChange={(e) => set({ beats: Number(e.target.value) || 0 })}
+                />
+                <span className="sn-story__blank">
+                  {story.beats
+                    ? 'Custom beat count.'
+                    : `Auto derived from clip lengths — ${beatSummary(targets)}.`}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── TAB 3: Cast & World ── */}
+        {activeTab === 'cast' && (
           <div className="sn-story__panel">
             <div className="sn-story__note">
-              Leave these empty and the AI decides them on the first run, then fills
-              them in here so you can change a word. Anything you write is used
-              exactly as written, in every prompt.
+              Leave empty for AI auto-generation, or lock specific characters & world details.
             </div>
 
             <div className="sn-story__section">
               <div className="sn-story__section-head">
-                <span>People</span>
+                <span>Cast & Characters</span>
                 <button
                   type="button"
                   className="sn-story__add nodrag"
-                  onClick={() => set({ cast: [...story.cast, { name: '', look: '' }] })}
+                  onClick={() => set({ cast: [...story.cast, { name: '', look: '', role: '' }] })}
                 >
-                  + Add
+                  + Add Character
                 </button>
               </div>
               {story.cast.length === 0 && (
-                <div className="sn-story__blank">Nobody set — the AI will choose.</div>
+                <div className="sn-story__blank">Nobody locked — AI will design dynamically.</div>
               )}
               {story.cast.map((c, i) => (
                 <div key={i} className="sn-story__cast">
@@ -199,8 +304,14 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                     <input
                       className="sn-story__input nodrag"
                       value={c.name}
-                      placeholder="Name"
+                      placeholder="Character Name"
                       onChange={(e) => setCast(i, { name: e.target.value })}
+                    />
+                    <input
+                      className="sn-story__input nodrag"
+                      value={c.role || ''}
+                      placeholder="Role / Position"
+                      onChange={(e) => setCast(i, { role: e.target.value })}
                     />
                     <button
                       type="button"
@@ -215,7 +326,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                     className="sn-story__area nodrag"
                     rows={2}
                     value={c.look}
-                    placeholder="What they look like — repeated in every shot so they stay the same person"
+                    placeholder="Physical appearance (repeated in prompts for consistency)"
                     onChange={(e) => setCast(i, { look: e.target.value })}
                   />
                 </div>
@@ -223,78 +334,25 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
             </div>
 
             <div className="sn-story__section">
-              <div className="sn-story__section-head"><span>Place</span></div>
+              <div className="sn-story__section-head"><span>World / Environment</span></div>
               <textarea
                 className="sn-story__area nodrag"
                 rows={2}
                 value={story.world}
-                placeholder="Where it happens — the AI will fill this in"
+                placeholder="Setting, atmosphere, and environmental context"
                 onChange={(e) => set({ world: e.target.value })}
               />
             </div>
 
             <div className="sn-story__section">
-              <div className="sn-story__section-head"><span>Style</span></div>
+              <div className="sn-story__section-head"><span>Custom Look & Lighting</span></div>
               <textarea
                 className="sn-story__area nodrag"
                 rows={2}
                 value={story.look}
-                placeholder="Colours, lighting, camera feel — the AI will fill this in"
+                placeholder="Specific color palette, lighting rules, camera lens"
                 onChange={(e) => set({ look: e.target.value })}
               />
-            </div>
-
-            <div className="sn-story__section">
-              <div className="sn-story__section-head"><span>Rules for every shot</span></div>
-              {RULES.map((r) => (
-                <label key={r.id} className="sn-story__rule">
-                  <input
-                    type="checkbox"
-                    className="sn-story__check nodrag"
-                    checked={story.rules.includes(r.id)}
-                    onChange={(e) => set({
-                      rules: e.target.checked
-                        ? [...story.rules, r.id]
-                        : story.rules.filter((x) => x !== r.id),
-                    })}
-                  />
-                  <span>{r.name}</span>
-                </label>
-              ))}
-            </div>
-
-            <div className="sn-story__section">
-              <div className="sn-story__section-head"><span>How many moments</span></div>
-              <div className="sn-story__beatrow">
-                <input
-                  className="sn-story__input sn-story__input--num nodrag"
-                  type="number"
-                  min={0}
-                  max={40}
-                  value={story.beats || ''}
-                  placeholder={String(beatsFor(targets))}
-                  onChange={(e) => set({ beats: Number(e.target.value) || 0 })}
-                />
-                <span className="sn-story__blank">
-                  {story.beats
-                    ? 'You set this.'
-                    : `Worked out from the clip lengths — ${beatSummary(targets)}.`}
-                </span>
-              </div>
-            </div>
-
-            <div className="sn-field">
-              <label className="sn-field__label">Extra instructions (optional)</label>
-              <select
-                className="sn-field__select nodrag"
-                value={d.preset || ''}
-                onChange={(e) => updateNodeData(id, { preset: e.target.value })}
-              >
-                <option value="">None</option>
-                {getAskPresets().map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
             </div>
           </div>
         )}
@@ -302,7 +360,9 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
         {d.errorMessage && <div className="sn-story__error">{d.errorMessage}</div>}
       </div>
 
-      <Handle type="source" position={Position.Right} id="text" className="sn-port sn-port--text" />
+      <Handle type="source" position={Position.Right} id="text" className="sn-port sn-port--text" style={{ top: 22 }}>
+        <span className="sn-port__glyph">T</span>
+      </Handle>
     </div>
   );
 }

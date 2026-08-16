@@ -1861,6 +1861,74 @@ export const BUILTIN_TEMPLATES: Template[] = [
     requiresPlatforms: ['chatgpt', 'flow'],
     tier: 'free',
   },
+  {
+    id: 'baby-dragon-viral',
+    name: 'Viral Baby Dragon: AI Director Series Engine',
+    description: 'Dynamic episodic generator: type any 1-line idea and the AI Director generates character-locked smartphone POV clips with layered sound design (ambience + foley + vocalizations) and frame handoffs.',
+    useCase: 'Viral TikTok / Reels creature comedy: generate unlimited consistent episodes from 1-line ideas',
+    category: 'Content',
+    difficulty: 'Easy',
+    nodeCount: 6,
+    thumbnail: '🐲',
+    nodes: [
+      promptNode(
+        'idea',
+        'Episode Brief / Idea',
+        'The baby dragon sneaks across the kitchen counter to steal peanut butter from an open jar, gets its tongue hilariously stuck to the roof of its mouth, and accidentally sneezes a tiny burst of flame that perfectly roasts a marshmallow on a nearby plate.',
+        40, 200,
+      ),
+      storyNode(
+        'story_director',
+        'Baby Dragon Director',
+        520, 200,
+        {
+          structure: 'hook',
+          cameraProgression: 'dynamic',
+          audioMode: 'cinematic',
+          visualPreset: 'smartphonePOV',
+          cast: [
+            {
+              name: 'Baby Dragon',
+              look: 'Tiny cat-sized eastern baby dragon with shimmering iridescent silver-white scales, large expressive emerald-green eyes, tiny translucent horns, and long delicate whiskers. Playful, curious, ultra-realistic CGI creature blending seamlessly into real-world video.',
+              role: 'Lead mischievous creature',
+            },
+          ],
+          world: 'Modern sunlit kitchen with bright white marble countertops, stainless steel appliances, and large windows with morning sunlight.',
+          look: 'Authentic vertical 9:16 slightly shaky handheld smartphone POV, natural morning daylight, sharp realistic creature textures, TikTok/Reels comedy realism.',
+          rules: ['samePerson', 'cumulative', 'inHand'],
+          beats: 2,
+        },
+      ),
+      genNode(
+        'ref_still',
+        { label: 'Dragon Anchor Still', mediaType: 'image', platform: 'flow', aspectRatio: '9:16' },
+        1000, 40,
+      ),
+      genNode(
+        'shot1',
+        { label: 'Shot 1 — The Sneak (6s)', mediaType: 'video', platform: 'flow', aspectRatio: '9:16', duration: '6s' },
+        1480, 200,
+      ),
+      frameNode('handoff', 'Shot 1 Last Frame', 1960, 200),
+      genNode(
+        'shot2',
+        { label: 'Shot 2 — Sneeze & Twist (6s)', mediaType: 'video', platform: 'flow', aspectRatio: '9:16', duration: '6s' },
+        2440, 200,
+      ),
+    ],
+    edges: [
+      tEdge('idea', 'story_director'),
+      tEdge('story_director', 'ref_still'),
+      tEdge('story_director', 'shot1'),
+      tEdge('story_director', 'shot2'),
+      iEdge('ref_still', 'shot1'),
+      iEdge('shot1', 'handoff'),
+      iEdge('handoff', 'shot2', 'image'),
+    ],
+    requiresNodeTypes: ['prompt', 'story', 'generate', 'frame'],
+    requiresPlatforms: ['chatgpt', 'flow'],
+    tier: 'free',
+  },
 ];
 
 export const CATEGORIES = ['All', 'Starter', 'Marketing', 'Character', 'Fashion', 'Content', 'Image', 'Utility'] as const;

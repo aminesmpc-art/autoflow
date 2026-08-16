@@ -17,6 +17,7 @@ import { memo, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { Lightbox } from '../components/Lightbox';
 import { useStudioStore } from '../store';
+import { NodeInfoBadge } from './NodeInfoBadge';
 
 function FrameNodeComponent({ id, data, selected }: NodeProps) {
   const nodeData = data as any;
@@ -40,6 +41,7 @@ function FrameNodeComponent({ id, data, selected }: NodeProps) {
       <div className="sn-label">
         <span className="sn-label__icon" aria-hidden="true">🎞</span>
         <span className="sn-label__text">{nodeData.label || 'Last Frame'}</span>
+        <NodeInfoBadge type="frame" />
       </div>
 
       <div className="fn">

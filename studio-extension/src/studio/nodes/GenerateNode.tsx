@@ -14,15 +14,18 @@ import { getAskPresets, DEFAULT_PRESET_ID, findPreset } from '../presets';
 import { portsFor, retargetImagePorts } from '../templates/validate';
 import { CHAT_PLATFORMS } from '../engine/WorkflowRunner';
 import { GrokSettings } from './GrokSettings';
+import { NodeInfoBadge } from './NodeInfoBadge';
 
 type NodeStatus = 'idle' | 'running' | 'done' | 'error';
-type Platform = 'flow' | 'chatgpt' | 'gemini' | 'grok';
+type Platform = 'flow' | 'chatgpt' | 'gemini' | 'grok' | 'claude' | 'zai';
 
 /** What each chat platform is called on screen. */
 const CHAT_NAMES: Record<string, string> = {
   chatgpt: 'ChatGPT',
   gemini: 'Gemini',
   grok: 'Grok',
+  claude: 'Claude',
+  zai: 'Z.AI',
 };
 
 /**
@@ -181,6 +184,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           {nodeData.label || (isText ? 'Ask AI' : 'Flow — Image/Video Generate')}
         </span>
         {!enabled && <span className="sn-label__skip">SKIPPED</span>}
+        <NodeInfoBadge type="generate" />
         <button
           className={`sn-toggle ${enabled ? 'sn-toggle--on' : ''}`}
           onClick={() => set('enabled', !enabled)}

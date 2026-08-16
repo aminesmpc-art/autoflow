@@ -10,10 +10,14 @@ import { scanProjectForVideos, previewAsset, retrySingleTile, downloadAssetByMen
 import { sleep, findModelSelectorTrigger, findMenuItem, simulateClick } from './selectors';
 import { DOM_SETTLE_MS } from '../../shared/constants';
 import { getRunningQueue, clearRunningQueue } from '../../shared/storage';
-import { initApiHelper, isApiAvailable } from './apiHelper';
+import {
+  initApiHelper, isApiAvailable, isCacheFresh, activeStatusCheck,
+  findStatusByMediaId, findStatusByPromptText, classifyError,
+} from './apiHelper';
 import { matchesFlowText } from './flowStrings';
 import { registerStudioImage, releaseStudioImages } from './studioImages';
 import { pickReferenceStill } from './studioFrames';
+import { getStudioTileState, extractTileProgress, findLargestImgSrc } from './tileState';
 
 // أ¢â€‌â‚¬أ¢â€‌â‚¬ Singleton engine أ¢â€‌â‚¬أ¢â€‌â‚¬
 let engine: AutomationEngine | null = null;
@@ -25,6 +29,13 @@ let recoveryCancelled = false;
 // When Chrome throttles background tabs, setTimeout delays balloon.
 // A message roundtrip to the service worker wakes up the main thread.
 let antiThrottleInterval: ReturnType<typeof setInterval> | null = null;
+
+/* Bumped whenever this adapter's completion logic changes. A content
+   script already injected into an open tab is NOT replaced when the
+   extension is rebuilt — the tab must be reloaded too — and a stale
+   script is indistinguishable from a broken fix unless it says which
+   one it is. */
+const ADAPTER_BUILD = 'playable-clip-v1';
 
 function startAntiThrottle() {
   if (antiThrottleInterval) return;
@@ -1253,7 +1264,8 @@ function blobToRawBase64(blob: Blob): Promise<string> {
 }
 
 async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
-  const { findAssetCards, isVisible, findRowForPrompt } = await import('./selectors');
+  const { findAssetCards, isVisible, findRowForPrompt, scrollOutputToTop, findOutputScroller } =
+    await import('./selectors');
 
   // What this node actually asked Flow for. Used further down to tell our
   // generation apart from everything else in the grid.
@@ -1358,8 +1370,96 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
   const isVideoNode = queue?.settings?.mediaType === 'video';
   const watchSeconds = isVideoNode ? 1200 : 360; // 20 min vs 6 min
 
+  /* Flow's grid is a virtuoso list: tiles that scroll out of view are removed
+     from the document entirely. Our tile is the newest, so it lives at the
+     top — and the moment the user scrolls down to look at an earlier clip, or
+     the list grows past a screenful, querySelector stops finding it and this
+     poller waits out its whole budget on a generation that finished minutes
+     ago. Scrolling the output back to the top re-mounts it.
+
+     Not every poll: that would take the grid away from the user each second
+     while they are trying to look at their own gallery. Only when the tile has
+     actually gone missing, and at most once every ten seconds. */
+  const REMOUNT_AFTER_MISSES = 5;
+  const REMOUNT_EVERY_MS = 10_000;
+  let missStreak = 0;
+  let lastRemountAt = 0;
+
+  /* How long a tile may show a thumbnail with no playable clip attached before
+     we stop waiting for one. Flow normally attaches the source a second or two
+     after the poster; 45s is far past that, so reaching it means the source is
+     not coming. Taking the tile then is the lesser evil — it is genuinely
+     rendered — but the log has to say the clip never became playable, because
+     that is why the Last Frame below it will be empty. */
+  const THUMBNAIL_GRACE_MS = 45_000;
+  let thumbnailOnlySince = 0;
+
+  /* Ask Flow's backend instead of guessing from pixels.
+   *
+   * Flow's own frontend polls batchCheckAsyncVideoGenerationStatus every few
+   * seconds, and apiHelper reads those responses as they go past — no extra
+   * requests, no traffic Google would not otherwise see. It has been driving
+   * the queue engine's completion checks all along; this poller, the one the
+   * Studio canvas actually runs, was the only path still reading the DOM
+   * alone and inferring from what it could see.
+   *
+   * MEDIA_GENERATION_STATUS_SUCCESSFUL is a positive statement from the
+   * service that made the clip. Every DOM signal here is a guess about what a
+   * rendering pipeline means — which is why the poster race existed at all.
+   *
+   * It does not replace the DOM: the tile ELEMENT is still where the pixels
+   * live, and the last frame can only be seeked off a real <video>. So the
+   * API answers "is it finished" and the DOM answers "where is it". When the
+   * interceptor is unavailable — a tab loaded before the extension, a Flow
+   * change — apiState stays null and every rule below falls back to the DOM
+   * exactly as before. */
+  const API_RECHECK_MS = 30_000;
+  let lastActiveCheckAt = 0;
+  let apiState: string | null = null;
+  let apiReported = '';
+  let failedStreak = 0;
+
   for (let wait = 0; wait < watchSeconds; wait++) {
     await sleep(1000);
+
+    if (isApiAvailable()) {
+      /* Flow only polls while its tab is doing something. Backgrounded or
+         idle, the cache goes stale and silence would read as "no news".
+         One replay of Flow's own call, at most every 30s — the same cadence
+         Flow uses, not a poll of our own on top of it. */
+      if (!isCacheFresh() && Date.now() - lastActiveCheckAt > API_RECHECK_MS) {
+        lastActiveCheckAt = Date.now();
+        await activeStatusCheck(prompt.mediaId ? [prompt.mediaId] : undefined);
+      }
+      const byId = prompt.mediaId ? findStatusByMediaId(prompt.mediaId) : null;
+      const status = byId || findStatusByPromptText(promptText);
+      if (status && status.state !== apiState) {
+        apiState = status.state;
+        logLine(`Flow's API says this generation is ${status.state} (${status.rawStatus})`);
+      }
+      if (status) apiReported = status.rawStatus;
+      if (!status || status.state !== 'failed') failedStreak = 0;
+
+      /* Failed is worth acting on immediately. The DOM equivalent needs eight
+         consecutive failed reads and twenty seconds, and only after Flow has
+         painted an error the user can see — the API knows first, and knows
+         WHY, which decides whether rewording would even help. */
+      if (status && status.state === 'failed') {
+        /* A media id is this generation and nothing else. A text match is a
+           guess, and re-running the same shot leaves an older failed entry in
+           the cache carrying identical text — acting on that would fail the
+           node that is at this moment rendering correctly. So a text-matched
+           failure has to survive a second look; an id-matched one is fact. */
+        failedStreak = byId ? 2 : failedStreak + 1;
+        if (failedStreak < 2) continue;
+        const why = classifyError(status.rawStatus, status.failureReason);
+        sendStudioError(nodeId, why === 'safety'
+          ? `Flow refused this prompt on safety grounds (${status.failureReason || status.rawStatus}). `
+            + 'Rewording is the only thing that will change it.'
+          : `Flow reported ${status.rawStatus}${status.failureReason ? ` — ${status.failureReason}` : ''}`);
+        return;
+      }
+    }
 
     // Find the tracked tile in DOM
     let trackedTile: Element | null = null;
@@ -1420,14 +1520,81 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
     }
 
     if (!trackedTile) {
-      if (wait % 10 === 0) logLine(`Tile not in DOM yet (wait=${wait}s)...`);
+      missStreak++;
+      /* Virtualised away, most likely. Bring the newest tiles back into the
+         list and try again next second. */
+      if (missStreak >= REMOUNT_AFTER_MISSES && Date.now() - lastRemountAt > REMOUNT_EVERY_MS) {
+        lastRemountAt = Date.now();
+        const scroller = findOutputScroller();
+        logLine(
+          `Tile ${trackedTileIds[0] || fallbackTileId || '(no id yet)'} is not in the page `
+          + `after ${missStreak}s`
+          /* The most useful sentence this poller can print: the service says
+             the work is done and the only thing missing is the element. */
+          + `${apiState === 'completed' ? ' — but Flow\'s API says it is finished' : ''}`
+          + ` — ${scroller
+              ? 'scrolling the output to the top, where the newest tile is'
+              : 'and there is no scrollable output to bring it back'}`
+        );
+        if (scroller) await scrollOutputToTop();
+      } else if (wait % 10 === 0) {
+        logLine(`Tile not in DOM yet (wait=${wait}s)...`);
+      }
       continue;
+    }
+    if (missStreak) {
+      logLine(`Tile is back in the page after ${missStreak}s`);
+      missStreak = 0;
     }
 
     // ── Studio-specific tile state detection ──
     // Priority: GENERATING first (a generating tile shows a real blurred
     // <img> + % badge, which a completion-first check misreads as done)
-    const state = getStudioTileState(trackedTile);
+    let state = getStudioTileState(trackedTile);
+
+    /* Say WHY it is still waiting, every fifteen seconds.
+       A node ran for twenty minutes and the whole of Diagnostics said "Tile
+       not in DOM yet" — and an 'unknown' tile said nothing at all, so the
+       most confusing state was also the silent one. The state name, Flow's
+       own badge and the tile id together separate "still rendering" from
+       "watching the wrong tile" from "watching a tile Flow has abandoned". */
+    if (wait > 8 && wait % 15 === 0) {
+      const pct = extractTileProgress(trackedTile);
+      logLine(
+        `Waiting ${wait}s — tile ${trackedTile.getAttribute('data-tile-id') || trackedTile.id || '?'} `
+        + `is ${state}${pct !== null ? `, Flow says ${pct}%` : ''}`
+        + `, API ${apiState || (isApiAvailable() ? 'has no entry for this prompt' : 'unavailable')}`
+        + ` [adapter ${ADAPTER_BUILD}]`
+      );
+    }
+
+    /* A thumbnail with no clip behind it. Keep waiting for the source to
+       attach — that is the whole point of naming this state — but never
+       forever, and say so out loud when the wait is given up. */
+    if (state === 'thumbnail-only') {
+      if (!thumbnailOnlySince) thumbnailOnlySince = Date.now();
+      const held = Date.now() - thumbnailOnlySince;
+      /* The API settles this one properly. A poster with no clip means either
+         "still rendering" or "rendered, source not attached yet", and the DOM
+         cannot tell those apart — which is why the grace period is a guess.
+         When the service says it is still working, the guess is not needed and
+         must not expire: a long render would otherwise be declared finished
+         at 45s and hand the next node an empty frame. */
+      const serviceStillWorking = apiState === 'generating' || apiState === 'queued';
+      if (serviceStillWorking || held < THUMBNAIL_GRACE_MS) {
+        if (wait % 5 === 0) sendStudioProgress(nodeId, Math.min(97, 40 + Math.floor(wait / 12)));
+        continue;
+      }
+      logLine(
+        `Tile has shown a thumbnail for ${Math.round(held / 1000)}s without ever attaching a `
+        + `playable clip${apiState ? ` (API: ${apiReported || apiState})` : ''} — taking it as `
+        + 'finished. Nothing chained from it will have a last frame.'
+      );
+      state = 'completed';
+    } else if (thumbnailOnlySince) {
+      logLine(`Clip attached after ${Math.round((Date.now() - thumbnailOnlySince) / 1000)}s of thumbnail`);
+      thumbnailOnlySince = 0;
+    }
 
     if (state === 'completed') {
       logLine(`Tile completed! (id=${trackedTile.getAttribute('data-tile-id') || trackedTile.id || 'unknown'})`);
@@ -1462,96 +1629,15 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
 
   // Stopped watching, which is not the same as the generation having failed.
   // The number comes from watchSeconds so the message cannot drift from it.
+  // If we spent that budget never seeing the tile, say that rather than
+  // implying we watched it: the two need completely different fixes.
   sendStudioError(nodeId,
-    `Stopped tracking after ${Math.round(watchSeconds / 60)} minutes. The generation may ` +
-    'still be running — check the Flow tab before re-running this node.');
-}
-
-/**
- * Studio-specific tile state detector.
- * The original getTileState() checks error icons FIRST — but in the
- * sidebar/detail view, extra UI elements contain icons that match
- * error patterns, causing false 'failed' on completed tiles.
- *
- * This detector checks in the OPPOSITE order:
- * 1. COMPLETED: has real image or video? → done
- * 2. GENERATING: has blur, percentage, or spinner? → still working
- * 3. FAILED: has explicit failure text? → only then failed
- */
-function getStudioTileState(tile: Element): 'completed' | 'generating' | 'failed' | 'unknown' {
-  // ── 1. GENERATING — must be checked BEFORE completion. ──
-  // While Flow generates, the tile shows a blurred preview <img> with a
-  // "24%" badge. That preview is a real image, so any completion check
-  // that runs first declares the tile done at 24% and grabs a blurred,
-  // unusable thumbnail.
-  const blurEls = tile.querySelectorAll('[style*="blur-amount"]');
-  for (const el of blurEls) {
-    const val = (el as HTMLElement).style.getPropertyValue('--blur-amount');
-    if (val && parseFloat(val) > 0) return 'generating';
-  }
-
-  // Percentage text (e.g. "36%", "99%")
-  if (extractTileProgress(tile) !== null) return 'generating';
-
-  const icons = tile.querySelectorAll('.google-symbols, .material-icons, .material-symbols-outlined, .material-symbols');
-  for (const icon of icons) {
-    const txt = icon.textContent?.trim() || '';
-    if (txt === 'progress_activity' || txt === 'hourglass_empty' || txt === 'pending') {
-      return 'generating';
-    }
-  }
-
-  // Generating text cues
-  const text = tile.textContent?.toLowerCase() || '';
-  if (text.includes('queued') || text.includes('preparing') || text.includes('creating video') ||
-      text.includes('almost finished') || text.includes('is preparing')) {
-    return 'generating';
-  }
-
-  // ── 2. COMPLETED: real image or video content, no generating markers ──
-  const video = tile.querySelector('video');
-  if (video && (video.src || video.querySelector('source[src]') || video.getAttribute('poster'))) {
-    return 'completed';
-  }
-
-  const imgs = tile.querySelectorAll('img[src]');
-  for (const img of imgs) {
-    const src = img.getAttribute('src') || '';
-    // Skip data URIs under 200 chars (tracking pixels / placeholders)
-    if (src.startsWith('data:') && src.length < 200) continue;
-    // Skip tiny invisible images
-    const rect = img.getBoundingClientRect();
-    if (rect.width < 20 || rect.height < 20) continue;
-    return 'completed';
-  }
-
-  // Play button icons (completed video)
-  for (const icon of icons) {
-    const txt = icon.textContent?.trim() || '';
-    if (txt === 'play_arrow' || txt === 'play_circle') return 'completed';
-  }
-
-  // ── 3. FAILED: explicit failure text (NOT icons) ──
-  // Must cover what Flow actually renders. "Failed — Oops, something went
-  // wrong!" contains neither "generation failed" nor "unable to generate"
-  // (the words are reversed), so the old check missed the single most common
-  // failure and the node polled it as 'unknown' until the 20-minute timeout.
-  // Mirrors automation.ts's detectGenerationError vocabulary.
-  if (
-    matchesFlowText(text, 'generationFailed') ||
-    matchesFlowText(text, 'tryAgain') ||
-    text.includes('something went wrong') || text.includes('oops') ||
-    text.includes('unable to generate') || text.includes('unavailable') ||
-    text.includes('capacity') ||
-    text.includes('violat') || text.includes('blocked') || text.includes('rejected') ||
-    // Bare "failed" last: it is the broadest, and the generating/completed
-    // checks above have already claimed any tile still in flight.
-    /\bfailed\b/.test(text)
-  ) {
-    return 'failed';
-  }
-
-  return 'unknown';
+    missStreak >= REMOUNT_AFTER_MISSES
+      ? `Stopped tracking after ${Math.round(watchSeconds / 60)} minutes — this node's tile was `
+        + `not in the page for the last ${missStreak}s and scrolling the output to the top did `
+        + 'not bring it back. Check the Flow tab before re-running this node.'
+      : `Stopped tracking after ${Math.round(watchSeconds / 60)} minutes. The generation may `
+        + 'still be running — check the Flow tab before re-running this node.');
 }
 
 /** Flow's own failure wording from a failed tile, trimmed for display */
@@ -1563,17 +1649,6 @@ function extractTileErrorText(tile: Element): string {
   return body.length > 160 ? `${body.slice(0, 160)}…` : body;
 }
 
-/** Flow's own progress badge ("24%") from a generating tile, or null */
-function extractTileProgress(tile: Element): number | null {
-  const walker = document.createTreeWalker(tile, NodeFilter.SHOW_TEXT);
-  let textNode: Text | null;
-  while ((textNode = walker.nextNode() as Text | null)) {
-    const t = textNode.textContent?.trim() || '';
-    const m = /^(\d{1,3})%$/.exec(t);
-    if (m) return Math.min(100, parseInt(m[1], 10));
-  }
-  return null;
-}
 
 
 async function sendStudioResult(
@@ -1870,28 +1945,14 @@ function extractTileMediaUrl(tile: Element): string {
     const source = video.querySelector('source[src]');
     if (source) return source.getAttribute('src') || '';
     if (video.src) return video.src;
-    if (video.getAttribute('poster')) return video.getAttribute('poster') || '';
+    /* Deliberately NOT the poster. This is the clip's URL — it is downloaded,
+       chained from, and shipped to the canvas as the node's video. Returning a
+       JPEG here produced a node that looked like it held a clip and held one
+       frame, and the failure surfaced two nodes later as a missing reference.
+       Empty is honest and every caller already handles it. */
   }
 
   return findLargestImgSrc(tile);
-}
-
-/** Largest real <img> src inside a tile (skips tiny data: placeholders) */
-function findLargestImgSrc(tile: Element): string {
-  const imgs = tile.querySelectorAll('img[src]');
-  let bestSrc = '';
-  let bestArea = 0;
-  for (const img of imgs) {
-    const src = img.getAttribute('src') || '';
-    if (src.startsWith('data:') && src.length < 200) continue;
-    const rect = img.getBoundingClientRect();
-    const area = rect.width * rect.height;
-    if (area > bestArea) {
-      bestArea = area;
-      bestSrc = src;
-    }
-  }
-  return bestSrc;
 }
 
 function sendStudioProgress(nodeId: string, progress: number): void {

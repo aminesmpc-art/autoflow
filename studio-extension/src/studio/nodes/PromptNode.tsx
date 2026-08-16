@@ -7,6 +7,7 @@
 import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useStudioStore } from '../store';
+import { NodeInfoBadge } from './NodeInfoBadge';
 
 const MAX_CHARS = 20000;
 
@@ -35,6 +36,7 @@ function PromptNodeComponent({ id, data, selected }: NodeProps) {
       <div className="sn-label">
         <span className="sn-label__icon" aria-hidden="true">✏️</span>
         <span className="sn-label__text">{nodeData.label || 'Prompt'}</span>
+        <NodeInfoBadge type="prompt" />
       </div>
 
       <div className="sn sn--prompt">

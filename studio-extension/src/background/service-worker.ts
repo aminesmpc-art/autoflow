@@ -9,7 +9,7 @@
    surface with no purpose here and every reason to rot.
    ============================================================ */
 
-type Platform = 'flow' | 'chatgpt' | 'gemini' | 'grok' | 'claude';
+type Platform = 'flow' | 'chatgpt' | 'gemini' | 'grok' | 'claude' | 'zai';
 
 /** The Studio window's long-lived port. Null whenever Studio is closed. */
 let studioPort: chrome.runtime.Port | null = null;
@@ -121,6 +121,13 @@ const PLATFORMS: Record<Platform, { match: string; open: string; script: string;
     open: 'https://claude.ai/new',
     script: 'claude-content.js',
     name: 'Claude',
+  },
+  /* Text only — Z.AI (GLM-4 / GLM-5) on chat.z.ai */
+  zai: {
+    match: 'https://chat.z.ai/*',
+    open: 'https://chat.z.ai/',
+    script: 'zai-content.js',
+    name: 'Z.AI',
   },
 };
 
@@ -635,6 +642,39 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     mainWorldPaste(tabId, msg.payload?.elId, msg.payload?.text)
       .then(sendResponse)
       .catch((e) => sendResponse({ error: e?.message || String(e) }));
+    return true; // async
+  }
+
+  /* ── Refresh Flow's generation-status cache on demand ──
+     apiHelper reads Flow's own batchCheckAsyncVideoGenerationStatus responses
+     as they go past. That is passive and free, but it only yields news while
+     Flow is polling — and Flow stops when its tab is idle or backgrounded,
+     which is exactly when a Studio run is waiting on it.
+
+     activeStatusCheck replays the call Flow itself makes, from the MAIN world
+     where the captured URL and auth live. It has to route through here because
+     labs.google's CSP blocks injected <script> tags, so executeScript is the
+     only way in.
+
+     This handler existed in the original extension and was never ported. The
+     call has been failing silently in Studio ever since — returning false,
+     which reads identically to "nothing changed", so a stale cache looked like
+     a generation that had not moved. */
+  if (msg?.type === 'RUN_ACTIVE_CHECK') {
+    const tabId = sender.tab?.id;
+    if (tabId == null) { sendResponse({ success: false, error: 'No tab ID' }); return false; }
+    chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async (mediaIds?: string[]) => {
+        const check = (window as any).__af_activeCheck;
+        if (typeof check !== 'function') return false;
+        try { return await check(mediaIds); } catch { return false; }
+      },
+      args: [msg.payload?.mediaIds],
+    })
+      .then((results) => sendResponse({ success: results?.[0]?.result === true }))
+      .catch((err: any) => sendResponse({ success: false, error: err?.message || String(err) }));
     return true; // async
   }
 

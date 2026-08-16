@@ -24,6 +24,7 @@ import {
   extendChain, affordableExtendSteps, secondsOf,
   GROK_EXTEND_STEPS, GROK_MAX_TOTAL_SECONDS,
 } from '../templates/validate';
+import { NodeInfoBadge } from './NodeInfoBadge';
 
 type NodeStatus = 'idle' | 'running' | 'done' | 'error';
 
@@ -82,6 +83,7 @@ function ExtendNodeComponent({ id, data, selected }: NodeProps) {
         <span className="sn-label__icon" aria-hidden="true">⏱</span>
         <span className="sn-label__text">{nodeData.label || 'Extend'}</span>
         {!enabled && <span className="sn-label__skip">SKIPPED</span>}
+        <NodeInfoBadge type="extend" />
         <button
           className={`sn-toggle ${enabled ? 'sn-toggle--on' : ''}`}
           onClick={() => updateNodeData(id, { enabled: !enabled })}

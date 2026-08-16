@@ -205,7 +205,7 @@ export const affordableExtendSteps = (secondsBefore: number): string[] =>
   GROK_EXTEND_STEPS.filter((s) => secondsBefore + secondsOf(s) <= GROK_MAX_TOTAL_SECONDS);
 
 /** Platforms this build has an adapter for. */
-export const SUPPORTED_PLATFORMS = ['flow', 'chatgpt', 'gemini', 'grok', 'claude'] as const;
+export const SUPPORTED_PLATFORMS = ['flow', 'chatgpt', 'gemini', 'grok', 'claude', 'zai'] as const;
 
 /**
  * Problems with a template, as a list of human-readable strings.

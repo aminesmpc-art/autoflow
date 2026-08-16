@@ -25,7 +25,7 @@ import { validateTemplate, isRunnableType } from '../templates/validate';
 import type { Template } from '../templates';
 
 /** What a plan may ask for. One name per node type the canvas can draw. */
-export type PlanStepType = 'image' | 'generate' | 'extend' | 'frame' | 'agent';
+export type PlanStepType = 'image' | 'generate' | 'extend' | 'frame' | 'agent' | 'story';
 
 export interface PlanStep {
   id: string;
@@ -33,7 +33,7 @@ export interface PlanStep {
   label?: string;
   /** generate only. 'text' writes a prompt for a later step to use. */
   media?: 'image' | 'video' | 'text';
-  platform?: 'flow' | 'chatgpt' | 'gemini' | 'grok';
+  platform?: 'flow' | 'chatgpt' | 'gemini' | 'grok' | 'claude' | 'zai';
   /** Literal prompt text. The compiler turns it into a prompt node. */
   prompt?: string;
   /** Step ids feeding this one — a still, a clip, or written text. */
@@ -48,6 +48,16 @@ export interface PlanStep {
      result, and a model that meant the move would get the references. */
   startFrame?: string;
   endFrame?: string;
+  /** Story director settings (story type only) */
+  cast?: Array<{ name: string; look: string; role?: string }>;
+  world?: string;
+  look?: string;
+  structure?: string;
+  rules?: string[];
+  beats?: number;
+  cameraProgression?: string;
+  audioMode?: string;
+  visualPreset?: string;
 }
 
 export interface Plan {
@@ -56,7 +66,7 @@ export interface Plan {
   steps: PlanStep[];
 }
 
-const PLATFORMS = ['flow', 'chatgpt', 'gemini', 'grok'] as const;
+const PLATFORMS = ['flow', 'chatgpt', 'gemini', 'grok', 'claude', 'zai'] as const;
 const MEDIA = ['image', 'video', 'text'] as const;
 
 /* ── Reading a plan out of a chat reply ──────────────────────
@@ -144,7 +154,7 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
   }
   if (problems.length) return { template: null, problems };
 
-  const TYPES: PlanStepType[] = ['image', 'generate', 'extend', 'frame', 'agent'];
+  const TYPES: PlanStepType[] = ['image', 'generate', 'extend', 'frame', 'agent', 'story'];
   for (const s of byId.values()) {
     if (!TYPES.includes(s.type)) {
       problems.push(`Step "${s.id}" has type "${s.type}"; use one of ${TYPES.join(', ')}.`);
@@ -236,6 +246,38 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
       continue;
     }
 
+    /* Story director node — writes all prompts across connected nodes at run time */
+    if (step.type === 'story') {
+      const y = nextY(col);
+      nodes.push({
+        id: step.id, type: 'story', position: { x, y },
+        data: {
+          type: 'story', label: step.label || 'Story Director',
+          platform: step.platform || 'chatgpt',
+          cast: Array.isArray(step.cast) ? step.cast : [],
+          world: typeof step.world === 'string' ? step.world : '',
+          look: typeof step.look === 'string' ? step.look : '',
+          structure: step.structure || 'hook',
+          rules: Array.isArray(step.rules) ? step.rules : ['samePerson'],
+          beats: typeof step.beats === 'number' ? step.beats : 0,
+          cameraProgression: step.cameraProgression || 'dynamic',
+          audioMode: step.audioMode || 'cinematic',
+          visualPreset: step.visualPreset || 'liveAction',
+          status: 'idle',
+        },
+      });
+      if (String(step.prompt || '').trim()) {
+        const pid = `${step.id}_p`;
+        nodes.push({
+          id: pid, type: 'prompt',
+          position: { x: x - COL_W + 60, y: y + 40 },
+          data: { type: 'prompt', label: `${step.label || step.id} brief`, text: String(step.prompt).trim() },
+        });
+        edge(pid, step.id, 'text', 'text', '#8b5cf6');
+      }
+      continue;
+    }
+
     const media = step.type === 'agent' ? 'text' : (step.media || 'image');
     const platform = step.platform || 'flow';
 
@@ -243,9 +285,17 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
        supplies it; otherwise the plan's literal prompt becomes a prompt node.
        Both at once would give the node two text edges, and the runner reads
        one — so the wire wins and the literal is dropped, with a note. */
-    const mediaOf = (s?: PlanStep) => (s?.type === 'agent' ? 'text' : s?.media);
+    const mediaOf = (s?: PlanStep) => (s?.type === 'agent' || s?.type === 'story' ? 'text' : s?.media);
     const textInputs = (step.inputs || []).filter((i) => mediaOf(byId.get(i)) === 'text');
     const mediaInputs = (step.inputs || []).filter((i) => mediaOf(byId.get(i)) !== 'text');
+
+    /* Story Director orchestration: if there is a single story node in the plan
+       and this generate step has neither its own literal prompt nor a text input,
+       the Story Director automatically feeds it text at runtime. */
+    const storySteps = Array.from(byId.values()).filter((s) => s.type === 'story');
+    if (!textInputs.length && !String(step.prompt || '').trim() && storySteps.length === 1) {
+      textInputs.push(storySteps[0].id);
+    }
 
     if (textInputs.length > 1) {
       problems.push(`Step "${step.id}" takes written text from ${textInputs.length} steps; it can use one.`);

@@ -76,6 +76,9 @@ function renderRun(s: Partial<RunSnapshot>): void {
   $('run-idle').hidden = live;
   $('run-live').hidden = !live;
 
+  const liveDot = document.getElementById('nav-live-dot');
+  if (liveDot) liveDot.hidden = !live;
+
   if (!live) {
     runStartedAt = null;
     $('run-idle-hint').textContent = s.studioOpen
@@ -503,6 +506,7 @@ const AUTO_CHATS: Array<{ key: string; name: string; models?: string[] }> = [
      matched loosely by the adapter — "Opus" finds "Opus 5" and whatever it
      becomes next. */
   { key: 'claude', name: 'Claude', models: ['', 'Sonnet', 'Opus', 'Haiku'] },
+  { key: 'zai', name: 'Z.AI' },
 ];
 
 /** Chats it cannot, which is why the manual path stays below them. */
@@ -702,24 +706,43 @@ function wireBuilder(): void {
   const reply = document.getElementById('build-reply') as HTMLTextAreaElement | null;
   const copy = document.getElementById('build-copy');
   const go = document.getElementById('build-go');
+  const clearBtn = document.getElementById('build-idea-clear') as HTMLButtonElement | null;
   if (!idea || !reply || !copy || !go) return;
 
   renderAiButtons(() => idea.value);
 
+  const syncClear = () => {
+    if (clearBtn) clearBtn.hidden = !idea.value.trim();
+  };
+
   // What was typed survives the panel closing; an idea is worth keeping.
   chrome.storage.local.get('af_build_idea')
-    .then(({ af_build_idea }) => { if (af_build_idea && !idea.value) idea.value = af_build_idea; })
+    .then(({ af_build_idea }) => {
+      if (af_build_idea && !idea.value) idea.value = af_build_idea;
+      syncClear();
+    })
     .catch(() => {});
   idea.addEventListener('input', () => {
     chrome.storage.local.set({ af_build_idea: idea.value }).catch(() => {});
+    syncClear();
   });
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      idea.value = '';
+      chrome.storage.local.set({ af_build_idea: '' }).catch(() => {});
+      syncClear();
+      idea.focus();
+    });
+  }
 
   /* Starters fill the box rather than building straight away. The sentence is
      a starting point, not the brief — most people want to change a word or
      two first, and a button that skipped ahead would take that away. */
   for (const btn of Array.from(document.querySelectorAll<HTMLButtonElement>('.sp-idea'))) {
     btn.addEventListener('click', () => {
-      idea.value = (btn.textContent || '').trim();
+      const text = btn.dataset.prompt || (btn.querySelector('.sp-idea__text') || btn).textContent || '';
+      idea.value = text.trim();
       chrome.storage.local.set({ af_build_idea: idea.value }).catch(() => {});
       idea.focus();
       idea.setSelectionRange(idea.value.length, idea.value.length);

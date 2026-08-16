@@ -29,6 +29,7 @@ import { useStudioStore } from '../store';
 import { AGENT_TOOLS } from '../engine/tools';
 import { CHAT_PLATFORMS } from '../engine/WorkflowRunner';
 import type { AgentStep } from '../engine/agent';
+import { NodeInfoBadge } from './NodeInfoBadge';
 
 type NodeStatus = 'idle' | 'running' | 'done' | 'error';
 
@@ -54,6 +55,8 @@ const PLATFORM_LABEL: Record<string, string> = {
   chatgpt: 'ChatGPT',
   gemini: 'Gemini',
   grok: 'Grok',
+  claude: 'Claude',
+  zai: 'Z.AI',
 };
 
 /** Iteration caps offered. Ten matches n8n's default ceiling; four is a
@@ -100,6 +103,7 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
         <span className="sn-label__icon" aria-hidden="true">🧠</span>
         <span className="sn-label__text">{nodeData.label || 'Agent'}</span>
         {!enabled && <span className="sn-label__skip">SKIPPED</span>}
+        <NodeInfoBadge type="agent" />
         <button
           className={`sn-toggle ${enabled ? 'sn-toggle--on' : ''}`}
           onClick={() => set({ enabled: !enabled })}

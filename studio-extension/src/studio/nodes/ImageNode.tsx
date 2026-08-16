@@ -8,6 +8,7 @@ import { memo, useCallback, useRef, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useStudioStore } from '../store';
 import { Lightbox } from '../components/Lightbox';
+import { NodeInfoBadge } from './NodeInfoBadge';
 
 function ImageNodeComponent({ id, data, selected }: NodeProps) {
   const nodeData = data as any;
@@ -58,6 +59,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps) {
       <div className="sn-label">
         <span className="sn-label__icon" aria-hidden="true">🖼</span>
         <span className="sn-label__text">{nodeData.label || 'Reference Image'}</span>
+        <NodeInfoBadge type="image" />
       </div>
 
       <div className="sn sn--image">

@@ -1351,21 +1351,38 @@
 }
 .sn-bar__sel {
   flex: 0 0 auto;
-  /* Never below the width of its own label + chevron */
   min-width: 58px;
   max-width: 100%;
-  padding: 5px 6px;
+  padding: 5px 22px 5px 8px;
   background: var(--surface-2);
   border: 1px solid var(--line-2);
-  border-radius: var(--r-chip);
-  color: var(--text-2);
+  border-radius: var(--r-ctrl);
+  color: var(--text);
   font-family: inherit;
   font-size: var(--t-micro);
   font-weight: 500;
   outline: none;
   cursor: pointer;
   text-overflow: ellipsis;
-  transition: border-color 0.15s, background 0.15s;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%),
+                    linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+  background-position: right 9px center, right 5px center;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  transition: border-color var(--fast), background-color var(--fast), box-shadow var(--fast);
+}
+.sn-bar__sel:hover {
+  border-color: var(--accent-dim);
+  background-color: var(--surface-3);
+}
+.sn-bar__sel:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-30);
+}
+.sn-bar__sel option {
+  background: var(--surface);
+  color: var(--text);
 }
 /* Model names are the long ones ("Veo 3.1 - Lite [Lower Priority]"), so give
    this one a real basis and let it take a full row when it needs to. */
@@ -2221,12 +2238,25 @@ video.sn-media__img { object-fit: contain; background: var(--canvas); cursor: de
    It is a plan, not a prompt, so it shows the plan: who it writes for, in the
    order it will write them, and a tick against each one it covered. A node
    responsible for five other nodes should look like it. */
-.sn--story { min-width: 260px; }
+.sn--story { min-width: 390px; width: 390px; }
+
+.sn-story__badge {
+  padding: 2px 8px;
+  background: var(--accent-14);
+  border: 1px solid var(--accent-30);
+  border-radius: var(--r-chip);
+  color: var(--accent);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  white-space: nowrap;
+}
 
 .sn-story__targets {
   margin-top: var(--s-2);
-  padding-top: var(--s-2);
-  border-top: 1px solid var(--line);
+  padding: var(--s-2);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
 }
 .sn-story__empty {
   font-size: var(--t-micro);
@@ -2234,22 +2264,29 @@ video.sn-media__img { object-fit: contain; background: var(--canvas); cursor: de
   line-height: 1.45;
 }
 .sn-story__count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: var(--t-micro);
-  color: var(--text-3);
+  font-weight: 600;
+  color: var(--text-2);
   margin-bottom: var(--s-1);
 }
-.sn-story__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.sn-story__ribbon {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  max-height: 130px;
+  overflow-y: auto;
 }
 .sn-story__item {
   display: flex;
   align-items: center;
   gap: var(--s-2);
+  padding: 3px 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
   font-size: var(--t-micro);
   color: var(--text-2);
   min-width: 0;
@@ -2269,6 +2306,7 @@ video.sn-media__img { object-fit: contain; background: var(--canvas); cursor: de
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 500;
 }
 .sn-story__meta { flex: none; color: var(--text-3); }
 .sn-story__done { flex: none; color: var(--ok); }
@@ -2283,18 +2321,71 @@ video.sn-media__img { object-fit: contain; background: var(--canvas); cursor: de
   line-height: 1.45;
 }
 
-/* Its own family colour, so a glance at the canvas says which box is the one
-   holding the story together. */
 .sn-wrap--kind-story .sn { border-color: var(--accent-30); }
 .sn-wrap--kind-story .sn-label__icon { color: var(--accent); }
+.sn-count--running { color: var(--accent); font-weight: 600; }
 
-/* ── Story node, expanded ────────────────────────────────────
-   Collapsed by default. Cast, world and look are empty until the first run
-   fills them, and a column of blank inputs on a canvas reads as work to do
-   rather than as something already handled. */
-.sn-story__beats {
-  float: right;
+/* ── Directorial Segmented Tabs ── */
+.sn-story__tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: var(--s-2);
+  padding: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+}
+.sn-story__tab {
+  flex: 1;
+  padding: 5px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-chip);
   color: var(--text-3);
+  font: inherit;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
+  transition: background var(--fast), color var(--fast), border-color var(--fast);
+}
+.sn-story__tab:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+.sn-story__tab--active {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--line-2);
+}
+
+.sn-story__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-2);
+}
+
+.sn-story__hint {
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.4;
+  padding: var(--s-1) var(--s-2);
+  background: var(--surface-2);
+  border-radius: var(--r-chip);
+  border-left: 2px solid var(--accent);
+}
+
+.sn-story__rules-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-1) 0;
+}
+
+.sn-story__beats {
+  color: var(--text-3);
+  font-weight: normal;
 }
 .sn-story__toggle {
   display: flex;
@@ -2513,3 +2604,287 @@ video.sn-media__img { object-fit: contain; background: var(--canvas); cursor: de
    wired, and they used to render identically. */
 .fn-empty--missed { color: var(--warn); }
 .fn-empty--missed .fn-empty__icon { color: var(--warn); }
+
+/* ════════════════════════════════════════════════
+   NODE INFO TOOLTIP — ⓘ badge and documentation card
+   Every node carries one. Positioned against the sn-label row so it
+   floats above the canvas without being clipped by the card.
+   ════════════════════════════════════════════════ */
+
+.sn-info {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  margin-left: 4px;
+}
+
+.sn-info__badge {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--fast), color var(--fast), border-color var(--fast),
+              transform var(--spring);
+}
+.sn-info__badge:hover {
+  background: var(--accent-14);
+  border-color: var(--accent-30);
+  color: var(--accent);
+  transform: scale(1.12);
+}
+.sn-info__badge--open {
+  background: var(--accent-14);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sn-info__card {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: -40px;
+  z-index: 50;
+  width: 280px;
+  padding: 14px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-card);
+  box-shadow: var(--e-3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  animation: sn-info-enter 200ms ease-out;
+}
+.sn-info__card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-card);
+  background: var(--glass-shine);
+  pointer-events: none;
+}
+
+@keyframes sn-info-enter {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.sn-info__title {
+  font-size: var(--t-mid);
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.sn-info__desc {
+  margin: 0 0 10px;
+  font-size: var(--t-small);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.sn-info__section {
+  margin-bottom: 8px;
+}
+.sn-info__section-head {
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+
+.sn-info__ports {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sn-info__port {
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  padding: 3px 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--r-chip);
+  border-left: 2px solid var(--accent-30);
+}
+
+.sn-info__tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px;
+  margin-top: 4px;
+  background: var(--accent-8);
+  border: 1px solid var(--accent-14);
+  border-radius: var(--r-ctrl);
+  font-size: var(--t-micro);
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.sn-info__tip-icon {
+  flex: 0 0 auto;
+  font-size: var(--t-body);
+  line-height: 1;
+}
+
+
+/* ════════════════════════════════════════════════
+   UI POLISH — Visual upgrades across the Studio
+   ════════════════════════════════════════════════ */
+
+/* ── Node hover elevation ──
+   Lifting the card slightly and adding a soft glow on hover makes
+   the canvas feel interactive and responsive. The transform is kept
+   subtle so node positions stay readable. */
+.sn-wrap:hover .sn {
+  box-shadow: var(--e-node-hover);
+  transform: translateY(-1px);
+}
+.sn-wrap--selected .sn { transform: translateY(-1px); }
+/* Keep status glows when active — don't override them */
+.sn-wrap:hover .sn--running { box-shadow: 0 0 28px var(--n-frame-10); }
+.sn-wrap:hover .sn--done    { box-shadow: 0 0 24px var(--ok-16); }
+.sn-wrap:hover .sn--error   { box-shadow: 0 0 24px var(--bad-30); }
+
+/* ── Subtle gradient on node cards ──
+   Adds depth to the flat sunken background without competing with content. */
+.sn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-card);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.02) 0%,
+    transparent 30%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Port hover glow ring ──
+   Ports already scale on hover; the ring adds a halo that telegraphs
+   what the connection will be before the wire lands. */
+.sn-port:hover {
+  box-shadow: 0 0 12px var(--accent-30) !important;
+}
+.sn-port--text:hover  { box-shadow: 0 0 14px var(--n-prompt-10) !important; }
+.sn-port--image:hover { box-shadow: 0 0 14px var(--n-image-10) !important; }
+.sn-port--out:hover   { box-shadow: 0 0 14px var(--ok-16) !important; }
+
+/* ── Gallery card glassmorphism upgrade ── */
+.studio-gallery__card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-color: var(--glass-border);
+}
+.studio-gallery__card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-card);
+  background: var(--glass-shine);
+  pointer-events: none;
+  z-index: 0;
+}
+.studio-gallery__card:hover {
+  border-color: var(--accent-50);
+  box-shadow: 0 12px 40px var(--accent-14), var(--glow-accent);
+}
+
+/* ── Toolbar button hover glow ── */
+.studio-toolbar__btn:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 1px var(--glass-border);
+}
+.studio-toolbar__btn--run {
+  box-shadow: var(--glow-accent);
+}
+.studio-toolbar__btn--run:hover:not(:disabled) {
+  box-shadow: 0 0 28px rgba(160, 122, 253, 0.32);
+}
+
+/* ── Run bar gradient shimmer ── */
+.studio-runbar__fill {
+  background: linear-gradient(
+    90deg,
+    var(--accent),
+    var(--warn),
+    var(--accent)
+  );
+  background-size: 200% 100%;
+  animation: runbar-shimmer 2.5s ease-in-out infinite;
+}
+@keyframes runbar-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-runbar__fill { animation: none; background-size: 100% 100%; }
+}
+
+/* ── Status badge micro-animations ── */
+.sn--done {
+  animation: sn-done-flash 0.6s ease-out;
+}
+@keyframes sn-done-flash {
+  0%  { box-shadow: 0 0 0 0 var(--ok); }
+  40% { box-shadow: 0 0 30px var(--ok-16); }
+  100% { box-shadow: 0 0 20px var(--ok-16); }
+}
+
+/* ── Selected edge glow ── */
+.react-flow__edge.selected .react-flow__edge-path {
+  filter: drop-shadow(0 0 6px var(--accent-50));
+}
+
+/* ── Connection line feedback ── */
+.react-flow__connectionline .react-flow__edge-path {
+  filter: drop-shadow(0 0 4px var(--accent-30));
+}
+
+/* ── Empty state entrance ── */
+.studio-empty {
+  animation: empty-enter 0.5s ease-out;
+}
+@keyframes empty-enter {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Topbar glass refinement ── */
+.studio-topbar {
+  background: var(--glass-bg);
+  border-bottom-color: var(--glass-border);
+}
+
+/* ── Dock glass refinement ── */
+.studio-dock {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+}
+
+/* ── Toolbar glass background ── */
+.studio-toolbar {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-color: var(--glass-border);
+}
+
+/* ── FrameNode hover polish ── */
+.fn-wrap:hover .fn {
+  box-shadow: var(--e-node-hover);
+  transform: translateY(-1px);
+}
+
