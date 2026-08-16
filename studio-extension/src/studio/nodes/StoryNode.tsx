@@ -24,6 +24,7 @@ import {
   type CastMember, type StorySettings, type StructureId,
   type CameraProgressionId, type AudioModeId, type VisualPresetId,
 } from '../ask/storyPlan';
+import { FLOW_VOICES, NO_VOICE, voiceLabel } from '../flowVoices';
 import { NodeInfoBadge } from './NodeInfoBadge';
 
 function readStory(d: any): StorySettings {
@@ -329,8 +330,35 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                     placeholder="Physical appearance (repeated in prompts for consistency)"
                     onChange={(e) => setCast(i, { look: e.target.value })}
                   />
+                  {/* A voice belongs to a character, which is why it is set
+                      here and not on sixteen clips. Flow agrees: it attaches a
+                      voice to a character ingredient, not to a prompt. Every
+                      shot this character appears in inherits it, and a
+                      two-hander gets two voices without anything being set
+                      per shot. */}
+                  <select
+                    className="sn-bar__sel nodrag"
+                    value={c.voice || NO_VOICE}
+                    onChange={(e) => setCast(i, { voice: e.target.value })}
+                    title="The Flow voice this character speaks in"
+                  >
+                    <option value={NO_VOICE}>No voice — this character does not speak</option>
+                    {FLOW_VOICES.map((v) => (
+                      <option key={v.id} value={v.id}>{voiceLabel(v)}</option>
+                    ))}
+                  </select>
                 </div>
               ))}
+              {story.cast.some((c) => c.voice && c.voice !== NO_VOICE) && (
+                <small className="sn-field__hint">
+                  {story.audioMode === 'none'
+                    ? 'Sound & Audio is set to none, so no voice will be applied — '
+                      + 'the story has no spoken lines to carry one.'
+                    : 'Each clip takes the voice of whoever speaks in it. A clip needs a '
+                      + 'reference image for Flow to attach a voice, and Frames mode has no '
+                      + 'voice at all.'}
+                </small>
+              )}
             </div>
 
             <div className="sn-story__section">

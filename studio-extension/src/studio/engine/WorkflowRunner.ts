@@ -17,9 +17,11 @@ import { useStudioStore } from '../store';
 import { composeAskPrompt } from '../presets';
 import {
   shotContract, parseShots, checkShots, repairMessage, summarise,
-  orderShotTargets, type ShotTarget,
+  orderShotTargets, type ShotTarget, type Shot,
 } from '../ask/storyboard';
-import { storyBrief, STORY_FIELDS, DEFAULT_STORY, type StorySettings } from '../ask/storyPlan';
+import {
+  storyBrief, STORY_FIELDS, DEFAULT_STORY, voiceForShot, type StorySettings,
+} from '../ask/storyPlan';
 import { runAgent, type AgentStep, type ToolOutcome } from './agent';
 import { toolsByName } from './tools';
 import {
@@ -1002,8 +1004,15 @@ export class WorkflowRunner {
     const platform = chatPlatform(nodeData.platform);
     const MAX_REPAIRS = 2;
 
-    let message = brief + '\n' + shotContract(targets, isStory ? STORY_FIELDS : '');
-    let best: { shots: string[]; problems: number; story: string } | null = null;
+    /* Ask who speaks only when a voice is waiting for the answer. With no cast
+       voices set the field is pure overhead — one more key for the writer to
+       get wrong, and one more chance to break the JSON envelope. */
+    const wantsSpeaker = isStory && ((nodeData?.cast || []) as any[])
+      .some((c) => c?.voice && c.voice !== 'none');
+
+    let message = brief + '\n'
+      + shotContract(targets, isStory ? STORY_FIELDS : '', wantsSpeaker);
+    let best: { shots: Shot[]; problems: number; story: string } | null = null;
 
     for (let round = 0; round <= MAX_REPAIRS; round++) {
       if (this.abortRequested) throw new Error('Stopped');
@@ -1048,7 +1057,7 @@ export class WorkflowRunner {
       console.log(`[Runner] Storyboard round ${round + 1}: ${summarise(problems)}`);
 
       if (!best || problems.length < best.problems) {
-        best = { shots: shots.map((sh) => sh.prompt), problems: problems.length, story: story || '' };
+        best = { shots, problems: problems.length, story: story || '' };
         /* Written back so the next run does not re-decide who the character
            is. Only what the user has not already locked — a field they typed
            outranks anything the model returns. */
@@ -1084,7 +1093,38 @@ export class WorkflowRunner {
       );
     }
 
-    this.shotPlans.set(nodeId, best.shots);
+    this.shotPlans.set(nodeId, best.shots.map((sh) => sh.prompt));
+
+    /* Hand each clip the voice of whoever speaks in it.
+     *
+     * The cast is where a voice is chosen, once, because that is where Flow
+     * puts it too — a voice is attached to a character, not to a prompt. The
+     * shot already says who appears in it and now says who talks, so the two
+     * meet here and nothing has to be set per shot.
+     *
+     * A voice the user picked on the node itself outranks this. voiceFromStory
+     * is what tells them apart: without it, re-running the Story would quietly
+     * overwrite a deliberate choice with a derived one, which is the same rule
+     * the cast/world/look write-back above already follows. */
+    if (isStory) {
+      const cast = ((nodeData.cast || []) as any[]).filter((c) => c?.name);
+      if (cast.some((c) => c.voice)) {
+        const all = useStudioStore.getState().nodes;
+        targets.forEach((t, i) => {
+          const shot = best!.shots[i];
+          if (!shot) return;
+          const node = all.find((n) => n.id === t.id);
+          const d = (node?.data || {}) as any;
+          if (d.voice && d.voice !== 'none' && !d.voiceFromStory) return;  // set by hand
+          const voice = voiceForShot(shot.cast, shot.speaker, cast, nodeData.audioMode);
+          if ((d.voice || '') === (voice || '')) return;
+          store.updateNodeData(t.id, {
+            voice: voice || 'none',
+            voiceFromStory: !!voice,
+          });
+        });
+      }
+    }
 
     /* The node itself shows the whole set, because that is what was written
        here; each generator shows the one it received. */

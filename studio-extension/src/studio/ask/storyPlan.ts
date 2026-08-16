@@ -28,6 +28,12 @@ export interface CastMember {
   look: string;
   /** Screen blocking or role: e.g. "center", "left", "lead", "creature". */
   role?: string;
+  /* Which of Flow's voices this character speaks in, or absent for none.
+     It belongs here rather than on each clip because that is where it belongs
+     in Flow too: a voice is attached to a CHARACTER ingredient, not to a
+     prompt. Set once, every shot this character appears in inherits it, and a
+     two-hander gets two voices without anything being set per shot. */
+  voice?: string;
 }
 
 export type CameraProgressionId = 'dynamic' | 'establishingToClose' | 'actionTracking' | 'fixed';
@@ -411,3 +417,56 @@ export const STORY_FIELDS = [
   '  "world": "the place, described once",',
   '  "look": "palette, lens, lighting",',
 ].join('\n');
+
+/**
+ * Which voice a shot's clip should speak in.
+ *
+ * The join between two things that already existed and never met: the Story's
+ * cast, where each character is described once, and each shot's `cast` list,
+ * naming who appears in it. Flow's own model is the same shape — a voice
+ * attaches to a character ingredient, not to a prompt — so matching them is
+ * the whole feature.
+ *
+ * Returns '' for no voice, which is the right answer more often than not:
+ *
+ *   - audioMode 'none' means the piece has no spoken lines at all, so a voice
+ *     would be attached to every clip and heard in none of them;
+ *   - a shot with nobody in it — an establishing shot, a product on a table —
+ *     has no character to speak through, and Flow drops the voice anyway;
+ *   - a character with no voice set is the default, and silence is what the
+ *     user asked for by not choosing one.
+ *
+ * The speaker rule matters for dialogue. Flow allows exactly one voice per
+ * clip, so a two-hander has to choose, and choosing wrong is invisible: the
+ * clip is generated, it has a voice, and it is the wrong character's. The
+ * writer names the speaker; falling back to the first listed is a guess, and
+ * is only reached when it did not.
+ */
+export function voiceForShot(
+  shotCast: string[] | undefined,
+  speaker: string | undefined,
+  cast: CastMember[],
+  audioMode?: AudioModeId,
+): string {
+  if (audioMode === 'none') return '';
+  const find = (name: string) => cast.find(
+    (c) => c.name.trim().toLowerCase() === name.trim().toLowerCase(),
+  );
+
+  /* Named speaker wins, even if the shot's cast list forgot to include them —
+     a writer that says "Maya speaks" and lists only "the barista" has told us
+     something true about the audio and something sloppy about the blocking. */
+  if (speaker) {
+    const named = find(speaker);
+    if (named?.voice) return named.voice;
+  }
+
+  const present = (shotCast || []).map(find).filter(Boolean) as CastMember[];
+  const withVoice = present.filter((c) => c.voice);
+  if (withVoice.length === 1) return withVoice[0].voice!;
+
+  /* Two voiced characters and nobody named as speaker. Taking the first is a
+     coin toss on which one is heard, and a wrong voice is harder to notice
+     than no voice — the clip sounds finished. */
+  return '';
+}

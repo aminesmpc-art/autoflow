@@ -37,6 +37,12 @@ export interface Shot {
   prompt: string;
   /** Characters in this shot, by name. Absent on replies that predate it. */
   cast?: string[];
+  /* Who actually speaks in this shot, when anyone does. Flow allows exactly
+     one voice per clip, so a shot listing two characters has to name which of
+     them the voice belongs to. The writer already decides this when it writes
+     the dialogue into the Audio section — it was simply never asked to say
+     so out loud. */
+  speaker?: string;
 }
 
 export interface ShotTarget {
@@ -157,7 +163,9 @@ const MOTION = /\b(camera|pan|tilt|dolly|zoom|track(?:ing)?|orbit|push(?:es|ing)
  * checker below rejects all of it, and it is cheaper to say so once here than
  * to spend a repair round on it.
  */
-export function shotContract(targets: ShotTarget[], extraFields = ''): string {
+export function shotContract(
+  targets: ShotTarget[], extraFields = '', wantsSpeaker = false,
+): string {
   /* Each target described by what it is configured to do, not just what kind
      of thing it is. A writer that knows the node is 9:16, ten seconds long and
      pinned to a start frame writes a different — correct — prompt. */
@@ -277,7 +285,8 @@ export function shotContract(targets: ShotTarget[], extraFields = ''): string {
       ]
       : ['  "story": "one sentence on what this shows",']),
     '  "shots": [',
-    '    { "n": 1, "title": "short name", "cast": ["who is in this one"], "prompt": "the full prompt" }',
+    `    { "n": 1, "title": "short name", "cast": ["who is in this one"]${
+      wantsSpeaker ? ', "speaker": "who talks, or omit"' : ''}, "prompt": "the full prompt" }`,
     '  ]',
     '}',
     '',
@@ -285,6 +294,17 @@ export function shotContract(targets: ShotTarget[], extraFields = ''): string {
     'name. It is how the check knows the moon scene is not missing the',
     'delivery man — it knows he was never in it.',
     '',
+    /* Only asked when a voice is actually waiting to be assigned. A field the
+       writer must fill for no reason is a field it gets wrong for no reason,
+       and every extra key is another chance to break the JSON. */
+    ...(wantsSpeaker ? [
+      '"speaker" is the ONE character whose voice is heard in that shot — the',
+      'one whose lines you put in the audio. Only one voice can be used per',
+      'clip, so name a single character or leave the field out. Omit it for a',
+      'shot with no speech: an establishing shot, a product on a table, a',
+      'reaction with no line.',
+      '',
+    ] : []),
     'Each "prompt" is what gets typed into the generator verbatim. So:',
     '  · write every prompt in ENGLISH, whatever language this brief is in',
     '  · no numbering, no "Shot 2:", no titles inside the prompt',
