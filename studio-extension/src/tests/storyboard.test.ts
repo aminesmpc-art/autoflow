@@ -294,3 +294,44 @@ describe('a story with more than one character', () => {
     expect(c).toContain('delivery man');
   });
 });
+
+describe('a reply in another language', () => {
+  /* Verbatim shape from a live Z.AI test: GLM answered the whole brief in
+     Chinese. The prompts were accurate — 摄像机和主体都在移动 is "camera and
+     subject are both moving" — and unusable, because every rule here reads
+     English. All three shots failed "static" on prompts that described
+     motion, and the repair loop would have chased that forever. */
+  const CHINESE = '广角镜头。皮克斯3D风格。摄像机扫过一个舒适、阳光明媚的郊区厨房。'
+    + '男孩Leo在场，有一头蓬松的红棕色卷发。摄像机和主体都在移动。';
+
+  it('reports the language, not four rules it cannot explain', () => {
+    const problems = checkShots([shot(1, CHINESE), shot(2, GOOD)], VIDEO);
+    const first = problems.filter((p) => p.shot === 1);
+    expect(first).toHaveLength(1);
+    expect(first[0].code).toBe('language');
+    // Specifically NOT "nothing moves" on a prompt that says the camera moves.
+    expect(first.map((p) => p.code)).not.toContain('static');
+  });
+
+  it('says why English, rather than just demanding it', () => {
+    const d = checkShots([shot(1, CHINESE)], [VIDEO[0]])[0].detail;
+    expect(d).toContain('trained on English prompts');
+    expect(d).toContain('keeping every detail');
+  });
+
+  it('leaves English prompts alone', () => {
+    expect(checkShots([shot(1, GOOD), shot(2, GOOD)], VIDEO)
+      .filter((p) => p.code === 'language')).toEqual([]);
+  });
+
+  it('does not trip on ordinary punctuation or accents', () => {
+    const accented = 'A wide fixed camera as the café owner — a woman in a naïve blue apron — '
+      + 'walks in carrying crème brûlée and sets it down while the light rises behind her.';
+    expect(checkShots([shot(1, accented)], [VIDEO[0]])
+      .filter((p) => p.code === 'language')).toEqual([]);
+  });
+
+  it('asks for English in the contract, so the check is a backstop', () => {
+    expect(shotContract(VIDEO)).toContain('write every prompt in ENGLISH');
+  });
+});

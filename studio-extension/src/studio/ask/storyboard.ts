@@ -135,6 +135,18 @@ const BANNED: Array<{ code: string; re: RegExp; detail: string }> = [
   },
 ];
 
+/* Prompts must be English.
+   GLM answered a live test entirely in Chinese — accurately, and unusably.
+   Every rule below reads English, so a translated reply fails static, meta,
+   storyboard and numbered at once regardless of quality, and the repair loop
+   chases its tail. The generators are the real reason: Flow and Veo are
+   trained on English prompts and degrade on anything else.
+
+   Detected by script rather than by wordlist: any run of CJK, Cyrillic,
+   Arabic or Hebrew is conclusive, where "does this contain English words" is
+   not. */
+const NON_LATIN = /[぀-ヿ㐀-䶿一-鿿가-힯Ѐ-ӿ֐-׿؀-ۿ]/;
+
 /** Words that mean something moves. A video prompt without one is a still. */
 const MOTION = /\b(camera|pan|tilt|dolly|zoom|track(?:ing)?|orbit|push(?:es|ing)? in|pull(?:s|ing)? back|handheld|walk|walks|walking|run|runs|turn|turns|move|moves|moving|rise|rises|lift|lifts|pour|pours|spray|sprays|reach|reaches|hyperlapse|time-?lapse|slow motion|motion|steadicam|crane)\b/i;
 
@@ -274,6 +286,7 @@ export function shotContract(targets: ShotTarget[], extraFields = ''): string {
     'delivery man — it knows he was never in it.',
     '',
     'Each "prompt" is what gets typed into the generator verbatim. So:',
+    '  · write every prompt in ENGLISH, whatever language this brief is in',
     '  · no numbering, no "Shot 2:", no titles inside the prompt',
     '  · no markdown, no bullets, no code fences',
     '  · no talking to me — no "Certainly", no "Here is"',
@@ -398,6 +411,19 @@ export function checkShots(
         shot: n, code: 'long',
         detail: `${p.length} characters, over the ${limit} the composer accepts. Cut it without dropping the details that must match the other shots.`,
       });
+    }
+
+    /* Language first. When a prompt is not English every rule below reports a
+       failure it cannot explain — "nothing moves" on a prompt that says the
+       camera moves, in Chinese. One accurate problem beats four misleading
+       ones, so the rest are skipped for this shot. */
+    if (NON_LATIN.test(p)) {
+      problems.push({
+        shot: n, code: 'language',
+        detail: 'is not written in English. The generators are trained on English prompts and '
+          + 'degrade on anything else — rewrite this prompt in English, keeping every detail.',
+      });
+      return;
     }
 
     for (const rule of BANNED) {
