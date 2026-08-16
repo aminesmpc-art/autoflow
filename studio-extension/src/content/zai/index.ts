@@ -144,16 +144,27 @@ function getAllCopyButtons(): HTMLElement[] {
  * evidence, and three of the old five could never be false.
  */
 function isThinkingOrGenerating(baselineCopyCount: number): boolean {
-  /* Thinking, said by the page itself. The icon and the label both carry
-     purpose-built class names; the Skip control is what the user presses to
-     cut reasoning short, so its presence means reasoning is happening. */
+  /* FINISHED WINS.
+     A new copy button is proof the turn is over — Z.AI renders it only then.
+     It is checked first and it is final, because the busy signals below are
+     ambiguous in a way this is not: Z.AI leaves the collapsed thinking
+     accordion in the page after the answer lands ("Thought for 12s"), and it
+     keeps its .shimmer class. Consulting that first meant a finished reply
+     could still read as busy forever, which is the same mistake as the
+     cursor-pointer check this replaced — a signal that cannot be false. */
+  if (getAllCopyButtons().length > baselineCopyCount) return false;
+
+  /* Thinking, said by the page itself. The icon and the label carry
+     purpose-built class names; the Skip control exists only while reasoning
+     is happening. Class names rather than text, so Deep Think is still
+     recognised on a Chinese or French account. */
   const thinking = document.querySelector<HTMLElement>(
     'svg.thinking-pulse, .shimmer, [aria-label="Skip Thinking"]'
   );
   if (thinking && isVisible(thinking)) return true;
 
-  /* Streaming: the send control becomes a stop control. Checked by shape
-     rather than by icon path, since the path changes with their icon set. */
+  /* Streaming: the send control becomes a stop control. By shape rather than
+     by icon path, since the path changes with their icon set. */
   const composer = findComposer();
   if (composer) {
     const parent = composer.closest('form, [class*="input"], [class*="box"], [class*="container"]')
@@ -164,14 +175,14 @@ function isThinkingOrGenerating(baselineCopyCount: number): boolean {
     if (sendBtn) {
       const label = (sendBtn.getAttribute('aria-label') || '').toLowerCase();
       if (/stop|abort|停止/.test(label)) return true;
-      // A square in place of the arrow is the same statement, drawn.
       if (sendBtn.innerHTML.toLowerCase().includes('<rect')) return true;
     }
   }
 
-  /* Finished: a copy button that was not there when we asked. Last, because
-     it is the only one that can say "no" — the others only say "yes". */
-  return getAllCopyButtons().length <= baselineCopyCount;
+  /* No copy button yet and nothing visibly working. Still treated as busy:
+     the gap between pressing send and the first token is real, and the outer
+     silence timeout ends a genuinely dead turn in under a minute. */
+  return true;
 }
 
 function findNewChatControl(): HTMLElement | null {

@@ -368,6 +368,41 @@ describe('the two things the car-carving plan exposed', () => {
     const into = template!.edges.find((e: any) => e.target === 'shot' && e.source === 'think')!;
     expect(into).toMatchObject({ sourceHandle: 'text', targetHandle: 'text' });
   });
+
+  it('auto-wires Story Director to downstream generate steps that lack prompt text', () => {
+    const { template, problems } = compilePlan({
+      name: 'Three-Shot Character Dialogue',
+      steps: [
+        {
+          id: 'story',
+          type: 'story',
+          platform: 'chatgpt',
+          label: 'Story Director',
+          prompt: 'Direct a three-shot sequence',
+          cast: [{ name: 'Hero', look: 'Detective in trench coat' }],
+          world: 'Rainy cyberpunk alley',
+          look: 'Moody neon noir',
+        },
+        { id: 'wide', type: 'generate', media: 'image', platform: 'grok', label: 'Wide Keyframe', aspectRatio: '16:9' },
+        { id: 'wideclip', type: 'generate', media: 'video', platform: 'flow', label: 'Wide Establishing', inputs: ['wide'], aspectRatio: '16:9', duration: '8s' },
+        { id: 'wideend', type: 'frame', label: 'Wide Final Frame', inputs: ['wideclip'] },
+        { id: 'medium', type: 'generate', media: 'image', platform: 'grok', label: 'Medium Keyframe', inputs: ['wideend'], aspectRatio: '16:9' },
+        { id: 'mediumclip', type: 'generate', media: 'video', platform: 'flow', label: 'Medium Dialogue', inputs: ['medium'], aspectRatio: '16:9', duration: '8s' },
+        { id: 'mediumend', type: 'frame', label: 'Medium Final Frame', inputs: ['mediumclip'] },
+        { id: 'close', type: 'generate', media: 'image', platform: 'grok', label: 'Close Keyframe', inputs: ['mediumend'], aspectRatio: '16:9' },
+        { id: 'closeclip', type: 'generate', media: 'video', platform: 'flow', label: 'Emotional Close-Up', inputs: ['close'], aspectRatio: '16:9', duration: '6s' },
+      ],
+    });
+
+    expect(problems).toEqual([]);
+    expect(template).not.toBeNull();
+    expect(validateTemplate(template)).toEqual([]);
+
+    // Every generate node is wired to the Story Director for runtime prompt generation
+    const storyEdges = template!.edges.filter((e: any) => e.source === 'story' && e.targetHandle === 'text');
+    const targetIds = storyEdges.map((e: any) => e.target).sort();
+    expect(targetIds).toEqual(['close', 'closeclip', 'medium', 'mediumclip', 'wide', 'wideclip']);
+  });
 });
 
 describe('the brief describes the agent it actually has', () => {

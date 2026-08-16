@@ -35,6 +35,8 @@ export interface Shot {
   n: number;
   title: string;
   prompt: string;
+  /** Characters in this shot, by name. Absent on replies that predate it. */
+  cast?: string[];
 }
 
 export interface ShotTarget {
@@ -263,9 +265,13 @@ export function shotContract(targets: ShotTarget[], extraFields = ''): string {
       ]
       : ['  "story": "one sentence on what this shows",']),
     '  "shots": [',
-    '    { "n": 1, "title": "short name", "prompt": "the full prompt" }',
+    '    { "n": 1, "title": "short name", "cast": ["who is in this one"], "prompt": "the full prompt" }',
     '  ]',
     '}',
+    '',
+    '"cast" lists only the characters who actually appear in that shot, by',
+    'name. It is how the check knows the moon scene is not missing the',
+    'delivery man — it knows he was never in it.',
     '',
     'Each "prompt" is what gets typed into the generator verbatim. So:',
     '  · no numbering, no "Shot 2:", no titles inside the prompt',
@@ -320,6 +326,11 @@ export function parseShots(reply: string): ParsedReply {
       n: Number(s?.n) || i + 1,
       title: String(s?.title || `Shot ${i + 1}`).trim(),
       prompt: String(s?.prompt ?? s?.text ?? '').trim(),
+      /* Who is in THIS shot. Absent on an older reply, which the checker
+         treats as "unknown" rather than "nobody". */
+      cast: Array.isArray(s?.cast)
+        ? s.cast.map((c: any) => String(c || '').trim()).filter(Boolean)
+        : undefined,
     }));
     const cast = Array.isArray(parsed?.cast)
       ? parsed.cast
@@ -346,7 +357,15 @@ export function parseShots(reply: string): ParsedReply {
  * that envelope problems come first — a wrong shot count makes the per-shot
  * numbering misleading.
  */
-export function checkShots(shots: Shot[], targets: ShotTarget[], anchor?: string): Problem[] {
+export function checkShots(
+  shots: Shot[],
+  targets: ShotTarget[],
+  anchor?: string,
+  /* Who each named character is. With it, a shot is measured only against the
+     people it says are in it — without it, the anchor named the whole cast and
+     the moon scene was failed for not mentioning the delivery man. */
+  cast?: Array<{ name: string; look: string }>,
+): Problem[] {
   const problems: Problem[] = [];
 
   if (shots.length !== targets.length) {
@@ -402,7 +421,17 @@ export function checkShots(shots: Shot[], targets: ShotTarget[], anchor?: string
        Checking it the other way failed a room design sheet for not containing
        a description of the person who walks into the room. */
     if (anchor && target?.media !== 'text' && target?.role !== 'reference') {
-      const keys = anchorKeys(anchor);
+      /* Scope the identity to this shot. A story with five characters shares
+         only its world and style globally; Dad is in one scene. Measuring
+         every prompt against every character is what made the repair loop
+         demand the moon shot describe the delivery man, and a model trying to
+         comply appends all five to all sixteen. */
+      const named = (shot.cast || []).map((n) => n.toLowerCase());
+      const relevant = (cast || []).filter((c) => named.includes(c.name.toLowerCase()));
+      const scoped = named.length && relevant.length
+        ? relevant.map((c) => c.look).join(' ')
+        : anchor;
+      const keys = anchorKeys(scoped);
       const missing = keys.filter((k) => !new RegExp(`\\b${escapeRe(k)}`, 'i').test(p));
       if (keys.length >= 2 && missing.length > keys.length / 2) {
         problems.push({

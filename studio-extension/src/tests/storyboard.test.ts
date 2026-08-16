@@ -239,3 +239,58 @@ describe('an anchor that is an instruction, not a description', () => {
     expect(problems.filter((p) => p.code === 'continuity').map((p) => p.shot)).toEqual([2]);
   });
 });
+
+describe('a story with more than one character', () => {
+  /* The failure this fixes, verbatim from a run: the anchor named all five
+     characters, so every prompt was required to contain all five. The moon
+     scene was failed for not mentioning the delivery man. GLM complied the
+     only way it could — by appending every character to all sixteen prompts. */
+  const CAST = [
+    { name: 'Leo', look: 'a five-year-old boy with fluffy brown hair, white t-shirt, blue shorts' },
+    { name: 'Dad', look: 'a warm smiling man in a plaid shirt with rolled-up sleeves' },
+    { name: 'Astronaut Kid', look: 'a child in a white NASA spacesuit, visor up' },
+  ];
+  const ANCHOR = CAST.map((c) => c.look).join(' ');
+
+  const bathroom = 'A wide fixed shot of a tiled bathroom as a warm smiling man in a plaid '
+    + 'shirt with rolled-up sleeves ties a rope around a shark, while a five-year-old boy with '
+    + 'fluffy brown hair in a white t-shirt and blue shorts backs away, camera holding still.';
+  const moon = 'A tracking shot across grey moon dust as a five-year-old boy with fluffy brown '
+    + 'hair runs beside a child in a white NASA spacesuit with the visor up, both leaping.';
+
+  const withCast = (n: number, prompt: string, names: string[]): Shot =>
+    ({ n, title: `Shot ${n}`, prompt, cast: names });
+
+  it('does not fail the moon scene for lacking Dad', () => {
+    const problems = checkShots(
+      [withCast(1, bathroom, ['Leo', 'Dad']), withCast(2, moon, ['Leo', 'Astronaut Kid'])],
+      VIDEO, ANCHOR, CAST,
+    );
+    expect(problems.filter((p) => p.code === 'continuity')).toEqual([]);
+  });
+
+  it('still fails a shot that drops the character it says is in it', () => {
+    const drifted = 'A tracking shot down a marble corridor as a man in a grey business suit '
+      + 'strides past tall windows while the camera follows him.';
+    const problems = checkShots(
+      [withCast(1, bathroom, ['Leo', 'Dad']), withCast(2, drifted, ['Leo', 'Astronaut Kid'])],
+      VIDEO, ANCHOR, CAST,
+    );
+    expect(problems.filter((p) => p.code === 'continuity').map((p) => p.shot)).toEqual([2]);
+  });
+
+  it('falls back to the anchor when a reply has no per-shot cast', () => {
+    // Older replies, and any model that ignores the field.
+    const problems = checkShots(
+      [shot(1, bathroom), shot(2, moon)], VIDEO, ANCHOR, CAST,
+    );
+    expect(Array.isArray(problems)).toBe(true);
+  });
+
+  it('asks for the field, and says what it is for', () => {
+    const c = shotContract(VIDEO);
+    expect(c).toContain('"cast": ["who is in this one"]');
+    expect(c).toContain('only the characters who actually appear');
+    expect(c).toContain('delivery man');
+  });
+});

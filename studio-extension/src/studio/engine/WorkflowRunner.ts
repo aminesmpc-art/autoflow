@@ -1040,7 +1040,7 @@ export class WorkflowRunner {
         parsedWorld || '',
         parsedLook || '',
       ].filter(Boolean).join(' ');
-      const problems = checkShots(shots, targets, identity || anchor);
+      const problems = checkShots(shots, targets, identity || anchor, parsedCast);
       console.log(`[Runner] Storyboard round ${round + 1}: ${summarise(problems)}`);
 
       if (!best || problems.length < best.problems) {

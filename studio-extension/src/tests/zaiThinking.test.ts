@@ -94,3 +94,40 @@ describe('the adapter still declares a ceiling the runner outlasts', () => {
 beforeAll(() => {
   if (!existsSync(SRC)) throw new Error(`missing adapter: ${SRC}`);
 });
+
+describe('a finished turn is not vetoed by leftover thinking markup', () => {
+  const fn = () => {
+    const s = source();
+    return s.slice(
+      s.indexOf('function isThinkingOrGenerating'),
+      s.indexOf('function findNewChatControl'),
+    );
+  };
+  /* Comments mention .shimmer while explaining why it is checked second, so
+     an ordering assertion has to read the code and not the prose about it. */
+  const code = () => fn().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
+  it('checks the copy button before anything else', () => {
+    /* Z.AI leaves the collapsed accordion ("Thought for 12s") in the page
+       after the answer lands, and it keeps its .shimmer class. Consulting
+       that first meant a finished reply read as busy forever — the same
+       mistake as the cursor-pointer check this replaced. */
+    const body = code();
+    const copy = body.indexOf('getAllCopyButtons()');
+    const shimmer = body.indexOf('.shimmer');
+    expect(copy).toBeGreaterThan(-1);
+    expect(shimmer).toBeGreaterThan(-1);
+    expect(copy).toBeLessThan(shimmer);
+  });
+
+  it('returns false immediately on a new copy button', () => {
+    // Not "and also check the others" — the positive signal is final.
+    expect(code()).toMatch(/getAllCopyButtons\(\)\.length > baselineCopyCount\) return false/);
+  });
+
+  it('treats the gap before the first token as busy, not as finished', () => {
+    /* Falling through to "finished" would capture an empty reply the instant
+       the prompt was sent. The outer silence timeout ends a dead turn. */
+    expect(code().trimEnd().endsWith('return true;\n}')).toBe(true);
+  });
+});
