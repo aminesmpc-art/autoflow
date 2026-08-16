@@ -198,3 +198,44 @@ describe('when the brief and the canvas disagree', () => {
     expect(shotContract(sixteenClips)).toContain('one prompt per entry');
   });
 });
+
+describe('an anchor that is an instruction, not a description', () => {
+  /* Verbatim from a GLM reply. The model described what SHOULD happen rather
+     than what the shots share, and the checker turned those words into
+     requirements: every prompt had to contain "copy-pasted" and "exactly".
+     Nothing could satisfy that, so GLM bolted a Consistency Reference block
+     onto all sixteen prompts and prefixed every name with [Role/Position: …].
+     The error handling made the output worse, which is the worst thing error
+     handling can do. */
+  const INSTRUCTION_ANCHOR = 'The character descriptions for Leo, Dad, Mom, Delivery Man, '
+    + 'and Astronaut Kid must be copy-pasted exactly into every prompt they appear in, '
+    + 'alongside the full world and look descriptions.';
+
+  const shotA = 'A wide fixed camera in a tiled bathroom as a warm smiling man in a plaid '
+    + 'shirt ties a rope around a giant shark while a small boy in a white t-shirt and blue '
+    + 'shorts backs nervously away, Pixar-quality 3D animation, warm cinematic lighting.';
+  const shotB = 'A medium tracking shot in a sunny backyard as a cheerful woman in an apron '
+    + 'cuts a watermelon shaped like a sports car while the same small boy in a white t-shirt '
+    + 'and blue shorts jumps with joy, Pixar-quality 3D animation, warm cinematic lighting.';
+
+  it('does not demand that prompts contain the word "copy-pasted"', () => {
+    const problems = checkShots(
+      [shot(1, shotA), shot(2, shotB)], VIDEO, INSTRUCTION_ANCHOR,
+    );
+    const detail = problems.map((p) => p.detail).join(' ');
+    expect(detail).not.toContain('copy-pasted');
+    expect(detail).not.toContain('exactly');
+    expect(detail).not.toContain('descriptions');
+  });
+
+  it('still catches real drift when the anchor holds real details', () => {
+    /* The rule must not be neutered — an anchor made of actual identity words
+       still has to reject a shot that dropped them. */
+    const realAnchor = 'a small boy in a white t-shirt and blue shorts, fluffy brown hair, '
+      + 'inside warm Pixar-quality environments';
+    const drifted = 'A medium tracking shot down a dark marble corridor as a man in a grey '
+      + 'business suit strides past tall windows while the camera follows him.';
+    const problems = checkShots([shot(1, shotA), shot(2, drifted)], VIDEO, realAnchor);
+    expect(problems.filter((p) => p.code === 'continuity').map((p) => p.shot)).toEqual([2]);
+  });
+});

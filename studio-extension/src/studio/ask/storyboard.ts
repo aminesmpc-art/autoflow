@@ -434,6 +434,22 @@ export function checkShots(shots: Shot[], targets: ShotTarget[], anchor?: string
  * long anchor's later half is represented at all.
  */
 function anchorKeys(anchor: string): string[] {
+  /* Meta-vocabulary. A model often writes the anchor as an INSTRUCTION —
+     "the character descriptions must be copy-pasted exactly into every
+     prompt" — rather than as the details themselves. Those words then became
+     the things every prompt was required to contain, so the repair asked for
+     "copy-pasted" and "exactly" to appear in a scene description. GLM could
+     not satisfy that sensibly and did the only thing available: it bolted a
+     Consistency Reference block onto all sixteen prompts and prefixed every
+     name with [Role/Position: ...]. The error handling made the output
+     worse, which is the worst thing error handling can do. */
+  const META = new Set([
+    'copy-pasted', 'copied', 'copy', 'paste', 'pasted', 'exactly', 'identical',
+    'identically', 'description', 'descriptions', 'described', 'reference',
+    'references', 'consistency', 'consistent', 'appear', 'appears', 'appearing',
+    'alongside', 'verbatim', 'above', 'below', 'listed', 'global', 'ensure',
+    'must', 'into', 'their', 'full', 'same', 'every', 'each', 'prompt', 'prompts',
+  ]);
   const STOP = new Set([
     // Ordinary connective words.
     'the', 'and', 'with', 'that', 'this', 'must', 'same', 'every', 'their', 'them', 'from',
@@ -458,7 +474,7 @@ function anchorKeys(anchor: string): string[] {
       anchor
         .toLowerCase()
         .split(/[^a-z0-9-]+/)
-        .filter((w) => w.length >= 5 && !STOP.has(w)),
+        .filter((w) => w.length >= 5 && !STOP.has(w) && !META.has(w)),
     ),
   );
 

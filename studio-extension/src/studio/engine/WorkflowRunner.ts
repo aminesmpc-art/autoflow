@@ -1025,7 +1025,22 @@ export class WorkflowRunner {
         continue;
       }
 
-      const problems = checkShots(shots, targets, anchor);
+      /* Check against the STRUCTURED story, not the prose anchor.
+         A model often writes the anchor as an instruction — "the character
+         descriptions must be copy-pasted exactly into every prompt" — and
+         checking against that demanded the words "copy-pasted" and "exactly"
+         appear in a scene description. Unsatisfiable, so the model bolted a
+         Consistency Reference block onto every prompt to try.
+
+         cast[].look, world and look are the details themselves, because the
+         envelope asked for them separately. Use those when they came back,
+         and fall back to the anchor only when they did not. */
+      const identity = [
+        ...(parsedCast || []).map((c) => c.look),
+        parsedWorld || '',
+        parsedLook || '',
+      ].filter(Boolean).join(' ');
+      const problems = checkShots(shots, targets, identity || anchor);
       console.log(`[Runner] Storyboard round ${round + 1}: ${summarise(problems)}`);
 
       if (!best || problems.length < best.problems) {
