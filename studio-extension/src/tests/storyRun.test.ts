@@ -243,3 +243,99 @@ describe('what the run remembers', () => {
     expect(brief).toContain('Maya: blonde ponytail, red tracksuit');
   });
 });
+
+/**
+ * A voice the Story casts has to reach Flow.
+ *
+ * Reported from a real run: the node on screen read "Kore — Female, firm, mid
+ * pitch" and the clip came back silent, while the same voice chosen by hand on
+ * the same node worked. Both of those are true at once for one reason.
+ *
+ * The runner sorts a snapshot of `nodes` before the first step and then reads
+ * `node.data` off it. React Flow's updateNodeData replaces node objects rather
+ * than mutating them, so anything written to a node DURING the run is invisible
+ * to the loop. A Story node's entire job is to write to the nodes below it, and
+ * every one of them runs afterwards — so a hand-set voice was in the snapshot
+ * and a cast one never was.
+ *
+ * The worst shape a bug can take: the canvas agrees with you and the run does
+ * not.
+ */
+describe('a voice cast by the Story', () => {
+  /** idea → story → clip, with a still wired in so a voice can apply. */
+  function voiceWorkflow(): { nodes: Node[]; edges: Edge[] } {
+    const nodes = [
+      { id: 'idea', type: 'prompt', position: { x: 0, y: 0 },
+        data: { type: 'prompt', label: 'Idea', text: 'a cafe' } },
+      { id: 'still', type: 'image', position: { x: 0, y: 300 },
+        data: { type: 'image', label: 'Maya', imageData: 'data:image/jpeg;base64,AAAA' } },
+      { id: 'story', type: 'story', position: { x: 200, y: 0 },
+        data: {
+          type: 'story', label: 'Story', platform: 'chatgpt', mediaType: 'text',
+          audioMode: 'dialogue',
+          cast: [{ name: 'Maya', look: 'red coat', voice: 'Kore' }],
+        } },
+      { id: 'clipA', type: 'generate', position: { x: 500, y: 0 },
+        data: { type: 'generate', label: 'Part 1', mediaType: 'video', platform: 'flow',
+          aspectRatio: '9:16', duration: '8s' } },
+      { id: 'clipB', type: 'generate', position: { x: 900, y: 0 },
+        data: { type: 'generate', label: 'Part 2', mediaType: 'video', platform: 'flow',
+          aspectRatio: '9:16', duration: '8s' } },
+    ] as unknown as Node[];
+    const edges = [
+      { id: 'e1', source: 'idea', target: 'story', sourceHandle: 'text', targetHandle: 'text' },
+      { id: 'e2', source: 'story', target: 'clipA', sourceHandle: 'text', targetHandle: 'text' },
+      { id: 'e3', source: 'story', target: 'clipB', sourceHandle: 'text', targetHandle: 'text' },
+      { id: 'e4', source: 'still', target: 'clipA', sourceHandle: 'result', targetHandle: 'image_ref' },
+      { id: 'e5', source: 'still', target: 'clipB', sourceHandle: 'result', targetHandle: 'image_ref' },
+    ] as unknown as Edge[];
+    return { nodes, edges };
+  }
+
+  const cast = (a: string[], b: string[]) => envelope(P1, P2, {
+    cast: [{ name: 'Maya', look: 'red coat' }],
+    shots: undefined,
+  }).replace(
+    /"shots":\[[\s\S]*\]/,
+    JSON.stringify({
+      shots: [
+        { n: 1, title: 'Part 1', cast: a, speaker: a[0], prompt: P1 },
+        { n: 2, title: 'Part 2', cast: b, speaker: b[0], prompt: P2 },
+      ],
+    }).slice(1, -1),
+  );
+
+  it('sends it in the config, not just onto the canvas', async () => {
+    replies = [cast(['Maya'], ['Maya'])];
+    const { nodes, edges } = voiceWorkflow();
+    useStudioStore.setState({ nodes, edges } as any);
+    await runner.run(nodes, edges);
+
+    const clipA = sent.find((s) => s.nodeId === 'clipA');
+    /* The assertion that was failing in the wild. The canvas showed Kore
+       either way; only the config told the truth. */
+    expect(clipA?.config?.voice).toBe('Kore');
+    expect(sent.find((s) => s.nodeId === 'clipB')?.config?.voice).toBe('Kore');
+  }, 30_000);
+
+  it('still sends a voice set by hand, which always worked', async () => {
+    replies = [cast(['Maya'], ['Maya'])];
+    const { nodes, edges } = voiceWorkflow();
+    (nodes.find((n) => n.id === 'clipB')!.data as any).voice = 'Charon';
+    useStudioStore.setState({ nodes, edges } as any);
+    await runner.run(nodes, edges);
+
+    /* Hand-set outranks the Story, and is the control for the test above: if
+       this one passed while the first failed, the fault is the snapshot and
+       not the casting rule. */
+    expect(sent.find((s) => s.nodeId === 'clipB')?.config?.voice).toBe('Charon');
+  }, 30_000);
+
+  it('sends no voice when nobody in the shot has one', async () => {
+    replies = [cast(['the dog'], ['the dog'])];
+    const { nodes, edges } = voiceWorkflow();
+    useStudioStore.setState({ nodes, edges } as any);
+    await runner.run(nodes, edges);
+    expect(sent.find((s) => s.nodeId === 'clipA')?.config?.voice).toBeFalsy();
+  }, 30_000);
+});

@@ -240,9 +240,16 @@ describe('inspect_clip', () => {
   }
 
   function agentWith(nodes: any[], tools: string[]) {
-    return nodes.map((n) => (n.id === 'agent_1'
+    const mapped = nodes.map((n) => (n.id === 'agent_1'
       ? { ...n, data: { ...n.data, tools } }
       : n));
+    /* And into the store, which is where the runner reads a node's data as it
+       executes — it has to, or nothing a Story writes to the nodes below it
+       during a run would ever be seen. This helper used to hand the mapped
+       nodes to run() while leaving the ORIGINALS in the store, a split that
+       cannot happen in the app: Canvas passes useStudioStore()'s own array. */
+    useStudioStore.setState({ nodes: mapped } as any);
+    return mapped;
   }
 
   it('attaches the clip and asks the model to watch it', async () => {

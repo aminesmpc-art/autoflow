@@ -296,7 +296,30 @@ export class WorkflowRunner {
       const node = nodes.find((n) => n.id === step.nodeId);
       if (!node) continue;
 
-      const nodeData = node.data as any;
+      /* Read the node as it is NOW, not as it was when Run was pressed.
+       *
+       * `nodes` is a snapshot taken before the first step, and React Flow's
+       * updateNodeData replaces node objects rather than mutating them — so
+       * anything written to a node DURING the run is invisible here. A Story
+       * node's whole job is to write to the nodes below it, and every one of
+       * them runs after it.
+       *
+       * That is why a voice set by hand worked and a voice cast by the Story
+       * did not: the first was already in the snapshot, the second was
+       * written into the store a minute after the snapshot was taken. The node
+       * on screen showed Kore and the config sent to Flow had no voice at all,
+       * which is the worst version of this — the canvas agrees with you and
+       * the run does not.
+       *
+       * The prompts avoided it only because they travel in shotPlans, a map
+       * this runner holds itself. The same trick is why set_prompt writes to
+       * nodeResults as well as the canvas. Reading live removes the need for
+       * either workaround next time.
+       */
+      const liveNode = (useStudioStore.getState().nodes.find(
+        (n) => n.id === step.nodeId,
+      ) as Node | undefined) ?? node;
+      const nodeData = liveNode.data as any;
 
       // Handle node by type
       switch (step.nodeType) {
@@ -407,7 +430,7 @@ export class WorkflowRunner {
             if (this.abortRequested) break;
 
             try {
-              const result = await this.executeGenerateNode(step.nodeId, node, edges);
+              const result = await this.executeGenerateNode(step.nodeId, liveNode, edges);
 
               if (nodeData.mediaType === 'text') {
                 // A written answer, not media. Stored the same way a Prompt
