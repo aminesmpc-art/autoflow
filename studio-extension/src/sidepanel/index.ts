@@ -687,6 +687,12 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
 
       const res: any = await chrome.runtime.sendMessage({
         type: 'PANEL_BUILD', platform: key, prompt: message, model,
+        /* A repair is the next turn of THIS conversation. Sent as a new chat
+           it refers to a plan the model has never seen, and every repair round
+           was doing exactly that — which is why the second attempt came back
+           smaller than the first rather than fixed. The Story node's own loop
+           has always done this correctly; the builder never did. */
+        newChat: round === 0 ? 'auto' : 'never',
       });
       if (!res || res.error) {
         buildSays('bad', `${name} could not answer`, [

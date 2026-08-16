@@ -278,7 +278,23 @@ interface PlanWaiter { resolve: (r: { text?: string; error?: string }) => void; 
 const planWaiters = new Map<string, PlanWaiter>();
 
 /** A text answer from a chat platform, or the reason there is none. */
-async function askChatForPlan(platform: Platform, prompt: string, model = ''): Promise<{ text?: string; error?: string }> {
+/**
+ * Ask a chat for a workflow plan.
+ *
+ * newChat decides whether this is a fresh conversation or the next turn of
+ * one. It matters because the builder repairs: round one asks for a plan,
+ * round two says "that plan has problems, fix them and send the whole JSON
+ * object again" — and in a NEW chat that sentence refers to nothing. Gemini
+ * answered it exactly as anyone would: "Could you please provide the original
+ * JSON object or the plan you are referring to?"
+ *
+ * Worse than useless, because the repair then produced a smaller plan built
+ * from the sentence alone — eight steps became four — and the loop spent its
+ * remaining round failing differently.
+ */
+async function askChatForPlan(
+  platform: Platform, prompt: string, model = '', newChat: 'auto' | 'never' = 'auto',
+): Promise<{ text?: string; error?: string }> {
   const cfg = PLATFORMS[platform];
   if (!cfg) return { error: `Unknown platform "${platform}".` };
 
@@ -318,7 +334,7 @@ async function askChatForPlan(platform: Platform, prompt: string, model = ''): P
              cleanAssistantReply, which strips code fences and leading lines —
              reasonable for a prompt, destructive for JSON. */
           rawReply: true,
-          newChat: 'auto',
+          newChat,
           model,
           aspectRatio: '1:1',
           creationType: 'ingredients',
@@ -752,7 +768,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg?.type === 'PANEL_BUILD') {
-    askChatForPlan(msg.platform, msg.prompt, msg.model || '')
+    askChatForPlan(msg.platform, msg.prompt, msg.model || '', msg.newChat === 'never' ? 'never' : 'auto')
       .then(sendResponse)
       .catch((e) => sendResponse({ error: e?.message || String(e) }));
     return true;   // async
