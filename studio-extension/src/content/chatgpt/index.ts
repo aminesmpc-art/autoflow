@@ -35,7 +35,7 @@ const TEXT_QUIET_MS = 45 * 1000;
    extension is rebuilt — the tab must be reloaded too — and a stale
    script is indistinguishable from a broken fix unless it says which
    one it is. */
-const ADAPTER_BUILD = 'copy-turn-v2';
+const ADAPTER_BUILD = 'composer-pill-v3';
 
 /** Backstop for a wedged tab. */
 const TEXT_CEILING_MS = 10 * 60 * 1000;
@@ -213,10 +213,41 @@ function findSendButton(): HTMLElement | null {
    editor, marked data-inline-selection-pill.
    ──────────────────────────────────────────────────────────── */
 
-/** Whether a tool pill with this label is already on the composer. */
-function hasToolPill(label: string): boolean {
-  return Array.from(document.querySelectorAll('[data-inline-selection-pill]'))
-    .some((p) => (p.textContent || '').trim().toLowerCase() === label.toLowerCase());
+/**
+ * Whether the composer is carrying the image tool.
+ *
+ * Read off the live page on 2026-08-17, after ChatGPT moved this. It used to
+ * be a span INSIDE the editor:
+ *
+ *     <span data-inline-selection-pill>Create image</span>
+ *
+ * and it is now a button beside it, under a shorter name:
+ *
+ *     <button class="__composer-pill" aria-label="Image, click to remove">
+ *       <span class="max-w-40 truncate">Image</span>
+ *
+ * Two changes in one, and either alone was enough to break this. The menu
+ * ENTRY is still called "Create image", so the click kept working and only
+ * the confirmation failed — every image node clicked the right thing, waited
+ * three seconds for a marker that no longer exists, and reported "the
+ * composer did not take the tool" about a composer that had taken it.
+ *
+ * Both names are accepted because both are true of the same state, and both
+ * shapes because a redesign rolls out to accounts at different times. The
+ * label is matched exactly rather than by prefix: an attached file gets a
+ * pill of its own, and "Image" must not match "Image_2024_final.png".
+ */
+const IMAGE_TOOL_NAMES = ['image', 'create image'];
+
+function hasToolPill(_label?: string): boolean {
+  const named = (el: Element): string => (
+    el.getAttribute('aria-label') || el.textContent || ''
+  ).trim().toLowerCase().replace(/,\s*click to remove$/, '');
+
+  const pills = document.querySelectorAll(
+    'button.__composer-pill, [data-inline-selection-pill]'
+  );
+  return Array.from(pills).some((p) => IMAGE_TOOL_NAMES.includes(named(p)));
 }
 
 /**
@@ -228,7 +259,7 @@ function hasToolPill(label: string): boolean {
  * looking for an image nobody asked ChatGPT to draw.
  */
 async function selectCreateImageTool(): Promise<string | null> {
-  if (hasToolPill('Create image')) return null;
+  if (hasToolPill()) return null;
 
   const plus = document.querySelector<HTMLElement>('button[data-testid="composer-plus-btn"]');
   if (!plus) return 'ChatGPT\'s "+" menu button is not on the page';
@@ -255,7 +286,7 @@ async function selectCreateImageTool(): Promise<string | null> {
   item.click();
   for (let i = 0; i < 12; i++) {
     await sleep(250);
-    if (hasToolPill('Create image')) return null;
+    if (hasToolPill()) return null;
   }
   return 'Clicked "Create image" but the composer did not take the tool';
 }
