@@ -36,7 +36,17 @@ export type RunnerState = 'idle' | 'running' | 'paused' | 'stopped' | 'done' | '
  * was missed sent every Gemini node to Flow — silently, because Flow accepts
  * any prompt. Grok would have been the same bug a second time.
  */
-export const CHAT_PLATFORMS = ['chatgpt', 'gemini', 'grok', 'claude'];
+/**
+ * How long the runner waits for a chat before deciding the tab is gone.
+ *
+ * Must exceed every adapter's own TEXT_CEILING_MS — the longest today is
+ * Z.AI's fifteen minutes for Deep Think. adapterTimeouts.test.ts fails if an
+ * adapter is ever raised past this, because the symptom is invisible: the node
+ * simply times out on the models that think the longest.
+ */
+export const TEXT_BACKSTOP_MS = 16 * 60 * 1000;
+
+export const CHAT_PLATFORMS = ['chatgpt', 'gemini', 'grok', 'claude', 'zai'];
 
 /**
  * The chat a node asked for, or ChatGPT if we cannot drive that one.
@@ -767,12 +777,22 @@ export class WorkflowRunner {
     // Asking ChatGPT for text is a chat round-trip, so it fails fast rather
     // than holding a workflow open for minutes.
     const isTextNode = config.mediaType === 'text';
-    /* 3 minutes, not 2: a ChatGPT node can now spend up to 45s uploading
-       reference images before it even asks the question, and the old budget
-       left the reply only 30s of headroom — the outer wait would have expired
-       first and blamed the model for a slow upload. */
-    const timeoutMs = isTextNode ? 3 * 60 * 1000 : isVideoNode ? 22 * 60 * 1000 : 8 * 60 * 1000;
-    const timeoutLabel = isTextNode ? '3 minutes' : isVideoNode ? '22 minutes' : '8 minutes';
+    /* A BACKSTOP, not the limit.
+       This was three minutes while every chat adapter carried a ceiling of ten
+       to fifteen — Z.AI's is fifteen, for GLM's Deep Think. So the runner
+       killed the node while the adapter was still legitimately waiting, and
+       blamed the model for a wait the extension itself had chosen to abandon.
+       A thinking model could never finish: it is silent while it reasons, and
+       the silence looked like three minutes of nothing.
+
+       The outer timer must therefore outlast the longest adapter ceiling, or
+       it decides the outcome instead of guarding it. Nothing is lost by
+       waiting: every adapter ends itself after 45-60 seconds of true silence,
+       so a dead reply still fails in about a minute. This only fires when the
+       content script itself has stopped answering — which is the one thing the
+       adapters cannot report. */
+    const timeoutMs = isTextNode ? TEXT_BACKSTOP_MS : isVideoNode ? 22 * 60 * 1000 : 8 * 60 * 1000;
+    const timeoutLabel = isTextNode ? '16 minutes' : isVideoNode ? '22 minutes' : '8 minutes';
 
     return this.awaitBridge(nodeId, config, timeoutMs, timeoutLabel);
   }
@@ -1065,10 +1085,15 @@ export class WorkflowRunner {
     nodeId: string, platform: string, message: string, firstTurn: boolean,
     attachments?: string[]
   ): Promise<string> {
-    /* Uploading can take the adapter most of a minute before the question is
-       even asked, and a clip is far bigger than a still, so a turn carrying
-       one gets a longer budget than an Ask AI node with references. */
-    const timeoutMs = attachments?.length ? 6 * 60 * 1000 : 3 * 60 * 1000;
+    /* The path a Story node and an Agent turn actually take, and the one that
+       produced "No result after 3 minutes" against GLM: a thinking model is
+       silent while it reasons, and three minutes of silence is indistinguishable
+       from a dead tab to anything counting from out here.
+
+       So it uses the same backstop as a single ask. Uploading adds a minute on
+       top of that rather than replacing it — a clip is far bigger than a still,
+       and the upload happens before the question is even asked. */
+    const timeoutMs = TEXT_BACKSTOP_MS + (attachments?.length ? 3 * 60 * 1000 : 0);
     const res = await this.awaitBridge(nodeId, {
       prompt: message,
       model: '',
@@ -1085,7 +1110,7 @@ export class WorkflowRunner {
          something in context rather than about a sentence describing it. The
          adapter field is named for images but carries any data: URL. */
       referenceImageData: attachments?.length ? attachments : undefined,
-    }, timeoutMs, attachments?.length ? '6 minutes' : '3 minutes');
+    }, timeoutMs, attachments?.length ? '19 minutes' : '16 minutes');
     return res.text || '';
   }
 
