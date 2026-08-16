@@ -217,3 +217,74 @@ describe('an account that is not in English', () => {
     expect(String(h.results()[0].payload?.text || '')).toContain('nothing cropped');
   });
 });
+
+/**
+ * The footer should make it FAST as well as correct.
+ *
+ * turnFinished() was added so a pause between chunks could not be mistaken for
+ * an ending. It did that — and then the adapter carried on waiting for
+ * stableCount >= 2 anyway, two more 2000ms polls after the site had already
+ * rendered the action bar that says the turn is over. Four seconds per node
+ * spent learning nothing, on every ChatGPT and Gemini node in every run.
+ *
+ * There is no state where that bar exists and the text is still growing, so
+ * the wait bought no safety either. These tests hold the two paths apart: the
+ * marker is immediate, its absence still takes the slow careful road.
+ */
+describe('how long it waits once the turn is over', () => {
+  it('captures on the poll after the footer appears, not two later', async () => {
+    const h = harness(1);
+    await h.execute(ASK);
+    h.startReply('a');
+
+    /* Streaming, not settled. This is the whole point of the test and the
+       first version got it wrong: if the text has already been still for two
+       polls when the footer arrives, the OLD rule fires just as fast and the
+       measurement proves nothing. Mutation caught that. So the reply grows
+       right up to the moment it completes, which is what a real one does —
+       stableCount is 0 when the footer appears, and the old rule would need
+       two further polls of quiet on top. */
+    const grow = setInterval(() => h.growReply(`a${'b'.repeat(Date.now() % 97)}`), 400);
+    await tick(3000);
+    clearInterval(grow);
+
+    const said = Date.now();
+    h.growReply('the finished answer about a sneaker');
+    h.finishReply();
+    /* Scoped to THIS reply, not "any result". Each test re-requires the
+       bundle, but the previous test's polling loop is still ticking against
+       the same globals — it reads the fresh DOM, finds the history turn, and
+       posts its own capture into this harness. Taking results[0] measured a
+       stale loop and read back "old answer 0". */
+    const mine = () => h.results().find((r: any) => /sneaker/.test(r.payload?.text || ''));
+    expect(await waitFor(() => !!mine(), 12_000)).toBe(true);
+    const waited = Date.now() - said;
+    /* One poll, not three. The old rule needed stableCount to reach 2 from
+       zero — two further 2000ms polls — so 4000ms is the line between them. */
+    /* Measured, both ways: 1032ms with the marker deciding, 5056ms with the
+       old rule, in this same harness. 4000ms sits between them, so reinstating
+       the two-poll wait turns this red. */
+    expect(waited).toBeLessThan(4000);
+    expect(mine()!.payload.text).toContain('sneaker');
+  }, 30_000);
+
+  it('still waits out two stable polls when there is no footer to read', async () => {
+    const h = harness(1);
+    await h.execute(ASK);
+    h.startReply('an answer that keeps growing');
+    /* No finishReply: turnFinished() cannot see a footer on the live turn, so
+       the fallback runs. Two polls of unchanged text is not yet enough — the
+       third is. Asserting the wait is real, because deleting the fallback
+       would make the fast path look like it covered everything. */
+    await tick(2600);
+    expect(h.results()).toHaveLength(0);
+  }, 20_000);
+
+  it('does not accept while the site says it is still writing', async () => {
+    const h = harness(1);
+    await h.execute(ASK);
+    h.startReply('half an answ');
+    await tick(5200);                       // long enough for the old rule to fire
+    expect(h.results()).toHaveLength(0);
+  }, 20_000);
+});

@@ -819,10 +819,29 @@ async function trackTextReply(
     if (current === lastSeen) stableCount++;
     else { lastSeen = current; stableCount = 0; lastChangeAt = Date.now(); }
 
-    /* The footer is the only positive signal that the turn is over, so it has
-       the deciding vote when it can be read. false means still writing — keep
-       waiting even though the text looks settled. */
-    if (stableCount >= 2 && !isGenerating() && turnFinished() !== false) {
+    /* Two ways to know the turn is over, and they deserve different waits.
+     *
+     * turnFinished() true is the site SAYING SO: Gemini renders its end-of-turn
+     * action bar only once the answer is complete, and there is no state in
+     * which that bar exists while the text is still growing. So waiting two
+     * more polls after it appears spends four seconds per node to learn
+     * nothing — a minute across a sixteen-shot story.
+     *
+     * stableCount is the fallback for when the marker cannot be read at all
+     * (null: a redesign, a turn we failed to scope). Then unchanged text plus
+     * nothing running is the best evidence there is, and it still takes two
+     * polls, because a pause between chunks looks exactly like an ending.
+     *
+     * false vetoes both. The site saying "still writing" outranks text that
+     * merely looks settled.
+     *
+     * TEXT ONLY. The identical rule in trackGeneration would accept the first
+     * image Gemini paints, before it sharpens — the same mistake as reading
+     * Flow's poster as a finished clip. An image has its own stability test
+     * and must keep it.
+     */
+    const said = turnFinished();
+    if (said !== false && (said === true || (stableCount >= 2 && !isGenerating()))) {
       const cleaned = raw ? current : cleanAssistantReply(current);
       if (!raw && !looksLikeUsablePrompt(cleaned)) {
         send('STUDIO_NODE_ERROR', {

@@ -1093,10 +1093,25 @@ async function trackTextReply(
       stableCount = 0;
     }
 
-    /* The action bar is the only positive signal that the turn is over, so it
-       has the deciding vote when it can be read. false means still writing —
-       keep waiting even though the text looks settled. */
-    if (stableCount >= 2 && !isGenerating() && turnFinished() !== false) {
+    /* Two ways to know the turn is over, and they deserve different waits.
+     *
+     * turnFinished() true is the site SAYING SO: ChatGPT renders its
+     * end-of-turn action bar only once the answer is complete. There is
+     * nothing further to wait for, and no state in which that bar exists while
+     * the text is still growing — so waiting two more polls after it appears
+     * spends four seconds per node to learn nothing. Sixteen shots is a
+     * minute of it.
+     *
+     * stableCount is the fallback for when the marker cannot be read at all
+     * (null — a redesign, a turn we failed to scope). Then unchanged text plus
+     * nothing running is the best evidence available, and it still has to be
+     * two polls, because a pause between chunks looks exactly like an ending.
+     *
+     * false still vetoes both: the site saying "still writing" outranks text
+     * that merely looks settled.
+     */
+    const said = turnFinished();
+    if (said !== false && (said === true || (stableCount >= 2 && !isGenerating()))) {
       const cleaned = raw ? current : cleanAssistantReply(current);
       if (!raw && !looksLikeUsablePrompt(cleaned)) {
         // Usually ChatGPT asking a clarifying question instead of answering.
