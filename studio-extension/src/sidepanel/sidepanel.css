@@ -1048,44 +1048,140 @@ body {
    guards this can actually see. */
 
 
-/* ── Build starters ──────────────────────────────────────────
-   A list, not a grid of cards. At 320px a two-column grid of these gives
-   two words a line, and the whole point is that the sentence is readable
-   at a glance — it is going straight into the box above. */
+/* ── Hero welcome ── */
+.sp-hero {
+  text-align: center;
+  padding: var(--s-1) 0 0;
+}
+.sp-hero__title {
+  margin: 0;
+  font-size: var(--t-lg);
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.3px;
+}
+.sp-hero__sub {
+  margin: 2px 0 0;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+}
+
+/* ── Elevated prompt textarea ── */
+.sp-area--hero {
+  border-color: var(--line-2);
+  background: var(--sunken);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+.sp-area--hero:focus {
+  border-color: var(--accent);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.3),
+    0 0 0 3px var(--accent-8),
+    0 0 20px var(--accent-8);
+}
+
+/* ── AI Engines Row ── */
+.sp-engines {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+.sp-engines__label {
+  font-size: var(--t-micro);
+  font-weight: 600;
+  color: var(--text-3);
+  flex: none;
+}
+
+/* ── Quick Start Formula Cards ── */
 .sp-ideas {
-  margin-top: var(--s-4);
-  padding-top: var(--s-3);
+  padding-top: var(--s-2);
   border-top: 1px solid var(--line);
 }
 .sp-ideas__head {
   font-size: var(--t-micro);
-  font-weight: 600;
-  letter-spacing: 0.4px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--text-3);
   margin-bottom: var(--s-2);
 }
-.sp-ideas__list { display: flex; flex-direction: column; gap: var(--s-1); }
+.sp-ideas__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+
 .sp-idea {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
   width: 100%;
   text-align: left;
-  padding: var(--s-2) var(--s-3);
+  padding: 8px;
   border-radius: var(--r-ctrl);
   border: 1px solid var(--line);
   background: var(--surface);
-  color: var(--text-2);
+  color: var(--text);
   font: inherit;
-  font-size: var(--t-small);
-  line-height: 1.4;
   cursor: pointer;
-  transition: background var(--fast), border-color var(--fast), color var(--fast);
+  transition: border-color var(--fast), background var(--fast), box-shadow var(--fast), transform var(--fast);
 }
 .sp-idea:hover {
-  background: var(--accent-8);
   border-color: var(--accent-30);
+  background: var(--surface-2);
+  box-shadow: var(--e-2);
+  transform: translateY(-1px);
+}
+.sp-idea:active { transform: translateY(0); box-shadow: none; }
+
+/* Colored icon wells — each formula has its own tint */
+.sp-idea__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px; height: 28px;
+  border-radius: var(--r-chip);
+  font-size: var(--t-mid);
+  line-height: 1;
+  background: var(--surface-2);
+}
+.sp-idea__icon--warm  { background: rgba(249, 115, 22, 0.14); }
+.sp-idea__icon--blue  { background: rgba(96, 165, 250, 0.14); }
+.sp-idea__icon--green { background: rgba(74, 222, 128, 0.14); }
+.sp-idea__icon--amber { background: rgba(251, 191, 36, 0.14); }
+.sp-idea__icon--pink  { background: rgba(236, 72, 153, 0.14); }
+.sp-idea__icon--violet{ background: rgba(160, 122, 253, 0.14); }
+
+.sp-idea__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.sp-idea__text {
+  font-size: var(--t-micro);
+  font-weight: 600;
+  line-height: 1.25;
   color: var(--text);
 }
+.sp-idea__sub {
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.2;
+}
+.sp-idea__arrow {
+  flex: none;
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity var(--fast), transform var(--fast);
+}
+.sp-idea:hover .sp-idea__arrow { opacity: 1; transform: translateX(0); }
+
 .sp-idea:focus-visible { outline: none; box-shadow: var(--focus); }
 
 /* Shared shape for the panel's inline marks, matching the nav tabs and the
@@ -1104,3 +1200,104 @@ body {
 /* The platform's own mark, sized to sit with the label rather than tower over
    it. Brand marks keep their own colour, so nothing here tints them. */
 .sp-ai__mark { width: 13px; height: 13px; flex: none; }
+
+/* ============================================================
+   Motion.
+
+   The panel already had 64 animated elements and still felt static, because
+   every one of them animated colour. Colour alone reads as a state change;
+   movement reads as a response. Nothing lifted under the cursor, nothing gave
+   way when pressed, and switching tabs replaced the content instantly with no
+   sense that anything had travelled.
+
+   Three rules here, and they are what keeps this from becoming noise:
+
+     1. Transform and opacity only. Both are composited, so none of this
+        touches layout or costs a reflow in a panel that is often open beside
+        a page doing real work.
+     2. Movement is small and fast. 1-2px and 120ms is felt rather than
+        watched. Anything a user has time to notice is too slow to sit behind
+        every hover in the product.
+     3. Entrances play once. A list that re-animates on every render draws the
+        eye back to something the reader has already read.
+
+   All of it is switched off by the prefers-reduced-motion block in
+   shared/tokens.css, which zeroes every duration globally — so this cannot
+   become an accessibility problem without that rule being deleted first.
+   ============================================================ */
+
+/* ── Press ──
+   The one piece of feedback nothing had. A control that does not move when
+   clicked leaves the user unsure the click landed, which on a slow build is
+   exactly when they press it again. */
+.sp-btn:active:not(:disabled),
+.sp-idea:active,
+.sp-tpl:active,
+.sp-ai__link:active,
+.sp-seg2__btn:active,
+.sp-pill:active { transform: scale(0.985); }
+
+.sp-btn, .sp-idea, .sp-tpl, .sp-ai__link, .sp-seg2__btn, .sp-pill {
+  transition:
+    background var(--fast), border-color var(--fast), color var(--fast),
+    transform var(--fast), box-shadow var(--fast);
+}
+
+/* ── Lift ──
+   Only on the things that are a choice — starters and templates. Buttons in a
+   row do not lift, or the whole panel floats. */
+.sp-idea:hover, .sp-tpl:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--e-2);
+}
+.sp-idea:hover .sp-idea__icon { transform: scale(1.06); }
+.sp-idea__icon { transition: transform var(--base); }
+
+/* ── Tab switching ──
+   The panel is three views in one column, and swapping them instantly gives
+   no sense of having moved between them. A short rise settles that without
+   making the user wait for it. */
+.sp-view:not([hidden]) { animation: sp-view-in var(--base) both; }
+@keyframes sp-view-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── The quick-start grid ──
+   Staggered, once, on the tab that opens first. Six cards appearing together
+   is a wall; six arriving in sequence is a list you read. Capped at six so a
+   longer list never turns into a slow reveal. */
+.sp-ideas__list > .sp-idea { animation: sp-rise var(--base) both; }
+.sp-ideas__list > .sp-idea:nth-child(1) { animation-delay: 20ms; }
+.sp-ideas__list > .sp-idea:nth-child(2) { animation-delay: 45ms; }
+.sp-ideas__list > .sp-idea:nth-child(3) { animation-delay: 70ms; }
+.sp-ideas__list > .sp-idea:nth-child(4) { animation-delay: 95ms; }
+.sp-ideas__list > .sp-idea:nth-child(5) { animation-delay: 120ms; }
+.sp-ideas__list > .sp-idea:nth-child(n+6) { animation-delay: 145ms; }
+@keyframes sp-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── The run card ──
+   A run takes minutes with nothing to look at. A slow breath on the progress
+   bar is the difference between "working" and "frozen", and it is the only
+   looping animation in the panel — everything else plays once and stops. */
+.sp-bar__fill { transition: width var(--base); }
+.sp-bar__fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--accent-30), transparent);
+  animation: sp-sheen 1.8s ease-in-out infinite;
+}
+.sp-bar__fill { position: relative; overflow: hidden; }
+@keyframes sp-sheen {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+
+/* ── Errors ──
+   Arrives rather than appears. An error that is simply present looks like it
+   was always there and gets read as part of the furniture. */
+.sp-error:not([hidden]) { animation: sp-rise var(--base) both; }

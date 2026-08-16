@@ -217,35 +217,76 @@
          no adapter for, so the feature is not limited to the sites it can
          automate. -->
     <div class="sp-view" id="view-build" role="tabpanel">
-      <div class="sp-step">
-        <span class="sp-step__n">1</span>
-        <label class="sp-step__label" for="build-idea">Describe what you want to make</label>
+
+      <!-- ── Hero welcome — sets the mood, not the rules ── -->
+      <div class="sp-hero">
+        <h2 class="sp-hero__title">What are we making?</h2>
+        <p class="sp-hero__sub">Describe your vision. AI builds the workflow.</p>
       </div>
-      <textarea id="build-idea" class="sp-area" rows="4"
+
+      <!-- ── Prompt ── -->
+      <textarea id="build-idea" class="sp-area sp-area--hero" rows="3"
                 placeholder="A 3-shot vertical ad for a coffee brand — a pour, a close-up of the beans, and the cup on a table."></textarea>
 
-      <div class="sp-step">
-        <span class="sp-step__n">2</span>
-        <span class="sp-step__label">Build it</span>
+      <!-- ── AI Engines Row ── -->
+      <div class="sp-engines">
+        <div class="sp-engines__label">Build with</div>
+        <div class="sp-ai" id="build-ai"></div>
       </div>
-      <!-- One press. The extension opens the chat, asks, reads the answer and
-           loads the workflow. Only the three with content scripts can be
-           driven; DeepSeek and Claude are below, by hand. -->
-      <div class="sp-ai" id="build-ai"></div>
       <div id="build-out" class="sp-buildout" hidden></div>
 
-      <!-- Starters. The default tab used to end at the disclosure below with
-           two thirds of the panel empty, and step 1 — describing the thing —
-           is exactly where people stall. Each of these fills the box above,
-           so the empty space now answers the question it used to pose. -->
+      <!-- ── Quick Formulas ── -->
       <div class="sp-ideas" id="build-ideas">
-        <div class="sp-ideas__head">Or start from one of these</div>
+        <div class="sp-ideas__head">Quick start</div>
         <div class="sp-ideas__list">
-          <button type="button" class="sp-idea">Turn one product photo into a 15-second ad</button>
-          <button type="button" class="sp-idea">The same character in three consistent shots</button>
-          <button type="button" class="sp-idea">A 20-second room transformation hyperlapse</button>
-          <button type="button" class="sp-idea">One outfit on a model, then two clips of it moving</button>
-          <button type="button" class="sp-idea">A clip that continues from its own last frame</button>
+          <button type="button" class="sp-idea" data-prompt="Turn one product photo into a 15-second ad — a hero reveal, close-up details, and call to action.">
+            <span class="sp-idea__icon sp-idea__icon--warm">☕</span>
+            <div class="sp-idea__body">
+              <span class="sp-idea__text">Product Ad</span>
+              <span class="sp-idea__sub">Photo → 15s commercial</span>
+            </div>
+            <span class="sp-idea__arrow">→</span>
+          </button>
+          <button type="button" class="sp-idea" data-prompt="The same character in three consistent shots — wide establishing, medium dialogue, and tight emotional close-up.">
+            <span class="sp-idea__icon sp-idea__icon--blue">👤</span>
+            <div class="sp-idea__body">
+              <span class="sp-idea__text">Consistent Actor</span>
+              <span class="sp-idea__sub">3 identity-locked shots</span>
+            </div>
+            <span class="sp-idea__arrow">→</span>
+          </button>
+          <button type="button" class="sp-idea" data-prompt="A 3-shot viral story with a cute baby dragon sneaking peanut butter from a kitchen counter.">
+            <span class="sp-idea__icon sp-idea__icon--green">🐲</span>
+            <div class="sp-idea__body">
+              <span class="sp-idea__text">Story Director</span>
+              <span class="sp-idea__sub">AI-directed viral story</span>
+            </div>
+            <span class="sp-idea__arrow">→</span>
+          </button>
+          <button type="button" class="sp-idea" data-prompt="A 20-second room transformation hyperlapse — empty construction, furniture build, and finished cozy reveal.">
+            <span class="sp-idea__icon sp-idea__icon--amber">🏠</span>
+            <div class="sp-idea__body">
+              <span class="sp-idea__text">Room Hyperlapse</span>
+              <span class="sp-idea__sub">20s transformation</span>
+            </div>
+            <span class="sp-idea__arrow">→</span>
+          </button>
+          <button type="button" class="sp-idea" data-prompt="One outfit on a model, then two clips of it moving — studio portrait, walking down street, dynamic spin.">
+            <span class="sp-idea__icon sp-idea__icon--pink">👗</span>
+            <div class="sp-idea__body">
+              <span class="sp-idea__text">Fashion Lookbook</span>
+              <span class="sp-idea__sub">Pose + motion clips</span>
+            </div>
+            <span class="sp-idea__arrow">→</span>
+          </button>
+          <button type="button" class="sp-idea" data-prompt="A clip that continues from its own last frame into the next action beat.">
+            <span class="sp-idea__icon sp-idea__icon--violet">🎞</span>
+            <div class="sp-idea__body">
+              <span class="sp-idea__text">Frame Extend</span>
+              <span class="sp-idea__sub">Seamless continuation</span>
+            </div>
+            <span class="sp-idea__arrow">→</span>
+          </button>
         </div>
       </div>
 
@@ -311,13 +352,12 @@
   
 <script>
 const STORE = { af_settings: {}, af_workflows: [], af_recent: [],
-  autoflow_auth_tokens: { access: 'harness', refresh: 'harness' } };
+  autoflow_auth_tokens: { access: 'h', refresh: 'h' } };
 const noop = () => {};
 window.chrome = {
   runtime: { id: 'h', sendMessage: () => Promise.resolve({ ok: true }),
     onMessage: { addListener: noop }, getURL: (p) => p, lastError: null },
-  storage: { local: {
-      get: (k) => Promise.resolve(typeof k === 'string' ? { [k]: STORE[k] } : STORE),
+  storage: { local: { get: (k) => Promise.resolve(typeof k === 'string' ? { [k]: STORE[k] } : STORE),
       set: () => Promise.resolve(), remove: () => Promise.resolve(),
       onChanged: { addListener: noop } }, onChanged: { addListener: noop } },
   tabs: { query: () => Promise.resolve([]), create: () => Promise.resolve({}),
@@ -330,10 +370,9 @@ window.chrome = {
 <script>document.write('<scr'+'ipt src="dist/sidepanel.js?v=' + Date.now() + '"></scr'+'ipt>')</script>
 <script>
 addEventListener('load', () => setTimeout(() => {
-  const gate = document.getElementById('gate') || document.querySelector('.sp-gate');
-  const app  = document.getElementById('app');
-  if (gate) gate.hidden = true;
-  if (app) app.hidden = false;
+  const g = document.getElementById('gate') || document.querySelector('.sp-gate');
+  const a = document.getElementById('app');
+  if (g) g.hidden = true; if (a) a.hidden = false;
 }, 400));
 </script>
 </body>
