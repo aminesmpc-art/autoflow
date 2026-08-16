@@ -1810,19 +1810,57 @@ export class AutomationEngine {
       return true;
     }
 
+    /* Is there anything for the voice to speak through, RIGHT NOW?
+     *
+     * Flow's own words when there is not: "An audio ingredient requires other
+     * ingredients to function." It accepts the selection anyway, generates,
+     * and hands back a mute clip — no error, nothing in the log.
+     *
+     * The caller decides this too, from the images it means to attach. This
+     * asks the page what actually arrived, which is a different question: an
+     * upload can be rejected, a reference can resolve to nothing, a chip can
+     * sit there with an image that never loaded. Between that decision and
+     * this moment the prompt bar is filled, which re-renders the composer.
+     *
+     * Skipping is not a failure. Nothing was going to be attached, so there is
+     * nothing to recover from — but the run has to be able to say why the clip
+     * came back silent, because that is the one thing Flow will not tell it.
+     */
+    const attached = findLoadedIngredients().length;
+    if (attached === 0) {
+      this.log('warn',
+        `Voice "${voiceName}" skipped — Flow's ingredient tray is empty, and an audio `
+        + 'ingredient requires another ingredient to function. This clip will have no '
+        + 'spoken voice.');
+      this.studioLog(
+        `Voice "${voiceName}" not applied — no reference image reached Flow, and a voice `
+        + 'needs one to speak through. This clip will be silent.');
+      return true;
+    }
+
     const currentVoice = getActiveVoiceName();
     if (currentVoice === voiceName) {
       this.log('info', `Voice "${voiceName}" already active`);
       return true;
     }
 
-    this.log('info', `Setting voice to "${voiceName}"...`);
-    
+    this.log('info', `Setting voice to "${voiceName}" (${attached} ingredient(s) attached)...`);
+
     // 1. Open ingredient dialog (the "+" button)
     const addBtn = findIngredientAttachButton();
     if (!addBtn) {
-      this.log('warn', 'Cannot find "+" ingredient button to set voice');
-      return false;
+      /* Frames mode is the known cause: measured on the live page, switching a
+         clip to Start/End removes this button from the DOM entirely, so there
+         is no menu to open and no voice to be had. Say that rather than
+         "cannot find the button", which reads like a broken selector. */
+      this.log('warn',
+        `Voice "${voiceName}" skipped — this composer has no ingredient menu. Flow removes `
+        + 'it in Frames mode, where a clip is built from a Start and End still and no voice '
+        + 'can be attached.');
+      this.studioLog(
+        `Voice "${voiceName}" not applied — Frames mode has no ingredient menu, so Flow `
+        + 'offers no voice for a clip built from a Start and End still.');
+      return true;
     }
 
     // Dismiss any stale dialogs first
@@ -5494,6 +5532,27 @@ private async detectAndReportFailures(): Promise<void> {
   }
 
   // ── Messaging helpers ──
+
+  /**
+   * Say something the STUDIO panel has to see.
+   *
+   * this.log sends type 'LOG', which the side panel's queue view reads and the
+   * Studio service worker has no handler for at all — so anything logged that
+   * way is invisible on the canvas, where a node is the only thing the user is
+   * looking at. Diagnostics listens for STUDIO_LOG.
+   *
+   * Reserved for facts that change what the user gets and that Flow will not
+   * report itself. A silent clip is exactly that: the generation succeeds, the
+   * node goes green, and nothing anywhere says the voice was dropped.
+   */
+  private studioLog(line: string): void {
+    try {
+      chrome.runtime.sendMessage({
+        type: 'STUDIO_LOG',
+        payload: { source: 'Flow', line },
+      }).catch(() => {});
+    } catch { /* not in a Studio run */ }
+  }
 
   private log(level: 'info' | 'warn' | 'error', message: string): void {
     const entry = {

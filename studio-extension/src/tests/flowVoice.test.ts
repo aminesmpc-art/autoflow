@@ -213,3 +213,60 @@ describe('reading the active voice off the composer', () => {
     expect(chip).toMatch(/role'\) === 'tab'/);
   });
 });
+
+/**
+ * The last check, made against the page instead of the plan.
+ *
+ * effectiveVoice decides from the images the node MEANS to attach. By the time
+ * the voice is applied, several things could have gone differently: an upload
+ * rejected, a reference that resolved to nothing, a chip holding an image that
+ * never loaded, and — between the two moments — the prompt bar being filled,
+ * which re-renders the composer.
+ *
+ * So the engine asks Flow what is actually in the tray. If nothing is, the
+ * voice cannot function and is skipped rather than selected into a clip that
+ * comes back mute with no error anywhere.
+ */
+describe('the engine checks the tray before setting a voice', () => {
+  const automation = readFileSync(
+    join(ROOT, 'src', 'content', 'flow', 'automation.ts'), 'utf8');
+  const apply = automation.slice(
+    automation.indexOf('private async applyVoiceIngredient'),
+    automation.indexOf('private async applyVoiceIngredient') + 4000);
+
+  it('reads the real tray, not the intended image count', () => {
+    /* findLoadedIngredients requires a chip whose image has actually loaded —
+       naturalWidth > 0 — so a chip that is present but empty does not count. */
+    expect(apply).toMatch(/findLoadedIngredients\(\)\.length/);
+  });
+
+  it('checks it before opening the menu, not after', () => {
+    /* Opening the dialog, switching tab, typing a name and clicking a row is
+       several seconds of work per node for a voice that cannot apply. */
+    expect(apply.indexOf('findLoadedIngredients')).toBeLessThan(
+      apply.indexOf('findIngredientAttachButton'));
+  });
+
+  it('treats a missing menu as Frames mode, not a broken selector', () => {
+    /* Measured: Frames removes the "+" button from the DOM entirely. The old
+       message was "Cannot find the + ingredient button", which reads like the
+       automation is broken when Flow is behaving normally. */
+    expect(apply).toMatch(/Frames mode/);
+  });
+
+  it('skips rather than failing the node', () => {
+    /* Nothing was going to be attached, so there is nothing to recover from.
+       Failing here would kill a clip that Flow will generate perfectly well —
+       just without sound. */
+    const firstSkip = apply.indexOf('ingredient tray is empty');
+    expect(apply.slice(firstSkip, firstSkip + 400)).toMatch(/return true;/);
+  });
+
+  it('says so where a Studio user can read it', () => {
+    /* this.log sends type 'LOG'. The Studio service worker has no handler for
+       it, so on the canvas — the only place the user is looking — it does not
+       exist. Diagnostics listens for STUDIO_LOG. */
+    expect(apply).toMatch(/this\.studioLog\(/);
+    expect(automation).toMatch(/type: 'STUDIO_LOG'/);
+  });
+});
