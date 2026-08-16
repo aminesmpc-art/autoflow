@@ -16,6 +16,10 @@ const TEXT_QUIET_MS = 60 * 1000;
 const TEXT_CEILING_MS = 15 * 60 * 1000; // 15 minutes ceiling for Deep Think Max
 const POLL_MS = 800;
 
+/* Bumped whenever this adapter's completion logic changes, so a stale
+   content script is visible in Diagnostics instead of being guessed at. */
+const ADAPTER_BUILD = 'copy-first-v2';
+
 chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
   if (msg?.type === 'PING') { sendResponse({ pong: true }); return true; }
   if (msg?.type === 'STUDIO_EXECUTE_NODE') {
@@ -329,7 +333,11 @@ async function handleExecute(payload: any): Promise<{ success: boolean }> {
     }));
   }
 
-  logLine('Submitted prompt to Z.AI — waiting for Deep Think & reply...');
+  /* The build, named. A content script already injected into an open tab is
+     NOT replaced when the extension is rebuilt — the tab has to be reloaded
+     too. That has cost hours: a fix ships, the tab keeps running the old
+     script, and the symptom is identical to the fix not working. */
+  logLine(`Submitted prompt to Z.AI — waiting for Deep Think & reply (adapter ${ADAPTER_BUILD})...`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 20 });
 
   startAntiThrottle();
@@ -353,6 +361,29 @@ async function trackTextReply(nodeId: string, baselineCopyCount: number, raw = f
 
     const isBusy = isThinkingOrGenerating(baselineCopyCount);
     const current = readLatestAssistantReply(baselineCopyCount);
+
+    /* Say WHY it is still waiting, every fifteen seconds.
+       A node sat at 83% for four minutes while the finished reply was on
+       screen, and Diagnostics said only "waiting for Deep Think & reply".
+       There was no way to tell a model still thinking from an adapter that
+       could no longer recognise the end — and the actual cause that time was
+       a tab still running the previously injected script, which no amount of
+       rebuilding fixes and nothing anywhere reported.
+
+       These four numbers separate all of it: copy buttons against the
+       baseline says whether the turn finished, the thinking count says
+       whether GLM is working, and the reply length says whether anything has
+       been read at all. */
+    if (elapsed > 10_000 && Math.floor(elapsed / 15_000) !== Math.floor((elapsed - POLL_MS) / 15_000)) {
+      const copies = getAllCopyButtons().length;
+      const thinking = document.querySelectorAll(
+        'svg.thinking-pulse, .shimmer, [aria-label="Skip Thinking"]'
+      ).length;
+      logLine(
+        `Waiting ${Math.round(elapsed / 1000)}s — copy buttons ${copies} (started at `
+        + `${baselineCopyCount}), thinking marks ${thinking}, reply ${current.length} chars`
+      );
+    }
 
     if (current && current === lastSeen) {
       stableCount++;
