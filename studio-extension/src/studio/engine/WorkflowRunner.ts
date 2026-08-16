@@ -17,7 +17,7 @@ import { useStudioStore } from '../store';
 import { composeAskPrompt } from '../presets';
 import {
   shotContract, parseShots, checkShots, repairMessage, summarise,
-  orderShotTargets, type ShotTarget, type Shot,
+  orderShotTargets, alignShots, type ShotTarget, type Shot,
 } from '../ask/storyboard';
 import {
   storyBrief, STORY_FIELDS, DEFAULT_STORY, voiceForShot, type StorySettings,
@@ -1026,7 +1026,7 @@ export class WorkflowRunner {
 
       const reply = await this.askAgent(nodeId, platform, message, round === 0);
       const {
-        shots, anchor, story, problem,
+        shots: rawShots, anchor, story, problem,
         cast: parsedCast, world: parsedWorld, look: parsedLook,
       } = parseShots(reply);
 
@@ -1053,6 +1053,11 @@ export class WorkflowRunner {
         parsedWorld || '',
         parsedLook || '',
       ].filter(Boolean).join(' ');
+      /* Before anything reads them by position. The checker's per-shot rules —
+         is this a reference or a continuation, does it match the node's mode —
+         are all "shot i against target i", so a reordered reply made the check
+         wrong as well as the assignment. */
+      const shots = alignShots(rawShots, targets);
       const problems = checkShots(shots, targets, identity || anchor, parsedCast);
       console.log(`[Runner] Storyboard round ${round + 1}: ${summarise(problems)}`);
 

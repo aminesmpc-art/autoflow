@@ -364,6 +364,10 @@ export function parseShots(reply: string): ParsedReply {
       cast: Array.isArray(s?.cast)
         ? s.cast.map((c: any) => String(c || '').trim()).filter(Boolean)
         : undefined,
+      /* Dropped here until now, which made the whole speaker field pointless:
+         the contract asked for it, the writer filled it in correctly, and it
+         was thrown away one line before anything could read it. */
+      speaker: s?.speaker ? String(s.speaker).trim() : undefined,
     }));
     const cast = Array.isArray(parsed?.cast)
       ? parsed.cast
@@ -743,4 +747,47 @@ export function orderShotTargets(
   }
   out.sort((a, b) => (a.x - b.x) || (a.y - b.y));
   return out.map(({ x: _x, y: _y, ...t }) => t);
+}
+
+/**
+ * Put the shots in the targets' order.
+ *
+ * Everything downstream matches by position: shotFor takes the target's index
+ * and reads plan[idx]. That is only correct if the writer returns the shots in
+ * the order it was given them, and a director does not think that way. Asked
+ * for five shots it returned them in narrative order — "After Closing" first,
+ * which was the fifth node — so every node got another node's prompt, the
+ * voices followed the prompts to the wrong clips, and the run looked broken in
+ * a way that pointed at neither.
+ *
+ * It renumbered "n" to match its own order too, so n is no better than
+ * position. The titles, though, came back as the target labels verbatim,
+ * because that is what the contract lists. So: match on title, and only when
+ * every target finds exactly one shot — a partial match is a guess, and a
+ * guess here is silently the wrong prompt on the wrong clip.
+ *
+ * Left alone otherwise. A writer that keeps the order is the normal case and
+ * must not be second-guessed.
+ */
+export function alignShots(shots: Shot[], targets: ShotTarget[]): Shot[] {
+  if (shots.length !== targets.length || shots.length < 2) return shots;
+
+  const key = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+  const byTitle = new Map<string, Shot[]>();
+  for (const sh of shots) {
+    const k = key(sh.title || '');
+    if (!k) return shots;
+    byTitle.set(k, [...(byTitle.get(k) || []), sh]);
+  }
+  /* Duplicate titles cannot be told apart, and a target with no label has
+     nothing to match on. Either way, position is the honest answer. */
+  if ([...byTitle.values()].some((v) => v.length > 1)) return shots;
+
+  const out: Shot[] = [];
+  for (const t of targets) {
+    const found = byTitle.get(key(t.label || ''));
+    if (!found) return shots;
+    out.push(found[0]);
+  }
+  return out;
 }
