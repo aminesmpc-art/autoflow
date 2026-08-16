@@ -1136,7 +1136,7 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
          unreachable from a node. effectiveVoice holds the "needs an image"
          rule, because a voice applied to a shot with an empty ingredient tray
          is silently dropped by Flow and the clip comes back mute. */
-      voiceIngredient: effectiveVoice(config.voice, refImages.length > 0),
+      voiceIngredient: effectiveVoice(config.voice, refImages.length > 0, config.creationType),
       stopOnError: false,
       automationMode: 'lite',
       waitMinSec: 1,

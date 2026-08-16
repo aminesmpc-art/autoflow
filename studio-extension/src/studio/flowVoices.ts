@@ -82,7 +82,46 @@ export function voiceLabel(v: FlowVoice): string {
  * an inline condition in the queue builder, and lets the node say why the
  * control it is showing will not take effect.
  */
-export function effectiveVoice(voice: string | undefined, hasReferenceImage: boolean): string {
+export function effectiveVoice(
+  voice: string | undefined,
+  hasReferenceImage: boolean,
+  creationType?: string,
+): string {
   if (!voice || voice === NO_VOICE) return NO_VOICE;
+  /* Frames mode has no voice at all, and this is not a guess: switching the
+     live composer to Frames on 2026-08-16 removed the "+" ingredient button
+     from the DOM entirely — zero matches, not merely hidden. There is no menu
+     to open, so applyVoiceIngredient can only fail to find its button and log
+     that it could not set the voice.
+
+     Checked before the image test because it outranks it: a Frames node
+     always HAS stills, they just go into the Start and End slots rather than
+     the ingredient tray, so an image-only rule would answer "yes, apply" for
+     the one case Flow does not offer. */
+  if (creationType === 'frames') return NO_VOICE;
   return hasReferenceImage ? voice : NO_VOICE;
+}
+
+/**
+ * Why a voice set on this node will not be used — or '' if it will.
+ *
+ * Split from effectiveVoice so the node can explain itself with the same rule
+ * the runner applies, rather than a second copy that can drift out of step.
+ */
+export function voiceBlockedReason(
+  voice: string | undefined,
+  hasReferenceImage: boolean,
+  creationType?: string,
+): string {
+  if (!voice || voice === NO_VOICE) return '';
+  if (creationType === 'frames') {
+    return 'Frames mode has no voice — Flow removes the ingredient menu entirely '
+      + 'when a clip is built from a Start and End still. Switch Build from to '
+      + 'Ingredients to use one.';
+  }
+  if (!hasReferenceImage) {
+    return 'Wire an image in — Flow’s own words are "An audio ingredient requires '
+      + 'other ingredients to function." Alone, this voice is dropped.';
+  }
+  return '';
 }

@@ -13,7 +13,7 @@ import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS, modelHasDuration } from '../.
 import { getAskPresets, DEFAULT_PRESET_ID, findPreset } from '../presets';
 import { portsFor, retargetImagePorts } from '../templates/validate';
 import { CHAT_PLATFORMS } from '../engine/WorkflowRunner';
-import { FLOW_VOICES, NO_VOICE, voiceLabel } from '../flowVoices';
+import { FLOW_VOICES, NO_VOICE, voiceLabel, voiceBlockedReason } from '../flowVoices';
 import { GrokSettings } from './GrokSettings';
 import { NodeInfoBadge } from './NodeInfoBadge';
 
@@ -498,14 +498,16 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                 </label>
               )}
 
-              {/* The one thing a dropdown of names cannot tell you. Without an
-                  image in the tray the picker has no character to speak
-                  through and the clip comes back silent — a failure with no
-                  error, spotted only by watching the output. */}
-              {isVideo && !isGrok && nodeData.voice && nodeData.voice !== NO_VOICE && !hasImageInput && (
+              {/* The one thing a dropdown of names cannot tell you: whether the
+                  voice will be used at all. Both reasons it might not are
+                  silent failures — Flow generates happily and returns a mute
+                  clip — so they are stated here rather than discovered by
+                  watching the output. The rule comes from the same function
+                  the runner applies, so the two cannot drift apart. */}
+              {isVideo && !isGrok && voiceBlockedReason(
+                nodeData.voice, hasImageInput, nodeData.creationType) && (
                 <small className="sn-field__hint sn-field--wide">
-                  Wire an image in — Flow's own words are "An audio ingredient
-                  requires other ingredients to function." Alone, this voice is dropped.
+                  {voiceBlockedReason(nodeData.voice, hasImageInput, nodeData.creationType)}
                 </small>
               )}
 

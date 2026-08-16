@@ -20,7 +20,9 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import { FLOW_VOICES, NO_VOICE, effectiveVoice, voiceLabel } from '../studio/flowVoices';
+import {
+  FLOW_VOICES, NO_VOICE, effectiveVoice, voiceLabel, voiceBlockedReason,
+} from '../studio/flowVoices';
 
 const ROOT = join(__dirname, '..', '..');
 
@@ -35,6 +37,29 @@ describe('a voice needs a character to speak through', () => {
        generation to produce a clip that is silent for a reason nothing
        reports. */
     expect(effectiveVoice('Sulafat', false)).toBe(NO_VOICE);
+  });
+
+  it('Frames mode has no voice at all', () => {
+    /* Measured, not assumed. Switching the live composer to Frames on
+       2026-08-16 removed the "+" ingredient button from the DOM entirely —
+       zero matches, not hidden — so there is no menu to open and
+       applyVoiceIngredient can only fail to find its button.
+
+       A Frames node always HAS stills; they go into the Start and End slots
+       rather than the ingredient tray. So the image test alone would answer
+       "yes, apply" for the one mode Flow does not offer. */
+    expect(effectiveVoice('Sulafat', true, 'frames')).toBe(NO_VOICE);
+    expect(effectiveVoice('Sulafat', true, 'ingredients')).toBe('Sulafat');
+    expect(effectiveVoice('Sulafat', true, undefined)).toBe('Sulafat');
+  });
+
+  it('explains itself with the rule the runner uses', () => {
+    /* Same function both sides. A second copy of "when is a voice dropped"
+       living in the component is a copy that drifts. */
+    expect(voiceBlockedReason('Sulafat', true, 'frames')).toMatch(/Frames mode has no voice/);
+    expect(voiceBlockedReason('Sulafat', false, 'ingredients')).toMatch(/audio ingredient requires/);
+    expect(voiceBlockedReason('Sulafat', true, 'ingredients')).toBe('');
+    expect(voiceBlockedReason(NO_VOICE, false, 'frames')).toBe('');
   });
 
   it('passes none through untouched', () => {
@@ -114,7 +139,7 @@ describe('the setting reaches Flow', () => {
        registered. Deciding from the node's edges instead would say "yes" for
        a wire whose upstream produced nothing, which is the exact case the
        last-frame bug produced all afternoon. */
-    expect(flow).toMatch(/effectiveVoice\(config\.voice, refImages\.length > 0\)/);
+    expect(flow).toMatch(/effectiveVoice\(config\.voice, refImages\.length > 0, config\.creationType\)/);
   });
 });
 
