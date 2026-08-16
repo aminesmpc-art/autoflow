@@ -17,6 +17,7 @@ import {
 import { matchesFlowText } from './flowStrings';
 import { registerStudioImage, releaseStudioImages } from './studioImages';
 import { pickReferenceStill } from './studioFrames';
+import { captureVideoFrame, captureVideoEndFrame } from './videoFrames';
 import { getStudioTileState, extractTileProgress, findLargestImgSrc } from './tileState';
 
 // أ¢â€‌â‚¬أ¢â€‌â‚¬ Singleton engine أ¢â€‌â‚¬أ¢â€‌â‚¬
@@ -35,7 +36,7 @@ let antiThrottleInterval: ReturnType<typeof setInterval> | null = null;
    extension is rebuilt — the tab must be reloaded too — and a stale
    script is indistinguishable from a broken fix unless it says which
    one it is. */
-const ADAPTER_BUILD = 'playable-clip-v1';
+const ADAPTER_BUILD = 'api-verified-v3';
 
 function startAntiThrottle() {
   if (antiThrottleInterval) return;
@@ -1299,7 +1300,23 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
 
     if (status === 'submitted' || status === 'done') break;
     if (status === 'failed') {
-      sendStudioError(nodeId, queue.prompts[0].error || 'Generation failed');
+      /* "Generation failed" is not a reason, and it is what the node has been
+         showing: three words that do not say whether to reword the prompt,
+         wait for capacity, or check the reference wired into it. The service
+         said something more specific; go and get it. */
+      let detail = queue.prompts[0].error || '';
+      if (!detail && isApiAvailable()) {
+        const st = (queue.prompts[0].mediaId ? findStatusByMediaId(queue.prompts[0].mediaId) : null)
+          || findStatusByPromptText(promptText);
+        if (st && st.state === 'failed') {
+          const why = classifyError(st.rawStatus, st.failureReason);
+          detail = why === 'safety'
+            ? `Flow refused this prompt on safety grounds (${st.failureReason || st.rawStatus}). `
+              + 'Rewording is the only thing that will change it.'
+            : `Flow reported ${st.rawStatus}${st.failureReason ? ` — ${st.failureReason}` : ''}`;
+        }
+      }
+      sendStudioError(nodeId, detail || 'Generation failed — Flow gave no reason');
       return;
     }
 
@@ -1691,14 +1708,16 @@ async function sendStudioResult(
    * frame; see pickReferenceStill for why the poster must not win.
    */
   const referenceUrl = pickReferenceStill({
-    endFrame: videoEl ? await captureVideoEndFrame(videoEl) : '',
+    endFrame: videoEl ? await captureVideoEndFrame(videoEl, logLine) : '',
     posterStill: stills.reference,
     // For a clip the poster is the OPENING frame, so it must not stand in for
     // a failed capture — see pickReferenceStill.
     isVideo: !!videoEl,
   });
   if (videoEl && !referenceUrl) {
-    logLine('Last frame: nothing captured from this clip — anything chained from it will have no reference');
+    logLine(`Last frame: nothing captured from this clip (duration ${
+      isFinite(videoEl.duration) ? `${videoEl.duration.toFixed(1)}s` : 'unknown'}, readyState ${
+      videoEl.readyState}) — anything chained from it will have no reference`);
     console.warn(
       '[AutoFlow Studio] No end frame captured for this clip. Anything chained ' +
       'from it will report a missing reference rather than silently restarting ' +
@@ -1724,132 +1743,6 @@ async function sendStudioResult(
       },
     }).catch(() => {});
   } catch {}
-}
-
-/** Draw the current frame of a page <video> to a downscaled JPEG data URL.
-    blob: video sources are same-origin, so the canvas stays untainted. */
-function captureVideoFrame(video: HTMLVideoElement): string {
-  try {
-    if (video.readyState < 2 || !video.videoWidth) return '';
-    const scale = Math.min(1, 512 / Math.max(video.videoWidth, video.videoHeight));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
-    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return '';
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg', 0.82);
-  } catch (e: any) {
-    console.warn(`[AutoFlow Studio] Video frame capture failed: ${e?.message || e}`);
-    return '';
-  }
-}
-
-/**
- * Get enough of a clip loaded that it can be seeked and drawn.
- *
- * `preload="none"` means the browser has fetched nothing — not even metadata —
- * so duration is NaN and drawing the element produces an empty canvas. Setting
- * preload and calling load() starts the fetch; readyState >= 2 (HAVE_CURRENT_DATA)
- * is the point at which drawImage returns pixels.
- *
- * The attribute is restored afterwards so Flow's own lazy-loading behaviour is
- * unchanged for the user. Returns false rather than throwing: a clip that will
- * not load is a reason to report no frame, never a reason to fail the run.
- */
-async function ensureVideoLoaded(video: HTMLVideoElement): Promise<boolean> {
-  const ready = () => video.readyState >= 2 && isFinite(video.duration) && video.duration > 0;
-  if (ready()) return true;
-
-  const originalPreload = video.getAttribute('preload');
-  video.preload = 'auto';
-  try { video.load(); } catch { /* already loading */ }
-
-  await new Promise<void>((resolve) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      for (const ev of ['loadeddata', 'canplay', 'loadedmetadata', 'error']) {
-        video.removeEventListener(ev, check);
-      }
-      resolve();
-    };
-    const check = () => { if (ready()) finish(); };
-    // 10s: a Flow clip is a few MB and this happens once per node. Longer than
-    // the seek timeout below because fetching bytes is the slow part.
-    const timer = setTimeout(finish, 10_000);
-    for (const ev of ['loadeddata', 'canplay', 'loadedmetadata', 'error']) {
-      video.addEventListener(ev, check);
-    }
-    check();
-  });
-
-  if (originalPreload === null) video.removeAttribute('preload');
-  else video.preload = originalPreload as any;
-
-  return ready();
-}
-
-/**
- * Capture the LAST frame of a page <video>.
- *
- * Chained workflows hand one clip's ending to the next clip as its opening
- * frame — that handoff is the whole continuity technique. After a generation
- * the element sits at time 0, so capturing "the current frame" would pass the
- * clip's *start* downstream and the subject would reset on every clip instead
- * of progressing. Seeks to the end, captures, then puts the playhead back so
- * the tile on the page looks untouched.
- */
-async function captureVideoEndFrame(video: HTMLVideoElement): Promise<string> {
-  /* Flow renders its tiles with preload="none", so the element usually holds
-     no data at all: duration is NaN, readyState is 0, and every seek below is
-     pointless. This used to bail straight to the poster — the clip's OPENING
-     frame — so a Last Frame node showed the start of the shot it was supposed
-     to end, and the chain silently restarted on every link.
-
-     Loading it is the whole fix. The element is left as we found it. */
-  if (!(await ensureVideoLoaded(video))) {
-    /* Diagnostics, not just the console. This is the moment a Last Frame node
-       is decided, and until now the only record of it was a warning in the
-       Flow tab — so the panel showed an empty frame box, the dependent clip
-       failed, and nothing anywhere said the two were connected. */
-    logLine('Last frame: the clip would not load, so no end frame was captured');
-    console.warn('[AutoFlow Studio] Clip would not load, so no end frame could be captured');
-    return '';
-  }
-
-  const duration = video.duration;
-  if (!isFinite(duration) || duration <= 0) return captureVideoFrame(video);
-
-  const original = video.currentTime;
-  // A hair before the end: seeking exactly to duration can land past the last
-  // decodable frame and draw blank.
-  const target = Math.max(0, duration - 0.05);
-
-  try {
-    await new Promise<void>((resolve) => {
-      let settled = false;
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        video.removeEventListener('seeked', finish);
-        resolve();
-      };
-      // Never hang a run on a video that refuses to seek — take whatever
-      // frame is showing instead.
-      const timer = setTimeout(finish, 2000);
-      video.addEventListener('seeked', finish);
-      video.currentTime = target;
-    });
-    return captureVideoFrame(video);
-  } catch {
-    return captureVideoFrame(video);
-  } finally {
-    try { video.currentTime = original; } catch { /* leave it wherever it is */ }
-  }
 }
 
 /** Fetch a video URL into a data URL so the Studio page can play it.
