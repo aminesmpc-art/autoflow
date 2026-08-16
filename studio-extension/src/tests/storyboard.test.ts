@@ -166,3 +166,35 @@ describe('the repair turn', () => {
     expect(s).toMatch(/fence×2|fence/);
   });
 });
+
+describe('when the brief and the canvas disagree', () => {
+  /* A user's brief said "8 still-image nodes AND 8 video nodes" while the
+     canvas held sixteen clips. GLM followed the sentence, wrote eight
+     motionless prompts, and the checker rejected half the reply — correctly,
+     and uselessly, because nothing had told the model which of the two
+     descriptions of the work was true. */
+  const sixteenClips: ShotTarget[] = Array.from({ length: 16 }, (_, i) => ({
+    id: `c${i}`, media: 'video' as const, platform: 'flow',
+    label: `Scene ${i + 1}`, aspectRatio: '9:16', duration: '6s',
+  }));
+
+  it('says the canvas wins, before listing it', () => {
+    const c = shotContract(sixteenClips);
+    const claim = c.indexOf('read from the canvas itself');
+    const list = c.indexOf('1. Scene 1');
+    expect(claim).toBeGreaterThan(-1);
+    // Stated before the list, or it reads as a footnote to it.
+    expect(claim).toBeLessThan(list);
+  });
+
+  it('names the exact contradiction it is resolving', () => {
+    const c = shotContract(sixteenClips);
+    expect(c).toContain('a different number of shots');
+    expect(c).toContain('still where this says a clip');
+    expect(c).toContain('out of date');
+  });
+
+  it('still asks for one prompt per entry', () => {
+    expect(shotContract(sixteenClips)).toContain('one prompt per entry');
+  });
+});

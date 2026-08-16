@@ -126,6 +126,11 @@ const BANNED: Array<{ code: string; re: RegExp; detail: string }> = [
     re: /\[(?:insert|describe|your|character|subject|scene)[^\]]*\]|\{\{[^}]+\}\}|<[A-Z_]{3,}>/,
     detail: 'still contains a placeholder to fill in. Replace it with the real detail.',
   },
+  {
+    code: 'editingJargon',
+    re: /\b(cut to|camera cuts to|fade in|fade out|scene transition|dissolve to|split screen|wipes to)\b/i,
+    detail: 'uses video-editing jargon like "cut to" or "fade in". Single-take diffusion models glitch on these — describe one continuous uninterrupted shot.',
+  },
 ];
 
 /** Words that mean something moves. A video prompt without one is a still. */
@@ -192,7 +197,14 @@ export function shotContract(targets: ShotTarget[], extraFields = ''): string {
       );
     }
     if (t.duration) {
-      notes.push(`     ${t.duration} is the whole clip. Do not write more beats than fit in it.`);
+      const durSec = parseFloat(t.duration) || 6;
+      if (durSec <= 4) {
+        notes.push(`     ${t.duration} is a fast clip: write ONE single punchy action or reaction beat.`);
+      } else if (durSec <= 8) {
+        notes.push(`     ${t.duration} is a standard clip: write a 2-stage build (action ➜ immediate reaction/escalation).`);
+      } else {
+        notes.push(`     ${t.duration} is an extended clip: write a 3-stage progression (setup ➜ escalation ➜ dramatic climax/twist).`);
+      }
     }
     return [head, ...notes];
   });
@@ -213,6 +225,23 @@ export function shotContract(targets: ShotTarget[], extraFields = ''): string {
         'described in full in EVERY prompt. A generator reads one prompt at a time',
         'and remembers nothing, so "the same woman as before" produces a stranger.',
         '',
+    /* Precedence, stated once and plainly.
+
+           A user's brief said "8 still-image nodes AND 8 video nodes" while the
+           canvas held sixteen clips. The model followed the sentence, wrote eight
+           motionless prompts, and the checker rejected half the reply — correctly,
+           and unhelpfully, because nothing had told the model which of the two
+           descriptions of the work was true.
+
+           The node list is read off the canvas and cannot be wrong about what
+           exists. The brief is written by hand and often describes an earlier
+           version of the graph. So the list wins, explicitly, before the list is
+           given. */
+            'The list below is read from the canvas itself, so it is what exists.',
+            'If anything above it says otherwise — a different number of shots, or a',
+            'still where this says a clip — the list is right and that instruction is',
+            'out of date. Write one prompt per entry, of the kind the entry names.',
+            '',
         'The shots, in order:',
       ]
       : [
