@@ -22,7 +22,8 @@ import type { Template } from '../studio/templates';
 import { getAskPresets } from '../studio/presets';
 import { signInWithGoogle } from './googleSignIn';
 import { buildSpec } from '../studio/builder/spec';
-import { buildFromReply } from '../studio/builder/plan';
+import { buildFromReply, readPlan, compilePlan } from '../studio/builder/plan';
+import { checkPlan, repairPlanMessage, summarisePlan } from '../studio/builder/check';
 import { isRunnableType } from '../studio/templates/validate';
 
 /**
@@ -646,32 +647,93 @@ function pickedModel(key: string): string {
   return sel ? sel.value : '';
 }
 
+/**
+ * Ask, check, repair, build.
+ *
+ * This used to be one question and one answer: if the reply did not compile it
+ * was dropped into the manual box with the problems listed, and fixing it was
+ * the user's job. But the problems are already written in the model's own
+ * terms — "step X takes input Y, which is not a step" — which is exactly what
+ * you would paste back yourself. So it pastes them back.
+ *
+ * Two kinds of problem go into that message. compilePlan's are structural: the
+ * plan cannot become a canvas at all. checkPlan's are worse, because they
+ * compile — a step folding five shots into one generation, a chain of clips
+ * with nothing carrying one into the next, a voice on a shot Flow will
+ * generate silent. Those the user pays for before finding out.
+ *
+ * Two repairs, then stop. Three rounds of a model that has not understood is
+ * three rounds of the same reply, and the manual box is still there.
+ */
+const MAX_BUILD_REPAIRS = 2;
+
 async function autoBuild(key: string, name: string, idea: string, model = ''): Promise<void> {
   setBuilding(true, key);
-  buildSays('info', `Asking ${name}…`, ['This takes a few seconds. Leave the panel open.']);
+  const trail: string[] = [];
+  const step = (line: string, kind: 'info' | 'bad' = 'info') => {
+    trail.push(line);
+    /* The whole trail, not just the latest. A repair round makes this a
+       multi-minute wait, and a single replaced line looks the same as a
+       hang — the user cannot tell thinking from stuck. */
+    buildSays(kind, `Building with ${name}…`, trail);
+  };
+
   try {
-    const res: any = await chrome.runtime.sendMessage({
-      type: 'PANEL_BUILD', platform: key, prompt: buildSpec(idea), model,
-    });
-    if (!res || res.error) {
-      buildSays('bad', `${name} could not answer`, [res?.error || 'No reply from the extension worker.']);
-      return;
+    let message = buildSpec(idea);
+    let lastReply = '';
+
+    for (let round = 0; round <= MAX_BUILD_REPAIRS; round++) {
+      step(round === 0 ? `Asking ${name} for a plan…` : `Asking ${name} to fix ${round === 1 ? 'them' : 'the rest'}…`);
+
+      const res: any = await chrome.runtime.sendMessage({
+        type: 'PANEL_BUILD', platform: key, prompt: message, model,
+      });
+      if (!res || res.error) {
+        buildSays('bad', `${name} could not answer`, [
+          ...trail, res?.error || 'No reply from the extension worker.',
+        ]);
+        return;
+      }
+      lastReply = String(res.text || '');
+      step('Reading the plan…');
+
+      const { plan, problem } = readPlan(lastReply);
+      if (!plan) {
+        /* Not a plan at all. Worth one more round — a model that wrapped its
+           JSON in prose fixes that on being told. */
+        if (round < MAX_BUILD_REPAIRS) {
+          step(`${problem || 'That was not a plan.'} Asking again…`);
+          message = repairPlanMessage([], [problem || 'The reply was not a JSON object with a "steps" array.']);
+          continue;
+        }
+        break;
+      }
+
+      const quality = checkPlan(plan);
+      const { template, problems } = compilePlan(plan);
+      const total = quality.length + problems.length;
+      step(`${plan.steps.length} step${plan.steps.length === 1 ? '' : 's'} — ${
+        total ? summarisePlan(quality) + (problems.length ? `, ${problems.length} structural` : '') : 'nothing to fix'}`);
+
+      if (template && !total) {
+        step(`Building ${template.nodes.length} nodes…`);
+        await openBuilt(template);
+        return;
+      }
+      if (round === MAX_BUILD_REPAIRS) break;
+      message = repairPlanMessage(quality, problems);
     }
-    const { template, problems } = buildFromReply(String(res.text || ''));
-    if (!template) {
-      /* Keep the reply rather than throw it away: a near miss is worth
-         editing by hand, and the manual box is where that happens. */
-      const box = document.getElementById('build-reply') as HTMLTextAreaElement | null;
-      if (box) box.value = String(res.text || '');
-      const details = document.getElementById('build-manual') as HTMLDetailsElement | null;
-      if (details) details.open = true;
-      buildSays('bad', `${name} replied, but it was not a usable plan`, [
-        ...problems,
-        'The reply is in the box below if you want to fix it and build again.',
-      ]);
-      return;
-    }
-    await openBuilt(template);
+
+    /* Out of rounds. Keep the reply rather than throw it away: a near miss is
+       worth editing by hand, and the manual box is where that happens. */
+    const box = document.getElementById('build-reply') as HTMLTextAreaElement | null;
+    if (box) box.value = lastReply;
+    const details = document.getElementById('build-manual') as HTMLDetailsElement | null;
+    if (details) details.open = true;
+    buildSays('bad', `${name} could not get to a clean plan`, [
+      ...trail,
+      'The last reply is in the box below if you want to fix it and build again.',
+    ]);
   } catch (e: any) {
     buildSays('bad', 'The build could not run', [e?.message || String(e)]);
   } finally {
@@ -679,7 +741,6 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
   }
 }
 
-/** One place to say how it went, so a failure cannot look like nothing. */
 function buildSays(kind: 'ok' | 'bad' | 'info', title: string, lines: string[] = []): void {
   const box = document.getElementById('build-out');
   if (!box) return;
@@ -783,8 +844,22 @@ function wireBuilder(): void {
       return;
     }
 
+    /* It compiles. That is not the same as it being any good, and this path
+       has no model to send a repair to — so say what is wrong and build it
+       anyway. Refusing would be worse: a plan pasted by hand is usually one
+       the user is already editing, and the canvas is a better place to finish
+       than a textarea. */
+    const { plan } = readPlan(text);
+    const quality = plan ? checkPlan(plan) : [];
+
     try {
       await openBuilt(template);
+      if (quality.length) {
+        buildSays('info', `Built, with ${summarisePlan(quality)}`, [
+          ...quality.map((q) => (q.step ? `Step "${q.step}" ${q.detail}` : q.detail)),
+          'The workflow is on the canvas — these are worth fixing before you run it.',
+        ]);
+      }
     } catch {
       buildSays('bad', 'Could not hand the workflow to the canvas — storage is unavailable.');
     }
