@@ -292,6 +292,83 @@ async function selectCreateImageTool(): Promise<string | null> {
 }
 
 /**
+ * Set the image's shape.
+ *
+ * New in the same redesign that moved the tool pill. With Create image on,
+ * the composer grows a footer control — read off the live page on 2026-08-17:
+ *
+ *   <div data-testid="composer-footer-actions">
+ *     <button class="composer-btn" aria-label="Choose image aspect ratio">
+ *       <span>Auto</span>
+ *
+ * and its menu holds six role="menuitemradio" entries whose aria-labels pair a
+ * name with a ratio: "Square 1:1", "Portrait 3:4", "Story 9:16",
+ * "Landscape 4:3", "Widescreen 16:9", plus Auto. Those five are exactly the
+ * five an image node offers, so nothing has to be approximated.
+ *
+ * Until now a ChatGPT image node's Ratio dropdown changed nothing at all: the
+ * setting existed, the user picked 9:16, and ChatGPT produced whatever Auto
+ * decided — usually square. Silent, because a square image is a perfectly good
+ * image until you put it in a vertical video.
+ *
+ * Never fatal. A wrong shape is worth reporting and not worth throwing away a
+ * generation over, so this returns a note and the node runs either way.
+ */
+async function selectImageRatio(ratio: string): Promise<string | null> {
+  const want = String(ratio || '').trim();
+  if (!want) return null;
+
+  const button = () => document.querySelector<HTMLElement>(
+    'button[aria-label="Choose image aspect ratio"]',
+  );
+  const btn = button();
+  // Older accounts have no such control. Not a failure — there is nothing to set.
+  if (!btn) return null;
+  if ((btn.textContent || '').trim() === want) return null;
+
+  /* Opens on pointerdown, like the "+" menu. A plain .click() leaves
+     aria-expanded false, which is how this looked broken while working. And
+     the same sequence CLOSES an open menu, so the state is read first rather
+     than toggled blind. */
+  if (btn.getAttribute('aria-expanded') !== 'true') {
+    for (const type of ['pointerdown', 'pointerup']) {
+      btn.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, view: window, pointerId: 1, isPrimary: true, button: 0,
+      }));
+    }
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+  }
+
+  let option: HTMLElement | undefined;
+  for (let i = 0; i < 10 && !option; i++) {
+    await sleep(200);
+    /* Matched on the END of the aria-label. The visible text is "Story9:16"
+       with no space — a name and a ratio run together — so the label is the
+       only place the two are cleanly separated. */
+    option = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'))
+      .find((el) => (el.getAttribute('aria-label') || '').trim().endsWith(` ${want}`));
+  }
+  if (!option) {
+    const offered = Array.from(document.querySelectorAll('[role="menuitemradio"]'))
+      .map((el) => (el.getAttribute('aria-label') || '').trim())
+      .filter(Boolean);
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return offered.length
+      ? `ChatGPT offers no ${want} image ratio (it has ${offered.join(', ')})`
+      : `ChatGPT's image ratio menu did not open — the image will use ${(btn.textContent || 'Auto').trim()}`;
+  }
+
+  option.click();
+  for (let i = 0; i < 10; i++) {
+    await sleep(200);
+    // The button relabels itself to the chosen ratio; that is the confirmation.
+    if ((button()?.textContent || '').trim() === want) return null;
+  }
+  return `Asked ChatGPT for a ${want} image but the composer still shows `
+    + `${(button()?.textContent || 'nothing').trim()}`;
+}
+
+/**
  * Keep the newest turn on screen.
  *
  * ChatGPT only renders what is near the viewport, and a generated image that
@@ -784,6 +861,22 @@ async function handleExecute(payload: any): Promise<any> {
       return { success: false };
     }
     logLine('Create image tool selected');
+
+    /* The shape, now that the tool is on — the control does not exist until
+       then. Reported and not fatal: a 1:1 picture where 9:16 was asked for is
+       wrong and still usable, and failing here would throw away a generation
+       to punish a dropdown. Silence was the old behaviour and the reason
+       nobody knew the setting did nothing. */
+    const ratio = String(config?.aspectRatio || '').trim();
+    if (ratio) {
+      const ratioProblem = await selectImageRatio(ratio);
+      /* logLine, not a new message type: Diagnostics already listens for it
+         and is where the user is looking. A STUDIO_NODE_WARNING would have
+         been invented here and handled nowhere — the service worker would
+         log "no handler" to a console nobody has open. */
+      logLine(ratioProblem || `Image ratio set to ${ratio}`);
+    }
+
     composer = findComposer() || composer;
   }
 

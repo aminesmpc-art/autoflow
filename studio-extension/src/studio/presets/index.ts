@@ -63,6 +63,48 @@ export const BUILTIN_ASK_PRESETS: AskPreset[] = [
   },
 
   {
+    id: 'nanobanana2_scene',
+    name: '🍌 NanoBanana2 Scene Stills Master',
+    hint: '8-part formula: Camera, Character ID lock, Props, Environment, Lighting, 8K Pixar render.',
+    brief:
+      'Write ONE ultra-high-quality scene image generation prompt for NanoBanana2 based on this concept: {{subject}}\n\n' +
+      '# THE 8-PART NANOBANANA2 FORMULA (MANDATORY STRUCTURE)\n' +
+      '1. [SCENE_LABEL] [REF:CHARACTER_NAME] — Identify the scene beat and character reference tag.\n' +
+      '2. CAMERA COMPOSITION — Exact lens angle, shot size (medium close-up, wide establishing, low-angle hero), framing.\n' +
+      '3. FULL CHARACTER ID — Explicitly specify head shape, skin tone, hair style & color, eye color, nose shape, exact layered outfit, and signature accessories.\n' +
+      '4. BODY LANGUAGE & EMOTION — Micro-expressions, gaze direction, posture, and physical weight.\n' +
+      '5. KEY PROPS — Explicit materials, colors, and any text spelled out clearly in quotes.\n' +
+      '6. DEEP ENVIRONMENT — Tangible materials, architectural cues, depth-of-field, atmospheric dust/weather.\n' +
+      '7. LIGHTING SETUP — Key light direction, ambient color temperature, rim/backlight, soft volumetric glow.\n' +
+      '8. QUALITY LOCK TAG — "9:16 vertical, Pixar-quality 3D cinematic render, 8K resolution, octane render, photorealistic materials, vibrant color grading, masterpiece".\n\n' +
+      'Output ONLY the single prompt string without markdown fences, preamble, or commentary.',
+    withImage:
+      'Write ONE NanoBanana2 scene image generation prompt that locks identity and style from the attached reference image.\n' +
+      'Scene concept: {{subject}}\n\n' +
+      '# READ REFERENCE & PRESERVE IDENTITY\n' +
+      'Extract exact character features (face shape, hair texture/color, outfit, palette) and replicate them completely.\n' +
+      'Follow the 8-part formula: [SCENE_LABEL] [REF] -> Camera -> Full Character ID -> Pose & Expression -> Key Props -> Deep Environment -> Cinematic Lighting -> 8K Pixar Quality Lock.\n\n' +
+      'Output ONLY the prompt.',
+  },
+
+  {
+    id: 'flow_omni_video',
+    name: '🎬 Flow Omni Video Director v2',
+    hint: 'Camera move, character action, dialogue in quotes, style-lock, and layered 3D sound.',
+    brief:
+      'Write ONE video generation prompt for Flow Omni based on this scene beat: {{subject}}\n\n' +
+      '# FLOW OMNI 7-PART VIDEO PROMPT FORMULA\n' +
+      '1. CAMERA MOTION — Specific movement (slow push-in, dynamic tracking pan, steadycam orbit, crane rise).\n' +
+      '2. CHARACTER ID & BODY LANGUAGE — Detailed character traits, realistic movement rhythm, natural pauses.\n' +
+      '3. ACTION BEAT — Clear physical action progression from 0s to 5s.\n' +
+      '4. SPOKEN DIALOGUE — Include any spoken words in exact quotation marks with emotional tone tags.\n' +
+      '5. RICH ENVIRONMENT & LIGHTING — World interaction, reflections, dynamic lighting shifts.\n' +
+      '6. STYLE-LOCK BLOCK — "Cinematic 3D animation, hyper-detailed textures, Pixar/DreamWorks quality, rich volumetric lighting, no morphing, no flicker, smooth motion".\n' +
+      '7. LAYERED SOUND DESIGN — 3+ specific audio elements (e.g., [Audio: gentle rustling wind, soft footsteps on wood, warm cheerful voice]).\n\n' +
+      'Output ONLY the prompt on a single clean paragraph.',
+  },
+
+  {
     id: 'car_sheet',
     name: 'Car reference sheet',
     hint: 'Type a model and year. Returns a three-view sheet prompt.',

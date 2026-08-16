@@ -67,7 +67,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
         <button className="sn-actions__btn sn-actions__btn--danger" onClick={() => removeNode(id)} title="Delete node">🗑</button>
       </div>
 
-      <Handle type="target" position={Position.Left} id="text" className="sn-port sn-port--text" style={{ top: 22 }}>
+      <Handle type="target" position={Position.Left} id="text" className="sn-port sn-port--text" style={{ top: '50%' }}>
         <span className="sn-port__glyph">T</span>
       </Handle>
 
@@ -85,7 +85,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
             <span className="sn-count sn-count--running">{d.statusNote || 'Writing…'}</span>
           ) : (
             <span className="sn-story__badge">
-              {targets.length ? `${targets.length} shots` : 'Unwired'}
+              {targets.length ? `🎬 ${targets.length} Shots` : 'Unwired'}
             </span>
           )}
         </div>
@@ -94,23 +94,28 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
         {targets.length === 0 ? (
           <div className="sn-story__empty">
             <strong>Not connected yet.</strong>
-            Connect the dot on the right to video or image nodes.
+            Connect the (T) dot on the right to video or image nodes to direct the sequence.
           </div>
         ) : (
           <div className="sn-story__targets">
             <div className="sn-story__count">
-              <span>Connected Sequence</span>
+              <span>Connected Sequence Timeline</span>
               <span className="sn-story__beats">{beatSummary(targets, story.beats)}</span>
             </div>
             <div className="sn-story__ribbon">
               {targets.map((t, i) => (
                 <div key={t.id} className="sn-story__item">
-                  <span className="sn-story__n">{i + 1}</span>
+                  <span className="sn-story__n">{String(i + 1).padStart(2, '0')}</span>
                   <span className="sn-story__name">{t.label || t.id}</span>
-                  <span className="sn-story__meta">
-                    {[t.media === 'video' ? 'clip' : 'still', t.aspectRatio, t.duration]
-                      .filter(Boolean).join(' · ')}
+                  <span className="sn-story__chip">
+                    {t.media === 'video' ? '🎬 clip' : '🖼 still'}
                   </span>
+                  {t.aspectRatio && (
+                    <span className="sn-story__meta">{t.aspectRatio}</span>
+                  )}
+                  {t.duration && (
+                    <span className="sn-story__meta">{t.duration}</span>
+                  )}
                   {t.role === 'reference' && (
                     <span className="sn-story__role" title={`Reference for ${t.referenceFor}`}>
                       ref
@@ -121,7 +126,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                       cont
                     </span>
                   )}
-                  {written[i] && <span className="sn-story__done">✓</span>}
+                  {written[i] && <span className="sn-story__done" title="Prompt generated">✓</span>}
                 </div>
               ))}
             </div>
@@ -385,10 +390,27 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
           </div>
         )}
 
-        {d.errorMessage && <div className="sn-story__error">{d.errorMessage}</div>}
+        {d.errorMessage && (
+          <div className="sn-story__error">
+            <div className="sn-story__error-head">
+              <span className="sn-story__error-title">⚠️ Generation Notice</span>
+              <button
+                type="button"
+                className="sn-story__retry-btn nodrag"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('studio:retry-node', { detail: id }));
+                }}
+                title="Re-run Story Director"
+              >
+                ↻ Retry
+              </button>
+            </div>
+            <p className="sn-story__error-msg">{d.errorMessage}</p>
+          </div>
+        )}
       </div>
 
-      <Handle type="source" position={Position.Right} id="text" className="sn-port sn-port--text" style={{ top: 22 }}>
+      <Handle type="source" position={Position.Right} id="text" className="sn-port sn-port--text" style={{ top: '50%' }}>
         <span className="sn-port__glyph">T</span>
       </Handle>
     </div>

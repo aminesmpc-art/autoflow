@@ -1291,6 +1291,48 @@
   word-break: break-word;
 }
 
+/* AI Prompt Synthesizer preview card */
+.sn-craft-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  width: 100%;
+  padding: var(--s-2) var(--s-3);
+  text-align: left;
+}
+.sn-craft-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-1);
+}
+.sn-craft-card__badge {
+  font-size: var(--t-micro);
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.sn-craft-card__token {
+  font-family: monospace;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: var(--r-chip);
+}
+.sn-craft-card__name {
+  font-size: var(--t-small);
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+}
+.sn-craft-card__hint {
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  line-height: 1.3;
+}
+
 .sn-media__state--error   { color: var(--bad); }
 .sn-media__state--error small { color: var(--bad); }
 
@@ -2275,31 +2317,60 @@ video.sn-media__img { object-fit: contain; background: var(--canvas); cursor: de
 .sn-story__ribbon {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  max-height: 130px;
+  gap: var(--s-1);
+  max-height: 140px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.sn-story__ribbon::-webkit-scrollbar {
+  width: 5px;
+}
+.sn-story__ribbon::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sn-story__ribbon::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: var(--r-pill);
+}
+.sn-story__ribbon::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-30);
 }
 .sn-story__item {
   display: flex;
   align-items: center;
   gap: var(--s-2);
-  padding: 3px 6px;
+  padding: 4px 8px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-chip);
   font-size: var(--t-micro);
   color: var(--text-2);
   min-width: 0;
+  transition: background var(--fast), border-color var(--fast);
+}
+.sn-story__item:hover {
+  background: var(--surface-2);
+  border-color: var(--line-2);
 }
 .sn-story__n {
   flex: none;
-  width: 16px; height: 16px;
-  display: grid; place-items: center;
+  padding: 1px 5px;
   border-radius: var(--r-pill);
   background: var(--accent-14);
   color: var(--accent);
   font-size: var(--t-micro);
   font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.sn-story__chip {
+  flex: none;
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  background: var(--surface-2);
+  padding: 1px 6px;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--line);
 }
 .sn-story__name {
   flex: 1 1 auto;
@@ -2307,18 +2378,49 @@ video.sn-media__img { object-fit: contain; background: var(--canvas); cursor: de
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
+  color: var(--text);
 }
 .sn-story__meta { flex: none; color: var(--text-3); }
-.sn-story__done { flex: none; color: var(--ok); }
+.sn-story__done { flex: none; color: var(--ok); font-weight: 700; }
 .sn-story__error {
   margin-top: var(--s-2);
-  padding: var(--s-2);
+  padding: var(--s-2) var(--s-3);
   border-radius: var(--r-ctrl);
   border-left: 3px solid var(--bad);
   background: var(--bad-12);
   color: var(--bad);
   font-size: var(--t-micro);
   line-height: 1.45;
+}
+.sn-story__error-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  margin-bottom: var(--s-1);
+}
+.sn-story__error-title {
+  font-weight: 700;
+  color: var(--bad);
+}
+.sn-story__retry-btn {
+  padding: 2px 8px;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--bad-30);
+  background: var(--bad-12);
+  color: var(--bad);
+  font: inherit;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--fast), border-color var(--fast);
+}
+.sn-story__retry-btn:hover {
+  background: var(--bad-30);
+}
+.sn-story__error-msg {
+  margin: 0;
+  color: var(--text-2);
 }
 
 .sn-wrap--kind-story .sn { border-color: var(--accent-30); }

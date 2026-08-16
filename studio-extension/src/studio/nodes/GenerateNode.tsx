@@ -37,14 +37,13 @@ const CHAT_NAMES: Record<string, string> = {
  * because which is which is the entire meaning of the mode.
  */
 const PORT_SPECS: Record<string, { glyph: string; cls: string; top: string; title: string }> = {
-  text: { glyph: 'T', cls: 'sn-port--text', top: '38%', title: 'Prompt' },
+  text: { glyph: 'T', cls: 'sn-port--text', top: '28%', title: 'Prompt input' },
   /* Prompt writers take references too, now that the ChatGPT script actually
      uploads them. Showing this frame to Ask AI and asking what happens next is
-     the reason to want a prompt writer at all — it was hidden only while an
-     attached image would have been dropped. */
-  image_ref: { glyph: '🖼', cls: 'sn-port--image', top: '62%', title: 'Reference image' },
-  frame_start: { glyph: 'S', cls: 'sn-port--image', top: '58%', title: 'Start frame — where the clip opens' },
-  frame_end: { glyph: 'E', cls: 'sn-port--image', top: '78%', title: 'End frame — where the clip lands' },
+     the reason to want a prompt writer at all. */
+  image_ref: { glyph: '🖼', cls: 'sn-port--image', top: '72%', title: 'Reference image' },
+  frame_start: { glyph: 'S', cls: 'sn-port--image', top: '56%', title: 'Start frame — where the clip opens' },
+  frame_end: { glyph: 'E', cls: 'sn-port--image', top: '80%', title: 'End frame — where the clip lands' },
 };
 
 /* Model names must match what Flow renders on the page — single source of truth */
@@ -305,28 +304,31 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
 
           {status === 'idle' && (
             <div className="sn-media__state sn-media__state--idle">
-              {/* An outline in the chosen ratio. The box itself is compact
-                  until there is a result to show, so without this nothing on
-                  an idle node said whether it was making a portrait or a
-                  landscape — and the ratio buttons are three identical pills
-                  otherwise. */}
               {isText ? (
-                <span className="sn-media__state-icon">💬</span>
+                <div className="sn-craft-card">
+                  <div className="sn-craft-card__head">
+                    <span className="sn-craft-card__badge">✨ AI Prompt Master</span>
+                    <span className="sn-craft-card__token">{"{{subject}}"}</span>
+                  </div>
+                  <div className="sn-craft-card__name">
+                    {findPreset(nodeData.preset).name}
+                  </div>
+                  <small className="sn-craft-card__hint">
+                    {hasPrompt ? '● Ready — input prompt connected' : '○ Wire a prompt into (T), then Run'}
+                  </small>
+                </div>
               ) : (
-                <span className="sn-media__ghost" style={{ aspectRatio: ratioToCss(ratio) }}>
-                  <span className="sn-media__state-icon">{isVideo ? '🎞' : '🖼'}</span>
-                </span>
+                <>
+                  <span className="sn-media__ghost" style={{ aspectRatio: ratioToCss(ratio) }}>
+                    <span className="sn-media__state-icon">{isVideo ? '🎞' : '🖼'}</span>
+                  </span>
+                  <small>
+                    {hasPrompt
+                      ? 'Ready — press Run'
+                      : 'Connect a prompt, then Run'}
+                  </small>
+                </>
               )}
-              {/* Said "Connect a prompt" even when one was connected, so a
-                  ready node looked unfinished. It knows the answer — the T
-                  handle either has an edge or it does not. */}
-              <small>
-                {hasPrompt
-                  ? 'Ready — press Run'
-                  : isText
-                    ? 'Connect what to ask, then Run — the answer feeds the next node'
-                    : 'Connect a prompt, then Run'}
-              </small>
             </div>
           )}
         </div>
