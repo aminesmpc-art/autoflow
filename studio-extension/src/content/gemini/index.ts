@@ -39,6 +39,24 @@ const GENERATION_TIMEOUT_MS = 6 * 60 * 1000;
 const TEXT_TIMEOUT_MS = 90 * 1000;
 /** No change and nothing running for this long means it is over. */
 const TEXT_QUIET_MS = 45 * 1000;
+/* Gemini had no logger. Every wait it ever performed was invisible in
+   Diagnostics, so a Gemini node that hung told the user nothing at all —
+   the other three adapters have had this since they were written. */
+function logLine(line: string): void {
+  console.log(`[AutoFlow Gemini] ${line}`);
+  try {
+    chrome.runtime.sendMessage({ type: 'STUDIO_LOG', payload: { source: 'Gemini', line } })
+      .catch(() => {});
+  } catch {}
+}
+
+/* Bumped whenever this adapter's completion logic changes. A content
+   script already injected into an open tab is NOT replaced when the
+   extension is rebuilt — the tab must be reloaded too — and a stale
+   script is indistinguishable from a broken fix unless it says which
+   one it is. */
+const ADAPTER_BUILD = 'footer-v2';
+
 /** Backstop for a wedged tab. */
 const TEXT_CEILING_MS = 10 * 60 * 1000;
 const POLL_MS = 2000;
@@ -600,7 +618,7 @@ async function handleExecute(payload: any): Promise<any> {
     return { success: false };
   }
 
-  console.log(`[AutoFlow Gemini] Executing node ${nodeId}`);
+  logLine(`Executing node ${nodeId} [adapter ${ADAPTER_BUILD}]`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 10 });
 
   /* Isolate this node first. It has to happen before the composer lookup and
@@ -654,7 +672,7 @@ async function handleExecute(payload: any): Promise<any> {
       send('STUDIO_NODE_ERROR', { nodeId, error: failure });
       return { success: false };
     }
-    console.log(`[AutoFlow Gemini] ${references.length} reference image(s) attached`);
+    logLine(`${references.length} reference image(s) attached`);
     send('STUDIO_NODE_PROGRESS', { nodeId, progress: 15 });
     composer = findComposer() || composer; // uploading re-renders the composer
   }
@@ -674,7 +692,7 @@ async function handleExecute(payload: any): Promise<any> {
     }));
   }
 
-  console.log(`[AutoFlow Gemini] Submitted — waiting for the ${wantsText ? 'reply' : 'image'}...`);
+  logLine(`Submitted — waiting for the ${wantsText ? 'reply' : 'image'}...`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 20 });
 
   // Hand the channel back now: Chrome closes a sendResponse channel long
@@ -779,6 +797,19 @@ async function trackTextReply(
     });
 
     const current = readLatestReply().trim();
+    /* Say WHY it is still waiting, every fifteen seconds.
+       A node sat at 83% for four minutes with the finished reply on screen
+       and Diagnostics said only "waiting for the reply". Nothing separated a
+       model still thinking from an adapter that could no longer recognise the
+       end — nor from a tab running a previously injected script, which no
+       amount of rebuilding fixes and nothing anywhere reported. */
+    if (elapsed > 10_000
+        && Math.floor(elapsed / 15_000) !== Math.floor((elapsed - POLL_MS) / 15_000)) {
+      logLine(
+        `Waiting ${Math.round(elapsed / 1000)}s — finished ${String(turnFinished())}, generating ${isGenerating()}, reply ${current.length} chars`
+      );
+    }
+
     /* Silence, and nothing in flight. Checked before the "has it started"
        skip below, so a chat that never answers at all still ends. */
     if (Date.now() - lastChangeAt > TEXT_QUIET_MS && !isGenerating()) break;
@@ -800,7 +831,7 @@ async function trackTextReply(
         });
         return;
       }
-      console.log(`[AutoFlow Gemini] Reply captured (${cleaned.length} chars)`);
+      logLine(`Reply captured (${cleaned.length} chars)`);
       send('STUDIO_NODE_RESULT', { nodeId, tileId: '', text: cleaned });
       return;
     }

@@ -31,6 +31,13 @@ console.log('[AutoFlow Grok] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
 
+/* Bumped whenever this adapter's completion logic changes. A content
+   script already injected into an open tab is NOT replaced when the
+   extension is rebuilt — the tab must be reloaded too — and a stale
+   script is indistinguishable from a broken fix unless it says which
+   one it is. */
+const ADAPTER_BUILD = 'base-v1';
+
 /* Ten minutes, not six. Imagine takes minutes on a long clip, and the cost of
    the two limits is not symmetric: waiting too long wastes time, giving up too
    early throws away a generation that was going to succeed. */
@@ -1370,7 +1377,7 @@ async function handleExecute(payload: any): Promise<any> {
     return { success: false };
   }
 
-  console.log(`[AutoFlow Grok] Executing node ${nodeId}`);
+  logLine(`Executing node ${nodeId} [adapter ${ADAPTER_BUILD}]`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 10 });
 
   /* What the result view will be carrying if it is ours. Set before anything
@@ -1885,6 +1892,18 @@ async function trackTextReply(
     });
 
     const current = readLatestReply().trim();
+
+    /* Say WHY it is still waiting, every fifteen seconds.
+       A node sat at 83% for four minutes with the finished reply on screen
+       and Diagnostics said only "waiting for the reply". Nothing separated a
+       model still thinking from an adapter that could no longer recognise the
+       end — nor from a tab running a previously injected script, which no
+       amount of rebuilding fixes and nothing anywhere reported. */
+    if (elapsed > 10_000
+        && Math.floor(elapsed / 15_000) !== Math.floor((elapsed - POLL_MS) / 15_000)) {
+      logLine(`Waiting ${Math.round(elapsed / 1000)}s — generating ${isGenerating()}, reply ${current.length} chars`);
+    }
+
     // Unchanged from before we asked means our answer has not started.
     if (!current || current === priorReply) continue;
 
@@ -1900,7 +1919,7 @@ async function trackTextReply(
         });
         return;
       }
-      console.log(`[AutoFlow Grok] Reply captured (${cleaned.length} chars)`);
+      logLine(`Reply captured (${cleaned.length} chars)`);
       send('STUDIO_NODE_RESULT', { nodeId, tileId: '', text: cleaned });
       return;
     }

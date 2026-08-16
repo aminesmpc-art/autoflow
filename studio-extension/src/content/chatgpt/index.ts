@@ -29,6 +29,14 @@ const GENERATION_TIMEOUT_MS = 6 * 60 * 1000; // ChatGPT image gen can take minut
 const TEXT_TIMEOUT_MS = 90 * 1000;
 /** No change and nothing running for this long means it is over. */
 const TEXT_QUIET_MS = 45 * 1000;
+
+/* Bumped whenever this adapter's completion logic changes. A content
+   script already injected into an open tab is NOT replaced when the
+   extension is rebuilt — the tab must be reloaded too — and a stale
+   script is indistinguishable from a broken fix unless it says which
+   one it is. */
+const ADAPTER_BUILD = 'copy-turn-v2';
+
 /** Backstop for a wedged tab. */
 const TEXT_CEILING_MS = 10 * 60 * 1000;
 const POLL_MS = 2000;
@@ -656,7 +664,7 @@ async function handleExecute(payload: any): Promise<any> {
     return { success: false };
   }
 
-  logLine(`Executing node ${nodeId} (${config?.mediaType || 'image'}, prompt ${prompt.length} chars)`);
+  logLine(`Executing node ${nodeId} (${config?.mediaType || 'image'}, prompt ${prompt.length} chars) [adapter ${ADAPTER_BUILD}]`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 10 });
 
   /* Isolate this node before anything else touches the page. It has to happen
@@ -1058,6 +1066,19 @@ async function trackTextReply(
     });
 
     const current = readLatestReply().trim();
+    /* Say WHY it is still waiting, every fifteen seconds.
+       A node sat at 83% for four minutes with the finished reply on screen
+       and Diagnostics said only "waiting for the reply". Nothing separated a
+       model still thinking from an adapter that could no longer recognise the
+       end — nor from a tab running a previously injected script, which no
+       amount of rebuilding fixes and nothing anywhere reported. */
+    if (elapsed > 10_000
+        && Math.floor(elapsed / 15_000) !== Math.floor((elapsed - POLL_MS) / 15_000)) {
+      logLine(
+        `Waiting ${Math.round(elapsed / 1000)}s — finished ${String(turnFinished())}, generating ${isGenerating()}, reply ${current.length} chars`
+      );
+    }
+
     /* Silence, and nothing in flight. Checked before the "has it started"
        skip below, so a chat that never answers at all still ends. */
     if (Date.now() - lastChangeAt > TEXT_QUIET_MS && !isGenerating()
@@ -1085,7 +1106,7 @@ async function trackTextReply(
         });
         return;
       }
-      console.log(`[AutoFlow ChatGPT] Reply captured (${cleaned.length} chars)`);
+      logLine(`Reply captured (${cleaned.length} chars)`);
       send('STUDIO_NODE_RESULT', { nodeId, tileId: '', text: cleaned });
       return;
     }
