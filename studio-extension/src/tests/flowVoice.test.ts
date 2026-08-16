@@ -48,9 +48,11 @@ describe('the voice list', () => {
   it('carries the descriptor, not just the name', () => {
     /* "Sadaltager" tells you nothing whatsoever. Flow's own picker shows the
        character note beside every name for that reason, and a dropdown of
-       thirty star names without it would be unusable. */
+       thirty star names without it would be unusable. The exact wording is
+       Flow's, read off the live picker — matching it means the dropdown and
+       the site agree rather than nearly agreeing. */
     const v = FLOW_VOICES.find((x) => x.id === 'Sulafat')!;
-    expect(voiceLabel(v)).toBe('Sulafat ♀ warm, mid');
+    expect(voiceLabel(v)).toBe('Sulafat — Female, warm, mid pitch');
     expect(FLOW_VOICES.every((x) => x.hint && x.sex)).toBe(true);
   });
 
@@ -137,5 +139,52 @@ describe('finding the picker on the page', () => {
     expect(selectors).toMatch(/button\[role="tab"\]/);
     expect(selectors).toMatch(/endsWith\('Voices'\)/);
     expect(selectors).not.toMatch(/sc-16c4830a/);
+  });
+});
+
+/**
+ * Reading back which voice is set.
+ *
+ * Verified against the live page on 2026-08-16. After picking Sulafat, the
+ * composer holds:
+ *
+ *   <button aria-label="Sulafat" …>
+ *     <i class="google-symbols">voice_selection</i>
+ *
+ * The old selector looked for button[aria-label="Play audio"] and read an
+ * h4[title] out of it. Neither exists — the chip has no h4 at all and its
+ * label IS the name — so getActiveVoiceName returned null every single time.
+ * Nothing failed loudly, which is why it survived: the voice applied fine, but
+ * the "already active" shortcut could never fire, so every node reopened the
+ * dialog and reselected a voice that was already set, and the closing check
+ * always warned that it had found "none".
+ */
+describe('reading the active voice off the composer', () => {
+  const selectors = readFileSync(
+    join(ROOT, 'src', 'content', 'flow', 'selectors.ts'), 'utf8');
+  /* Comments stripped: this file explains what the old selector got wrong, so
+     the words "Play audio" and "h4[title]" appear in the prose describing the
+     bug. Asserting against the raw text would have the explanation fail the
+     test that the explanation is about. */
+  const chip = selectors
+    .slice(selectors.indexOf('export function findVoiceChip'),
+           selectors.indexOf('export function isIngredientMenuOpen'))
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
+
+  it('matches the voice_selection icon, not a Play audio label', () => {
+    expect(chip).toMatch(/voice_selection/);
+    expect(chip).not.toMatch(/Play audio/);
+  });
+
+  it('takes the name from aria-label, not from an h4 that is not there', () => {
+    expect(chip).toMatch(/getAttribute\('aria-label'\)/);
+    expect(chip).not.toMatch(/h4\[title\]/);
+  });
+
+  it('excludes the Voices tab, which carries the same icon', () => {
+    /* The tab reads "voice_selectionVoices". Matching it would report the
+       tab's own label as the currently selected voice. */
+    expect(chip).toMatch(/role'\) === 'tab'/);
   });
 });

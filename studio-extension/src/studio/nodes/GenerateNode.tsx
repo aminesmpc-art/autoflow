@@ -504,8 +504,8 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                   error, spotted only by watching the output. */}
               {isVideo && !isGrok && nodeData.voice && nodeData.voice !== NO_VOICE && !hasImageInput && (
                 <small className="sn-field__hint sn-field--wide">
-                  Wire an image into this node — Flow gives the voice to a character,
-                  so without one the clip is generated silent.
+                  Wire an image in — Flow's own words are "An audio ingredient
+                  requires other ingredients to function." Alone, this voice is dropped.
                 </small>
               )}
 

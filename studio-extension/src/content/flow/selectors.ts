@@ -3093,7 +3093,35 @@ export async function allTilesSettledWithScroll(): Promise<boolean> {
  * Find the voice chip button in the prompt area.
  */
 export function findVoiceChip(): Element | null {
-  return document.querySelector('button[aria-label="Play audio"]');
+  /* Read off the live page on 2026-08-16, after selecting Sulafat:
+
+       <button aria-label="Sulafat" …>
+         <i class="google-symbols">voice_selection</i>
+         …
+
+     This looked for button[aria-label="Play audio"] and read an h4[title]
+     inside it. Neither exists — the chip carries no h4 at all and its label IS
+     the voice name. So getActiveVoiceName returned null every time, which had
+     two costs that both looked like something else:
+
+       - the "voice X is already active" early exit could never fire, so every
+         single node reopened the ingredient dialog, retyped the name and
+         reclicked the row, for a voice that was already set;
+       - the closing verification always reported "found none instead of X"
+         and continued anyway, so the log warned about a voice that had in
+         fact applied correctly.
+
+     Excluding role="tab" matters: the Voices TAB contains the same
+     voice_selection icon ("voice_selectionVoices"), and matching it would
+     report the tab's label as the active voice. */
+  const buttons = document.querySelectorAll('button[aria-label]');
+  for (const btn of buttons) {
+    if (btn.getAttribute('role') === 'tab') continue;
+    for (const icon of btn.querySelectorAll('i.google-symbols, .google-symbols')) {
+      if ((icon.textContent || '').trim() === 'voice_selection') return btn;
+    }
+  }
+  return null;
 }
 
 /**
@@ -3101,9 +3129,7 @@ export function findVoiceChip(): Element | null {
  */
 export function getActiveVoiceName(): string | null {
   const chip = findVoiceChip();
-  if (!chip) return null;
-  const h4 = chip.querySelector('h4[title]');
-  return h4 ? h4.getAttribute('title') : null;
+  return chip ? chip.getAttribute('aria-label') : null;
 }
 /**
  * Check if the ingredient menu/dialog is currently open.

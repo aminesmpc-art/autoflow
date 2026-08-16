@@ -1,8 +1,10 @@
 /* ============================================================
    The voices Flow offers.
 
-   Ported from the original extension's side panel, which has shipped this
-   list since the feature was added. The names are Google's — stars, moons and
+   Ported from the original extension's side panel, then checked against the
+   live picker on 2026-08-16 — Flow now writes "Female, warm, mid pitch" where
+   the old list said "♀ warm, mid", so the descriptors here are Flow's current
+   wording rather than the shorthand. The names are Google's — stars, moons and
    Greek figures — and they carry no information at all on their own: nothing
    about "Sadaltager" tells you it is a mid-pitch male voice. So the descriptor
    travels with the name everywhere the list is shown, exactly as Flow's own
@@ -19,7 +21,7 @@
 export interface FlowVoice {
   /** Exactly as Flow spells it — typed into the picker's search box. */
   id: string;
-  /** '♀' | '♂' | '⚥', as Flow labels them. */
+  /** 'Female' | 'Male' | 'Ungendered', as Flow's picker writes it. */
   sex: string;
   /** Flow's own one-line character note. */
   hint: string;
@@ -28,41 +30,41 @@ export interface FlowVoice {
 export const NO_VOICE = 'none';
 
 export const FLOW_VOICES: readonly FlowVoice[] = [
-  { id: 'Achernar',      sex: '♀', hint: 'soft, high' },
-  { id: 'Achird',        sex: '♂', hint: 'friendly, mid' },
-  { id: 'Algenib',       sex: '♂', hint: 'gravelly, low' },
-  { id: 'Algieba',       sex: '♂', hint: 'easy-going, mid-low' },
-  { id: 'Alnilam',       sex: '♂', hint: 'firm, mid-low' },
-  { id: 'Aoede',         sex: '♀', hint: 'breezy, mid' },
-  { id: 'Autonoe',       sex: '♀', hint: 'bright, mid' },
-  { id: 'Callirrhoe',    sex: '♀', hint: 'easy-going, mid' },
-  { id: 'Charon',        sex: '♂', hint: 'informative, low' },
-  { id: 'Despina',       sex: '♀', hint: 'smooth, mid' },
-  { id: 'Enceladus',     sex: '♂', hint: 'breathy, low' },
-  { id: 'Erinome',       sex: '♀', hint: 'clear, mid' },
-  { id: 'Fenrir',        sex: '♂', hint: 'excitable, young' },
-  { id: 'Gacrux',        sex: '♀', hint: 'mature, mid' },
-  { id: 'Iapetus',       sex: '♂', hint: 'clear, mid-low' },
-  { id: 'Kore',          sex: '♀', hint: 'firm, mid' },
-  { id: 'Laomedeia',     sex: '♀', hint: 'upbeat, mid-high' },
-  { id: 'Leda',          sex: '♀', hint: 'youthful, mid-high' },
-  { id: 'Orus',          sex: '♂', hint: 'firm, mid-low' },
-  { id: 'Puck',          sex: '♂', hint: 'upbeat, mid' },
-  { id: 'Pulcherrima',   sex: '⚥', hint: 'forward, mid-high' },
-  { id: 'Rasalgethi',    sex: '♂', hint: 'informative, mid' },
-  { id: 'Sadachbia',     sex: '♂', hint: 'lively, low' },
-  { id: 'Sadaltager',    sex: '♂', hint: 'knowledgeable, mid' },
-  { id: 'Schedar',       sex: '♂', hint: 'even, mid-low' },
-  { id: 'Sulafat',       sex: '♀', hint: 'warm, mid' },
-  { id: 'Umbriel',       sex: '♂', hint: 'smooth, low' },
-  { id: 'Vindemiatrix',  sex: '♀', hint: 'gentle, mid' },
-  { id: 'Zephyr',        sex: '♀', hint: 'bright, mid-high' },
-  { id: 'Zubenelgenubi', sex: '♂', hint: 'casual, mid-low' },
+  { id: 'Achernar', sex: 'Female', hint: 'soft, high pitch' },
+  { id: 'Achird', sex: 'Male', hint: 'friendly, mid pitch' },
+  { id: 'Algenib', sex: 'Male', hint: 'gravelly, low pitch' },
+  { id: 'Algieba', sex: 'Male', hint: 'easy-going, mid-low pitch' },
+  { id: 'Alnilam', sex: 'Male', hint: 'firm, mid-low pitch' },
+  { id: 'Aoede', sex: 'Female', hint: 'breezy, mid pitch' },
+  { id: 'Autonoe', sex: 'Female', hint: 'bright, mid pitch' },
+  { id: 'Callirrhoe', sex: 'Female', hint: 'easy-going, mid pitch' },
+  { id: 'Charon', sex: 'Male', hint: 'informative, low pitch' },
+  { id: 'Despina', sex: 'Female', hint: 'smooth, mid pitch' },
+  { id: 'Enceladus', sex: 'Male', hint: 'breathy, low pitch' },
+  { id: 'Erinome', sex: 'Female', hint: 'clear, mid pitch' },
+  { id: 'Fenrir', sex: 'Male', hint: 'excitable, young pitch' },
+  { id: 'Gacrux', sex: 'Female', hint: 'mature, mid pitch' },
+  { id: 'Iapetus', sex: 'Male', hint: 'clear, mid-low pitch' },
+  { id: 'Kore', sex: 'Female', hint: 'firm, mid pitch' },
+  { id: 'Laomedeia', sex: 'Female', hint: 'upbeat, mid-high pitch' },
+  { id: 'Leda', sex: 'Female', hint: 'youthful, mid-high pitch' },
+  { id: 'Orus', sex: 'Male', hint: 'firm, mid-low pitch' },
+  { id: 'Puck', sex: 'Male', hint: 'upbeat, mid pitch' },
+  { id: 'Pulcherrima', sex: 'Ungendered', hint: 'forward, mid-high pitch' },
+  { id: 'Rasalgethi', sex: 'Male', hint: 'informative, mid pitch' },
+  { id: 'Sadachbia', sex: 'Male', hint: 'lively, low pitch' },
+  { id: 'Sadaltager', sex: 'Male', hint: 'knowledgeable, mid pitch' },
+  { id: 'Schedar', sex: 'Male', hint: 'even, mid-low pitch' },
+  { id: 'Sulafat', sex: 'Female', hint: 'warm, mid pitch' },
+  { id: 'Umbriel', sex: 'Male', hint: 'smooth, lower pitch' },
+  { id: 'Vindemiatrix', sex: 'Female', hint: 'gentle, mid pitch' },
+  { id: 'Zephyr', sex: 'Female', hint: 'bright, mid-high pitch' },
+  { id: 'Zubenelgenubi', sex: 'Male', hint: 'casual, mid-low pitch' },
 ];
 
-/** "Sulafat ♀ warm, mid" — the name alone tells you nothing. */
+/** "Sulafat — Female, warm, mid pitch", the way Flow's own picker writes it. */
 export function voiceLabel(v: FlowVoice): string {
-  return `${v.id} ${v.sex} ${v.hint}`;
+  return `${v.id} — ${v.sex}, ${v.hint}`;
 }
 
 /**
