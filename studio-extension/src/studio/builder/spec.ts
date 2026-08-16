@@ -53,7 +53,7 @@ const PLATFORM_NOTES = [
   '- "zai"     Z.AI (GLM-4 / GLM-5). Fast structured text generation and creative reasoning.',
 ].join('\n');
 
-const NODE_MANUAL = `THE NODES, AND WHAT EACH IS FOR
+export const NODE_MANUAL = `THE NODES, AND WHAT EACH IS FOR
 
   image     USER UPLOAD SLOT
             A place for the user to upload their own reference picture.
@@ -252,7 +252,8 @@ A step:
     "platform": "chatgpt" | "gemini" | "grok" | "claude" | "zai",
     "label": "Story Director",
     "prompt": "optional story premise or brief",
-    "cast": [ { "name": "Name", "look": "Appearance description", "role": "optional role" } ],
+    "cast": [ { "name": "Name", "look": "Appearance description", "role": "optional role",
+                "voice": "optional Flow voice, e.g. Kore" } ],
     "world": "Setting description",
     "look": "Lighting & style description",
     "structure": "hook" | "transform" | "loop" | "free",
@@ -273,7 +274,8 @@ A step:
     "duration": "4s" | "6s" | "8s" | "10s",
     "extendSeconds": "+6s" | "+10s",
     "startFrame": "id of the still this clip begins on",
-    "endFrame": "id of the still this clip ends on"
+    "endFrame": "id of the still this clip ends on",
+    "voice": "optional Flow voice for this one clip, overriding the cast"
   }
 
 RULES
@@ -286,6 +288,11 @@ RULES
 - "startFrame"/"endFrame" are flow only, are used together, and replace
   "inputs" for that step. Do not pass two pictures in "inputs" hoping for a
   start and an end — that is two references, not a move between them.
+- A voice belongs on the CAST, not on each clip: every shot a character is in
+  picks up their voice by itself. Put "voice" on a step only to override that.
+  A voice needs a reference image in "inputs" — Flow attaches it to a
+  character — and is impossible on a startFrame/endFrame step, so do not set
+  one there. Omit it entirely unless somebody actually speaks.
 - "agent" is for reacting to a result, never for writing a prompt.
 - "extend" is Grok only, and a clip cannot pass 30 seconds in total.
 - Only "image" steps are things the user uploads. If the idea does not need an

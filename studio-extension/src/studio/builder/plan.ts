@@ -48,8 +48,13 @@ export interface PlanStep {
      result, and a model that meant the move would get the references. */
   startFrame?: string;
   endFrame?: string;
+  /* Flow's voice, on a generate step. Only meaningful for a Flow video with
+     a reference image — Flow attaches a voice to a character ingredient — but
+     carried for any step, because dropping it silently is how a spec that
+     asked for a voice produced clips with none and nothing said why. */
+  voice?: string;
   /** Story director settings (story type only) */
-  cast?: Array<{ name: string; look: string; role?: string }>;
+  cast?: Array<{ name: string; look: string; role?: string; voice?: string }>;
   world?: string;
   look?: string;
   structure?: string;
@@ -324,6 +329,10 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
         aspectRatio: step.aspectRatio || (media === 'video' ? '9:16' : '1:1'),
         duration: step.duration || '6s',
         creationType: step.startFrame && step.endFrame ? 'frames' : 'ingredients',
+        /* A voice named on the step is the author's, not the Story's, so it
+           carries no voiceFromStory marker and re-running a Story will leave
+           it alone. */
+        ...(step.voice ? { voice: step.voice } : {}),
         ...(step.type === 'extend' ? { extendSeconds: step.extendSeconds || '+10s' } : {}),
         enabled: true, status: 'idle', resultUrl: null, previewUrl: '',
         resultTileId: null, progress: 0, errorMessage: null,
