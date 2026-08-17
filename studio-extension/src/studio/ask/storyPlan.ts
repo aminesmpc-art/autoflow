@@ -36,7 +36,8 @@ export interface CastMember {
   voice?: string;
 }
 
-export type CameraProgressionId = 'dynamic' | 'establishingToClose' | 'actionTracking' | 'fixed';
+export type CameraProgressionId =
+  'dynamic' | 'establishingToClose' | 'actionTracking' | 'fixed' | 'propped';
 
 export interface CameraProgressionOption {
   id: CameraProgressionId;
@@ -72,6 +73,25 @@ export const CAMERA_PROGRESSIONS: CameraProgressionOption[] = [
     hint: 'Steadicam, handheld tracking, and energetic subject movement.',
     rules: [
       'MOTION CAMERA: Keep camera actively tracking, dollying, or following the primary subject with dynamic steadicam or handheld motion.',
+    ],
+  },
+  {
+    /* The one that makes a talking piece look real rather than shot.
+       A dolly move reads as stock footage; a phone leaning on a counter reads
+       as somebody's actual video, which is the entire point of UGC. It is
+       also the framing lip sync needs — chest-up, the face large enough to
+       animate — so it answers the camera question and the dialogue question
+       with the same instruction. */
+    id: 'propped',
+    name: 'Phone on a Surface (UGC)',
+    hint: 'A phone leaning on a counter. Locked frame, chest-up, no camera moves.',
+    rules: [
+      'PROPPED PHONE: the phone is resting on a surface and nobody is holding it.',
+      '  · The frame never pans, tilts, zooms, dollies or orbits. It is leaning on something.',
+      '  · Frame the subject chest-up, close enough to read their face clearly.',
+      '  · ONE slow deliberate physical action per shot. Fast hand movement falls apart.',
+      '  · Ordinary available light — a window, a ceiling fitting. Never a studio setup.',
+      '  · The phone itself is never visible, and nobody looks at a second camera.',
     ],
   },
   {
@@ -160,6 +180,22 @@ export interface VisualPresetOption {
   stylePrompt: string;
   negativePrompt: string;
 }
+
+/**
+ * Never wanted, in any style.
+ *
+ * These lived only in the smartphone preset, so a Live-Action or 35mm piece
+ * could come back with subtitles burned into the picture — and burned in is
+ * exactly the problem: there is no removing them without paying for the
+ * generation again.
+ *
+ * A style preset says what a piece should look LIKE. Whether it has captions
+ * welded to it is not a style question, so this is appended to every preset
+ * rather than copied into each one and forgotten in the next.
+ */
+export const ALWAYS_NEGATIVE =
+  'no on-screen text, no captions, no subtitles, no watermark, no stickers, '
+  + 'no fake app interface, no logos overlaid on the picture';
 
 export const VISUAL_PRESETS: VisualPresetOption[] = [
   {
@@ -409,13 +445,14 @@ export function storyBrief(
   if (lookParts.length) {
     out.push('LOOK — applies to every shot without changing what is in them.');
     out.push(`  ${lookParts.join(' ')}`);
-    if (preset?.negativePrompt) {
-      out.push(`  Guardrails (Negative): ${preset.negativePrompt}`);
-    }
+    /* Always, not only when a preset happens to mention it. */
+    const guards = [preset?.negativePrompt, ALWAYS_NEGATIVE].filter(Boolean).join(' ');
+    out.push(`  Guardrails (Negative): ${guards}`);
     out.push('');
   } else {
     out.push('LOOK — decide the palette, lens and lighting, apply it to all shots, and');
     out.push('return it in the "look" field.');
+    out.push(`  Guardrails (Negative): ${ALWAYS_NEGATIVE}`);
     out.push('');
   }
 
@@ -456,6 +493,22 @@ export function storyBrief(
   if (cameraMode && cameraMode.rules.length) {
     out.push(`CINEMATOGRAPHY & CAMERA — ${cameraMode.name}`);
     for (const line of cameraMode.rules) out.push(line);
+    /* Two settings that can contradict each other, reconciled here rather
+       than left for the model to guess.
+       Director Coverage opens on a wide establishing shot and Establishing ➜
+       Push In starts wider still. Neither can carry a spoken line: lip sync
+       is animated on the face, and a wide frame has too little of one. Said
+       explicitly because otherwise the brief asks for both and the writer
+       picks whichever it read last. */
+    const opensWide = cameraMode.id === 'dynamic' || cameraMode.id === 'establishingToClose';
+    const speaks = (s.audioMode || 'cinematic') !== 'ambient'
+      && (s.audioMode || 'cinematic') !== 'none';
+    if (opensWide && speaks) {
+      out.push('  · Where a shot has someone SPEAKING, that shot is chest-up or a medium');
+      out.push('    close-up regardless of the coverage above. A wide frame cannot hold a');
+      out.push('    line — there is not enough face to animate. Put the wide shot on a');
+      out.push('    moment where nobody talks.');
+    }
     out.push('');
   }
 
