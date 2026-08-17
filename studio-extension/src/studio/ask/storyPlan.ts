@@ -88,9 +88,10 @@ export const CAMERA_PROGRESSIONS: CameraProgressionOption[] = [
     rules: [
       'PROPPED PHONE: the phone is resting on a surface and nobody is holding it.',
       '  · The frame never pans, tilts, zooms, dollies or orbits. It is leaning on something.',
+      '  · Because it is leaning, it is not level. A degree or two off, and the subject',
+      '    sits slightly off-centre. A perfectly squared frame means a tripod and a crew.',
       '  · Frame the subject chest-up, close enough to read their face clearly.',
       '  · ONE slow deliberate physical action per shot. Fast hand movement falls apart.',
-      '  · Ordinary available light — a window, a ceiling fitting. Never a studio setup.',
       '  · The phone itself is never visible, and nobody looks at a second camera.',
     ],
   },
@@ -207,8 +208,19 @@ export const VISUAL_PRESETS: VisualPresetOption[] = [
   {
     id: 'smartphonePOV',
     name: 'Smartphone POV (TikTok)',
-    stylePrompt: 'Authentic vertical 9:16 handheld smartphone POV camera, natural everyday indoor/outdoor lighting, raw realism, viral social video aesthetic.',
-    negativePrompt: 'No Hollywood tripod rigidity, no artificial stage lighting, no subtitles.',
+    /* "Raw realism, viral social video aesthetic" is a mood, not an
+       instruction — a generator can satisfy every word of it and still hand
+       back a retouched face under an even key. Replaced with the things that
+       actually separate phone footage from an advert, each of which is a
+       decision the model has to make differently. */
+    stylePrompt: 'Footage a real person shot on their own phone: one everyday light source with '
+      + 'the other side of the face left dark, unretouched skin with visible pores and a faint '
+      + 'shine, phone-lens depth where the background stays legible instead of melting into '
+      + 'bokeh, mild sensor noise in the shadows, framing that is slightly off-centre and a '
+      + 'degree off level.',
+    negativePrompt: 'No studio or three-point lighting, no colour grading, no cinematic '
+      + 'shallow-focus bokeh, no retouched or poreless skin, no tripod-perfect framing, no '
+      + 'Hollywood rigidity.',
   },
   {
     id: 'cinema35mm',
@@ -310,7 +322,100 @@ export const RULES: Array<{ id: RuleId; name: string; line: string }> = [
   },
 ];
 
-export type StructureId = 'hook' | 'transform' | 'loop' | 'free';
+/**
+ * Why AI UGC looks like AI.
+ *
+ * The models are trained toward "good": even soft light, retouched skin,
+ * symmetrical composition, a tidy room, shallow cinematic focus. Every one of
+ * those is the opposite of what a phone in someone's kitchen produces, and
+ * every one of them is a separate decision the model makes by default. That
+ * is why "authentic raw UGC" in a prompt does nothing — it is a mood, and the
+ * defaults are specifics. Each line below overturns one specific default.
+ *
+ * Ordered by how loudly each one gives the game away. Skin is first for a
+ * reason: a retouched face reads as an advert however right everything else
+ * is, and no amount of handheld wobble rescues it.
+ *
+ * The last line is the one that is easy to skip and expensive to skip. Each
+ * clip is generated on its own from its own prompt, so a realism instruction
+ * that lives only here is a realism instruction the generator never sees.
+ * The same reason the CAST block insists on being written into every prompt.
+ */
+export const UGC_REALISM: string[] = [
+  'SHOT AS UGC — this is phone footage a real person made, not a production.',
+  'Where anything above pulls it back toward looking produced, this wins.',
+  '',
+  '  SKIN — pores, a faint shine on the forehead and nose, a small blemish or two,',
+  '    flyaway hairs, a face that is not symmetrical. No smoothing, no beauty filter.',
+  '    This is the strongest tell there is: a retouched face reads as an advert',
+  '    however good everything else is.',
+  '  LIGHT — one everyday source and nothing filling the other side: a window that',
+  '    slightly blows out, or a ceiling fitting at whatever colour it actually is.',
+  '    One side of the face darker than the other. Never an even, balanced key.',
+  '  LENS — a phone lens. Almost everything stays in focus and the background stays',
+  '    legible; it does not melt into bokeh. Mild noise in the shadows, and a little',
+  '    softness where things move quickly.',
+  '  FRAME — not composed. Slightly off-centre, a little too much or too little',
+  '    headroom, a degree off level. A frame that lands on the thirds means a crew.',
+  '  ROOM — somewhere someone actually lives. Something in shot is out of place —',
+  '    a cable, a used mug, a towel not folded. Nothing cleared or styled for camera.',
+  '  WARDROBE — worn, not new. No styling: a hair tie on the wrist, a shirt that has',
+  '    been washed a hundred times.',
+  '  DELIVERY — talking to the lens, not past it. Contractions, plain words, the',
+  '    register of telling one friend one thing. Ordinary blinks and small head',
+  '    movement while speaking. No presenting, no announcing, no advertising voice.',
+  '  SOUND — the phone’s own microphone in that room: a little reflection off hard',
+  '    surfaces and the room’s real background — a fridge, a street, a fan. No music',
+  '    underneath and no clean studio voice.',
+  '',
+  '  Carry SKIN, LIGHT and LENS into EVERY video prompt as three or four short',
+  '  phrases in the prompt’s own words — not the whole list, and not stated once',
+  '  here and assumed. Each clip is generated alone and remembers nothing.',
+];
+
+/** The defaults a UGC piece has to overturn, as exclusions. */
+export const UGC_NEGATIVE =
+  'no studio or three-point lighting, no colour grading, no cinematic shallow-focus '
+  + 'bokeh, no lens flare, no slow motion, no music bed, no retouched or poreless skin, '
+  + 'no cinema-camera look, no styled or tidied set';
+
+/**
+ * One guardrail line out of several overlapping lists.
+ *
+ * The UGC exclusions and the smartphone preset's exclusions describe the same
+ * defaults, so joining them raw produced "no cinematic shallow-focus bokeh"
+ * twice in one sentence, a missing separator where one list ended in a full
+ * stop and the next did not, and a capital N mid-sentence. A prompt is read,
+ * and a sentence that repeats itself reads as noise around the parts that
+ * matter.
+ *
+ * Splitting on the comma is safe here because every clause in every list has
+ * the same shape: "no <thing>".
+ */
+export function mergeNegatives(...parts: Array<string | undefined>): string {
+  const seen = new Set<string>();
+  const clauses: string[] = [];
+  for (const part of parts) {
+    for (const raw of (part || '').split(/[,.]/)) {
+      const clause = raw.trim().replace(/\s+/g, ' ');
+      if (!clause) continue;
+      const key = clause.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      /* Sentence case belongs to the first clause only — the rest are mid-list. */
+      clauses.push(clauses.length ? key.charAt(0) + clause.slice(1) : clause);
+    }
+  }
+  return clauses.length ? `${clauses.join(', ')}.` : '';
+}
+
+/** The three settings that each mean "this is a UGC piece". */
+export const isUgc = (s: StorySettings): boolean =>
+  s.cameraProgression === 'propped'
+  || s.visualPreset === 'smartphonePOV'
+  || s.structure === 'ugcAd';
+
+export type StructureId = 'hook' | 'transform' | 'loop' | 'free' | 'ugcAd';
 
 export const STRUCTURES: Array<{ id: StructureId; name: string; hint: string; shape: string[] }> = [
   {
@@ -346,6 +451,26 @@ export const STRUCTURES: Array<{ id: StructureId; name: string; hint: string; sh
       'explicitly in both the first and last prompt.',
     ],
   },
+  {
+    /* Hook ➜ Build ➜ Payoff is the shape of a short film. This is the shape of
+       a creator ad, which is a different thing: it argues. The one rule every
+       source agrees on is the one nobody follows — the first words ARE the
+       hook. "Hey guys, so I wanted to share something" is three seconds spent
+       on nothing, and three seconds is the whole audition. */
+    id: 'ugcAd',
+    name: 'UGC Ad — Hook ➜ Problem ➜ Proof ➜ CTA',
+    hint: 'What a creator ad actually does. Opens on the hook, no throat-clearing.',
+    shape: [
+      'HOOK — the FIRST words are the hook, and the first shot is already in motion.',
+      '  No greeting, no "hey guys", no "so I wanted to share". Start mid-thought on',
+      '  the most surprising or most useful thing there is to say.',
+      'PROBLEM — the annoyance, named the way somebody says it to a friend rather',
+      '  than the way a brand writes it. Specific and small beats broad and important.',
+      'PROOF — the hands do the arguing, not the words. The actual thing, actually',
+      '  used, in one unhurried continuous movement close enough to see.',
+      'CTA — one plain sentence. What to do, said the way a person says it.',
+    ],
+  },
   { id: 'free', name: 'No fixed structure', hint: 'Let the idea decide.', shape: [] },
 ];
 
@@ -360,6 +485,39 @@ export const DEFAULT_STORY: StorySettings = {
   audioMode: 'cinematic',
   visualPreset: 'none',
 };
+
+/**
+ * A Story node's stored data, as settings.
+ *
+ * There were two of these, written months apart, and each forgot a different
+ * set of fields. The node's own reader dropped `avoid` and `timedBeats`, so
+ * those did not survive a reload. The runner's dropped `cameraProgression`,
+ * `audioMode`, `visualPreset`, `avoid` and `timedBeats` — and since it spread
+ * DEFAULT_STORY first, they did not arrive empty, they arrived as the
+ * defaults. A user who chose the smartphone preset got a brief that said
+ * Custom, and nothing anywhere reported a problem.
+ *
+ * The bug is not that either was written carelessly. It is that adding a
+ * setting meant remembering two places, and a new field is invisible in the
+ * one you forget. One function, so there is only ever one place.
+ */
+export function readStorySettings(d: any): StorySettings {
+  const n = d || {};
+  return {
+    cast: Array.isArray(n.cast) ? n.cast : [],
+    world: typeof n.world === 'string' ? n.world : '',
+    look: typeof n.look === 'string' ? n.look : '',
+    structure: (n.structure as StructureId) || DEFAULT_STORY.structure,
+    beats: Number(n.beats) || 0,
+    rules: Array.isArray(n.rules) ? n.rules : [],
+    cameraProgression:
+      (n.cameraProgression as CameraProgressionId) || DEFAULT_STORY.cameraProgression,
+    audioMode: (n.audioMode as AudioModeId) || DEFAULT_STORY.audioMode,
+    visualPreset: (n.visualPreset as VisualPresetId) || DEFAULT_STORY.visualPreset,
+    timedBeats: !!n.timedBeats,
+    avoid: typeof n.avoid === 'string' ? n.avoid : '',
+  };
+}
 
 /** Seconds in a target, or 0 for a still. */
 function secondsOf(t: ShotTarget): number {
@@ -442,17 +600,21 @@ export function storyBrief(
   if (preset && preset.stylePrompt) lookParts.push(preset.stylePrompt);
   if (s.look.trim()) lookParts.push(s.look.trim());
 
+  /* Always, not only when a preset happens to mention it, and with the UGC
+     exclusions folded in when this is a UGC piece — those are the model's
+     defaults rather than a style, so they have to be named to be beaten. */
+  const ugc = isUgc(s);
+  const guards = mergeNegatives(preset?.negativePrompt, ugc ? UGC_NEGATIVE : '', ALWAYS_NEGATIVE);
+
   if (lookParts.length) {
     out.push('LOOK — applies to every shot without changing what is in them.');
     out.push(`  ${lookParts.join(' ')}`);
-    /* Always, not only when a preset happens to mention it. */
-    const guards = [preset?.negativePrompt, ALWAYS_NEGATIVE].filter(Boolean).join(' ');
     out.push(`  Guardrails (Negative): ${guards}`);
     out.push('');
   } else {
     out.push('LOOK — decide the palette, lens and lighting, apply it to all shots, and');
     out.push('return it in the "look" field.');
-    out.push(`  Guardrails (Negative): ${ALWAYS_NEGATIVE}`);
+    out.push(`  Guardrails (Negative): ${guards}`);
     out.push('');
   }
 
@@ -517,6 +679,16 @@ export function storyBrief(
   if (audio && audio.guide.length) {
     out.push(`AUDIO & SOUND DESIGN — ${audio.name}`);
     for (const line of audio.guide) out.push(line);
+    out.push('');
+  }
+
+  /* After the camera and the audio, deliberately.
+     The realism rules contradict things those sections legitimately ask for —
+     a preset's lighting, a coverage's composure — and the later instruction
+     is the one that survives. It is the reconciliation layer, so it goes last
+     of the three. */
+  if (ugc) {
+    for (const line of UGC_REALISM) out.push(line);
     out.push('');
   }
 

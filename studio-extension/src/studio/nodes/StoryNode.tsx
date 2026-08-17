@@ -19,7 +19,7 @@ import { Icon } from '../components/Icon';
 import { useStudioStore } from '../store';
 import { orderShotTargets } from '../ask/storyboard';
 import {
-  STRUCTURES, RULES, DEFAULT_STORY, beatSummary, beatsFor,
+  STRUCTURES, RULES, DEFAULT_STORY, beatSummary, beatsFor, readStorySettings,
   CAMERA_PROGRESSIONS, AUDIO_MODES, VISUAL_PRESETS,
   type CastMember, type StorySettings, type StructureId,
   type CameraProgressionId, type AudioModeId, type VisualPresetId,
@@ -27,19 +27,9 @@ import {
 import { FLOW_VOICES, NO_VOICE, voiceLabel } from '../flowVoices';
 import { NodeInfoBadge } from './NodeInfoBadge';
 
-function readStory(d: any): StorySettings {
-  return {
-    cast: Array.isArray(d.cast) ? d.cast : DEFAULT_STORY.cast,
-    world: typeof d.world === 'string' ? d.world : '',
-    look: typeof d.look === 'string' ? d.look : '',
-    structure: (d.structure as StructureId) || DEFAULT_STORY.structure,
-    beats: Number(d.beats) || 0,
-    rules: Array.isArray(d.rules) ? d.rules : DEFAULT_STORY.rules,
-    cameraProgression: (d.cameraProgression as CameraProgressionId) || DEFAULT_STORY.cameraProgression || 'dynamic',
-    audioMode: (d.audioMode as AudioModeId) || DEFAULT_STORY.audioMode || 'cinematic',
-    visualPreset: (d.visualPreset as VisualPresetId) || DEFAULT_STORY.visualPreset || 'liveAction',
-  };
-}
+/* One reader, shared with the runner. Kept as a local name because this
+   file uses it a dozen times, and because the two used to differ. */
+const readStory = readStorySettings;
 
 function StoryNodeInner({ id, data, selected }: NodeProps) {
   const d = data as any;

@@ -20,7 +20,8 @@ import {
   orderShotTargets, alignShots, type ShotTarget, type Shot,
 } from '../ask/storyboard';
 import {
-  storyBrief, STORY_FIELDS, DEFAULT_STORY, voiceForShot, type StorySettings,
+  storyBrief, STORY_FIELDS, DEFAULT_STORY, voiceForShot, readStorySettings, isUgc,
+  type StorySettings,
 } from '../ask/storyPlan';
 import { runAgent, type AgentStep, type ToolOutcome } from './agent';
 import { toolsByName } from './tools';
@@ -585,15 +586,7 @@ export class WorkflowRunner {
       /* The story settings first, then whatever extra brief the preset adds.
          Order matters: the cast and world are the fixed part, and a preset is
          craft applied on top of them. */
-      const settings: StorySettings = {
-        ...DEFAULT_STORY,
-        ...(nodeData.cast ? { cast: nodeData.cast } : {}),
-        world: nodeData.world || '',
-        look: nodeData.look || '',
-        structure: nodeData.structure || DEFAULT_STORY.structure,
-        beats: Number(nodeData.beats) || 0,
-        rules: Array.isArray(nodeData.rules) ? nodeData.rules : [],
-      };
+      const settings: StorySettings = readStorySettings(nodeData);
       const extra = nodeData.preset ? composeAskPrompt(nodeData.preset, '', false) : '';
       const brief = storyBrief(prompt, settings, targets) + (extra ? `\n${extra}` : '');
       return this.executeStoryboardAsk(nodeId, nodeData, brief, targets, edges, true);
@@ -1140,7 +1133,10 @@ export class WorkflowRunner {
          are all "shot i against target i", so a reordered reply made the check
          wrong as well as the assignment. */
       const shots = alignShots(rawShots, targets);
-      const problems = checkShots(shots, targets, identity || anchor, parsedCast);
+      const problems = checkShots(
+        shots, targets, identity || anchor, parsedCast,
+        isStory && isUgc(readStorySettings(nodeData)),
+      );
       console.log(`[Runner] Storyboard round ${round + 1}: ${summarise(problems)}`);
 
       if (!best || problems.length < best.problems) {
