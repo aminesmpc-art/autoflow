@@ -148,21 +148,33 @@ describe('the real Fantasy Room template', () => {
   const room: any = (BUILTIN_TEMPLATES as any[]).find((t) => t.id === 'tpl_room_transform');
   const targets = orderShotTargets('story', room.nodes, room.edges);
 
-  it('reads all three jobs off the wiring', () => {
+  it('reads every job off the wiring', () => {
+    /* Four since the empty-room still was added. It feeds Part 1's first
+       frame, so it reads as a reference without anything declaring it one —
+       and Part 1 stays a shot rather than becoming a continuation, because
+       what pins it is a still and not the end of another clip. */
     expect(targets.map((t) => [t.id, t.role])).toEqual([
       ['board', 'reference'],
+      ['before', 'reference'],
       ['part1', 'shot'],
       ['part2', 'continuation'],
     ]);
   });
 
-  it('knows the poster is the reference for BOTH clips', () => {
-    // It feeds each of them, and naming only the first is how it read before.
-    expect(targets[0].referenceFor).toBe('Part 1 — 10s and Part 2 — 10s');
+  it('knows which shots each reference is for', () => {
+    // Naming only the first consumer is how this read before.
+    expect(targets[0].referenceFor).toBe('Empty room — first frame and Part 2 — 10s');
+    expect(targets[1].referenceFor).toBe('Part 1 — 10s');
+  });
+
+  it('sees Part 1 opening on a fixed first frame rather than inventing one', () => {
+    const part1 = targets.find((t) => t.id === 'part1');
+    expect(part1?.mode).toBe('frames');
+    expect(part1?.hasStartFrame).toBe(true);
   });
 
   it('sees that Part 2 continues Part 1 through the Last Frame node', () => {
-    expect(targets[2].continues).toBe('Part 1 — 10s');
+    expect(targets[3].continues).toBe('Part 1 — 10s');
   });
 
   it('briefs Part 2 not to restart the room', () => {

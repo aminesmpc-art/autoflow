@@ -548,6 +548,93 @@ export const hasStory = (s: StorySettings): boolean =>
   !!(s.cast.some((c) => c.name.trim() || c.look.trim()) || s.world.trim() || s.look.trim());
 
 /**
+ * Whether the piece is a build — something arrives that was not there.
+ *
+ * Two settings say it independently: the structure, and the rule that says
+ * nothing already built disappears. A user who describes a time-lapse with
+ * "Nothing already built disappears" switched on and the structure left on
+ * Hook is describing a build, and the opening still has to be empty.
+ */
+export const isBuild = (s: StorySettings): boolean =>
+  s.structure === 'transform' || s.rules.includes('cumulative');
+
+/**
+ * The state the piece starts in, and why it kept coming back wrong.
+ *
+ * A room transformation was opening on a half-finished room. Not because the
+ * words were missing — the room preset has said "PART 1 covers 00:00–00:10:
+ * the empty room" for as long as it has existed — but because the still wired
+ * into the first clip was the storyboard poster, which shows the FINISHED
+ * design. Flow was handed a sentence saying empty and a picture showing
+ * furnished, and a picture beats a sentence every time.
+ *
+ * So this section is about the picture. Two cases, and the difference is one
+ * fact off the canvas rather than a setting anyone has to know about:
+ *
+ *   pinned      Something upstream fixes the first frame. Then that still is
+ *               the opening state, and it is the thing that has to be empty —
+ *               instructing the clip is instructing the wrong shot.
+ *   unpinned    Nothing does, so the opening state is invented from the words
+ *               alone and the words have to carry all of it.
+ *
+ * The emptiness half only applies to a build. A piece that opens in a busy
+ * kitchen and stays there has no "before", and telling it to start empty would
+ * be telling it to start wrong.
+ */
+export function openingState(s: StorySettings, targets: ShotTarget[]): string[] {
+  const opening = targets.find((t) => t.role !== 'reference' && t.media !== 'text');
+  if (!opening) return [];
+
+  const pinned = opening.mode === 'frames' && opening.hasStartFrame;
+  const label = opening.label || 'the first shot';
+  /* Which still pins it, when one does. referenceFor lists the shots a
+     reference feeds, so the opening's own label finds it. */
+  const pin = pinned
+    ? targets.find((t) => t.role === 'reference' && !!t.referenceFor
+        && !!opening.label && t.referenceFor.includes(opening.label))
+    : undefined;
+
+  const out: string[] = ['OPENING STATE'];
+  if (pinned) {
+    const name = pin?.label ? `"${pin.label}"` : 'the still wired into its first frame';
+    out.push(`  ${name} IS the first frame of ${label} — the clip begins inside that`);
+    out.push('  picture. Whatever it shows is where the piece starts, so it is the shot');
+    out.push('  that has to be right about the beginning, not the clip.');
+  } else {
+    out.push(`  Nothing upstream fixes the first frame of ${label}, so its opening state is`);
+    out.push('  invented from your words alone. Describe the state the piece STARTS in,');
+    out.push('  completely, in that prompt — a generator given a transformation and no');
+    out.push('  starting picture renders something halfway through it.');
+  }
+
+  if (isBuild(s)) {
+    out.push('  This piece BUILDS: things arrive that were not there. So the opening is');
+    out.push('  the state before ANY of them — and every one of them has to be named as');
+    out.push('  absent, or the generator fills the space with what it expects to see.');
+    /* Google's own guidance, already applied to the "avoid" field: a bare
+       negation summons the thing it names. */
+    out.push('  Write those absences as things the place is WITHOUT, inside the');
+    out.push('  description — "bare boards and unpainted walls, no furniture, no');
+    out.push('  lighting, no decoration" — never as a bare list of "no" on its own.');
+
+    /* The trap the room template fell into. A design sheet naturally shows
+       the finished thing — that is what a design sheet is for — and then it
+       is wired into the clip that is supposed to open empty. Whatever the
+       words say, the clip renders the picture. */
+    const refs = targets.filter((t) => t.role === 'reference');
+    if (refs.length) {
+      const named = refs.map((t) => `"${t.label || 'the reference'}"`).join(', ');
+      out.push(`  ${named} shows the design, and a design sheet naturally shows the`);
+      out.push('  FINISHED piece. For a build it must show the start as well — the same');
+      out.push('  place, same angle, empty — because that is the picture the opening is');
+      out.push('  generated from, and a picture of a finished room produces one.');
+    }
+  }
+  out.push('');
+  return out;
+}
+
+/**
  * The brief, assembled from what the user has locked plus what the canvas
  * already knows.
  */
@@ -697,6 +784,8 @@ export function storyBrief(
     for (const line of structure.shape) out.push(line);
     out.push('');
   }
+
+  for (const line of openingState(s, targets)) out.push(line);
 
   const chosen = RULES.filter((r) => s.rules.includes(r.id));
   if (chosen.length) {

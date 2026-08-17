@@ -37,13 +37,21 @@ const PORTS: Record<string, { in: string[]; out: string[] }> = {
      validate.ts: a test that imported the implementation's map would agree
      with it by construction and prove nothing. */
   story: { in: ['text'], out: ['text'] },
+  /* Frames mode swaps the ingredient tray for Flow's Start and End slots, so
+     it swaps the port too: a node in this mode that still drew image_ref would
+     accept a wire the runner never reads. Spelled out here rather than
+     imported for the same reason as the rest of this map. */
+  'generate:frames': { in: ['text', 'frame_start', 'frame_end'], out: ['result'] },
 };
 
 const portsFor = (node: any) => {
-  const key = node.type === 'generate' && node.data?.mediaType === 'text'
-    ? 'generate:text'
-    : node.type;
-  return PORTS[key];
+  if (node.type !== 'generate') return PORTS[node.type];
+  const d = node.data || {};
+  if (d.mediaType === 'text') return PORTS['generate:text'];
+  const frames = (d.platform || 'flow') === 'flow'
+    && d.mediaType === 'video'
+    && d.creationType === 'frames';
+  return PORTS[frames ? 'generate:frames' : 'generate'];
 };
 
 describe.each(TEMPLATES.map((t) => [t.name, t] as const))('%s', (_name, tpl) => {

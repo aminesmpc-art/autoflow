@@ -282,6 +282,31 @@ const PRODUCED = new RegExp(
   'gi',
 );
 
+/**
+ * A prompt that says the place has not been built yet.
+ *
+ * Two ways of saying it and both count, because both work on a generator: an
+ * adjective for the state ("bare concrete floor", "an empty room") or a named
+ * absence inside the description ("with no furniture or lighting"). The second
+ * form is the one Google's guide asks for and the one the brief teaches, but
+ * failing a prompt that said "a stripped, unfurnished room" would be failing a
+ * correct answer for using the other half of the same instruction.
+ *
+ * "Nothing" is missing on purpose — "nothing moves", "nothing in her hands"
+ * are ordinary shot description and say nothing about the room.
+ */
+const EMPTY_START = new RegExp(
+  '\\b(?:'
+  + 'empty|emptied|bare|barren|unfurnished|undecorated|unpainted|unfinished|'
+  + 'stripped|gutted|untouched|vacant|blank|derelict|raw concrete|bare boards|'
+  + 'before (?:any|anything|the work|she|he|they)|not yet '
+  + ')\\b'
+  + '|\\bno (?:furniture|decoration|decor|lighting|lights|fittings|fixtures|'
+  + 'rugs?|panels?|shelves|paint|colour|color)\\b'
+  + '|\\bwith no \\w+',
+  'i',
+);
+
 const ATTRIBUTED =
   /\b(?:says?|said|whispers?|shouts?|asks?|answers?|replies|replied|murmurs?|mutters?|exclaims?|adds|calls|yells?|sings?|tells|breathes)\b[^\u201c\u201d"]{0,40}["\u201c]([^"\u201d]{2,})["\u201d]/gi;
 
@@ -661,14 +686,36 @@ export function checkShots(
      people it says are in it — without it, the anchor named the whole cast and
      the moon scene was failed for not mentioning the delivery man. */
   cast?: Array<{ name: string; look: string }>,
-  /* Whether this is a UGC piece. The realism instructions are the only part of
-     the brief that ask a model to make something WORSE than it knows how to,
-     which is the hardest kind of instruction to keep — a writer that has read
-     them still reaches for "cinematic" and "shallow depth of field" because
-     that is what a good prompt looks like everywhere else. Stated in the brief
-     it is a suggestion; checked here it is not. */
-  ugc?: boolean,
+  /* What kind of piece this is. Two facts the shots alone cannot tell you,
+     both of which decide whether a well-formed prompt is the right prompt.
+
+     ugc      The realism instructions are the only part of the brief asking a
+              model to make something WORSE than it knows how to, which is the
+              hardest kind of instruction to keep — a writer that has read them
+              still reaches for "cinematic" because that is what a good prompt
+              looks like everywhere else.
+     build    Things arrive that were not there, so the opening shot has to be
+              the state before any of them.
+
+     In the brief both are suggestions; here they are not. */
+  kind?: { ugc?: boolean; build?: boolean },
 ): Problem[] {
+  const { ugc = false, build = false } = kind || {};
+  /* The first shot that is a moment in the piece. A reference still is not
+     one — it is a design for the others to match. */
+  const opening = shots.length && targets.length
+    ? targets.find((t) => t.role !== 'reference' && t.media !== 'text')
+    : undefined;
+  /* And the still wired into its first frame, when there is one. That still is
+     the opening state — the clip begins inside it — so it is the shot that has
+     to be empty. Checking only the clip would pass a perfect description of an
+     empty room generated from a picture of a finished one, which is exactly
+     what was happening. */
+  const pin = opening && opening.mode === 'frames' && opening.hasStartFrame && opening.label
+    ? targets.find((t) => t.role === 'reference'
+        && !!t.referenceFor && t.referenceFor.includes(opening.label as string))
+    : undefined;
+  const startsPiece = new Set([opening?.id, pin?.id].filter(Boolean) as string[]);
   const problems: Problem[] = [];
 
   if (shots.length !== targets.length) {
@@ -793,6 +840,23 @@ export function checkShots(
             + 'and skin with pores and shine — and drop the film vocabulary.',
         });
       }
+    }
+
+    /* A transformation that opens halfway through itself.
+       Reported as "the room does not start empty", and the words were never
+       the problem — the room preset has asked for "the empty room" all along.
+       What was missing was anything that noticed when the prompt came back
+       describing a room with furniture in it. This fires only on the shot
+       that opens the piece, and only when the piece builds. */
+    if (build && target && startsPiece.has(target.id) && !EMPTY_START.test(p)) {
+      problems.push({
+        shot: n, code: 'openNotFromNothing',
+        detail: 'opens the piece, which BUILDS — so it has to start before any of it. '
+          + 'Nothing in this prompt says the place is empty, so the generator will fill '
+          + 'it with what it expects to be there. Name what is missing as part of the '
+          + 'description — "bare boards and unpainted walls, no furniture, no lighting" '
+          + '— not as a bare list of "no".',
+      });
     }
 
     if (target?.media === 'video' && target?.role !== 'reference' && !MOTION.test(p)) {

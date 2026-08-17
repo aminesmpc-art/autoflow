@@ -44,7 +44,7 @@ const codes = (prompt: string, ugc: boolean) =>
     [targets[0]],
     'a woman in a beige ribbed tank top',
     undefined,
-    ugc,
+    { ugc },
   ).map((p) => p.code);
 
 describe('what counts as a UGC piece', () => {
@@ -205,7 +205,7 @@ describe('the checker catches the film vocabulary a writer reaches for', () => {
   it('names the words it found, so the repair knows what to remove', () => {
     const problem = checkShots(
       [{ n: 1, title: 'One', prompt: `${REAL} Cinematic, shallow depth of field.` } as Shot],
-      [targets[0]], 'a woman in a beige ribbed tank top', undefined, true,
+      [targets[0]], 'a woman in a beige ribbed tank top', undefined, { ugc: true },
     ).find((p) => p.code === 'ugcProduced')!;
     expect(problem.detail).toContain('cinematic');
     expect(problem.detail).toContain('shallow depth of field');
@@ -214,7 +214,7 @@ describe('the checker catches the film vocabulary a writer reaches for', () => {
   it('says each word once however often it appears', () => {
     const problem = checkShots(
       [{ n: 1, title: 'One', prompt: `${REAL} Cinematic, cinematic, CINEMATIC.` } as Shot],
-      [targets[0]], 'a woman in a beige ribbed tank top', undefined, true,
+      [targets[0]], 'a woman in a beige ribbed tank top', undefined, { ugc: true },
     ).find((p) => p.code === 'ugcProduced')!;
     expect(problem.detail.match(/cinematic/gi)).toHaveLength(1);
   });

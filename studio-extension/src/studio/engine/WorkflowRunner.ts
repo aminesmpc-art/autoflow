@@ -20,7 +20,7 @@ import {
   orderShotTargets, alignShots, type ShotTarget, type Shot,
 } from '../ask/storyboard';
 import {
-  storyBrief, STORY_FIELDS, DEFAULT_STORY, voiceForShot, readStorySettings, isUgc,
+  storyBrief, STORY_FIELDS, DEFAULT_STORY, voiceForShot, readStorySettings, isUgc, isBuild,
   type StorySettings,
 } from '../ask/storyPlan';
 import { runAgent, type AgentStep, type ToolOutcome } from './agent';
@@ -1133,9 +1133,10 @@ export class WorkflowRunner {
          are all "shot i against target i", so a reordered reply made the check
          wrong as well as the assignment. */
       const shots = alignShots(rawShots, targets);
+      const storySettings = readStorySettings(nodeData);
       const problems = checkShots(
         shots, targets, identity || anchor, parsedCast,
-        isStory && isUgc(readStorySettings(nodeData)),
+        isStory ? { ugc: isUgc(storySettings), build: isBuild(storySettings) } : undefined,
       );
       console.log(`[Runner] Storyboard round ${round + 1}: ${summarise(problems)}`);
 

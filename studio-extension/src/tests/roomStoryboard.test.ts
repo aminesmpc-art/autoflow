@@ -26,7 +26,7 @@ describe('the Fantasy Room template', () => {
     expect(room.nodes).toHaveLength(room.nodeCount);
   });
 
-  it('has one director for all three prompts, not two conversations', () => {
+  it('has one director for every prompt, not two conversations', () => {
     /* It shipped with an Ask AI writing the poster and a second writing the
        clips, which could not agree about the room because neither could see
        the other's answer. Before that it had two hardcoded prompt nodes
@@ -35,7 +35,10 @@ describe('the Fantasy Room template', () => {
     expect(writers).toHaveLength(1);
     expect(room.nodes.find((n: any) => n.id === 'p1')).toBeUndefined();
     expect(room.nodes.find((n: any) => n.id === 'motion')).toBeUndefined();
-    expect(targets.map((t) => t.id)).toEqual(['board', 'part1', 'part2']);
+    /* Four now. The empty-room still was added because Part 1 was opening on
+       a half-built room: its only picture was the poster, which shows the
+       FINISHED design, and a picture beats the words asking for an empty one. */
+    expect(targets.map((t) => t.id)).toEqual(['board', 'before', 'part1', 'part2']);
   });
 
   it('builds a brief that carries the craft and the shape of the piece', () => {
@@ -69,9 +72,14 @@ describe('a realistic reply for this template', () => {
   const anchor = 'the same blonde designer in a bright red tracksuit inside the tall pink '
     + 'peppermint lounge, one fixed medium-wide camera';
   const poster = 'A vertical design sheet for a tall pink peppermint lounge, showing the '
-    + 'glossy candy floor, the lollipop arch and the cotton-candy ceiling, evenly lit.';
+    + 'glossy candy floor, the lollipop arch and the cotton-candy ceiling, evenly lit, '
+    + 'beside the same room bare and unfurnished before any of it is built.';
+  const before = 'The tall pink peppermint lounge before any of the work, from one fixed '
+    + 'medium-wide angle: bare grey boards, unpainted walls, no furniture, no lighting and '
+    + 'no decoration, daylight from the window wall on the left.';
   const p1 = 'Vertical 9:16 ultra-realistic extreme fast hyperlapse. One fixed medium-wide '
-    + 'camera inside a tall pink peppermint lounge. The same blonde designer in a bright red '
+    + 'camera inside a tall pink peppermint lounge that starts bare — unpainted walls, no '
+    + 'furniture, no lighting. The same blonde designer in a bright red '
     + 'tracksuit walks in carrying glowing floor rails and lays them across the boards, then '
     + 'pours a glossy candy layer over them and presses the first wall piece into place.';
   const p2 = 'Vertical 9:16 ultra-realistic extreme fast hyperlapse. One fixed medium-wide '
@@ -85,20 +93,25 @@ describe('a realistic reply for this template', () => {
       anchor,
       shots: [
         { n: 1, title: 'Poster', prompt: poster },
-        { n: 2, title: 'Part 1', prompt: p1 },
-        { n: 3, title: 'Part 2', prompt: p2 },
+        { n: 2, title: 'Empty room', prompt: before },
+        { n: 3, title: 'Part 1', prompt: p1 },
+        { n: 4, title: 'Part 2', prompt: p2 },
       ],
     }) + '\n```';
     const parsed = parseShots(reply);
-    expect(parsed.shots).toHaveLength(3);
-    expect(checkShots(parsed.shots, targets, parsed.anchor)).toEqual([]);
+    expect(parsed.shots).toHaveLength(4);
+    /* Checked as the build it is, which is how the runner checks this
+       template — structure "transform" plus the cumulative rule. */
+    expect(checkShots(parsed.shots, targets, parsed.anchor, undefined, { build: true }))
+      .toEqual([]);
   });
 
   it('catches the failure this template is famous for', () => {
     // A clip describing the poster instead of the room.
     const bad = p2.replace('mounts the remaining wall pieces', 'follows panel 3 of the storyboard');
     const problems = checkShots(
-      [{ n: 1, title: 'a', prompt: poster }, { n: 2, title: 'b', prompt: p1 }, { n: 3, title: 'c', prompt: bad }],
+      [{ n: 1, title: 'a', prompt: poster }, { n: 2, title: 'b', prompt: before },
+        { n: 3, title: 'c', prompt: p1 }, { n: 4, title: 'd', prompt: bad }],
       targets, anchor,
     );
     expect(problems.map((x) => x.code)).toContain('storyboard');
@@ -110,7 +123,8 @@ describe('a realistic reply for this template', () => {
     const panelly = 'A vertical guide poster of five numbered panels with short captions, '
       + 'each a stage of the pink peppermint lounge being built, bright and evenly lit.';
     const problems = checkShots(
-      [{ n: 1, title: 'a', prompt: panelly }, { n: 2, title: 'b', prompt: p1 }, { n: 3, title: 'c', prompt: p2 }],
+      [{ n: 1, title: 'a', prompt: panelly }, { n: 2, title: 'b', prompt: before },
+        { n: 3, title: 'c', prompt: p1 }, { n: 4, title: 'd', prompt: p2 }],
       targets, anchor,
     );
     expect(problems.filter((x) => x.shot === 1)).toEqual([]);
@@ -120,10 +134,11 @@ describe('a realistic reply for this template', () => {
     const restart = 'Extreme fast hyperlapse. A fixed camera watches an empty grey studio as '
       + 'someone walks in and begins laying equipment across the bare concrete floor.';
     const problems = checkShots(
-      [{ n: 1, title: 'a', prompt: poster }, { n: 2, title: 'b', prompt: p1 }, { n: 3, title: 'c', prompt: restart }],
+      [{ n: 1, title: 'a', prompt: poster }, { n: 2, title: 'b', prompt: before },
+        { n: 3, title: 'c', prompt: p1 }, { n: 4, title: 'd', prompt: restart }],
       targets, anchor,
     );
-    expect(problems.filter((p) => p.code === 'continuity').map((p) => p.shot)).toEqual([3]);
+    expect(problems.filter((p) => p.code === 'continuity').map((p) => p.shot)).toEqual([4]);
   });
 });
 

@@ -88,6 +88,8 @@ interface GenOpts {
   aspectRatio?: string;
   duration?: string;
   platform?: 'flow' | 'chatgpt';
+  /** 'frames' swaps the ingredient tray for Flow's Start and End slots. */
+  creationType?: 'ingredients' | 'frames';
 }
 
 const genNode = (id: string, o: GenOpts, x: number, y: number): Node => ({
@@ -104,7 +106,7 @@ const genNode = (id: string, o: GenOpts, x: number, y: number): Node => ({
       : o.model || (o.mediaType === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),
     aspectRatio: o.aspectRatio || '9:16',
     duration: o.duration || '6s',
-    creationType: 'ingredients',
+    creationType: o.creationType || 'ingredients',
     enabled: true,
     status: 'idle',
     resultUrl: null,
@@ -164,6 +166,17 @@ const iEdge = (source: string, target: string, from: 'image' | 'result' = 'resul
   sourceHandle: from, targetHandle: 'image_ref',
   type: 'default', animated: true,
   style: { stroke: '#3b82f6', strokeWidth: 2.5 },
+});
+
+/* A first-frame wire. Flow's Frames mode begins the clip INSIDE this picture
+   rather than treating it as a look reference, which is the difference between
+   a sentence asking for an empty room and a clip that starts in one. */
+const fEdge = (source: string, target: string): Edge => ({
+  id: `e_${source}_${target}_f`,
+  source, target,
+  sourceHandle: 'result', targetHandle: 'frame_start',
+  type: 'default', animated: true,
+  style: { stroke: '#a855f7', strokeWidth: 2.5 },
 });
 
 /* Continuity boilerplate — the single biggest lever on multi-shot
@@ -1878,7 +1891,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
       + 'Last Frame node holds the continuity, which is what stops Part 2 rebuilding the room.',
     category: 'Content',
     difficulty: 'Medium',
-    nodeCount: 6,
+    nodeCount: 7,
     thumbnail: '🏠',
     nodes: [
       promptNode(
@@ -1908,16 +1921,37 @@ export const BUILTIN_TEMPLATES: Template[] = [
         { label: 'Storyboard poster', mediaType: 'image', platform: 'chatgpt', aspectRatio: '9:16' },
         1000, 40,
       ),
+      /* The still this template was missing, and the reason it opened on a
+         half-finished room. Part 1 was handed the poster — a picture of the
+         FINISHED design — as its look reference, while the words asked for an
+         empty room. A picture beats a sentence, so it rendered the picture.
+         This one is the same room with nothing in it yet, drawn from the same
+         poster so the geometry and palette match, and it is wired into Part
+         1's first frame rather than its ingredients: the clip begins inside
+         it instead of being influenced by it. */
+      genNode(
+        'before',
+        { label: 'Empty room — first frame', mediaType: 'image', platform: 'chatgpt', aspectRatio: '9:16' },
+        1480, 40,
+      ),
       genNode(
         'part1',
-        { label: 'Part 1 — 10s', mediaType: 'video', platform: 'flow', aspectRatio: '9:16', duration: '10s' },
-        1480, 300,
+        {
+          label: 'Part 1 — 10s',
+          mediaType: 'video',
+          platform: 'flow',
+          aspectRatio: '9:16',
+          duration: '10s',
+          // Frames mode: the empty room IS frame one, not a hint about it.
+          creationType: 'frames',
+        },
+        1960, 300,
       ),
-      frameNode('handoff', 'Ends on → Reference 2', 1960, 300),
+      frameNode('handoff', 'Ends on → Reference 2', 2440, 300),
       genNode(
         'part2',
         { label: 'Part 2 — 10s', mediaType: 'video', platform: 'flow', aspectRatio: '9:16', duration: '10s' },
-        2440, 300,
+        2920, 300,
       ),
     ],
     edges: [
@@ -1928,12 +1962,19 @@ export const BUILTIN_TEMPLATES: Template[] = [
          is written as a continuation. Neither fact is configured anywhere —
          both are read off these wires. */
       tEdge('story', 'board'),
+      tEdge('story', 'before'),
       tEdge('story', 'part1'),
       tEdge('story', 'part2'),
-      // Reference 1: the poster holds the design for both halves.
-      iEdge('board', 'part1'),
+      // Reference 1: the poster holds the design. The empty room is drawn from
+      // it, so the two agree about geometry and palette before anything moves.
+      iEdge('board', 'before'),
       iEdge('board', 'part2'),
-      // Reference 2: the frame Part 1 ended on, so Part 2 cannot restart.
+      /* Reference 2: the empty room, as Part 1's actual first frame. Not an
+         ingredient — Frames mode starts the clip inside this picture, which is
+         the only thing that makes "it must open empty" true rather than
+         requested. */
+      fEdge('before', 'part1'),
+      // Reference 3: the frame Part 1 ended on, so Part 2 cannot restart.
       iEdge('part1', 'handoff'),
       iEdge('handoff', 'part2', 'image'),
     ],
