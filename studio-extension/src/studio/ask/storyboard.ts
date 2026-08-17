@@ -210,6 +210,68 @@ const MOTION = /\b(camera|pan|tilt|dolly|zoom|track(?:ing)?|orbit|push(?:es|ing)
  * checker below rejects all of it, and it is cheaper to say so once here than
  * to spend a repair round on it.
  */
+/**
+ * How many spoken words fit in a clip.
+ *
+ * Natural delivery is about two words a second, and every guide on Veo
+ * dialogue converges on the same budget: roughly 8–10 words at 4s, 12–15 at
+ * 6s, 15–20 at 8s. Go over and the model does not slow the scene down — it
+ * rushes the line or clips the end, which is precisely what "the talking is
+ * not realistic" looks like from the outside.
+ *
+ * A real example from a run: "This is my little secret for that
+ * super-hydrated, plump-looking glow. It feels rich, but my skin still looks
+ * fresh, not greasy." Twenty-two words in an eight-second clip that also had
+ * to show a hand movement and a turn to the light. It was always going to
+ * sound hurried.
+ *
+ * Deliberately generous at the top of each band — this is used to reject a
+ * line, and a checker that fires on a line a human would accept is worse than
+ * no checker.
+ */
+export function dialogueBudget(duration?: string): number {
+  const seconds = parseFloat(String(duration || '')) || 8;
+  return Math.max(6, Math.round(seconds * 2.5));
+}
+
+/* What counts as dialogue: an ATTRIBUTED quote.
+
+   Quotation marks alone are not enough, and a sweep over the shipped
+   templates proved it — tpl_dental_macro writes its prompt as JSON, so every
+   key ("model", "aspect_ratio", "duration") read as a spoken line and the
+   whole template failed for talking too much. A product name on a label
+   quotes the same way.
+
+   The attribution is also what the generator itself keys on: the lead-in verb
+   plus the quotes is what drives lip sync, and a line without one tends to be
+   narrated rather than spoken. So the same signal decides both questions.
+
+   Up to 40 characters between the verb and the quote leaves room for the
+   delivery — says warmly, / says, almost laughing, — without reaching into
+   the next sentence. */
+/* A literal rather than a RegExp built from strings: a backslash has to
+   survive twice through a constructor, and '\b' in a JS string is a backspace
+   rather than a word boundary \u2014 which is exactly how this matched nothing on
+   its first attempt.
+
+   The middle group allows up to 40 characters for the delivery \u2014 says warmly,
+   / says, almost laughing, \u2014 without reaching into the next sentence. Straight
+   quotes are accepted as well as curly: a model that used them still said
+   something, and the repair that fixes the envelope runs long after this. */
+const ATTRIBUTED =
+  /\b(?:says?|said|whispers?|shouts?|asks?|answers?|replies|replied|murmurs?|mutters?|exclaims?|adds|calls|yells?|sings?|tells|breathes)\b[^\u201c\u201d"]{0,40}["\u201c]([^"\u201d]{2,})["\u201d]/gi;
+
+/** The spoken words in a prompt — what is inside an attributed quote. */
+export function spokenWords(prompt: string): string[] {
+  const said = Array.from(prompt.matchAll(ATTRIBUTED)).map((m) => m[1]);
+  return said.join(' ').split(/\s+/).filter(Boolean);
+}
+
+/** How many separate attributed lines a prompt contains. */
+export function spokenLines(prompt: string): number {
+  return Array.from(prompt.matchAll(ATTRIBUTED)).length;
+}
+
 export function shotContract(
   targets: ShotTarget[], extraFields = '', wantsSpeaker = false,
   /** How many reference stills are attached to this message. */
@@ -276,6 +338,16 @@ export function shotContract(
       } else {
         notes.push(`     ${t.duration} is an extended clip: it moves through three things — what begins, what it turns into, and where it lands — written as one continuous moment, not as labelled stages.`);
       }
+      /* The word budget, said where the duration is known.
+         Natural delivery is about two words a second. Over the budget the
+         generator does not lengthen the shot — it rushes the line or clips
+         the end, and the result is the "not realistic talking" this was
+         reported as. */
+      notes.push(
+        `     If anyone speaks in this one, the whole spoken line fits in about `
+        + `${dialogueBudget(t.duration)} words. Longer and the delivery is rushed to fit `
+        + 'the clip.',
+      );
     }
     return [head, ...notes];
   });
@@ -615,6 +687,62 @@ export function checkShots(
 
     for (const rule of BANNED) {
       if (rule.re.test(p)) problems.push({ shot: n, code: rule.code, detail: `The prompt ${rule.detail}` });
+    }
+
+    /* ── Dialogue that a generator can actually speak ──
+     *
+     * Reported as "the talking is not realistic", and the research says the
+     * same thing three different ways: natural delivery is about two words a
+     * second, and past that the model does not slow the scene down — it
+     * rushes the line or clips the end.
+     *
+     * From a real run, in an eight-second clip that also had to show a hand
+     * movement and a turn to the light: "This is my little secret for that
+     * super-hydrated, plump-looking glow. It feels rich, but my skin still
+     * looks fresh, not greasy." Twenty-two words. It was never going to sound
+     * like a person talking.
+     *
+     * Only for clips, and only where the duration is known — a still has no
+     * seconds, and guessing a budget would reject lines for a limit nobody
+     * set. */
+    if (target?.media === 'video' && target?.role !== 'reference') {
+      const words = spokenWords(p);
+      const budget = dialogueBudget(target.duration);
+      if (words.length > budget) {
+        problems.push({
+          shot: n, code: 'dialogueLong',
+          detail: `has ${words.length} spoken words in a ${target.duration || '8s'} clip, `
+            + `where about ${budget} fit at a natural pace. The generator will not slow the `
+            + 'shot down to fit them — it speeds the delivery up or cuts the end off. Cut '
+            + 'the line, or move the rest into the next shot.',
+        });
+      }
+
+      /* One voice per clip. Two attributed lines inside eight seconds is a
+         scene, and the model assigns them to whichever face it prefers. */
+      if (spokenLines(p) > 1) {
+        problems.push({
+          shot: n, code: 'twoSpeakers',
+          detail: 'has more than one spoken line. A clip this short can carry one, and a '
+            + 'generator handed two decides for itself who says what. Keep one line and '
+            + 'give the reply to the next shot.',
+        });
+      }
+
+      /* A mouth too small to animate.
+         Lip sync is driven by the face, and a wide or establishing frame
+         leaves too few pixels of it — the guides are unanimous that dialogue
+         wants a medium close-up or chest-up frame. This is the one rule here
+         that reads the SHOT rather than the line, so it only fires when a
+         prompt both speaks and says it is wide. */
+      if (words.length && /\b(wide shot|wide establishing|establishing shot|extreme wide|aerial|drone shot|from across the room|full[- ]body shot)\b/i.test(p)) {
+        problems.push({
+          shot: n, code: 'dialogueTooWide',
+          detail: 'has someone speaking in a wide or establishing frame. The face is then '
+            + 'too small for the mouth to be animated and the lip sync drifts. Either frame '
+            + 'this one chest-up or medium close, or drop the line and let it be a look.',
+        });
+      }
     }
 
     if (target?.media === 'video' && target?.role !== 'reference' && !MOTION.test(p)) {
