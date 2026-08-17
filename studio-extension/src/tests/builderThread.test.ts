@@ -54,11 +54,21 @@ describe('the builder keeps its conversation', () => {
 describe('the Story node already did this, and must keep doing it', () => {
   it('threads its own repair rounds', () => {
     expect(runner).toMatch(/newChat: firstTurn \? 'auto' : 'never'/);
-    /* Matched loosely on purpose: this call now spans lines and carries the
-       reference stills too. What matters is that round 0 is the flag deciding
-       a fresh chat, not how the arguments are wrapped. */
-    expect(runner.replace(/\s+/g, ' ')).toMatch(
-      /this\.askAgent\( nodeId, platform, message, round === 0,/);
+    /* Matched loosely on purpose: this call spans lines, carries the
+       reference stills, and now also has to know whether a settings turn
+       already opened the conversation. What matters is that a fresh chat is
+       decided by round 0 and nothing else — not how it is wrapped. */
+    const flat = runner.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
+    expect(flat).toMatch(
+      /this\.askAgent\( nodeId, platform, message, round === 0[^,]*,/);
+  });
+
+  it('does not re-open the chat the settings turn already started', () => {
+    /* A Story node with nothing configured spends a turn choosing how to make
+       the piece. Opening a new chat for the prompts would throw that away and
+       pay for describing the piece twice. */
+    const flat = runner.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
+    expect(flat).toMatch(/round === 0 && !storyRun\?\.threadOpen/);
   });
 });
 

@@ -594,20 +594,45 @@ export interface ParsedReply {
   problem?: string;
 }
 
+/**
+ * The strings in a reply that might be the JSON object.
+ *
+ * Three, in the order most likely to be right: what a fence contains, the
+ * whole reply, and the widest brace span for a reply with prose either side.
+ * Shared so the second thing that reads a JSON reply cannot end up with a
+ * narrower idea of where JSON hides than the first.
+ */
+export function jsonCandidates(reply: string): string[] {
+  const text = (reply || '').trim();
+  if (!text) return [];
+  const out: string[] = [];
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) out.push(fenced[1]);
+  out.push(text);
+  const first = text.indexOf('{');
+  const last = text.lastIndexOf('}');
+  if (first !== -1 && last > first) out.push(text.slice(first, last + 1));
+  return out;
+}
+
+/** The first candidate that parses as a JSON object. */
+export function readJsonObject(reply: string): Record<string, unknown> | null {
+  for (const c of jsonCandidates(reply)) {
+    for (const attempt of [c.trim(), repairInnerQuotes(c.trim())]) {
+      try {
+        const parsed = JSON.parse(attempt);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      } catch { /* next */ }
+    }
+  }
+  return null;
+}
+
 export function parseShots(reply: string): ParsedReply {
   const text = (reply || '').trim();
   if (!text) return { shots: [], problem: 'The reply was empty.' };
 
-  const candidates: string[] = [];
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced) candidates.push(fenced[1]);
-  candidates.push(text);
-  // Widest brace span, for a reply with prose either side of the object.
-  const first = text.indexOf('{');
-  const last = text.lastIndexOf('}');
-  if (first !== -1 && last > first) candidates.push(text.slice(first, last + 1));
-
-  for (const c of candidates) {
+  for (const c of jsonCandidates(text)) {
     let parsed: any;
     try {
       parsed = JSON.parse(c.trim());

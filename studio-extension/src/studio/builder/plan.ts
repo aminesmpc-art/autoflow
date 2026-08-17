@@ -63,6 +63,8 @@ export interface PlanStep {
   cameraProgression?: string;
   audioMode?: string;
   visualPreset?: string;
+  timedBeats?: boolean;
+  avoid?: string;
 }
 
 export interface Plan {
@@ -268,6 +270,11 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
           cameraProgression: step.cameraProgression || 'dynamic',
           audioMode: step.audioMode || 'cinematic',
           visualPreset: step.visualPreset || 'liveAction',
+          /* Read because the spec documents them. A field the plan can name
+             and the node never receives is a setting the builder appears to
+             control and does not. */
+          timedBeats: !!step.timedBeats,
+          avoid: typeof step.avoid === 'string' ? step.avoid : '',
           status: 'idle',
         },
       });

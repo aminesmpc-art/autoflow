@@ -85,8 +85,12 @@ function workflow(): { nodes: Node[]; edges: Edge[] } {
   const nodes = [
     { id: 'idea', type: 'prompt', position: { x: 0, y: 0 },
       data: { type: 'prompt', label: 'Idea', text: 'a candy lounge' } },
+      /* Configured, so this file keeps testing what it is about. An
+         unconfigured Story node now spends a turn choosing its settings
+         before it writes anything — see storySettingsAsk.test.ts. */
     { id: 'story', type: 'story', position: { x: 200, y: 0 },
-      data: { type: 'story', label: 'Story', platform: 'chatgpt', mediaType: 'text' } },
+      data: { type: 'story', label: 'Story', platform: 'chatgpt', mediaType: 'text',
+        structure: 'hook' } },
     { id: 'clipA', type: 'generate', position: { x: 500, y: 0 },
       data: { type: 'generate', label: 'Part 1', mediaType: 'video', platform: 'flow',
         aspectRatio: '9:16', duration: '10s' } },

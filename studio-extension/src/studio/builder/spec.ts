@@ -117,10 +117,22 @@ export const NODE_MANUAL = `THE NODES, AND WHAT EACH IS FOR
               - cast: [ { "name": "Name", "look": "Appearance description", "role": "position/role" } ]
               - world: "Setting and environment description"
               - look: "Visual style, camera aesthetics, and lighting rules"
-              - structure: "hook" | "transform" | "loop" | "free"
-              - cameraProgression: "dynamic" | "establishingToClose" | "actionTracking" | "fixed"
+              - structure: "hook" | "transform" | "loop" | "ugcAd" | "free"
+              - cameraProgression: "dynamic" | "establishingToClose" | "actionTracking" | "propped" | "fixed"
               - audioMode: "cinematic" | "ambient" | "dialogue" | "none"
-              - visualPreset: "liveAction" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime"
+              - visualPreset: "liveAction" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime" | "none"
+              - rules: ["cumulative" | "fixedCamera" | "samePerson" | "inHand"]
+              - beats: number of story beats across the whole piece, or 0 to derive it
+              - timedBeats: true to cut each clip into "[00:00-00:02] ..." segments
+              - avoid: "what must not appear"
+            Picking these:
+              "propped" + "smartphonePOV" + "ugcAd" is the UGC set — a phone on a
+                counter, unretouched, opening on the hook. Use all three for a
+                creator ad; none of them for anything meant to look produced.
+              "transform" plus rules ["cumulative","inHand"] is the build set —
+                a time-lapse where things arrive and nothing disappears.
+              "dialogue" only when someone actually speaks on camera; "ambient"
+                for a piece with sound but no lines; "none" for silence.
             When:   Use whenever building a multi-shot story, episodic series, or
                     reusable story template where one director should coordinate
                     all scene prompts at runtime.
@@ -256,10 +268,14 @@ A step:
                 "voice": "optional Flow voice, e.g. Kore" } ],
     "world": "Setting description",
     "look": "Lighting & style description",
-    "structure": "hook" | "transform" | "loop" | "free",
-    "cameraProgression": "dynamic" | "establishingToClose" | "actionTracking" | "fixed",
+    "structure": "hook" | "transform" | "loop" | "ugcAd" | "free",
+    "cameraProgression": "dynamic" | "establishingToClose" | "actionTracking" | "propped" | "fixed",
     "audioMode": "cinematic" | "ambient" | "dialogue" | "none",
-    "visualPreset": "liveAction" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime"
+    "visualPreset": "liveAction" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime" | "none",
+    "rules": ["cumulative" | "fixedCamera" | "samePerson" | "inHand"],
+    "beats": 0,
+    "timedBeats": false,
+    "avoid": "optional — what must not appear"
   }
 
   {

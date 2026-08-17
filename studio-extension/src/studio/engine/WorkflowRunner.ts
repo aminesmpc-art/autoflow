@@ -16,11 +16,12 @@ import { bridge, type NodeExecutionConfig, type NodeResult } from './bridge';
 import { useStudioStore } from '../store';
 import { composeAskPrompt } from '../presets';
 import {
-  shotContract, parseShots, checkShots, repairMessage, summarise,
+  shotContract, parseShots, checkShots, repairMessage, summarise, readJsonObject,
   orderShotTargets, alignShots, type ShotTarget, type Shot,
 } from '../ask/storyboard';
 import {
   storyBrief, STORY_FIELDS, DEFAULT_STORY, voiceForShot, readStorySettings, isUgc, isBuild,
+  storyIsUnset, settingsAsk, readSettingsReply,
   type StorySettings,
 } from '../ask/storyPlan';
 import { runAgent, type AgentStep, type ToolOutcome } from './agent';
@@ -586,10 +587,43 @@ export class WorkflowRunner {
       /* The story settings first, then whatever extra brief the preset adds.
          Order matters: the cast and world are the fixed part, and a preset is
          craft applied on top of them. */
-      const settings: StorySettings = readStorySettings(nodeData);
+      let settings: StorySettings = readStorySettings(nodeData);
+
+      /* Nobody has configured this node, so the defaults are about to decide
+         the piece — and a default is not a decision. Ask first, in its own
+         turn, then write the answer onto the node so it shows in the dropdowns
+         and is there next run.
+
+         Its own turn rather than folded into the shot request, because the
+         settings decide what the brief SAYS. The brief cannot be written until
+         they exist. The prompts then follow in the same conversation, with the
+         choices still above them. */
+      let threadOpen = false;
+      if (storyIsUnset(nodeData)) {
+        useStudioStore.getState().updateNodeData(nodeId, {
+          status: 'running', statusNote: 'Choosing how to make it…',
+        });
+        const chosen = readSettingsReply(readJsonObject(await this.askAgent(
+          nodeId, chatPlatform(nodeData.platform), settingsAsk(prompt, targets), true,
+        )));
+        threadOpen = true;
+        if (Object.keys(chosen).length) {
+          settings = { ...settings, ...chosen };
+          useStudioStore.getState().updateNodeData(nodeId, chosen as Record<string, unknown>);
+          console.log(`[Runner] Story settings chosen: ${JSON.stringify(chosen)}`);
+        } else {
+          /* Not a failure. The defaults are still a working piece, and losing
+             a run over a settings turn that came back unusable would be worse
+             than making it on the defaults. */
+          console.warn('[Runner] Story settings: nothing usable came back, keeping the defaults');
+        }
+      }
+
       const extra = nodeData.preset ? composeAskPrompt(nodeData.preset, '', false) : '';
       const brief = storyBrief(prompt, settings, targets) + (extra ? `\n${extra}` : '');
-      return this.executeStoryboardAsk(nodeId, nodeData, brief, targets, edges, true);
+      return this.executeStoryboardAsk(
+        nodeId, nodeData, brief, targets, edges, true, { settings, threadOpen },
+      );
     }
 
     // Gather reference images from EVERY upstream image connection.
@@ -1060,7 +1094,11 @@ export class WorkflowRunner {
     /** Needed to find the stills wired into those targets. */
     edges: Edge[],
     /** Story nodes also ask for the cast, world and look, and lock them. */
-    isStory = false
+    isStory = false,
+    /* What the settings turn worked out, when there was one. Passed rather
+       than re-read off nodeData: writing the choices back replaces the node
+       object, so the snapshot this function was handed is already stale. */
+    storyRun?: { settings: StorySettings; threadOpen: boolean },
   ): Promise<NodeResult> {
     const store = useStudioStore.getState();
     const platform = chatPlatform(nodeData.platform);
@@ -1098,7 +1136,12 @@ export class WorkflowRunner {
          same conversation, so the pictures are already above it — sending
          them again would re-upload minutes of images to say nothing new. */
       const reply = await this.askAgent(
-        nodeId, platform, message, round === 0, round === 0 ? refs : undefined,
+        nodeId, platform, message,
+        /* Only if the conversation is not already open. A settings turn has
+           already introduced this piece, and starting a new chat here would
+           throw that away and pay for it twice. */
+        round === 0 && !storyRun?.threadOpen,
+        round === 0 ? refs : undefined,
       );
       const {
         shots: rawShots, anchor, story, problem,
@@ -1133,7 +1176,7 @@ export class WorkflowRunner {
          are all "shot i against target i", so a reordered reply made the check
          wrong as well as the assignment. */
       const shots = alignShots(rawShots, targets);
-      const storySettings = readStorySettings(nodeData);
+      const storySettings = storyRun?.settings || readStorySettings(nodeData);
       const problems = checkShots(
         shots, targets, identity || anchor, parsedCast,
         isStory ? { ugc: isUgc(storySettings), build: isBuild(storySettings) } : undefined,

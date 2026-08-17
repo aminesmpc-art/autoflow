@@ -519,6 +519,142 @@ export function readStorySettings(d: any): StorySettings {
   };
 }
 
+/**
+ * Whether anybody has told this Story node anything.
+ *
+ * Read off the RAW node data rather than the resolved settings, because
+ * readStorySettings fills every field in — after it runs, an untouched node and
+ * a deliberately-defaulted one are the same object. The difference matters:
+ * one is a choice and the other is an absence, and only the absence should be
+ * filled in for you.
+ *
+ * A node the builder made is never unset — plan.ts writes the four settings
+ * whatever the plan said — and neither is one from a template. It is the node
+ * you drag onto the canvas that arrives with nothing.
+ */
+export function storyIsUnset(d: any): boolean {
+  const n = d || {};
+  return !n.structure && !n.cameraProgression && !n.audioMode && !n.visualPreset
+    && !(Array.isArray(n.cast) && n.cast.length)
+    && !(Array.isArray(n.rules) && n.rules.length)
+    && !(Number(n.beats) > 0) && !n.timedBeats
+    && !String(n.world || '').trim()
+    && !String(n.look || '').trim()
+    && !String(n.avoid || '').trim();
+}
+
+/** Every setting the node can be asked to choose, as `id — name. hint` lines. */
+const choiceList = (
+  items: Array<{ id: string; name: string; hint?: string; line?: string }>,
+): string[] =>
+  items.map((x) => `    "${x.id}" — ${x.name}. ${x.hint || x.line || ''}`.trimEnd());
+
+/**
+ * The turn before the prompts, when nothing has been configured.
+ *
+ * A Story node dragged onto the canvas runs on the defaults — Director
+ * Coverage, Layered Cinematic Audio, no visual preset — and those defaults are
+ * a decision about the piece that nobody made. They are also, for a lot of
+ * ideas, the wrong one: a phone review shot as directed coverage with a wide
+ * establishing opener is the exact combination that makes UGC look staged.
+ *
+ * So the director is asked to choose first, in its own turn. Separate rather
+ * than folded into the shot request for two reasons: the settings decide what
+ * the brief SAYS, so they have to exist before it is written; and a model
+ * asked for eleven settings and five prompts in one reply does both worse.
+ *
+ * The answer is written back onto the node, so it appears in the dropdowns and
+ * is there next run — chosen once rather than re-decided every time.
+ */
+export function settingsAsk(idea: string, targets: ShotTarget[]): string {
+  const shots = targets.map((t, i) => {
+    const kind = t.media === 'video' ? 'a moving clip' : t.media === 'image' ? 'a still' : 'text';
+    const spec = [t.aspectRatio, t.duration].filter(Boolean).join(', ');
+    return `  ${i + 1}. ${t.label || `Shot ${i + 1}`} — ${kind}${spec ? ` (${spec})` : ''}`;
+  });
+
+  return [
+    'Before writing anything, decide how this piece should be made.',
+    '',
+    'THE IDEA',
+    idea.trim() || '(none given)',
+    '',
+    `IT IS BEING MADE AS ${targets.length} SHOT${targets.length === 1 ? '' : 'S'}`,
+    ...shots,
+    '',
+    'Choose one value for each setting below. Choose for THIS idea — the',
+    'defaults suit a directed short film, and a lot of ideas are not one.',
+    '',
+    '  structure — the shape of the piece',
+    ...choiceList(STRUCTURES),
+    '  cameraProgression — how the camera behaves across the shots',
+    ...choiceList(CAMERA_PROGRESSIONS),
+    '  audioMode — what is heard',
+    ...choiceList(AUDIO_MODES),
+    '  visualPreset — the look ("none" means you describe it yourself in "look")',
+    ...choiceList(VISUAL_PRESETS),
+    '  rules — any that this piece needs, as a list. Empty list if none apply.',
+    ...choiceList(RULES),
+    '  timedBeats — true only for a shot with a beginning and an end that has to',
+    '    move through it. False for a held mood, where cutting eight seconds into',
+    '    four instructions produces four half-seconds of nothing.',
+    '  avoid — anything that must not appear, or "" if nothing.',
+    '',
+    'Reply with ONLY this JSON object. No prose, no code fence, no explanation.',
+    '{',
+    '  "structure": "...",',
+    '  "cameraProgression": "...",',
+    '  "audioMode": "...",',
+    '  "visualPreset": "...",',
+    '  "rules": [],',
+    '  "timedBeats": false,',
+    '  "avoid": ""',
+    '}',
+  ].join('\n');
+}
+
+/**
+ * Read the settings reply, keeping only what exists.
+ *
+ * Anything unrecognised is dropped rather than corrected. A model that invents
+ * "handheldVlog" has told us nothing usable, and writing it onto the node
+ * would put a value in a dropdown that cannot render it — the control would
+ * show blank and the brief would fall back to the default anyway, with nobody
+ * able to see why.
+ */
+export function readSettingsReply(
+  obj: Record<string, unknown> | null,
+): Partial<StorySettings> {
+  if (!obj) return {};
+  const out: Partial<StorySettings> = {};
+  const pick = <T extends string>(v: unknown, ids: readonly string[]): T | undefined =>
+    typeof v === 'string' && ids.includes(v) ? (v as T) : undefined;
+
+  const structure = pick<StructureId>(obj.structure, STRUCTURES.map((x) => x.id));
+  if (structure) out.structure = structure;
+
+  const camera = pick<CameraProgressionId>(
+    obj.cameraProgression, CAMERA_PROGRESSIONS.map((x) => x.id));
+  if (camera) out.cameraProgression = camera;
+
+  const audio = pick<AudioModeId>(obj.audioMode, AUDIO_MODES.map((x) => x.id));
+  if (audio) out.audioMode = audio;
+
+  const preset = pick<VisualPresetId>(obj.visualPreset, VISUAL_PRESETS.map((x) => x.id));
+  if (preset) out.visualPreset = preset;
+
+  if (Array.isArray(obj.rules)) {
+    const known = RULES.map((r) => r.id) as string[];
+    const rules = obj.rules.filter((r): r is RuleId => typeof r === 'string' && known.includes(r));
+    if (rules.length) out.rules = rules;
+  }
+
+  if (typeof obj.timedBeats === 'boolean') out.timedBeats = obj.timedBeats;
+  if (typeof obj.avoid === 'string' && obj.avoid.trim()) out.avoid = obj.avoid.trim();
+
+  return out;
+}
+
 /** Seconds in a target, or 0 for a still. */
 function secondsOf(t: ShotTarget): number {
   const m = /([\d.]+)\s*s/i.exec(t.duration || '');
