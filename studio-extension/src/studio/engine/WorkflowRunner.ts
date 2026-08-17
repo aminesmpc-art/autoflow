@@ -596,7 +596,7 @@ export class WorkflowRunner {
       };
       const extra = nodeData.preset ? composeAskPrompt(nodeData.preset, '', false) : '';
       const brief = storyBrief(prompt, settings, targets) + (extra ? `\n${extra}` : '');
-      return this.executeStoryboardAsk(nodeId, nodeData, brief, targets, true);
+      return this.executeStoryboardAsk(nodeId, nodeData, brief, targets, edges, true);
     }
 
     // Gather reference images from EVERY upstream image connection.
@@ -714,7 +714,7 @@ export class WorkflowRunner {
          Zero targets means the node feeds a person or another writer, not a
          generator — there is no format to hold it to, so it stays free text. */
       if (targets.length >= 1) {
-        return this.executeStoryboardAsk(nodeId, nodeData, askPrompt, targets);
+        return this.executeStoryboardAsk(nodeId, nodeData, askPrompt, targets, edges);
       }
     }
 
@@ -1015,11 +1015,57 @@ export class WorkflowRunner {
    * repairs would produce broken clips at full price, and "ran and wasted your
    * generations" is worse than "stopped and said why".
    */
+  /**
+   * The stills the director should look at before writing.
+   *
+   * Until now the contract told it "1 reference image attached" — a COUNT.
+   * It has never seen the face it is writing about, so every description of
+   * that character was a paraphrase of the `look` field, and the drift that
+   * paraphrase causes is the exact thing `look` exists to prevent.
+   *
+   * Google's own Veo guidance is to do both: supply the reference images AND
+   * describe them, referring to them explicitly ("Using the provided images
+   * for the detective..."). Flow's own troubleshooting says the same in the
+   * negative — a blurry reference produces an inconsistent character however
+   * good the words are.
+   *
+   * Deduplicated by content, because one character still wired into sixteen
+   * shots is ONE picture and uploading it sixteen times would add minutes to
+   * every story. Capped for the same reason: past a handful the upload costs
+   * more than the extra faces are worth, and a chat has its own attachment
+   * limits.
+   */
+  private storyReferences(targets: ShotTarget[], edges: Edge[], max = 4): string[] {
+    const PORTS = ['image_ref', 'image', 'frame_start', 'frame_end'];
+    const seen = new Set<string>();
+    const out: string[] = [];
+
+    for (const t of targets) {
+      for (const [handle, sources] of getNodeInputs(t.id, edges)) {
+        if (!PORTS.includes(handle)) continue;
+        for (const src of sources) {
+          const r = this.nodeResults.get(src);
+          /* Data URLs only. A tile id or a Flow URL means nothing to a chat
+             window, and referenceUrl is preferred because for a clip that is
+             the LAST frame — where the next shot actually starts. */
+          const url = [r?.referenceUrl, r?.imageUrl]
+            .find((u) => typeof u === 'string' && u.startsWith('data:')) || '';
+          if (!url || seen.has(url) || out.length >= max) continue;
+          seen.add(url);
+          out.push(url);
+        }
+      }
+    }
+    return out;
+  }
+
   private async executeStoryboardAsk(
     nodeId: string,
     nodeData: any,
     brief: string,
     targets: ShotTarget[],
+    /** Needed to find the stills wired into those targets. */
+    edges: Edge[],
     /** Story nodes also ask for the cast, world and look, and lock them. */
     isStory = false
   ): Promise<NodeResult> {
@@ -1033,8 +1079,16 @@ export class WorkflowRunner {
     const wantsSpeaker = isStory && ((nodeData?.cast || []) as any[])
       .some((c) => c?.voice && c.voice !== 'none');
 
+    /* Gathered before the first ask, so the contract can say they are there.
+       Telling a model "images are attached" when none are produces prompts
+       that refer confidently to pictures nobody sent. */
+    const refs = this.storyReferences(targets, edges);
+    if (refs.length) {
+      console.log(`[Runner] Storyboard: showing the director ${refs.length} reference still(s)`);
+    }
+
     let message = brief + '\n'
-      + shotContract(targets, isStory ? STORY_FIELDS : '', wantsSpeaker);
+      + shotContract(targets, isStory ? STORY_FIELDS : '', wantsSpeaker, refs.length);
     let best: { shots: Shot[]; problems: number; story: string } | null = null;
 
     for (let round = 0; round <= MAX_REPAIRS; round++) {
@@ -1047,7 +1101,12 @@ export class WorkflowRunner {
           : `Fixing the format (${round} of ${MAX_REPAIRS})…`,
       });
 
-      const reply = await this.askAgent(nodeId, platform, message, round === 0);
+      /* Attached on the first turn only. A repair is the next message in the
+         same conversation, so the pictures are already above it — sending
+         them again would re-upload minutes of images to say nothing new. */
+      const reply = await this.askAgent(
+        nodeId, platform, message, round === 0, round === 0 ? refs : undefined,
+      );
       const {
         shots: rawShots, anchor, story, problem,
         cast: parsedCast, world: parsedWorld, look: parsedLook,
@@ -1164,6 +1223,12 @@ export class WorkflowRunner {
       resultText: combined,
       // Shown on the Story node as a tick beside each target it covered.
       shotTitles: targets.map((t, i) => t.label || `Shot ${i + 1}`),
+      /* And the prompt each target actually received, in the targets' order —
+         which is the order alignShots put them in, not the order they arrived.
+         The node can then show WHICH text landed on WHICH clip, and that
+         pairing is the thing that was wrong for a whole run without anybody
+         being able to see it. */
+      shotPrompts: best.shots.map((sh) => sh.prompt),
     });
     return { tileId: '', text: combined };
   }

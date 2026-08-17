@@ -106,7 +106,8 @@ describe('the wiring around it', () => {
        no reason, and every extra key is another chance to break the JSON. */
     expect(contract).toMatch(/wantsSpeaker \? ', "speaker"/);
     expect(runner).toMatch(/const wantsSpeaker = isStory &&/);
-    expect(runner).toMatch(/shotContract\(targets, isStory \? STORY_FIELDS : '', wantsSpeaker\)/);
+    expect(runner).toMatch(
+      /shotContract\(targets, isStory \? STORY_FIELDS : '', wantsSpeaker, refs\.length\)/);
   });
 
   it('a voice set by hand on a node outranks the story', () => {

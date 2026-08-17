@@ -53,6 +53,13 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
   const story = readStory(d);
   const targets = orderShotTargets(id, nodes as any, edges as any);
   const written: string[] = Array.isArray(d.shotTitles) ? d.shotTitles : [];
+  /* The prompt each target received, in the targets' order. Kept beside the
+     titles rather than in the combined resultText, because the question worth
+     answering on the canvas is not "what did it write" but "what did THIS
+     clip get" — and a misalignment between the two is invisible in a single
+     block of text. */
+  const prompts: string[] = Array.isArray(d.shotPrompts) ? d.shotPrompts : [];
+  const [openShot, setOpenShot] = useState<number | null>(null);
   const set = (patch: Partial<StorySettings>) => updateNodeData(id, patch as any);
 
   const setCast = (i: number, patch: Partial<CastMember>) => {
@@ -126,9 +133,31 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                       cont
                     </span>
                   )}
-                  {written[i] && <span className="sn-story__done" title="Prompt generated">✓</span>}
+                  {written[i] && (
+                    prompts[i]
+                      ? <button
+                          type="button"
+                          className="sn-story__done nodrag"
+                          title={openShot === i ? 'Hide the prompt' : 'Show the prompt this shot got'}
+                          onClick={() => setOpenShot(openShot === i ? null : i)}
+                        >
+                          {openShot === i ? '▾' : '✓'}
+                        </button>
+                      : <span className="sn-story__done" title="Prompt generated">✓</span>
+                  )}
                 </div>
               ))}
+              {openShot !== null && prompts[openShot] && (
+                <div className="sn-story__shottext nodrag">
+                  <div className="sn-story__shottext-head">
+                    {targets[openShot]?.label || `Shot ${openShot + 1}`}
+                    <span className="sn-story__meta">
+                      {prompts[openShot].length} chars
+                    </span>
+                  </div>
+                  {prompts[openShot]}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -201,6 +230,24 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                     <option key={x.id} value={x.id}>{x.name}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* Timestamp prompting, straight out of Google's Veo guide: an
+                  eight-second clip told what happens at [00:00-00:02] moves
+                  through a moment instead of describing a tableau and looping
+                  it. Off by default because it fights a held mood — four
+                  instructions inside eight seconds is four half-seconds of
+                  nothing. */}
+              <div className="sn-field">
+                <label className="sn-field__label">Time inside each clip</label>
+                <label className="sn-story__check nodrag" title="Break each clip into [00:00-00:02] segments">
+                  <input
+                    type="checkbox"
+                    checked={!!story.timedBeats}
+                    onChange={(e) => set({ timedBeats: e.target.checked })}
+                  />
+                  <span>Timed beats — [00:00-00:02] segments per clip</span>
+                </label>
               </div>
 
               <div className="sn-field">
@@ -374,6 +421,22 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 value={story.world}
                 placeholder="Setting, atmosphere, and environmental context"
                 onChange={(e) => set({ world: e.target.value })}
+              />
+            </div>
+
+            {/* Google is explicit that a bare negation tends to summon the thing
+                it names — "no buildings" puts buildings in — and that the fix is
+                to state the absence as part of the scene. The user types what
+                they do not want; the brief carries the rephrasing instruction
+                so nobody has to know the trick. */}
+            <div className="sn-story__section">
+              <div className="sn-story__section-head"><span>Must not appear</span></div>
+              <textarea
+                className="sn-story__area nodrag"
+                rows={2}
+                value={story.avoid || ''}
+                placeholder="Things to keep out of every shot — text on screen, other people, modern cars"
+                onChange={(e) => set({ avoid: e.target.value })}
               />
             </div>
 

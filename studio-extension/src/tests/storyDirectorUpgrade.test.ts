@@ -48,9 +48,13 @@ describe('Upgraded Story Director System', () => {
 
     // Verify Audio Layer
     expect(brief).toContain('AUDIO & SOUND DESIGN — Layered Cinematic Audio');
-    expect(brief).toContain('[Ambience/Environment]');
-    expect(brief).toContain('[Foley/SFX]');
-    expect(brief).toContain('[Dialogue/Vocalization]');
+    /* Updated when the audio guidance was rewritten to Google's documented
+       wording. These three bracket labels were ours; the guide asks for
+       "Ambient noise:" and "SFX:" as separate sentences with the line in
+       quotation marks, and that is what a model trained on it acts on. */
+    expect(brief).toContain('Ambient noise: ');
+    expect(brief).toContain('SFX: ');
+    expect(brief).toContain('attributed and in quotation marks');
 
     // Verify Duration-Aware Pacing
     expect(brief).toContain('BEATS —');

@@ -99,10 +99,15 @@ export const AUDIO_MODES: AudioModeOption[] = [
     name: 'Layered Cinematic Audio',
     hint: 'Full sound design layer with room tone, physical foley, and spoken lines.',
     guide: [
-      'NATIVE SOUND DESIGN: Include a dedicated "Audio:" section at the end of each video prompt with 3 distinct sound layers:',
-      '  1. [Ambience/Environment]: (e.g. "Audio: Quiet kitchen room tone, gentle rain on glass")',
-      '  2. [Foley/SFX]: (e.g. "distinct clicking claws, jar lid squeak, sudden sizzle")',
-      '  3. [Dialogue/Vocalization]: Character speech in quotes or creature vocalizations (e.g. "whispers: \'Look at that\', playful squeak").',
+      /* The prefixes are Google's, not ours. Its Veo guide asks for "SFX:" and
+         "Ambient noise:" as separate sentences, with dialogue in quotation
+         marks — we had invented one "Audio:" heading with three numbered
+         layers stacked under it. Close enough to look right, and not the
+         wording the model was trained to act on. */
+      'SOUND: end each video prompt with three separate audio sentences, in this order:',
+      '  1. "Ambient noise: ..." — the room or the weather (e.g. "Ambient noise: quiet kitchen room tone, rain on glass")',
+      '  2. "SFX: ..." — the physical sounds the action makes (e.g. "SFX: clicking claws, a jar lid squeaking, a sudden sizzle")',
+      '  3. The line itself, attributed and in quotation marks (e.g. She whispers, "Look at that.")',
     ],
   },
   {
@@ -110,7 +115,9 @@ export const AUDIO_MODES: AudioModeOption[] = [
     name: 'Environment & Foley',
     hint: 'Atmospheric room tone, footsteps, and physical interactions.',
     guide: [
-      'NATIVE SOUND DESIGN: Include an "Audio:" note with environmental tone and physical interaction sounds (foley, weather, mechanical clicks). No spoken dialogue.',
+      'SOUND: end each video prompt with "Ambient noise: ..." for the room or weather and',
+      '"SFX: ..." for the physical sounds the action makes. Separate sentences, both of them.',
+      'Nobody speaks — no dialogue, no voice-over, no whispering.',
     ],
   },
   {
@@ -118,7 +125,10 @@ export const AUDIO_MODES: AudioModeOption[] = [
     name: 'Dialogue & Voice',
     hint: 'Clear spoken character lines with delivery notes.',
     guide: [
-      'NATIVE SOUND DESIGN: Include an "Audio:" section specifying crisp spoken character lines in quotes with emotional delivery tags (e.g. "Audio: Character says urgently: \'We have to leave now.\'").',
+      'SOUND: give each shot one spoken line, written the way Veo expects it —',
+      'attributed, in quotation marks, with the delivery inside the attribution:',
+      '  She says urgently, "We have to leave now."',
+      'One line per shot. Two people talking inside eight seconds is a scene, not a shot.',
     ],
   },
   {
@@ -192,6 +202,30 @@ export interface StorySettings {
   audioMode?: AudioModeId;
   /** Visual style preset. */
   visualPreset?: VisualPresetId;
+  /**
+   * Break each clip into timed segments — "[00:00-00:02] ...".
+   *
+   * Google's own Veo guide calls this timestamp prompting and gives it for
+   * clips up to eight seconds. It is the difference between a shot that holds
+   * one moment and a shot that MOVES through one: without it an eight-second
+   * clip tends to describe a tableau and then loop it.
+   *
+   * Off by default. It suits a shot with a beginning and an end — a hand
+   * reaching, a reveal — and works against a held mood, where cutting the
+   * eight seconds into four instructions produces four half-seconds of
+   * nothing.
+   */
+  timedBeats?: boolean;
+  /**
+   * What must not appear.
+   *
+   * Google is explicit that a negation works better stated as a positive
+   * absence: "a desolate landscape with no buildings or roads" rather than
+   * "no buildings". The brief passes this through with that instruction
+   * attached, so what the user types plainly comes out phrased the way the
+   * model actually obeys.
+   */
+  avoid?: string;
 }
 
 export type RuleId = 'cumulative' | 'fixedCamera' | 'samePerson' | 'inHand';
@@ -369,6 +403,38 @@ export function storyBrief(
   } else {
     out.push('LOOK — decide the palette, lens and lighting, apply it to all shots, and');
     out.push('return it in the "look" field.');
+    out.push('');
+  }
+
+  /* What must not be in it.
+     Written as a presence rather than an absence, which is Google's own
+     guidance and not a style preference: "a desolate landscape with no
+     buildings or roads" lands, "no buildings" often puts buildings in. The
+     user types the thing they do not want and this asks for the rephrasing,
+     so nobody has to know the trick. */
+  if (s.avoid && s.avoid.trim()) {
+    out.push('MUST NOT APPEAR');
+    out.push(`  ${s.avoid.trim()}`);
+    out.push('  Write these as things the scene is WITHOUT, inside the description —');
+    out.push('  "an empty road with no cars or people" — never as a bare "no cars".');
+    out.push('  A bare negation tends to summon the thing it names.');
+    out.push('');
+  }
+
+  /* Timestamped beats.
+     Google's Veo guide gives this for clips up to eight seconds, and it is
+     what separates a shot that MOVES through a moment from one that describes
+     a tableau and loops it. Only offered for clips — a still has no seconds
+     to divide. */
+  if (s.timedBeats && targets.some((t) => t.media === 'video')) {
+    out.push('TIME INSIDE EACH CLIP');
+    out.push("  Break every clip prompt into timed segments, in Veo's own notation:");
+    out.push('    [00:00-00:02] what happens first');
+    out.push('    [00:02-00:05] what happens next');
+    out.push('    [00:05-00:08] where it lands');
+    out.push("  Cover the clip's whole length and no more — a segment past the end is");
+    out.push('  an instruction the generator cannot obey. Two to four segments; more');
+    out.push('  than that in eight seconds is a trailer, not a shot.');
     out.push('');
   }
 

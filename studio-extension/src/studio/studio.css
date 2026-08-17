@@ -2382,6 +2382,49 @@ video.sn-media__img { object-fit: contain; background: var(--canvas); cursor: de
 }
 .sn-story__meta { flex: none; color: var(--text-3); }
 .sn-story__done { flex: none; color: var(--ok); font-weight: 700; }
+/* The tick is a button when there is a prompt behind it to read. Same colour
+   and weight so the row does not change shape when a run finishes — only the
+   cursor says it can be opened. */
+button.sn-story__done {
+  border: 0;
+  background: none;
+  padding: 0 var(--s-1);
+  font: inherit;
+  font-weight: 700;
+  color: var(--ok);
+  cursor: pointer;
+  border-radius: var(--r-chip);
+}
+button.sn-story__done:hover { background: var(--ok-16); }
+button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-canvas); }
+
+/* The prompt this shot actually received.
+   Monospace and wrapped: it is read to compare against the shot beside it,
+   and a proportional font makes two similar prompts look identical. */
+.sn-story__shottext {
+  margin-top: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  max-height: 260px;
+  overflow-y: auto;
+  border-radius: var(--r-ctrl);
+  border-left: 3px solid var(--n-prompt);
+  background: var(--sunken);
+  color: var(--text-2);
+  font-size: var(--t-micro);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+.sn-story__shottext-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  margin-bottom: var(--s-1);
+  color: var(--text);
+  font-weight: 600;
+}
 .sn-story__error {
   margin-top: var(--s-2);
   padding: var(--s-2) var(--s-3);

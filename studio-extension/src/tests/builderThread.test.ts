@@ -54,7 +54,11 @@ describe('the builder keeps its conversation', () => {
 describe('the Story node already did this, and must keep doing it', () => {
   it('threads its own repair rounds', () => {
     expect(runner).toMatch(/newChat: firstTurn \? 'auto' : 'never'/);
-    expect(runner).toMatch(/this\.askAgent\(nodeId, platform, message, round === 0\)/);
+    /* Matched loosely on purpose: this call now spans lines and carries the
+       reference stills too. What matters is that round 0 is the flag deciding
+       a fresh chat, not how the arguments are wrapped. */
+    expect(runner.replace(/\s+/g, ' ')).toMatch(
+      /this\.askAgent\( nodeId, platform, message, round === 0,/);
   });
 });
 

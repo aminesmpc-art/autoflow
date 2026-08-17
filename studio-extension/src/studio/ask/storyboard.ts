@@ -165,6 +165,8 @@ const MOTION = /\b(camera|pan|tilt|dolly|zoom|track(?:ing)?|orbit|push(?:es|ing)
  */
 export function shotContract(
   targets: ShotTarget[], extraFields = '', wantsSpeaker = false,
+  /** How many reference stills are attached to this message. */
+  attached = 0,
 ): string {
   /* Each target described by what it is configured to do, not just what kind
      of thing it is. A writer that knows the node is 9:16, ten seconds long and
@@ -290,6 +292,26 @@ export function shotContract(
     '  ]',
     '}',
     '',
+    /* Google's own Veo guidance is to do BOTH: supply the reference images and
+       describe what is in them, referring to them explicitly — "Using the
+       provided images for the detective, the woman, and the office setting…".
+       Flow's troubleshooting says the same from the other side: a reference
+       image alone does not hold a character together, and neither does a
+       description alone.
+
+       So the pictures do not replace the look field, they anchor it. Said
+       only when something really is attached: a model told to look at images
+       that are not there writes confidently about pictures nobody sent. */
+    ...(attached ? [
+      `The ${attached} image${attached === 1 ? '' : 's'} attached to this message `
+      + `${attached === 1 ? 'is' : 'are'} the reference still${attached === 1 ? '' : 's'} `
+      + 'these shots are built from — the characters and places as they actually look.',
+      'Look at them before you write. Describe what you can SEE in them, not what',
+      'you would have imagined: the real hair, the real clothing, the real room.',
+      'Where a shot uses one, say so in its prompt the way Flow expects — "the',
+      'woman from the reference image" — so the generator ties the two together.',
+      '',
+    ] : []),
     '"cast" lists only the characters who actually appear in that shot, by',
     'name. It is how the check knows the moon scene is not missing the',
     'delivery man — it knows he was never in it.',
