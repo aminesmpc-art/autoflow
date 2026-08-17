@@ -240,6 +240,18 @@ describe('the engine checks the tray before setting a voice', () => {
     expect(apply).toMatch(/findLoadedIngredients\(\)\.length/);
   });
 
+  it('waits for the tray rather than sampling it once', () => {
+    /* This is the whole bug the first version shipped with. APPLY_VOICE runs
+       immediately after the images are attached, and a decoded thumbnail is
+       not instant — so a single sample answered "empty", the voice was
+       skipped, and the clip came back mute with the image plainly in the
+       tray. Intermittent by construction: it depended on how fast one
+       thumbnail decoded, so it hit one node in a run and not the others.
+
+       A check written to prevent a silent failure was causing one. */
+    expect(apply).toMatch(/await waitForIngredients\(1, 15_000\)/);
+  });
+
   it('checks it before opening the menu, not after', () => {
     /* Opening the dialog, switching tab, typing a name and clicking a row is
        several seconds of work per node for a voice that cannot apply. */

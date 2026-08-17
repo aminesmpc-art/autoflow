@@ -1826,7 +1826,22 @@ export class AutomationEngine {
      * nothing to recover from — but the run has to be able to say why the clip
      * came back silent, because that is the one thing Flow will not tell it.
      */
-    const attached = findLoadedIngredients().length;
+    /* WAIT for it, do not sample it once.
+     *
+     * This ran immediately after ATTACH_INGREDIENT_IMAGES and asked the tray a
+     * single question, and findLoadedIngredients requires the chip's thumbnail
+     * to have DECODED — img.complete && naturalWidth > 0. A moment after
+     * attaching it usually has not, so the answer was "the tray is empty",
+     * the voice was skipped, and the clip came back mute with an image
+     * plainly sitting in the tray.
+     *
+     * Intermittent by construction: whether it happened depended on how fast
+     * one thumbnail decoded, which is why it hit one node in a run and not
+     * the others. A check meant to prevent a silent failure was causing one.
+     */
+    const attached = (await waitForIngredients(1, 15_000))
+      ? findLoadedIngredients().length
+      : 0;
     if (attached === 0) {
       this.log('warn',
         `Voice "${voiceName}" skipped — Flow's ingredient tray is empty, and an audio `
