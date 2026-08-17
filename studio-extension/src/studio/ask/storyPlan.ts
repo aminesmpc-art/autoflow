@@ -468,8 +468,17 @@ export function storyBrief(
   }
 
   out.push(`BEATS — ${beats} across the whole piece, distributed over the shots below in`);
-  out.push('proportion to their length. A 4s shot gets a single punchy action; a 6-8s shot gets');
-  out.push('a 2-stage build; a 10s shot gets a 3-stage progression (Setup ➜ Escalation ➜ Payoff).');
+  out.push('proportion to their length. A 4s shot holds one action. A 6-8s shot has an');
+  out.push('action and the reaction to it. A 10s shot moves through three: what begins,');
+  out.push('what it turns into, and where it lands.');
+  /* Said because the last version was not. Handed "Setup ➜ Escalation ➜
+     Payoff", a model writes "Setup: she holds the jar. Escalation: she dabs
+     it on." verbatim into the prompt, and the generator receives three words
+     that are not in the scene. Naming the shape without naming the labels is
+     half the fix; saying so outright is the other half. */
+  out.push('Write that as one continuous description. "Setup", "Escalation", "Climax"');
+  out.push('and "Payoff" are how this brief talks about shape — they are not words that');
+  out.push('belong in a prompt, and a generator handed them will try to render them.');
   out.push('');
 
   return out.join('\n');

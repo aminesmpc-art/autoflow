@@ -135,6 +135,38 @@ const BANNED: Array<{ code: string; re: RegExp; detail: string }> = [
     detail: 'still contains a placeholder to fill in. Replace it with the real detail.',
   },
   {
+    /* The brief's own vocabulary, typed into the generator.
+       From a live run: "...raw and unedited UGC style. Setup: She holds the
+       jar up to the camera... Escalation: She dabs the cream... Climax: She
+       gently rubs it in." Those three words are how the brief TALKS ABOUT
+       shape — they are not in the scene, and a generator handed them either
+       renders them as text or spends attention on them.
+
+       The brief invited it by saying "write a 3-stage progression
+       (Setup ➜ Escalation ➜ Payoff)", which has since been reworded. This is
+       the net under that: a model asked for three stages will sometimes label
+       them however it is asked.
+
+       Matched only as a LABEL — capitalised and followed by a colon — so a
+       sentence that happens to say "the setup of the room" is untouched. */
+    code: 'stageLabels',
+    re: /(^|[\s.,;—-])(setup|escalation|climax|payoff|stage\s*\d+|beat\s*\d+|part\s*\d+)\s*:/i,
+    detail: 'labels its parts ("Setup:", "Escalation:", "Climax:"). Those words are how '
+      + 'the brief describes shape, not things in the scene — the generator types them in '
+      + 'literally. Write the whole shot as one continuous description.',
+  },
+  {
+    /* Same fault, in the audio section. Our own older guidance asked for
+       "1. [Ambience/Environment]: ..." and models copied the brackets in
+       verbatim. Google's documented prefixes — "Ambient noise:" and "SFX:" —
+       ARE meant to appear, so only the bracketed layer names are banned. */
+    code: 'audioLabels',
+    re: /\[\s*(ambience|ambient|foley|sfx|dialogue|vocalization|vocalisation|environment)[^\]]*\]/i,
+    detail: 'contains a bracketed audio layer label like "[Foley/SFX]". Those brackets are '
+      + 'from the instructions, not from the scene. Write the sound as plain sentences — '
+      + '"Ambient noise: ...", "SFX: ...", and the spoken line in quotation marks.',
+  },
+  {
     code: 'editingJargon',
     re: /\b(cut to|camera cuts to|fade in|fade out|scene transition|dissolve to|split screen|wipes to)\b/i,
     detail: 'uses video-editing jargon like "cut to" or "fade in". Single-take diffusion models glitch on these — describe one continuous uninterrupted shot.',
@@ -225,9 +257,9 @@ export function shotContract(
       if (durSec <= 4) {
         notes.push(`     ${t.duration} is a fast clip: write ONE single punchy action or reaction beat.`);
       } else if (durSec <= 8) {
-        notes.push(`     ${t.duration} is a standard clip: write a 2-stage build (action ➜ immediate reaction/escalation).`);
+        notes.push(`     ${t.duration} is a standard clip: one action and the reaction it causes, described as one continuous moment.`);
       } else {
-        notes.push(`     ${t.duration} is an extended clip: write a 3-stage progression (setup ➜ escalation ➜ dramatic climax/twist).`);
+        notes.push(`     ${t.duration} is an extended clip: it moves through three things — what begins, what it turns into, and where it lands — written as one continuous moment, not as labelled stages.`);
       }
     }
     return [head, ...notes];

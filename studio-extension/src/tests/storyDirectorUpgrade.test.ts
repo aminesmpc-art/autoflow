@@ -64,12 +64,16 @@ describe('Upgraded Story Director System', () => {
   it('generates duration-aware micro-pacing notes inside shotContract', () => {
     const contract = shotContract(mockTargets);
 
-    // 4s shot gets single punchy beat note
+    /* The wording changed, and this test was pinning the cause of a bug.
+       "write a 3-stage progression (setup ➜ escalation ➜ climax)" is read by a
+       model as three labels to write down, and it did exactly that in a live
+       run: "Setup: She holds the jar... Escalation: She dabs the cream...".
+       The shape is still asked for; the label words are not handed over. */
     expect(contract).toContain('4s is a fast clip: write ONE single punchy action or reaction beat.');
-    // 6s shot gets 2-stage build note
-    expect(contract).toContain('6s is a standard clip: write a 2-stage build (action ➜ immediate reaction/escalation).');
-    // 10s shot gets 3-stage progression note
-    expect(contract).toContain('10s is an extended clip: write a 3-stage progression (setup ➜ escalation ➜ dramatic climax/twist).');
+    expect(contract).toContain('6s is a standard clip: one action and the reaction it causes');
+    expect(contract).toContain('what begins, what it turns into, and where it lands');
+    expect(contract).toContain('not as labelled stages');
+    expect(contract).not.toContain('setup ➜ escalation ➜');
   });
 
   it('catches and rejects video-editing jargon (cut to, fade in, split screen) in checkShots', () => {
