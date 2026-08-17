@@ -107,7 +107,7 @@ export const AUDIO_MODES: AudioModeOption[] = [
       'SOUND: end each video prompt with three separate audio sentences, in this order:',
       '  1. "Ambient noise: ..." — the room or the weather (e.g. "Ambient noise: quiet kitchen room tone, rain on glass")',
       '  2. "SFX: ..." — the physical sounds the action makes (e.g. "SFX: clicking claws, a jar lid squeaking, a sudden sizzle")',
-      '  3. The line itself, attributed and in quotation marks (e.g. She whispers, "Look at that.")',
+      '  3. The line itself, attributed and in curly quotes (e.g. She whispers, “Look at that.”)',
     ],
   },
   {
@@ -126,8 +126,8 @@ export const AUDIO_MODES: AudioModeOption[] = [
     hint: 'Clear spoken character lines with delivery notes.',
     guide: [
       'SOUND: give each shot one spoken line, written the way Veo expects it —',
-      'attributed, in quotation marks, with the delivery inside the attribution:',
-      '  She says urgently, "We have to leave now."',
+      'attributed, in curly quotes, with the delivery inside the attribution:',
+      '  She says urgently, “We have to leave now.”',
       'One line per shot. Two people talking inside eight seconds is a scene, not a shot.',
     ],
   },

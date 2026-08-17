@@ -54,7 +54,7 @@ describe('Upgraded Story Director System', () => {
        quotation marks, and that is what a model trained on it acts on. */
     expect(brief).toContain('Ambient noise: ');
     expect(brief).toContain('SFX: ');
-    expect(brief).toContain('attributed and in quotation marks');
+    expect(brief).toContain('attributed and in curly quotes');
 
     // Verify Duration-Aware Pacing
     expect(brief).toContain('BEATS —');

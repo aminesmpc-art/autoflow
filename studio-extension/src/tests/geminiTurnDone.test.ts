@@ -263,7 +263,12 @@ describe('how long it waits once the turn is over', () => {
        zero — two further 2000ms polls — so 4000ms is the line between them. */
     /* Measured, both ways: 1032ms with the marker deciding, 5056ms with the
        old rule, in this same harness. 4000ms sits between them, so reinstating
-       the two-poll wait turns this red. */
+       the two-poll wait turns this red.
+
+       It is a wall-clock assertion inside a suite jest runs in parallel with
+       sixty others, so it is the one test here that can flake under load
+       rather than under change. The gap is 4s wide and the margin about 3s,
+       which is why the threshold is not tightened towards the measurement. */
     expect(waited).toBeLessThan(4000);
     expect(mine()!.payload.text).toContain('sneaker');
   }, 30_000);

@@ -339,6 +339,25 @@ export function shotContract(
     '  ]',
     '}',
     '',
+    /* The envelope is JSON and a spoken line is quoted, which is a collision
+       nothing in either instruction mentioned. Asked for a line "in quotation
+       marks", a model writes
+
+           "prompt": "... Elena says, "Okay, my skin has been so flat.""
+
+       and that is not JSON. Three replies in a row parsed as nothing, each
+       one otherwise correct, and the panel could only say no shots array was
+       found — a message about the symptom that names neither the cause nor
+       the fix.
+
+       Curly quotes end it: they are quotation marks to the generator, which
+       is all Veo's guidance asks for, and they are ordinary characters to a
+       JSON parser. Cheaper than teaching a model to escape, and it cannot be
+       got half right. */
+    'Dialogue goes in CURLY quotes — “like this” — never straight ones.',
+    'A straight quote inside a prompt ends the JSON string early and the whole',
+    'reply is unreadable, however good the writing is.',
+    '',
     /* Google's own Veo guidance is to do BOTH: supply the reference images and
        describe what is in them, referring to them explicitly — "Using the
        provided images for the detective, the woman, and the office setting…".
@@ -390,6 +409,57 @@ export function shotContract(
   ].join('\n');
 }
 
+/**
+ * Rescue an envelope whose only fault is an unescaped quote.
+ *
+ * A spoken line is quoted and the envelope is JSON, and a model asked for
+ * both writes:
+ *
+ *     "prompt": "... Elena says, "Okay, my skin has been so flat.""
+ *
+ * which is not JSON. Three consecutive replies were lost to exactly this —
+ * every prompt correct, every field present, the whole thing discarded
+ * because of two characters. The brief now asks for curly quotes, which
+ * cannot collide; this is for the model that uses straight ones anyway.
+ *
+ * Deliberately narrow. It walks the text as a parser would and only ever
+ * escapes a quote that is INSIDE a string and not the one closing it —
+ * decided by what follows: a comma, a closing brace or bracket means the
+ * string is ending, anything else means the quote is part of the sentence.
+ * It rewrites nothing outside a string, so a reply that is malformed in some
+ * other way still fails rather than being silently reshaped into something
+ * that parses and is wrong.
+ */
+export function repairInnerQuotes(json: string): string {
+  let out = '';
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+
+    if (escaped) { out += ch; escaped = false; continue; }
+    if (ch === '\\') { out += ch; escaped = true; continue; }
+
+    if (ch !== '"') { out += ch; continue; }
+
+    if (!inString) { inString = true; out += ch; continue; }
+
+    /* Inside a string, at a quote. Whatever comes next says whether this is
+       the end of the value or a quotation mark in the middle of it. */
+    let j = i + 1;
+    while (j < json.length && /\s/.test(json[j])) j++;
+    const next = json[j];
+    if (next === ',' || next === '}' || next === ']' || next === ':' || next === undefined) {
+      inString = false;
+      out += ch;
+    } else {
+      out += '\\"';
+    }
+  }
+  return out;
+}
+
 /** Pull the envelope out of a reply that may be wrapped in anything. */
 export interface ParsedReply {
   shots: Shot[];
@@ -421,7 +491,15 @@ export function parseShots(reply: string): ParsedReply {
     try {
       parsed = JSON.parse(c.trim());
     } catch {
-      continue;
+      /* One more try, with the quotes inside the prompts escaped. A reply
+         that is otherwise perfect is not worth a repair round, and the round
+         it costs is spent asking a model to do by hand what this does
+         exactly. */
+      try {
+        parsed = JSON.parse(repairInnerQuotes(c.trim()));
+      } catch {
+        continue;
+      }
     }
     const raw = Array.isArray(parsed) ? parsed : parsed?.shots;
     if (!Array.isArray(raw) || !raw.length) continue;
@@ -455,7 +533,21 @@ export function parseShots(reply: string): ParsedReply {
       look: typeof parsed?.look === 'string' && parsed.look.trim() ? parsed.look.trim() : undefined,
     };
   }
-  return { shots: [], problem: 'No JSON object with a "shots" array was found in the reply.' };
+  /* Say which kind of failure it is. "No shots array was found" was true of
+     a reply containing a perfect shots array whose only fault was a quote —
+     and the repair message built from it asked for the object again, which
+     the model then sent again, identically broken, three times over. A model
+     told what is actually wrong can fix it; told the symptom, it repeats
+     itself. */
+  const looksLikeJson = text.includes('"shots"') || text.trimStart().startsWith('{');
+  return {
+    shots: [],
+    problem: looksLikeJson
+      ? 'The reply looks like the right object but is not valid JSON — most often a '
+        + 'straight quotation mark inside a prompt, which ends the string early. Put '
+        + 'dialogue in curly quotes (“like this”) and send the whole object again.'
+      : 'No JSON object with a "shots" array was found in the reply.',
+  };
 }
 
 /**

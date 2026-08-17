@@ -112,7 +112,11 @@ describe('the audio guidance matches what Veo documents', () => {
   });
 
   it('writes dialogue the way the guide writes it', () => {
-    expect(guide('dialogue')).toMatch(/She says urgently, "We have to leave now\."/);
+    /* Curly quotes, not straight ones. Google's guide shows straight quotes
+       because it is describing what reaches the generator; ours travels
+       inside a JSON envelope first, and a straight quote ends the string
+       early. See quoteEnvelope.test.ts — three replies were lost to it. */
+    expect(guide('dialogue')).toMatch(/She says urgently, “We have to leave now\.”/);
   });
 
   it('keeps the silent mode silent', () => {
