@@ -90,6 +90,43 @@ describe('a clip is finished when it is playable', () => {
   });
 });
 
+describe('a clip tile that has only painted its thumbnail', () => {
+  /* Measured on a live Veo 3.1 Fast tile: it renders an <img> with NO poster
+     and NO <video> element at all, and attaches the <video> some time later.
+     Omni Flash does not behave this way, which is why this survived until a
+     workflow switched models. */
+  it('is not finished just because it has a picture', () => {
+    const t = tile('<img src="https://lh3.googleusercontent.com/x=w400">');
+    sized(t.querySelector('img')!);
+    /* The whole bug: without knowing a clip was asked for, the image branch
+       says "completed" and the node is taken with no clip — no preview, no
+       playable video, and no last frame for whatever is chained below it. */
+    expect(getStudioTileState(t, true)).toBe('thumbnail-only');
+  });
+
+  it('is finished once the video arrives with a source', () => {
+    const t = tile('<img src="https://lh3.googleusercontent.com/x=w400">'
+      + '<video src="https://labs.google/fx/api/trp/abc"></video>');
+    sized(t.querySelector('img')!);
+    expect(getStudioTileState(t, true)).toBe('completed');
+  });
+
+  it('still lets a still image be finished on its picture alone', () => {
+    /* The same DOM, asked for as an image, is a finished image. The flag is
+       the only thing separating them. */
+    const t = tile('<img src="https://lh3.googleusercontent.com/x=w400">');
+    sized(t.querySelector('img')!);
+    expect(getStudioTileState(t, false)).toBe('completed');
+  });
+
+  it('a failed clip is still failed, not waiting for a video', () => {
+    const t = tile('<img src="https://lh3.googleusercontent.com/x=w400">'
+      + '<div>Oops, something went wrong!</div>');
+    sized(t.querySelector('img')!);
+    expect(getStudioTileState(t, true)).toBe('failed');
+  });
+});
+
 describe('the phases before it are still read first', () => {
   it('a blurred preview is generating, however real the <img> is', () => {
     const t = tile(
@@ -235,5 +272,28 @@ describe('the service worker answers the active status check', () => {
        resolves, and the caller would read the same false it read before. */
     const handler = worker.slice(worker.indexOf("RUN_ACTIVE_CHECK"));
     expect(handler.slice(0, handler.indexOf('\n  // ── Diagnostic'))).toMatch(/return true;/);
+  });
+});
+
+describe('how long to wait for a clip that is known to exist', () => {
+  const poller2 = readFileSync(
+    join(__dirname, '..', 'content', 'flow', 'index.ts'), 'utf8');
+
+  it('waits far longer once the service confirms the render finished', () => {
+    /* Then the element is the only thing missing, and giving up produces
+       three failures from one impatient decision: no preview, no playable
+       clip, and no last frame for the node chained below. Measured on Veo 3.1
+       Fast, whose gap between thumbnail and <video> is longer than the blind
+       grace allowed — and longer than Omni Flash's, which is why this only
+       appeared when a workflow changed models. */
+    expect(poller2).toMatch(/CONFIRMED_GRACE_MS = 4 \* 60_000/);
+    expect(poller2).toMatch(
+      /const grace = apiState === 'completed' \? CONFIRMED_GRACE_MS : THUMBNAIL_GRACE_MS/);
+  });
+
+  it('tells the detector what the node asked Flow for', () => {
+    /* Without it the image branch answers for a clip, and a thumbnail counts
+       as a finished video. */
+    expect(poller2).toMatch(/getStudioTileState\(trackedTile, isVideoNode\)/);
   });
 });

@@ -24,7 +24,23 @@ import { matchesFlowText } from './flowStrings';
 export type StudioTileState =
   'completed' | 'generating' | 'thumbnail-only' | 'failed' | 'unknown';
 
-export function getStudioTileState(tile: Element): StudioTileState {
+export function getStudioTileState(
+  tile: Element,
+  /**
+   * Whether this tile is supposed to become a CLIP.
+   *
+   * Without it the detector cannot tell a finished still from a video tile
+   * that has only painted its thumbnail. Measured on a Veo 3.1 Fast tile: it
+   * renders an <img> with NO poster and NO <video> element at all, then
+   * attaches the <video> some time later. The image branch below sees a real
+   * picture and says "completed" — so the node was taken at the moment it had
+   * a thumbnail and nothing else, which is why it came back with no preview,
+   * no playable clip, and no last frame for the node chained under it.
+   *
+   * The caller knows what it asked Flow for. This is that knowledge.
+   */
+  expectVideo = false,
+): StudioTileState {
   // ── 1. GENERATING — must be checked BEFORE completion. ──
   // While Flow generates, the tile shows a blurred preview <img> with a
   // "24%" badge. That preview is a real image, so any completion check
@@ -92,10 +108,12 @@ export function getStudioTileState(tile: Element): StudioTileState {
      Held rather than returned, because a tile that failed also has no playable
      source, and the failure text below has to be read before this is answered.
      Returning here would have turned every failed clip into a 20-minute wait. */
-  const videoWithoutClip = !!video
-    && !!(video.getAttribute('poster') || findLargestImgSrc(tile));
+  const videoWithoutClip = (!!video || expectVideo)
+    && !!(video?.getAttribute('poster') || findLargestImgSrc(tile));
 
-  const imgs = video ? [] : tile.querySelectorAll('img[src]');
+  /* A still's own image is its result. A clip's is a placeholder until the
+     <video> arrives, so it must not be allowed to answer the question. */
+  const imgs = (video || expectVideo) ? [] : tile.querySelectorAll('img[src]');
   for (const img of imgs) {
     const src = img.getAttribute('src') || '';
     // Skip data URIs under 200 chars (tracking pixels / placeholders)

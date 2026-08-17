@@ -1416,6 +1416,14 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
      rendered — but the log has to say the clip never became playable, because
      that is why the Last Frame below it will be empty. */
   const THUMBNAIL_GRACE_MS = 45_000;
+  /* How long to wait for the clip once the SERVICE says it is finished.
+     Then the element is the only thing missing, and giving up produces a
+     result with no preview, no playable clip and no last frame — three
+     failures downstream from one impatient decision. Measured on a Veo 3.1
+     Fast tile: it paints an <img> thumbnail with NO poster and attaches the
+     <video> some time later, which is a longer gap than Omni Flash's and
+     longer than the blind grace allowed. */
+  const CONFIRMED_GRACE_MS = 4 * 60_000;
   let thumbnailOnlySince = 0;
 
   /* Ask Flow's backend instead of guessing from pixels.
@@ -1574,7 +1582,7 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
     // ── Studio-specific tile state detection ──
     // Priority: GENERATING first (a generating tile shows a real blurred
     // <img> + % badge, which a completion-first check misreads as done)
-    let state = getStudioTileState(trackedTile);
+    let state = getStudioTileState(trackedTile, isVideoNode);
 
     /* Say WHY it is still waiting, every fifteen seconds.
        A node ran for twenty minutes and the whole of Diagnostics said "Tile
@@ -1605,14 +1613,22 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
          must not expire: a long render would otherwise be declared finished
          at 45s and hand the next node an empty frame. */
       const serviceStillWorking = apiState === 'generating' || apiState === 'queued';
-      if (serviceStillWorking || held < THUMBNAIL_GRACE_MS) {
+      /* Three different waits, because three different things are known.
+           still working  — no clock at all; the render is not done.
+           finished       — the clip EXISTS and the page is behind. Worth
+                            minutes, because what is missing is a DOM element
+                            and not a generation.
+           nothing known  — the blind grace, unchanged. */
+      const grace = apiState === 'completed' ? CONFIRMED_GRACE_MS : THUMBNAIL_GRACE_MS;
+      if (serviceStillWorking || held < grace) {
         if (wait % 5 === 0) sendStudioProgress(nodeId, Math.min(97, 40 + Math.floor(wait / 12)));
         continue;
       }
       logLine(
         `Tile has shown a thumbnail for ${Math.round(held / 1000)}s without ever attaching a `
         + `playable clip${apiState ? ` (API: ${apiReported || apiState})` : ''} — taking it as `
-        + 'finished. Nothing chained from it will have a last frame.'
+        + 'finished. It will have no preview and nothing chained from it will have a last '
+        + 'frame.'
       );
       state = 'completed';
     } else if (thumbnailOnlySince) {
