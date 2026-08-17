@@ -113,11 +113,59 @@ function findSendButton(): HTMLElement | null {
   return null;
 }
 
+/** Z.AI's copy control, wherever it renders. */
+const COPY_SELECTOR = 'button.copy-response-button, button[class*="copy-response-button"], '
+  + '[data-testid="copy-button"]';
+
 function getAllCopyButtons(): HTMLElement[] {
-  return Array.from(document.querySelectorAll<HTMLElement>(
-    'button.copy-response-button, button[class*="copy-response-button"], [data-testid="copy-button"]'
-  )).filter(isVisible);
+  return Array.from(document.querySelectorAll<HTMLElement>(COPY_SELECTOR)).filter(isVisible);
 }
+
+/**
+ * The newest turn on the page, assistant or user.
+ *
+ * Read off the live page on 2026-08-17. Z.AI wraps every turn in
+ * `div[id^="message-<uuid>"]`, which is the same shape ChatGPT's <article> and
+ * Gemini's <model-response> give — a scope. The id appears twice per turn
+ * (an outer and an inner), the second carrying no text, so the empty ones are
+ * dropped rather than trusted.
+ */
+function lastTurn(): HTMLElement | null {
+  const turns = Array.from(document.querySelectorAll<HTMLElement>('div[id^="message-"]'))
+    .filter((m) => (m.innerText || '').trim());
+  return turns.length ? turns[turns.length - 1] : null;
+}
+
+/**
+ * Has THIS turn finished?
+ *
+ * Z.AI renders a copy button on an assistant turn once it is complete, and
+ * never on a user turn — so scoped to the newest turn this answers cleanly:
+ *
+ *   user's message showing, no reply yet  → no button → false
+ *   assistant still streaming             → no button → false
+ *   assistant done                        → button    → true
+ *
+ * PRESENCE, not visibility. Measured on the page: an older assistant turn's
+ * button is `class="invisible group-hover:visible"` — in the DOM, hidden until
+ * the pointer is over it. Filtering by isVisible drops it, and that is what
+ * broke the second round of every threaded conversation.
+ *
+ * This replaces a page-wide count compared against a baseline taken before
+ * submitting. That could not work here for two compounding reasons, both
+ * visible in one live log — "copy buttons 0 (started at 1)" then "1 (started
+ * at 1)": submitting re-rendered the thread so the old turn's button went
+ * invisible and the count fell to 0, then the new turn brought it back to 1.
+ * One is never greater than one, so the turn never finished and the reply read
+ * 0 chars for as long as anyone waited. A new chat hid it — with a baseline of
+ * 0, the first button was always an increase.
+ */
+function turnFinished(): boolean | null {
+  const last = lastTurn();
+  if (!last) return null;
+  return !!last.querySelector(COPY_SELECTOR);
+}
+
 
 /**
  * Is GLM still working?
@@ -147,16 +195,15 @@ function getAllCopyButtons(): HTMLElement[] {
  * Everything else was removed. A heuristic that cannot be wrong is not
  * evidence, and three of the old five could never be false.
  */
-function isThinkingOrGenerating(baselineCopyCount: number): boolean {
+function isThinkingOrGenerating(): boolean {
   /* FINISHED WINS.
-     A new copy button is proof the turn is over — Z.AI renders it only then.
-     It is checked first and it is final, because the busy signals below are
-     ambiguous in a way this is not: Z.AI leaves the collapsed thinking
-     accordion in the page after the answer lands ("Thought for 12s"), and it
-     keeps its .shimmer class. Consulting that first meant a finished reply
-     could still read as busy forever, which is the same mistake as the
-     cursor-pointer check this replaced — a signal that cannot be false. */
-  if (getAllCopyButtons().length > baselineCopyCount) return false;
+     The copy button on the newest turn is proof that turn is over, and it is
+     checked first and final. The busy signals below are ambiguous in a way
+     this is not: Z.AI leaves the collapsed thinking accordion in the page
+     after the answer lands ("Thought for 12s") and it keeps its .shimmer
+     class, so consulting that first meant a finished reply could read as busy
+     forever — the same mistake as the cursor-pointer check this replaced. */
+  if (turnFinished() === true) return false;
 
   /* Thinking, said by the page itself. The icon and the label carry
      purpose-built class names; the Skip control exists only while reasoning
@@ -231,14 +278,18 @@ function fillComposer(el: HTMLElement, text: string): boolean {
 }
 
 /** Extract text from the latest assistant message only, thoroughly stripping thinking blocks */
-function readLatestAssistantReply(baselineCopyCount: number): string {
-  const copyBtns = getAllCopyButtons();
-  if (copyBtns.length > baselineCopyCount) {
-    const latestBtn = copyBtns[copyBtns.length - 1];
-    // Find the message container above or around this copy button
-    const container = latestBtn.closest<HTMLElement>(
-      '[class*="message"], [data-role="assistant"], .prose, .markdown-body, div.relative'
-    );
+function readLatestAssistantReply(): string {
+  /* The newest turn, whether or not it has finished. Reading a streaming
+     reply is the point — the poller compares it against the last poll to see
+     whether it is still growing.
+
+     This used to start from a page-wide copy-button count exceeding a
+     baseline, and inherited that comparison's failure exactly: in a threaded
+     conversation the count never rose, so this returned nothing at all and
+     Diagnostics reported "reply 0 chars" beside a reply that was fully on
+     screen. */
+  {
+    const container = lastTurn();
     if (container) {
       const cloned = container.cloneNode(true) as HTMLElement;
       // Remove all thought/thinking accordions, skip buttons, and action buttons
@@ -315,8 +366,6 @@ async function handleExecute(payload: any): Promise<{ success: boolean }> {
     return { success: false };
   }
 
-  // Snapshot how many copy buttons exist before we submit
-  const baselineCopyCount = getAllCopyButtons().length;
 
   if (!fillComposer(composer, prompt)) {
     send('STUDIO_NODE_ERROR', { nodeId, error: 'Could not type into Z.AI prompt box' });
@@ -341,12 +390,12 @@ async function handleExecute(payload: any): Promise<{ success: boolean }> {
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 20 });
 
   startAntiThrottle();
-  const work = trackTextReply(nodeId, baselineCopyCount, config?.rawReply === true);
+  const work = trackTextReply(nodeId, config?.rawReply === true);
   work.finally(stopAntiThrottle);
   return { success: true };
 }
 
-async function trackTextReply(nodeId: string, baselineCopyCount: number, raw = false): Promise<void> {
+async function trackTextReply(nodeId: string, raw = false): Promise<void> {
   const startedAt = Date.now();
   let lastSeen = '';
   let stableCount = 0;
@@ -359,8 +408,8 @@ async function trackTextReply(nodeId: string, baselineCopyCount: number, raw = f
       progress: Math.min(90, 20 + Math.floor((elapsed / TEXT_TIMEOUT_MS) * 90)),
     });
 
-    const isBusy = isThinkingOrGenerating(baselineCopyCount);
-    const current = readLatestAssistantReply(baselineCopyCount);
+    const isBusy = isThinkingOrGenerating();
+    const current = readLatestAssistantReply();
 
     /* Say WHY it is still waiting, every fifteen seconds.
        A node sat at 83% for four minutes while the finished reply was on
@@ -375,13 +424,16 @@ async function trackTextReply(nodeId: string, baselineCopyCount: number, raw = f
        whether GLM is working, and the reply length says whether anything has
        been read at all. */
     if (elapsed > 10_000 && Math.floor(elapsed / 15_000) !== Math.floor((elapsed - POLL_MS) / 15_000)) {
-      const copies = getAllCopyButtons().length;
       const thinking = document.querySelectorAll(
         'svg.thinking-pulse, .shimmer, [aria-label="Skip Thinking"]'
       ).length;
+      /* The turn's own verdict rather than a page-wide tally against a
+         baseline. The old line read "copy buttons 1 (started at 1)" for
+         ninety seconds, which was true and told nobody that one can never
+         exceed one. */
       logLine(
-        `Waiting ${Math.round(elapsed / 1000)}s — copy buttons ${copies} (started at `
-        + `${baselineCopyCount}), thinking marks ${thinking}, reply ${current.length} chars`
+        `Waiting ${Math.round(elapsed / 1000)}s — turn finished ${String(turnFinished())}, `
+        + `thinking marks ${thinking}, reply ${current.length} chars`
       );
     }
 
@@ -392,8 +444,12 @@ async function trackTextReply(nodeId: string, baselineCopyCount: number, raw = f
       stableCount = 0;
     }
 
-    // Only finish when we have text AND isBusy is FALSE (meaning new copy button rendered & thinking finished)
-    if (!isBusy && current && (getAllCopyButtons().length > baselineCopyCount || stableCount >= 2)) {
+    /* Finished when the turn says so, or when the text has settled and
+       nothing reads as busy. Same two paths as ChatGPT and Gemini: the
+       marker is immediate because there is no state where it exists and the
+       text is still growing; stableCount is the fallback for when it cannot
+       be read. */
+    if (current && (turnFinished() === true || (!isBusy && stableCount >= 2))) {
       const cleaned = raw ? current : cleanAssistantReply(current);
       if (!raw && !looksLikeUsablePrompt(cleaned)) {
         send('STUDIO_NODE_ERROR', {

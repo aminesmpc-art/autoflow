@@ -74,11 +74,11 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
         <button className="sn-actions__btn sn-actions__btn--danger" onClick={() => removeNode(id)} title="Delete node">🗑</button>
       </div>
 
-      <Handle type="target" position={Position.Left} id="text" className="sn-port sn-port--text" style={{ top: '50%' }}>
-        <span className="sn-port__glyph">T</span>
-      </Handle>
-
       <div className="sn sn--story">
+        <Handle type="target" position={Position.Left} id="text" className="sn-port sn-port--text" style={{ top: 72 }}>
+          <span className="sn-port__glyph">T</span>
+        </Handle>
+
         <div className="sn-bar">
           <Icon name="agent" kind="agent" className="sn-label__icon" />
           <input
@@ -232,24 +232,6 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 </select>
               </div>
 
-              {/* Timestamp prompting, straight out of Google's Veo guide: an
-                  eight-second clip told what happens at [00:00-00:02] moves
-                  through a moment instead of describing a tableau and looping
-                  it. Off by default because it fights a held mood — four
-                  instructions inside eight seconds is four half-seconds of
-                  nothing. */}
-              <div className="sn-field">
-                <label className="sn-field__label">Time inside each clip</label>
-                <label className="sn-story__check nodrag" title="Break each clip into [00:00-00:02] segments">
-                  <input
-                    type="checkbox"
-                    checked={!!story.timedBeats}
-                    onChange={(e) => set({ timedBeats: e.target.checked })}
-                  />
-                  <span>Timed beats — [00:00-00:02] segments per clip</span>
-                </label>
-              </div>
-
               <div className="sn-field">
                 <label className="sn-field__label">Sound & Audio</label>
                 <select
@@ -262,6 +244,19 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                   ))}
                 </select>
               </div>
+            </div>
+
+            {/* Timestamp prompting as a clean full-width toggle row */}
+            <div className="sn-story__timing-row">
+              <label className="sn-story__timing-label nodrag" title="Break each clip into [00:00-00:02] segments">
+                <input
+                  type="checkbox"
+                  className="sn-story__check"
+                  checked={!!story.timedBeats}
+                  onChange={(e) => set({ timedBeats: e.target.checked })}
+                />
+                <span>Timed beats — [00:00-00:02] pacing per clip</span>
+              </label>
             </div>
 
             <div className="sn-story__hint">
@@ -471,11 +466,11 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
             <p className="sn-story__error-msg">{d.errorMessage}</p>
           </div>
         )}
-      </div>
 
-      <Handle type="source" position={Position.Right} id="text" className="sn-port sn-port--text" style={{ top: '50%' }}>
-        <span className="sn-port__glyph">T</span>
-      </Handle>
+        <Handle type="source" position={Position.Right} id="text" className="sn-port sn-port--text" style={{ top: 72 }}>
+          <span className="sn-port__glyph">T</span>
+        </Handle>
+      </div>
     </div>
   );
 }

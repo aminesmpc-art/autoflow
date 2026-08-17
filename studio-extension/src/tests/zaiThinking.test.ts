@@ -113,16 +113,19 @@ describe('a finished turn is not vetoed by leftover thinking markup', () => {
        that first meant a finished reply read as busy forever — the same
        mistake as the cursor-pointer check this replaced. */
     const body = code();
-    const copy = body.indexOf('getAllCopyButtons()');
+    /* Now asked of the newest TURN rather than counted page-wide — see
+       zaiThreadedTurn.test.ts for why the count could not survive a threaded
+       conversation. The ordering this test is about is unchanged. */
+    const finished = body.indexOf('turnFinished()');
     const shimmer = body.indexOf('.shimmer');
-    expect(copy).toBeGreaterThan(-1);
+    expect(finished).toBeGreaterThan(-1);
     expect(shimmer).toBeGreaterThan(-1);
-    expect(copy).toBeLessThan(shimmer);
+    expect(finished).toBeLessThan(shimmer);
   });
 
-  it('returns false immediately on a new copy button', () => {
+  it('returns false immediately once the turn is finished', () => {
     // Not "and also check the others" — the positive signal is final.
-    expect(code()).toMatch(/getAllCopyButtons\(\)\.length > baselineCopyCount\) return false/);
+    expect(code()).toMatch(/turnFinished\(\) === true\) return false/);
   });
 
   it('treats the gap before the first token as busy, not as finished', () => {

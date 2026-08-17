@@ -2466,8 +2466,9 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   color: var(--text-2);
 }
 
+.sn-wrap--kind-story { width: 390px; min-width: 390px; }
 .sn-wrap--kind-story .sn { border-color: var(--accent-30); }
-.sn-wrap--kind-story .sn-label__icon { color: var(--accent); }
+.sn-wrap--kind-story .sn-label__icon { background: var(--accent-14); color: var(--accent); }
 .sn-count--running { color: var(--accent); font-weight: 600; }
 
 /* ── Directorial Segmented Tabs ── */
@@ -2511,7 +2512,28 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   gap: var(--s-2);
 }
 
+.sn-story__timing-row {
+  margin-top: var(--s-2);
+  padding: var(--s-1) var(--s-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+}
+.sn-story__timing-label {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  cursor: pointer;
+  width: 100%;
+}
+.sn-story__timing-label:hover {
+  color: var(--text);
+}
+
 .sn-story__hint {
+  margin-top: var(--s-2);
   font-size: var(--t-micro);
   color: var(--text-3);
   line-height: 1.4;

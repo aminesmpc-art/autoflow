@@ -167,6 +167,21 @@ const BANNED: Array<{ code: string; re: RegExp; detail: string }> = [
       + '"Ambient noise: ...", "SFX: ...", and the spoken line in quotation marks.',
   },
   {
+    /* An attachment's filename, typed into the prompt.
+       From a live run, after the reference stills started being attached:
+       "...lands on a clean aesthetic composition of the product from
+       reference-1.png resting on the marble counter." The generator has no
+       file called that. It receives the characters r-e-f-e-r-e-n-c-e-hyphen-1
+       and does something with them, and none of it is the product.
+
+       The contract asks for "the woman from the reference image" instead —
+       this is the net under that, because an instruction is not a guarantee. */
+    code: 'fileName',
+    re: /\b[\w-]+\.(?:png|jpe?g|webp|gif|mp4|mov|heic)\b|\breference-\d+\b/i,
+    detail: 'names an attached file ("reference-1.png"). The generator has no files — it '
+      + 'gets those characters as text. Say "the woman from the reference image" instead.',
+  },
+  {
     code: 'editingJargon',
     re: /\b(cut to|camera cuts to|fade in|fade out|scene transition|dissolve to|split screen|wipes to)\b/i,
     detail: 'uses video-editing jargon like "cut to" or "fade in". Single-take diffusion models glitch on these — describe one continuous uninterrupted shot.',
@@ -342,6 +357,8 @@ export function shotContract(
       'you would have imagined: the real hair, the real clothing, the real room.',
       'Where a shot uses one, say so in its prompt the way Flow expects — "the',
       'woman from the reference image" — so the generator ties the two together.',
+      'Never write a file name. "the product from reference-1.png" reaches the',
+      'generator as those words: it has no file, and it will try to draw the text.',
       '',
     ] : []),
     '"cast" lists only the characters who actually appear in that shot, by',

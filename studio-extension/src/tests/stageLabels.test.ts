@@ -133,3 +133,45 @@ describe('it does not fire on prompts that already ship', () => {
     expect(hits).toEqual([]);
   });
 });
+
+/**
+ * An attachment's filename, typed into the prompt.
+ *
+ * From a live run, after the reference stills started being attached:
+ *
+ *   "...the camera executes a dramatic pull-back and tilts down to land on a
+ *    clean aesthetic composition of the product from reference-1.png resting
+ *    on the marble counter beside the sink."
+ *
+ * The generator has no file called that. It receives the characters and does
+ * something with them, and none of it is the product. Caused by the feature
+ * that attaches the stills — before that there was no filename to leak.
+ */
+describe('the name of an attached file', () => {
+  it('is caught', () => {
+    const p = `${ANCHOR}. The camera tilts down to land on the product from reference-1.png `
+      + 'resting on the marble counter as the light moves across it.';
+    expect(codes(p)).toContain('fileName');
+  });
+
+  it('catches any image or clip extension, not just the one we generate', () => {
+    for (const name of ['shot_02.jpg', 'char.jpeg', 'ref.webp', 'take1.mp4', 'IMG_4021.HEIC']) {
+      const p = `${ANCHOR}. She lifts the jar toward ${name} and the camera pushes in slowly.`;
+      expect(codes(p)).toContain('fileName');
+    }
+  });
+
+  it('accepts the phrasing the contract asks for instead', () => {
+    const p = `${ANCHOR}. The camera tilts down to land on the product from the reference `
+      + 'image resting on the marble counter as the light moves across it.';
+    expect(codes(p)).toEqual([]);
+  });
+
+  it('leaves ordinary prose alone', () => {
+    /* No extension, no reference-N — a sentence about a period drama should
+       not be rejected for containing a full stop. */
+    const p = `${ANCHOR}. She sets the jar down. The camera holds on her face as the morning `
+      + 'light moves across the marble and she smiles at the lens.';
+    expect(codes(p)).not.toContain('fileName');
+  });
+});

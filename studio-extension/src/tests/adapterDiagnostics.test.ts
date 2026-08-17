@@ -111,10 +111,16 @@ describe('the signals reported are ones that adapter actually has', () => {
     }
   });
 
-  it('zai reports copy-button count against its baseline', () => {
+  it('zai reports its own turn verdict', () => {
     const s = src('zai');
-    /* Z.AI's marker is a copy button that appears on the finished turn, so
-       the count is only meaningful next to what it was before submitting. */
-    expect(s.replace(/\s+/g, ' ')).toMatch(/copy buttons \$\{[^}]*\} \(started at/);
+    /* It used to report a page-wide copy-button count against a baseline
+       taken before submitting. That line read "copy buttons 1 (started at 1)"
+       for ninety seconds — true, and no help at all, because one can never
+       exceed one. The turn's own answer is the useful number. */
+    expect(s.replace(/\s+/g, ' ')).toMatch(/turn finished \$\{String\(turnFinished\(\)\)\}/);
+    /* Comments stripped: the history of the old line is written down in one,
+       and asserting against the prose would fail the explanation. */
+    const code = s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(code).not.toMatch(/started at/);
   });
 });
