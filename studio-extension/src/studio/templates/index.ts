@@ -833,6 +833,86 @@ const KIDS_SCENES = [
  * At runtime these are the floor the loader falls back to — a fresh install,
  * or the API being down, must still open a gallery with workflows in it.
  */
+/* ── Real animal comedy ──
+   From a 28-section master prompt for photorealistic animal comedy. It lives
+   here, in the template, rather than anywhere in the Story node's own code:
+   this is one format, and a format belongs in a workflow you can edit or
+   delete, not in the machinery every workflow runs through.
+
+   Three things had to be adapted rather than copied:
+
+     - it is written for Seedance 2.0 at fifteen seconds, and Flow generates
+       4, 6, 8 or 10. Its six segments — hook, anticipation, payoff, reaction,
+       micro-gag, aftermath — are spread across two 8s clips joined on a last
+       frame. Its own pacing puts the payoff at 5–8.5s, so compressing into a
+       single clip would throw away the reaction and the final gag, which is
+       where the comedy is.
+     - its output format is prose under bold headings; the Story node answers
+       in a JSON envelope, so the shape is dropped and the content kept.
+     - its cast, world, look and continuity sections already exist as fields
+       on the node, so they are set as fields instead of repeated as prose. */
+
+/** §10 — an ordinary real place, not a set. */
+const ANIMAL_COMEDY_WORLD =
+  'An ordinary real place filmed as it is — a small corner shop, a home kitchen, a '
+  + 'launderette, a parked car, a stairwell. Real clutter, real wear, nothing arranged for '
+  + 'the camera. Ordinary available light through a window or a plain ceiling fitting.';
+
+/** §8 + §11 — how it was supposedly filmed. */
+const ANIMAL_COMEDY_LOOK =
+  'Raw modern phone footage shot by an unseen person who is not part of the scene: vertical '
+  + '9:16, natural handheld micro-shake, real autofocus hunting, ordinary available light, '
+  + 'slight sensor noise. Never a phone in shot, never a tripod, never film lighting.';
+
+/** §21 — the AI-realism negative lock, as one line for the Avoid field. */
+const ANIMAL_COMEDY_AVOID =
+  'cartoon, animation, anime, Pixar or Disney styling, CGI look, 3D mascot, furry humanoid, '
+  + 'plush toy, rubber fur, plastic skin, a human body with an animal head, human hands or '
+  + 'five human fingers, extra or missing paws, duplicated or fused animals, warped paws, a '
+  + 'breed or fur pattern or eye colour that changes between shots, melting or morphing '
+  + 'faces, floating objects, sliding feet, paws clipping through objects, on-screen text or '
+  + 'subtitles, a visible phone or camera rig';
+
+/**
+ * §1–7 and §14–20 — the laws that make it this format and not another.
+ *
+ * In the idea prompt rather than in the node's settings, because the Story
+ * node has no field for "what kind of thing is this" and inventing one would
+ * be changing the node to suit one template. The user's own idea goes
+ * underneath; everything above it is the format.
+ */
+const ANIMAL_COMEDY_BRIEF =
+  'THE FORM — a real animal, an ordinary real place, one simple human-like activity, played '
+  + 'completely straight. One absurd situation, one physical payoff, one reaction, and '
+  + 'optionally one small final gag. It must look like a strange real event somebody happened '
+  + 'to catch on a phone — never animation, an advert, or a polished AI clip.\n\n'
+  + 'THE ANIMAL IS A REAL ANIMAL. Name a recognisable one — a real orange tabby, a real '
+  + 'French Bulldog, a real raccoon — and keep its anatomy honest: real muzzle proportions, '
+  + 'accurate whisker placement, authentic paw anatomy, natural fur direction, believable '
+  + 'body weight, real blinking and breathing, contact shadows where it touches anything. '
+  + 'Never a furry humanoid, a mascot, a plush toy or a Pixar character.\n\n'
+  + 'HOW FAR THE BEHAVIOUR GOES — roughly 80% ordinary animal physicality, 15% simple '
+  + 'human-like behaviour, 5% absurdity. It may sit upright, hold a paw to something, press a '
+  + 'button, push, steer lightly, wait its turn, look at another animal meaningfully. It may '
+  + 'NOT do anything needing fingers: typing, tying laces, using cutlery, playing an '
+  + 'instrument. The comedy lives in posture, timing, gaze and ONE object.\n\n'
+  + 'DEAD SERIOUS — everyone in the scene treats the absurd thing as completely normal. '
+  + 'Nobody mugs at the camera and nobody reacts as though it is funny. That is the joke.\n\n'
+  + 'OPEN IN THE MIDDLE OF IT — never spend the opening arriving somewhere. The strange thing '
+  + 'is already happening in the first frame, and a viewer understands the premise in about a '
+  + 'second.\n\n'
+  + 'ONE JOKE — one scenario, one gag, one payoff, one reaction. A second idea arriving '
+  + 'halfway is not a bigger video, it is two smaller ones.\n\n'
+  + 'THE TWO SHOTS — shot one opens mid-situation, builds, and lands the physical payoff. '
+  + 'Shot two continues from its last frame and plays the reaction, then one small final gag '
+  + 'or a beat of aftermath. Same animal, same room, same light in both.\n\n'
+  + 'HARMLESS — funny, cute, family-safe. No injury, no distress, no cruelty, nothing '
+  + 'graphic. Any slapstick contact is obviously light and nobody is hurt.\n\n'
+  + '─────────────\n'
+  + 'THE IDEA — replace this with your own:\n\n'
+  + 'A real orange tabby cat running a tiny neighbourhood corner shop, taking the job '
+  + 'completely seriously, while a queue of unbothered cats waits its turn.';
+
 export const BUILTIN_TEMPLATES: Template[] = [
   /* ─────────────── Starters ─────────────── */
   {
@@ -1921,6 +2001,83 @@ export const BUILTIN_TEMPLATES: Template[] = [
       tEdge('story_director', 'ref_still'),
       tEdge('story_director', 'shot1'),
       tEdge('story_director', 'shot2'),
+      iEdge('ref_still', 'shot1'),
+      iEdge('shot1', 'handoff'),
+      iEdge('handoff', 'shot2', 'image'),
+    ],
+    requiresNodeTypes: ['prompt', 'story', 'generate', 'frame'],
+    requiresPlatforms: ['chatgpt', 'flow'],
+    tier: 'free',
+  },
+
+  /* ── Real animal comedy ──
+     Built from a 28-section master prompt for photorealistic animal comedy.
+     Its rules live in the animalComedy genre rather than in this template, so
+     they apply to any Story node — this is the canvas that runs them.
+
+     Fifteen seconds does not exist in Flow, and that shaped the whole thing.
+     The source paces one video across six segments: WTF hook, anticipation,
+     payoff, reaction, micro-gag, aftermath. Two 8s clips joined on a last
+     frame carry all six and keep the animal and the room across the cut,
+     which a single compressed 10s clip cannot — its own pacing puts the
+     payoff at 5–8.5s, so compressing throws away the reaction and the gag,
+     which is where the comedy actually is. */
+  {
+    id: 'tpl_animal_comedy',
+    name: 'Real Animal Comedy: 15s Viral',
+    description:
+      'A real animal doing an ordinary human thing, completely straight, caught by accident '
+      + 'on a phone. Two chained clips carry the full six-beat pacing.',
+    useCase:
+      'The format behind cat-runs-a-shop and dog-attends-dinner reels. The Story node carries '
+      + 'the genre rules — real animal anatomy, 80/15/5 behaviour, dead-serious playing, one '
+      + 'joke, phone footage, room sound only — so you write the idea and it writes both '
+      + 'shots. Shot one opens mid-situation and lands the payoff; shot two takes the last '
+      + 'frame and plays the reaction and a final small gag. Needs a signed-in ChatGPT tab '
+      + 'for the writing and Flow for the clips.',
+    category: 'Content',
+    difficulty: 'Medium',
+    nodeCount: 6,
+    thumbnail: '🐈',
+    nodes: [
+      promptNode('idea', 'The Format & The Idea', ANIMAL_COMEDY_BRIEF, 40, 300),
+      /* Every rule from the source document lives on THIS node, in the fields
+         the Story node already has. Nothing in the node's own code knows this
+         format exists — the template carries it, so it can be edited, copied
+         or thrown away like any other workflow. */
+      storyNode('director', 'Comedy Director', 470, 260, {
+        beats: 6,
+        structure: 'hook',
+        cameraProgression: 'fixed',   // §9: one locked phone, no pans or zooms
+        audioMode: 'ambient',         // §15–16: room sound only, no dialogue
+        visualPreset: 'smartphonePOV',// §8: raw phone footage, not cinema
+        timedBeats: true,             // §6: the six-segment pacing
+        rules: ['samePerson'],        // §13: the animal never changes breed
+        world: ANIMAL_COMEDY_WORLD,
+        look: ANIMAL_COMEDY_LOOK,
+        avoid: ANIMAL_COMEDY_AVOID,   // §21: the AI-realism negative lock
+      }),
+      genNode('ref_still', {
+        label: 'The Animal', mediaType: 'image', model: 'Nano Banana Pro', aspectRatio: '9:16',
+      }, 900, 40),
+      genNode('shot1', {
+        label: 'Hook & Payoff', mediaType: 'video', model: 'Veo 3.1 - Fast',
+        aspectRatio: '9:16', duration: '8s',
+      }, 900, 420),
+      frameNode('handoff', 'Ends on Shot 1', 1330, 480),
+      genNode('shot2', {
+        label: 'Reaction & Gag', mediaType: 'video', model: 'Veo 3.1 - Fast',
+        aspectRatio: '9:16', duration: '8s',
+      }, 1700, 420),
+    ],
+    edges: [
+      tEdge('idea', 'director'),
+      tEdge('director', 'ref_still'),
+      tEdge('director', 'shot1'),
+      tEdge('director', 'shot2'),
+      /* The still is the animal's identity, wired into BOTH clips — the
+         second one gets it as well as the handoff frame, because a last frame
+         carries the pose and the reference carries the breed. */
       iEdge('ref_still', 'shot1'),
       iEdge('shot1', 'handoff'),
       iEdge('handoff', 'shot2', 'image'),
