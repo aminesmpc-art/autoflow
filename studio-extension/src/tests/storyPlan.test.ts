@@ -123,7 +123,8 @@ describe('housekeeping', () => {
   });
 
   it('offers a structure for each way these pieces are actually built', () => {
-    expect(STRUCTURES.map((s) => s.id)).toEqual(['hook', 'transform', 'loop', 'free']);
+    expect(STRUCTURES.map((s) => s.id))
+      .toEqual(['hook', 'transform', 'loop', 'ugcAd', 'free']);
     for (const s of STRUCTURES) expect(s.name.length).toBeGreaterThan(3);
   });
 });

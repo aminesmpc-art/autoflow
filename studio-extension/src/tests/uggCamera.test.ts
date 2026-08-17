@@ -128,11 +128,16 @@ describe('caption guardrails', () => {
     const line = brief({ visualPreset: 'cinema35mm' })
       .split('\n').find((l) => l.includes('Guardrails (Negative):'))!;
     /* Both halves on the one line: what the preset excludes, then what is
-       excluded everywhere. Asserted on the preset's actual words — a length
-       comparison passes even when the preset half has been dropped. */
+       excluded everywhere. Asserted clause by clause on the preset's actual
+       words — a length comparison passes even when the preset half has been
+       dropped, and the clauses are re-punctuated when the lists are merged. */
     expect(preset.negativePrompt).toBeTruthy();
-    expect(line).toContain(preset.negativePrompt);
-    expect(line).toContain(ALWAYS_NEGATIVE);
+    for (const clause of preset.negativePrompt.split(/[,.]/)) {
+      if (clause.trim()) expect(line.toLowerCase()).toContain(clause.trim().toLowerCase());
+    }
+    for (const clause of ALWAYS_NEGATIVE.split(',')) {
+      expect(line.toLowerCase()).toContain(clause.trim().toLowerCase());
+    }
   });
 
   it('appears exactly once, not repeated per shot', () => {

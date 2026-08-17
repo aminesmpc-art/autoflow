@@ -258,6 +258,30 @@ export function dialogueBudget(duration?: string): number {
    / says, almost laughing, \u2014 without reaching into the next sentence. Straight
    quotes are accepted as well as curly: a model that used them still said
    something, and the repair that fixes the envelope runs long after this. */
+/**
+ * Film vocabulary, in a piece that is meant to look like it was not filmed.
+ *
+ * Every entry names something a phone in a bathroom physically cannot do —
+ * there is no crane, no colour grade, no anamorphic lens, and a face without
+ * pores has been retouched. It is deliberately narrower than the brief's
+ * realism section: "tracking shot" and "golden hour" are missing because a
+ * person really does walk while holding their phone, and a window really is
+ * gold at six o'clock. Only the tells that are always tells.
+ */
+const PRODUCED = new RegExp(
+  '\\b('
+  + 'cinematic|cinematography|'
+  + 'shallow (?:depth of field|focus)|bokeh|anamorphic|\\d{2}mm (?:lens|film)|film grain|'
+  + 'stud(?:io) light(?:ing)?|three[- ]point lighting|softbox|key light|rim light|'
+  + 'volumetric light(?:ing)?|lens flare|'
+  + 'colou?r[- ]grad(?:e|ed|ing)|'
+  + 'dolly|crane shot|steadicam|gimbal|'
+  + 'slow[- ]?mo(?:tion)?|'
+  + 'flawless skin|poreless|porcelain skin|airbrushed|perfect skin'
+  + ')\\b',
+  'gi',
+);
+
 const ATTRIBUTED =
   /\b(?:says?|said|whispers?|shouts?|asks?|answers?|replies|replied|murmurs?|mutters?|exclaims?|adds|calls|yells?|sings?|tells|breathes)\b[^\u201c\u201d"]{0,40}["\u201c]([^"\u201d]{2,})["\u201d]/gi;
 
@@ -637,6 +661,13 @@ export function checkShots(
      people it says are in it — without it, the anchor named the whole cast and
      the moon scene was failed for not mentioning the delivery man. */
   cast?: Array<{ name: string; look: string }>,
+  /* Whether this is a UGC piece. The realism instructions are the only part of
+     the brief that ask a model to make something WORSE than it knows how to,
+     which is the hardest kind of instruction to keep — a writer that has read
+     them still reaches for "cinematic" and "shallow depth of field" because
+     that is what a good prompt looks like everywhere else. Stated in the brief
+     it is a suggestion; checked here it is not. */
+  ugc?: boolean,
 ): Problem[] {
   const problems: Problem[] = [];
 
@@ -741,6 +772,25 @@ export function checkShots(
           detail: 'has someone speaking in a wide or establishing frame. The face is then '
             + 'too small for the mouth to be animated and the lip sync drifts. Either frame '
             + 'this one chest-up or medium close, or drop the line and let it be a look.',
+        });
+      }
+    }
+
+    /* The vocabulary that undoes a UGC piece.
+       Not a style disagreement: each of these names a specific thing a phone
+       cannot do. A phone has no shallow-focus bokeh worth the word, no colour
+       grade, no dolly and no slow motion, and a face without pores has been
+       retouched. One of them in the prompt and the clip comes back looking
+       like the advert the piece was written to not look like. */
+    if (ugc) {
+      const produced = p.match(PRODUCED) || [];
+      if (produced.length) {
+        problems.push({
+          shot: n, code: 'ugcProduced',
+          detail: `reads as a production, not a phone: ${[...new Set(produced.map((w) => w.toLowerCase()))].join(', ')}. `
+            + 'This one is meant to look like someone filmed it themselves. Describe the '
+            + 'available light, the phone-lens depth where the background stays legible, '
+            + 'and skin with pores and shine — and drop the film vocabulary.',
         });
       }
     }
