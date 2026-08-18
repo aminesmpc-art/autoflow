@@ -24,7 +24,7 @@
 
 /// <reference types="node" />
 
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 const BUNDLE = join(__dirname, '../../dist/gemini-content.js');
@@ -97,17 +97,54 @@ function harness(history: number) {
     require(BUNDLE);
   });
 
-  /** The footer Gemini adds when a turn completes. */
+  /* The footer Gemini adds when a turn completes.
+     Nested the way the real page nests it, read off a live conversation:
+
+       div.response-container-footer > message-actions > div.actions-container-v2
+         > div.buttons-container-v2 > copy-button > gem-icon-button
+         > button[aria-label="Copy"] > mat-icon[fonticon="copy"]
+
+     It used to be a bare button. That passed, and it tested a shape Gemini
+     does not produce — so it could not have caught the code-block bug below,
+     which is entirely about WHERE in the turn the copy icon sits. */
   function copyControl(label = 'Copy'): HTMLElement {
+    const footer = document.createElement('div');
+    footer.className = 'response-container-footer';
+    const actions = document.createElement('message-actions');
+    const wrap = document.createElement('copy-button');
     const btn = document.createElement('button');
     btn.setAttribute('aria-label', label);
     const icon = document.createElement('mat-icon');
     icon.setAttribute('fonticon', 'copy');
     icon.setAttribute('data-mat-icon-name', 'copy');
     btn.append(icon);
-    box(btn);
-    box(icon);
-    return btn;
+    wrap.append(btn);
+    actions.append(wrap);
+    footer.append(actions);
+    [footer, actions, wrap, btn, icon].forEach(box);
+    return footer;
+  }
+
+  /* A fenced block inside a reply, with the controls Gemini gives it the
+     moment the block opens — before a word of it has been written. The copy
+     one carries fonticon="copy", which is the whole problem. */
+  function codeBlock(): HTMLElement {
+    const cb = document.createElement('code-block');
+    cb.className = 'enable-luminous-code-block';
+    for (const [label, glyph] of [['Download code', 'arrow_circle_down'], ['Copy code', 'copy']]) {
+      const b = document.createElement('button');
+      b.setAttribute('aria-label', label);
+      const i = document.createElement('mat-icon');
+      i.setAttribute('fonticon', glyph);
+      i.setAttribute('data-mat-icon-name', glyph);
+      b.append(i);
+      cb.append(b);
+      box(b); box(i);
+    }
+    const pre = document.createElement('pre');
+    cb.append(pre);
+    box(cb); box(pre);
+    return cb;
   }
 
   const startReply = (text: string) => {
@@ -130,6 +167,11 @@ function harness(history: number) {
     document.getElementById('live')?.append(copyControl(label));
   };
 
+  /** Gemini opening a fenced block partway through writing the answer. */
+  const openCodeBlock = () => {
+    document.getElementById('live')?.append(codeBlock());
+  };
+
   const execute = (payload: any) => new Promise<any>((resolve) => {
     let done = false;
     for (const fn of listeners) {
@@ -140,7 +182,7 @@ function harness(history: number) {
   });
 
   const results = () => sent.filter((m) => m?.type === 'STUDIO_NODE_RESULT');
-  return { execute, sent, results, startReply, growReply, finishReply, composer };
+  return { execute, sent, results, startReply, growReply, finishReply, openCodeBlock, composer };
 }
 
 const ASK = {
@@ -292,4 +334,63 @@ describe('how long it waits once the turn is over', () => {
     await tick(5200);                       // long enough for the old rule to fire
     expect(h.results()).toHaveLength(0);
   }, 20_000);
+});
+
+describe('a code block is not the end of the answer', () => {
+  /* Reported as: the reply gets cut off after about a second whenever the
+     answer contains a fenced block, and what arrives is the first line or two.
+
+     Gemini gives a code block its own controls the instant the block opens —
+     Download code, Copy code — and the copy one carries fonticon="copy", the
+     exact attribute the adapter was using to decide a turn was over. So an
+     answer whose second line was "```" was declared finished before its third
+     line existed.
+
+     The reason this shipped: the harness above built the footer as a bare
+     button, so "in the footer" and "anywhere in the turn" were the same place
+     and no test could tell them apart. It builds the real nesting now. */
+
+  it('does not finish on the copy button a code block brings with it', async () => {
+    const h = harness(0);
+    const run = h.execute(ASK);
+
+    h.startReply('### 5-SCENE STORYBOARD');
+    await tick(200);
+    h.openCodeBlock();          // one second in, the block opens
+    await tick(1500);
+    h.growReply('### 5-SCENE STORYBOARD\nScene 1 — the empty room, bare boards.');
+    await tick(1500);
+
+    /* Still writing. Nothing may have been accepted yet — the old code would
+       have returned "### 5-SCENE STORYBOARD" and called it the answer. */
+    expect(h.results().length).toBe(0);
+
+    h.growReply('### 5-SCENE STORYBOARD\nScene 1 — the empty room, bare boards.\n'
+      + 'Scene 5 — the finished lounge, lit.');
+    h.finishReply();
+    await waitFor(() => h.results().length > 0, 8000);
+
+    expect(String(h.results()[0].payload?.text || '')).toContain('Scene 5');
+  }, 20_000);
+
+  /* Two more timing tests lived here and were deleted. Both passed against
+     the broken adapter, which makes them worse than nothing: they described
+     the bug accurately and proved nothing about it. Only the case above
+     actually distinguishes the two versions, so it is the only one kept.
+
+     What is left is the invariant itself, read off the shipped bundle. Not a
+     substitute for the behavioural test — a guard on the two things that made
+     the bug possible, so neither can come back quietly. */
+  it('keeps the copy search inside the footer, and out of code blocks', () => {
+    const src = readFileSync(join(__dirname, '..', 'content', 'gemini', 'index.ts'), 'utf8');
+    const fn = src.slice(src.indexOf('function turnFinished()'));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+
+    // Scoped to the footer rather than the whole turn...
+    expect(body).toMatch(/message-actions, \.response-container-footer/);
+    // ...and code blocks excluded even if that scope is ever not found.
+    expect(body.match(/closest\('code-block'\)/g) || []).toHaveLength(2);
+    // The icon still comes first: aria-label is translated, fonticon is not.
+    expect(body.indexOf('fonticon="copy"')).toBeLessThan(body.indexOf('aria-label'));
+  });
 });

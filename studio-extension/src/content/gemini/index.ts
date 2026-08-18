@@ -317,6 +317,29 @@ function composerRegion(): HTMLElement | null {
  * button too and a page-wide query would report "finished" the moment the
  * conversation had any history at all.
  *
+ * And scoped again, to that turn's FOOTER. Reported as: the reply gets cut
+ * off after about a second whenever the answer contains a code block. It does,
+ * because a code block ships its own controls —
+ *
+ *   <code-block class="enable-luminous-code-block">
+ *     <button aria-label="Download code"><mat-icon fonticon="arrow_circle_down">
+ *     <button aria-label="Copy code">   <mat-icon fonticon="copy">
+ *
+ * — and Gemini renders them the instant the block opens, long before the text
+ * inside it is written. Searching the whole turn for fonticon="copy" found
+ * that one first and called the answer over, so a five-scene storyboard was
+ * read as its first line and a half.
+ *
+ * The label saved the second check by accident: "Copy code" does not match
+ * /^copy$/, so only the icon query was wrong. Not something to rely on — the
+ * label is translated, which is the reason the icon is checked first.
+ *
+ * Read off the live page rather than reasoned about: `message-actions`,
+ * `.response-container-footer` and `copy-button` are each exactly one per
+ * turn, and each zero inside a code block. Anything inside `code-block` is
+ * excluded as well, so a renamed footer degrades to the old behaviour minus
+ * this bug rather than reintroducing it.
+ *
  * Returns null when no model-response exists, so a renamed element falls back
  * to the old signals rather than waiting forever for a button it cannot find.
  */
@@ -324,11 +347,20 @@ function turnFinished(): boolean | null {
   const turns = document.querySelectorAll<HTMLElement>('model-response');
   if (!turns.length) return null;
   const last = turns[turns.length - 1];
-  if (last.querySelector('mat-icon[fonticon="copy"], mat-icon[data-mat-icon-name="copy"]')) {
-    return true;
-  }
-  return !!Array.from(last.querySelectorAll<HTMLElement>('button'))
-    .find((b) => /^\s*copy\s*$/i.test(b.getAttribute('aria-label') || ''));
+
+  /* The footer if it can be found, the whole turn if it cannot. */
+  const scope: HTMLElement = last.querySelector<HTMLElement>(
+    'message-actions, .response-container-footer'
+  ) || last;
+
+  const icon = Array.from(scope.querySelectorAll<HTMLElement>(
+    'mat-icon[fonticon="copy"], mat-icon[data-mat-icon-name="copy"]'
+  )).find((el) => !el.closest('code-block'));
+  if (icon) return true;
+
+  return !!Array.from(scope.querySelectorAll<HTMLElement>('button'))
+    .find((b) => !b.closest('code-block')
+      && /^\s*copy\s*$/i.test(b.getAttribute('aria-label') || ''));
 }
 
 /**
