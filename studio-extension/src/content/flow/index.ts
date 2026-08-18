@@ -7,7 +7,10 @@
 import { ImageMeta, Message, QueueObject } from '../../types';
 import { AutomationEngine, isRunLocked } from './automation';
 import { scanProjectForVideos, previewAsset, retrySingleTile, downloadAssetByMenu, waitForUpscalingDone, waitForExtendedVideoDownloadDone } from './scanner';
-import { sleep, findModelSelectorTrigger, findMenuItem, simulateClick } from './selectors';
+import {
+  sleep, findModelSelectorTrigger, findMenuItem, simulateClick,
+  scrollOutputToTop, bringTileIntoView,
+} from './selectors';
 import { DOM_SETTLE_MS } from '../../shared/constants';
 import { getRunningQueue, clearRunningQueue } from '../../shared/storage';
 import {
@@ -1772,7 +1775,7 @@ async function sendStudioResult(
    * the bytes are always available. For a clip that means seeking to its last
    * frame; see pickReferenceStill for why the poster must not win.
    */
-  const referenceUrl = pickReferenceStill({
+  let referenceUrl = pickReferenceStill({
     endFrame: videoEl ? await captureVideoEndFrame(videoEl, logLine) : '',
     posterStill: stills.reference,
     // For a clip the poster is the OPENING frame, so it must not stand in for
@@ -1807,9 +1810,49 @@ async function sendStudioResult(
     previewUrl = captureVideoFrame(videoEl) || referenceUrl;
     if (previewUrl) {
       logLine(`Preview captured (${Math.round(previewUrl.length / 1024)}KB)`);
-    } else {
-      logLine('Preview: the clip would not give up a frame — the node will show no thumbnail');
     }
+  }
+
+  /* A clip that finished and handed over nothing is not a finished node.
+   *
+   * Reported repeatedly and correctly: a node goes green, says "Preview
+   * unavailable", carries no last frame, and everything chained below it
+   * fails — while the clip sits in Flow, rendered perfectly. Reporting that
+   * as success is what makes it look like the node skipped itself.
+   *
+   * So it does not report it. The tile is brought back — scrolling the output
+   * to the top, which is where a just-finished clip is, then into view — and
+   * everything is read again from whatever is there now. Only if that also
+   * comes back empty does the node fail, loudly, with the reason. */
+  if (videoEl && !previewUrl && !referenceUrl) {
+    logLine('Nothing captured from this clip — scrolling back to it and trying once more');
+    await scrollOutputToTop();
+    const again = tileId
+      ? document.querySelector(`[data-tile-id="${CSS.escape(tileId)}"]`)
+      : null;
+    const retryTile = again || tile;
+    if (retryTile) await bringTileIntoView(retryTile);
+
+    const v2 = retryTile?.querySelector('video') as HTMLVideoElement | null;
+    if (v2) {
+      referenceUrl = await captureVideoEndFrame(v2, logLine);
+      previewUrl = captureVideoFrame(v2) || referenceUrl;
+    }
+
+    if (!previewUrl && !referenceUrl) {
+      logLine('The clip is on Flow but this node could read nothing from it, even after '
+        + 'scrolling back. Failing rather than reporting a result with no data in it.');
+      chrome.runtime.sendMessage({
+        type: 'STUDIO_NODE_ERROR',
+        payload: {
+          nodeId,
+          error: 'The clip generated on Flow but no frame could be read from it. '
+            + 'Open the Flow tab to check it, then retry this node.',
+        },
+      }).catch(() => {});
+      return;
+    }
+    logLine('Recovered on the second look.');
   }
 
   try {

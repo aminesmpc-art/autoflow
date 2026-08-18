@@ -167,6 +167,17 @@ export function extractTileProgress(tile: Element): number | null {
 }
 
 /** Largest real <img> src inside a tile (skips tiny data: placeholders) */
+/* The pictures YOU gave the tile, not the one it produced.
+   A finished clip's tile carries a thumbnail for every ingredient that went
+   into it, and those are the only <img> elements in it — the clip itself is a
+   <video> with no poster. So "largest image in the tile" returned the
+   reference photo the user uploaded, and a node either showed the wrong
+   picture or, when the strip had not rendered, nothing at all.
+
+   Matched on the alt text Flow gives them, which is written for a screen
+   reader and says exactly what they are. */
+const INGREDIENT_ALT = /generated or uploaded by you|present in your collection/i;
+
 export function findLargestImgSrc(tile: Element): string {
   const imgs = tile.querySelectorAll('img[src]');
   let bestSrc = '';
@@ -174,6 +185,7 @@ export function findLargestImgSrc(tile: Element): string {
   for (const img of imgs) {
     const src = img.getAttribute('src') || '';
     if (src.startsWith('data:') && src.length < 200) continue;
+    if (INGREDIENT_ALT.test(img.getAttribute('alt') || '')) continue;
     const rect = img.getBoundingClientRect();
     const area = rect.width * rect.height;
     if (area > bestArea) {
