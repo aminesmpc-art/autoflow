@@ -174,7 +174,12 @@ describe('a Story node run end to end', () => {
   it('spends nothing when it cannot get a clean set', async () => {
     /* Three bad replies: the opening turn and both repairs. Generating from
        prompts known to be broken costs real money for output nobody wants,
-       so the run stops instead. */
+       so the run stops instead.
+
+       "Certainly! Here is your second clip." is the meta code, which the
+       generator types in literally — one of the problems still worth
+       refusing over. Most are not: a shot the checker merely judges badly
+       now runs, and storyAdvisory.test.ts covers which is which. */
     const bad = envelope(P1, 'Certainly! Here is your second clip.');
     replies = [bad, bad, bad];
     const { nodes, edges } = workflow();
@@ -185,7 +190,8 @@ describe('a Story node run end to end', () => {
     expect(sent.some((s) => s.nodeId === 'clipA')).toBe(false);
     expect(sent.some((s) => s.nodeId === 'clipB')).toBe(false);
     const story = useStudioStore.getState().nodes.find((n) => n.id === 'story');
-    expect(String((story?.data as any)?.errorMessage || '')).toMatch(/format check|usable prompts/i);
+    expect(String((story?.data as any)?.errorMessage || ''))
+      .toMatch(/typed \s*into the generator|usable prompts/i);
   });
 
   it('refuses to run wired to nothing rather than asking for a plan for no one', async () => {

@@ -1002,6 +1002,42 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Which problems mean a prompt cannot be used, and which mean it is worse.
+ *
+ * The distinction the storyboard loop was missing. It counted every problem
+ * the same and refused to run when any survived three attempts, so a set of
+ * prompts that would have rendered perfectly well was thrown away because one
+ * shot opened a beat wider than the dialogue rule likes — and because a Story
+ * node feeds everything downstream, the whole workflow stopped there.
+ *
+ * Blocking means the text would carry something that is not part of the scene
+ * into the generator: a code fence, a stage label, a file name, "Sure, here
+ * are your prompts". Those get rendered literally, which is a wasted
+ * generation every time, and the check is worth stopping for.
+ *
+ * Everything else is a judgement about the shot. A wide frame with a line in
+ * it, a clip that reads as more produced than a phone would, an opening that
+ * does not say the room is empty — each makes the video less good and none of
+ * them makes it fail. Those are reported and run.
+ */
+export const BLOCKING: ReadonlySet<string> = new Set([
+  'count', 'empty', 'thin',
+  'fence', 'numbered', 'meta', 'storyboard', 'markdown', 'placeholder',
+  'stageLabels', 'audioLabels', 'fileName', 'editingJargon',
+]);
+
+/** The problems worth refusing to spend a generation on. */
+export const blockingProblems = (problems: Problem[]): Problem[] =>
+  problems.filter((p) => BLOCKING.has(p.code));
+
+/** One line per problem, in the order the shots run. */
+export function describeProblems(problems: Problem[]): string[] {
+  return [...problems]
+    .sort((a, b) => a.shot - b.shot)
+    .map((p) => (p.shot ? `Shot ${p.shot} ${p.detail}` : p.detail));
+}
+
 /** The follow-up turn: what was wrong, and what to send back. */
 export function repairMessage(problems: Problem[], targets: ShotTarget[]): string {
   const envelope = problems.filter((p) => p.shot === 0);

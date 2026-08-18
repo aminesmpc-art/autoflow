@@ -17,7 +17,8 @@ import { useStudioStore } from '../store';
 import { composeAskPrompt } from '../presets';
 import {
   shotContract, parseShots, checkShots, repairMessage, summarise, readJsonObject,
-  orderShotTargets, alignShots, type ShotTarget, type Shot,
+  blockingProblems, describeProblems,
+  orderShotTargets, alignShots, type ShotTarget, type Shot, type Problem,
 } from '../ask/storyboard';
 import {
   storyBrief, STORY_FIELDS, DEFAULT_STORY, voiceForShot, readStorySettings, isUgc, isBuild,
@@ -138,6 +139,24 @@ export interface RunOptions {
    * each one costs minutes and a prompt.
    */
   only?: Set<string>;
+}
+
+/**
+ * Say it where the user is looking.
+ *
+ * The content scripts have logged to Execution Diagnostics for a long time.
+ * The runner never did — its storyboard verdict went to console.log on the
+ * Studio page, which is the one console nobody has open. So a Story node that
+ * rejected a reply said "Fixing the format (1 of 2)" and nothing else: no
+ * indication of what was wrong, or whether the fix that came back was any
+ * better. The most common question about this feature was unanswerable from
+ * the UI.
+ */
+function studioLog(source: string, line: string): void {
+  try {
+    chrome.runtime.sendMessage({ type: 'STUDIO_LOG', payload: { source, line } })
+      .catch(() => {});
+  } catch { /* the panel is not open */ }
 }
 
 export class WorkflowRunner {
@@ -1120,7 +1139,7 @@ export class WorkflowRunner {
 
     let message = brief + '\n'
       + shotContract(targets, isStory ? STORY_FIELDS : '', wantsSpeaker, refs.length);
-    let best: { shots: Shot[]; problems: number; story: string } | null = null;
+    let best: { shots: Shot[]; problems: number; blocking: Problem[]; story: string } | null = null;
 
     for (let round = 0; round <= MAX_REPAIRS; round++) {
       if (this.abortRequested) throw new Error('Stopped');
@@ -1182,9 +1201,18 @@ export class WorkflowRunner {
         isStory ? { ugc: isUgc(storySettings), build: isBuild(storySettings) } : undefined,
       );
       console.log(`[Runner] Storyboard round ${round + 1}: ${summarise(problems)}`);
+      /* And in the panel, where somebody watching the run can read it. */
+      if (!problems.length) {
+        studioLog('Story', `Round ${round + 1}: ${shots.length} prompts, nothing to fix`);
+      } else {
+        const blocking = blockingProblems(problems).length;
+        studioLog('Story', `Round ${round + 1}: ${problems.length} problem${
+          problems.length === 1 ? '' : 's'}${blocking ? `, ${blocking} that would waste a generation` : ''}`);
+        for (const line of describeProblems(problems)) studioLog('Story', `  · ${line}`);
+      }
 
       if (!best || problems.length < best.problems) {
-        best = { shots, problems: problems.length, story: story || '' };
+        best = { shots, problems: problems.length, blocking: problems, story: story || '' };
         /* Written back so the next run does not re-decide who the character
            is. Only what the user has not already locked — a field they typed
            outranks anything the model returns. */
@@ -1207,12 +1235,35 @@ export class WorkflowRunner {
         + `${MAX_REPAIRS + 1} attempts — open the chat tab to see what it replied`
       );
     }
-    if (best.problems > 0) {
+    /* Out of repairs, with something in hand.
+     *
+     * This used to throw whenever ANY problem survived, and because a Story
+     * node feeds every clip below it, that stopped the whole workflow — six
+     * minutes in, on prompts that would have rendered perfectly well. The
+     * reasoning was sound for the problems it was written against: a prompt
+     * carrying a code fence or a "Setup:" label gets that typed into the
+     * generator, and paying for it is worse than stopping.
+     *
+     * But most of what the checker finds is not that. A line in a frame wider
+     * than lip sync likes, a clip that reads as more produced than a phone
+     * would, an opening that never says the room is empty — each makes the
+     * video less good and none of them makes it fail. Refusing to run those
+     * throws away the whole piece to avoid a blemish on one shot of it.
+     *
+     * So the blocking ones still stop. The rest run, and are said out loud. */
+    const stillBlocking = blockingProblems(best.blocking);
+    if (stillBlocking.length) {
       throw new Error(
-        `The prompts still fail the format check after ${MAX_REPAIRS} repairs `
-        + `(${best.problems} problem${best.problems === 1 ? '' : 's'}). Stopping rather than `
-        + `spending ${targets.length} generations on prompts that will not render correctly.`
+        `${stillBlocking.length} of the prompts still carry something that would be typed `
+        + `into the generator (${stillBlocking.map((p) => p.code).join(', ')}). Stopping `
+        + `rather than spending ${targets.length} generations rendering it. `
+        + 'See Diagnostics for the detail.'
       );
+    }
+    if (best.problems > 0) {
+      studioLog('Story', `Running with ${best.problems} thing${
+        best.problems === 1 ? '' : 's'} worth fixing — none of them stops a clip rendering.`);
+      console.warn(`[Runner] Storyboard: proceeding with ${best.problems} advisory problem(s)`);
     }
     if (best.shots.length < targets.length) {
       throw new Error(
