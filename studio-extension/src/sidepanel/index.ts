@@ -710,8 +710,176 @@ interface PendingBuild {
   platform: string;
   name: string;
   model: string;
+  /* Set when this came back from history rather than from a live
+     conversation, so refine sends the plan instead of assuming the model
+     still has it. */
+  resumeFrom?: any;
 }
 let pendingBuild: PendingBuild | null = null;
+
+/* ── Pictures of what you mean ──
+   A sentence about "my product" is a great deal less use to a model than the
+   product. These ride along with the build request on the same field a Story
+   node uses for its reference stills, so every adapter already knows how to
+   attach them. */
+let refImages: string[] = [];
+
+/** Small enough to survive a message hop and an upload. */
+const REF_MAX_PX = 1024;
+
+/** Read a picked file down to a data URL the chat tab can be given. */
+function readRef(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    const fr = new FileReader();
+    fr.onerror = () => resolve('');
+    fr.onload = () => {
+      const img = new Image();
+      img.onerror = () => resolve('');
+      img.onload = () => {
+        /* Downscaled here rather than sent whole. A phone photo is several
+           megabytes, and it crosses two message boundaries before it reaches
+           the tab that needs it. */
+        const scale = Math.min(1, REF_MAX_PX / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * scale));
+        c.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = c.getContext('2d');
+        if (!ctx) return resolve('');
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = String(fr.result || '');
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+function renderRefs(): void {
+  const box = document.getElementById('build-refs') as HTMLElement | null;
+  if (!box) return;
+  box.hidden = !refImages.length;
+  box.innerHTML = '';
+  refImages.forEach((src, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'sp-shot';
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = '';
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'sp-shot__x';
+    x.textContent = '\u2715';
+    x.title = 'Remove';
+    x.addEventListener('click', () => { refImages.splice(i, 1); renderRefs(); });
+    cell.append(img, x);
+    box.append(cell);
+  });
+}
+
+/* ── What you made before ──
+   A workflow is rarely right first time. Everything needed to ask for a
+   change — the idea, the plan, which AI wrote it — was being discarded the
+   moment it reached the canvas, so "make it 5 shots" was only ever possible
+   in the thirty seconds the preview was on screen. */
+interface PastBuild {
+  id: string;
+  idea: string;
+  name: string;
+  at: number;
+  platform: string;
+  model: string;
+  template: any;
+}
+
+/** Enough to be useful, few enough that the list stays a list. */
+const PAST_MAX = 12;
+
+async function readPast(): Promise<PastBuild[]> {
+  try {
+    const { af_builds } = await chrome.storage.local.get('af_builds');
+    return Array.isArray(af_builds) ? af_builds : [];
+  } catch { return []; }
+}
+
+async function rememberBuild(b: PendingBuild, idea: string): Promise<void> {
+  const past = await readPast();
+  const entry: PastBuild = {
+    id: `b_${Date.now().toString(36)}`,
+    idea: idea.trim().slice(0, 400),
+    name: String(b.template?.name || 'Workflow'),
+    at: Date.now(),
+    platform: b.platform,
+    model: b.model,
+    template: b.template,
+  };
+  try {
+    await chrome.storage.local.set({ af_builds: [entry, ...past].slice(0, PAST_MAX) });
+  } catch { /* storage full — the build still happened */ }
+  renderPast();
+}
+
+/** "just now", "2h", "3d" — enough to tell one from another. */
+function ago(at: number): string {
+  const mins = Math.max(0, Math.round((Date.now() - at) / 60000));
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  return `${Math.round(hrs / 24)}d`;
+}
+
+async function renderPast(): Promise<void> {
+  const box = document.getElementById('build-past') as HTMLElement | null;
+  const list = document.getElementById('build-past-list');
+  if (!box || !list) return;
+  const past = await readPast();
+  box.hidden = !past.length;
+  list.innerHTML = '';
+  for (const b of past) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'sp-past__item';
+    const idea = document.createElement('span');
+    idea.className = 'sp-past__idea';
+    idea.textContent = b.idea || b.name;
+    const when = document.createElement('span');
+    when.className = 'sp-past__when';
+    when.textContent = ago(b.at);
+    row.append(idea, when);
+    row.title = `${b.name} — reopen to change it`;
+    row.addEventListener('click', () => reopenBuild(b));
+    list.append(row);
+  }
+}
+
+/**
+ * Bring a past build back, with the refine box working.
+ *
+ * The chat tab it was written in is long gone, so this cannot resume that
+ * conversation — and pretending otherwise is how the builder used to send
+ * repairs into a fresh chat that had never seen the plan. It starts a new one
+ * and hands over the plan as context, which is the honest version and the one
+ * that actually produces a changed plan rather than a different piece.
+ */
+function reopenBuild(b: PastBuild): void {
+  const idea = document.getElementById('build-idea') as HTMLTextAreaElement | null;
+  if (idea) {
+    idea.value = b.idea;
+    idea.dispatchEvent(new Event('input'));
+  }
+  showStages(false);
+  const out = document.getElementById('build-out') as HTMLElement | null;
+  if (out) out.hidden = true;
+  showPlan({
+    template: b.template,
+    warnings: [],
+    platform: b.platform,
+    name: engineName(b.platform),
+    model: b.model,
+    /* The conversation is gone; the plan is not. */
+    resumeFrom: b.template,
+  });
+}
 
 /** How many nodes on this template actually spend something. */
 function generationCount(template: any): number {
@@ -965,6 +1133,10 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
 
       const res: any = await chrome.runtime.sendMessage({
         type: 'PANEL_BUILD', platform: key, prompt: message, model,
+        /* First turn only. A repair is the next message in the same
+           conversation and the pictures are already above it — sending them
+           again would re-upload for nothing. */
+        images: round === 0 ? refImages : [],
         /* A repair is the next turn of THIS conversation. Sent as a new chat
            it refers to a plan the model has never seen, and every repair round
            was doing exactly that — which is why the second attempt came back
@@ -1065,10 +1237,20 @@ async function refineBuild(text: string): Promise<void> {
   showStages(true);
   stage('write', `Asking ${at.name} to change it…`);
 
+  const carry = at.resumeFrom
+    ? `Here is a workflow plan:\n\n${JSON.stringify(at.resumeFrom, null, 1)}\n\n`
+    : '';
+
   try {
     const res: any = await chrome.runtime.sendMessage({
-      type: 'PANEL_BUILD', platform: at.platform, model: at.model, newChat: 'never',
-      prompt: `${text.trim()}\n\nApply that to the plan you just wrote and send the `
+      type: 'PANEL_BUILD', platform: at.platform, model: at.model,
+      /* A plan reopened from history is being shown to a model that has never
+         seen it, so it travels with the message. A live one is the next turn
+         of the conversation that produced it and does not — re-sending it
+         would waste the context that thread already holds. */
+      newChat: at.resumeFrom ? 'auto' : 'never',
+      prompt: `${carry}${text.trim()}\n\nApply that to ${
+        at.resumeFrom ? 'that plan' : 'the plan you just wrote'} and send the `
         + 'complete JSON object again — the same shape, with everything else unchanged. '
         + 'No prose around it, no code fence.',
     });
@@ -1087,7 +1269,7 @@ async function refineBuild(text: string): Promise<void> {
     }
 
     stage('ready', quality.length ? 'Changed — a few things worth knowing.' : 'Changed.');
-    showPlan({ ...at, template, warnings: explainPlan(quality) });
+    showPlan({ ...at, template, warnings: explainPlan(quality), resumeFrom: undefined });
   } catch (e: any) {
     stage('write', e?.message || 'The change could not be asked for.');
   } finally {
@@ -1169,6 +1351,32 @@ function wireBuilder(): void {
     });
   }
 
+  /* Pictures for the AI. */
+  const addImg = document.getElementById('build-add-image') as HTMLButtonElement | null;
+  const imgInput = document.getElementById('build-image-input') as HTMLInputElement | null;
+  if (addImg && imgInput) {
+    addImg.addEventListener('click', () => imgInput.click());
+    imgInput.addEventListener('change', async () => {
+      for (const f of Array.from(imgInput.files || [])) {
+        if (refImages.length >= 4) break;   // a chat tab will not take many
+        const data = await readRef(f);
+        if (data) refImages.push(data);
+      }
+      imgInput.value = '';
+      renderRefs();
+    });
+  }
+
+  /* What was built before. */
+  renderPast();
+  const pastClear = document.getElementById('build-past-clear');
+  if (pastClear) {
+    pastClear.addEventListener('click', async () => {
+      try { await chrome.storage.local.set({ af_builds: [] }); } catch { /* ignore */ }
+      renderPast();
+    });
+  }
+
   const toLibrary = document.getElementById('build-open-library');
   if (toLibrary) toLibrary.addEventListener('click', () => showView('templates'));
 
@@ -1183,6 +1391,7 @@ function wireBuilder(): void {
       (planGo as HTMLButtonElement).disabled = true;
       try {
         await openBuilt(at.template);
+        await rememberBuild(at, (document.getElementById('build-idea') as HTMLTextAreaElement | null)?.value || '');
         hidePlan();
         showStages(false);
       } catch {

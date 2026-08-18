@@ -39,7 +39,11 @@ describe('the builder keeps its conversation', () => {
   it('the worker forwards what it was asked for', () => {
     /* It hardcoded 'auto'. Passing the flag from the panel and ignoring it
        here would look correct in every diff and change nothing at all. */
-    expect(worker).toMatch(/askChatForPlan\(msg\.platform, msg\.prompt, msg\.model \|\| '', msg\.newChat/);
+    /* Flattened: the call spans lines now that it also carries the pictures
+       the user attached. What matters is that the panel's flag is passed on
+       rather than hardcoded here. */
+    expect(worker.replace(/\s+/g, ' ')).toMatch(
+      /askChatForPlan\( msg\.platform, msg\.prompt, msg\.model \|\| '', msg\.newChat/);
     expect(worker).toMatch(/newChat,\n\s+model,/);
     expect(worker).not.toMatch(/newChat: 'auto',\n\s+model,/);
   });

@@ -225,12 +225,13 @@ describe('changing it without starting over', () => {
     expect(SRC).toMatch(/refineBox\.addEventListener\('keydown'[\s\S]{0,200}e\.key === 'Enter'/);
   });
 
-  it('continues the conversation rather than opening a new one', () => {
-    /* The whole point. A new chat has never seen the plan, so "make it 5
-       shots" becomes a fresh brief that rediscovers everything the first one
-       settled — and loses the parts that were already right. */
+  it('continues the conversation for a live plan, and introduces a reopened one', () => {
+    /* Two cases now. A plan the model just wrote is the next turn of that
+       thread. One reopened from history is being shown to a model that has
+       never seen it, and the thread it was written in is long gone. */
     const fn = SRC.slice(SRC.indexOf('async function refineBuild'));
-    expect(fn.slice(0, fn.indexOf('\n}\n'))).toContain('newChat: \'never\'');
+    expect(fn.slice(0, fn.indexOf('sendMessage') + 700))
+      .toContain("newChat: at.resumeFrom ? 'auto' : 'never'");
   });
 
   it('keeps the plan on screen when the change comes back unusable', () => {

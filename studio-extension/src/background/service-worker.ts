@@ -294,6 +294,11 @@ const planWaiters = new Map<string, PlanWaiter>();
  */
 async function askChatForPlan(
   platform: Platform, prompt: string, model = '', newChat: 'auto' | 'never' = 'auto',
+  /* Pictures of what the user is describing. The same field a Story node uses
+     to show a chat its reference stills, and the same adapters read it — a
+     sentence about "my product" is a great deal less use to a model than the
+     product. */
+  images: string[] = [],
 ): Promise<{ text?: string; error?: string }> {
   const cfg = PLATFORMS[platform];
   if (!cfg) return { error: `Unknown platform "${platform}".` };
@@ -316,8 +321,8 @@ async function askChatForPlan(
          the user is told what the site did rather than "timed out here". */
       timer: setTimeout(() => {
         planWaiters.delete(nodeId);
-        resolve({ error: `${cfg.name} did not answer within three minutes.` });
-      }, 180_000),
+        resolve({ error: `${cfg.name} did not answer in time.` });
+      }, images.length ? 360_000 : 180_000),
     });
   });
 
@@ -338,6 +343,7 @@ async function askChatForPlan(
           model,
           aspectRatio: '1:1',
           creationType: 'ingredients',
+          referenceImageData: images.length ? images : undefined,
         },
       },
     });
@@ -768,7 +774,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg?.type === 'PANEL_BUILD') {
-    askChatForPlan(msg.platform, msg.prompt, msg.model || '', msg.newChat === 'never' ? 'never' : 'auto')
+    askChatForPlan(
+      msg.platform, msg.prompt, msg.model || '',
+      msg.newChat === 'never' ? 'never' : 'auto',
+      Array.isArray(msg.images) ? msg.images : [],
+    )
       .then(sendResponse)
       .catch((e) => sendResponse({ error: e?.message || String(e) }));
     return true;   // async
