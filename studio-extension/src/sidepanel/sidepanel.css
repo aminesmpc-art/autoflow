@@ -2078,3 +2078,68 @@ body {
    rather than inside a composer, so it carries its own padding. */
 .sp-shots--refine { padding: 8px 0 0; }
 .sp-plan__refine .sp-ask__clip { margin-left: 0; width: 26px; height: 26px; }
+
+/* ── The last three things that read as leftover ── */
+
+/* A native <select> is the one control on this panel that is drawn by the
+   operating system: its own arrow, its own metrics, its own idea of a focus
+   ring. Beside a custom composer that is exactly where the eye goes. */
+.sp-ask__engine {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 18px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-3) 50%),
+    linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+  background-position: right 7px top 52%, right 3px top 52%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+.sp-ask__engine:hover { border-color: var(--line-2); color: var(--text); }
+
+/* The Library link was grey text that happened to end in an arrow. A row with
+   a hover state and an arrow that moves says it does something. */
+.sp-ask__more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: var(--s-4);
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  background: var(--surface);
+  font-size: var(--t-small);
+  color: var(--text-2);
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.sp-ask__more:hover { border-color: var(--accent-30); color: var(--text); }
+.sp-ask__more-go {
+  color: var(--text-3);
+  transition: transform 120ms ease, color 120ms ease;
+}
+.sp-ask__more:hover .sp-ask__more-go { color: var(--accent); transform: translateX(3px); }
+
+/* The escape hatch, looking like one rather than like an unfinished row. */
+.sp-manual { margin-top: var(--s-3); }
+.sp-manual > summary {
+  list-style: none;
+  padding: 9px 12px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-ctrl);
+  font-size: var(--t-small);
+  color: var(--text-3);
+  cursor: pointer;
+}
+.sp-manual > summary::-webkit-details-marker { display: none; }
+.sp-manual > summary::before {
+  content: '+';
+  margin-right: 7px;
+  font-weight: 700;
+  color: var(--text-3);
+}
+.sp-manual[open] > summary::before { content: '\2212'; }
+.sp-manual > summary:hover { border-color: var(--accent-30); color: var(--text-2); }
