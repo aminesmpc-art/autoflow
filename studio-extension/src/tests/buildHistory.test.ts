@@ -328,3 +328,45 @@ describe('reopening the conversation, not a summary of it', () => {
     expect(WORKER.slice(at, at + 900)).toMatch(/waitForTabReady\(tabId/);
   });
 });
+
+describe('a conversation id outlives the conversation', () => {
+  /* Read off the live page rather than reasoned about. Navigating to
+     /app/8ddbd0fbddb01467 — a well-formed id captured by a real build —
+     redirected to /app: a blank new chat, zero turns, no error. That id is
+     not among the twenty-five in the sidebar, and every one of those has the
+     identical shape. So the format was never wrong; the conversation simply
+     stopped existing, and Gemini answers that with a silent redirect.
+
+     Which made the previous check useless: tabs.update threw nothing, so the
+     worker reported success and handed the user a page that looked like a
+     broken conversation. */
+
+  it('checks where the navigation landed, not just that it ran', () => {
+    const at = WORKER.indexOf("if (msg?.type === 'PANEL_OPEN_CHAT')");
+    const block = WORKER.slice(at, at + 2200);
+    expect(block).toMatch(/const landed = \(await chrome\.tabs\.get\(tabId\)\)\?\.url \|\| ''/);
+    expect(block).toMatch(/if \(bare\(landed\) !== bare\(url\)\)/);
+  });
+
+  it('waits for the redirect before looking', () => {
+    /* It happens after load, so reading the URL the instant the tab is ready
+       sees the address we asked for and misses the bounce. */
+    const at = WORKER.indexOf("if (msg?.type === 'PANEL_OPEN_CHAT')");
+    expect(WORKER.slice(at, at + 2200)).toMatch(/setTimeout\(r, \d+\)[\s\S]{0,120}chrome\.tabs\.get\(tabId\)/);
+  });
+
+  it('ignores a query string these sites add themselves', () => {
+    const at = WORKER.indexOf("if (msg?.type === 'PANEL_OPEN_CHAT')");
+    expect(WORKER.slice(at, at + 2200)).toMatch(/split\('\?'\)\[0\]/);
+  });
+
+  it('says the conversation is gone rather than that something failed', () => {
+    const at = WORKER.indexOf("if (msg?.type === 'PANEL_OPEN_CHAT')");
+    expect(WORKER.slice(at, at + 2200)).toMatch(/no longer there/);
+  });
+
+  it('shows that reason in the panel instead of a generic line', () => {
+    const fn = SRC.slice(SRC.indexOf('async function reopenBuild'));
+    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/buildSays\('info', String\(res\?\.error/);
+  });
+});

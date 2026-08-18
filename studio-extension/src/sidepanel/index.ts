@@ -938,7 +938,7 @@ async function reopenBuild(b: PastBuild): Promise<void> {
     }).catch(() => null);
     live = !!res?.ok;
     if (!live) {
-      buildSays('info', 'That conversation could not be reopened', [
+      buildSays('info', String(res?.error || 'That conversation could not be reopened'), [
         'Changing it will start a new chat and send the plan across instead.',
       ]);
     }

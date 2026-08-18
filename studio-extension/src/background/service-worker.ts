@@ -823,6 +823,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await waitForTabReady(tabId, 20_000);
         }
         await chrome.tabs.update(tabId, { active: true });
+
+        /* Where did we actually land?
+           A conversation id stays well-formed long after the conversation
+           stops existing — deleted, expired, or belonging to another account.
+           Gemini answers one of those with a silent redirect to /app, which
+           is a blank new chat that looks like a working page, so navigating
+           and reporting success handed the user a broken screen and called it
+           done. Observed directly: /app/8ddbd0fbddb01467 -> /app, no turns.
+
+           A short settle first, because the redirect happens after load. */
+        await new Promise((r) => setTimeout(r, 1200));
+        const landed = (await chrome.tabs.get(tabId))?.url || '';
+        /* Compared without the query string: these sites append their own. */
+        const bare = (u: string) => u.split('?')[0].replace(/\/$/, '');
+        if (bare(landed) !== bare(url)) {
+          sendResponse({
+            ok: false,
+            error: 'That conversation is no longer there — it may have been deleted.',
+          });
+          return;
+        }
         sendResponse({ ok: true });
       } catch (e: any) {
         sendResponse({ ok: false, error: e?.message || String(e) });
