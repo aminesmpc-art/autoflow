@@ -299,7 +299,7 @@ async function askChatForPlan(
      sentence about "my product" is a great deal less use to a model than the
      product. */
   images: string[] = [],
-): Promise<{ text?: string; error?: string }> {
+): Promise<{ text?: string; error?: string; conversationUrl?: string }> {
   const cfg = PLATFORMS[platform];
   if (!cfg) return { error: `Unknown platform "${platform}".` };
 
@@ -353,7 +353,26 @@ async function askChatForPlan(
     return { error: `${cfg.name} tab is not reachable: ${e?.message || e}` };
   }
 
-  return answer;
+  const settled = await answer;
+
+  /* Where that conversation lives.
+     Read here rather than in five content scripts: the worker owns the tab
+     and already knows its id, and every one of these sites puts the
+     conversation id in the address bar once the first message lands. Kept so
+     a change asked for tomorrow can be typed into the SAME thread rather than
+     into a new one that has to be told everything again. */
+  if (settled.text) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      const url = tab?.url || '';
+      /* Only a real conversation, not the site's front door. A bare
+         chatgpt.com would reopen a blank chat and look like it worked. */
+      if (url && /\/(c|chat|app|share)\/[\w-]{6,}/.test(url)) {
+        return { ...settled, conversationUrl: url };
+      }
+    } catch { /* tab closed between answering and asking */ }
+  }
+  return settled;
 }
 
 /** True when this result belonged to a Build request rather than to a node. */
@@ -781,6 +800,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     )
       .then(sendResponse)
       .catch((e) => sendResponse({ error: e?.message || String(e) }));
+    return true;   // async
+  }
+
+  /* Put a chat tab back on the conversation a plan was written in, so the
+     next message continues it instead of starting somewhere new. */
+  if (msg?.type === 'PANEL_OPEN_CHAT') {
+    (async () => {
+      const platform = msg.platform as Platform;
+      const url = String(msg.url || '');
+      if (!PLATFORMS[platform] || !url) {
+        sendResponse({ ok: false, error: 'No conversation to open.' });
+        return;
+      }
+      try {
+        const tabId = await ensurePlatformTab(platform);
+        if (!tabId) { sendResponse({ ok: false, error: 'Could not open that chat.' }); return; }
+        const tab = await chrome.tabs.get(tabId);
+        /* Already there — navigating again would discard anything typed. */
+        if ((tab?.url || '') !== url) {
+          await chrome.tabs.update(tabId, { url });
+          await waitForTabReady(tabId, 20_000);
+        }
+        await chrome.tabs.update(tabId, { active: true });
+        sendResponse({ ok: true });
+      } catch (e: any) {
+        sendResponse({ ok: false, error: e?.message || String(e) });
+      }
+    })();
     return true;   // async
   }
 

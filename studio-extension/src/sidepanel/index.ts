@@ -712,8 +712,12 @@ interface PendingBuild {
   model: string;
   /* Set when this came back from history rather than from a live
      conversation, so refine sends the plan instead of assuming the model
-     still has it. */
+     still has it. Not needed when the conversation itself can be reopened. */
   resumeFrom?: any;
+  /* The chat this plan was written in. Reopening it is better than
+     reconstructing it: the model still has the whole thread, including the
+     pictures and every repair round, none of which fits in one message. */
+  chatUrl?: string;
 }
 let pendingBuild: PendingBuild | null = null;
 
@@ -831,6 +835,8 @@ interface PastBuild {
   platform: string;
   model: string;
   template: any;
+  /** The conversation it was written in, when the site gave us one. */
+  chatUrl?: string;
 }
 
 /** Enough to be useful, few enough that the list stays a list. */
@@ -853,6 +859,7 @@ async function rememberBuild(b: PendingBuild, idea: string): Promise<void> {
     platform: b.platform,
     model: b.model,
     template: b.template,
+    chatUrl: b.chatUrl || '',
   };
   try {
     await chrome.storage.local.set({ af_builds: [entry, ...past].slice(0, PAST_MAX) });
@@ -888,7 +895,9 @@ async function renderPast(): Promise<void> {
     when.className = 'sp-past__when';
     when.textContent = ago(b.at);
     row.append(idea, when);
-    row.title = `${b.name} — reopen to change it`;
+    row.title = b.chatUrl
+      ? `${b.name} — opens the ${engineName(b.platform)} conversation it was written in`
+      : `${b.name} — reopen to change it`;
     row.addEventListener('click', () => reopenBuild(b));
     list.append(row);
   }
@@ -903,7 +912,7 @@ async function renderPast(): Promise<void> {
  * and hands over the plan as context, which is the honest version and the one
  * that actually produces a changed plan rather than a different piece.
  */
-function reopenBuild(b: PastBuild): void {
+async function reopenBuild(b: PastBuild): Promise<void> {
   const idea = document.getElementById('build-idea') as HTMLTextAreaElement | null;
   if (idea) {
     idea.value = b.idea;
@@ -912,14 +921,38 @@ function reopenBuild(b: PastBuild): void {
   showStages(false);
   const out = document.getElementById('build-out') as HTMLElement | null;
   if (out) out.hidden = true;
+
+  /* Reopen the conversation itself where we can.
+     Re-sending the plan reconstructs a summary of it. The thread still holds
+     the whole thing — the brief, the pictures, every repair round and the
+     reasoning between them — and none of that fits in one message. So put the
+     tab back on it and continue there.
+
+     Where the site never gave us a conversation URL, or the conversation has
+     since been deleted, carrying the plan is the fallback rather than the
+     plan. Both work; one is much better informed. */
+  let live = false;
+  if (b.chatUrl) {
+    const res: any = await chrome.runtime.sendMessage({
+      type: 'PANEL_OPEN_CHAT', platform: b.platform, url: b.chatUrl,
+    }).catch(() => null);
+    live = !!res?.ok;
+    if (!live) {
+      buildSays('info', 'That conversation could not be reopened', [
+        'Changing it will start a new chat and send the plan across instead.',
+      ]);
+    }
+  }
+
   showPlan({
     template: b.template,
     warnings: [],
     platform: b.platform,
     name: engineName(b.platform),
     model: b.model,
-    /* The conversation is gone; the plan is not. */
-    resumeFrom: b.template,
+    chatUrl: b.chatUrl,
+    /* Only when the thread could not be reopened. */
+    resumeFrom: live ? undefined : b.template,
   });
 }
 
@@ -1166,6 +1199,7 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
 
   try {
     let message = buildSpec(idea) + aboutImages(refImages.length, 'make');
+    let chatUrl = '';
 
     for (let round = 0; round <= MAX_BUILD_REPAIRS; round++) {
       if (buildAborted) return;
@@ -1195,6 +1229,9 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
       }
       if (buildAborted) return;
       lastReply = String(res.text || '');
+      /* Latest wins: a repair happens in the same thread, and the URL only
+         exists once the site has actually created the conversation. */
+      if (res.conversationUrl) chatUrl = String(res.conversationUrl);
 
       stage('check', 'Reading what came back…');
       const { plan, template, quality, problems, problem } = evaluateReply(lastReply);
@@ -1238,7 +1275,7 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
       showPlan({
         template: best.template,
         warnings: explainPlan(best.quality),
-        platform: key, name, model,
+        platform: key, name, model, chatUrl,
       });
       return;
     }

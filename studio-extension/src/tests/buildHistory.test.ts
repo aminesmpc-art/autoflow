@@ -259,3 +259,66 @@ describe('the model is told the pictures are there', () => {
       .toMatch(/picture of what to change/i);
   });
 });
+
+describe('reopening the conversation, not a summary of it', () => {
+  /* Re-sending the plan reconstructs a summary. The thread still holds the
+     whole thing — the brief, the pictures, every repair round and the
+     reasoning between them — and none of that fits in one message. */
+
+  it('reads the conversation URL off the tab, not out of five adapters', () => {
+    /* The worker owns the tab and knows its id. Asking each content script to
+       report its own address would be five changes for one fact. */
+    expect(WORKER).toMatch(/await chrome\.tabs\.get\(tabId\)/);
+    expect(WORKER).toMatch(/conversationUrl: url/);
+  });
+
+  it('keeps only a real conversation, not the site’s front door', () => {
+    /* A bare chatgpt.com would reopen a blank chat and look like it worked. */
+    const at = WORKER.indexOf('if (settled.text) {');
+    expect(WORKER.slice(at, at + 600)).toContain('(c|chat|app|share)');
+  });
+
+  it('takes the latest one, because a repair happens in the same thread', () => {
+    /* And the URL only exists once the site has actually created it — often
+       not until after the first message has landed. */
+    expect(SRC).toMatch(/if \(res\.conversationUrl\) chatUrl = String\(res\.conversationUrl\)/);
+  });
+
+  it('stores it with the build', () => {
+    const fn = SRC.slice(SRC.indexOf('async function rememberBuild'));
+    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/chatUrl: b\.chatUrl \|\| ''/);
+  });
+
+  it('opens the chat tab on that conversation when one was kept', () => {
+    const fn = SRC.slice(SRC.indexOf('async function reopenBuild'));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+    expect(body).toMatch(/type: 'PANEL_OPEN_CHAT', platform: b\.platform, url: b\.chatUrl/);
+  });
+
+  it('continues that thread rather than carrying the plan into it', () => {
+    /* resumeFrom is what makes refine re-send the plan and open a new chat.
+       With the real conversation in front of the model, both are wrong. */
+    const fn = SRC.slice(SRC.indexOf('async function reopenBuild'));
+    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/resumeFrom: live \? undefined : b\.template/);
+  });
+
+  it('falls back to carrying the plan when the thread is gone', () => {
+    /* Deleted conversations, a signed-out account, a site that never gave us
+       a URL. All produce the same thing: no thread to continue. */
+    const fn = SRC.slice(SRC.indexOf('async function reopenBuild'));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+    expect(body).toMatch(/live = !!res\?\.ok/);
+    expect(body).toMatch(/could not be reopened/);
+  });
+
+  it('does not navigate a tab that is already on it', () => {
+    /* Reloading would discard anything half-typed in the composer there. */
+    const at = WORKER.indexOf("if (msg?.type === 'PANEL_OPEN_CHAT')");
+    expect(WORKER.slice(at, at + 900)).toMatch(/\(tab\?\.url \|\| ''\) !== url/);
+  });
+
+  it('waits for the tab before saying it worked', () => {
+    const at = WORKER.indexOf("if (msg?.type === 'PANEL_OPEN_CHAT')");
+    expect(WORKER.slice(at, at + 900)).toMatch(/waitForTabReady\(tabId/);
+  });
+});
