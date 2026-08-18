@@ -1381,6 +1381,13 @@ function wireBuilder(): void {
   idea.addEventListener('input', syncGo);
   syncGo();
 
+  /* The cap says whichever key this machine actually has. Showing a Mac
+     glyph on Windows is worse than showing nothing — it names a key that is
+     not on the keyboard. */
+  const goKey = document.getElementById("build-go-key");
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+  if (goKey) goKey.textContent = isMac ? "⌘⏎" : "Ctrl ⏎";
+
   /* Ctrl/Cmd+Enter, because a box you type a sentence into is a box people
      try to submit from. */
   idea.addEventListener('keydown', (e) => {

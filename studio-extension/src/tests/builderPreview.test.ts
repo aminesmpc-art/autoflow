@@ -341,3 +341,52 @@ describe('the checker still behaves', () => {
     expect(explainPlan(checkPlan(plan))).toEqual([]);
   });
 });
+
+describe('the keyboard is visible, the way Linear and Raycast make it', () => {
+  beforeEach(mountPanel);
+
+  it('shows the shortcut on the action', () => {
+    /* The panel has accepted Ctrl/Cmd+Enter since it was built and never once
+       said so. Putting the shortcut on the button is the single most
+       recognisable thing both of those apps do. */
+    const cap = document.getElementById('build-go-key')!;
+    expect(cap.tagName).toBe('KBD');
+    expect(document.getElementById('build-go-ai')!.contains(cap)).toBe(true);
+  });
+
+  it('names the key this machine actually has', () => {
+    /* A ⌘ glyph on Windows names a key that is not on the keyboard, which is
+       worse than showing nothing. */
+    expect(SRC).toMatch(/Mac\|iPhone\|iPad/);
+    expect(SRC).toMatch(/goKey\.textContent = isMac \?/);
+  });
+
+  it('puts one on the change box too', () => {
+    expect(document.querySelector('#build-refine-go .sp-key')).not.toBeNull();
+  });
+
+  it('keeps the cap legible on a filled button', () => {
+    /* A grey cap on a purple fill disappears. */
+    const css = CSS();
+    expect(css).toMatch(/\.sp-key--on \{[^}]*color: var\(--on-accent\)/);
+    expect(css).toMatch(/\.sp-ask__go:disabled \.sp-key--on/);
+  });
+
+  it('drops the marketing kicker for a tighter heading', () => {
+    /* An uppercase accent eyebrow over a 20px title is a landing page. Both
+       references let the input be the interface. */
+    expect(document.querySelector('.sp-ask__kicker')).toBeNull();
+    const css = CSS();
+    const at = css.lastIndexOf('.sp-ask__q {');
+    expect(css.slice(at, css.indexOf('}', at))).toMatch(/font-size: var\(--t-lg\)/);
+  });
+
+  it('does not give a 320px panel a horizontal scrollbar', () => {
+    /* The opening glow was set with a negative horizontal inset, which is
+       wider than the panel and scrolls the whole view sideways. Bleeding a
+       highlight past the edge is not worth that. */
+    const css = CSS();
+    const at = css.indexOf('.sp-ask::before');
+    expect(css.slice(at, css.indexOf('}', at))).not.toMatch(/inset:[^;]*-\d+px auto/);
+  });
+});

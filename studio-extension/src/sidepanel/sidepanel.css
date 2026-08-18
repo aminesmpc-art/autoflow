@@ -2143,3 +2143,90 @@ body {
 }
 .sp-manual[open] > summary::before { content: '\2212'; }
 .sp-manual > summary:hover { border-color: var(--accent-30); color: var(--text-2); }
+
+/* ── Linear / Raycast ──
+   What those two actually share is not a colour. It is that the keyboard is
+   visible, the density is tight, and nothing is decorated that could instead
+   be precise. Three changes in that direction. */
+
+/* A keycap. Raycast puts the shortcut on the action, every time — the panel
+   has supported Ctrl/Cmd+Enter since it was built and never once said so. */
+.sp-key {
+  display: inline-grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  font-family: inherit;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-3);
+  background: var(--surface-3);
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: var(--r-chip);
+}
+/* On a filled button the cap has to sit on the fill, not fight it. */
+.sp-key--on {
+  color: var(--on-accent);
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+.sp-ask__go:disabled .sp-key--on {
+  color: var(--text-3);
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+.sp-btn .sp-key { margin-left: 5px; }
+
+/* Tighter. Linear's headings are small and set close; the 20px + uppercase
+   accent kicker this replaces was a landing page, not a tool. */
+.sp-ask__q {
+  margin: 2px 0 12px;
+  font-size: var(--t-lg);
+  letter-spacing: -0.015em;
+}
+
+/* Denser, quieter. Numbered discs in accent were louder than the step they
+   labelled — Raycast would set this as three plain rows and move on. */
+.sp-how { gap: 2px; margin-top: 14px; }
+.sp-how li {
+  gap: 8px;
+  padding: 4px 0;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+}
+/* The disc is gone. A number in a bordered circle was decorating a step that
+   only needed counting, and neither reference would draw it — the scale has
+   no 9px size for a reason, and reaching for one was the tell. */
+.sp-how__n {
+  width: auto;
+  height: auto;
+  border: none;
+  background: none;
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  opacity: 0.7;
+}
+
+/* One faint light above the fold, the way both of them open a surface. */
+.sp-ask::before {
+  content: '';
+  position: absolute;
+  /* No negative horizontal inset: the panel is 320px and anything wider than
+     its content gives the whole view a horizontal scrollbar. Bleeding a glow
+     past the edge is not worth a scrollbar that should never exist. */
+  inset: -20px 0 auto;
+  height: 120px;
+  pointer-events: none;
+  background: radial-gradient(60% 100% at 50% 0%, var(--accent-8), transparent 70%);
+}
+
+/* Restrained. The glow was doing the work precision should do. */
+.sp-ask__go { box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset; }
+.sp-ask__go:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset, 0 2px 12px -4px var(--accent-50);
+}

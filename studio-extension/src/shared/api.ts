@@ -270,7 +270,7 @@ export async function getProfile(): Promise<UserProfile | null> {
       email: data.user?.email ?? '',
       plan_type: data.profile?.plan_type ?? 'free',
       is_pro_active: data.profile?.is_pro_active ?? false,
-      daily_limit: data.profile?.daily_limit ?? 30,
+      daily_limit: data.profile?.daily_limit ?? 50,
     };
   } catch {
     return null;
@@ -322,8 +322,8 @@ export async function getDailyUsage(): Promise<DailyUsageResponse | null> {
     const data = await res.json();
     return {
       text_used: data.text_used_today ?? 0,
-      text_limit: data.is_pro_active ? 999 : (data.text_daily_limit ?? 100),
-      text_remaining: data.is_pro_active ? 999 : (data.text_remaining_today ?? 100),
+      text_limit: data.is_pro_active ? 999 : (data.text_daily_limit ?? 50),
+      text_remaining: data.is_pro_active ? 999 : (data.text_remaining_today ?? 50),
       full_used: data.full_used_today ?? 0,
       full_limit: data.is_pro_active ? 999 : (data.full_daily_limit ?? 20),
       full_remaining: data.is_pro_active ? 999 : (data.full_remaining_today ?? 20),

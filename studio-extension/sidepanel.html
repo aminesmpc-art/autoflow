@@ -116,7 +116,6 @@
              before anything could happen, and none of them said which engines
              were even signed in. -->
         <div class="sp-ask">
-          <p class="sp-ask__kicker">Describe it once</p>
           <h2 class="sp-ask__q">What do you want to make?</h2>
 
           <!-- One object, not three. The box, the button and the engine line
@@ -150,9 +149,7 @@
               </div>
               <button type="button" class="sp-ask__go" id="build-go-ai" disabled>
                 <span class="sp-ask__go-label">Make it</span>
-                <svg class="sp-ask__go-arrow" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M5 12h13M13 6l6 6-6 6"/>
-                </svg>
+                <kbd class="sp-key sp-key--on" id="build-go-key">&#8984;&#9166;</kbd>
               </button>
             </div>
           </div>
@@ -233,7 +230,7 @@
             <input type="file" id="build-refine-image-input" accept="image/*" multiple hidden />
             <input type="text" class="sp-plan__ask" id="build-refine"
                    placeholder="Change it — or attach a picture of what to change" />
-            <button type="button" class="sp-btn sp-btn--ghost" id="build-refine-go">Ask</button>
+            <button type="button" class="sp-btn sp-btn--ghost" id="build-refine-go">Ask <kbd class="sp-key">&#9166;</kbd></button>
           </div>
         </div>
 
