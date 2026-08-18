@@ -139,12 +139,26 @@ describe('the plan is shown before it is built', () => {
     expect(SRC).toContain('generation${runs === 1 ? \'\' : \'s\'}');
   });
 
-  it('colours each row the way the canvas colours that node', () => {
-    const css = CSS();
-    for (const [kind, token] of [['image', '--n-image'], ['video', '--n-video'],
-      ['story', '--n-agent'], ['frame', '--n-frame'], ['prompt', '--n-prompt']]) {
-      expect(css).toMatch(new RegExp(`sp-plan__kind--${kind}[^}]*var\\(${token}\\)`));
-    }
+  it('lists what you will watch, and counts the rest', () => {
+    /* The card used to be a row per node — "Story — writes all three", "Ends
+       on → Shot 2". That is the graph, and it is what somebody deciding
+       whether to spend four generations cannot read. A shot is a node that
+       produces something you watch; everything else becomes one quiet line. */
+    const fn = SRC.slice(SRC.indexOf('function splitPlan'));
+    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/media === 'video' \|\| media === 'image'/);
+    expect(SRC).toMatch(/function helperName/);
+    expect(SRC).toMatch(/Plus \$\{helpers\.length\} step/);
+  });
+
+  it('says how long the video is, not how many nodes it has', () => {
+    const fn = SRC.slice(SRC.indexOf('function describeSize'));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+    expect(body).toMatch(/seconds/);
+    expect(body).toMatch(/clips\.length/);
+  });
+
+  it('numbers the shots, because the order is the story', () => {
+    expect(CSS()).toMatch(/sp-plan__shot::before[\s\S]{0,120}counter-increment: shot/);
   });
 
   it('does not truncate the one line that says what was made', () => {
@@ -214,19 +228,58 @@ describe('what it is doing, while it does it', () => {
   });
 });
 
-describe('the blueprint count is counted', () => {
+describe('the examples are gone from the Build tab', () => {
   beforeEach(mountPanel);
 
-  it('is derived from the buttons, not written beside them', () => {
-    /* "6 blueprints" was a literal next to exactly six buttons. True today,
-       and wrong the moment somebody adds a seventh — silently, in a label
-       nobody looks at. */
-    expect(SRC).toContain('#build-ideas .sp-idea\').length');
-    expect(SRC).toContain('blueprint${n === 1 ? \'\' : \'s\'}');
+  it('no longer spends most of the tab on six cards', () => {
+    /* They took more room than the thing the tab is for, and the Library
+       already holds twenty-six of them. */
+    expect(document.querySelectorAll('#build-ideas .sp-idea')).toHaveLength(0);
+    expect(document.getElementById('build-ideas')).toBeNull();
   });
 
-  it('and the markup it counts is still there', () => {
-    expect(document.querySelectorAll('#build-ideas .sp-idea').length).toBeGreaterThan(0);
+  it('points at the Library instead, in one line', () => {
+    const link = document.getElementById('build-open-library');
+    expect(link).not.toBeNull();
+    expect(link!.textContent).toMatch(/ready-made workflow/i);
+    expect(SRC).toMatch(/build-open-library[\s\S]{0,200}showView\('templates'\)/);
+  });
+});
+
+describe('one button, and the AI chosen for you', () => {
+  beforeEach(mountPanel);
+
+  it('offers a single action rather than five brands', () => {
+    /* Five equal buttons is five decisions before anything can happen, and
+       none of them said which engines were signed in. */
+    expect(document.getElementById('build-go-ai')).not.toBeNull();
+    expect(document.getElementById('build-ai')).toBeNull();
+  });
+
+  it('starts disabled, so the shape of what happens next is visible', () => {
+    expect((document.getElementById('build-go-ai') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('picks from what is actually open', () => {
+    expect(SRC).toMatch(/const ENGINE_ORDER = /);
+    const fn = SRC.slice(SRC.indexOf('function chosenEngine'));
+    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/ENGINE_ORDER\.find\(\(k\) => engineOpen\[k\]\)/);
+    expect(SRC).toMatch(/PANEL_PLATFORM_STATUS/);
+  });
+
+  it('says an engine is not open rather than hiding the choice', () => {
+    /* Somebody who wants ChatGPT should be able to pick it and be told to
+       open it, not find it greyed out with no explanation. */
+    expect(SRC).toMatch(/\(not open\)/);
+  });
+
+  it('does not use the same words for asking and for committing', () => {
+    /* Both read "Make it" at first: one asks the AI to write the plan, the
+       other puts the result on the canvas. */
+    const go = document.getElementById('build-go-ai')!.textContent!.trim();
+    const commit = document.getElementById('build-plan-go')!.textContent!.trim();
+    expect(go).not.toBe(commit);
+    expect(commit).toMatch(/canvas/i);
   });
 });
 

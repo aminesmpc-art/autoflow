@@ -111,64 +111,69 @@
       <!-- ══ 1. BUILD TAB ═════════════════════════════════════════ -->
       <div class="sp-view" id="view-build" role="tabpanel">
         
-        <!-- Hero Header -->
-        <div class="sp-hero">
-          <div class="sp-hero__badge">✨ AI Prompt to Node Workflow</div>
-          <h2 class="sp-hero__title">What do you want to create?</h2>
-          <p class="sp-hero__sub">Type a scene concept or brief. AI will construct your multi-shot workflow.</p>
-        </div>
+        <!-- What you want, in your words. One question, one answer, one
+             button. The five brand buttons this replaces were five decisions
+             before anything could happen, and none of them said which engines
+             were even signed in. -->
+        <div class="sp-ask">
+          <h2 class="sp-ask__q">What do you want to make?</h2>
+          <textarea id="build-idea" class="sp-ask__box" rows="3"
+                    placeholder="A 3-shot vertical ad for cold brew coffee"></textarea>
+          <button type="button" class="sp-prompt-clear" id="build-idea-clear"
+                  title="Clear" hidden>✕</button>
 
-        <!-- Prompt Builder Area -->
-        <div class="sp-prompt-box">
-          <textarea id="build-idea" class="sp-area sp-area--hero" rows="3"
-                    placeholder="E.g. A 3-shot vertical commercial for cold brew coffee: 1) dramatic beans drop, 2) slow-motion milk swirl, 3) ice cup condensation hero reveal with logo text."></textarea>
-          <div class="sp-prompt-bar">
-            <span class="sp-prompt-tip">💡 Formats: NanoBanana2 stills & Flow Omni video</span>
-            <button type="button" class="sp-prompt-clear" id="build-idea-clear" title="Clear prompt" hidden>✕</button>
+          <button type="button" class="sp-ask__go" id="build-go-ai" disabled>
+            <span class="sp-ask__go-label">Make it</span>
+          </button>
+
+          <!-- Which AI, decided for you from what is actually signed in, and
+               changeable without being a decision you have to make first. -->
+          <div class="sp-ask__who">
+            <span class="sp-ask__who-text">using</span>
+            <select id="build-engine" class="sp-ask__engine" aria-label="Which AI writes it"></select>
+            <span class="sp-ask__who-hint" id="build-engine-hint"></span>
           </div>
         </div>
 
-        <!-- AI Engines Generator Row -->
-        <div class="sp-engines-card">
-          <div class="sp-engines__head">
-            <span class="sp-engines__label">Generate with AI Model</span>
-            <span class="sp-engines__sublabel">Directly builds nodes on canvas</span>
-          </div>
-          <div class="sp-ai" id="build-ai"></div>
-        </div>
-
-        <!-- What it is doing, while it does it. A build with repair rounds
-             runs for minutes, and appended lines of text look the same as a
-             hang — the stage that is live is the part that says otherwise. -->
+        <!-- What is happening, in what it means rather than what it does.
+             Three stages, because each one has to tell you something new —
+             a label that only names a phase resets nobody's patience. -->
         <div id="build-stages" class="sp-stages" hidden>
-          <div class="sp-stages__row" data-stage="ask">
-            <span class="sp-stages__dot"></span><span class="sp-stages__name">Asking</span>
-          </div>
-          <div class="sp-stages__row" data-stage="read">
-            <span class="sp-stages__dot"></span><span class="sp-stages__name">Reading the plan</span>
+          <div class="sp-stages__row" data-stage="write">
+            <span class="sp-stages__dot"></span>
+            <span class="sp-stages__name">Writing your shots</span>
           </div>
           <div class="sp-stages__row" data-stage="check">
-            <span class="sp-stages__dot"></span><span class="sp-stages__name">Checking it</span>
+            <span class="sp-stages__dot"></span>
+            <span class="sp-stages__name">Checking they will render</span>
           </div>
-          <div class="sp-stages__row" data-stage="build">
-            <span class="sp-stages__dot"></span><span class="sp-stages__name">Ready</span>
+          <div class="sp-stages__row" data-stage="ready">
+            <span class="sp-stages__dot"></span>
+            <span class="sp-stages__name">Ready</span>
           </div>
           <div class="sp-stages__note" id="build-stage-note"></div>
+          <button type="button" class="sp-stages__cancel" id="build-cancel">Cancel</button>
         </div>
 
-        <!-- What it made, before it makes it. A workflow costs real
-             generations, and this is the last moment they are still free. -->
+        <!-- What you are about to get, described as the video and not as the
+             machinery that makes it. The nodes are still there; they are just
+             not what somebody deciding whether to spend four generations
+             needs to read. -->
         <div id="build-plan" class="sp-plan" hidden>
-          <div class="sp-plan__head">
-            <span class="sp-plan__name" id="build-plan-name"></span>
+          <div class="sp-plan__what">
+            <span class="sp-plan__size" id="build-plan-size"></span>
             <span class="sp-plan__cost" id="build-plan-cost"></span>
           </div>
           <p class="sp-plan__sub" id="build-plan-sub"></p>
+
           <ol class="sp-plan__shots" id="build-plan-shots"></ol>
+          <p class="sp-plan__helpers" id="build-plan-helpers" hidden></p>
+
           <div class="sp-plan__warn" id="build-plan-warn" hidden></div>
+
           <div class="sp-plan__acts">
-            <button type="button" class="sp-btn sp-btn--primary" id="build-plan-go">Build on canvas</button>
-            <button type="button" class="sp-btn sp-btn--ghost" id="build-plan-drop">Discard</button>
+            <button type="button" class="sp-btn sp-btn--primary" id="build-plan-go">Open on canvas</button>
+            <button type="button" class="sp-btn sp-btn--ghost" id="build-plan-drop">Start over</button>
           </div>
           <div class="sp-plan__refine">
             <input type="text" class="sp-plan__ask" id="build-refine"
@@ -177,90 +182,16 @@
           </div>
         </div>
 
+        <!-- The examples used to be six cards taking most of the tab. They
+             are the Library's job, and the Library holds twenty-six of them. -->
+        <a class="sp-ask__more" id="build-open-library" role="button" tabindex="0">
+          Or start from a ready-made workflow →
+        </a>
+
         <!-- Build Status Box -->
         <div id="build-out" class="sp-buildout" hidden></div>
 
         <!-- Quick Start Blueprints -->
-        <div class="sp-ideas" id="build-ideas">
-          <div class="sp-ideas__head">
-            <span>Production Formulas</span>
-            <span class="sp-ideas__count">6 blueprints</span>
-          </div>
-          <div class="sp-ideas__list">
-            <button type="button" class="sp-idea" data-prompt="Turn one product photo into a 15-second commercial: Shot 1 dynamic product reveal, Shot 2 macro texture close-up, Shot 3 polished packshot with call to action.">
-              <span class="sp-idea__icon sp-idea__icon--warm">☕</span>
-              <div class="sp-idea__body">
-                <div class="sp-idea__title-row">
-                  <span class="sp-idea__text">Product Commercial</span>
-                  <span class="sp-idea__tag">#E-Commerce</span>
-                </div>
-                <span class="sp-idea__sub">Photo → 15s 3-shot ad</span>
-              </div>
-              <span class="sp-idea__arrow">→</span>
-            </button>
-
-            <button type="button" class="sp-idea" data-prompt="The same consistent character in three seamless shots: Wide establishing location, medium dialogue tracking shot, tight emotional close-up with exact outfit lock.">
-              <span class="sp-idea__icon sp-idea__icon--blue">👤</span>
-              <div class="sp-idea__body">
-                <div class="sp-idea__title-row">
-                  <span class="sp-idea__text">Consistent Actor</span>
-                  <span class="sp-idea__tag">#CharacterLock</span>
-                </div>
-                <span class="sp-idea__sub">3 identity-locked shots</span>
-              </div>
-              <span class="sp-idea__arrow">→</span>
-            </button>
-
-            <button type="button" class="sp-idea" data-prompt="A 3-shot viral narrative: Hook opening scene, unexpected conflict twist, satisfying emotional resolution with punchy pacing.">
-              <span class="sp-idea__icon sp-idea__icon--green">🐲</span>
-              <div class="sp-idea__body">
-                <div class="sp-idea__title-row">
-                  <span class="sp-idea__text">Story Director</span>
-                  <span class="sp-idea__tag">#ViralNarrative</span>
-                </div>
-                <span class="sp-idea__sub">Multi-scene storytelling</span>
-              </div>
-              <span class="sp-idea__arrow">→</span>
-            </button>
-
-            <button type="button" class="sp-idea" data-prompt="A 20-second room transformation hyperlapse: Empty construction shell, accelerated modular build, and cinematic warm cozy interior reveal.">
-              <span class="sp-idea__icon sp-idea__icon--amber">🏠</span>
-              <div class="sp-idea__body">
-                <div class="sp-idea__title-row">
-                  <span class="sp-idea__text">Room Hyperlapse</span>
-                  <span class="sp-idea__tag">#Timelapse</span>
-                </div>
-                <span class="sp-idea__sub">20s architectural transition</span>
-              </div>
-              <span class="sp-idea__arrow">→</span>
-            </button>
-
-            <button type="button" class="sp-idea" data-prompt="High-fashion runway lookbook: Clean studio portrait still, natural outdoor walking motion, 360-degree dynamic garment spin.">
-              <span class="sp-idea__icon sp-idea__icon--pink">👗</span>
-              <div class="sp-idea__body">
-                <div class="sp-idea__title-row">
-                  <span class="sp-idea__text">Fashion Lookbook</span>
-                  <span class="sp-idea__tag">#Fashion</span>
-                </div>
-                <span class="sp-idea__sub">Stills + fluid motion clips</span>
-              </div>
-              <span class="sp-idea__arrow">→</span>
-            </button>
-
-            <button type="button" class="sp-idea" data-prompt="Chained video extension: Take the ending frame of the previous clip and seamlessly extend into the next high-action sequence.">
-              <span class="sp-idea__icon sp-idea__icon--violet">🎞</span>
-              <div class="sp-idea__body">
-                <div class="sp-idea__title-row">
-                  <span class="sp-idea__text">Frame Chaining</span>
-                  <span class="sp-idea__tag">#Extension</span>
-                </div>
-                <span class="sp-idea__sub">Infinite video continuation</span>
-              </div>
-              <span class="sp-idea__arrow">→</span>
-            </button>
-          </div>
-        </div>
-
         <!-- Manual Copy/Paste Accordion -->
         <details class="sp-manual" id="build-manual">
           <summary>Copy prompt brief / Paste AI chat reply</summary>

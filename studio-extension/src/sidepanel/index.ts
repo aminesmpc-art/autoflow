@@ -539,6 +539,69 @@ function brandMark(key: string): Element {
   return svg;
 }
 
+/* ── Which AI writes it ──
+   Five equal brand buttons were five decisions before anything could happen,
+   and none of them said which engines were signed in — so a regular user
+   picked one at random, and when it was not open the run failed for a reason
+   that had nothing to do with their idea.
+   One button now. The engine is chosen from what is actually open, shown
+   underneath, and changeable without being a question you must answer first. */
+let engineOpen: Record<string, boolean> = {};
+
+/** Preference order when several are open. Not a quality ranking — the ones
+    that hold a long JSON envelope most reliably, from this repo's own runs. */
+const ENGINE_ORDER = ['claude', 'chatgpt', 'gemini', 'zai', 'grok'];
+
+function engineName(key: string): string {
+  return (AUTO_CHATS.find((c) => c.key === key) || { name: key }).name;
+}
+
+/** The engine the button will use: what the user chose, or the best open one. */
+function chosenEngine(): string {
+  const sel = document.getElementById('build-engine') as HTMLSelectElement | null;
+  if (sel && sel.value) return sel.value;
+  return ENGINE_ORDER.find((k) => engineOpen[k]) || ENGINE_ORDER[0];
+}
+
+/** Fill the picker, mark what is open, and say so under the button. */
+function renderEnginePicker(): void {
+  const sel = document.getElementById('build-engine') as HTMLSelectElement | null;
+  const hint = document.getElementById('build-engine-hint');
+  if (!sel) return;
+
+  const keep = sel.value;
+  sel.innerHTML = '';
+  for (const c of AUTO_CHATS) {
+    const o = document.createElement('option');
+    o.value = c.key;
+    /* Said on the option itself rather than by disabling it. A user who wants
+       ChatGPT should be able to pick ChatGPT and be told to open it, not find
+       the choice greyed out with no explanation. */
+    o.textContent = engineOpen[c.key] ? c.name : `${c.name} (not open)`;
+    sel.append(o);
+  }
+  sel.value = keep && AUTO_CHATS.some((c) => c.key === keep) ? keep : chosenEngine();
+
+  if (hint) {
+    const open = engineOpen[sel.value];
+    hint.textContent = open ? '' : '— open it first, or pick another';
+    hint.classList.toggle('sp-ask__who-hint--warn', !open);
+  }
+}
+
+/** Learn which chats are signed in, from the same worker the Activity tab asks. */
+async function refreshEngineState(): Promise<void> {
+  try {
+    const status: any = await chrome.runtime.sendMessage({ type: 'PANEL_PLATFORM_STATUS' });
+    engineOpen = {};
+    for (const c of AUTO_CHATS) {
+      const v = status?.[c.key];
+      engineOpen[c.key] = v === 'open' || v === true;
+    }
+  } catch { /* leave every engine unknown rather than claiming none work */ }
+  renderEnginePicker();
+}
+
 function renderAiButtons(idea: () => string): void {
   const auto = document.getElementById('build-ai');
   if (auto) {
@@ -606,8 +669,8 @@ function renderAiButtons(idea: () => string): void {
    list of appended lines, which looks identical whether the model is thinking
    or the tab has died: in both cases lines stop arriving. One live stage says
    which, and costs nothing to read. */
-type BuildStage = 'ask' | 'read' | 'check' | 'build';
-const STAGE_ORDER: BuildStage[] = ['ask', 'read', 'check', 'build'];
+type BuildStage = 'write' | 'check' | 'ready';
+const STAGE_ORDER: BuildStage[] = ['write', 'check', 'ready'];
 
 function showStages(on: boolean): void {
   const box = document.getElementById('build-stages') as HTMLElement | null;
@@ -655,35 +718,64 @@ function generationCount(template: any): number {
   return (template?.nodes || []).filter((n: any) => isRunnableType(n.type)).length;
 }
 
-/** Which dot a row gets — the canvas's own colour for that kind of node. */
-function nodeKind(n: any): string {
-  if (n.type === 'frame') return 'frame';
-  if (n.type === 'prompt') return 'prompt';
-  if (n.type === 'image') return 'image';
-  if (n.type === 'story') return 'story';
-  const media = String(n.data?.mediaType || 'image');
-  return media === 'video' ? 'video' : media === 'text' ? 'text' : 'image';
+/**
+ * The shots, and everything that is not a shot.
+ *
+ * A workflow is a graph, and the old preview showed it as one — a row per
+ * node, including the prompt box, the writer and the frame handoffs. Reading
+ * "Story — writes all three" and "Ends on → Shot 2" tells you nothing about
+ * the video, and those are the rows somebody is being asked to spend four
+ * generations on.
+ *
+ * A shot is a node that produces something you will watch. Everything else is
+ * plumbing — real, necessary, and not what the decision is about — so it is
+ * counted in one line instead of listed.
+ */
+function splitPlan(template: any): { shots: any[]; helpers: any[] } {
+  const shots: any[] = [];
+  const helpers: any[] = [];
+  for (const n of (template?.nodes || [])) {
+    const media = n?.data?.mediaType;
+    const isShot = n.type === 'generate' && (media === 'video' || media === 'image');
+    (isShot ? shots : helpers).push(n);
+  }
+  return { shots, helpers };
+}
+
+/** "24 seconds, 3 shots" — the piece, in the words somebody would use for it. */
+function describeSize(shots: any[]): string {
+  const clips = shots.filter((n) => n.data?.mediaType === 'video');
+  const stills = shots.length - clips.length;
+  const seconds = clips.reduce(
+    (n, c) => n + (parseFloat(String(c.data?.duration || '')) || 0), 0);
+  const parts: string[] = [];
+  if (seconds) parts.push(`${Math.round(seconds)} seconds`);
+  if (clips.length) parts.push(`${clips.length} clip${clips.length === 1 ? '' : 's'}`);
+  if (stills) parts.push(`${stills} image${stills === 1 ? '' : 's'}`);
+  return parts.join(', ') || 'A workflow';
+}
+
+/** What each helper node is for, in one phrase. */
+function helperName(n: any): string {
+  if (n.type === 'story') return 'a writer for the shots';
+  if (n.type === 'frame') return 'a frame handoff';
+  if (n.type === 'prompt') return 'your idea';
+  if (n.type === 'image') return 'a picture you supply';
+  if (n.type === 'extend') return 'a clip extension';
+  return 'a step';
 }
 
 function planRow(n: any): HTMLElement {
   const li = document.createElement('li');
   li.className = 'sp-plan__shot';
-  const dot = document.createElement('span');
-  dot.className = `sp-plan__kind sp-plan__kind--${nodeKind(n)}`;
   const label = document.createElement('span');
   label.className = 'sp-plan__label';
   label.textContent = String(n.data?.label || n.id);
   const meta = document.createElement('span');
   meta.className = 'sp-plan__meta';
-  /* What distinguishes one row from the next. A clip is its length, a still
-     is its shape, and a writer is the chat it runs on — the field that would
-     be the same on every row says nothing. */
   const d = n.data || {};
-  meta.textContent = d.mediaType === 'video' ? String(d.duration || '')
-    : d.mediaType === 'text' ? String(d.platform || '')
-    : n.type === 'generate' ? String(d.aspectRatio || '')
-    : '';
-  li.append(dot, label, meta);
+  meta.textContent = d.mediaType === 'video' ? String(d.duration || 'clip') : 'image';
+  li.append(label, meta);
   return li;
 }
 
@@ -699,24 +791,33 @@ function showPlan(b: PendingBuild): void {
   if (!box) return;
   box.hidden = false;
 
-  const name = document.getElementById('build-plan-name');
-  if (name) name.textContent = String(b.template?.name || 'Workflow');
-
+  const { shots, helpers } = splitPlan(b.template);
   const runs = generationCount(b.template);
+
+  const size = document.getElementById('build-plan-size');
+  if (size) size.textContent = describeSize(shots);
+
   const cost = document.getElementById('build-plan-cost');
   if (cost) cost.textContent = `${runs} generation${runs === 1 ? '' : 's'}`;
 
   const sub = document.getElementById('build-plan-sub');
-  if (sub) {
-    const total = (b.template?.nodes || []).length;
-    sub.textContent = String(b.template?.description
-      || `${total} node${total === 1 ? '' : 's'}, ${runs} of them run.`);
-  }
+  if (sub) sub.textContent = String(b.template?.description || '');
 
   const list = document.getElementById('build-plan-shots');
   if (list) {
     list.innerHTML = '';
-    for (const n of (b.template?.nodes || [])) list.append(planRow(n));
+    for (const n of shots) list.append(planRow(n));
+  }
+
+  /* The plumbing, counted rather than listed. */
+  const helperLine = document.getElementById('build-plan-helpers') as HTMLElement | null;
+  if (helperLine) {
+    const named = Array.from(new Set(helpers.map(helperName)));
+    helperLine.hidden = !named.length;
+    helperLine.textContent = named.length
+      ? `Plus ${helpers.length} step${helpers.length === 1 ? '' : 's'} that make it work: ${
+        named.join(', ')}.`
+      : '';
   }
 
   const warn = document.getElementById('build-plan-warn') as HTMLElement | null;
@@ -789,11 +890,19 @@ async function openBuilt(template: any): Promise<void> {
 
 /** Disable every build button, so one run cannot be started twice. */
 function setBuilding(on: boolean, activeKey?: string): void {
-  for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('#build-ai button'))) {
-    b.disabled = on;
-    b.classList.toggle('sp-ai__link--busy', on && b.dataset.key === activeKey);
+  const go = document.getElementById('build-go-ai') as HTMLButtonElement | null;
+  if (go) {
+    go.disabled = on || !(document.getElementById('build-idea') as HTMLTextAreaElement | null)?.value.trim();
+    go.classList.toggle('sp-ask__go--busy', on);
+    const label = go.querySelector('.sp-ask__go-label');
+    if (label) label.textContent = on ? `${engineName(activeKey || chosenEngine())} is working…` : 'Make it';
   }
+  const sel = document.getElementById('build-engine') as HTMLSelectElement | null;
+  if (sel) sel.disabled = on;
 }
+
+/** Set by Cancel, read at the top of each repair round. */
+let buildAborted = false;
 
 /**
  * The whole thing, unattended: open the chat, ask, read the answer, compile
@@ -831,6 +940,7 @@ const MAX_BUILD_REPAIRS = 2;
 
 async function autoBuild(key: string, name: string, idea: string, model = ''): Promise<void> {
   setBuilding(true, key);
+  buildAborted = false;
   hidePlan();
   showStages(true);
   const box = document.getElementById('build-out') as HTMLElement | null;
@@ -848,9 +958,10 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
     let message = buildSpec(idea);
 
     for (let round = 0; round <= MAX_BUILD_REPAIRS; round++) {
-      stage('ask', round === 0
-        ? `${name} is writing the plan…`
-        : `Asking ${name} to fix ${round === 1 ? 'it' : 'the rest'}…`);
+      if (buildAborted) return;
+      stage('write', round === 0
+        ? `${name} is writing them. This usually takes a minute or two.`
+        : `${name} is fixing ${round === 1 ? 'what was wrong' : 'the rest'} — same conversation, so it keeps what worked.`);
 
       const res: any = await chrome.runtime.sendMessage({
         type: 'PANEL_BUILD', platform: key, prompt: message, model,
@@ -868,24 +979,26 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
         ]);
         return;
       }
+      if (buildAborted) return;
       lastReply = String(res.text || '');
 
-      stage('read', 'Reading what came back…');
+      stage('check', 'Reading what came back…');
       const { plan, template, quality, problems, problem } = evaluateReply(lastReply);
 
       if (!plan) {
         /* Not a plan at all. Worth one more round — a model that wrapped its
            JSON in prose fixes that on being told. */
         if (round < MAX_BUILD_REPAIRS) {
-          stage('read', problem || 'That was not a plan. Asking again…');
+          stage('write', problem || 'That reply was not usable. Asking again…');
           message = repairPlanMessage([], [problem || 'The reply was not a JSON object with a "steps" array.']);
           continue;
         }
         break;
       }
 
-      stage('check', `${plan.steps.length} step${plan.steps.length === 1 ? '' : 's'} — ${
-        quality.length + problems.length ? 'checking what it would produce…' : 'nothing to fix'}`);
+      stage('check', quality.length + problems.length
+        ? `${plan.steps.length} steps back — checking what they would produce…`
+        : `${plan.steps.length} steps back, nothing to fix.`);
 
       /* Structural problems mean there is no canvas to keep. Quality problems
          mean there is one, and it is worth keeping even if a later round never
@@ -905,8 +1018,8 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
          over raw JSON with "fix it and build again", which turned a workflow
          that was 90% right into no workflow at all. Now it is offered, with
          what is wrong with it said plainly. */
-      stage('build', best.quality.length
-        ? 'Ready, with a few things worth knowing.'
+      stage('ready', best.quality.length
+        ? 'Ready — a few things worth knowing before you make it.'
         : 'Ready.');
       showPlan({
         template: best.template,
@@ -950,7 +1063,7 @@ async function refineBuild(text: string): Promise<void> {
   const ask = document.getElementById('build-refine-go') as HTMLButtonElement | null;
   if (ask) ask.disabled = true;
   showStages(true);
-  stage('ask', `Asking ${at.name} to change it…`);
+  stage('write', `Asking ${at.name} to change it…`);
 
   try {
     const res: any = await chrome.runtime.sendMessage({
@@ -960,11 +1073,11 @@ async function refineBuild(text: string): Promise<void> {
         + 'No prose around it, no code fence.',
     });
     if (!res || res.error) {
-      stage('ask', res?.error || 'No reply.');
+      stage('write', res?.error || 'No reply.');
       return;
     }
 
-    stage('read', 'Reading the change…');
+    stage('check', 'Reading the change…');
     const { plan, template, quality, problems } = evaluateReply(String(res.text || ''));
     if (!plan || !template || problems.length) {
       /* The plan on screen is still good. Saying so matters: silently keeping
@@ -973,10 +1086,10 @@ async function refineBuild(text: string): Promise<void> {
       return;
     }
 
-    stage('build', quality.length ? 'Changed, with a few things worth knowing.' : 'Changed.');
+    stage('ready', quality.length ? 'Changed — a few things worth knowing.' : 'Changed.');
     showPlan({ ...at, template, warnings: explainPlan(quality) });
   } catch (e: any) {
-    stage('ask', e?.message || 'The change could not be asked for.');
+    stage('write', e?.message || 'The change could not be asked for.');
   } finally {
     if (ask) ask.disabled = false;
   }
@@ -1013,14 +1126,44 @@ function wireBuilder(): void {
 
   renderAiButtons(() => idea.value);
 
-  /* "6 blueprints" was written into the markup beside exactly six buttons.
-     True today, and wrong the moment a seventh is added — by whoever adds it,
-     silently, in a label nobody looks at. */
-  const ideasCount = document.querySelector('.sp-ideas__count');
-  if (ideasCount) {
-    const n = document.querySelectorAll('#build-ideas .sp-idea').length;
-    ideasCount.textContent = `${n} blueprint${n === 1 ? '' : 's'}`;
+  /* The one button, and the engine under it. */
+  refreshEngineState();
+  const engineSel = document.getElementById('build-engine') as HTMLSelectElement | null;
+  if (engineSel) engineSel.addEventListener('change', () => renderEnginePicker());
+
+  const goBtn = document.getElementById('build-go-ai') as HTMLButtonElement | null;
+  const syncGo = () => { if (goBtn) goBtn.disabled = !idea.value.trim(); };
+  if (goBtn) {
+    goBtn.addEventListener('click', () => {
+      const text = idea.value.trim();
+      if (!text) return;
+      const key = chosenEngine();
+      autoBuild(key, engineName(key), text, pickedModel(key));
+    });
   }
+  idea.addEventListener('input', syncGo);
+  syncGo();
+
+  /* Ctrl/Cmd+Enter, because a box you type a sentence into is a box people
+     try to submit from. */
+  idea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      goBtn?.click();
+    }
+  });
+
+  const cancel = document.getElementById('build-cancel');
+  if (cancel) {
+    cancel.addEventListener('click', () => {
+      buildAborted = true;
+      showStages(false);
+      buildSays('info', 'Stopped. Nothing was built.');
+    });
+  }
+
+  const toLibrary = document.getElementById('build-open-library');
+  if (toLibrary) toLibrary.addEventListener('click', () => showView('templates'));
 
   /* The preview's own controls. Build hands over what is already on screen;
      Discard drops it without touching the canvas, which is the point of
