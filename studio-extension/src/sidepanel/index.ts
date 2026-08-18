@@ -548,6 +548,22 @@ function brandMark(key: string): Element {
    underneath, and changeable without being a question you must answer first. */
 let engineOpen: Record<string, boolean> = {};
 
+/**
+ * Which chats can actually be shown a picture.
+ *
+ * Not every adapter attaches one. ChatGPT, Gemini and Grok read
+ * referenceImageData and put the file into the composer; Claude and Z.AI have
+ * no attach path at all, so an image sent to them is accepted by the worker,
+ * carried across two message boundaries and then dropped on the floor. The
+ * panel showed the thumbnails the whole time, which is the worst version of
+ * this: it looked like it worked and the model answered without ever seeing
+ * the picture.
+ *
+ * Checked against the adapters by a test, so adding the missing path to one
+ * of them is a one-line change here and not something to remember.
+ */
+const IMAGE_CAPABLE = new Set(['chatgpt', 'gemini', 'grok']);
+
 /** Preference order when several are open. Not a quality ranking — the ones
     that hold a long JSON envelope most reliably, from this repo's own runs. */
 const ENGINE_ORDER = ['claude', 'chatgpt', 'gemini', 'zai', 'grok'];
@@ -584,8 +600,18 @@ function renderEnginePicker(): void {
 
   if (hint) {
     const open = engineOpen[sel.value];
-    hint.textContent = open ? '' : '— open it first, or pick another';
-    hint.classList.toggle('sp-ask__who-hint--warn', !open);
+    const blind = (refImages.length || refineImages.length)
+      && !IMAGE_CAPABLE.has(sel.value);
+    /* The picture problem first: it is the one that silently changes the
+       answer. A closed tab at least fails loudly. */
+    hint.textContent = blind ? '— cannot see pictures'
+      : open ? ''
+      : '— open it first, or pick another';
+    hint.classList.toggle('sp-ask__who-hint--warn', !!blind || !open);
+    hint.title = blind
+      ? `${engineName(sel.value)} has no way to attach a picture, so it would answer `
+        + 'from the words alone. ChatGPT, Gemini and Grok can see them.'
+      : '';
   }
 }
 
@@ -787,8 +813,8 @@ function readRef(file: File): Promise<string> {
    later turn and brings its own. */
 let refineImages: string[] = [];
 
-function renderRefs(): void { drawRefs('build-refs', refImages); }
-function renderRefineRefs(): void { drawRefs('build-refine-refs', refineImages); }
+function renderRefs(): void { drawRefs('build-refs', refImages); renderEnginePicker(); }
+function renderRefineRefs(): void { drawRefs('build-refine-refs', refineImages); renderEnginePicker(); }
 
 function drawRefs(boxId: string, list: string[]): void {
   const box = document.getElementById(boxId) as HTMLElement | null;
@@ -1206,7 +1232,8 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
   let lastReply = '';
 
   try {
-    let message = buildSpec(idea) + aboutImages(refImages.length, 'make');
+    let message = buildSpec(idea)
+      + aboutImages(IMAGE_CAPABLE.has(key) ? refImages.length : 0, 'make');
     let chatUrl = '';
 
     for (let round = 0; round <= MAX_BUILD_REPAIRS; round++) {
@@ -1220,7 +1247,10 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
         /* First turn only. A repair is the next message in the same
            conversation and the pictures are already above it — sending them
            again would re-upload for nothing. */
-        images: round === 0 ? refImages : [],
+        /* Not sent to a chat that cannot attach them: the worker would carry
+           them across two message boundaries for nothing, and a six-minute
+           upload budget would be spent on it. */
+        images: round === 0 && IMAGE_CAPABLE.has(key) ? refImages : [],
         /* A repair is the next turn of THIS conversation. Sent as a new chat
            it refers to a plan the model has never seen, and every repair round
            was doing exactly that — which is why the second attempt came back
@@ -1331,13 +1361,13 @@ async function refineBuild(text: string): Promise<void> {
   try {
     const res: any = await chrome.runtime.sendMessage({
       type: 'PANEL_BUILD', platform: at.platform, model: at.model,
-      images: refineImages,
+      images: IMAGE_CAPABLE.has(at.platform) ? refineImages : [],
       /* A plan reopened from history is being shown to a model that has never
          seen it, so it travels with the message. A live one is the next turn
          of the conversation that produced it and does not — re-sending it
          would waste the context that thread already holds. */
       newChat: at.resumeFrom ? 'auto' : 'never',
-      prompt: `${carry}${text.trim()}${aboutImages(refineImages.length, 'edit')}`
+      prompt: `${carry}${text.trim()}${aboutImages(IMAGE_CAPABLE.has(at.platform) ? refineImages.length : 0, 'edit')}`
         + `\n\nApply that to ${at.resumeFrom ? 'that plan' : 'the plan you just wrote'} `
         + 'and send the complete JSON object again — the same shape, with everything '
         + 'else unchanged. No prose around it, no code fence.',

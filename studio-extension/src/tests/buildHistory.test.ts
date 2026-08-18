@@ -69,7 +69,7 @@ describe('showing the AI what you mean', () => {
   it('attaches them to the first turn only', () => {
     /* A repair is the next message in the same conversation and the pictures
        are already above it. Sending them again re-uploads for nothing. */
-    expect(SRC).toMatch(/images: round === 0 \? refImages : \[\]/);
+    expect(SRC).toMatch(/images: round === 0 && IMAGE_CAPABLE\.has\(key\) \? refImages : \[\]/);
   });
 
   it('shrinks a phone photo before sending it', () => {
@@ -183,12 +183,12 @@ describe('a picture with the change, too', () => {
     /* Those are already in the conversation. Re-sending them with every
        change would upload the same pictures again and again. */
     expect(SRC).toMatch(/let refineImages: string\[\] = \[\];/);
-    expect(SRC).toMatch(/images: refineImages,/);
+    expect(SRC).toMatch(/images: IMAGE_CAPABLE\.has\(at\.platform\) \? refineImages : \[\]/);
   });
 
   it('draws both rows through one function rather than two copies', () => {
-    expect(SRC).toMatch(/function renderRefs\(\): void \{ drawRefs\('build-refs', refImages\); \}/);
-    expect(SRC).toMatch(/function renderRefineRefs\(\): void \{ drawRefs\('build-refine-refs', refineImages\); \}/);
+    expect(SRC).toMatch(/function renderRefs\(\): void \{ drawRefs\('build-refs', refImages\);/);
+    expect(SRC).toMatch(/function renderRefineRefs\(\): void \{ drawRefs\('build-refine-refs', refineImages\);/);
   });
 
   it('clears them once sent, whatever came back', () => {
@@ -247,8 +247,8 @@ describe('the model is told the pictures are there', () => {
   });
 
   it('is attached to both asks, with the right kind on each', () => {
-    expect(SRC).toMatch(/buildSpec\(idea\) \+ aboutImages\(refImages\.length, 'make'\)/);
-    expect(SRC).toMatch(/aboutImages\(refineImages\.length, 'edit'\)/);
+    expect(SRC).toMatch(/aboutImages\(IMAGE_CAPABLE\.has\(key\) \? refImages\.length : 0, 'make'\)/);
+    expect(SRC).toMatch(/aboutImages\(IMAGE_CAPABLE\.has\(at\.platform\) \? refineImages\.length : 0, 'edit'\)/);
   });
 
   it('says on the button itself what the change picture is for', () => {
