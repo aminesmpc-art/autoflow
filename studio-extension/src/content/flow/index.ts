@@ -1272,7 +1272,8 @@ function blobToRawBase64(blob: Blob): Promise<string> {
 }
 
 async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
-  const { findAssetCards, isVisible, findRowForPrompt, scrollOutputToTop, findOutputScroller } =
+  const { findAssetCards, isVisible, findRowForPrompt, scrollOutputToTop, findOutputScroller,
+    bringTileIntoView } =
     await import('./selectors');
 
   // What this node actually asked Flow for. Used further down to tell our
@@ -1406,6 +1407,10 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
      actually gone missing, and at most once every ten seconds. */
   const REMOUNT_AFTER_MISSES = 5;
   const REMOUNT_EVERY_MS = 10_000;
+  /* How often a thumbnail-only tile is scrolled back into view. Often enough
+     to recover inside the grace period, rarely enough that a user reading the
+     page is not fighting it. */
+  const NUDGE_EVERY_MS = 6_000;
   let missStreak = 0;
   let lastRemountAt = 0;
 
@@ -1425,6 +1430,11 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
      longer than the blind grace allowed. */
   const CONFIRMED_GRACE_MS = 4 * 60_000;
   let thumbnailOnlySince = 0;
+  /* Last time the tracked tile was pulled back into the viewport. Throttled
+     the same way the remount is: the point is to give Virtuoso a chance to
+     mount the player, not to hold the page still. */
+  let lastNudgeAt = 0;
+  let nudges = 0;
 
   /* Ask Flow's backend instead of guessing from pixels.
    *
@@ -1622,13 +1632,28 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
       const grace = apiState === 'completed' ? CONFIRMED_GRACE_MS : THUMBNAIL_GRACE_MS;
       if (serviceStillWorking || held < grace) {
         if (wait % 5 === 0) sendStudioProgress(nodeId, Math.min(97, 40 + Math.floor(wait / 12)));
+        /* The reason most of these waits used to expire.
+           Flow's grid is a Virtuoso list, so a tile that has scrolled out of
+           view renders as a poster and never gets a <video> — and every clip
+           generated after this one pushes it further out. Waiting cannot fix
+           that; the tile has to be on screen for the player to mount. So bring
+           it back, on the same throttle as the remount, and let the next poll
+           read the real state. */
+        if (!serviceStillWorking && Date.now() - lastNudgeAt > NUDGE_EVERY_MS) {
+          lastNudgeAt = Date.now();
+          nudges += 1;
+          if (await bringTileIntoView(trackedTile)) {
+            logLine('Tile was off screen — scrolled it back and the clip attached');
+          }
+        }
         continue;
       }
       logLine(
         `Tile has shown a thumbnail for ${Math.round(held / 1000)}s without ever attaching a `
-        + `playable clip${apiState ? ` (API: ${apiReported || apiState})` : ''} — taking it as `
-        + 'finished. It will have no preview and nothing chained from it will have a last '
-        + 'frame.'
+        + `playable clip${apiState ? ` (API: ${apiReported || apiState})` : ''}, including `
+        + `${nudges} attempt${nudges === 1 ? '' : 's'} at scrolling it back into view — taking `
+        + 'it as finished. It will have no preview and nothing chained from it will have a '
+        + 'last frame.'
       );
       state = 'completed';
     } else if (thumbnailOnlySince) {
@@ -1637,6 +1662,18 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
     }
 
     if (state === 'completed') {
+      /* One last look, at the only moment that matters.
+         Everything below reads the tile ONCE — the last frame especially,
+         because it has to be captured while the tile is definitely here. If
+         the player is not mounted at this instant there is no second chance:
+         the reference is empty, and the node chained below fails for want of
+         it. So if this is a clip and there is no <video>, put the tile on
+         screen and look again before committing to that. */
+      if (isVideoNode && !trackedTile.querySelector('video')) {
+        if (await bringTileIntoView(trackedTile)) {
+          logLine('Clip attached once the tile was scrolled into view');
+        }
+      }
       logLine(`Tile completed! (id=${trackedTile.getAttribute('data-tile-id') || trackedTile.id || 'unknown'})`);
       const tileId = trackedTile.getAttribute('data-tile-id') || trackedTile.id || '';
       const mediaUrl = extractTileMediaUrl(trackedTile);

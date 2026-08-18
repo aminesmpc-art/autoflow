@@ -2986,6 +2986,38 @@ export function findOutputScroller(): HTMLElement | null {
 }
 
 /**
+ * Put a tile where Flow will mount its player.
+ *
+ * The grid is a Virtuoso virtual list: a tile that has scrolled out of the
+ * viewport is rendered as a lightweight poster, and Flow does not attach the
+ * <video> until it comes back into view. Nothing about that says "still
+ * generating" — the clip exists and the tile looks finished.
+ *
+ * Which is how a long workflow lost last frames at random. Each new clip
+ * pushes the grid along, so whether the tile being tracked was still on screen
+ * when its clip landed depended on how many other tiles were in flight. When
+ * it was not, the poller waited out its grace period against a poster that was
+ * never going to become a player, declared the tile finished, and handed the
+ * next node no reference at all.
+ *
+ * Bounded and gentle on purpose: `nearest` does nothing when the tile is
+ * already visible, so this cannot fight a user scrolling the page themselves.
+ */
+export async function bringTileIntoView(tile: Element): Promise<boolean> {
+  try {
+    const before = !!tile.querySelector('video');
+    tile.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' as ScrollBehavior });
+    /* Long enough for Virtuoso to re-render the row and for Flow to attach a
+       source to it. Shorter than one poll tick, so the wait costs nothing the
+       poller was not already spending. */
+    await sleep(700);
+    return !before && !!tile.querySelector('video');
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Scroll the output area to the very top so the newest tiles are visible.
  */
 export async function scrollOutputToTop(): Promise<void> {
