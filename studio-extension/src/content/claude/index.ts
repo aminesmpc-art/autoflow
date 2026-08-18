@@ -202,6 +202,118 @@ function currentModel(): string {
   return (fromLabel ? fromLabel[1] : trigger.textContent || '').trim();
 }
 
+/* ── Showing Claude a picture ──
+   Every selector here was read off claude.ai rather than reasoned about,
+   which is the only reason it is three lines instead of a hunt.
+
+   The file input is already in the document — no button to click first, no
+   menu to open. It is hidden with `absolute -z-10 h-0 w-0 opacity-0` rather
+   than display:none, which is why it can be filled directly:
+
+     <input type="file" data-testid="file-upload"
+            id="chat-input-file-upload-onpage" multiple>
+
+   And an attached file appears as exactly one [data-testid="file-thumbnail"],
+   which is what tells us the upload finished rather than merely started.
+   Verified by attaching a 1×1 PNG to a live composer and watching it. */
+
+const CLAUDE_FILE_INPUT = 'input[type="file"][data-testid="file-upload"], #chat-input-file-upload-onpage';
+const CLAUDE_THUMBNAIL = '[data-testid="file-thumbnail"]';
+
+/** How many files the composer is currently holding. */
+function attachmentCount(): number {
+  return document.querySelectorAll(CLAUDE_THUMBNAIL).length;
+}
+
+/** A data URL as a File the composer will take. */
+function dataUrlToFile(dataUrl: string, filename: string): File {
+  const comma = dataUrl.indexOf(',');
+  const header = dataUrl.slice(0, comma);
+  const mime = /data:([^;,]+)/.exec(header)?.[1] || 'image/png';
+  const body = dataUrl.slice(comma + 1);
+  const binary = header.includes(';base64') ? atob(body) : decodeURIComponent(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const ext = mime.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+  return new File([bytes], `${filename}.${ext}`, { type: mime });
+}
+
+/**
+ * Poke React, not just the DOM.
+ *
+ * Setting input.files and dispatching 'change' updates the element and tells
+ * React nothing — its onChange is bound through a synthetic event system that
+ * a plain dispatch does not reach. The same three routes the ChatGPT adapter
+ * uses, in the same order, because the same framework is underneath.
+ */
+function triggerFileInputChange(input: HTMLInputElement): void {
+  const synthetic = {
+    target: input, currentTarget: input, type: 'change', bubbles: true,
+    preventDefault: () => {}, stopPropagation: () => {},
+    isPropagationStopped: () => false, isDefaultPrevented: () => false,
+    persist: () => {}, nativeEvent: new Event('change', { bubbles: true }),
+  };
+  const propsKey = Object.keys(input).find((k) => k.startsWith('__reactProps$'));
+  const props = propsKey ? (input as any)[propsKey] : null;
+  if (typeof props?.onChange === 'function') {
+    try { props.onChange(synthetic); } catch { /* try the next route */ }
+  }
+  const fiberKey = Object.keys(input).find((k) => k.startsWith('__reactFiber$'));
+  if (fiberKey) {
+    let fiber: any = (input as any)[fiberKey];
+    for (let i = 0; i < 15 && fiber; i++) {
+      if (typeof fiber.memoizedProps?.onChange === 'function') {
+        try { fiber.memoizedProps.onChange(synthetic); } catch { /* fall through */ }
+        break;
+      }
+      fiber = fiber.return;
+    }
+  }
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+/** Wait for the thumbnails to appear, so we never send before the upload lands. */
+async function waitForAttachments(baseline: number, added: number): Promise<boolean> {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    if (attachmentCount() >= baseline + added) return true;
+    await sleep(400);
+  }
+  return false;
+}
+
+/**
+ * Attach the pictures, or say why not.
+ *
+ * Returns a message on failure rather than throwing: a reference that did not
+ * upload must fail the node loudly. Answering from the words alone while the
+ * panel shows thumbnails is the exact failure this whole path exists to stop.
+ */
+async function attachReferences(dataUrls: string[]): Promise<string | null> {
+  const input = document.querySelector<HTMLInputElement>(CLAUDE_FILE_INPUT);
+  if (!input) return 'Could not find Claude\'s file upload — the picture was not sent';
+
+  let files: File[];
+  try {
+    files = dataUrls.map((url, i) => dataUrlToFile(url, `reference-${i + 1}`));
+  } catch (e: any) {
+    return `Picture could not be decoded: ${e.message}`;
+  }
+
+  const baseline = attachmentCount();
+  const dt = new DataTransfer();
+  for (const f of files) dt.items.add(f);
+  input.files = dt.files;
+  triggerFileInputChange(input);
+
+  if (!(await waitForAttachments(baseline, files.length))) {
+    return files.length > 1
+      ? `Only some of the ${files.length} pictures finished uploading to Claude`
+      : 'The picture did not finish uploading to Claude';
+  }
+  return null;
+}
+
 /**
  * Choose a model by name, loosely.
  *
@@ -298,6 +410,21 @@ async function handleExecute(payload: any): Promise<any> {
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 10 });
 
   if (config?.newChat !== 'never') await startNewChat();
+
+  /* Pictures first. Uploading re-renders the composer, so a prompt typed
+     before it would be wiped — the same ordering the ChatGPT adapter settled
+     on for the same reason. */
+  const references: string[] = (config?.referenceImageData || [])
+    .filter((d: unknown): d is string => typeof d === 'string' && d.startsWith('data:'));
+  if (references.length) {
+    const failure = await attachReferences(references);
+    if (failure) {
+      send('STUDIO_NODE_ERROR', { nodeId, error: failure });
+      return { success: false };
+    }
+    logLine(`${references.length} picture(s) attached`);
+    send('STUDIO_NODE_PROGRESS', { nodeId, progress: 15 });
+  }
 
   let composer = findComposer();
   for (let i = 0; !composer && i < 10; i++) {

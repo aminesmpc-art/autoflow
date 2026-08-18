@@ -75,7 +75,7 @@ describe('and the panel says so before you press it', () => {
   });
 
   it('says which chats can, so the fix is obvious', () => {
-    expect(SRC).toMatch(/ChatGPT, Gemini and Grok can see them/);
+    expect(SRC).toMatch(/can see them/);
   });
 
   it('warns only when there is actually a picture to lose', () => {

@@ -562,7 +562,7 @@ let engineOpen: Record<string, boolean> = {};
  * Checked against the adapters by a test, so adding the missing path to one
  * of them is a one-line change here and not something to remember.
  */
-const IMAGE_CAPABLE = new Set(['chatgpt', 'gemini', 'grok']);
+const IMAGE_CAPABLE = new Set(['chatgpt', 'gemini', 'grok', 'claude']);
 
 /** Preference order when several are open. Not a quality ranking — the ones
     that hold a long JSON envelope most reliably, from this repo's own runs. */
@@ -610,7 +610,7 @@ function renderEnginePicker(): void {
     hint.classList.toggle('sp-ask__who-hint--warn', !!blind || !open);
     hint.title = blind
       ? `${engineName(sel.value)} has no way to attach a picture, so it would answer `
-        + 'from the words alone. ChatGPT, Gemini and Grok can see them.'
+        + 'from the words alone. ChatGPT, Claude, Gemini and Grok can see them.'
       : '';
   }
 }
