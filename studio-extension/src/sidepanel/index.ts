@@ -951,8 +951,16 @@ async function reopenBuild(b: PastBuild): Promise<void> {
     name: engineName(b.platform),
     model: b.model,
     chatUrl: b.chatUrl,
-    /* Only when the thread could not be reopened. */
-    resumeFrom: live ? undefined : b.template,
+    /* The plan travels either way.
+       Opening the tab is not the same as the conversation loading. Gemini
+       answers a navigation to a real conversation URL by rendering the
+       attachment fullscreen and saying "Something went wrong" often enough
+       that treating "no exception" as "the thread is there" leaves the user
+       with neither the thread NOR the plan — which is worse than either.
+       A model that has the conversation open reads the plan twice, which
+       costs a few hundred tokens. A model that has neither cannot help at
+       all. */
+    resumeFrom: b.template,
   });
 }
 

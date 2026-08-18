@@ -295,11 +295,17 @@ describe('reopening the conversation, not a summary of it', () => {
     expect(body).toMatch(/type: 'PANEL_OPEN_CHAT', platform: b\.platform, url: b\.chatUrl/);
   });
 
-  it('continues that thread rather than carrying the plan into it', () => {
-    /* resumeFrom is what makes refine re-send the plan and open a new chat.
-       With the real conversation in front of the model, both are wrong. */
+  it('carries the plan even when the conversation appears to reopen', () => {
+    /* Opening the tab is not the same as the conversation loading. Gemini
+       answers a navigation to a real conversation URL by rendering the
+       attachment fullscreen and saying "Something went wrong" often enough
+       that treating "no exception" as "the thread is there" left the user
+       with neither the thread NOR the plan — worse than either alone.
+
+       A model that does have the conversation open reads the plan twice and
+       loses a few hundred tokens. A model that has neither cannot help. */
     const fn = SRC.slice(SRC.indexOf('async function reopenBuild'));
-    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/resumeFrom: live \? undefined : b\.template/);
+    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/resumeFrom: b\.template,/);
   });
 
   it('falls back to carrying the plan when the thread is gone', () => {
