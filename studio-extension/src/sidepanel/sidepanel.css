@@ -1579,3 +1579,178 @@ body {
    12. MANDATORY CASCADE BACKSTOP: [hidden]
    ════════════════════════════════════════════════ */
 [hidden] { display: none !important; }
+
+/* ── Build: what it is doing ──
+   A build with two repair rounds runs for minutes. The trail of appended text
+   this replaces looked identical whether it was thinking or dead, because the
+   only thing that changed was a line arriving — and lines stop arriving in
+   both cases. A live stage says which. */
+.sp-stages {
+  padding: var(--s-3);
+  border-radius: var(--r-ctrl);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.sp-stages__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-small);
+  color: var(--text-3);
+  padding: 3px 0;
+}
+.sp-stages__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line-2);
+  flex: 0 0 auto;
+}
+.sp-stages__row--done { color: var(--text-2); }
+.sp-stages__row--done .sp-stages__dot { background: var(--ok); }
+.sp-stages__row--live { color: var(--text); font-weight: 600; }
+.sp-stages__row--live .sp-stages__dot {
+  background: var(--busy);
+  /* The one moving thing on the panel, so "working" is legible at a glance
+     rather than inferred from text that has stopped changing. */
+  animation: sp-stage-pulse 1.4s ease-in-out infinite;
+}
+@keyframes sp-stage-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--busy-16); opacity: 1; }
+  50%      { box-shadow: 0 0 0 4px var(--busy-16); opacity: 0.65; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp-stages__row--live .sp-stages__dot { animation: none; }
+}
+.sp-stages__note {
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  margin-top: 6px;
+  padding-left: 15px;
+  min-height: 14px;
+}
+
+/* ── Build: what it made, before it makes it ── */
+.sp-plan {
+  padding: var(--s-3);
+  border-radius: var(--r-ctrl);
+  border: 1px solid var(--accent-30);
+  background: var(--accent-8);
+}
+.sp-plan__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sp-plan__name {
+  font-size: var(--t-mid);
+  font-weight: 700;
+  color: var(--text);
+  /* A model-written name can be any length. Truncating it kept the card tidy
+     and cost the user the one line they need to judge what they are about to
+     pay for — "Cold Brew — 3-shot vertical comm…" at 320px. So it wraps, and
+     min-width:0 keeps it from pushing the cost off the edge instead. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sp-plan__cost {
+  flex: 0 0 auto;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-14);
+  border-radius: var(--r-pill);
+  padding: 2px 8px;
+}
+.sp-plan__sub {
+  margin: 4px 0 0;
+  font-size: var(--t-small);
+  color: var(--text-2);
+}
+.sp-plan__shots {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sp-plan__shot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--t-small);
+  color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  padding: 5px 8px;
+}
+/* The canvas's own colours, so a row here and the node it becomes are
+   recognisably the same thing. */
+.sp-plan__kind {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--text-3);
+}
+.sp-plan__kind--image  { background: var(--n-image); }
+.sp-plan__kind--video  { background: var(--n-video); }
+.sp-plan__kind--text   { background: var(--n-ask); }
+.sp-plan__kind--story  { background: var(--n-agent); }
+.sp-plan__kind--frame  { background: var(--n-frame); }
+.sp-plan__kind--prompt { background: var(--n-prompt); }
+.sp-plan__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sp-plan__meta {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+}
+.sp-plan__warn {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-chip);
+  border-left: 3px solid var(--warn);
+  background: var(--warn-16);
+  font-size: var(--t-micro);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.sp-plan__warn ul { margin: 4px 0 0; padding-left: 15px; }
+.sp-plan__warn li { margin-bottom: 3px; }
+.sp-plan__warn-title { font-weight: 700; color: var(--warn); }
+.sp-plan__acts {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+.sp-plan__acts .sp-btn { flex: 1 1 auto; }
+.sp-plan__refine {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.sp-plan__ask {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--t-small);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  padding: 6px 8px;
+}
+.sp-plan__ask::placeholder { color: var(--text-3); }
+.sp-plan__ask:focus { outline: none; border-color: var(--accent); }
+.sp-plan__refine .sp-btn { flex: 0 0 auto; }

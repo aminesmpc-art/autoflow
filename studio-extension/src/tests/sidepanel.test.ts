@@ -101,6 +101,10 @@ describe('the panel markup keeps the contract index.ts relies on', () => {
     'sp-nav', 'tpl-search', 'tpl-pills', 'tpl-grid', 'tpl-count', 'preset-list',
     'build-idea', 'build-reply', 'build-copy', 'build-go', 'build-ai', 'build-out',
     'build-ai-manual', 'build-manual',
+    'build-stages', 'build-stage-note',
+    'build-plan', 'build-plan-name', 'build-plan-cost', 'build-plan-sub',
+    'build-plan-shots', 'build-plan-warn', 'build-plan-go', 'build-plan-drop',
+    'build-refine', 'build-refine-go',
     'gate', 'app', 'gate-google',
     'src-official', 'src-community',
   ];

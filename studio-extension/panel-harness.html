@@ -42,7 +42,11 @@
 /* Real template data, so the layout is stress-tested by the names it will
    actually hold — "Product Photos → Storyboard → Commercial" is 40 characters
    and it is shipping today. */
-const RAW = await (await fetch('dist-templates/templates.json')).json();
+/* Cache-busted for the same reason the stylesheet above is: a rebuilt file
+   served from the same path is exactly what a browser cache gets wrong, and a
+   harness showing yesterday's data is worse than no harness. */
+const bust = () => '?v=' + Date.now();
+const RAW = await (await fetch('dist-templates/templates.json' + bust())).json();
 const TEMPLATES = (RAW.templates || RAW);
 const CATS = ['All', ...Array.from(new Set(TEMPLATES.map(t => t.category))).sort()];
 
@@ -62,7 +66,7 @@ const PRESETS = [
 
 /* The shipped panel, minus the <script> that would try to talk to a
    service worker that is not there. */
-const shipped = await (await fetch('dist/sidepanel.html')).text();
+const shipped = await (await fetch('dist/sidepanel.html' + bust())).text();
 const doc = new DOMParser().parseFromString(shipped, 'text/html');
 doc.querySelectorAll('script').forEach(s => s.remove());
 const BODY = doc.body.innerHTML;
@@ -129,6 +133,51 @@ function build(width, view, opts = {}) {
     }
   }
 
+  /* The builder mid-run and the builder holding a plan. Both are drawn by
+     the panel's own script, which this harness removes — so without this the
+     two states that most needed looking at were the two it could not show. */
+  if (opts.building) {
+    q('#build-stages').hidden = false;
+    const order = ['ask', 'read', 'check', 'build'];
+    const at = order.indexOf(opts.building);
+    order.forEach((id, i) => {
+      const row = q(`.sp-stages__row[data-stage="${id}"]`);
+      row.classList.toggle('sp-stages__row--done', i < at);
+      row.classList.toggle('sp-stages__row--live', i === at);
+    });
+    q('#build-stage-note').textContent = opts.note || '';
+  }
+  if (opts.plan) {
+    const P = opts.plan;
+    q('#build-plan').hidden = false;
+    q('#build-plan-name').textContent = P.name;
+    q('#build-plan-cost').textContent = `${P.runs} generations`;
+    q('#build-plan-sub').textContent = P.sub;
+    const shots = q('#build-plan-shots');
+    for (const [kind, label, meta] of P.rows) {
+      const li = document.createElement('li');
+      li.className = 'sp-plan__shot';
+      li.innerHTML = `<span class="sp-plan__kind sp-plan__kind--${kind}"></span>`
+        + '<span class="sp-plan__label"></span><span class="sp-plan__meta"></span>';
+      li.children[1].textContent = label;
+      li.children[2].textContent = meta;
+      shots.append(li);
+    }
+    const warn = q('#build-plan-warn');
+    if (P.warnings && P.warnings.length) {
+      warn.hidden = false;
+      const t = document.createElement('div');
+      t.className = 'sp-plan__warn-title';
+      t.textContent = P.warnings.length === 1 ? 'One thing to know' : `${P.warnings.length} things to know`;
+      const ul = document.createElement('ul');
+      for (const w of P.warnings) {
+        const li = document.createElement('li'); li.textContent = w; ul.append(li);
+      }
+      warn.append(t, ul);
+    }
+    q('.sp-plan__refine').hidden = !P.refinable;
+  }
+
   // Pills
   const pills = q('#tpl-pills');
   for (const c of CATS) {
@@ -187,6 +236,25 @@ function build(width, view, opts = {}) {
 
 const h = document.getElementById('h');
 h.textContent = '';
+const PLAN = {
+  name: 'Cold Brew — 3-shot vertical commercial',
+  runs: 4,
+  sub: 'A storyboard still, then three clips chained on the last frame.',
+  rows: [
+    ['prompt', 'Idea', ''],
+    ['story',  'Story — writes all three', 'chatgpt'],
+    ['image',  'Storyboard poster', '9:16'],
+    ['video',  'Shot 1 — beans drop', '8s'],
+    ['frame',  'Ends on \u2192 Shot 2', ''],
+    ['video',  'Shot 2 — milk swirl', '8s'],
+    ['video',  'Shot 3 — hero reveal with logo', '8s'],
+  ],
+  warnings: [
+    'This clip asks for a voice but has no picture of who is speaking, so Flow has nobody to attach the voice to and the clip comes back silent.',
+  ],
+  refinable: true,
+};
+
 h.append(
   build(320, 'run', { emptyLog: true }),
   build(320, 'run', { live: true, signedIn: true }),
@@ -195,6 +263,10 @@ h.append(
   build(650, 'run', { live: true, signedIn: true }),
   build(650, 'templates'),
   build(320, 'build'),
+  build(320, 'build', { building: 'check', note: '7 steps \u2014 checking what it would produce\u2026' }),
+  build(320, 'build', { plan: PLAN }),
+  build(320, 'build', { plan: { ...PLAN, warnings: [], refinable: false } }),
+  build(400, 'build', { plan: PLAN }),
 );
 </script>
 </body>

@@ -22,8 +22,10 @@ import type { Template } from '../studio/templates';
 import { getAskPresets } from '../studio/presets';
 import { signInWithGoogle } from './googleSignIn';
 import { buildSpec } from '../studio/builder/spec';
-import { buildFromReply, readPlan, compilePlan } from '../studio/builder/plan';
-import { checkPlan, repairPlanMessage, summarisePlan } from '../studio/builder/check';
+import { readPlan, compilePlan } from '../studio/builder/plan';
+import {
+  checkPlan, repairPlanMessage, explainPlan, type PlanProblem,
+} from '../studio/builder/check';
 import { isRunnableType } from '../studio/templates/validate';
 
 /**
@@ -599,6 +601,166 @@ function renderAiButtons(idea: () => string): void {
 }
 
 /** Hand a finished workflow to the canvas and open it. */
+/* ── What it is doing, while it does it ──
+   A build with two repair rounds runs for minutes. What this replaces was a
+   list of appended lines, which looks identical whether the model is thinking
+   or the tab has died: in both cases lines stop arriving. One live stage says
+   which, and costs nothing to read. */
+type BuildStage = 'ask' | 'read' | 'check' | 'build';
+const STAGE_ORDER: BuildStage[] = ['ask', 'read', 'check', 'build'];
+
+function showStages(on: boolean): void {
+  const box = document.getElementById('build-stages') as HTMLElement | null;
+  if (box) box.hidden = !on;
+  if (on) {
+    for (const row of Array.from(document.querySelectorAll('.sp-stages__row'))) {
+      row.classList.remove('sp-stages__row--done', 'sp-stages__row--live');
+    }
+    const note = document.getElementById('build-stage-note');
+    if (note) note.textContent = '';
+  }
+}
+
+function stage(now: BuildStage, note = ''): void {
+  const at = STAGE_ORDER.indexOf(now);
+  STAGE_ORDER.forEach((id, i) => {
+    const row = document.querySelector(`.sp-stages__row[data-stage="${id}"]`);
+    if (!row) return;
+    row.classList.toggle('sp-stages__row--done', i < at);
+    row.classList.toggle('sp-stages__row--live', i === at);
+  });
+  const el = document.getElementById('build-stage-note');
+  if (el) el.textContent = note;
+}
+
+/* ── What it made, before it makes it ──
+   The plan used to go straight onto the canvas. Every node on it is a
+   generation somebody pays for, and this is the last moment they are still
+   free — so it is shown first, with what it will cost, and built on a click. */
+interface PendingBuild {
+  template: any;
+  /** In the user's terms, not the model's. See check.ts explainPlan. */
+  warnings: string[];
+  /** Kept so "make it 5 shots" is the next turn of the same conversation.
+      Empty for a reply pasted by hand: there is no conversation to continue,
+      and offering the box anyway would promise something that cannot work. */
+  platform: string;
+  name: string;
+  model: string;
+}
+let pendingBuild: PendingBuild | null = null;
+
+/** How many nodes on this template actually spend something. */
+function generationCount(template: any): number {
+  return (template?.nodes || []).filter((n: any) => isRunnableType(n.type)).length;
+}
+
+/** Which dot a row gets — the canvas's own colour for that kind of node. */
+function nodeKind(n: any): string {
+  if (n.type === 'frame') return 'frame';
+  if (n.type === 'prompt') return 'prompt';
+  if (n.type === 'image') return 'image';
+  if (n.type === 'story') return 'story';
+  const media = String(n.data?.mediaType || 'image');
+  return media === 'video' ? 'video' : media === 'text' ? 'text' : 'image';
+}
+
+function planRow(n: any): HTMLElement {
+  const li = document.createElement('li');
+  li.className = 'sp-plan__shot';
+  const dot = document.createElement('span');
+  dot.className = `sp-plan__kind sp-plan__kind--${nodeKind(n)}`;
+  const label = document.createElement('span');
+  label.className = 'sp-plan__label';
+  label.textContent = String(n.data?.label || n.id);
+  const meta = document.createElement('span');
+  meta.className = 'sp-plan__meta';
+  /* What distinguishes one row from the next. A clip is its length, a still
+     is its shape, and a writer is the chat it runs on — the field that would
+     be the same on every row says nothing. */
+  const d = n.data || {};
+  meta.textContent = d.mediaType === 'video' ? String(d.duration || '')
+    : d.mediaType === 'text' ? String(d.platform || '')
+    : n.type === 'generate' ? String(d.aspectRatio || '')
+    : '';
+  li.append(dot, label, meta);
+  return li;
+}
+
+function hidePlan(): void {
+  pendingBuild = null;
+  const box = document.getElementById('build-plan') as HTMLElement | null;
+  if (box) box.hidden = true;
+}
+
+function showPlan(b: PendingBuild): void {
+  pendingBuild = b;
+  const box = document.getElementById('build-plan') as HTMLElement | null;
+  if (!box) return;
+  box.hidden = false;
+
+  const name = document.getElementById('build-plan-name');
+  if (name) name.textContent = String(b.template?.name || 'Workflow');
+
+  const runs = generationCount(b.template);
+  const cost = document.getElementById('build-plan-cost');
+  if (cost) cost.textContent = `${runs} generation${runs === 1 ? '' : 's'}`;
+
+  const sub = document.getElementById('build-plan-sub');
+  if (sub) {
+    const total = (b.template?.nodes || []).length;
+    sub.textContent = String(b.template?.description
+      || `${total} node${total === 1 ? '' : 's'}, ${runs} of them run.`);
+  }
+
+  const list = document.getElementById('build-plan-shots');
+  if (list) {
+    list.innerHTML = '';
+    for (const n of (b.template?.nodes || [])) list.append(planRow(n));
+  }
+
+  const warn = document.getElementById('build-plan-warn') as HTMLElement | null;
+  if (warn) {
+    warn.hidden = !b.warnings.length;
+    warn.innerHTML = '';
+    if (b.warnings.length) {
+      const t = document.createElement('div');
+      t.className = 'sp-plan__warn-title';
+      t.textContent = b.warnings.length === 1
+        ? 'One thing to know' : `${b.warnings.length} things to know`;
+      const ul = document.createElement('ul');
+      for (const line of b.warnings) {
+        const li = document.createElement('li');
+        li.textContent = line;
+        ul.append(li);
+      }
+      warn.append(t, ul);
+    }
+  }
+
+  const ask = document.getElementById('build-refine') as HTMLInputElement | null;
+  if (ask) ask.value = '';
+  const refine = document.querySelector('.sp-plan__refine') as HTMLElement | null;
+  if (refine) refine.hidden = !b.platform;
+}
+
+/**
+ * Read a reply the whole way: is it a plan, does it compile, is it any good.
+ *
+ * One function because the first ask, every repair round and every later
+ * refinement all need exactly this, and three copies of it is three places for
+ * the definition of "good enough to build" to drift apart.
+ */
+function evaluateReply(text: string): {
+  plan: any; template: any; quality: PlanProblem[]; problems: string[]; problem?: string;
+} {
+  const { plan, problem } = readPlan(text);
+  if (!plan) return { plan: null, template: null, quality: [], problems: [], problem };
+  const quality = checkPlan(plan);
+  const { template, problems } = compilePlan(plan);
+  return { plan, template, quality, problems };
+}
+
 async function openBuilt(template: any): Promise<void> {
   /* Parked whole rather than by id: the gallery looks an id up in the
      published list, and this workflow exists nowhere but here. */
@@ -669,21 +831,26 @@ const MAX_BUILD_REPAIRS = 2;
 
 async function autoBuild(key: string, name: string, idea: string, model = ''): Promise<void> {
   setBuilding(true, key);
-  const trail: string[] = [];
-  const step = (line: string, kind: 'info' | 'bad' = 'info') => {
-    trail.push(line);
-    /* The whole trail, not just the latest. A repair round makes this a
-       multi-minute wait, and a single replaced line looks the same as a
-       hang — the user cannot tell thinking from stuck. */
-    buildSays(kind, `Building with ${name}…`, trail);
-  };
+  hidePlan();
+  showStages(true);
+  const box = document.getElementById('build-out') as HTMLElement | null;
+  if (box) box.hidden = true;
+
+  /* The best plan seen so far, across every round.
+     Round 2 is not reliably better than round 1 — a model asked to fix three
+     things sometimes returns two fixed and a fourth broken — so keeping the
+     one with the fewest problems is the difference between shipping the good
+     attempt and shipping the last one. */
+  let best: { template: any; quality: PlanProblem[] } | null = null;
+  let lastReply = '';
 
   try {
     let message = buildSpec(idea);
-    let lastReply = '';
 
     for (let round = 0; round <= MAX_BUILD_REPAIRS; round++) {
-      step(round === 0 ? `Asking ${name} for a plan…` : `Asking ${name} to fix ${round === 1 ? 'them' : 'the rest'}…`);
+      stage('ask', round === 0
+        ? `${name} is writing the plan…`
+        : `Asking ${name} to fix ${round === 1 ? 'it' : 'the rest'}…`);
 
       const res: any = await chrome.runtime.sendMessage({
         type: 'PANEL_BUILD', platform: key, prompt: message, model,
@@ -695,55 +862,123 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
         newChat: round === 0 ? 'auto' : 'never',
       });
       if (!res || res.error) {
+        showStages(false);
         buildSays('bad', `${name} could not answer`, [
-          ...trail, res?.error || 'No reply from the extension worker.',
+          res?.error || 'No reply from the extension worker.',
         ]);
         return;
       }
       lastReply = String(res.text || '');
-      step('Reading the plan…');
 
-      const { plan, problem } = readPlan(lastReply);
+      stage('read', 'Reading what came back…');
+      const { plan, template, quality, problems, problem } = evaluateReply(lastReply);
+
       if (!plan) {
         /* Not a plan at all. Worth one more round — a model that wrapped its
            JSON in prose fixes that on being told. */
         if (round < MAX_BUILD_REPAIRS) {
-          step(`${problem || 'That was not a plan.'} Asking again…`);
+          stage('read', problem || 'That was not a plan. Asking again…');
           message = repairPlanMessage([], [problem || 'The reply was not a JSON object with a "steps" array.']);
           continue;
         }
         break;
       }
 
-      const quality = checkPlan(plan);
-      const { template, problems } = compilePlan(plan);
-      const total = quality.length + problems.length;
-      step(`${plan.steps.length} step${plan.steps.length === 1 ? '' : 's'} — ${
-        total ? summarisePlan(quality) + (problems.length ? `, ${problems.length} structural` : '') : 'nothing to fix'}`);
+      stage('check', `${plan.steps.length} step${plan.steps.length === 1 ? '' : 's'} — ${
+        quality.length + problems.length ? 'checking what it would produce…' : 'nothing to fix'}`);
 
-      if (template && !total) {
-        step(`Building ${template.nodes.length} nodes…`);
-        await openBuilt(template);
-        return;
+      /* Structural problems mean there is no canvas to keep. Quality problems
+         mean there is one, and it is worth keeping even if a later round never
+         improves on it. */
+      if (template && (!best || quality.length < best.quality.length)) {
+        best = { template, quality };
       }
+
+      if (template && !quality.length && !problems.length) break;
       if (round === MAX_BUILD_REPAIRS) break;
       message = repairPlanMessage(quality, problems);
     }
 
-    /* Out of rounds. Keep the reply rather than throw it away: a near miss is
-       worth editing by hand, and the manual box is where that happens. */
-    const box = document.getElementById('build-reply') as HTMLTextAreaElement | null;
-    if (box) box.value = lastReply;
+    if (best) {
+      /* Every problem left is one that compiles, opens and runs — check.ts
+         says so at the top of the file. This used to throw that away and hand
+         over raw JSON with "fix it and build again", which turned a workflow
+         that was 90% right into no workflow at all. Now it is offered, with
+         what is wrong with it said plainly. */
+      stage('build', best.quality.length
+        ? 'Ready, with a few things worth knowing.'
+        : 'Ready.');
+      showPlan({
+        template: best.template,
+        warnings: explainPlan(best.quality),
+        platform: key, name, model,
+      });
+      return;
+    }
+
+    /* Nothing compiled at all, in any round. Keep the reply rather than throw
+       it away: a near miss is worth editing by hand, and the manual box is
+       where that happens. */
+    showStages(false);
+    const replyBox = document.getElementById('build-reply') as HTMLTextAreaElement | null;
+    if (replyBox) replyBox.value = lastReply;
     const details = document.getElementById('build-manual') as HTMLDetailsElement | null;
     if (details) details.open = true;
-    buildSays('bad', `${name} could not get to a clean plan`, [
-      ...trail,
+    buildSays('bad', `${name} could not get to a workflow`, [
       'The last reply is in the box below if you want to fix it and build again.',
     ]);
   } catch (e: any) {
+    showStages(false);
     buildSays('bad', 'The build could not run', [e?.message || String(e)]);
   } finally {
     setBuilding(false);
+  }
+}
+
+/**
+ * Change something about the plan that is already on screen.
+ *
+ * The next turn of the same conversation, which is the whole point: the model
+ * still has the plan it wrote, so "make it 5 shots" is a small edit rather
+ * than a fresh brief that has to rediscover everything the first one settled.
+ * Starting over was the only option before this, and it lost the parts that
+ * were already right.
+ */
+async function refineBuild(text: string): Promise<void> {
+  const at = pendingBuild;
+  if (!at || !text.trim()) return;
+  const ask = document.getElementById('build-refine-go') as HTMLButtonElement | null;
+  if (ask) ask.disabled = true;
+  showStages(true);
+  stage('ask', `Asking ${at.name} to change it…`);
+
+  try {
+    const res: any = await chrome.runtime.sendMessage({
+      type: 'PANEL_BUILD', platform: at.platform, model: at.model, newChat: 'never',
+      prompt: `${text.trim()}\n\nApply that to the plan you just wrote and send the `
+        + 'complete JSON object again — the same shape, with everything else unchanged. '
+        + 'No prose around it, no code fence.',
+    });
+    if (!res || res.error) {
+      stage('ask', res?.error || 'No reply.');
+      return;
+    }
+
+    stage('read', 'Reading the change…');
+    const { plan, template, quality, problems } = evaluateReply(String(res.text || ''));
+    if (!plan || !template || problems.length) {
+      /* The plan on screen is still good. Saying so matters: silently keeping
+         it would look like the change was applied. */
+      stage('check', 'That came back unusable — keeping the plan you already have.');
+      return;
+    }
+
+    stage('build', quality.length ? 'Changed, with a few things worth knowing.' : 'Changed.');
+    showPlan({ ...at, template, warnings: explainPlan(quality) });
+  } catch (e: any) {
+    stage('ask', e?.message || 'The change could not be asked for.');
+  } finally {
+    if (ask) ask.disabled = false;
   }
 }
 
@@ -777,6 +1012,52 @@ function wireBuilder(): void {
   if (!idea || !reply || !copy || !go) return;
 
   renderAiButtons(() => idea.value);
+
+  /* "6 blueprints" was written into the markup beside exactly six buttons.
+     True today, and wrong the moment a seventh is added — by whoever adds it,
+     silently, in a label nobody looks at. */
+  const ideasCount = document.querySelector('.sp-ideas__count');
+  if (ideasCount) {
+    const n = document.querySelectorAll('#build-ideas .sp-idea').length;
+    ideasCount.textContent = `${n} blueprint${n === 1 ? '' : 's'}`;
+  }
+
+  /* The preview's own controls. Build hands over what is already on screen;
+     Discard drops it without touching the canvas, which is the point of
+     having a preview at all. */
+  const planGo = document.getElementById('build-plan-go');
+  if (planGo) {
+    planGo.addEventListener('click', async () => {
+      const at = pendingBuild;
+      if (!at) return;
+      (planGo as HTMLButtonElement).disabled = true;
+      try {
+        await openBuilt(at.template);
+        hidePlan();
+        showStages(false);
+      } catch {
+        buildSays('bad', 'Could not hand the workflow to the canvas — storage is unavailable.');
+      } finally {
+        (planGo as HTMLButtonElement).disabled = false;
+      }
+    });
+  }
+  const planDrop = document.getElementById('build-plan-drop');
+  if (planDrop) {
+    planDrop.addEventListener('click', () => { hidePlan(); showStages(false); });
+  }
+
+  const refineBox = document.getElementById('build-refine') as HTMLInputElement | null;
+  const refineGo = document.getElementById('build-refine-go');
+  if (refineGo && refineBox) {
+    const send = () => { const t = refineBox.value; refineBox.value = ''; refineBuild(t); };
+    refineGo.addEventListener('click', send);
+    // Enter, because a one-line box that needs a button click is a box people
+    // press Enter in and then wonder why nothing happened.
+    refineBox.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); send(); }
+    });
+  }
 
   const syncClear = () => {
     if (clearBtn) clearBtn.hidden = !idea.value.trim();
@@ -844,31 +1125,26 @@ function wireBuilder(): void {
       return;
     }
 
-    const { template, problems } = buildFromReply(text);
+    const { template, quality, problems } = evaluateReply(text);
     if (!template) {
       buildSays('bad', 'That reply could not be turned into a workflow', problems);
       return;
     }
 
     /* It compiles. That is not the same as it being any good, and this path
-       has no model to send a repair to — so say what is wrong and build it
+       has no model to send a repair to — so say what is wrong and offer it
        anyway. Refusing would be worse: a plan pasted by hand is usually one
-       the user is already editing, and the canvas is a better place to finish
-       than a textarea. */
-    const { plan } = readPlan(text);
-    const quality = plan ? checkPlan(plan) : [];
+       the user is already editing.
 
-    try {
-      await openBuilt(template);
-      if (quality.length) {
-        buildSays('info', `Built, with ${summarisePlan(quality)}`, [
-          ...quality.map((q) => (q.step ? `Step "${q.step}" ${q.detail}` : q.detail)),
-          'The workflow is on the canvas — these are worth fixing before you run it.',
-        ]);
-      }
-    } catch {
-      buildSays('bad', 'Could not hand the workflow to the canvas — storage is unavailable.');
-    }
+       The same preview as the driven path, so what happens next does not
+       depend on which button got you here. Without a conversation behind it,
+       though — hence the empty platform. */
+    const box = document.getElementById('build-out') as HTMLElement | null;
+    if (box) box.hidden = true;
+    showStages(false);
+    showPlan({
+      template, warnings: explainPlan(quality), platform: '', name: '', model: '',
+    });
   });
 }
 

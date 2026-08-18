@@ -7,18 +7,21 @@
   <link rel="stylesheet" href="sidepanel.css" />
 </head>
 <body>
-  <!-- ══ SIGN IN ══════════════════════════════════════════════
-       The whole panel is behind this. Everything below it costs a run
-       against the account's quota, so there is nothing useful to show
-       someone we cannot count runs for — and a tab bar over a wall of
-       disabled controls is a worse answer than one clear screen. -->
+  <!-- ══ SIGN IN GATE ══════════════════════════════════════════════ -->
   <div class="sp-gate" id="gate">
     <div class="sp-gate__inner">
-      <div class="sp-gate__mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M20.5 12a8.5 8.5 0 1 1-2.9-6.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M15.2 3.4l3.1 2.1-2.1 3.1" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.3 8.9l5.4 3.1-5.4 3.1z" fill="currentColor"/></svg></div>
+      <div class="sp-gate__glow" aria-hidden="true"></div>
+      <div class="sp-gate__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M20.5 12a8.5 8.5 0 1 1-2.9-6.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M15.2 3.4l3.1 2.1-2.1 3.1" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M10.3 8.9l5.4 3.1-5.4 3.1z" fill="currentColor"/>
+        </svg>
+      </div>
       <h1 class="sp-gate__title">AutoFlow Studio</h1>
-      <p class="sp-gate__sub">Node workflows for AI video. Sign in to build and run them.</p>
+      <p class="sp-gate__sub">Visual AI video workflow composer. Sign in to automate and generate.</p>
 
-      <button id="gate-google" class="sp-gbtn">
+      <button id="gate-google" class="sp-gbtn" type="button">
         <svg viewBox="0 0 18 18" aria-hidden="true" class="sp-gbtn__g">
           <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.49h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.63z"/>
           <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.17l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/>
@@ -28,282 +31,461 @@
         Continue with Google
       </button>
 
-      <div class="sp-gate__or"><span>or</span></div>
+      <div class="sp-gate__or"><span>or with email</span></div>
 
-      <input id="email" class="sp-input" type="email" placeholder="you@example.com" autocomplete="username" />
-      <input id="password" class="sp-input" type="password" placeholder="Password" autocomplete="current-password" />
-      <button id="btn-login" class="sp-btn sp-btn--primary sp-btn--wide">Sign in</button>
+      <div class="sp-gate__fields">
+        <input id="email" class="sp-input" type="email" placeholder="name@domain.com" autocomplete="username" />
+        <input id="password" class="sp-input" type="password" placeholder="Password" autocomplete="current-password" />
+        <button id="btn-login" class="sp-btn sp-btn--primary sp-btn--wide" type="button">Sign In</button>
+      </div>
+
       <p id="auth-error" class="sp-error" hidden></p>
+      
       <p class="sp-gate__foot">
-        No account? <a href="https://auto-flow.studio" target="_blank" rel="noopener noreferrer">Create one</a>
+        Need an account? <a href="https://auto-flow.studio" target="_blank" rel="noopener noreferrer">Create one free</a>
       </p>
     </div>
   </div>
 
-  <!-- ── Header ──
-       One band, not two. There used to be a top bar and a session bar stacked
-       under the browser's own title bar, which spent 86px of a 720px panel
-       saying "AutoFlow Studio" twice. The run status moved into the run card,
-       where the run is; the docs and site links moved into the account sheet,
-       where a link that gets clicked once a month belongs. -->
+  <!-- ══ MAIN APP SHELL ══════════════════════════════════════════ -->
   <div id="app" class="sp-app" hidden>
-  <header class="sp-top">
-    <svg class="sp-top__logo" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 1 1-2.9-6.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M15.2 3.4l3.1 2.1-2.1 3.1" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.3 8.9l5.4 3.1-5.4 3.1z" fill="currentColor"/></svg>
-    <span class="sp-top__name">AutoFlow&nbsp;Studio</span>
-    <span id="plan-badge" class="sp-badge" hidden>Free</span>
-    <button id="open-studio" class="sp-top__open">
-      Open canvas
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
-    </button>
-    <button class="sp-top__icon" id="btn-account" title="Account" aria-label="Account">
-      <span id="top-avatar"><svg class="sp-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.4" r="3.7"/><path d="M4.6 20.2a7.4 7.4 0 0 1 14.8 0"/></svg></span>
-    </button>
-  </header>
+    
+    <!-- ── Header ── -->
+    <header class="sp-top">
+      <div class="sp-top__brand">
+        <svg class="sp-top__logo" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M20.5 12a8.5 8.5 0 1 1-2.9-6.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M15.2 3.4l3.1 2.1-2.1 3.1" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M10.3 8.9l5.4 3.1-5.4 3.1z" fill="currentColor"/>
+        </svg>
+        <span class="sp-top__name">AutoFlow<span class="sp-top__name-studio">Studio</span></span>
+        <span id="plan-badge" class="sp-badge" hidden>Free</span>
+      </div>
 
-  <!-- ── Primary navigation ── -->
-  <!-- ── Primary navigation ──
-       Three, and Build first.
+      <div class="sp-top__actions">
+        <button id="open-studio" class="sp-top__open" type="button" title="Launch Workflow Canvas Tab">
+          <span>Open Canvas</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
+        </button>
+        <button class="sp-top__icon" id="btn-account" type="button" title="Account Settings" aria-label="Account Settings">
+          <span id="top-avatar" class="sp-top__avatar">
+            <svg class="sp-glyph" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="8.4" r="3.7"/>
+              <path d="M4.6 20.2a7.4 7.4 0 0 1 14.8 0"/>
+            </svg>
+          </span>
+        </button>
+      </div>
+    </header>
 
-       It was four — Run, Templates, Build, Prompts — opening on Run, which is
-       the one tab that has nothing in it until a workflow is already running.
-       The panel opened on an empty state every time. Build is why someone
-       opens this, so it leads and it is the default. Templates and Prompts
-       were both "pick something from a list", so they are one Library.
-       Run became Activity, which is what it actually shows: the run, the
-       platform tabs, and the log. -->
-  <nav class="sp-nav" id="sp-nav" role="tablist" aria-label="Panel sections">
-    <button class="sp-nav__tab sp-nav__tab--on" data-view="build"
-            role="tab" aria-selected="true" aria-controls="view-build">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M3 12h3M18 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/><circle cx="12" cy="12" r="3.2"/></svg>
-      Build
-    </button>
-    <button class="sp-nav__tab" data-view="templates"
-            role="tab" aria-selected="false" aria-controls="view-templates">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>
-      Library
-    </button>
-    <button class="sp-nav__tab" data-view="run"
-            role="tab" aria-selected="false" aria-controls="view-run">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
-      Activity
-    </button>
-  </nav>
+    <!-- ── Primary Navigation ── -->
+    <nav class="sp-nav" id="sp-nav" role="tablist" aria-label="Panel sections">
+      <button class="sp-nav__tab sp-nav__tab--on" data-view="build"
+              role="tab" aria-selected="true" aria-controls="view-build">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3v3M12 18v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M3 12h3M18 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>
+          <circle cx="12" cy="12" r="3.2"/>
+        </svg>
+        <span>Build</span>
+      </button>
+      <button class="sp-nav__tab" data-view="templates"
+              role="tab" aria-selected="false" aria-controls="view-templates">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>
+        </svg>
+        <span>Library</span>
+      </button>
+      <button class="sp-nav__tab" data-view="run"
+              role="tab" aria-selected="false" aria-controls="view-run">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8 5.5v13l11-6.5z"/>
+        </svg>
+        <span>Activity</span>
+        <span class="sp-nav__live-dot" id="nav-live-dot" hidden aria-hidden="true"></span>
+      </button>
+    </nav>
 
-  <main class="sp-main">
-    <!-- ══ RUN ══════════════════════════════════════════════════ -->
-    <div class="sp-view" id="view-run" role="tabpanel" hidden>
-      <!-- The reason the panel exists: during a run the canvas is behind the
-           platform tab, so this is the only view of what is happening. -->
-      <section class="sp-run" id="run-card">
-        <div id="run-idle" class="sp-run__idle">
-          <svg class="sp-run__idle-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.6"/><path d="M10.2 8.6 15.6 12l-5.4 3.4z" fill="currentColor" stroke="none"/></svg>
-          <span class="sp-run__idle-text">Nothing running</span>
-          <span class="sp-run__idle-hint" id="run-idle-hint">Open the canvas to build or run a workflow.</span>
+    <!-- ── Main Content Area ── -->
+    <main class="sp-main">
+      
+      <!-- ══ 1. BUILD TAB ═════════════════════════════════════════ -->
+      <div class="sp-view" id="view-build" role="tabpanel">
+        
+        <!-- Hero Header -->
+        <div class="sp-hero">
+          <div class="sp-hero__badge">✨ AI Prompt to Node Workflow</div>
+          <h2 class="sp-hero__title">What do you want to create?</h2>
+          <p class="sp-hero__sub">Type a scene concept or brief. AI will construct your multi-shot workflow.</p>
         </div>
 
-        <div id="run-live" hidden>
-          <div class="sp-run__top">
-            <span class="sp-run__pulse" aria-hidden="true"></span>
-            <span class="sp-run__state" id="head-sub">Running</span>
-            <span class="sp-run__elapsed" id="run-elapsed">0:00</span>
+        <!-- Prompt Builder Area -->
+        <div class="sp-prompt-box">
+          <textarea id="build-idea" class="sp-area sp-area--hero" rows="3"
+                    placeholder="E.g. A 3-shot vertical commercial for cold brew coffee: 1) dramatic beans drop, 2) slow-motion milk swirl, 3) ice cup condensation hero reveal with logo text."></textarea>
+          <div class="sp-prompt-bar">
+            <span class="sp-prompt-tip">💡 Formats: NanoBanana2 stills & Flow Omni video</span>
+            <button type="button" class="sp-prompt-clear" id="build-idea-clear" title="Clear prompt" hidden>✕</button>
           </div>
-          <div class="sp-run__node" id="run-node">—</div>
-          <div class="sp-bar"><div class="sp-bar__fill" id="run-bar"></div></div>
-          <div class="sp-run__meta">
-            <span id="run-count">0 / 0</span>
-            <span id="run-pct">0%</span>
+        </div>
+
+        <!-- AI Engines Generator Row -->
+        <div class="sp-engines-card">
+          <div class="sp-engines__head">
+            <span class="sp-engines__label">Generate with AI Model</span>
+            <span class="sp-engines__sublabel">Directly builds nodes on canvas</span>
           </div>
-          <div class="sp-row">
-            <button id="btn-pause" class="sp-btn sp-btn--ghost">Pause</button>
-            <button id="btn-stop" class="sp-btn sp-btn--danger">Stop</button>
+          <div class="sp-ai" id="build-ai"></div>
+        </div>
+
+        <!-- What it is doing, while it does it. A build with repair rounds
+             runs for minutes, and appended lines of text look the same as a
+             hang — the stage that is live is the part that says otherwise. -->
+        <div id="build-stages" class="sp-stages" hidden>
+          <div class="sp-stages__row" data-stage="ask">
+            <span class="sp-stages__dot"></span><span class="sp-stages__name">Asking</span>
+          </div>
+          <div class="sp-stages__row" data-stage="read">
+            <span class="sp-stages__dot"></span><span class="sp-stages__name">Reading the plan</span>
+          </div>
+          <div class="sp-stages__row" data-stage="check">
+            <span class="sp-stages__dot"></span><span class="sp-stages__name">Checking it</span>
+          </div>
+          <div class="sp-stages__row" data-stage="build">
+            <span class="sp-stages__dot"></span><span class="sp-stages__name">Ready</span>
+          </div>
+          <div class="sp-stages__note" id="build-stage-note"></div>
+        </div>
+
+        <!-- What it made, before it makes it. A workflow costs real
+             generations, and this is the last moment they are still free. -->
+        <div id="build-plan" class="sp-plan" hidden>
+          <div class="sp-plan__head">
+            <span class="sp-plan__name" id="build-plan-name"></span>
+            <span class="sp-plan__cost" id="build-plan-cost"></span>
+          </div>
+          <p class="sp-plan__sub" id="build-plan-sub"></p>
+          <ol class="sp-plan__shots" id="build-plan-shots"></ol>
+          <div class="sp-plan__warn" id="build-plan-warn" hidden></div>
+          <div class="sp-plan__acts">
+            <button type="button" class="sp-btn sp-btn--primary" id="build-plan-go">Build on canvas</button>
+            <button type="button" class="sp-btn sp-btn--ghost" id="build-plan-drop">Discard</button>
+          </div>
+          <div class="sp-plan__refine">
+            <input type="text" class="sp-plan__ask" id="build-refine"
+                   placeholder="Change something — “make it 5 shots”, “use Veo”…" />
+            <button type="button" class="sp-btn sp-btn--ghost" id="build-refine-go">Ask</button>
           </div>
         </div>
 
-        <div id="run-error" class="sp-error" hidden></div>
-      </section>
+        <!-- Build Status Box -->
+        <div id="build-out" class="sp-buildout" hidden></div>
 
-      <!-- Whether the sites a run needs are open, checked before a node finds
-           out three minutes in. Rows are buttons because they are also the
-           fix — clicking one opens the tab it is reporting missing. -->
-      <section class="sp-card">
-        <div class="sp-card__head">
-          <h2 class="sp-card__title">Platforms</h2>
-          <span class="sp-card__count" id="plat-count">—</span>
+        <!-- Quick Start Blueprints -->
+        <div class="sp-ideas" id="build-ideas">
+          <div class="sp-ideas__head">
+            <span>Production Formulas</span>
+            <span class="sp-ideas__count">6 blueprints</span>
+          </div>
+          <div class="sp-ideas__list">
+            <button type="button" class="sp-idea" data-prompt="Turn one product photo into a 15-second commercial: Shot 1 dynamic product reveal, Shot 2 macro texture close-up, Shot 3 polished packshot with call to action.">
+              <span class="sp-idea__icon sp-idea__icon--warm">☕</span>
+              <div class="sp-idea__body">
+                <div class="sp-idea__title-row">
+                  <span class="sp-idea__text">Product Commercial</span>
+                  <span class="sp-idea__tag">#E-Commerce</span>
+                </div>
+                <span class="sp-idea__sub">Photo → 15s 3-shot ad</span>
+              </div>
+              <span class="sp-idea__arrow">→</span>
+            </button>
+
+            <button type="button" class="sp-idea" data-prompt="The same consistent character in three seamless shots: Wide establishing location, medium dialogue tracking shot, tight emotional close-up with exact outfit lock.">
+              <span class="sp-idea__icon sp-idea__icon--blue">👤</span>
+              <div class="sp-idea__body">
+                <div class="sp-idea__title-row">
+                  <span class="sp-idea__text">Consistent Actor</span>
+                  <span class="sp-idea__tag">#CharacterLock</span>
+                </div>
+                <span class="sp-idea__sub">3 identity-locked shots</span>
+              </div>
+              <span class="sp-idea__arrow">→</span>
+            </button>
+
+            <button type="button" class="sp-idea" data-prompt="A 3-shot viral narrative: Hook opening scene, unexpected conflict twist, satisfying emotional resolution with punchy pacing.">
+              <span class="sp-idea__icon sp-idea__icon--green">🐲</span>
+              <div class="sp-idea__body">
+                <div class="sp-idea__title-row">
+                  <span class="sp-idea__text">Story Director</span>
+                  <span class="sp-idea__tag">#ViralNarrative</span>
+                </div>
+                <span class="sp-idea__sub">Multi-scene storytelling</span>
+              </div>
+              <span class="sp-idea__arrow">→</span>
+            </button>
+
+            <button type="button" class="sp-idea" data-prompt="A 20-second room transformation hyperlapse: Empty construction shell, accelerated modular build, and cinematic warm cozy interior reveal.">
+              <span class="sp-idea__icon sp-idea__icon--amber">🏠</span>
+              <div class="sp-idea__body">
+                <div class="sp-idea__title-row">
+                  <span class="sp-idea__text">Room Hyperlapse</span>
+                  <span class="sp-idea__tag">#Timelapse</span>
+                </div>
+                <span class="sp-idea__sub">20s architectural transition</span>
+              </div>
+              <span class="sp-idea__arrow">→</span>
+            </button>
+
+            <button type="button" class="sp-idea" data-prompt="High-fashion runway lookbook: Clean studio portrait still, natural outdoor walking motion, 360-degree dynamic garment spin.">
+              <span class="sp-idea__icon sp-idea__icon--pink">👗</span>
+              <div class="sp-idea__body">
+                <div class="sp-idea__title-row">
+                  <span class="sp-idea__text">Fashion Lookbook</span>
+                  <span class="sp-idea__tag">#Fashion</span>
+                </div>
+                <span class="sp-idea__sub">Stills + fluid motion clips</span>
+              </div>
+              <span class="sp-idea__arrow">→</span>
+            </button>
+
+            <button type="button" class="sp-idea" data-prompt="Chained video extension: Take the ending frame of the previous clip and seamlessly extend into the next high-action sequence.">
+              <span class="sp-idea__icon sp-idea__icon--violet">🎞</span>
+              <div class="sp-idea__body">
+                <div class="sp-idea__title-row">
+                  <span class="sp-idea__text">Frame Chaining</span>
+                  <span class="sp-idea__tag">#Extension</span>
+                </div>
+                <span class="sp-idea__sub">Infinite video continuation</span>
+              </div>
+              <span class="sp-idea__arrow">→</span>
+            </button>
+          </div>
         </div>
-        <ul class="sp-plat" id="plat-list">
-          <li><button type="button" data-plat="flow">
-            <span class="sp-dot" aria-hidden="true"></span>
-            <span class="sp-plat__name">Google Flow</span>
-            <span class="sp-plat__state">—</span>
-          </button></li>
-          <li><button type="button" data-plat="chatgpt">
-            <span class="sp-dot" aria-hidden="true"></span>
-            <span class="sp-plat__name">ChatGPT</span>
-            <span class="sp-plat__state">—</span>
-          </button></li>
-          <li><button type="button" data-plat="gemini">
-            <span class="sp-dot" aria-hidden="true"></span>
-            <span class="sp-plat__name">Gemini</span>
-            <span class="sp-plat__state">—</span>
-          </button></li>
-          <li><button type="button" data-plat="grok">
-            <span class="sp-dot" aria-hidden="true"></span>
-            <span class="sp-plat__name">Grok</span>
-            <span class="sp-plat__state">—</span>
-          </button></li>
-        </ul>
-      </section>
 
-      <!-- What the content scripts are doing, without opening devtools on a
-           third-party site to read it.
+        <!-- Manual Copy/Paste Accordion -->
+        <details class="sp-manual" id="build-manual">
+          <summary>Copy prompt brief / Paste AI chat reply</summary>
+          <div class="sp-manual__content">
+            <p class="sp-note">
+              For models without direct automation (DeepSeek, external Claude). Copy the formatted specification brief, then paste the full response back below.
+            </p>
+            <div class="sp-row">
+              <button id="build-copy" class="sp-btn sp-btn--ghost" type="button">
+                <svg class="sp-glyph" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                <span>Copy Specification Brief</span>
+              </button>
+            </div>
+            <div class="sp-ai" id="build-ai-manual"></div>
+            <label class="sp-step__label" for="build-reply">Paste AI Response JSON/Plan:</label>
+            <textarea id="build-reply" class="sp-area sp-area--mono" rows="4"
+                      placeholder="Paste the AI's reply here — Markdown code blocks and descriptions are safely parsed..."></textarea>
+            <div class="sp-row">
+              <button id="build-go" class="sp-btn sp-btn--primary sp-btn--wide" type="button">
+                <span>⚡ Build Nodes from Pasted Reply</span>
+              </button>
+            </div>
+          </div>
+        </details>
 
-           ONE of these. There used to be two elements sharing id="diag-log" —
-           a <details> here and a card below it — so every getElementById call
-           found the first and the card stayed empty forever, permanently
-           reading "No log entries yet" while lines were written above it. -->
-      <section class="sp-card">
-        <div class="sp-card__head">
-          <h2 class="sp-card__title">Diagnostics</h2>
-        </div>
-        <div id="diag-log" class="sp-diag__log">
-          <div class="sp-diag__empty">No log entries yet.</div>
-        </div>
-      </section>
-    </div>
-
-    <!-- ══ TEMPLATES ════════════════════════════════════════════ -->
-    <div class="sp-view" id="view-templates" role="tabpanel" hidden>
-      <!-- Pinned. Scrolling to row 14 and then wanting to filter used to mean
-           scrolling all the way back up, because the search box and the
-           category pills were part of the scrolling column. -->
-      <div class="sp-tplbar">
-        <!-- Two sets, never merged. Official templates ship with the app and
-             are curated; community ones are other people's, moderated but not
-             ours. Blending them into one list would hide which is which. -->
-        <div class="sp-seg2" role="tablist" aria-label="Template source">
-          <button id="src-official" class="sp-seg2__btn sp-seg2__btn--on" role="tab" aria-selected="true">Official</button>
-          <button id="src-community" class="sp-seg2__btn" role="tab" aria-selected="false">Community</button>
-        </div>
-        <div class="sp-search">
-          <svg class="sp-search__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-          <input id="tpl-search" class="sp-search__input" type="search"
-                 placeholder="Search templates…" aria-label="Search templates" />
-        </div>
-        <!-- One line that scrolls sideways. Wrapping eight categories cost a
-             second 29px row permanently, on every width. -->
-        <div class="sp-pills" id="tpl-pills" role="group" aria-label="Filter by category"></div>
-      </div>
-      <div class="sp-count" id="tpl-count"></div>
-      <div class="sp-grid" id="tpl-grid"></div>
-
-      <!-- Prompt presets. A reference list, not a destination — it had a tab
-           of its own and was the least visited thing in the panel. -->
-      <details class="sp-manual" id="preset-fold">
-        <summary>Prompt presets</summary>
-
-      <p class="sp-note sp-note--intro">
-        A preset wraps what you type in a brief — the angles, the lighting, and
-        the trap to avoid. Pick one on any Ask AI node.
-      </p>
-      <div id="preset-list"></div>
-          </details>
-
-    </div>
-
-    <!-- ══ BUILD ════════════════════════════════════════════════
-         Describe an idea, have any AI chat turn it into a plan, paste the
-         reply back. The chat is not driven from here on purpose: the same
-         three steps work with DeepSeek and Claude, which this extension has
-         no adapter for, so the feature is not limited to the sites it can
-         automate. -->
-    <div class="sp-view" id="view-build" role="tabpanel">
-      <div class="sp-step">
-        <span class="sp-step__n">1</span>
-        <label class="sp-step__label" for="build-idea">Describe what you want to make</label>
-      </div>
-      <textarea id="build-idea" class="sp-area" rows="4"
-                placeholder="A 3-shot vertical ad for a coffee brand — a pour, a close-up of the beans, and the cup on a table."></textarea>
-
-      <div class="sp-step">
-        <span class="sp-step__n">2</span>
-        <span class="sp-step__label">Build it</span>
-      </div>
-      <!-- One press. The extension opens the chat, asks, reads the answer and
-           loads the workflow. Only the three with content scripts can be
-           driven; DeepSeek and Claude are below, by hand. -->
-      <div class="sp-ai" id="build-ai"></div>
-      <div id="build-out" class="sp-buildout" hidden></div>
-
-      <!-- Starters. The default tab used to end at the disclosure below with
-           two thirds of the panel empty, and step 1 — describing the thing —
-           is exactly where people stall. Each of these fills the box above,
-           so the empty space now answers the question it used to pose. -->
-      <div class="sp-ideas" id="build-ideas">
-        <div class="sp-ideas__head">Or start from one of these</div>
-        <div class="sp-ideas__list">
-          <button type="button" class="sp-idea">Turn one product photo into a 15-second ad</button>
-          <button type="button" class="sp-idea">The same character in three consistent shots</button>
-          <button type="button" class="sp-idea">A 20-second room transformation hyperlapse</button>
-          <button type="button" class="sp-idea">One outfit on a model, then two clips of it moving</button>
-          <button type="button" class="sp-idea">A clip that continues from its own last frame</button>
-        </div>
       </div>
 
-      <details class="sp-manual" id="build-manual">
-        <summary>Use DeepSeek, Claude, or another chat</summary>
-        <p class="sp-note">
-          These have no adapter here, so it is copy and paste — the same brief,
-          the same result.
-        </p>
-        <div class="sp-row">
-          <button id="build-copy" class="sp-btn sp-btn--ghost">Copy brief</button>
+      <!-- ══ 2. LIBRARY TAB ════════════════════════════════════════ -->
+      <div class="sp-view" id="view-templates" role="tabpanel" hidden>
+        
+        <!-- Pinned Search & Filter Toolbar -->
+        <div class="sp-tplbar">
+          <div class="sp-seg2" role="tablist" aria-label="Template source">
+            <button id="src-official" class="sp-seg2__btn sp-seg2__btn--on" role="tab" aria-selected="true" type="button">Official Curated</button>
+            <button id="src-community" class="sp-seg2__btn" role="tab" aria-selected="false" type="button">Community Hub</button>
+          </div>
+          <div class="sp-search">
+            <svg class="sp-search__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="tpl-search" class="sp-search__input" type="search"
+                   placeholder="Search workflows, categories, techniques…" aria-label="Search templates" />
+          </div>
+          <div class="sp-pills" id="tpl-pills" role="group" aria-label="Filter by category"></div>
         </div>
-        <div class="sp-ai" id="build-ai-manual"></div>
-        <label class="sp-step__label" for="build-reply">Paste the reply back</label>
-        <textarea id="build-reply" class="sp-area sp-area--mono" rows="4"
-                  placeholder="Paste the whole reply — fenced code, prose around it, all fine."></textarea>
-        <div class="sp-row">
-          <button id="build-go" class="sp-btn sp-btn--ghost">Build from pasted reply</button>
-        </div>
-      </details>
-    </div>
 
-</main>
+        <div class="sp-count" id="tpl-count"></div>
+        <div class="sp-grid" id="tpl-grid"></div>
 
-  <!-- ── Footer: the plan, and what is left of it ── -->
-  <footer class="sp-foot">
-    <span class="sp-foot__plan" id="foot-plan">FREE</span>
-    <button class="sp-foot__acct" id="foot-acct">Sign in</button>
-    <span class="sp-foot__stat" id="foot-runs">—</span>
-  </footer>
+        <!-- Prompt Presets Drawer -->
+        <details class="sp-manual" id="preset-fold">
+          <summary>Production Prompt Presets & Style Guides</summary>
+          <div class="sp-manual__content">
+            <p class="sp-note sp-note--intro">
+              Expert prompt structures optimized for NanoBanana2 & Flow Omni. Attach these directly to Ask AI nodes in the canvas.
+            </p>
+            <div id="preset-list"></div>
+          </div>
+        </details>
+
+      </div>
+
+      <!-- ══ 3. ACTIVITY TAB ═══════════════════════════════════════ -->
+      <div class="sp-view" id="view-run" role="tabpanel" hidden>
+        
+        <!-- Live Execution Card -->
+        <section class="sp-run" id="run-card">
+          <div id="run-idle" class="sp-run__idle">
+            <div class="sp-run__idle-graphic">
+              <svg class="sp-run__idle-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M10 8.5 16 12l-6 3.5z" fill="currentColor"/>
+              </svg>
+            </div>
+            <div class="sp-run__idle-content">
+              <span class="sp-run__idle-text">Pipeline Idle</span>
+              <span class="sp-run__idle-hint" id="run-idle-hint">Open the canvas to construct or start a workflow run.</span>
+            </div>
+          </div>
+
+          <div id="run-live" hidden>
+            <div class="sp-run__top">
+              <div class="sp-run__badge">
+                <span class="sp-run__pulse" aria-hidden="true"></span>
+                <span class="sp-run__state" id="head-sub">RUNNING</span>
+              </div>
+              <div class="sp-run__timer">
+                <svg class="sp-glyph" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                <span id="run-elapsed">0:00</span>
+              </div>
+            </div>
+
+            <div class="sp-run__node-wrapper">
+              <div class="sp-run__node-label">Active Node</div>
+              <div class="sp-run__node" id="run-node">—</div>
+            </div>
+
+            <div class="sp-bar">
+              <div class="sp-bar__fill" id="run-bar"></div>
+            </div>
+
+            <div class="sp-run__meta">
+              <span class="sp-run__count-label"><strong id="run-count">0 / 0</strong> nodes completed</span>
+              <span class="sp-run__pct-badge" id="run-pct">0%</span>
+            </div>
+
+            <div class="sp-row sp-run__controls">
+              <button id="btn-pause" class="sp-btn sp-btn--ghost" type="button">
+                <svg class="sp-glyph" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+                <span>Pause</span>
+              </button>
+              <button id="btn-stop" class="sp-btn sp-btn--danger" type="button">
+                <svg class="sp-glyph" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                <span>Stop Run</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="run-error" class="sp-error" hidden></div>
+        </section>
+
+        <!-- Platform Status Health Matrix -->
+        <section class="sp-card">
+          <div class="sp-card__head">
+            <div class="sp-card__title-group">
+              <svg class="sp-glyph" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              <h2 class="sp-card__title">Platform Connections</h2>
+            </div>
+            <span class="sp-card__count" id="plat-count">—</span>
+          </div>
+          
+          <ul class="sp-plat" id="plat-list">
+            <li><button type="button" data-plat="flow">
+              <span class="sp-dot" aria-hidden="true"></span>
+              <span class="sp-plat__name">Google Flow</span>
+              <span class="sp-plat__state">—</span>
+            </button></li>
+            <li><button type="button" data-plat="chatgpt">
+              <span class="sp-dot" aria-hidden="true"></span>
+              <span class="sp-plat__name">ChatGPT</span>
+              <span class="sp-plat__state">—</span>
+            </button></li>
+            <li><button type="button" data-plat="gemini">
+              <span class="sp-dot" aria-hidden="true"></span>
+              <span class="sp-plat__name">Google Gemini</span>
+              <span class="sp-plat__state">—</span>
+            </button></li>
+            <li><button type="button" data-plat="grok">
+              <span class="sp-dot" aria-hidden="true"></span>
+              <span class="sp-plat__name">xAI Grok</span>
+              <span class="sp-plat__state">—</span>
+            </button></li>
+          </ul>
+        </section>
+
+        <!-- Live Diagnostics Log Terminal -->
+        <section class="sp-card">
+          <div class="sp-card__head">
+            <div class="sp-card__title-group">
+              <svg class="sp-glyph" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              <h2 class="sp-card__title">Execution Diagnostics</h2>
+            </div>
+            <span class="sp-diag__badge">Live Feed</span>
+          </div>
+          <div id="diag-log" class="sp-diag__log">
+            <div class="sp-diag__empty">No log entries yet. Output will stream here during runs.</div>
+          </div>
+        </section>
+
+      </div>
+
+    </main>
+
+    <!-- ── Sticky Footer ── -->
+    <footer class="sp-foot">
+      <span class="sp-foot__plan" id="foot-plan">FREE</span>
+      <button class="sp-foot__acct" id="foot-acct" type="button">Sign in</button>
+      <span class="sp-foot__stat" id="foot-runs">—</span>
+    </footer>
 
   </div><!-- /#app -->
 
-  <!-- ── Account ── -->
+  <!-- ── Account Modal ── -->
   <div class="sp-modal" id="acct-modal" hidden>
-    <div class="sp-modal__card" role="dialog" aria-modal="true" aria-label="Account">
-      <button class="sp-modal__x" id="acct-close" aria-label="Close"><svg class="sp-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 6.4l11.2 11.2M17.6 6.4L6.4 17.6"/></svg></button>
+    <div class="sp-modal__card" role="dialog" aria-modal="true" aria-label="Account Settings">
+      <button class="sp-modal__x" id="acct-close" aria-label="Close" type="button">
+        <svg class="sp-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 6.4l11.2 11.2M17.6 6.4L6.4 17.6"/></svg>
+      </button>
 
-      <div id="acct-out" hidden></div>
+      <div class="sp-modal__header">
+        <h3 class="sp-modal__title">Account & Quota</h3>
+      </div>
+
+      <div id="acct-out" hidden>
+        <p class="sp-note">You are currently signed out.</p>
+      </div>
 
       <div id="acct-in" hidden>
         <div class="sp-acct">
-          <span class="sp-avatar" id="acct-initial">·</span>
-          <span class="sp-acct__email" id="acct-email">—</span>
+          <div class="sp-avatar-wrap">
+            <span class="sp-avatar" id="acct-initial">·</span>
+          </div>
+          <div class="sp-acct__info">
+            <span class="sp-acct__email" id="acct-email">—</span>
+            <span class="sp-acct__status">Active Session</span>
+          </div>
         </div>
+
         <div class="sp-usage" id="usage-block">
           <div class="sp-usage__row">
-            <span id="usage-label">Studio runs</span>
-            <span id="usage-count">—</span>
+            <span id="usage-label">Monthly Studio Runs</span>
+            <span id="usage-count" class="sp-usage__val">—</span>
           </div>
-          <div class="sp-bar sp-bar--thin"><div class="sp-bar__fill" id="usage-bar"></div></div>
+          <div class="sp-bar sp-bar--thin">
+            <div class="sp-bar__fill" id="usage-bar"></div>
+          </div>
         </div>
-        <button id="btn-logout" class="sp-btn sp-btn--ghost sp-btn--wide">Sign out</button>
+
+        <button id="btn-logout" class="sp-btn sp-btn--ghost sp-btn--wide" type="button">
+          <svg class="sp-glyph" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          <span>Sign Out</span>
+        </button>
       </div>
 
       <div class="sp-modal__links">
-        <a id="lnk-docs" href="https://auto-flow.studio/docs" target="_blank" rel="noopener noreferrer">Documentation</a>
-        <a href="https://auto-flow.studio" target="_blank" rel="noopener noreferrer">auto-flow.studio</a>
+        <a id="lnk-docs" href="https://auto-flow.studio/docs" target="_blank" rel="noopener noreferrer">Docs & Guides ↗</a>
+        <a href="https://auto-flow.studio" target="_blank" rel="noopener noreferrer">auto-flow.studio ↗</a>
       </div>
     </div>
   </div>

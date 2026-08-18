@@ -34,6 +34,62 @@ export interface PlanProblem {
   detail: string;
 }
 
+/**
+ * The same problem, said to a person.
+ *
+ * `detail` is written at the model: it names the field to change and the
+ * repair to make, because that is what gets a better plan back. Shown to
+ * someone building a video it reads as an instruction they did not ask for —
+ * and the panel was showing worse than that, the raw codes, "2× noContinuity,
+ * 1× voiceWithoutImage", which is a stack trace in a consumer product.
+ *
+ * So each code gets a sentence about the OUTPUT rather than the plan: not
+ * what to change, but what the video will do wrong if nobody does. That is
+ * the thing the user can judge, and the only reason they would care.
+ */
+const HUMAN: Record<PlanProblem['code'], string> = {
+  noContinuity:
+    'Each clip starts from scratch, so the subject changes between them however '
+    + 'carefully the prompts are written.',
+  voiceOnFrames:
+    'This clip asks for a voice and also pins its first and last frame. Flow hides '
+    + 'the voice picker entirely in that mode, so it would come back silent.',
+  voiceWithoutImage:
+    'This clip asks for a voice but has no picture of who is speaking, so Flow has '
+    + 'nobody to attach the voice to and the clip comes back silent.',
+  unknownVoice: 'That is not one of Flow’s voices, so no voice would be set at all.',
+  voiceButSilent:
+    'Voices are cast but the piece is set to have no sound, so nobody would speak.',
+  castVoiceUnused:
+    'Voices are cast but no clip has a picture of the character, so every one of '
+    + 'them would come back silent.',
+  storyUnused:
+    'The story director writes the prompts and nothing is set to use them, so the '
+    + 'shots would be generated from whatever was typed instead.',
+  uploadUnused: 'This asks you for a picture and then never uses it.',
+  lonelyStory:
+    'There is more than one story director. They cannot see each other’s answers, '
+    + 'so the shots would not agree about the character or the place.',
+};
+
+/**
+ * What each problem means for the finished video, in order, deduplicated.
+ *
+ * Deduplicated because the same fault on four clips is one thing to understand
+ * and one thing to fix — four identical sentences reads as four problems.
+ */
+export function explainPlan(problems: PlanProblem[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of problems) {
+    const line = HUMAN[p.code];
+    if (!line || seen.has(line)) continue;
+    seen.add(line);
+    out.push(line);
+  }
+  return out;
+}
+
 /* A folded-shots check lived here and was deleted rather than tuned.
    The idea was sound — one step is one generation, so a prompt moving through
    time asks one clip to be several — but every implementation of it was a
