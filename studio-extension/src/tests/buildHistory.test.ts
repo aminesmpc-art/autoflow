@@ -212,3 +212,50 @@ describe('a picture with the change, too', () => {
     expect(getComputedStyle(el).display).toBe('none');
   });
 });
+
+describe('the model is told the pictures are there', () => {
+  /* Attaching them is not the same as using them. A model handed an image and
+     a sentence that never refers to it will often answer the sentence and
+     leave the picture alone — it arrives as context, and nothing in the
+     message says it matters. */
+
+  it('says nothing when nothing is attached', () => {
+    const fn = SRC.slice(SRC.indexOf('function aboutImages'));
+    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/if \(!count\) return '';/);
+  });
+
+  it('describes the first ask as what to MAKE', () => {
+    const fn = SRC.slice(SRC.indexOf('function aboutImages'));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+    expect(body).toMatch(/the subject, the product or the look I want/);
+    expect(body).toMatch(/rather than working from the/);
+  });
+
+  it('describes a change as what to EDIT', () => {
+    /* The distinction the user drew: on a change the picture is the thing
+       being pointed at, which is the whole reason for attaching it there. */
+    const fn = SRC.slice(SRC.indexOf('function aboutImages'));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+    expect(body).toMatch(/what I want changed/);
+    expect(body).toMatch(/what I am pointing at/);
+    expect(body).toMatch(/the rest of the plan stays as it is/);
+  });
+
+  it('counts them, so the model knows how many to look at', () => {
+    const fn = SRC.slice(SRC.indexOf('function aboutImages'));
+    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/count === 1 \? 'The attached picture shows'/);
+  });
+
+  it('is attached to both asks, with the right kind on each', () => {
+    expect(SRC).toMatch(/buildSpec\(idea\) \+ aboutImages\(refImages\.length, 'make'\)/);
+    expect(SRC).toMatch(/aboutImages\(refineImages\.length, 'edit'\)/);
+  });
+
+  it('says on the button itself what the change picture is for', () => {
+    mountPanel();
+    expect(document.getElementById('build-refine-image')!.getAttribute('title'))
+      .toMatch(/what to change/i);
+    expect((document.getElementById('build-refine') as HTMLInputElement).placeholder)
+      .toMatch(/picture of what to change/i);
+  });
+});

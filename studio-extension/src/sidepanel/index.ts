@@ -724,6 +724,30 @@ let pendingBuild: PendingBuild | null = null;
    attach them. */
 let refImages: string[] = [];
 
+/**
+ * Tell the model the pictures are there, and what they are for.
+ *
+ * Attaching them is not the same as using them. A model handed two images and
+ * a sentence that never refers to them will often answer the sentence and
+ * leave the pictures alone — they arrive as context, not as instruction, and
+ * nothing in the message says they matter.
+ *
+ * The two cases are genuinely different and worth saying differently. On the
+ * first ask a picture is WHAT TO MAKE: the product, the character, the look.
+ * On a change it is WHAT TO EDIT — the thing being pointed at, which is the
+ * whole reason for attaching it to a change rather than describing it.
+ */
+function aboutImages(count: number, kind: 'make' | 'edit'): string {
+  if (!count) return '';
+  const some = count === 1 ? 'The attached picture shows' : `The ${count} attached pictures show`;
+  return kind === 'make'
+    ? `\n\n${some} what this is of — the subject, the product or the look I want. `
+      + 'Read it and let it decide what the workflow makes, rather than working from the '
+      + 'words alone.'
+    : `\n\n${some} what I want changed. Work out from it what I am pointing at, and change `
+      + 'that — the rest of the plan stays as it is.';
+}
+
 /** Small enough to survive a message hop and an upload. */
 const REF_MAX_PX = 1024;
 
@@ -1141,7 +1165,7 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
   let lastReply = '';
 
   try {
-    let message = buildSpec(idea);
+    let message = buildSpec(idea) + aboutImages(refImages.length, 'make');
 
     for (let round = 0; round <= MAX_BUILD_REPAIRS; round++) {
       if (buildAborted) return;
@@ -1268,10 +1292,10 @@ async function refineBuild(text: string): Promise<void> {
          of the conversation that produced it and does not — re-sending it
          would waste the context that thread already holds. */
       newChat: at.resumeFrom ? 'auto' : 'never',
-      prompt: `${carry}${text.trim()}\n\nApply that to ${
-        at.resumeFrom ? 'that plan' : 'the plan you just wrote'} and send the `
-        + 'complete JSON object again — the same shape, with everything else unchanged. '
-        + 'No prose around it, no code fence.',
+      prompt: `${carry}${text.trim()}${aboutImages(refineImages.length, 'edit')}`
+        + `\n\nApply that to ${at.resumeFrom ? 'that plan' : 'the plan you just wrote'} `
+        + 'and send the complete JSON object again — the same shape, with everything '
+        + 'else unchanged. No prose around it, no code fence.',
     });
     if (!res || res.error) {
       stage('write', res?.error || 'No reply.');
