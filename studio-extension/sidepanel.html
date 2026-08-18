@@ -116,23 +116,42 @@
              before anything could happen, and none of them said which engines
              were even signed in. -->
         <div class="sp-ask">
+          <p class="sp-ask__kicker">Describe it once</p>
           <h2 class="sp-ask__q">What do you want to make?</h2>
-          <textarea id="build-idea" class="sp-ask__box" rows="3"
-                    placeholder="A 3-shot vertical ad for cold brew coffee"></textarea>
-          <button type="button" class="sp-prompt-clear" id="build-idea-clear"
-                  title="Clear" hidden>✕</button>
 
-          <button type="button" class="sp-ask__go" id="build-go-ai" disabled>
-            <span class="sp-ask__go-label">Make it</span>
-          </button>
+          <!-- One object, not three. The box, the button and the engine line
+               were separate elements floating on the page background, which is
+               what made a finished layout read as an unstyled form. -->
+          <div class="sp-composer" id="build-composer">
+            <textarea id="build-idea" class="sp-ask__box" rows="3"
+                      placeholder="A 3-shot vertical ad for cold brew coffee"></textarea>
+            <button type="button" class="sp-prompt-clear" id="build-idea-clear"
+                    title="Clear" hidden>&#10005;</button>
 
-          <!-- Which AI, decided for you from what is actually signed in, and
-               changeable without being a decision you have to make first. -->
-          <div class="sp-ask__who">
-            <span class="sp-ask__who-text">using</span>
-            <select id="build-engine" class="sp-ask__engine" aria-label="Which AI writes it"></select>
-            <span class="sp-ask__who-hint" id="build-engine-hint"></span>
+            <div class="sp-composer__foot">
+              <div class="sp-ask__who">
+                <span class="sp-ask__who-text">using</span>
+                <select id="build-engine" class="sp-ask__engine"
+                        aria-label="Which AI writes it"></select>
+                <span class="sp-ask__who-hint" id="build-engine-hint"></span>
+              </div>
+              <button type="button" class="sp-ask__go" id="build-go-ai" disabled>
+                <span class="sp-ask__go-label">Make it</span>
+                <svg class="sp-ask__go-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 12h13M13 6l6 6-6 6"/>
+                </svg>
+              </button>
+            </div>
           </div>
+
+          <!-- What happens after you press it. Three short lines, and they go
+               away the moment you type - the space they fill is the space that
+               read as unfinished, and by then you no longer need telling. -->
+          <ol class="sp-how" id="build-how">
+            <li><span class="sp-how__n">1</span> You describe the video</li>
+            <li><span class="sp-how__n">2</span> The AI writes every shot</li>
+            <li><span class="sp-how__n">3</span> You check it, then make it</li>
+          </ol>
         </div>
 
         <!-- What is happening, in what it means rather than what it does.

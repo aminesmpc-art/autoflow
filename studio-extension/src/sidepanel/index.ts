@@ -1132,7 +1132,14 @@ function wireBuilder(): void {
   if (engineSel) engineSel.addEventListener('change', () => renderEnginePicker());
 
   const goBtn = document.getElementById('build-go-ai') as HTMLButtonElement | null;
-  const syncGo = () => { if (goBtn) goBtn.disabled = !idea.value.trim(); };
+  const how = document.getElementById('build-how') as HTMLElement | null;
+  const syncGo = () => {
+    const typed = !!idea.value.trim();
+    if (goBtn) goBtn.disabled = !typed;
+    /* Read once and then in the way. It fills the space that otherwise reads
+       as unfinished, and stops filling it the moment it has done its job. */
+    if (how) how.hidden = typed;
+  };
   if (goBtn) {
     goBtn.addEventListener('click', () => {
       const text = idea.value.trim();

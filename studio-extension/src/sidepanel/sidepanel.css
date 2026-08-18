@@ -1581,64 +1581,123 @@ body {
 [hidden] { display: none !important; }
 
 /* ── Build: the question ──
-   One question, one box, one button. What this replaces asked the user to
-   choose an AI engine from five equal buttons before anything could happen,
-   with nothing saying which of them were signed in. */
+   One question, one composer, one button. The structure was right and it
+   still read as an unstyled form, because the box, the button and the engine
+   line were three separate things floating on the page background with no
+   depth, no focus response, and nothing holding them together. */
 .sp-ask { position: relative; }
+.sp-ask__kicker {
+  margin: 0 0 2px;
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
 .sp-ask__q {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   font-size: var(--t-title);
   font-weight: 700;
   letter-spacing: -0.02em;
+  line-height: 1.2;
   color: var(--text);
 }
+
+/* The composer, as one instrument. */
+.sp-composer {
+  position: relative;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  /* Lifted off the page rather than drawn on it. */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+/* The whole thing answers, not just the textarea inside it. */
+.sp-composer:focus-within {
+  border-color: var(--accent-50);
+  box-shadow: 0 0 0 3px var(--accent-8), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+}
 .sp-ask__box {
+  display: block;
   width: 100%;
   resize: vertical;
-  min-height: 84px;
+  min-height: 78px;
   font: inherit;
   font-size: var(--t-mid);
   line-height: 1.5;
   color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-ctrl);
-  padding: 12px;
+  background: transparent;
+  border: none;
+  padding: 12px 12px 4px;
 }
 .sp-ask__box::placeholder { color: var(--text-3); }
-.sp-ask__box:focus { outline: none; border-color: var(--accent); }
-.sp-ask .sp-prompt-clear { position: absolute; top: 44px; right: 8px; }
+.sp-ask__box:focus { outline: none; }
+.sp-ask .sp-prompt-clear { position: absolute; top: 8px; right: 8px; }
 
-/* The one action. Full width because there is nothing to weigh it against —
-   a primary button beside four equals is not a primary button. */
+.sp-composer__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-top: 1px solid var(--line);
+}
+
+/* The one action. A gradient rather than a flat fill, using the token that
+   exists for exactly this — --accent-deep is documented as the gradient far
+   end — plus a glow that only appears once there is something to press. */
 .sp-ask__go {
-  width: 100%;
-  margin-top: 10px;
-  padding: 11px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 8px 14px;
   font: inherit;
-  font-size: var(--t-mid);
+  font-size: var(--t-small);
   font-weight: 700;
   color: var(--on-accent);
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent-dim));
   border: none;
   border-radius: var(--r-ctrl);
   cursor: pointer;
+  box-shadow: 0 2px 10px -2px var(--accent-50);
+  transition: filter 120ms ease, box-shadow 120ms ease;
 }
-.sp-ask__go:hover:not(:disabled) { background: var(--accent-dim); }
+.sp-ask__go:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 3px 14px -2px var(--accent-50);
+}
+.sp-ask__go:active:not(:disabled) { filter: brightness(0.94); }
 .sp-ask__go:disabled {
   /* Nothing typed yet. Dimmed rather than hidden, so the shape of what
      happens next is visible before you start. */
   background: var(--surface-3);
   color: var(--text-3);
+  box-shadow: none;
   cursor: default;
 }
-.sp-ask__go--busy { background: var(--surface-3); color: var(--text-2); }
+.sp-ask__go-arrow {
+  width: 14px; height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sp-ask__go:disabled .sp-ask__go-arrow { opacity: 0.5; }
+.sp-ask__go--busy {
+  background: var(--surface-3);
+  color: var(--text-2);
+  box-shadow: none;
+}
+.sp-ask__go--busy .sp-ask__go-arrow { display: none; }
 
 .sp-ask__who {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 8px;
+  gap: 5px;
+  min-width: 0;
   font-size: var(--t-micro);
   color: var(--text-3);
 }
@@ -1650,16 +1709,47 @@ body {
   border: 1px solid var(--line);
   border-radius: var(--r-chip);
   padding: 2px 4px;
+  max-width: 118px;
   cursor: pointer;
 }
 .sp-ask__engine:focus { outline: none; border-color: var(--accent); }
 .sp-ask__who-hint { color: var(--text-3); }
 .sp-ask__who-hint--warn { color: var(--warn); }
 
+/* What happens after you press it, in three lines. Fills the space that read
+   as unfinished, and disappears once you type — by then it has been read. */
+.sp-how {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.sp-how li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: var(--t-small);
+  color: var(--text-3);
+}
+.sp-how__n {
+  display: grid;
+  place-items: center;
+  width: 19px; height: 19px;
+  flex: 0 0 auto;
+  border-radius: var(--r-pill);
+  font-size: var(--t-micro);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+  background: var(--accent-14);
+}
+
 .sp-ask__more {
   display: block;
-  margin-top: 14px;
-  padding-top: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
   border-top: 1px solid var(--line);
   font-size: var(--t-small);
   color: var(--text-3);
@@ -1679,12 +1769,28 @@ body {
   background: var(--surface);
 }
 .sp-stages__row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: var(--t-small);
   color: var(--text-3);
-  padding: 3px 0;
+  padding: 5px 0;
+}
+/* A spine down the dots, so three marks read as one sequence rather than
+   three unrelated bullets. */
+.sp-stages__row:not(:last-of-type)::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 18px;
+  bottom: -4px;
+  width: 1px;
+  background: var(--line-2);
+}
+.sp-stages__row--done:not(:last-of-type)::before {
+  background: var(--ok);
+  opacity: 0.5;
 }
 .sp-stages__dot {
   width: 7px; height: 7px;

@@ -146,7 +146,9 @@ function build(width, view, opts = {}) {
   if (opts.typed) {
     q('#build-idea').value = opts.typed;
     q('#build-go-ai').disabled = false;
+    q('#build-how').hidden = true;
   }
+  if (opts.plan) q('#build-how').hidden = true;
   if (opts.building) {
     q('#build-stages').hidden = false;
     const order = ['write', 'check', 'ready'];

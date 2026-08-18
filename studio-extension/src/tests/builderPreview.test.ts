@@ -161,13 +161,59 @@ describe('the plan is shown before it is built', () => {
     expect(CSS()).toMatch(/sp-plan__shot::before[\s\S]{0,120}counter-increment: shot/);
   });
 
-  it('does not truncate the one line that says what was made', () => {
+  it('does not truncate the line that says what you are getting', () => {
     /* It did: "Cold Brew — 3-shot vertical comm…" at 320px, which is the
-       width this panel docks at, and the name is what is being judged. */
+       width this panel docks at.
+       Anchored on a selector that has to exist — .sp-plan__name was renamed
+       and this went on passing against indexOf's -1, which is a test that
+       guards nothing. */
     const css = CSS();
-    const rule = css.slice(css.indexOf('.sp-plan__name'), css.indexOf('.sp-plan__cost'));
+    const at = css.indexOf('.sp-plan__size');
+    expect(at).toBeGreaterThan(-1);
+    const rule = css.slice(at, css.indexOf('}', at));
     expect(rule).not.toContain('text-overflow: ellipsis');
     expect(rule).not.toContain('white-space: nowrap');
+  });
+});
+
+describe('it reads as built, not as a bare form', () => {
+  beforeEach(mountPanel);
+
+  it('holds the box, the engine and the button in one object', () => {
+    /* They were three elements floating on the page background. Structure was
+       right; it looked unfinished. */
+    const composer = document.getElementById('build-composer')!;
+    expect(composer.querySelector('#build-idea')).not.toBeNull();
+    expect(composer.querySelector('#build-engine')).not.toBeNull();
+    expect(composer.querySelector('#build-go-ai')).not.toBeNull();
+  });
+
+  it('answers focus as a whole, not just inside the textarea', () => {
+    expect(CSS()).toMatch(/\.sp-composer:focus-within/);
+  });
+
+  it('gives the one action some weight', () => {
+    const css = CSS();
+    const at = css.indexOf('.sp-ask__go {');
+    const rule = css.slice(at, css.indexOf('}', at));
+    expect(rule).toMatch(/linear-gradient/);
+    expect(rule).toMatch(/box-shadow/);
+  });
+
+  it('says what happens next, and stops saying it once you have typed', () => {
+    /* The empty state was a large blank area, which is most of what "looks
+       unfinished" was. Three lines, gone the moment they have been read. */
+    expect(document.querySelectorAll('#build-how li')).toHaveLength(3);
+    expect(SRC).toMatch(/if \(how\) how\.hidden = typed;/);
+  });
+
+  it('stays on the design system rather than near it', () => {
+    /* Two raw values slipped in — a 12px radius and a 10px font — and the
+       system's own guards caught both. Kept as a reminder that they are the
+       reason it looks like one product. */
+    const css = CSS();
+    const build = css.slice(css.indexOf('.sp-composer {'));
+    expect(build).not.toMatch(/border-radius: \d+px/);
   });
 });
 
