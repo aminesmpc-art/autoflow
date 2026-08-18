@@ -162,6 +162,15 @@ function studioLog(source: string, line: string): void {
 export class WorkflowRunner {
   private state: RunnerState = 'idle';
   private abortRequested = false;
+
+  /* Waits that are in flight right now.
+     Stop used to set a flag the loop reads BETWEEN nodes — and a run sits
+     inside a node, not between them, for as long as the generation takes.
+     So pressing Stop during a Flow video did nothing visible for up to
+     twenty minutes: the flag was set, the content script was told, and this
+     side went on waiting for a reply that was never coming. Each pending
+     wait registers here so stop() can end it now. */
+  private pendingWaits = new Set<(reason: Error) => void>();
   private pauseRequested = false;
 
   /** Results from each node (nodeId → result) */
@@ -483,6 +492,15 @@ export class WorkflowRunner {
               break;
             } catch (err: any) {
               lastError = err?.message || 'Generation failed';
+              /* Stopping is not failing. Without this the node the user
+                 stopped goes red and reads "Stopped" as if something had
+                 gone wrong with it, and Retry Failed offers to run it again. */
+              if (this.abortRequested) {
+                store.updateNodeData(step.nodeId, {
+                  status: 'idle', progress: 0, errorMessage: null,
+                });
+                break;
+              }
               const canRetry = attempt < MAX_AUTO_RETRIES && isTransientFailure(lastError);
               console.error(
                 `[Runner] Generate "${nodeData.label}" attempt ${attempt + 1} failed:`,
@@ -927,8 +945,14 @@ export class WorkflowRunner {
         reject(new Error(payload.error || 'Generation failed'));
       };
 
+      /* Ends this wait when Stop is pressed, rather than when the generation
+         it is waiting for happens to finish. */
+      const abort = (reason: Error) => { cleanup(); reject(reason); };
+      this.pendingWaits.add(abort);
+
       const cleanup = () => {
         clearTimeout(timeout);
+        this.pendingWaits.delete(abort);
         bridge.off('STUDIO_NODE_RESULT', onResult);
         bridge.off('STUDIO_NODE_PROGRESS', onProgress);
         bridge.off('STUDIO_NODE_ERROR', onError);
@@ -1584,16 +1608,30 @@ export class WorkflowRunner {
     throw new Error(`${name} is not a tool this node can run`);
   }
 
-  /** Pause the workflow */
+  /**
+   * Pause the workflow.
+   *
+   * Between nodes, not inside one. A generation that has already been
+   * submitted to Flow cannot be un-submitted, so pausing during one waits for
+   * it to land — which looked exactly like the button doing nothing. It says
+   * so now instead of leaving that to be inferred.
+   */
   pause(): void {
     this.pauseRequested = true;
     bridge.pauseExecution();
+    if (this.pendingWaits.size) {
+      /* Said in Diagnostics, which is on the same panel as the button. A
+         pause that appears to do nothing is the same complaint as a stop that
+         does nothing, and half of it is just never having been told. */
+      studioLog('Run', 'Pausing — the step already running has to finish first.');
+    }
   }
 
   /** Resume after pause */
   resume(): void {
     this.pauseRequested = false;
     bridge.resumeExecution();
+    studioLog('Run', 'Resumed.');
   }
 
   /** Stop the workflow */
@@ -1601,6 +1639,17 @@ export class WorkflowRunner {
     this.abortRequested = true;
     this.pauseRequested = false;
     bridge.stopExecution();
+    /* And end whatever this side is waiting on. Telling the content script to
+       stop is not enough: it stops driving the site, and the promise here goes
+       on waiting for a reply that will now never come. */
+    const waiting = this.pendingWaits.size;
+    for (const abort of Array.from(this.pendingWaits)) {
+      abort(new Error('Stopped'));
+    }
+    this.pendingWaits.clear();
+    studioLog('Run', waiting
+      ? 'Stopped. The step that was running was not waited out.'
+      : 'Stopped.');
   }
 
   private sleep(ms: number): Promise<void> {
