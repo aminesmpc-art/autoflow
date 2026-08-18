@@ -1741,7 +1741,12 @@ async function sendStudioResult(
   const stills = await buildStudioStills(previewSrc || mediaUrl || '');
   let previewUrl = stills.preview;
 
-  // Videos rarely carry a poster — grab a frame straight off the <video>
+  /* Videos rarely carry a poster, so a frame is drawn off the <video> itself.
+     Attempted here and again below, because at THIS point it cannot work:
+     Flow renders its tiles with preload="none", so readyState is 0 and
+     videoWidth is 0, and captureVideoFrame's first line returns '' on exactly
+     that. The element has to be loaded first — which is what the end-frame
+     capture further down does, and what this never learned to do. */
   const videoEl = tile?.querySelector('video') || null;
   if (!previewUrl && videoEl) {
     previewUrl = captureVideoFrame(videoEl);
@@ -1787,6 +1792,24 @@ async function sendStudioResult(
 
   if (videoEl && referenceUrl) {
     logLine(`Last frame captured (${Math.round(referenceUrl.length / 1024)}KB)`);
+  }
+
+  /* The preview, now that there is something to draw.
+     captureVideoEndFrame has just loaded the element and put the playhead
+     back to where it found it, so the same call that returned nothing above
+     returns the opening frame here. This is why a clip could finish, hand its
+     last frame to the node below, and still show "Preview unavailable" — the
+     load was added to one of the two callers and not the other.
+
+     Failing that, the end frame is a far better thumbnail than none. It is
+     the wrong end of the clip and it is a picture of the right clip. */
+  if (!previewUrl && videoEl) {
+    previewUrl = captureVideoFrame(videoEl) || referenceUrl;
+    if (previewUrl) {
+      logLine(`Preview captured (${Math.round(previewUrl.length / 1024)}KB)`);
+    } else {
+      logLine('Preview: the clip would not give up a frame — the node will show no thumbnail');
+    }
   }
 
   try {
