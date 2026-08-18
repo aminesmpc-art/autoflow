@@ -360,9 +360,18 @@ describe('a conversation id outlives the conversation', () => {
     expect(WORKER.slice(at, at + 2200)).toMatch(/split\('\?'\)\[0\]/);
   });
 
-  it('says the conversation is gone rather than that something failed', () => {
+  it('names the reason it usually is, before the one it might be', () => {
+    /* It said "it may have been deleted", which sent somebody looking through
+       their own history for a conversation that was never in it. These sites
+       put no account index in the path, so which conversations exist is
+       decided by the cookies of the Chrome profile — a chat built under a
+       different Google account is unreachable, and the site says so by
+       redirecting to a blank page rather than by refusing. */
     const at = WORKER.indexOf("if (msg?.type === 'PANEL_OPEN_CHAT')");
-    expect(WORKER.slice(at, at + 2200)).toMatch(/no longer there/);
+    const block = WORKER.slice(at, at + 2600);
+    expect(block).toMatch(/different Google account or Chrome profile/);
+    expect(block.indexOf('different Google account'))
+      .toBeLessThan(block.indexOf('may also have been deleted'));
   });
 
   it('shows that reason in the panel instead of a generic line', () => {

@@ -809,7 +809,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       const platform = msg.platform as Platform;
       const url = String(msg.url || '');
-      if (!PLATFORMS[platform] || !url) {
+      const cfg = PLATFORMS[platform];
+      if (!cfg || !url) {
         sendResponse({ ok: false, error: 'No conversation to open.' });
         return;
       }
@@ -838,9 +839,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         /* Compared without the query string: these sites append their own. */
         const bare = (u: string) => u.split('?')[0].replace(/\/$/, '');
         if (bare(landed) !== bare(url)) {
+          /* Named in the order they actually happen.
+             The first one is not a guess: these sites put no account index in
+             the path, so which conversations exist is decided by the cookies
+             of the Chrome profile. A chat built while signed in as someone
+             else — or in another Chrome profile entirely — is unreachable
+             from here, and the site says so by redirecting to a blank page
+             rather than by refusing.
+
+             Saying "deleted" sent somebody looking through their own history
+             for a conversation that was never in it. */
           sendResponse({
             ok: false,
-            error: 'That conversation is no longer there — it may have been deleted.',
+            error: `${cfg.name} did not open that conversation. It usually belongs to a `
+              + 'different Google account or Chrome profile than the one signed in here; '
+              + 'it may also have been deleted.',
           });
           return;
         }
