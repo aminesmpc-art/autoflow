@@ -20,7 +20,7 @@ import {
 import { matchesFlowText } from './flowStrings';
 import { registerStudioImage, releaseStudioImages } from './studioImages';
 import { pickReferenceStill } from './studioFrames';
-import { captureVideoFrame, captureVideoEndFrame } from './videoFrames';
+import { captureVideoFrame, captureVideoEndFrame, framesFromVideoBlob } from './videoFrames';
 import { effectiveVoice } from '../../studio/flowVoices';
 import { getStudioTileState, extractTileProgress, findLargestImgSrc } from './tileState';
 
@@ -1775,8 +1775,14 @@ async function sendStudioResult(
    * the bytes are always available. For a clip that means seeking to its last
    * frame; see pickReferenceStill for why the poster must not win.
    */
+  /* The downloaded file first: it does not care where the tile is on the
+     page, what its preload says, or whether the virtual list has recycled it.
+     The on-page capture stays as the fallback for a tile whose media URL we
+     could not fetch. */
+  const fromFile = videoEl ? stills.reference : '';
   let referenceUrl = pickReferenceStill({
-    endFrame: videoEl ? await captureVideoEndFrame(videoEl, logLine) : '',
+    fromFile,
+    endFrame: (videoEl && !fromFile) ? await captureVideoEndFrame(videoEl, logLine) : '',
     posterStill: stills.reference,
     // For a clip the poster is the OPENING frame, so it must not stand in for
     // a failed capture — see pickReferenceStill.
@@ -1794,7 +1800,8 @@ async function sendStudioResult(
   }
 
   if (videoEl && referenceUrl) {
-    logLine(`Last frame captured (${Math.round(referenceUrl.length / 1024)}KB)`);
+    logLine(`Last frame captured (${Math.round(referenceUrl.length / 1024)}KB)${
+      fromFile ? ' from the downloaded clip' : ' off the page'}`);
   }
 
   /* The preview, now that there is something to draw.
@@ -1922,7 +1929,16 @@ async function buildStudioStills(url: string): Promise<{ preview: string; refere
     const resp = await fetch(url);
     if (!resp.ok) return none;
     const blob = await resp.blob();
-    if (blob.type.startsWith('video/')) return none; // videos use their poster instead
+    if (blob.type.startsWith('video/')) {
+      /* Decoded rather than discarded.
+         This used to return nothing here on the assumption that a clip's tile
+         carries a poster to fall back to. A finished Flow tile has no poster
+         attribute at all, so the bytes were downloaded and dropped, and every
+         later attempt went back to scraping a <video> on a page that may have
+         scrolled it away. */
+      const { first, last } = await framesFromVideoBlob(blob, logLine);
+      return { preview: first, reference: last };
+    }
 
     const bitmap = await createImageBitmap(blob);
     const longest = Math.max(bitmap.width, bitmap.height);

@@ -150,3 +150,81 @@ describe('a node does not report done with nothing in it', () => {
     expect(sendResult()).toMatch(/if \(videoEl && !previewUrl && !referenceUrl\)/);
   });
 });
+
+describe('using the file Flow already gave us', () => {
+  /* The question that produced this: "in Flow it's easy with API download and
+     getting data if it's there — why don't you use it?"
+
+     It was already downloading it. buildStudioStills fetched the media URL
+     off the tile — /fx/api/trpc/media.getMediaUrlRedirect?name=<uuid>, same
+     origin, cookies included — and then threw the bytes away on
+     `if (blob.type.startsWith('video/')) return none`, on the assumption that
+     a clip's tile carries a poster to fall back to. The DOM of a finished
+     tile has no poster attribute at all.
+
+     So every failure since has been the DOM route: is the tile in view, has
+     the virtual list recycled it, what does its preload say, where is the
+     playhead. None of that applies to a blob we hold. */
+
+  const FRAMES = readFileSync(
+    join(__dirname, '..', 'content', 'flow', 'videoFrames.ts'), 'utf8');
+  const STILLS = readFileSync(
+    join(__dirname, '..', 'content', 'flow', 'studioFrames.ts'), 'utf8');
+
+  it('decodes the clip instead of discarding it', () => {
+    expect(SRC).not.toMatch(/return none; \/\/ videos use their poster instead/);
+    expect(SRC).toMatch(/framesFromVideoBlob\(blob, logLine\)/);
+    expect(SRC).toMatch(/return \{ preview: first, reference: last \}/);
+  });
+
+  it('takes both ends out of the one download', () => {
+    /* The opening frame is the thumbnail, the closing frame is what a chained
+       clip continues from. One fetch, both answers. */
+    const fn = FRAMES.slice(FRAMES.indexOf('export async function framesFromVideoBlob'));
+    const body = fn.slice(0, fn.lastIndexOf('\n}'));
+    expect(body).toMatch(/const first = await drawWhenDecodable\(video\)/);
+    expect(body).toMatch(/duration - 0\.05, duration - 0\.3, duration - 1/);
+  });
+
+  it('uses its own element, not the page’s', () => {
+    /* Which is the whole point: nothing here depends on where the tile is,
+       what its preload says, or whether it still exists. */
+    const fn = FRAMES.slice(FRAMES.indexOf('export async function framesFromVideoBlob'));
+    const body = fn.slice(0, fn.lastIndexOf('\n}'));
+    expect(body).toMatch(/document\.createElement\('video'\)/);
+    expect(body).toMatch(/video\.preload = 'auto'/);
+    expect(body).toMatch(/URL\.createObjectURL\(blob\)/);
+  });
+
+  it('attaches it, because a detached element may not decode', () => {
+    const fn = FRAMES.slice(FRAMES.indexOf('export async function framesFromVideoBlob'));
+    expect(fn.slice(0, fn.lastIndexOf('\n}'))).toMatch(/document\.body\.appendChild\(video\)/);
+  });
+
+  it('cleans up whatever happened', () => {
+    /* A blob URL held open is a whole clip pinned in memory, once per node. */
+    const fn = FRAMES.slice(FRAMES.indexOf('export async function framesFromVideoBlob'));
+    const body = fn.slice(0, fn.lastIndexOf('\n}'));
+    expect(body).toMatch(/finally \{[\s\S]{0,240}URL\.revokeObjectURL\(url\)/);
+    expect(body).toMatch(/video\.remove\(\)/);
+  });
+
+  it('lets a frame from the file stand as the reference', () => {
+    /* The rule it passes is there to stop a POSTER — the opening frame —
+       standing in for the ending and silently restarting a chained shot. A
+       last frame read out of the file is the thing that rule protects. */
+    const fn = STILLS.slice(STILLS.indexOf('export function pickReferenceStill'));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+    expect(body).toMatch(/if \(fromFile\) return fromFile;/);
+    expect(body.indexOf('if (fromFile)')).toBeLessThan(body.indexOf("if (isVideo) return '';"));
+  });
+
+  it('keeps the page capture as the fallback, not the first resort', () => {
+    expect(SRC).toMatch(/endFrame: \(videoEl && !fromFile\) \? await captureVideoEndFrame/);
+  });
+
+  it('says which route the frame came from', () => {
+    expect(SRC).toMatch(/from the downloaded clip/);
+    expect(SRC).toMatch(/off the page/);
+  });
+});

@@ -10,6 +10,8 @@
 export interface ReferenceCandidates {
   /** The clip's final frame, captured by seeking the <video>. Empty for images. */
   endFrame: string;
+  /** The last frame decoded from the clip we downloaded, when we got one. */
+  fromFile?: string;
   /**
    * Still built from the tile's poster or thumbnail. For a video tile the
    * poster is the clip's OPENING frame, which is exactly what a chain must not
@@ -42,8 +44,15 @@ export interface ReferenceCandidates {
  * says it captured nothing, and the node downstream refuses to run rather
  * than generating without the reference it was wired for.
  */
-export function pickReferenceStill({ endFrame, posterStill, isVideo }: ReferenceCandidates): string {
+export function pickReferenceStill(
+  { endFrame, posterStill, isVideo, fromFile }: ReferenceCandidates
+): string {
   if (endFrame) return endFrame;
+  /* A frame decoded from the downloaded clip IS the end of it. The rule below
+     exists to stop a clip's POSTER — its opening frame — standing in for its
+     ending and silently restarting a chained shot. A last frame read out of
+     the file itself is the very thing the rule is protecting. */
+  if (fromFile) return fromFile;
   if (isVideo) return '';
   return posterStill || '';
 }

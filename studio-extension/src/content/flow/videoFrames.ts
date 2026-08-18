@@ -208,3 +208,66 @@ export async function drawWhenDecodable(video: HTMLVideoElement, budgetMs = 4000
   return '';
 }
 
+
+/**
+ * The first and last frame of a clip we downloaded ourselves.
+ *
+ * The better way round, and the one the page was standing in the way of.
+ * Flow serves the actual file at a same-origin URL —
+ * /fx/api/trpc/media.getMediaUrlRedirect?name=<uuid> — which is what the
+ * tile's own <video> points at. buildStudioStills was already fetching it and
+ * then throwing the bytes away on `if (blob.type.startsWith('video/'))`,
+ * because it assumed a finished tile carries a poster. It does not.
+ *
+ * Decoding it here instead removes every reason the DOM route kept failing:
+ * nothing depends on the tile being in view, on the page's preload attribute,
+ * on the virtual list not having recycled the element, or on the playhead
+ * being where we left it. It is our element, off the page, holding our blob.
+ *
+ * Attached to the document rather than left floating: some engines will not
+ * decode for a detached element, and a 1px hidden box costs nothing.
+ */
+export async function framesFromVideoBlob(
+  blob: Blob, logLine: Log = () => {}
+): Promise<{ first: string; last: string }> {
+  const none = { first: '', last: '' };
+  const url = URL.createObjectURL(blob);
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = 'auto';
+  video.src = url;
+  video.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none';
+  document.body.appendChild(video);
+
+  try {
+    if (!(await ensureVideoLoaded(video))) {
+      logLine('Downloaded the clip but it would not decode');
+      return none;
+    }
+
+    const first = await drawWhenDecodable(video);
+
+    let last = '';
+    const duration = video.duration;
+    if (isFinite(duration) && duration > 0) {
+      /* Same ladder as the on-page capture: the very last frame is the one
+         most likely to sit in a range that will not decode in time, and half
+         a second earlier is still the end of the shot. */
+      for (const target of [duration - 0.05, duration - 0.3, duration - 1].filter((t) => t > 0)) {
+        await seekVideo(video, target);
+        last = await drawWhenDecodable(video);
+        if (last) break;
+      }
+    }
+    return { first: first || last, last: last || first };
+  } catch (e: any) {
+    logLine(`Downloaded the clip but could not read a frame: ${e?.message || e}`);
+    return none;
+  } finally {
+    video.removeAttribute('src');
+    try { video.load(); } catch { /* already torn down */ }
+    video.remove();
+    URL.revokeObjectURL(url);
+  }
+}
