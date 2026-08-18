@@ -2073,3 +2073,8 @@ body {
    once left all three views stacked on top of each other — and placed AFTER
    the rule it overrides, because equal specificity is decided by order. */
 .sp-shots[hidden] { display: none; }
+
+/* The same picture row, inside the plan card. Sits above the change box
+   rather than inside a composer, so it carries its own padding. */
+.sp-shots--refine { padding: 8px 0 0; }
+.sp-plan__refine .sp-ask__clip { margin-left: 0; width: 26px; height: 26px; }

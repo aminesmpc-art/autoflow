@@ -86,7 +86,10 @@ describe('showing the AI what you mean', () => {
   });
 
   it('caps how many, because a chat tab will not take many', () => {
-    expect(SRC).toMatch(/if \(refImages\.length >= \d\) break;/);
+    /* In collectRefs, which both pickers go through — the cap used to be
+       written into the first one and would not have covered the second. */
+    const fn = SRC.slice(SRC.indexOf('async function collectRefs'));
+    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/list\.length >= \d\) break;/);
   });
 });
 
@@ -163,5 +166,49 @@ describe('reopening one to change it', () => {
     /* After one round the model has the plan in its own thread, so the next
        change is an ordinary follow-up. */
     expect(SRC).toMatch(/showPlan\(\{ \.\.\.at, template, warnings: explainPlan\(quality\), resumeFrom: undefined \}\)/);
+  });
+});
+
+describe('a picture with the change, too', () => {
+  beforeEach(mountPanel);
+
+  it('has its own button and its own row', () => {
+    expect(document.getElementById('build-refine-image')!.tagName).toBe('BUTTON');
+    expect((document.getElementById('build-refine-image-input') as HTMLInputElement).accept)
+      .toBe('image/*');
+    expect((document.getElementById('build-refine-refs') as HTMLElement).hidden).toBe(true);
+  });
+
+  it('keeps them apart from the ones on the first ask', () => {
+    /* Those are already in the conversation. Re-sending them with every
+       change would upload the same pictures again and again. */
+    expect(SRC).toMatch(/let refineImages: string\[\] = \[\];/);
+    expect(SRC).toMatch(/images: refineImages,/);
+  });
+
+  it('draws both rows through one function rather than two copies', () => {
+    expect(SRC).toMatch(/function renderRefs\(\): void \{ drawRefs\('build-refs', refImages\); \}/);
+    expect(SRC).toMatch(/function renderRefineRefs\(\): void \{ drawRefs\('build-refine-refs', refineImages\); \}/);
+  });
+
+  it('clears them once sent, whatever came back', () => {
+    /* They went either way. Leaving them attached would send them twice. */
+    const fn = SRC.slice(SRC.indexOf('async function refineBuild'));
+    expect(fn.slice(0, fn.indexOf('\n  } catch'))).toMatch(
+      /refineImages = \[\];\s*\n\s*renderRefineRefs\(\);/);
+  });
+
+  it('shares the cap and the downscale with the first ask', () => {
+    const fn = SRC.slice(SRC.indexOf('async function collectRefs'));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+    expect(body).toMatch(/list\.length >= 4/);
+    expect(body).toMatch(/readRef\(f\)/);
+  });
+
+  it('hides its row when empty, against the cascade', () => {
+    /* .sp-shots is display:flex, which beats [hidden]. The refine row is the
+       same class and would have had the same bug. */
+    const el = document.getElementById('build-refine-refs') as HTMLElement;
+    expect(getComputedStyle(el).display).toBe('none');
   });
 });

@@ -218,7 +218,19 @@
             <button type="button" class="sp-btn sp-btn--primary" id="build-plan-go">Open on canvas</button>
             <button type="button" class="sp-btn sp-btn--ghost" id="build-plan-drop">Start over</button>
           </div>
+          <!-- A picture helps a change as much as it helps the first ask —
+               "make the room look like this" is not a sentence. -->
+          <div class="sp-shots sp-shots--refine" id="build-refine-refs" hidden></div>
           <div class="sp-plan__refine">
+            <button type="button" class="sp-ask__clip" id="build-refine-image"
+                    title="Show the AI a picture" aria-label="Show the AI a picture">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 16.5 9 11l4 4 2.5-2.5L20 17"/>
+                <rect x="3.2" y="4.2" width="17.6" height="15.6" rx="2.4"/>
+                <circle cx="8.6" cy="8.6" r="1.4"/>
+              </svg>
+            </button>
+            <input type="file" id="build-refine-image-input" accept="image/*" multiple hidden />
             <input type="text" class="sp-plan__ask" id="build-refine"
                    placeholder="Change it — “make it 5 shots”" />
             <button type="button" class="sp-btn sp-btn--ghost" id="build-refine-go">Ask</button>

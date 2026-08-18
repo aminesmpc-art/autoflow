@@ -754,12 +754,20 @@ function readRef(file: File): Promise<string> {
   });
 }
 
-function renderRefs(): void {
-  const box = document.getElementById('build-refs') as HTMLElement | null;
+/* Pictures attached to a CHANGE, kept apart from the ones attached to the
+   first ask. The first ask's are already in that conversation; a change is a
+   later turn and brings its own. */
+let refineImages: string[] = [];
+
+function renderRefs(): void { drawRefs('build-refs', refImages); }
+function renderRefineRefs(): void { drawRefs('build-refine-refs', refineImages); }
+
+function drawRefs(boxId: string, list: string[]): void {
+  const box = document.getElementById(boxId) as HTMLElement | null;
   if (!box) return;
-  box.hidden = !refImages.length;
+  box.hidden = !list.length;
   box.innerHTML = '';
-  refImages.forEach((src, i) => {
+  list.forEach((src, i) => {
     const cell = document.createElement('div');
     cell.className = 'sp-shot';
     const img = document.createElement('img');
@@ -770,10 +778,20 @@ function renderRefs(): void {
     x.className = 'sp-shot__x';
     x.textContent = '\u2715';
     x.title = 'Remove';
-    x.addEventListener('click', () => { refImages.splice(i, 1); renderRefs(); });
+    x.addEventListener('click', () => { list.splice(i, 1); drawRefs(boxId, list); });
     cell.append(img, x);
     box.append(cell);
   });
+}
+
+/** Take files from a picker into a list, downscaled and capped. */
+async function collectRefs(input: HTMLInputElement, list: string[]): Promise<void> {
+  for (const f of Array.from(input.files || [])) {
+    if (list.length >= 4) break;   // a chat tab will not take many
+    const data = await readRef(f);
+    if (data) list.push(data);
+  }
+  input.value = '';
 }
 
 /* ── What you made before ──
@@ -1244,6 +1262,7 @@ async function refineBuild(text: string): Promise<void> {
   try {
     const res: any = await chrome.runtime.sendMessage({
       type: 'PANEL_BUILD', platform: at.platform, model: at.model,
+      images: refineImages,
       /* A plan reopened from history is being shown to a model that has never
          seen it, so it travels with the message. A live one is the next turn
          of the conversation that produced it and does not — re-sending it
@@ -1258,6 +1277,11 @@ async function refineBuild(text: string): Promise<void> {
       stage('write', res?.error || 'No reply.');
       return;
     }
+
+    /* Sent. Clearing here rather than on success, because they went whether
+       or not the reply was usable — leaving them would attach them twice. */
+    refineImages = [];
+    renderRefineRefs();
 
     stage('check', 'Reading the change…');
     const { plan, template, quality, problems } = evaluateReply(String(res.text || ''));
@@ -1357,13 +1381,19 @@ function wireBuilder(): void {
   if (addImg && imgInput) {
     addImg.addEventListener('click', () => imgInput.click());
     imgInput.addEventListener('change', async () => {
-      for (const f of Array.from(imgInput.files || [])) {
-        if (refImages.length >= 4) break;   // a chat tab will not take many
-        const data = await readRef(f);
-        if (data) refImages.push(data);
-      }
-      imgInput.value = '';
+      await collectRefs(imgInput, refImages);
       renderRefs();
+    });
+  }
+
+  /* And on a change, where "make the room look like this" is not a sentence. */
+  const rImg = document.getElementById('build-refine-image') as HTMLButtonElement | null;
+  const rInput = document.getElementById('build-refine-image-input') as HTMLInputElement | null;
+  if (rImg && rInput) {
+    rImg.addEventListener('click', () => rInput.click());
+    rInput.addEventListener('change', async () => {
+      await collectRefs(rInput, refineImages);
+      renderRefineRefs();
     });
   }
 

@@ -104,6 +104,7 @@ describe('the panel markup keeps the contract index.ts relies on', () => {
     'build-go-ai', 'build-engine', 'build-engine-hint', 'build-open-library',
     'build-composer', 'build-how', 'build-refs', 'build-add-image', 'build-image-input',
     'build-past', 'build-past-list', 'build-past-clear',
+    'build-refine-refs', 'build-refine-image', 'build-refine-image-input',
     'build-stages', 'build-stage-note', 'build-cancel',
     'build-plan', 'build-plan-size', 'build-plan-cost', 'build-plan-sub',
     'build-plan-shots', 'build-plan-helpers', 'build-plan-warn',
