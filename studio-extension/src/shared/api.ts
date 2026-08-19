@@ -34,9 +34,69 @@ async function clearTokens(): Promise<void> {
   });
 }
 
+// ── Request Timeout ──
+
+/* Every call below used a bare fetch(), which has no deadline of its own. A
+   stalled socket therefore never settled the promise, and the sign-in button
+   sat disabled on "Signing in…" forever — no error, no way to retry. The auth
+   endpoints answer in well under a second, so this ceiling only ever trips on
+   a connection that has already gone wrong. */
+const REQUEST_TIMEOUT_MS = 15000;
+
+/** A timeout we caused, as opposed to the network being absent entirely.
+    Worth telling apart: the advice for each is different. */
+class TimeoutError extends Error {
+  constructor() {
+    super('Request timed out');
+    this.name = 'TimeoutError';
+  }
+}
+
+async function timedFetch(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    // An abort arrives as a generic AbortError; relabel ours so callers can
+    // say something more useful than "check your connection".
+    if (timedOut) throw new TimeoutError();
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** What to show the user when a request in this module throws. */
+function networkErrorMessage(err: unknown): string {
+  return err instanceof TimeoutError
+    ? 'The server took too long to respond. Please try again.'
+    : 'Could not reach the server. Check your internet connection.';
+}
+
 // ── Core Fetch Wrapper ──
 
-const EXTENSION_VERSION = '5.1';
+/* Read off the manifest instead of being restated here — this said 5.1, which
+   is not even this extension's numbering. Nothing on the server reads the
+   header today, so it is informational, but informational and wrong is worse
+   than absent. The guard is for the non-extension contexts this module also
+   runs in. */
+const EXTENSION_VERSION = (() => {
+  try {
+    return chrome.runtime.getManifest().version;
+  } catch {
+    return 'unknown';
+  }
+})();
 
 async function apiFetch(
   path: string,
@@ -62,7 +122,7 @@ async function apiFetch(
     headers.set('Authorization', `Bearer ${tokens.access}`);
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await timedFetch(`${API_BASE}${path}`, {
     ...options,
     headers,
   });
@@ -80,7 +140,7 @@ async function apiFetch(
 
 async function refreshAccessToken(refreshToken: string): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+    const res = await timedFetch(`${API_BASE}/api/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh: refreshToken }),
@@ -130,7 +190,7 @@ export async function ensureSession(): Promise<'valid' | 'refreshed' | 'expired'
 
   // Try a lightweight API call to check if the access token still works
   try {
-    const res = await fetch(`${API_BASE}/api/auth/me`, {
+    const res = await timedFetch(`${API_BASE}/api/auth/me`, {
       headers: {
         'Authorization': `Bearer ${tokens.access}`,
         'Content-Type': 'application/json',
@@ -177,7 +237,7 @@ function extractError(data: any, fallback: string): string {
 
 export async function register(email: string, password: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/register`, {
+    const res = await timedFetch(`${API_BASE}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -191,13 +251,13 @@ export async function register(email: string, password: string): Promise<{ ok: b
 
     return { ok: true, message: data.message || 'Account created! You can log in now.' };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: networkErrorMessage(err) };
   }
 }
 
 export async function login(email: string, password: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/login`, {
+    const res = await timedFetch(`${API_BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -213,13 +273,13 @@ export async function login(email: string, password: string): Promise<{ ok: bool
     await clearSessionExpired();
     return { ok: true, message: 'Logged in!' };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: networkErrorMessage(err) };
   }
 }
 
 export async function loginWithGoogle(idToken: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/google`, {
+    const res = await timedFetch(`${API_BASE}/api/auth/google`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id_token: idToken }),
@@ -235,13 +295,13 @@ export async function loginWithGoogle(idToken: string): Promise<{ ok: boolean; m
     await clearSessionExpired();
     return { ok: true, message: 'Logged in with Google!' };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: networkErrorMessage(err) };
   }
 }
 
 export async function getGoogleConfig(): Promise<{ client_id: string } | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/google/config`);
+    const res = await timedFetch(`${API_BASE}/api/auth/google/config`);
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -577,7 +637,7 @@ export async function getReviewRewardStatus(): Promise<ReviewRewardResult> {
 /** Request a password reset. Sends a 6-digit code via email. */
 export async function requestPasswordReset(email: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/password/reset-request`, {
+    const res = await timedFetch(`${API_BASE}/api/auth/password/reset-request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
@@ -588,14 +648,14 @@ export async function requestPasswordReset(email: string): Promise<{ ok: boolean
     }
     return { ok: false, message: extractError(data, 'Failed to request password reset.') };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: networkErrorMessage(err) };
   }
 }
 
 /** Confirm password reset by providing email, code, and new password. */
 export async function confirmPasswordReset(email: string, code: string, newPassword: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/password/reset-confirm`, {
+    const res = await timedFetch(`${API_BASE}/api/auth/password/reset-confirm`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, code, new_password: newPassword }),
@@ -606,7 +666,7 @@ export async function confirmPasswordReset(email: string, code: string, newPassw
     }
     return { ok: false, message: extractError(data, 'Failed to reset password.') };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: networkErrorMessage(err) };
   }
 }
 
