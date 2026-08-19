@@ -68,10 +68,11 @@ describe('the call to action', () => {
     expect(CSS()).toMatch(/\.sp-foot__up--out/);
   });
 
-  it('goes where the server says, not to a hardcoded page', () => {
-    /* getUpgradeUrl is the backend's own answer, which can change with the
-       plan or the account. The literal is only the fallback. */
-    expect(SRC).toMatch(/await getUpgradeUrl\(\)\.catch\(\(\) => ''\)/);
-    expect(SRC).toMatch(/url \|\| 'https:\/\/auto-flow\.studio'/);
+  it('opens the Pro page rather than the payment form', () => {
+    /* It used to open the checkout directly. A button reading "3 left" is a
+       warning, and sending that straight to a card form asks for money before
+       saying what it buys. The page explains; its own button hands off, and
+       where it hands off to is covered in proPage.test.ts. */
+    expect(SRC).toMatch(/upBtn\.addEventListener\('click', \(\) => showView\('pro'\)\)/);
   });
 });

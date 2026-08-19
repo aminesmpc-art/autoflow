@@ -194,6 +194,15 @@ function build(width, view, opts = {}) {
     q('.sp-plan__refine').hidden = !P.refinable;
   }
 
+  if (view === 'pro') {
+    q('#pro-status').textContent =
+      'You have 2 of 10 free workflow runs left this month. One subscription covers '
+      + 'the workflow builder and Flow automation.';
+    q('#pro-free').textContent =
+      'Free stays free: 10 workflow runs a month, workflows of any size, and the '
+      + 'daily Flow prompt allowance.';
+  }
+
   // Pills
   const pills = q('#tpl-pills');
   for (const c of CATS) {
@@ -276,6 +285,7 @@ h.append(
   build(400, 'templates'),
   build(650, 'run', { live: true, signedIn: true }),
   build(650, 'templates'),
+  build(320, 'pro'),
   build(320, 'build'),
   build(320, 'build', { typed: 'A 3-shot vertical ad for cold brew coffee' }),
   build(320, 'build', { typed: 'A 3-shot vertical ad for cold brew coffee', building: 'write',

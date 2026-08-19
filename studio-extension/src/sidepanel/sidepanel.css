@@ -2253,3 +2253,131 @@ body {
   background: var(--warn);
   color: var(--canvas);
 }
+
+/* ── The Pro page ──
+   A view, not a tab. It explains what the subscription is and hands off to
+   the checkout page; nothing here collects a payment detail, because an
+   extension panel is the wrong place to be typing card numbers into whatever
+   it is dressed up as. */
+.sp-pro__back {
+  /* .sp-view is a column flex, so a button stretches to the full width and
+     centres its own label — which read as a centred Back link rather than one
+     in the corner where it belongs. */
+  align-self: flex-start;
+  padding: 0;
+  margin-bottom: var(--s-3);
+  font: inherit;
+  font-size: var(--t-small);
+  color: var(--text-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.sp-pro__back:hover { color: var(--text); }
+
+.sp-pro__head { margin-bottom: var(--s-4); }
+.sp-pro__eyebrow {
+  display: block;
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.sp-pro__title {
+  margin: 2px 0 6px;
+  font-size: var(--t-lg);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--text);
+}
+.sp-pro__sub {
+  margin: 0;
+  font-size: var(--t-small);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.sp-pro__card {
+  padding: var(--s-3);
+  border: 1px solid var(--accent-30);
+  border-radius: var(--r-card);
+  background: var(--accent-8);
+}
+.sp-pro__price {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-bottom: var(--s-3);
+  padding-bottom: var(--s-3);
+  border-bottom: 1px solid var(--line);
+}
+.sp-pro__price strong {
+  font-size: var(--t-hero);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+.sp-pro__price span { font-size: var(--t-small); color: var(--text-3); }
+
+.sp-pro__list {
+  list-style: none;
+  margin: 0 0 var(--s-3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.sp-pro__list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--t-small);
+  color: var(--text-2);
+}
+.sp-pro__list li::before {
+  content: '✓';
+  flex: 0 0 auto;
+  font-size: var(--t-micro);
+  font-weight: 800;
+  color: var(--ok);
+}
+/* A ticked "Studio" reads as a feature called Studio, so the headings lose
+   the tick and keep the indent it occupied. Same rule as the website. */
+.sp-pro__list li.sp-pro__group {
+  margin-top: 6px;
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.sp-pro__list li.sp-pro__group:first-child { margin-top: 0; }
+.sp-pro__list li.sp-pro__group::before { content: '✓'; visibility: hidden; }
+
+.sp-pro__go {
+  width: 100%;
+  padding: 11px 14px;
+  font: inherit;
+  font-size: var(--t-mid);
+  font-weight: 700;
+  color: var(--on-accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+  border: none;
+  border-radius: var(--r-ctrl);
+  cursor: pointer;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+.sp-pro__go:hover { filter: brightness(1.06); }
+.sp-pro__note {
+  margin: 8px 0 0;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  text-align: center;
+}
+.sp-pro__free {
+  margin: var(--s-3) 0 0;
+  font-size: var(--t-micro);
+  line-height: 1.5;
+  color: var(--text-3);
+}

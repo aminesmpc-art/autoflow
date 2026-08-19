@@ -389,9 +389,28 @@ function wire(): void {
      somebody who has just been told they are running out. */
   const upBtn = document.getElementById('foot-upgrade');
   if (upBtn) {
-    upBtn.addEventListener('click', async () => {
-      const url = await getUpgradeUrl().catch(() => '');
-      chrome.tabs.create({ url: url || 'https://auto-flow.studio' }).catch(() => {});
+    /* Opens the page rather than the checkout.
+       Sending somebody straight to a payment form from a button that says
+       "3 left" asks for money before saying what it buys. The page explains,
+       and its own button does the handing off. */
+    upBtn.addEventListener('click', () => showView('pro'));
+  }
+
+  const proBack = document.getElementById('pro-back');
+  if (proBack) proBack.addEventListener('click', () => showView(viewBeforePro));
+
+  const proGo = document.getElementById('pro-go') as HTMLButtonElement | null;
+  if (proGo) {
+    proGo.addEventListener('click', async () => {
+      proGo.disabled = true;
+      try {
+        /* getUpgradeUrl carries the account email in the URL fragment, which
+           is what lets the webhook attach the membership to the right
+           account. The literal is only a fallback. */
+        const url = await getUpgradeUrl().catch(() => '');
+        await chrome.tabs.create({ url: url || 'https://www.auto-flow.studio/checkout' });
+      } catch { /* the tab could not be opened; the button comes back */ }
+      proGo.disabled = false;
     });
   }
 
@@ -501,7 +520,11 @@ function boot(): void {
    thing the panel could not help with.
    ============================================================ */
 
-type PanelView = 'build' | 'templates' | 'run';
+/* 'pro' is a view without a nav tab. showView hides it like the others and
+   the tab loop simply finds no button for it, which is the behaviour wanted:
+   reachable from the CTAs, not from a fourth tab that would spend permanent
+   navigation on selling. */
+type PanelView = 'build' | 'templates' | 'run' | 'pro';
 
 /* ── The builder ──
    An idea in, a workflow out, with any AI chat in the middle.
@@ -1665,8 +1688,17 @@ let panelTemplates: Template[] = [];
 let panelCategory = 'All';
 let panelQuery = '';
 
+/* The tab the Pro page was opened from, so Back returns there rather than
+   guessing at Build. */
+let viewBeforePro: PanelView = 'build';
+
 function showView(view: PanelView): void {
-  for (const id of ['build', 'templates', 'run'] as PanelView[]) {
+  if (view === 'pro') {
+    const current = (['build', 'templates', 'run'] as PanelView[])
+      .find((id) => !(document.getElementById(`view-${id}`) as HTMLElement | null)?.hidden);
+    if (current) viewBeforePro = current;
+  }
+  for (const id of ['build', 'templates', 'run', 'pro'] as PanelView[]) {
     const el = document.getElementById(`view-${id}`);
     if (el) (el as HTMLElement).hidden = id !== view;
   }
@@ -1991,6 +2023,24 @@ function renderFooter(email: string | null, isPro: boolean, used: number, limit:
     up.hidden = !near;
     up.textContent = left === 0 ? 'Out of runs — go Pro' : `${left} left — go Pro`;
     up.classList.toggle('sp-foot__up--out', left === 0);
+  }
+
+  /* The Pro page, written for whoever is looking at it. "You have used all
+     ten" is a different sentence from "unlimited runs", and only one of them
+     is about them. */
+  const proStatus = document.getElementById('pro-status');
+  const proFree = document.getElementById('pro-free');
+  if (proStatus) {
+    const left = Math.max(0, limit - used);
+    proStatus.textContent = isPro
+      ? 'You are on Pro. Everything below is already active.'
+      : left === 0
+        ? `You have used all ${limit} free workflow runs this month. Pro removes the limit on both tools.`
+        : `You have ${left} of ${limit} free workflow runs left this month. One subscription covers the workflow builder and Flow automation.`;
+  }
+  if (proFree) {
+    proFree.textContent = isPro ? ''
+      : `Free stays free: ${limit} workflow runs a month, workflows of any size, and the daily Flow prompt allowance.`;
   }
 
   const runs = document.getElementById('foot-runs');

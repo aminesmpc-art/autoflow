@@ -108,6 +108,47 @@
     <!-- ── Main Content Area ── -->
     <main class="sp-main">
       
+      <!-- ══ 0. PRO ═══════════════════════════════════════════════
+           A page rather than a fourth tab. The panel has three tabs that each
+           do something; spending one permanently on selling makes it the tab
+           nobody reads. This is reached from the CTAs that already exist and
+           left with Back.
+
+           It explains and hands off. Payment happens on the checkout page,
+           which is where the embedded provider and the account email
+           belong — an extension panel is the wrong place to be typing card
+           details into, whatever it looks like. -->
+      <div class="sp-view" id="view-pro" role="tabpanel" hidden>
+        <button type="button" class="sp-pro__back" id="pro-back">← Back</button>
+
+        <div class="sp-pro__head">
+          <span class="sp-pro__eyebrow">AutoFlow Pro</span>
+          <h2 class="sp-pro__title">Stop counting runs</h2>
+          <p class="sp-pro__sub" id="pro-status">One subscription covers the workflow builder and Flow automation.</p>
+        </div>
+
+        <div class="sp-pro__card">
+          <div class="sp-pro__price"><strong>$9.99</strong><span>/ month</span></div>
+
+          <ul class="sp-pro__list">
+            <li class="sp-pro__group">Studio — workflow builder</li>
+            <li>Unlimited workflow runs</li>
+            <li>Every template, including Pro-only</li>
+            <li>Voice casting across chained clips</li>
+            <li class="sp-pro__group">AutoFlow — Google Flow</li>
+            <li>Unlimited text and full-feature prompts</li>
+            <li>Priority generation queue</li>
+            <li>Bulk upscale &amp; download</li>
+            <li>Frame chain mode</li>
+          </ul>
+
+          <button type="button" class="sp-pro__go" id="pro-go">Upgrade — $9.99/mo</button>
+          <p class="sp-pro__note">Opens the secure checkout in a new tab. Cancel any time.</p>
+        </div>
+
+        <p class="sp-pro__free" id="pro-free"></p>
+      </div>
+
       <!-- ══ 1. BUILD TAB ═════════════════════════════════════════ -->
       <div class="sp-view" id="view-build" role="tabpanel">
         
