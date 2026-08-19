@@ -15,6 +15,7 @@ module.exports = {
     'gemini-content': './src/content/gemini/index.ts',
     'grok-content': './src/content/grok/index.ts',
     'claude-content': './src/content/claude/index.ts',
+    'zai-content': './src/content/zai/index.ts',
     'sw-bypass': './src/content/flow/sw-bypass.ts',
     studio: './src/studio/index.tsx',
     sidepanel: './src/sidepanel/index.ts',

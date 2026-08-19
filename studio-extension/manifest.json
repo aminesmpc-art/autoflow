@@ -21,7 +21,8 @@
     "https://chatgpt.com/*",
     "https://gemini.google.com/*",
     "https://grok.com/*",
-    "https://claude.ai/*"
+    "https://claude.ai/*",
+    "https://chat.z.ai/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -94,6 +95,15 @@
       ],
       "js": [
         "claude-content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chat.z.ai/*"
+      ],
+      "js": [
+        "zai-content.js"
       ],
       "run_at": "document_idle"
     }
