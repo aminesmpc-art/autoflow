@@ -1,6 +1,6 @@
 {
   "name": "autoflow-studio-extension",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "description": "AutoFlow Studio \u2014 node workflows for Veo, ChatGPT and Grok",
   "scripts": {
     "build": "webpack --mode production --bail",
