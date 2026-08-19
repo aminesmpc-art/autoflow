@@ -14,7 +14,7 @@ import './sidepanel.css';
 import {
   login, logout, isLoggedIn, getProfile,
   listCommunityTemplates, getCommunityTemplate, likeCommunityTemplate,
-  submitCommunityTemplate, type CommunityCard,
+  submitCommunityTemplate, getUpgradeUrl, type CommunityCard,
 } from '../shared/api';
 import { loadTemplates, refreshTemplates } from '../studio/templates/loader';
 import { BRAND_MARKS } from '../studio/components/brandMarks';
@@ -379,6 +379,17 @@ function wire(): void {
       } as Record<string, string>)[row.dataset.plat || 'flow']
         || 'https://labs.google/fx/tools/flow';
       chrome.tabs.create({ url }).catch(() => {});
+    });
+  }
+
+  /* The upgrade button in the footer. It only ever appears when a free
+     account is near its ceiling — see renderUsage — so a click here is
+     somebody who has just been told they are running out. */
+  const upBtn = document.getElementById('foot-upgrade');
+  if (upBtn) {
+    upBtn.addEventListener('click', async () => {
+      const url = await getUpgradeUrl().catch(() => '');
+      chrome.tabs.create({ url: url || 'https://auto-flow.studio' }).catch(() => {});
     });
   }
 
@@ -1966,6 +1977,20 @@ function renderFooter(email: string | null, isPro: boolean, used: number, limit:
   }
   const acct = document.getElementById('foot-acct');
   if (acct) acct.textContent = email || 'Sign in';
+  /* The one moment an upgrade is worth offering.
+     Not a permanent banner: someone with forty runs left does not need
+     selling to, and a button that is always there stops being read. It
+     appears when the ceiling is close enough to be the thing standing
+     between them and the video they are making. */
+  const up = document.getElementById('foot-upgrade') as HTMLButtonElement | null;
+  if (up) {
+    const left = Math.max(0, limit - used);
+    const near = !isPro && left <= Math.max(3, Math.round(limit * 0.2));
+    up.hidden = !near;
+    up.textContent = left === 0 ? 'Out of runs — go Pro' : `${left} left — go Pro`;
+    up.classList.toggle('sp-foot__up--out', left === 0);
+  }
+
   const runs = document.getElementById('foot-runs');
   // A Pro account has no monthly ceiling, so "n/15" against it would be false.
   if (runs) {

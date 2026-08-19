@@ -2230,3 +2230,26 @@ body {
   filter: brightness(1.06);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset, 0 2px 12px -4px var(--accent-50);
 }
+
+/* The one place an upgrade is offered, and only while it is the thing
+   standing between somebody and the video they are making. A button that is
+   always there is furniture and stops being read. */
+.sp-foot__up {
+  margin-left: 8px;
+  padding: 3px 9px;
+  font: inherit;
+  font-size: var(--t-micro);
+  font-weight: 700;
+  color: var(--on-accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+  border: none;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sp-foot__up:hover { filter: brightness(1.08); }
+/* Out of runs is not a nudge any more, it is the reason nothing is happening. */
+.sp-foot__up--out {
+  background: var(--warn);
+  color: var(--canvas);
+}
