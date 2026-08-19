@@ -1,5 +1,10 @@
 /**
- * The free allowance, in the two places that state it.
+ * The free STUDIO allowance — workflow runs — in the three places that state it.
+ *
+ * Not to be confused with the Flow extension's daily prompt allowance, which
+ * is FREE_TEXT_DAILY_LIMIT and a different number for a different product.
+ * Conflating the two is how these got raised to fifty by mistake: "the free
+ * limit" is ambiguous until you say which extension.
  *
  * The panel shows "n/15 runs". The server stops a free account at
  * FREE_STUDIO_MONTHLY_LIMIT. Those were 15 and 10 — so a free user was cut off
@@ -65,10 +70,13 @@ describe('what a free account is allowed', () => {
     expect(canvasLimit()).toBe(serverLimit());
   });
 
-  (existsSync(SERVICES) ? it : it.skip)('is fifty', () => {
-    expect(serverLimit()).toBe(50);
-    expect(panelLimit()).toBe(50);
-    expect(canvasLimit()).toBe(50);
+  (existsSync(SERVICES) ? it : it.skip)('is ten workflow runs a month', () => {
+    /* Ten is the Studio number. Fifty is the Flow extension's daily prompt
+       allowance — a different product, a different counter, and the reason
+       this test now says which one it is checking. */
+    expect(serverLimit()).toBe(10);
+    expect(panelLimit()).toBe(10);
+    expect(canvasLimit()).toBe(10);
   });
 
   it('says where the authority lives, next to the copy of it', () => {

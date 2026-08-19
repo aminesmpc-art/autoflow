@@ -310,11 +310,13 @@ async function refreshAccount(): Promise<void> {
  * server remains the authority — this is a display of what we last saw.
  */
 const runKey = () => `studio_runs_${new Date().toISOString().slice(0, 7)}`;
-/* Must match FREE_STUDIO_MONTHLY_LIMIT in apps/plans/services.py.
-   It did not: the panel promised fifteen and the server stopped them at ten,
-   so a free user was cut off five runs before the number in front of them
-   said they would be. The server is the authority; this is a display of it. */
-const FREE_RUNS_PER_MONTH = 50;
+/* Studio workflow runs a month — not the Flow extension's daily prompts,
+   which is a different product and a different number.
+   Must match FREE_STUDIO_MONTHLY_LIMIT in apps/plans/services.py. It did not:
+   the panel promised fifteen and the server stopped them at ten, so a free
+   user was cut off five runs before the number in front of them said they
+   would be. The server is the authority; this is a display of it. */
+const FREE_RUNS_PER_MONTH = 10;
 
 /** Runs recorded for this month. One reader, so the usage bar and the footer
     cannot show different numbers. */

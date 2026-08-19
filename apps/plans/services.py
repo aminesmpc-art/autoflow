@@ -30,7 +30,7 @@ FREE_FULL_DAILY_LIMIT_RUNS = getattr(settings, "FREE_FULL_DAILY_LIMIT_RUNS", 1)
 # Studio workflow limits (visual builder) — runs per MONTH, plus a node cap.
 # Node count is enforced server-side too: the client-side cap lives in
 # chrome.storage and is trivially editable.
-FREE_STUDIO_MONTHLY_LIMIT = getattr(settings, "FREE_STUDIO_MONTHLY_LIMIT", 50)
+FREE_STUDIO_MONTHLY_LIMIT = getattr(settings, "FREE_STUDIO_MONTHLY_LIMIT", 10)
 # 0 means no cap. Free is now "ten runs, build whatever you like": the node
 # limit punished the workflows the product is for — a five-node ceiling made
 # every interesting template Pro-only, so free users could never see one work.
