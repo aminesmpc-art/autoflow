@@ -99,7 +99,13 @@ interface StudioState {
    than five nodes, so a free user could never watch one work, which is a
    strange way to sell the thing that makes them work. The server agrees:
    FREE_STUDIO_MAX_NODES is 0 there too, and it is the authoritative gate. */
-export const FREE_LIMITS = { nodes: 0, runsPerMonth: 10 } as const;
+/* runsPerMonth must match FREE_STUDIO_MONTHLY_LIMIT in apps/plans/services.py.
+   There are three copies of this number — here, the side panel, and the
+   server — and they have drifted before: the panel promised fifteen while the
+   server stopped free accounts at ten, so a user was refused five runs before
+   the figure in front of them said they would be. freeLimit.test.ts now checks
+   all three against the server, which is the only authority. */
+export const FREE_LIMITS = { nodes: 0, runsPerMonth: 50 } as const;
 
 /** Runs are counted per calendar month, keyed so a new month resets itself */
 const runKey = () => `studio_runs_${new Date().toISOString().slice(0, 7)}`;

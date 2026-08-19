@@ -19,6 +19,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { Icon } from './Icon';
+import { getUpgradeTarget } from '../../shared/api';
 import { StoryNode } from '../nodes/StoryNode';
 import { canConnect, connectionProblem } from '../canvas/connect';
 import { BrandIcon } from './BrandIcon';
@@ -203,6 +204,22 @@ function CanvasInner() {
     setLimitMsg(null);
     runner.run(nodes, edges);
   }, [nodes, edges, isRunning, canRun, isPro, runBlockedReason, recordRun, setRunsUsed]);
+
+  /* How close the ceiling is, said once.
+     A fifth of the allowance, floored at five, so it behaves whether free is
+     ten runs or fifty. */
+  const runsLeft = Math.max(0, FREE_LIMITS.runsPerMonth - runsUsed);
+  const LOW_RUNS = Math.max(5, Math.round(FREE_LIMITS.runsPerMonth * 0.2));
+
+  /* Where Pro lives, decided by the server rather than written in here twice.
+     The template gallery has always asked; the topbar and the limit notice
+     had the pricing URL hardcoded, so a change to it would have fixed one
+     conversion surface out of three. */
+  const openUpgrade = useCallback(async () => {
+    let url = 'https://auto-flow.studio/pricing';
+    try { url = (await getUpgradeTarget()).url || url; } catch { /* the literal is the fallback */ }
+    window.open(url, '_blank', 'noopener');
+  }, []);
 
   /* Nodes the user can retry — anything a run left in error. */
   /* What the run bar reads. currentNodeId is set by the runner as each node
@@ -591,22 +608,33 @@ function CanvasInner() {
             </span>
           ) : (
             <>
-              <span className={`studio-topbar__stat ${runsUsed >= FREE_LIMITS.runsPerMonth ? 'studio-topbar__stat--maxed' : ''}`}>
-                Runs {Math.min(runsUsed, FREE_LIMITS.runsPerMonth)}/{FREE_LIMITS.runsPerMonth}
+              {/* What is left, not what is spent.
+                  "Runs 8/50" reads the same at 8 as at 48 — the number that
+                  decides anything is the one going down. */}
+              <span className={`studio-topbar__stat ${
+                runsLeft === 0 ? 'studio-topbar__stat--maxed'
+                  : runsLeft <= LOW_RUNS ? 'studio-topbar__stat--low' : ''
+              }`}>
+                {runsLeft === 0 ? 'No runs left' : `${runsLeft} runs left`}
               </span>
               <span className={`studio-topbar__stat ${
                 FREE_LIMITS.nodes && nodes.length >= FREE_LIMITS.nodes ? 'studio-topbar__stat--maxed' : ''
               }`}>
                 Nodes {nodes.length}{FREE_LIMITS.nodes ? `/${FREE_LIMITS.nodes}` : ''}
               </span>
-              <a
-                className="studio-topbar__upgrade"
-                href="https://auto-flow.studio/pricing"
-                target="_blank"
-                rel="noopener noreferrer"
+              {/* Loud only when it is the thing in the way. A button that
+                  looks the same on run 1 as on run 50 is furniture by the
+                  time it matters. */}
+              <button
+                type="button"
+                className={`studio-topbar__upgrade ${
+                  runsLeft <= LOW_RUNS ? 'studio-topbar__upgrade--urgent' : ''
+                }`}
+                onClick={openUpgrade}
               >
-                <Icon name="upgrade" className="studio-topbar__glyph" /> Upgrade
-              </a>
+                <Icon name="upgrade" className="studio-topbar__glyph" />
+                {runsLeft === 0 ? 'Get more runs' : 'Upgrade'}
+              </button>
             </>
           )}
           <button
@@ -636,9 +664,9 @@ function CanvasInner() {
       {limitMsg && (
         <div className="studio-limit">
           <span className="studio-limit__text">{limitMsg}</span>
-          <a className="studio-limit__cta" href="https://auto-flow.studio/pricing" target="_blank" rel="noopener noreferrer">
+          <button type="button" className="studio-limit__cta" onClick={openUpgrade}>
             Upgrade
-          </a>
+          </button>
           <button className="studio-limit__close" onClick={() => setLimitMsg(null)} aria-label="Dismiss">×</button>
         </div>
       )}

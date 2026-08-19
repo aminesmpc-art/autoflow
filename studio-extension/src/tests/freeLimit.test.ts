@@ -21,6 +21,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
 const PANEL = readFileSync(join(__dirname, '..', 'sidepanel', 'index.ts'), 'utf8');
+const STORE = readFileSync(join(__dirname, '..', 'studio', 'store.ts'), 'utf8');
 
 /* apps/ is what Railway deploys. backend/ is a stale copy that is not
    deployed, so reading it would check the display against a number nobody is
@@ -29,6 +30,14 @@ const SERVICES = join(__dirname, '..', '..', '..', 'apps', 'plans', 'services.py
 
 const panelLimit = (): number => {
   const m = PANEL.match(/const FREE_RUNS_PER_MONTH = (\d+);/);
+  return m ? Number(m[1]) : NaN;
+};
+
+/* The canvas keeps its own. Missed the first time this was raised, which is
+   the whole argument for checking every copy rather than the two you happen
+   to remember. */
+const canvasLimit = (): number => {
+  const m = STORE.match(/runsPerMonth: (\d+)/);
   return m ? Number(m[1]) : NaN;
 };
 
@@ -44,14 +53,22 @@ describe('what a free account is allowed', () => {
   });
 
   (existsSync(SERVICES) ? it : it.skip)('is the same number the server enforces', () => {
-    /* The whole point. A panel that promises more than the server allows
-       produces a refusal the user cannot account for. */
+    /* The whole point. A client that promises more than the server allows
+       produces a refusal the user cannot account for; one that promises less
+       withholds runs they have paid nothing for and are owed. */
     expect(panelLimit()).toBe(serverLimit());
+  });
+
+  (existsSync(SERVICES) ? it : it.skip)('is that number on the canvas too', () => {
+    /* The canvas is where a run is actually blocked, so this is the copy that
+       decides. It was still ten when the other two went to fifty. */
+    expect(canvasLimit()).toBe(serverLimit());
   });
 
   (existsSync(SERVICES) ? it : it.skip)('is fifty', () => {
     expect(serverLimit()).toBe(50);
     expect(panelLimit()).toBe(50);
+    expect(canvasLimit()).toBe(50);
   });
 
   it('says where the authority lives, next to the copy of it', () => {
