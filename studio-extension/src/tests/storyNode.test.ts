@@ -93,3 +93,21 @@ describe('what a Story node writes for', () => {
     expect(posterLine).not.toMatch(/\b10s\b/);
   });
 });
+
+describe('the summary the node shows for itself', () => {
+  const runner = readFileSync(join(SRC, 'studio', 'engine', 'WorkflowRunner.ts'), 'utf8');
+  const combined = runner.slice(
+    runner.indexOf('const combined = best.shots'),
+    runner.indexOf("      .join('\n\n');"),
+  );
+
+  it('prints the prompt, not the Shot object holding it', () => {
+    /* It interpolated the Shot itself, so resultText was every target label
+       followed by "[object Object]" — the node's own account of what it had
+       just written, unreadable, for as long as Story has existed. Two lines
+       above, shotPlans correctly takes .prompt off the same array, which is
+       what made it look right everywhere except on the node. */
+    expect(combined).toContain('sh.prompt');
+    expect(combined).not.toMatch(/\$\{p\}/);
+  });
+});

@@ -137,10 +137,22 @@ describe('the run does not stop for something that would have rendered', () => {
     expect(block).toMatch(/rather than spending \$\{targets\.length\} generations/);
   });
 
-  it('keeps the two genuine dead ends', () => {
-    /* Nothing usable came back at all, and fewer prompts than nodes. Neither
-       is a judgement about quality — there is nothing to run. */
-    expect(RUNNER).toMatch(/Could not get \$\{targets\.length\} usable prompts/);
-    expect(RUNNER).toMatch(/Only \$\{best\.shots\.length\} of \$\{targets\.length\} prompts came back/);
+  it('keeps the genuine dead end, and now says which shot it is', () => {
+    /* There used to be two errors here: "could not get N usable prompts" and
+       "only N of M came back". The ledger collapses them into one, because
+       with per-shot banking they are the same condition measured twice — the
+       run stops when some shot never came good, whether that is one of them or
+       all of them.
+
+       What is new is that it names them. The old message was true of a reply
+       where fifteen of sixteen shots were perfect and told nobody which one to
+       look at. */
+    expect(RUNNER).toMatch(/prompts came back usable from \$\{platform\}/);
+    expect(RUNNER).toMatch(/Still wrong: \$\{detail\}/);
+    const at = RUNNER.indexOf('if (!best) {');
+    const block = RUNNER.slice(at, at + 900);
+    expect(block).toMatch(/unresolved\.get\(i\)/);       // the codes that failed
+    expect(block).toMatch(/targets\[i\]\.label/);        // named, not numbered
+    expect(block).toMatch(/Nothing was run/);
   });
 });

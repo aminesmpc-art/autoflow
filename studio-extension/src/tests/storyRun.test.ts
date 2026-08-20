@@ -165,10 +165,18 @@ describe('a Story node run end to end', () => {
     expect(turns).toHaveLength(2);
     // The second turn names the problem rather than repeating the brief.
     expect(turns[1].config.prompt).toContain('code fence');
-    expect(turns[1].config.prompt).toContain('the complete object');
+    /* And asks for shot 2 ALONE. Shot 1 came back clean and is banked, so
+       re-asking for it would spend the longest possible reply to fix the
+       shortest possible problem, and give a good shot a fresh chance to come
+       back worse. */
+    expect(turns[1].config.prompt).toMatch(/ONLY shot 2/);
+    expect(turns[1].config.prompt).toMatch(/must not be resent/);
+    expect(turns[1].config.prompt).not.toContain('the complete object');
     // And it continues in the same thread, which is what makes it a repair.
     expect(turns[1].config.newChat).toBe('never');
     expect(promptSentTo('clipB')).toBe(P2);
+    // Shot 1 survived the repair round untouched.
+    expect(promptSentTo('clipA')).toBe(P1);
   });
 
   it('spends nothing when it cannot get a clean set', async () => {
@@ -190,8 +198,14 @@ describe('a Story node run end to end', () => {
     expect(sent.some((s) => s.nodeId === 'clipA')).toBe(false);
     expect(sent.some((s) => s.nodeId === 'clipB')).toBe(false);
     const story = useStudioStore.getState().nodes.find((n) => n.id === 'story');
-    expect(String((story?.data as any)?.errorMessage || ''))
-      .toMatch(/typed \s*into the generator|usable prompts/i);
+    const message = String((story?.data as any)?.errorMessage || '');
+    expect(message).toMatch(/1 of 2 prompts came back usable/);
+    /* Naming the shot that failed, and why. The old message said only that it
+       could not get usable prompts, which was equally true of a reply where
+       fifteen of sixteen were perfect and told nobody where to look. */
+    expect(message).toMatch(/Still wrong: Part 2 \(/);
+    expect(message).toMatch(/meta/);
+    expect(message).toMatch(/Nothing was run/);
   });
 
   it('refuses to run wired to nothing rather than asking for a plan for no one', async () => {

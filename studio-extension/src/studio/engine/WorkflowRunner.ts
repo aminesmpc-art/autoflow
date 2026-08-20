@@ -18,7 +18,7 @@ import { composeAskPrompt } from '../presets';
 import {
   shotContract, parseShots, checkShots, repairMessage, summarise, readJsonObject,
   blockingProblems, describeProblems,
-  orderShotTargets, alignShots, type ShotTarget, type Shot, type Problem,
+  orderShotTargets, alignShots, placeShots, type ShotTarget, type Shot, type Problem,
 } from '../ask/storyboard';
 import {
   storyBrief, STORY_FIELDS, DEFAULT_STORY, voiceForShot, readStorySettings, isUgc, isBuild,
@@ -129,6 +129,7 @@ export function isRunFatal(message: string): boolean {
     /out of credits/i,
     /not enough .*credits/i,
     /sign(ed)? in|not signed in|logged out/i,
+    /rate limit reached|out of free messages|usage limit/i,
   ].some((p) => p.test(m));
 }
 
@@ -621,20 +622,7 @@ export class WorkflowRunner {
       if (!prompt.trim()) {
         throw new Error('No idea connected — link a Prompt node to the T input');
       }
-      /* The story settings first, then whatever extra brief the preset adds.
-         Order matters: the cast and world are the fixed part, and a preset is
-         craft applied on top of them. */
       let settings: StorySettings = readStorySettings(nodeData);
-
-      /* Nobody has configured this node, so the defaults are about to decide
-         the piece — and a default is not a decision. Ask first, in its own
-         turn, then write the answer onto the node so it shows in the dropdowns
-         and is there next run.
-
-         Its own turn rather than folded into the shot request, because the
-         settings decide what the brief SAYS. The brief cannot be written until
-         they exist. The prompts then follow in the same conversation, with the
-         choices still above them. */
       let threadOpen = false;
       if (storyIsUnset(nodeData)) {
         useStudioStore.getState().updateNodeData(nodeId, {
@@ -649,9 +637,6 @@ export class WorkflowRunner {
           useStudioStore.getState().updateNodeData(nodeId, chosen as Record<string, unknown>);
           console.log(`[Runner] Story settings chosen: ${JSON.stringify(chosen)}`);
         } else {
-          /* Not a failure. The defaults are still a working piece, and losing
-             a run over a settings turn that came back unusable would be worse
-             than making it on the defaults. */
           console.warn('[Runner] Story settings: nothing usable came back, keeping the defaults');
         }
       }
@@ -735,28 +720,27 @@ export class WorkflowRunner {
       }
     }
 
-    // An empty prompt still submits and burns a generation on Flow, so fail
-    // here with something actionable instead of at the far end of the bridge.
-    if (!prompt.trim()) {
-      throw new Error(
-        textSourceId
-          ? 'Connected prompt node is empty — type a prompt before running'
-          : 'No prompt connected — link a Prompt node to the T input'
-      );
-    }
-
     /* Ask AI presets wrap the user's subject in the craft.
        Composed here rather than in the node because the variant depends on
        whether a reference image actually resolved — "character sheet from a
        photo" and "from a description" are different briefs, and only this
        point knows which one applies. */
+    const hasReferenceImage = referenceImageData.length > 0 || referenceImageIds.length > 0;
     let askPrompt = nodeData.mediaType === 'text'
-      ? composeAskPrompt(
-          nodeData.preset,
-          prompt,
-          referenceImageData.length > 0 || referenceImageIds.length > 0
-        )
+      ? composeAskPrompt(nodeData.preset, prompt, hasReferenceImage)
       : prompt;
+
+    // An empty prompt still submits and burns a generation on Flow, so fail
+    // here with something actionable instead of at the far end of the bridge.
+    if (!askPrompt.trim()) {
+      throw new Error(
+        textSourceId
+          ? 'Connected prompt node is empty — type a prompt before running'
+          : hasReferenceImage
+            ? 'No preset or prompt provided for the connected reference image'
+            : 'No prompt connected — link a Prompt node to the T input'
+      );
+    }
 
     /* One Ask AI feeding several generators is a storyboard, not a question.
        Asking it once for all of them is the only way the prompts can agree
@@ -1105,13 +1089,17 @@ export class WorkflowRunner {
    * more than the extra faces are worth, and a chat has its own attachment
    * limits.
    */
-  private storyReferences(targets: ShotTarget[], edges: Edge[], max = 4): string[] {
+  private storyReferences(nodeId: string, targets: ShotTarget[], edges: Edge[], max = 4): string[] {
     const PORTS = ['image_ref', 'image', 'frame_start', 'frame_end'];
     const seen = new Set<string>();
     const out: string[] = [];
 
-    for (const t of targets) {
-      for (const [handle, sources] of getNodeInputs(t.id, edges)) {
+    // Gather reference images from the Ask AI / Story node itself first,
+    // then from any downstream shot targets.
+    const allNodeIds = [nodeId, ...targets.map((t) => t.id)];
+
+    for (const id of allNodeIds) {
+      for (const [handle, sources] of getNodeInputs(id, edges)) {
         if (!PORTS.includes(handle)) continue;
         for (const src of sources) {
           const r = this.nodeResults.get(src);
@@ -1156,14 +1144,29 @@ export class WorkflowRunner {
     /* Gathered before the first ask, so the contract can say they are there.
        Telling a model "images are attached" when none are produces prompts
        that refer confidently to pictures nobody sent. */
-    const refs = this.storyReferences(targets, edges);
+    const refs = this.storyReferences(nodeId, targets, edges);
     if (refs.length) {
       console.log(`[Runner] Storyboard: showing the director ${refs.length} reference still(s)`);
     }
 
     let message = brief + '\n'
       + shotContract(targets, isStory ? STORY_FIELDS : '', wantsSpeaker, refs.length);
-    let best: { shots: Shot[]; problems: number; blocking: Problem[]; story: string } | null = null;
+    /* A ledger, not a best-of-round snapshot.
+     *
+     * This used to keep whichever ROUND had the fewest problems and throw the
+     * rest away. So a run where shot 1 came back clean in round 1 and shot 3
+     * came back clean in round 2 kept one of them and discarded the other —
+     * while holding both — and the repair asked for every shot again, giving
+     * each good one a fresh chance to come back worse.
+     *
+     * Now a shot is banked the moment it has no blocking problem, and the
+     * repair asks only for the ones still missing. Round 0 is the long reply;
+     * every round after it is two shots instead of sixteen. */
+    const accepted = new Map<number, Shot>();
+    const advisories = new Map<number, Problem[]>();
+    const unresolved = new Map<number, Problem[]>();
+    let storyText = '';
+    let wroteBack = false;
 
     for (let round = 0; round <= MAX_REPAIRS; round++) {
       if (this.abortRequested) throw new Error('Stopped');
@@ -1178,14 +1181,27 @@ export class WorkflowRunner {
       /* Attached on the first turn only. A repair is the next message in the
          same conversation, so the pictures are already above it — sending
          them again would re-upload minutes of images to say nothing new. */
-      const reply = await this.askAgent(
-        nodeId, platform, message,
-        /* Only if the conversation is not already open. A settings turn has
-           already introduced this piece, and starting a new chat here would
-           throw that away and pay for it twice. */
-        round === 0 && !storyRun?.threadOpen,
-        round === 0 ? refs : undefined,
-      );
+      let reply = '';
+      try {
+        reply = await this.askAgent(
+          nodeId, platform, message,
+          /* Only if the conversation is not already open. A settings turn has
+             already introduced this piece, and starting a new chat here would
+             throw that away and pay for it twice. */
+          round === 0 && !storyRun?.threadOpen,
+          round === 0 ? refs : undefined,
+        );
+      } catch (err: any) {
+        /* Whatever is already banked is still good. A repair turn that fails
+           to arrive costs us the shots it was going to fix, not the ones that
+           were already accepted. */
+        if (accepted.size) {
+          console.warn(`[Runner] Storyboard repair round ${round + 1} failed (${err?.message || err}), keeping ${accepted.size} banked prompt(s)`);
+          studioLog('Story', `Repair turn failed (${err?.message || err}). Keeping ${accepted.size} of ${targets.length} prompts already accepted.`);
+          break;
+        }
+        throw err;
+      }
       const {
         shots: rawShots, anchor, story, problem,
         cast: parsedCast, world: parsedWorld, look: parsedLook,
@@ -1218,7 +1234,20 @@ export class WorkflowRunner {
          is this a reference or a continuation, does it match the node's mode —
          are all "shot i against target i", so a reordered reply made the check
          wrong as well as the assignment. */
-      const shots = alignShots(rawShots, targets);
+      const pending = targets.map((_, i) => i).filter((i) => !accepted.has(i));
+
+      /* A full reply aligns by title as before. A repair reply carries only the
+         shots that failed, and placeShots works out which those are. */
+      const placed = (rawShots.length === targets.length)
+        ? new Map(alignShots(rawShots, targets).map((sh, i) => [i, sh] as const))
+        : placeShots(rawShots, pending, targets);
+
+      /* Banked shots included, so the checker sees the whole set: the count
+         rule stays meaningful and a slot nobody filled reads as empty, which
+         is exactly what it is. */
+      const shots: Shot[] = targets.map((t, i) => accepted.get(i) || placed.get(i)
+        || { n: i + 1, title: t.label || `Shot ${i + 1}`, prompt: '' });
+
       const storySettings = storyRun?.settings || readStorySettings(nodeData);
       const problems = checkShots(
         shots, targets, identity || anchor, parsedCast,
@@ -1235,28 +1264,75 @@ export class WorkflowRunner {
         for (const line of describeProblems(problems)) studioLog('Story', `  · ${line}`);
       }
 
-      if (!best || problems.length < best.problems) {
-        best = { shots, problems: problems.length, blocking: problems, story: story || '' };
-        /* Written back so the next run does not re-decide who the character
-           is. Only what the user has not already locked — a field they typed
-           outranks anything the model returns. */
-        if (isStory) {
-          const patch: Record<string, unknown> = {};
-          if (parsedCast && !(nodeData.cast || []).length) patch.cast = parsedCast;
-          if (parsedWorld && !nodeData.world) patch.world = parsedWorld;
-          if (parsedLook && !nodeData.look) patch.look = parsedLook;
-          if (Object.keys(patch).length) store.updateNodeData(nodeId, patch);
+      if (story && !storyText) storyText = story;
+
+      /* Bank every shot that nothing blocking is wrong with. Advisories travel
+         with it — they are worth saying out loud but never worth re-asking a
+         shot that would render perfectly well. */
+      for (const i of pending) {
+        const sh = placed.get(i);
+        if (!sh || !sh.prompt) continue;
+        const mine = problems.filter((p) => p.shot === i + 1);
+        if (blockingProblems(mine).length) {
+          unresolved.set(i, mine);
+        } else {
+          accepted.set(i, sh);
+          advisories.set(i, mine);
+          unresolved.delete(i);
         }
       }
-      if (!problems.length) break;
+      studioLog('Story', `Round ${round + 1}: ${accepted.size} of ${targets.length} prompts banked`);
+
+      /* Written back so the next run does not re-decide who the character is.
+         Only what the user has not already locked — a field they typed
+         outranks anything the model returns. */
+      if (isStory && !wroteBack) {
+        const patch: Record<string, unknown> = {};
+        if (parsedCast && !(nodeData.cast || []).length) patch.cast = parsedCast;
+        if (parsedWorld && !nodeData.world) patch.world = parsedWorld;
+        if (parsedLook && !nodeData.look) patch.look = parsedLook;
+        if (Object.keys(patch).length) { store.updateNodeData(nodeId, patch); wroteBack = true; }
+      }
+
+      if (accepted.size === targets.length) break;
       if (round === MAX_REPAIRS) break;
-      message = repairMessage(problems, targets);
+
+      const stillPending = targets.map((_, i) => i).filter((i) => !accepted.has(i));
+      /* Only what is still wrong, and only for the shots still wanted. A
+         problem on a banked shot is settled and re-stating it invites the
+         model to change something nobody asked it to touch. */
+      const outstanding = problems.filter(
+        (p) => p.shot === 0 || stillPending.includes(p.shot - 1),
+      );
+      message = repairMessage(outstanding, targets, stillPending.map((i) => i + 1));
     }
 
-    if (!best || !best.shots.length) {
+    const best = accepted.size === targets.length
+      ? {
+        shots: targets.map((_, i) => accepted.get(i) as Shot),
+        problems: Array.from(advisories.values()).reduce((n, list) => n + list.length, 0),
+        blocking: [] as Problem[],   // none by construction — a blocked shot is never banked
+        story: storyText,
+      }
+      : null;
+
+    if (!best) {
+      /* Name the shots that never came good and what was wrong with them. The
+         old message said only "could not get N usable prompts", which is true
+         of a reply where fifteen of sixteen were perfect and told nobody which
+         one to look at. */
+      const missing = targets.map((_, i) => i).filter((i) => !accepted.has(i));
+      const detail = missing
+        .map((i) => {
+          const codes = (unresolved.get(i) || []).map((p) => p.code);
+          const label = targets[i].label || `Shot ${i + 1}`;
+          return codes.length ? `${label} (${Array.from(new Set(codes)).join(', ')})` : label;
+        })
+        .join('; ');
       throw new Error(
-        `Could not get ${targets.length} usable prompts from ${platform} after `
-        + `${MAX_REPAIRS + 1} attempts — open the chat tab to see what it replied`
+        `${accepted.size} of ${targets.length} prompts came back usable from ${platform} after `
+        + `${MAX_REPAIRS + 1} attempts. Still wrong: ${detail}. Nothing was run — `
+        + 'see Diagnostics, or open the chat tab to read the reply.'
       );
     }
     /* Out of repairs, with something in hand.
@@ -1288,11 +1364,6 @@ export class WorkflowRunner {
       studioLog('Story', `Running with ${best.problems} thing${
         best.problems === 1 ? '' : 's'} worth fixing — none of them stops a clip rendering.`);
       console.warn(`[Runner] Storyboard: proceeding with ${best.problems} advisory problem(s)`);
-    }
-    if (best.shots.length < targets.length) {
-      throw new Error(
-        `Only ${best.shots.length} of ${targets.length} prompts came back — nothing was run`
-      );
     }
 
     this.shotPlans.set(nodeId, best.shots.map((sh) => sh.prompt));
@@ -1331,7 +1402,10 @@ export class WorkflowRunner {
     /* The node itself shows the whole set, because that is what was written
        here; each generator shows the one it received. */
     const combined = best.shots
-      .map((p, i) => `${targets[i].label || `Shot ${i + 1}`}\n${p}`)
+      /* .prompt, not the Shot itself — interpolating the object wrote
+         "[object Object]" under every label, which is what the node had
+         been showing as its summary of the set. */
+      .map((sh, i) => `${targets[i].label || `Shot ${i + 1}`}\n${sh.prompt}`)
       .join('\n\n');
     store.updateNodeData(nodeId, {
       statusNote: '',

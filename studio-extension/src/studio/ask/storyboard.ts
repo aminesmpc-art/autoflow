@@ -121,7 +121,7 @@ const BANNED: Array<{ code: string; re: RegExp; detail: string }> = [
   },
   {
     code: 'storyboard',
-    re: /\b(panel|storyboard|caption|grid layout|numbered sequence|text overlay|title card)\b/i,
+    re: /\b(comic\s*panel|storyboard\s*panel|panel\s*\d+|grid\s*layout|numbered\s*sequence|text\s*overlay)\b/i,
     detail: 'mentions the storyboard itself (panels, captions, overlays). The generator will animate the poster instead of the scene. Describe the real space.',
   },
   {
@@ -1039,7 +1039,19 @@ export function describeProblems(problems: Problem[]): string[] {
 }
 
 /** The follow-up turn: what was wrong, and what to send back. */
-export function repairMessage(problems: Problem[], targets: ShotTarget[]): string {
+export function repairMessage(
+  problems: Problem[],
+  targets: ShotTarget[],
+  /* The shots still wanted, 1-based. Absent means all of them, which is what a
+     wholly-rejected reply needs.
+   *
+   * With it, the ask shrinks to the shots that actually failed. This message
+   * used to end "send the whole object again", so one bad line in shot 7
+   * re-asked for all sixteen: the most expensive possible reply to fix the
+   * smallest possible problem, at the moment the reply is already at its
+   * longest, and with every good shot free to come back worse. */
+  only?: number[],
+): string {
   const envelope = problems.filter((p) => p.shot === 0);
   const perShot = problems.filter((p) => p.shot !== 0);
 
@@ -1057,11 +1069,22 @@ export function repairMessage(problems: Problem[], targets: ShotTarget[]): strin
     lines.push(`Shot ${n}:`);
     for (const p of list) lines.push(`  · ${p.detail}`);
   }
-  lines.push(
-    '',
-    `Return the same JSON shape with all ${targets.length} shots — the complete object, not just the corrected ones,`,
-    'and nothing outside it.',
-  );
+  if (only && only.length && only.length < targets.length) {
+    const named = only.map((n: number) => `${n} ("${targets[n - 1]?.label || `Shot ${n}`}")`);
+    lines.push(
+      '',
+      `Send back ONLY ${only.length === 1 ? 'shot' : 'shots'} ${named.join(', ')} - `
+      + 'the others are accepted and must not be resent.',
+      'Same JSON shape, "shots" array, and set the "n" field on each one to its shot number',
+      'so it is clear which is which. Nothing outside the object.',
+    );
+  } else {
+    lines.push(
+      '',
+      `Return the same JSON shape with all ${targets.length} shots — the complete object, not just the corrected ones,`,
+      'and nothing outside it.',
+    );
+  }
   return lines.join('\n');
 }
 
@@ -1255,5 +1278,54 @@ export function alignShots(shots: Shot[], targets: ShotTarget[]): Shot[] {
     if (!found) return shots;
     out.push(found[0]);
   }
+  return out;
+}
+
+/**
+ * Place a PARTIAL reply's shots onto the targets still waiting for one.
+ *
+ * A repair round asks for only the shots that failed, so the reply carries two
+ * of sixteen and nothing about it says which two — except by title, by `n`, or
+ * by the order they arrive in. All three are tried, in that order.
+ *
+ * Title first, and this is the important part: parseShots defaults a missing
+ * `n` to the array index, so a two-shot reply always claims to be shots 1 and 2
+ * whatever it actually contains. Trusting `n` first would silently overwrite
+ * shot 1 with a repair meant for shot 7 — a wrong prompt on a good shot, which
+ * is worse than the failure being repaired.
+ */
+export function placeShots(
+  incoming: Shot[],
+  pending: number[],
+  targets: ShotTarget[],
+): Map<number, Shot> {
+  const key = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+  const out = new Map<number, Shot>();
+  const left: Shot[] = [];
+
+  // 1. By title, against the labels of the targets still waiting.
+  for (const sh of incoming) {
+    const k = key(sh.title || '');
+    const hit = k
+      ? pending.find((i) => !out.has(i) && key(targets[i].label || '') === k)
+      : undefined;
+    if (hit === undefined) left.push(sh);
+    else out.set(hit, sh);
+  }
+
+  // 2. By `n`, but only where it lands on a slot that is actually waiting.
+  const stillLeft: Shot[] = [];
+  for (const sh of left) {
+    const i = Number(sh.n) - 1;
+    if (Number.isInteger(i) && pending.includes(i) && !out.has(i)) out.set(i, sh);
+    else stillLeft.push(sh);
+  }
+
+  // 3. Whatever remains, onto whatever slots remain, in order.
+  const free = pending.filter((i) => !out.has(i));
+  stillLeft.forEach((sh, j) => {
+    if (j < free.length) out.set(free[j], sh);
+  });
+
   return out;
 }
