@@ -57,6 +57,81 @@ function patchRunState(patch: Partial<RunSnapshot>): void {
 const DIAG_LOG_MAX = 50;
 const diagLog: Array<{ ts: number; source: string; line: string }> = [];
 
+/** Write a line into the same ring buffer the content scripts feed. */
+function diag(source: string, line: string): void {
+  const entry = { ts: Date.now(), source, line };
+  diagLog.push(entry);
+  if (diagLog.length > DIAG_LOG_MAX) diagLog.shift();
+  chrome.runtime.sendMessage({ type: 'PANEL_LOG_PUSH', payload: entry }).catch(() => {});
+}
+
+/* ── Replies with nowhere to go ──
+   replyToStudio used to be `if (studioPort) post(...)` with no else, so a
+   result that arrived while the port was down was discarded — no buffer, no
+   retry, no log. The runner, which is blocked in awaitBridge waiting for
+   exactly that message, then sat out its full sixteen-minute backstop showing
+   "Writing 4 prompts…" while the finished answer sat visible in the chat tab.
+
+   The port goes down as a matter of routine: MV3 recycles the worker, the port
+   closes with it, and the canvas reconnects two seconds later. Anything that
+   landed inside those two seconds was gone for good. Long generations sit in
+   that window far longer than short ones, which is why it was always the big
+   Story nodes that hung.
+
+   So a reply that cannot be delivered is kept instead of dropped, and handed
+   over when the canvas comes back. Only terminal messages are worth keeping:
+   a replayed progress tick tells nobody anything, and a run produces hundreds.
+
+   Delivering the same result twice is safe — awaitBridge removes its listener
+   in cleanup(), so the second copy arrives to an empty room. */
+const PARKED_KEY = 'studio_parked_replies';
+const PARKED_MAX = 20;
+const PARKABLE = new Set(['STUDIO_NODE_RESULT', 'STUDIO_NODE_ERROR']);
+
+/* In memory first, so parking is synchronous and cannot race a flush. The
+   session copy is only there to survive a worker restart, which is the case
+   the in-memory array cannot cover. It clears itself when Chrome closes. */
+const parked: any[] = [];
+
+function persistParked(): void {
+  chrome.storage.session.set({ [PARKED_KEY]: parked }).catch(() => { /* best effort */ });
+}
+
+function park(msg: any): void {
+  parked.push(msg);
+  while (parked.length > PARKED_MAX) parked.shift();
+  persistParked();
+  diag('Bridge', `Studio was not connected — held ${msg?.type === 'STUDIO_NODE_ERROR'
+    ? 'an error' : 'a reply'} for node ${msg?.payload?.nodeId || '?'} until it returns`);
+}
+
+async function flushParked(port: chrome.runtime.Port): Promise<void> {
+  /* A worker that has just restarted has an empty array and a full store. */
+  if (!parked.length) {
+    try {
+      const got = await chrome.storage.session.get(PARKED_KEY);
+      const saved = got?.[PARKED_KEY];
+      if (Array.isArray(saved) && saved.length) parked.push(...saved);
+    } catch { /* session storage unavailable; nothing was held */ }
+  }
+  /* This port may have died — or been replaced by a newer one — while the
+     read above was in flight. Without this check the flush from a port that
+     is already gone wakes up, takes a reply that was parked in the meantime,
+     and posts it into the dead port: the exact loss this whole mechanism
+     exists to prevent, reintroduced one layer down. Leave it parked; the
+     connect that replaced us runs its own flush. */
+  if (studioPort !== port) return;
+  if (!parked.length) return;
+
+  const sending = parked.splice(0, parked.length);
+  persistParked();
+  diag('Bridge', `Studio reconnected — delivering ${sending.length} held ${
+    sending.length === 1 ? 'reply' : 'replies'}`);
+  for (const held of sending) {
+    try { port.postMessage(held); } catch { /* went away again mid-flush */ }
+  }
+}
+
 /* ── Keepalive ──
    A video generation easily outlasts Chrome's idle timeout for a service
    worker. If the worker is recycled mid-run the port dies and the next node
@@ -233,16 +308,6 @@ async function waitForTabReady(tabId: number, timeoutMs = 30_000): Promise<boole
 
   while (Date.now() < deadline) {
     try {
-      /* Anything that comes back without throwing means a content script is
-         listening, which is the whole question. Do NOT inspect the shape of
-         the reply: the chat scripts answer { pong: true } and the Flow script
-         answers { type: 'PONG', runLocked }, so a check for `.pong` was false
-         for Flow forever. Every Flow node then sat through this entire loop,
-         got its content script injected a second time, and waited again —
-         about forty seconds of nothing before each node.
-
-         Chrome rejects with "Receiving end does not exist" when nobody is
-         there, so not throwing is the signal. */
       await chrome.tabs.sendMessage(tabId, { type: 'PING' });
       return true;
     } catch {
@@ -253,10 +318,20 @@ async function waitForTabReady(tabId: number, timeoutMs = 30_000): Promise<boole
   return false;
 }
 
-function replyToStudio(msg: unknown): void {
+function replyToStudio(msg: any): void {
   if (studioPort) {
-    try { studioPort.postMessage(msg); } catch { /* Studio closed mid-flight */ }
+    try {
+      studioPort.postMessage(msg);
+      return;
+    } catch {
+      // Died between the null check and the post — the worker was recycled
+      // under us. Fall through and hold it like any other undelivered reply.
+      studioPort = null;
+    }
   }
+  /* Nowhere to put it *at this moment*, which is not the same as nobody
+     wanting it. The runner is still waiting in the canvas page. */
+  if (PARKABLE.has(msg?.type)) park(msg);
 }
 
 function nodeError(nodeId: unknown, error: string): void {
@@ -399,6 +474,9 @@ chrome.runtime.onConnect.addListener((port) => {
   studioPort = port;
   patchRunState({ studioOpen: true });
   console.log('[Studio] connected');
+  /* Before anything else: a reply that landed while this port was down is the
+     only thing standing between a stuck node and a finished one. */
+  flushParked(port).catch(() => { /* nothing held, or storage gone */ });
 
   port.onMessage.addListener(async (msg: any) => {
     if (!msg?.type?.startsWith?.('STUDIO_')) return;
@@ -472,6 +550,10 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 
   port.onDisconnect.addListener(() => {
+    /* Only if it is still ours. A reconnect can land before the old port's
+       disconnect fires, and clearing unconditionally would blank the live
+       port — sending every reply after it straight to the parking lot. */
+    if (studioPort !== port) return;
     studioPort = null;
     stopKeepalive().catch(() => {});
     // Closing the canvas ends the run as far as anyone can observe it.
@@ -525,6 +607,69 @@ async function mainWorldPaste(tabId: number, elId: string, text: string): Promis
       return { success: true, text: (el.textContent || '').slice(0, 50) };
     },
     args: [elId, text],
+  });
+  return result?.result ?? { success: false, error: 'No result from page' };
+}
+
+/**
+ * Dispatch paste and drop events with image files in the page's MAIN world.
+ */
+async function mainWorldAttachFiles(tabId: number, elId: string, dataUrls: string[]): Promise<any> {
+  const [result] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: (id: string, urls: string[]) => {
+      const composer = document.getElementById(id)
+        || document.querySelector('[data-testid="chat-input"]')
+        || document.querySelector('div[contenteditable="true"].ProseMirror')
+        || document.querySelector('div[contenteditable="true"]');
+      if (!composer) return { success: false, error: 'Composer not found' };
+
+      const files: File[] = [];
+      for (let i = 0; i < urls.length; i++) {
+        const url = urls[i];
+        const comma = url.indexOf(',');
+        const header = url.slice(0, comma);
+        const mime = /data:([^;,]+)/.exec(header)?.[1] || 'image/png';
+        const body = url.slice(comma + 1);
+        const binary = header.includes(';base64') ? atob(body) : decodeURIComponent(body);
+        const bytes = new Uint8Array(binary.length);
+        for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j);
+        const ext = mime.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+        files.push(new File([bytes], `reference-${i + 1}.${ext}`, { type: mime }));
+      }
+
+      const dt = new DataTransfer();
+      for (const f of files) dt.items.add(f);
+
+      // Paste on composer
+      composer.focus();
+      try {
+        composer.dispatchEvent(new ClipboardEvent('paste', {
+          bubbles: true, cancelable: true, clipboardData: dt,
+        }));
+      } catch {}
+
+      // Drop on composer
+      try {
+        composer.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        composer.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        composer.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      } catch {}
+
+      // Populate file inputs
+      const inputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="file"]'));
+      for (const input of inputs) {
+        try {
+          input.files = dt.files;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        } catch {}
+      }
+
+      return { success: true, count: files.length };
+    },
+    args: [elId, dataUrls],
   });
   return result?.result ?? { success: false, error: 'No result from page' };
 }
@@ -686,6 +831,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // async
   }
 
+  if (msg?.type === 'MAIN_WORLD_ATTACH_FILES') {
+    const tabId = sender.tab?.id;
+    if (!tabId) {
+      sendResponse({ error: 'No tab ID' });
+      return false;
+    }
+    mainWorldAttachFiles(tabId, msg.payload?.elId, Array.isArray(msg.payload?.dataUrls) ? msg.payload.dataUrls : [])
+      .then(sendResponse)
+      .catch((e) => sendResponse({ error: e?.message || String(e) }));
+    return true; // async
+  }
+
   /* ── Refresh Flow's generation-status cache on demand ──
      apiHelper reads Flow's own batchCheckAsyncVideoGenerationStatus responses
      as they go past. That is passive and free, but it only yields news while
@@ -725,14 +882,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Must sit ABOVE the STUDIO_* catch-all — STUDIO_LOG starts with "STUDIO_"
   // and comes from a tab, so the catch-all was swallowing it.
   if (msg?.type === 'STUDIO_LOG' && sender.tab) {
-    const entry = {
-      ts: Date.now(),
-      source: msg.payload?.source || '?',
-      line: msg.payload?.line || '',
-    };
-    diagLog.push(entry);
-    if (diagLog.length > DIAG_LOG_MAX) diagLog.shift();
-    chrome.runtime.sendMessage({ type: 'PANEL_LOG_PUSH', payload: entry }).catch(() => {});
+    diag(msg.payload?.source || '?', msg.payload?.line || '');
     return false;
   }
 
