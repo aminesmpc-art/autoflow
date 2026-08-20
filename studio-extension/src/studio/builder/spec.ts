@@ -179,7 +179,33 @@ HOW THEY GO TOGETHER
       story  ->  [shot1, shot2, shot3, shot4]
     Connect one story node to every generate node in your scene. It inspects
     their formats (media, ratio, duration) and writes all prompts together
-    so characters, setting, and pacing match across the entire sequence.`;
+    so characters, setting, and pacing match across the entire sequence.
+
+  Plan the whole piece as one picture (storyboard sheet).
+      generate image (the board)  ->  clip 1, clip 2, clip 3 (inputs: the board)
+    One image holding every scene as a numbered panel, with the spoken line
+    written under each. All the panels share a canvas, so the model composes
+    them as a single picture — which is why the character, the palette and the
+    product hold across every panel, and therefore across every clip made from
+    it. Feed the board into each clip as a reference: it is read as a plan and
+    the content is animated, not the borders or the captions.
+    Ask for the panel count that matches the number of clips (8 clips -> a 4x2
+    board) and keep each caption to a short phrase — long captions render
+    badly.
+
+  A minute, as connected ten-second clips.
+      board 1 -> clip 1 (10s) -> frame -> clip 2 (10s, inputs: that frame)
+    A Flow clip tops out at 10s, so a long piece is chained rather than asked
+    for in one go. Give each ten seconds its own board, and pass the last
+    frame of each clip into the next so the cut continues instead of
+    restarting. Repeat the wardrobe and hair in every board: unmanaged, they
+    drift within a single ten-second clip, let alone across six.
+
+  How many references one shot may carry.
+    Flow takes at most FIVE images and one video per generation. A shot wired
+    to more fails at the composer, after the run has already started and paid
+    for getting there. Two or three characters, an environment and a prop is
+    the working budget.`;
 
 const EXAMPLE = `{
   "thinking": {

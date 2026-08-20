@@ -29,7 +29,7 @@ export interface PlanProblem {
   code:
     | 'noContinuity' | 'voiceOnFrames'
     | 'voiceWithoutImage' | 'unknownVoice' | 'voiceButSilent' | 'castVoiceUnused'
-    | 'storyUnused' | 'uploadUnused' | 'lonelyStory';
+    | 'storyUnused' | 'uploadUnused' | 'lonelyStory' | 'tooManyReferences';
   /** What to tell the model, in its own terms. */
   detail: string;
 }
@@ -70,6 +70,9 @@ const HUMAN: Record<PlanProblem['code'], string> = {
   lonelyStory:
     'There is more than one story director. They cannot see each other’s answers, '
     + 'so the shots would not agree about the character or the place.',
+  tooManyReferences:
+    'One shot is given more reference pictures than Flow accepts, so the extra ones '
+    + 'would be dropped when the clip is generated.',
 };
 
 /**
@@ -165,6 +168,27 @@ export function checkPlan(plan: Plan): PlanProblem[] {
             + 'character, so without one the clip is generated silent.',
         });
       }
+    }
+  }
+
+  /* ── More references than Flow will take ── */
+  /* Flow's composer refuses the sixth image outright — "Maximum image
+     ingredients reached (5 allowed)". Nothing downstream catches it, so a plan
+     that over-wires a shot opens the tab, attaches five, and stalls on the
+     rest, having already spent the time to get there. Cheaper to say so while
+     it is still a plan. */
+  const MAX_IMAGE_REFS = 5;
+  for (const s of steps) {
+    if (s.type !== 'generate' || s.media !== 'video') continue;
+    const refs = imageInputs(s).length;
+    if (refs > MAX_IMAGE_REFS) {
+      out.push({
+        step: s.id, code: 'tooManyReferences',
+        detail: `wires ${refs} reference images into one shot. Flow takes at most `
+          + `${MAX_IMAGE_REFS}, and refuses the rest at the composer. Drop `
+          + `${refs - MAX_IMAGE_REFS} — or build a storyboard image and feed that `
+          + 'single picture instead, which carries the whole scene in one reference.',
+      });
     }
   }
 
