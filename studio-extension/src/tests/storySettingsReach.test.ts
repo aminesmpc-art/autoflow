@@ -183,6 +183,8 @@ describe('one reader for a Story node, used by both readers', () => {
       cameraProgression: 'propped',
       audioMode: 'dialogue',
       visualPreset: 'smartphonePOV',
+      colorTemp: 'tungsten',
+      lighting: 'intimate',
       timedBeats: true,
       avoid: 'traffic',
     });
@@ -196,6 +198,12 @@ describe('one reader for a Story node, used by both readers', () => {
       cameraProgression: 'propped',
       audioMode: 'dialogue',
       visualPreset: 'smartphonePOV',
+      /* Film language, decided once for the piece rather than per shot. Named
+         here for the same reason as everything else in this list: a field the
+         node holds and the reader drops is a setting that silently does
+         nothing, which is the bug this whole test exists for. */
+      colorTemp: 'tungsten',
+      lighting: 'intimate',
       timedBeats: true,
       avoid: 'traffic',
     });

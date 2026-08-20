@@ -248,6 +248,72 @@ export const VISUAL_PRESETS: VisualPresetOption[] = [
   },
 ];
 
+/* ── Colour temperature, in Kelvin ──
+ *
+ * Decided once for the whole piece, not per shot, which is the point of it:
+ * a story whose shots each pick their own white balance looks like footage
+ * from several days edited together. Kelvin is how the grade is actually
+ * discussed, and a number is far harder for a writer to drift on than
+ * "warm" — two prompts can both say warm and mean different things. */
+export type ColorTempId = 'moon' | 'daylight' | 'tungsten' | 'amber' | 'none';
+
+export const COLOR_TEMPS: Array<{ id: ColorTempId; name: string; hint: string }> = [
+  { id: 'none', name: 'Not specified', hint: 'let each shot settle its own white balance.' },
+  {
+    id: 'moon',
+    name: 'Cold moonlight, 6800K',
+    hint: 'blue-white key, deep shadow, night interiors and anything meant to feel unwarm.',
+  },
+  {
+    id: 'daylight',
+    name: 'Daylight, 5600K',
+    hint: 'neutral sun. The safe one, and the right one for most product and UGC work.',
+  },
+  {
+    id: 'tungsten',
+    name: 'Tungsten interior, 3200K',
+    hint: 'warm practical bulbs indoors, lamps in frame, evening rooms.',
+  },
+  {
+    id: 'amber',
+    name: 'Warm amber, 1800K',
+    hint: 'candle, firelight, late golden sun. Strong and easy to overdo.',
+  },
+];
+
+/* ── Lighting grammar ──
+ *
+ * Three setups rather than a free description, because the failure being
+ * fixed is inconsistency, not poverty of choice. A named setup repeated
+ * across sixteen shots holds; sixteen descriptions of lighting do not.
+ *
+ * Each hint is written to be pasted into a prompt as-is. That is deliberate:
+ * a hint the writer has to translate is a hint it will translate differently
+ * each time. */
+export type LightingId = 'intimate' | 'tension' | 'hero' | 'none';
+
+export const LIGHTING_GRAMMARS: Array<{ id: LightingId; name: string; hint: string }> = [
+  { id: 'none', name: 'Not specified', hint: 'no fixed lighting setup.' },
+  {
+    id: 'intimate',
+    name: 'Intimate',
+    hint: 'low-key soft directional light with deep negative fill, shadows allowed to go '
+      + 'black on the far side of the face.',
+  },
+  {
+    id: 'tension',
+    name: 'Tension',
+    hint: 'high-contrast chiaroscuro, hard rim light separating the subject from the '
+      + 'background, crushed shadows.',
+  },
+  {
+    id: 'hero',
+    name: 'Hero',
+    hint: 'sculpted three-quarter key, volumetric backlight, clear catchlights in the '
+      + 'eyes, product surfaces given a defined highlight.',
+  },
+];
+
 export interface StorySettings {
   cast: CastMember[];
   world: string;
@@ -263,6 +329,11 @@ export interface StorySettings {
   audioMode?: AudioModeId;
   /** Visual style preset. */
   visualPreset?: VisualPresetId;
+  /* Decided once for the whole piece. Both are film language rather than
+     scene content, so they belong in the settings turn and appear once in
+     the brief — not restated per shot, where they would drift. */
+  colorTemp?: ColorTempId;
+  lighting?: LightingId;
   /**
    * Break each clip into timed segments — "[00:00-00:02] ...".
    *
@@ -484,6 +555,8 @@ export const DEFAULT_STORY: StorySettings = {
   cameraProgression: 'dynamic',
   audioMode: 'cinematic',
   visualPreset: 'none',
+  colorTemp: 'none',
+  lighting: 'none',
 };
 
 /**
@@ -514,6 +587,8 @@ export function readStorySettings(d: any): StorySettings {
       (n.cameraProgression as CameraProgressionId) || DEFAULT_STORY.cameraProgression,
     audioMode: (n.audioMode as AudioModeId) || DEFAULT_STORY.audioMode,
     visualPreset: (n.visualPreset as VisualPresetId) || DEFAULT_STORY.visualPreset,
+    colorTemp: (n.colorTemp as ColorTempId) || DEFAULT_STORY.colorTemp,
+    lighting: (n.lighting as LightingId) || DEFAULT_STORY.lighting,
     timedBeats: !!n.timedBeats,
     avoid: typeof n.avoid === 'string' ? n.avoid : '',
   };
@@ -593,6 +668,12 @@ export function settingsAsk(idea: string, targets: ShotTarget[]): string {
     ...choiceList(AUDIO_MODES),
     '  visualPreset — the look ("none" means you describe it yourself in "look")',
     ...choiceList(VISUAL_PRESETS),
+    '  colorTemp — one white balance for the whole piece. Shots that each pick',
+    '    their own look like footage from several days cut together.',
+    ...choiceList(COLOR_TEMPS),
+    '  lighting — one lighting setup, repeated. Sixteen descriptions of lighting',
+    '    do not hold; one named setup does.',
+    ...choiceList(LIGHTING_GRAMMARS),
     '  rules — any that this piece needs, as a list. Empty list if none apply.',
     ...choiceList(RULES),
     '  timedBeats — true only for a shot with a beginning and an end that has to',
@@ -606,6 +687,8 @@ export function settingsAsk(idea: string, targets: ShotTarget[]): string {
     '  "cameraProgression": "...",',
     '  "audioMode": "...",',
     '  "visualPreset": "...",',
+    '  "colorTemp": "...",',
+    '  "lighting": "...",',
     '  "rules": [],',
     '  "timedBeats": false,',
     '  "avoid": ""',
@@ -642,6 +725,12 @@ export function readSettingsReply(
 
   const preset = pick<VisualPresetId>(obj.visualPreset, VISUAL_PRESETS.map((x) => x.id));
   if (preset) out.visualPreset = preset;
+
+  const temp = pick<ColorTempId>(obj.colorTemp, COLOR_TEMPS.map((x) => x.id));
+  if (temp) out.colorTemp = temp;
+
+  const light = pick<LightingId>(obj.lighting, LIGHTING_GRAMMARS.map((x) => x.id));
+  if (light) out.lighting = light;
 
   if (Array.isArray(obj.rules)) {
     const known = RULES.map((r) => r.id) as string[];
@@ -823,6 +912,13 @@ export function storyBrief(
   if (preset && preset.stylePrompt) lookParts.push(preset.stylePrompt);
   if (s.look.trim()) lookParts.push(s.look.trim());
 
+  /* The film language, decided once in the settings turn and stated once here.
+     Written as finished prompt text rather than as a label, because a hint the
+     writer has to translate is a hint it translates differently in every shot
+     - which is the drift this exists to remove. */
+  const temp = COLOR_TEMPS.find((c) => c.id === s.colorTemp && c.id !== 'none');
+  const light = LIGHTING_GRAMMARS.find((l) => l.id === s.lighting && l.id !== 'none');
+
   /* Always, not only when a preset happens to mention it, and with the UGC
      exclusions folded in when this is a UGC piece — those are the model's
      defaults rather than a style, so they have to be named to be beaten. */
@@ -832,11 +928,15 @@ export function storyBrief(
   if (lookParts.length) {
     out.push('LOOK — applies to every shot without changing what is in them.');
     out.push(`  ${lookParts.join(' ')}`);
+    if (temp) out.push(`  Colour temperature: ${temp.name} — ${temp.hint}`);
+    if (light) out.push(`  Lighting: ${light.name} — ${light.hint}`);
     out.push(`  Guardrails (Negative): ${guards}`);
     out.push('');
   } else {
     out.push('LOOK — decide the palette, lens and lighting, apply it to all shots, and');
     out.push('return it in the "look" field.');
+    if (temp) out.push(`  Colour temperature: ${temp.name} — ${temp.hint}`);
+    if (light) out.push(`  Lighting: ${light.name} — ${light.hint}`);
     out.push(`  Guardrails (Negative): ${guards}`);
     out.push('');
   }
