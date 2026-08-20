@@ -22,7 +22,7 @@ import type { Template } from '../studio/templates';
 import { getAskPresets } from '../studio/presets';
 import { signInWithGoogle } from './googleSignIn';
 import { buildSpec } from '../studio/builder/spec';
-import { readPlan, compilePlan } from '../studio/builder/plan';
+import { readPlan, compilePlan, extractJson } from '../studio/builder/plan';
 import {
   checkPlan, repairPlanMessage, explainPlan, type PlanProblem,
 } from '../studio/builder/check';
@@ -1016,17 +1016,11 @@ async function reopenBuild(b: PastBuild): Promise<void> {
     platform: b.platform,
     name: engineName(b.platform),
     model: b.model,
-    chatUrl: b.chatUrl,
-    /* The plan travels either way.
-       Opening the tab is not the same as the conversation loading. Gemini
-       answers a navigation to a real conversation URL by rendering the
-       attachment fullscreen and saying "Something went wrong" often enough
-       that treating "no exception" as "the thread is there" leaves the user
-       with neither the thread NOR the plan — which is worse than either.
-       A model that has the conversation open reads the plan twice, which
-       costs a few hundred tokens. A model that has neither cannot help at
-       all. */
-    resumeFrom: b.template,
+    chatUrl: live ? b.chatUrl : undefined,
+    /* When the conversation was successfully opened live on the tab, we don't
+       need to start a new chat or re-carry the whole plan. If reopening failed
+       (live is false), resumeFrom carries the plan. */
+    resumeFrom: live ? undefined : b.template,
   });
 }
 
@@ -1098,42 +1092,52 @@ function planRow(n: any): HTMLElement {
 
 function hidePlan(): void {
   pendingBuild = null;
-  const box = document.getElementById('build-plan') as HTMLElement | null;
-  if (box) box.hidden = true;
+  const card = document.getElementById('build-plan');
+  if (card) card.hidden = true;
+  refineImages = [];
+  renderRefineRefs();
 }
 
+/**
+ * Show what it made, with what it will cost and a way to change it.
+ *
+ * Replaces the live stages once the build is ready.
+ */
 function showPlan(b: PendingBuild): void {
   pendingBuild = b;
-  const box = document.getElementById('build-plan') as HTMLElement | null;
-  if (!box) return;
-  box.hidden = false;
+  showStages(false);
+  const card = document.getElementById('build-plan');
+  if (!card) return;
+  card.hidden = false;
+
+  const title = document.getElementById('build-plan-title');
+  if (title) title.textContent = String(b.template?.name || 'Your workflow');
+
+  const desc = document.getElementById('build-plan-desc');
+  if (desc) desc.textContent = String(b.template?.description || '');
 
   const { shots, helpers } = splitPlan(b.template);
-  const runs = generationCount(b.template);
-
   const size = document.getElementById('build-plan-size');
   if (size) size.textContent = describeSize(shots);
 
   const cost = document.getElementById('build-plan-cost');
-  if (cost) cost.textContent = `${runs} generation${runs === 1 ? '' : 's'}`;
-
-  const sub = document.getElementById('build-plan-sub');
-  if (sub) sub.textContent = String(b.template?.description || '');
+  if (cost) {
+    const runs = generationCount(b.template);
+    cost.textContent = `${runs} generation${runs === 1 ? '' : 's'}`;
+  }
 
   const list = document.getElementById('build-plan-shots');
   if (list) {
     list.innerHTML = '';
-    for (const n of shots) list.append(planRow(n));
+    shots.forEach((s) => list.append(planRow(s)));
   }
 
-  /* The plumbing, counted rather than listed. */
-  const helperLine = document.getElementById('build-plan-helpers') as HTMLElement | null;
-  if (helperLine) {
-    const named = Array.from(new Set(helpers.map(helperName)));
-    helperLine.hidden = !named.length;
-    helperLine.textContent = named.length
-      ? `Plus ${helpers.length} step${helpers.length === 1 ? '' : 's'} that make it work: ${
-        named.join(', ')}.`
+  const foot = document.getElementById('build-plan-foot');
+  if (foot) {
+    const parts = helpers.map(helperName);
+    const unique = Array.from(new Set(parts));
+    foot.textContent = unique.length
+      ? `Plus ${helpers.length} step${helpers.length === 1 ? '' : 's'} that make it work: ${unique.join(', ')}.`
       : '';
   }
 
@@ -1169,11 +1173,34 @@ function showPlan(b: PendingBuild): void {
  * refinement all need exactly this, and three copies of it is three places for
  * the definition of "good enough to build" to drift apart.
  */
+/**
+ * A finished workflow, rather than a plan for one.
+ *
+ * This box asks for a chat reply and expects the builder's step format. Paste
+ * an exported .json workflow into it and readPlan says "no steps array", which
+ * surfaced as "That reply could not be turned into a workflow" about a file
+ * that IS one. The shape is unmistakable, so recognise it instead: nodes and
+ * edges, the same two arrays importWorkflow checks for.
+ *
+ * It opens the way a built one does, and loadTemplate normalises it on the way
+ * in, so nothing downstream has to know which door it came through.
+ */
+function readWorkflow(text: string): any | null {
+  const raw = extractJson(text);
+  if (!raw || !Array.isArray(raw.nodes) || !Array.isArray(raw.edges)) return null;
+  if (!raw.nodes.length) return null;
+  return { ...raw, name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : 'Pasted workflow' };
+}
+
 function evaluateReply(text: string): {
   plan: any; template: any; quality: PlanProblem[]; problems: string[]; problem?: string;
 } {
   const { plan, problem } = readPlan(text);
-  if (!plan) return { plan: null, template: null, quality: [], problems: [], problem };
+  if (!plan) {
+    const ready = readWorkflow(text);
+    if (ready) return { plan: null, template: ready, quality: [], problems: [] };
+    return { plan: null, template: null, quality: [], problems: [], problem };
+  }
   const quality = checkPlan(plan);
   const { template, problems } = compilePlan(plan);
   return { plan, template, quality, problems };
@@ -1402,10 +1429,10 @@ async function refineBuild(text: string): Promise<void> {
     const res: any = await chrome.runtime.sendMessage({
       type: 'PANEL_BUILD', platform: at.platform, model: at.model,
       images: IMAGE_CAPABLE.has(at.platform) ? refineImages : [],
-      /* A plan reopened from history is being shown to a model that has never
-         seen it, so it travels with the message. A live one is the next turn
-         of the conversation that produced it and does not — re-sending it
-         would waste the context that thread already holds. */
+      /* A plan reopened from history with no live chat URL is shown to a model that
+         has never seen it, so it travels with the message and opens a chat.
+         When the conversation was reopened live (live === true), resumeFrom is undefined
+         so it continues in that thread (newChat: 'never') and keeps all conversation memory! */
       newChat: at.resumeFrom ? 'auto' : 'never',
       prompt: `${carry}${text.trim()}${aboutImages(IMAGE_CAPABLE.has(at.platform) ? refineImages.length : 0, 'edit')}`
         + `\n\nApply that to ${at.resumeFrom ? 'that plan' : 'the plan you just wrote'} `
