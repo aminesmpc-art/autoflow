@@ -32,6 +32,7 @@ import { FrameNode } from '../nodes/FrameNode';
 import { ExtendNode } from '../nodes/ExtendNode';
 import { AgentNode } from '../nodes/AgentNode';
 import { NodeBoundary } from './NodeBoundary';
+import { DeletableEdge } from '../canvas/DeletableEdge';
 import { runner } from '../engine/WorkflowRunner';
 import { bridge } from '../engine/bridge';
 import { isRunnableType } from '../templates/validate';
@@ -59,6 +60,13 @@ const nodeTypes = {
   extend: guarded(ExtendNode, 'Extend'),
   agent: guarded(AgentNode, 'Agent'),
   story: guarded(StoryNode, 'Story'),
+};
+
+const edgeTypes = {
+  default: DeletableEdge,
+  deletable: DeletableEdge,
+  bezier: DeletableEdge,
+  smoothstep: DeletableEdge,
 };
 
 function CanvasInner() {
@@ -332,7 +340,7 @@ function CanvasInner() {
       setLimitMsg(null);
       setEdges(addEdge({
         ...connection,
-        type: 'default',
+        type: 'deletable',
         animated: true,
         style: { stroke: '#8b5cf6', strokeWidth: 2.5 },
       }, edges));
@@ -545,9 +553,13 @@ function CanvasInner() {
       data: {
         type: 'story',
         label: `Story ${nodes.filter((x) => x.type === 'story').length + 1}`,
-        platform: 'chatgpt',
+        platform: 'gemini',
         mediaType: 'text',
         preset: '',
+        structure: 'hook',
+        cameraProgression: 'dynamic',
+        audioMode: 'cinematic',
+        visualPreset: 'none',
         status: 'idle',
       },
     } as any);
@@ -673,66 +685,73 @@ function CanvasInner() {
 
       {/* Node Toolbar (Left sidebar) */}
       <div className="studio-toolbar">
-        {/* Grouped by what a node does, because a flat list of seven stopped
-            being scannable — "Add Last Frame" and "Add Extend" both continue a
-            clip, and sat three apart from each other between two things that
-            start one. */}
         <div className="studio-toolbar__group">
           <div className="studio-toolbar__heading">Inputs</div>
-          <button className="studio-toolbar__btn studio-toolbar__btn--add" onClick={addPromptNode} aria-label="Add Prompt node">
-            <Icon name="prompt" kind="prompt" className="studio-toolbar__btn-icon" />
+          <button className="studio-toolbar__btn studio-toolbar__btn--prompt" onClick={addPromptNode} aria-label="Add Prompt node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--prompt">
+              <Icon name="prompt" kind="prompt" className="studio-toolbar__btn-icon" />
+            </span>
             <span className="studio-toolbar__btn-label">Prompt</span>
           </button>
-          <button className="studio-toolbar__btn" onClick={addImageNode} aria-label="Add Image node">
-            <Icon name="image" kind="image" className="studio-toolbar__btn-icon" />
+          <button className="studio-toolbar__btn studio-toolbar__btn--image" onClick={addImageNode} aria-label="Add Image node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--image">
+              <Icon name="image" kind="image" className="studio-toolbar__btn-icon" />
+            </span>
             <span className="studio-toolbar__btn-label">Image</span>
           </button>
         </div>
 
         <div className="studio-toolbar__group">
           <div className="studio-toolbar__heading">Generate</div>
-          <button className="studio-toolbar__btn studio-toolbar__btn--primary" onClick={addGenerateNode} aria-label="Add Generate node">
-            <BrandIcon name="flow" className="studio-toolbar__btn-icon studio-toolbar__btn-icon--brand" />
+          <button className="studio-toolbar__btn studio-toolbar__btn--flow" onClick={addGenerateNode} aria-label="Add Flow clip node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--flow">
+              <BrandIcon name="flow" className="studio-toolbar__btn-icon studio-toolbar__btn-icon--brand" />
+            </span>
             <span className="studio-toolbar__btn-label">Flow clip</span>
           </button>
-          <button className="studio-toolbar__btn" onClick={addGrokNode} aria-label="Add Grok clip node">
-            <BrandIcon name="grok" className="studio-toolbar__btn-icon studio-toolbar__btn-icon--brand" />
+          <button className="studio-toolbar__btn studio-toolbar__btn--grok" onClick={addGrokNode} aria-label="Add Grok clip node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--grok">
+              <BrandIcon name="grok" className="studio-toolbar__btn-icon studio-toolbar__btn-icon--brand" />
+            </span>
             <span className="studio-toolbar__btn-label">Grok clip</span>
           </button>
-          <button className="studio-toolbar__btn" onClick={addAskNode} aria-label="Add Ask AI node">
-            <Icon name="chat" kind="ask" className="studio-toolbar__btn-icon" />
+          <button className="studio-toolbar__btn studio-toolbar__btn--ask" onClick={addAskNode} aria-label="Add Ask AI node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--ask">
+              <Icon name="chat" kind="ask" className="studio-toolbar__btn-icon" />
+            </span>
             <span className="studio-toolbar__btn-label">Ask AI</span>
           </button>
-          {/* An agent belongs here, not under "Continue a clip". It starts
-              work rather than continuing a clip, and it spends generations
-              like everything else in this group — it sat between Last frame
-              and Extend, which both genuinely continue one. */}
-          <button className="studio-toolbar__btn" onClick={addStoryNode} aria-label="Add Story node">
-            <Icon name="agent" kind="agent" className="studio-toolbar__btn-icon" />
+          <button className="studio-toolbar__btn studio-toolbar__btn--story" onClick={addStoryNode} aria-label="Add Story node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--story">
+              <Icon name="story" kind="video" className="studio-toolbar__btn-icon" />
+            </span>
             <span className="studio-toolbar__btn-label">Story</span>
           </button>
-          <button className="studio-toolbar__btn" onClick={addAgentNode} aria-label="Add Agent node">
-            <Icon name="agent" kind="agent" className="studio-toolbar__btn-icon" />
+          <button className="studio-toolbar__btn studio-toolbar__btn--agent" onClick={addAgentNode} aria-label="Add Agent node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--agent">
+              <Icon name="agent" kind="agent" className="studio-toolbar__btn-icon" />
+            </span>
             <span className="studio-toolbar__btn-label">Agent</span>
           </button>
         </div>
 
         <div className="studio-toolbar__group">
           <div className="studio-toolbar__heading">Continue a clip</div>
-          <button className="studio-toolbar__btn" onClick={addFrameNode} aria-label="Add Last Frame node">
-            <Icon name="frame" kind="frame" className="studio-toolbar__btn-icon" />
+          <button className="studio-toolbar__btn studio-toolbar__btn--frame" onClick={addFrameNode} aria-label="Add Last Frame node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--frame">
+              <Icon name="frame" kind="frame" className="studio-toolbar__btn-icon" />
+            </span>
             <span className="studio-toolbar__btn-label">Last frame</span>
           </button>
-          <button className="studio-toolbar__btn" onClick={addExtendNode} aria-label="Add Extend node">
-            <Icon name="extend" kind="frame" className="studio-toolbar__btn-icon" />
+          <button className="studio-toolbar__btn studio-toolbar__btn--extend" onClick={addExtendNode} aria-label="Add Extend node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--extend">
+              <Icon name="extend" kind="frame" className="studio-toolbar__btn-icon" />
+            </span>
             <span className="studio-toolbar__btn-label">Extend</span>
           </button>
         </div>
 
-        {/* Run control lives in the run bar at the bottom, not here. Mixing
-            "build the workflow" with "operate the workflow" in one 40px column
-            meant the primary action moved position depending on state — Run
-            became Pause the moment you pressed it, under your cursor. */}
+        {/* Run control */}
         <div className="studio-toolbar__divider" />
         {!isRunning && (
           <>
@@ -747,8 +766,6 @@ function CanvasInner() {
                 {canRun ? 'Run workflow' : 'Add a node to run'}
               </span>
             </button>
-            {/* Recovering from a failure shouldn't mean paying for the clips
-                that already worked. */}
             {failedNodeIds.length > 0 && (
               <button
                 className="studio-toolbar__btn studio-toolbar__btn--retry"
@@ -773,21 +790,19 @@ function CanvasInner() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
-        /* React Flow greys the wire mid-drag when this returns false, so the
-           answer to "what does this connect to" arrives while the question is
-           being asked rather than after the drop. */
         isValidConnection={(c) => canConnect(c as any)}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        deleteKeyCode={['Backspace', 'Delete']}
         fitView
-        /* Cap zoom so a 2-node workflow doesn't fill the screen with giant cards */
         fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{
-          type: 'smoothstep',
+          type: 'deletable',
           animated: true,
-          style: { stroke: '#f97316', strokeWidth: 2 },
+          style: { stroke: '#8b5cf6', strokeWidth: 2.5 },
         }}
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#1c1c21" />

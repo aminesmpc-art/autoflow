@@ -68,6 +68,18 @@
   --accent-8:    rgba(160, 122, 253, 0.08);
   --accent-14:   rgba(160, 122, 253, 0.14);
   --accent-30:   rgba(160, 122, 253, 0.30);
+
+  /* ---- Solid fills that carry a white label ------------------
+     --accent itself cannot: white on it is 3.14:1, as the note above says.
+     These are deep enough that white clears AA — 5.4:1 and 5.7:1 — which is
+     why the primary Run button is this violet and not the brand one. Keep
+     them for filled buttons; --accent stays the colour of text and icons. */
+  --accent-solid:     #9333ea;
+  --accent-solid-dim: #7c3aed;
+  --accent-solid-lit: #a855f7;   /* hover, the light end of the gradient */
+  --bad-solid:      #dc2626;     /* a destructive filled button */
+  --bad-solid-line: #ef4444;
+  --on-solid:       #ffffff;     /* label on any of the above */
   --accent-50:   rgba(160, 122, 253, 0.50);
 
   /* ---- 2. Status ---------------------------------------------
@@ -97,15 +109,23 @@
                               #3b82f6, which was also the input focus colour */
   --n-video:    #f97316;   /* a clip                6.4:1 */
   --n-ask:      #38bdf8;   /* ask a chat model      8.0:1 */
-  --n-agent:    #ec4899;   /* an agent run          5.1:1 */
+  /* NOTE: this sits within a few points of --accent (#a07afd), which the
+     "hue means one thing" rule would rather it did not. It had no consumers
+     at all until the toolbar picked violet for it, so this records what is on
+     screen rather than inventing a third answer. Worth revisiting. */
+  --n-agent:    #a78bfa;   /* an agent run          6.9:1 */
   --n-frame:    #c084fc;   /* continue from a frame 6.5:1 */
+  --n-story:    #fb7185;   /* a written shot list   6.2:1 */
+  --n-extend:   #34d399;   /* continue a clip       8.7:1 */
 
   --n-prompt-10: rgba(34, 197, 94, 0.10);
   --n-image-10:  rgba(96, 165, 250, 0.10);
   --n-video-10:  rgba(249, 115, 22, 0.10);
   --n-ask-10:    rgba(56, 189, 248, 0.10);
-  --n-agent-10:  rgba(236, 72, 153, 0.10);
+  --n-agent-10:  rgba(167, 139, 250, 0.10);
   --n-frame-10:  rgba(192, 132, 252, 0.10);
+  --n-story-10:  rgba(251, 113, 133, 0.10);
+  --n-extend-10: rgba(52, 211, 153, 0.10);
 
   /* Third-party marks. Not ours to restyle, and not part of any ramp. */
   --brand-chatgpt: #10a37f;
@@ -141,6 +161,7 @@
   --r-ctrl:  8px;
   --r-row:  10px;
   --r-card: 12px;
+  --r-panel: 16px;  /* a floating glass panel, larger than any card on it */
   --r-pill: 999px;
 
   /* ---- Spacing -----------------------------------------------
