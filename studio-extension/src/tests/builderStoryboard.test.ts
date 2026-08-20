@@ -18,6 +18,7 @@
  */
 
 import { checkPlan } from '../studio/builder/check';
+import { compilePlan } from '../studio/builder/plan';
 import { buildSpec } from '../studio/builder/spec';
 import type { Plan } from '../studio/builder/plan';
 
@@ -103,5 +104,47 @@ describe('what the spec teaches the builder', () => {
   it('warns that wardrobe drifts inside a single clip', () => {
     /* Measured: her hair went from up to down inside one 10s generation. */
     expect(SPEC).toMatch(/drift within a single ten-second clip/);
+  });
+});
+
+describe('marking the board on a plan', () => {
+  const dataFor = (steps: any[], id: string) => {
+    const { template, problems } = compilePlan({ name: 't', steps } as any);
+    expect(problems).toEqual([]);          // a plan that will not compile proves nothing
+    return ((template?.nodes || []).find((n: any) => n.id === id)?.data || {}) as any;
+  };
+
+  it('carries the flag onto the node the story director will read', () => {
+    /* Without this the feature is unreachable: nothing else in the product can
+       set it, so the board would be asked for one illustration and then
+       refused for mentioning panels. */
+    const data = dataFor([{
+      /* A generate step, not an upload slot: the board is drawn, not supplied. */
+      id: 'board', type: 'generate', media: 'image', platform: 'flow',
+      prompt: 'a storyboard sheet, 8 panels in a 4x2 grid', storyboardSheet: true,
+    }], 'board');
+    expect(data.storyboardSheet).toBe(true);
+  });
+
+  it('leaves an ordinary still unflagged', () => {
+    const data = dataFor([{
+      id: 'still', type: 'generate', media: 'image', platform: 'flow', prompt: 'a serum bottle',
+    }], 'still');
+    expect(data.storyboardSheet).toBeUndefined();
+  });
+
+  it('refuses to mark a video step, whatever the plan says', () => {
+    /* A board is a picture. A clip carrying the flag would be handed the
+       permissive rulebook and be free to describe panels, which is the render
+       the rule exists to stop. */
+    const data = dataFor([{
+      id: 'clip', type: 'generate', media: 'video', platform: 'flow',
+      prompt: 'she lifts the jar', storyboardSheet: true,
+    }], 'clip');
+    expect(data.storyboardSheet).toBeUndefined();
+  });
+
+  it('tells the builder the flag exists', () => {
+    expect(buildSpec('x')).toMatch(/"storyboardSheet": true/);
   });
 });

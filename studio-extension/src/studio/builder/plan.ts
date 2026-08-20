@@ -36,6 +36,11 @@ export interface PlanStep {
   platform?: 'flow' | 'chatgpt' | 'gemini' | 'grok' | 'claude' | 'zai';
   /** Literal prompt text. The compiler turns it into a prompt node. */
   prompt?: string;
+  /* This image step is the storyboard board: one picture holding every shot
+     as a numbered panel. A story director wired to it asks it for a board
+     rather than for a scene, and it is checked against the opposite rules to
+     a clip. Only meaningful on an image step. */
+  storyboardSheet?: boolean;
   /** Step ids feeding this one — a still, a clip, or written text. */
   inputs?: string[];
   aspectRatio?: string;
@@ -332,6 +337,7 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
         label: step.label || (media === 'video' ? 'Generate Video' : media === 'text' ? 'Ask AI' : 'Generate Image'),
         platform,
         mediaType: media,
+        ...(step.storyboardSheet && media !== 'video' ? { storyboardSheet: true } : {}),
         model: media === 'video' ? 'Omni Flash' : 'Nano Banana Pro',
         aspectRatio: step.aspectRatio || (media === 'video' ? '9:16' : '1:1'),
         duration: step.duration || '6s',

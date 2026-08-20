@@ -192,6 +192,9 @@ HOW THEY GO TOGETHER
     Ask for the panel count that matches the number of clips (8 clips -> a 4x2
     board) and keep each caption to a short phrase — long captions render
     badly.
+    Set "storyboardSheet": true on that image step. A story director wired to
+    it then asks it for a board instead of a scene; without the flag it is
+    asked for one illustration and refused for mentioning panels.
 
   A minute, as connected ten-second clips.
       board 1 -> clip 1 (10s) -> frame -> clip 2 (10s, inputs: that frame)
