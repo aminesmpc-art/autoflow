@@ -167,6 +167,64 @@ export const BUILTIN_ASK_PRESETS: AskPreset[] = [
   },
 
   {
+    /* The other half of the storyboard board.
+     *
+     * A Story node wired to an image node ticked "Storyboard board" writes the
+     * board prompt itself. This is for the workflow with no director — an Ask
+     * AI node feeding an image node, which is the commonest shape people
+     * actually build.
+     *
+     * What makes a board work is that every panel shares one canvas: the model
+     * composes them as a single picture, so the character, the palette and the
+     * product hold across all of them, and therefore across every clip made
+     * from the board. Panels asked for as separate images lose exactly that,
+     * which is why the first instruction is ONE image and not a set.
+     */
+    id: 'storyboard_sheet',
+    name: 'Storyboard board',
+    hint: 'A logline and a shot count. Returns one board with every scene as a captioned panel.',
+    brief:
+      'Write ONE image-generation prompt for a storyboard board of: ' +
+      '{{subject}}\n\n' +
+      '# THE BOARD\n' +
+      'ONE image, not a set. Every scene is a numbered panel on a single ' +
+      'canvas, laid out on a stated grid — six panels read as 3x2, eight as ' +
+      '4x2. Say the panel count and the grid in the prompt. Wide beats tall: ' +
+      'the panels are 16:9 and a single column of them is a strip nobody can ' +
+      'read at a glance.\n\n' +
+      '# WHAT EVERY PANEL SHARES\n' +
+      'Describe the cast, the setting and the look ONCE at the top, then let ' +
+      'each panel carry only its own action. That is what the single canvas ' +
+      'buys — the same face, the same clothes and the same light in every ' +
+      'frame — and it is the whole reason to draw a board rather than six ' +
+      'separate pictures.\n\n' +
+      '# EACH PANEL\n' +
+      '"Panel 1: ...", "Panel 2: ..." in story order, each naming its shot ' +
+      'size and what happens in it. Give each one a SHORT caption beneath the ' +
+      'frame — the line that character speaks in that shot, in quotation ' +
+      'marks, a few words at most. Long captions render as unreadable text.\n\n' +
+      'Finish with the board itself: production-board background, clear ' +
+      'borders between panels, caption text beneath each frame.\n\n' +
+      'Under 220 words.' + ONLY_THE_PROMPT,
+    withImage:
+      'Write ONE image-generation prompt for a storyboard board that uses the ' +
+      'attached reference. Notes on the piece: {{subject}}\n\n' +
+      '# READ THE REFERENCE FIRST\n' +
+      'Describe what is actually in it — the product or person, its colours, ' +
+      'markings, materials and proportions — and carry that description into ' +
+      'the shared block so every panel draws the same thing. Do not restyle, ' +
+      'improve or idealise it.\n\n' +
+      '# THE BOARD\n' +
+      'ONE image. Every scene a numbered panel on a single canvas, on a stated ' +
+      'grid. Cast, setting and look described once at the top; each panel then ' +
+      'carries only its own action and shot size.\n\n' +
+      '"Panel 1: ...", "Panel 2: ..." in story order, each with a SHORT quoted ' +
+      'caption beneath it. Production-board background, clear borders between ' +
+      'panels.\n\n' +
+      'Under 220 words.' + ONLY_THE_PROMPT,
+  },
+
+  {
     id: 'continue_shot',
     name: 'Continue this shot',
     hint: 'Wire a Last Frame in. Writes the clip that follows it.',
