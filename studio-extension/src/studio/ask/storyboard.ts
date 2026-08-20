@@ -903,6 +903,28 @@ export function checkShots(
     });
   }
 
+  /* No shared plan for a sequence that would benefit from one.
+   *
+   * Advisory, deliberately. A workflow that gives each clip its own anchor
+   * still is a legitimate answer and sometimes the better one - an unboxing on
+   * a bench and a sprint on court do not need to look like one continuous
+   * scene. What is not legitimate is nobody knowing the option exists, which
+   * is what happened: the flag was reachable from a pasted JSON file and
+   * nowhere else, so every workflow built in the product went without it.
+   *
+   * Three, because two shots hold together on the cast description alone. */
+  const clipCount = targets.filter((t) => t.media === 'video').length;
+  if (clipCount >= 3 && !targets.some((t) => t.isSheet)) {
+    problems.push({
+      shot: 0,
+      code: 'noBoard',
+      detail: `These ${clipCount} clips have no shared plan. One image node ticked `
+        + '"Storyboard board" would hold every shot as a numbered panel on one canvas, '
+        + 'which is what keeps the character and the light the same across all of them. '
+        + 'Skip it when the shots are meant to look unrelated.',
+    });
+  }
+
   shots.forEach((shot, i) => {
     const target = targets[i];
     /* By position, not by shot.n. Everything downstream reads p.shot as an
@@ -1101,10 +1123,29 @@ export function checkShots(
        compared a clip's wardrobe against a reference picture's, which is
        not a contradiction and not worth reporting as one. */
     let previous: Shot | undefined;
-    for (let k = i - 1; k >= 0; k--) {
-      if (targets[k]?.role === 'reference' || targets[k]?.media === 'text') continue;
-      previous = shots[k];
-      break;
+    /* The shot this one CONTINUES, when the wiring says which that is. Read
+       off a real run: the targets came back in canvas order as
+
+         still, still, FILM 2A, FILM 1, still, FILM 2B
+
+       so the shot positionally before FILM 2B was the unboxing, while the clip
+       it actually picks up from is 2A, two places earlier. Canvas order is not
+       story order, and comparing a sprint against an unboxing would report a
+       contradiction that is only an artefact of where the nodes sit. */
+    if (target?.continues) {
+      const k = targets.findIndex((x) => (x.label || '') === target.continues);
+      if (k >= 0 && k !== i) previous = shots[k];
+    }
+    /* Otherwise the previous real shot. Not simply shots[i - 1]: a workflow
+       giving each clip its own anchor still has those stills interleaved, and
+       a clip's wardrobe measured against a reference picture's is not a
+       contradiction. */
+    if (!previous) {
+      for (let k = i - 1; k >= 0; k--) {
+        if (targets[k]?.role === 'reference' || targets[k]?.media === 'text') continue;
+        previous = shots[k];
+        break;
+      }
     }
 
     if (target?.role === 'continuation') {

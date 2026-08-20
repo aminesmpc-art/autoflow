@@ -208,3 +208,42 @@ describe('"the shot before it" means the previous shot', () => {
     expect(codes).toContain('3:stateDrift');
   });
 });
+
+describe('canvas order is not story order', () => {
+  /* Read off a real run of a real workflow. The director's targets came back
+     as: still, still, FILM 2A, FILM 1, still, FILM 2B — so the shot
+     positionally before FILM 2B was the UNBOXING, while the clip it actually
+     picks up from is 2A, two places earlier. */
+  const targets: ShotTarget[] = [
+    clip({ id: 'a', label: 'FILM 2A' }),
+    clip({ id: 'u', label: 'FILM 1' }),
+    { ...clip({ id: 'b', label: 'FILM 2B' }), role: 'continuation', continues: 'FILM 2A' },
+  ];
+
+  const run = (twoA: string, one: string, twoB: string) => codesFor(
+    [{ n: 1, title: 'FILM 2A', prompt: twoA },
+      { n: 2, title: 'FILM 1', prompt: one },
+      { n: 3, title: 'FILM 2B', prompt: twoB }],
+    targets,
+  );
+
+  it('compares a continuation to the shot it continues, not the one beside it', () => {
+    const codes = run(
+      'She laces the shoes on the baseline, her hair twisted up into a loose bun as she pulls tight.',
+      'She lifts the lid off the shoebox on the bench, her hair down loose across her shoulders.',
+      'She continues into a full sprint across the court, her hair still twisted up into the same bun.',
+    );
+    /* 2B agrees with 2A. Measured against FILM 1 next door it would look like
+       a contradiction, and that is purely where the nodes sit. */
+    expect(codes).not.toContain('3:stateDrift');
+  });
+
+  it('still catches a real contradiction with the shot it continues', () => {
+    const codes = run(
+      'She laces the shoes on the baseline, her hair twisted up into a loose bun as she pulls tight.',
+      'She lifts the lid off the shoebox on the bench, her hair down loose across her shoulders.',
+      'She continues into a full sprint across the court, her hair down loose across her shoulders now.',
+    );
+    expect(codes).toContain('3:stateDrift');
+  });
+});

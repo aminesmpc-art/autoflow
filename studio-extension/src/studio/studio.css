@@ -2918,6 +2918,27 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   cursor: pointer;
 }
 .sn-story__rule:hover { color: var(--text); }
+/* A plain checkbox row on a generate node, modelled on the story node's
+   timed-beats row so the two read as the same control in two places. */
+.sn-check {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  margin-top: var(--s-1);
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.sn-check:hover { color: var(--text); }
+.sn-check input {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .sn-story__check {
   flex: none;
   margin-top: 1px;

@@ -140,7 +140,8 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   const isChat = platform !== 'flow';
   const isChatGPT = isChat;
   const chatName = CHAT_NAMES[platform] || 'ChatGPT';
-  const mediaType = nodeData.mediaType || 'image';
+  const isClaude = platform === 'claude';
+  const mediaType = isClaude ? 'text' : (nodeData.mediaType || 'image');
   /* Grok Imagine generates video too, so "is this a clip" stopped being the
      same question as "is this Flow". Everything Flow-specific below — the
      model list, Frames mode — still checks the platform rather than this. */
@@ -150,7 +151,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
      them. Video only — an image has no "between". */
   const isFrames = isVideo && platform === 'flow' && nodeData.creationType === 'frames';
   /* Text output only makes sense on a chat platform — Flow has no chat. */
-  const isText = isChat && mediaType === 'text';
+  const isText = isChat && (mediaType === 'text' || isClaude);
   const models = isVideo ? VIDEO_MODELS : IMAGE_MODELS;
   /* Flow's, and only Flow's. Imagine's live in GrokSettings, which is the
      point of the split — these lists no longer have to know another platform
@@ -346,26 +347,36 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
             <select
               className="sn-bar__sel nodrag"
               value={platform}
-              onChange={(e) => set('platform', e.target.value)}
+              onChange={(e) => {
+                const newPlatform = e.target.value;
+                if (newPlatform === 'claude') {
+                  updateNodeData(id, { platform: 'claude', mediaType: 'text' });
+                } else if (newPlatform === 'flow') {
+                  updateNodeData(id, { platform: 'flow', mediaType: mediaType === 'text' ? 'video' : mediaType });
+                } else {
+                  set('platform', newPlatform);
+                }
+              }}
             >
               <option value="flow">Flow</option>
               <option value="chatgpt">ChatGPT</option>
               <option value="gemini">Gemini</option>
               <option value="grok">Grok</option>
+              <option value="claude">Claude</option>
+              <option value="zai">Z.AI</option>
             </select>
           </label>
 
-          {/* ChatGPT can either draw or write. Asking it to write turns this
-              node into a prompt writer whose answer feeds the next node. */}
-          {isChatGPT && (
+          {/* Chat platforms can draw or write (except Claude which is text-only) */}
+          {isChat && (
             <label className="sn-field" title={`Ask ${chatName} for an image, or for a written prompt`}>
               <span className="sn-field__label">Output</span>
               <select
                 className="sn-bar__sel nodrag"
-                value={mediaType === 'text' ? 'text' : isGrok && mediaType === 'video' ? 'video' : 'image'}
+                value={isClaude ? 'text' : (mediaType === 'text' ? 'text' : isGrok && mediaType === 'video' ? 'video' : 'image')}
                 onChange={(e) => set('mediaType', e.target.value)}
               >
-                <option value="image">Image</option>
+                {!isClaude && <option value="image">Image</option>}
                 {/* Imagine generates clips; the other chats do not. */}
                 {isGrok && <option value="video">Video</option>}
                 <option value="text">Text</option>
@@ -532,6 +543,30 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                   ))}
                 </div>
               </div>
+
+              {/* Storyboard board.
+                  Stills only, because a board is a picture. It was reachable
+                  from a pasted JSON file and from nowhere else, so the one
+                  person who found it was the one who wrote the file - and
+                  everyone else built a separate anchor still per shot without
+                  ever learning the option existed.
+
+                  What it changes is which rulebook the shot is checked
+                  against: a board is asked to name its panels and its grid,
+                  and a clip is refused for doing the same. */}
+              {!isVideo && !isText && (
+                <label
+                  className="sn-check nodrag"
+                  title="Ask the story director for one picture holding every shot as a numbered panel, instead of a single scene"
+                >
+                  <input
+                    type="checkbox"
+                    checked={nodeData.storyboardSheet === true}
+                    onChange={(e) => set('storyboardSheet', e.target.checked)}
+                  />
+                  <span>Storyboard board</span>
+                </label>
+              )}
             </>
           )}
           {/* Imagine's controls live in their own component: they share no
