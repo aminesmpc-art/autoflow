@@ -409,6 +409,40 @@ export function spokenLines(prompt: string): number {
   return Array.from(prompt.matchAll(ATTRIBUTED)).length;
 }
 
+/**
+ * The grid a given number of panels should be laid out on.
+ *
+ * Taken from the count rather than fixed, because a board whose panel count
+ * disagrees with the number of clips it is planning is a board nobody can
+ * shoot from. A real 8-panel board reads 4x2; six reads 3x2.
+ *
+ * Wide-and-short beats tall-and-narrow: the panels are 16:9 and a column of
+ * eight of them is a strip nobody can read at a glance. Odd counts leave the
+ * last cell empty, which is what paper storyboards do too.
+ */
+export function gridFor(panels: number): string {
+  const n = Math.max(2, Math.floor(panels) || 2);
+  const table: Record<number, [number, number]> = {
+    2: [2, 1], 3: [3, 1], 4: [2, 2], 5: [3, 2], 6: [3, 2],
+    7: [4, 2], 8: [4, 2], 9: [3, 3], 10: [5, 2], 11: [4, 3], 12: [4, 3],
+  };
+  const [cols, rows] = table[n] || [Math.ceil(n / 2), 2];
+  return `${cols}x${rows}`;
+}
+
+/**
+ * How many panels a board should carry: one per shot it is planning for.
+ *
+ * The board itself is not a shot, and neither is a reference still or a
+ * downstream writer — counting those puts panels on the board that no clip
+ * will ever be made from.
+ */
+export function panelsFor(targets: ShotTarget[]): number {
+  return targets.filter(
+    (t) => !t.isSheet && t.media !== 'text' && t.role !== 'reference',
+  ).length;
+}
+
 export function shotContract(
   targets: ShotTarget[], extraFields = '', wantsSpeaker = false,
   /** How many reference stills are attached to this message. */
@@ -427,6 +461,36 @@ export function shotContract(
     const head = `  ${i + 1}. ${t.label || `Shot ${i + 1}`} — ${kind}${spec ? ` (${spec})` : ''}`;
 
     const notes: string[] = [];
+
+    /* A board is not a shot, so none of the shot guidance below applies to it.
+       It is the plan for every other shot, drawn as one picture: all the panels
+       share a canvas, which is why the character, the palette and the product
+       hold across them - and therefore across the clips made from them.
+
+       Everything it is asked for here is what `sheetShape` requires and what
+       the `storyboard` rule forbids on a clip. Those two rules disagreeing on
+       purpose is the whole reason a board can be asked for at all. */
+    if (t.isSheet) {
+      const panels = panelsFor(targets);
+      notes.push(
+        `     A STORYBOARD SHEET: one image holding all ${panels} shots as numbered`
+        + ` panels in a ${gridFor(panels)} grid. Not a scene - the plan for the scenes.`,
+      );
+      notes.push(
+        `     Write it as "Panel 1: ...", "Panel 2: ..." through to Panel ${panels},`
+        + ' one per shot in the same order, each naming its shot size and its action.',
+      );
+      notes.push(
+        '     Say the grid in the prompt, and give each panel a SHORT caption beneath'
+        + ' it - the line that character speaks in that shot, in quotation marks, a'
+        + ' few words at most. Long captions render as unreadable text.',
+      );
+      notes.push(
+        '     Describe the cast, the world and the look once at the top so every'
+        + ' panel is drawn the same way, then let the panels carry only the action.',
+      );
+      return [head, ...notes];
+    }
 
     /* The job first, because it changes what the prompt should even be. A
        reference still described as a story moment is a reference nobody can
