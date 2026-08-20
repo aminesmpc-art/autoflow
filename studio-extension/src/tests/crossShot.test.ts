@@ -170,3 +170,41 @@ describe('the vocabulary matches how continuations are really written', () => {
     expect(two(prompt)).not.toContain('2:contBreak');
   });
 });
+
+describe('"the shot before it" means the previous shot', () => {
+  it('looks past a reference still standing between two clips', () => {
+    /* Targets arrive in CANVAS order, and a workflow that gives each clip its
+       own anchor still has those stills interleaved between the clips. Read
+       off a real one: the director's targets came back as
+
+         still-A, still-B, clip test_a, clip unbox, still-C, clip test_b
+
+       so shots[i - 1] for a clip was a reference picture. Comparing a clip's
+       wardrobe against a reference picture's is not a contradiction, and
+       reporting it as one is how an advisory becomes noise. */
+    const ref: ShotTarget = clip({ id: 'r', label: 'Anchor', media: 'image', role: 'reference' });
+    const codes = codesFor(
+      [
+        { n: 1, title: 'A', prompt: FIRST },
+        { n: 2, title: 'Anchor', prompt: 'A clean product still of the jar on a plain background, evenly lit, hair down.' },
+        { n: 3, title: 'B', prompt: 'She continues lowering the jar, her hair still twisted up into the same loose bun.' },
+      ],
+      [clip({ id: 'a', label: 'A' }), ref, cont('B')],
+    );
+    // Shot 3 agrees with shot 1, which is the shot before it that matters.
+    expect(codes).not.toContain('3:stateDrift');
+  });
+
+  it('still catches drift across an intervening still', () => {
+    const ref: ShotTarget = clip({ id: 'r', label: 'Anchor', media: 'image', role: 'reference' });
+    const codes = codesFor(
+      [
+        { n: 1, title: 'A', prompt: FIRST },
+        { n: 2, title: 'Anchor', prompt: 'A clean product still of the jar on a plain background, evenly lit.' },
+        { n: 3, title: 'B', prompt: 'She continues lowering the jar, her hair down loose across her shoulders now.' },
+      ],
+      [clip({ id: 'a', label: 'A' }), ref, cont('B')],
+    );
+    expect(codes).toContain('3:stateDrift');
+  });
+});

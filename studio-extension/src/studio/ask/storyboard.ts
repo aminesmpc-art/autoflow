@@ -1095,7 +1095,17 @@ export function checkShots(
      * Measured, that last one: in a single ten-second generation driven by
      * a storyboard, the character wore her hair up for the first half and
      * down for the second, with nothing asking for it. */
-    const previous = i > 0 ? shots[i - 1] : undefined;
+    /* The previous SHOT, not simply shots[i - 1]. Targets arrive in canvas
+       order, and a workflow that gives each clip its own anchor still has
+       those stills interleaved between the clips - so the naive version
+       compared a clip's wardrobe against a reference picture's, which is
+       not a contradiction and not worth reporting as one. */
+    let previous: Shot | undefined;
+    for (let k = i - 1; k >= 0; k--) {
+      if (targets[k]?.role === 'reference' || targets[k]?.media === 'text') continue;
+      previous = shots[k];
+      break;
+    }
 
     if (target?.role === 'continuation') {
       /* Blocking. Not a matter of phrasing: this node's first frame comes
@@ -1449,7 +1459,11 @@ export function orderShotTargets(
       mode,
       hasStartFrame: handles.has('frame_start'),
       hasEndFrame: handles.has('frame_end'),
-      references: incoming.filter((x) => (x.targetHandle || '') === 'image').length,
+      /* image_ref, which is what the handle is called. This counted 'image'
+         - the OUTPUT handle of an upload node - so it was always 0, and the
+         line in the contract that says how many pictures are attached has
+         never once been printed. */
+      references: incoming.filter((x) => (x.targetHandle || '') === 'image_ref').length,
       isSheet: d.mediaType !== 'video' && d.storyboardSheet === true,
       x: node.position?.x ?? 0,
       y: node.position?.y ?? 0,

@@ -166,7 +166,12 @@ describe('the contract describes the node, not just its kind', () => {
     { source: 'ask', target: 'plain', targetHandle: 'text' },
     { source: 'startImg', target: 'clip', targetHandle: 'frame_start' },
     { source: 'endImg', target: 'clip', targetHandle: 'frame_end' },
-    { source: 'ref', target: 'plain', targetHandle: 'image' },
+    /* image_ref, which is what a generate node's picture input is actually
+       called (NODE_PORTS). This fixture said 'image' - the OUTPUT handle of
+       an upload node - and so did the code counting it, so the pair agreed
+       with each other and disagreed with every real workflow: the count was
+       always 0 in production and this test never noticed. */
+    { source: 'ref', target: 'plain', targetHandle: 'image_ref' },
   ];
 
   it('reads the settings off the node', () => {
