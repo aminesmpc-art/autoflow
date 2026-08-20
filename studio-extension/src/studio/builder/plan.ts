@@ -41,6 +41,15 @@ export interface PlanStep {
      rather than for a scene, and it is checked against the opposite rules to
      a clip. Only meaningful on an image step. */
   storyboardSheet?: boolean;
+  /* An Ask AI preset id. The presets carry the craft - the angles, the
+     lighting, the trap to avoid - so a step that names one gets a written
+     brief instead of the bare subject. There was no way to name one from a
+     plan at all, so every preset in the product was unreachable from a built
+     workflow. Only meaningful on a generate step with media "text". */
+  preset?: string;
+  /* Story director film language, decided once for the whole piece. */
+  colorTemp?: string;
+  lighting?: string;
   /** Step ids feeding this one — a still, a clip, or written text. */
   inputs?: string[];
   aspectRatio?: string;
@@ -275,6 +284,8 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
           cameraProgression: step.cameraProgression || 'dynamic',
           audioMode: step.audioMode || 'cinematic',
           visualPreset: step.visualPreset || 'liveAction',
+          colorTemp: step.colorTemp || 'none',
+          lighting: step.lighting || 'none',
           /* Read because the spec documents them. A field the plan can name
              and the node never receives is a setting the builder appears to
              control and does not. */
@@ -338,6 +349,7 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
         platform,
         mediaType: media,
         ...(step.storyboardSheet && media !== 'video' ? { storyboardSheet: true } : {}),
+        ...(step.preset && media === 'text' ? { preset: step.preset } : {}),
         model: media === 'video' ? 'Omni Flash' : 'Nano Banana Pro',
         aspectRatio: step.aspectRatio || (media === 'video' ? '9:16' : '1:1'),
         duration: step.duration || '6s',

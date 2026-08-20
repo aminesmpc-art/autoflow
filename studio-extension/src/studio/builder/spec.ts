@@ -76,6 +76,21 @@ export const NODE_MANUAL = `THE NODES, AND WHAT EACH IS FOR
                              "1:1" (square), "2:3", "3:2", "4:3", "3:4"
               - duration: "4s" | "6s" | "8s" | "10s" (video only)
               - startFrame / endFrame: node IDs of stills for match cuts (Flow only)
+              - storyboardSheet: true (image only) — see "Plan the whole piece as one
+                                 picture" below
+              - preset: (media "text" only) a written brief so the step only needs the
+                        subject. A bare subject gets a flat result; the preset brings the
+                        angles, the lighting and the trap to avoid. One of:
+                          "storyboard_sheet"  every scene as a captioned panel on ONE canvas
+                          "character_sheet"   three-view reference of a person
+                          "car_sheet"         three-view reference of a vehicle
+                          "product_ugc"       a product shot that reads as a real phone photo
+                          "scene_beats"       a logline into numbered shots
+                          "continue_shot"     the clip that follows a wired-in Last Frame
+                          "match_style"       a new subject in an existing picture's style
+                          "nanobanana2_scene" 8-part scene-still formula
+                          "flow_omni_video"   camera, action, quoted dialogue, layered sound
+                        Omit it, or use "none", to send your text unchanged.
             When:   This forms 80%+ of any workflow. Every shot or image is a generate step.
 
   frame     LAST FRAME CONTINUITY EXTRACTOR
@@ -121,6 +136,15 @@ export const NODE_MANUAL = `THE NODES, AND WHAT EACH IS FOR
               - cameraProgression: "dynamic" | "establishingToClose" | "actionTracking" | "propped" | "fixed"
               - audioMode: "cinematic" | "ambient" | "dialogue" | "none"
               - visualPreset: "liveAction" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime" | "none"
+              - colorTemp: "daylight" (5600K) | "tungsten" (3200K) | "amber" (1800K) |
+                           "moon" (6800K) | "none". ONE white balance for the whole piece.
+                           Shots that each pick their own look like footage from several
+                           days cut together.
+              - lighting: "hero" | "intimate" | "tension" | "none". ONE lighting setup,
+                          repeated. Sixteen descriptions of lighting do not hold; one
+                          named setup does. Do NOT pair "hero" with visualPreset
+                          "smartphonePOV" — that preset rules out studio lighting, so the
+                          two instructions contradict each other and the model picks one.
               - rules: ["cumulative" | "fixedCamera" | "samePerson" | "inHand"]
               - beats: number of story beats across the whole piece, or 0 to derive it
               - timedBeats: true to cut each clip into "[00:00-00:02] ..." segments
