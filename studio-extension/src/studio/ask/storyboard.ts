@@ -331,6 +331,58 @@ const PRODUCED = new RegExp(
  * "Nothing" is missing on purpose — "nothing moves", "nothing in her hands"
  * are ordinary shot description and say nothing about the room.
  */
+/* A shot that says it carries on from the one before it.
+ *
+ * The contract already asks for this in so many words - "Picks up exactly
+ * where X ended. Do not restart" - so a continuation that says none of it is
+ * worth mentioning. Only worth MENTIONING, though: a shot can continue
+ * perfectly well by describing continuing action and never reaching for one
+ * of these words, which is why this is advisory. */
+const CONTINUES = new RegExp(
+  '\\b(?:'
+  + 'continu\\w+|picks? up (?:where|from)|carries on|resum\\w+|'
+  + 'without (?:a )?cut|uninterrupted|unbroken|mid-(?:motion|action|gesture|step)|'
+  + 'from the (?:same|previous) (?:moment|position|frame|beat)|'
+  /* How a real continuation is actually written, which the first version of
+     this list missed. From a shipped template's own fixture: "inside the SAME
+     lounge with the floor ALREADY glowing... mounts the REMAINING wall
+     pieces". That is a textbook continuation and it was being flagged. */
+  + 'the same |already|still |remaining|the rest of|by now|as before'
+  + ')\\b',
+  'i',
+);
+
+/* A shot that says it is STARTING, on a node whose first frame comes from
+ * another shot. Unlike the above this is not a matter of phrasing: a
+ * continuation that establishes the scene fresh, or describes the room as it
+ * was before the work, contradicts the frame it is handed. The generator has
+ * the previous frame and a prompt arguing with it, and the clip restarts. */
+const RESTARTS = new RegExp(
+  '\\b(?:'
+  + 'opens? on|the (?:scene|shot|clip) opens|establishing shot|'
+  + 'for the first time|we (?:first )?see|introduc\\w+|'
+  + 'begins? (?:with|on|in)|at the start of'
+  + ')\\b',
+  'i',
+);
+
+/* State that must not change between adjacent shots unless the story says
+ * so. Measured, not imagined: in a single ten-second generation driven by a
+ * storyboard, the character wore her hair up for the first half and down for
+ * the second. Nothing asked for that.
+ *
+ * One category, deliberately. A vocabulary broad enough to catch everything
+ * catches coincidences too, and an advisory nobody trusts is noise. */
+const STATE_TERMS: Array<{ what: string; terms: Array<[string, RegExp]> }> = [
+  {
+    what: 'hair',
+    terms: [
+      ['up', /\b(?:hair (?:is )?(?:up|pinned|tied)|bun|ponytail|braid(?:ed)?|updo)\b/i],
+      ['down', /\b(?:hair (?:is )?(?:down|loose|falling)|loose hair|hair spilling)\b/i],
+    ],
+  },
+];
+
 const EMPTY_START = new RegExp(
   '\\b(?:'
   + 'empty|emptied|bare|barren|unfurnished|undecorated|unpainted|unfinished|'
@@ -968,6 +1020,62 @@ export function checkShots(
         });
       }
     }
+
+    /* ── Shots measured against the shot before them ──
+     *
+     * Every rule above judges a prompt on its own. Nothing compared shot 3
+     * to shot 2, so the failure that actually ruins a sequence went
+     * unnoticed: a continuation that restarts, a room re-emptied after it
+     * was furnished, hair that was up in one shot and down in the next.
+     *
+     * Measured, that last one: in a single ten-second generation driven by
+     * a storyboard, the character wore her hair up for the first half and
+     * down for the second, with nothing asking for it. */
+    const previous = i > 0 ? shots[i - 1] : undefined;
+
+    if (target?.role === 'continuation') {
+      /* Blocking. Not a matter of phrasing: this node's first frame comes
+         from another shot, so a prompt that establishes the scene fresh, or
+         describes the room as it was before the work, is arguing with the
+         frame it has been handed. The clip restarts and the render is
+         wasted. */
+      if (RESTARTS.test(p) || EMPTY_START.test(p)) {
+        problems.push({
+          shot: n, code: 'contRestart',
+          detail: 'opens as though the scene were starting, but this shot continues '
+            + `from "${target.continues || 'the shot before it'}" and is handed its last `
+            + 'frame. Describe what is already there and carry the action on from it.',
+        });
+      } else if (!CONTINUES.test(p)) {
+        /* Advisory. A shot can continue perfectly well by describing
+           continuing action and never reaching for the word, so this is
+           worth saying and not worth stopping a run over. */
+        problems.push({
+          shot: n, code: 'contBreak',
+          detail: 'never says it carries on from the previous shot. It reads as a fresh '
+            + 'take, which is how a continuation ends up re-staging what already happened.',
+        });
+      }
+    }
+
+    /* Advisory, and quiet by design: it only speaks when both shots state a
+       value and the values disagree. A shot that says nothing about hair is
+       not a contradiction, it is a shot that says nothing about hair. */
+    if (previous?.prompt && target?.media !== 'text') {
+      for (const group of STATE_TERMS) {
+        const valueIn = (text: string) => group.terms.find(([, re]) => re.test(text))?.[0];
+        const before = valueIn(previous.prompt);
+        const now = valueIn(p);
+        if (before && now && before !== now) {
+          problems.push({
+            shot: n, code: 'stateDrift',
+            detail: `has the ${group.what} ${now} where the shot before it had the `
+              + `${group.what} ${before}. Nothing in the story changes it, so the two `
+              + 'clips will not look like the same person moments apart.',
+          });
+        }
+      }
+    }
   });
 
   return problems;
@@ -1072,7 +1180,7 @@ function escapeRe(s: string): string {
 export const BLOCKING: ReadonlySet<string> = new Set([
   'count', 'empty', 'thin',
   'fence', 'numbered', 'meta', 'storyboard', 'markdown', 'placeholder',
-  'stageLabels', 'audioLabels', 'fileName', 'editingJargon', 'sheetShape',
+  'stageLabels', 'audioLabels', 'fileName', 'editingJargon', 'sheetShape', 'contRestart',
 ]);
 
 /** The problems worth refusing to spend a generation on. */
