@@ -67,6 +67,12 @@ export interface ShotTarget {
   /** How many reference images are wired in. */
   references?: number;
 
+  /* This node is the storyboard board rather than a shot in the story: one
+     image holding every scene as a labelled panel. It is checked against the
+     opposite rules to a clip, so it has to be stated on the target rather
+     than guessed from what came back. */
+  isSheet?: boolean;
+
   /* What this node is FOR, read off the wiring rather than its media type.
      An image node feeding a video node is not a shot in the story — it is the
      character being built so the clip has something to look like. Told only
@@ -107,7 +113,18 @@ const DEFAULT_MAX = 8000;
    storyboard words are the specific failure this repo already documents in
    the room-transformation brief: hand a generator a prompt that mentions
    panels and captions and it animates the poster instead of the room. */
-const BANNED: Array<{ code: string; re: RegExp; detail: string }> = [
+/** What a target is FOR, which decides which rules apply to it.
+ *
+ *  clip   Anything a generator will animate or render as a scene.
+ *  sheet  A storyboard board: one image holding every scene as a labelled
+ *         panel, with the spoken line written under each.
+ *
+ *  The two want opposite things from the same words. "Panel 1", "grid
+ *  layout" and "text overlay" are how you ask for a board and how you ruin
+ *  a clip. */
+export type ShotScope = 'clip' | 'sheet';
+
+const BANNED: Array<{ code: string; re: RegExp; detail: string; scope?: ShotScope[] }> = [
   { code: 'fence', re: /```/, detail: 'contains a code fence (```). Send the prompt text only.' },
   {
     code: 'numbered',
@@ -120,9 +137,28 @@ const BANNED: Array<{ code: string; re: RegExp; detail: string }> = [
     detail: 'contains conversational filler addressed to the reader. A prompt is not a reply.',
   },
   {
+    /* A CLIP that mentions panels animates the poster instead of the room.
+       A SHEET is a storyboard, so the same words are its specification.
+       Unscoped, this banned the board outright: the storyboard prompt matches
+       here on "grid layout", "Panel 1", "Panel 2", and a blocking problem
+       stops the workflow before a generation is spent. */
+    scope: ['clip'],
     code: 'storyboard',
     re: /\b(comic\s*panel|storyboard\s*panel|panel\s*\d+|grid\s*layout|numbered\s*sequence|text\s*overlay)\b/i,
     detail: 'mentions the storyboard itself (panels, captions, overlays). The generator will animate the poster instead of the scene. Describe the real space.',
+  },
+  {
+    /* The inverted rule, and why scope is not merely an exemption list. For
+       a board, failing to lay out its panels IS the defect: an unstructured
+       prompt returns one illustration instead of the sequence every clip
+       below it is meant to be shot from. */
+    code: 'sheetShape',
+    scope: ['sheet'],
+    re: /^(?![\s\S]*\bpanel\s*\d+\b)|^(?![\s\S]*(?:\b\d+\s*x\s*\d+\b|\bgrid\b))/i,
+    detail: 'is a storyboard sheet but does not lay one out. Number each panel '
+      + '("Panel 1: ...", "Panel 2: ...") and say the grid ("a 4x2 grid"), so the '
+      + 'board comes back as the sequence the clips are shot from rather than as '
+      + 'a single illustration.',
   },
   {
     code: 'markdown',
@@ -753,7 +789,13 @@ export function checkShots(
 
   shots.forEach((shot, i) => {
     const target = targets[i];
-    const n = shot.n || i + 1;
+    /* By position, not by shot.n. Everything downstream reads p.shot as an
+       index into targets - repairMessage prints targets[n - 1].label, and the
+       ledger banks by it. After alignShots a shot sitting at position 2 can
+       still call itself 1, and a partial repair reply always numbers itself
+       from 1 whatever it holds, so trusting the shot's own number reported
+       every one of its problems against the wrong target. */
+    const n = i + 1;
     const p = shot.prompt || '';
 
     if (!p.trim()) {
@@ -788,7 +830,13 @@ export function checkShots(
       return;
     }
 
+    /* A board and a clip are checked against different rulebooks. Read off the
+       target, never sniffed from the prompt: a clip that happens to mention a
+       panel would otherwise talk its way into the permissive rulebook, and
+       that mistake costs a render. */
+    const scope: ShotScope = target?.isSheet ? 'sheet' : 'clip';
     for (const rule of BANNED) {
+      if (rule.scope && !rule.scope.includes(scope)) continue;
       if (rule.re.test(p)) problems.push({ shot: n, code: rule.code, detail: `The prompt ${rule.detail}` });
     }
 
@@ -1024,7 +1072,7 @@ function escapeRe(s: string): string {
 export const BLOCKING: ReadonlySet<string> = new Set([
   'count', 'empty', 'thin',
   'fence', 'numbered', 'meta', 'storyboard', 'markdown', 'placeholder',
-  'stageLabels', 'audioLabels', 'fileName', 'editingJargon',
+  'stageLabels', 'audioLabels', 'fileName', 'editingJargon', 'sheetShape',
 ]);
 
 /** The problems worth refusing to spend a generation on. */
@@ -1230,6 +1278,7 @@ export function orderShotTargets(
       hasStartFrame: handles.has('frame_start'),
       hasEndFrame: handles.has('frame_end'),
       references: incoming.filter((x) => (x.targetHandle || '') === 'image').length,
+      isSheet: d.mediaType !== 'video' && d.storyboardSheet === true,
       x: node.position?.x ?? 0,
       y: node.position?.y ?? 0,
     });
