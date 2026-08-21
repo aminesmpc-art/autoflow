@@ -59,7 +59,7 @@ const nodeTypes = {
   frame: guarded(FrameNode, 'Last Frame'),
   extend: guarded(ExtendNode, 'Extend'),
   agent: guarded(AgentNode, 'Agent'),
-  story: guarded(StoryNode, 'Story'),
+  story: guarded(StoryNode, 'Director'),
 };
 
 const edgeTypes = {
@@ -552,7 +552,10 @@ function CanvasInner() {
       position: { x: 300, y: 250 + nodes.length * 50 },
       data: {
         type: 'story',
-        label: `Story ${nodes.filter((x) => x.type === 'story').length + 1}`,
+        /* The stored type stays 'story' — every saved workflow, all 26
+           templates and the builder's plan format hold that string, and this
+           rename is the label only. */
+        label: `Director ${nodes.filter((x) => x.type === 'story').length + 1}`,
         platform: 'gemini',
         mediaType: 'text',
         preset: '',
@@ -721,11 +724,11 @@ function CanvasInner() {
             </span>
             <span className="studio-toolbar__btn-label">Ask AI</span>
           </button>
-          <button className="studio-toolbar__btn studio-toolbar__btn--story" onClick={addStoryNode} aria-label="Add Story node">
+          <button className="studio-toolbar__btn studio-toolbar__btn--story" onClick={addStoryNode} aria-label="Add Director node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--story">
               <Icon name="story" kind="video" className="studio-toolbar__btn-icon" />
             </span>
-            <span className="studio-toolbar__btn-label">Story</span>
+            <span className="studio-toolbar__btn-label">Director</span>
           </button>
           <button className="studio-toolbar__btn studio-toolbar__btn--agent" onClick={addAgentNode} aria-label="Add Agent node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--agent">

@@ -615,7 +615,7 @@ export class WorkflowRunner {
       const targets = this.shotTargetsFor(nodeId, edges);
       if (!targets.length) {
         throw new Error(
-          'This Story node is not wired to anything — connect its output to the '
+          'This Director is not wired to anything — connect its output to the '
           + 'nodes whose prompts it should write'
         );
       }

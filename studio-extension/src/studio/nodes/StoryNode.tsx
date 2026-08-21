@@ -73,9 +73,9 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
           <Icon name="agent" kind="agent" className="sn-label__icon" />
           <input
             className="sn-label__name nodrag"
-            value={d.label || 'Story Director'}
+            value={d.label || 'Director'}
             onChange={(e) => updateNodeData(id, { label: e.target.value })}
-            placeholder="Story Director"
+            placeholder="Director"
           />
           <NodeInfoBadge type="story" />
           {d.status === 'running' ? (
@@ -448,7 +448,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 onClick={() => {
                   window.dispatchEvent(new CustomEvent('studio:retry-node', { detail: id }));
                 }}
-                title="Re-run Story Director"
+                title="Re-run the Director"
               >
                 ↻ Retry
               </button>

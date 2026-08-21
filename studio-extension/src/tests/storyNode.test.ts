@@ -37,7 +37,9 @@ describe('the Story node is registered everywhere a node type must be', () => {
 
   it('refuses to run wired to nothing, rather than asking for a plan for no one', () => {
     const runner = readFileSync(join(SRC, 'studio', 'engine', 'WorkflowRunner.ts'), 'utf8');
-    expect(runner).toContain('This Story node is not wired to anything');
+    /* "Director" since the rename — the label changed, the stored type
+       ('story') did not, so this is the only string here that moved. */
+    expect(runner).toContain('This Director is not wired to anything');
   });
 });
 

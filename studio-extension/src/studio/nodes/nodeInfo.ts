@@ -128,7 +128,7 @@ export const NODE_DOCS: Record<string, NodeDoc> = {
   },
 
   story: {
-    title: 'Story',
+    title: 'Director',
     description:
       'One director for the whole workflow — writes all prompts in a single pass ' +
       'so they match each other. Wire it to every Generate node and it sees ' +
