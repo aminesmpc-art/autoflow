@@ -90,6 +90,10 @@ interface GenOpts {
   platform?: 'flow' | 'chatgpt';
   /** 'frames' swaps the ingredient tray for Flow's Start and End slots. */
   creationType?: 'ingredients' | 'frames';
+  /* Marks a still as the storyboard board: one picture holding every shot as
+     a numbered panel. A story director wired to it asks it for a board rather
+     than for a scene, and it is checked against the opposite rules to a clip. */
+  storyboardSheet?: boolean;
 }
 
 const genNode = (id: string, o: GenOpts, x: number, y: number): Node => ({
@@ -114,6 +118,13 @@ const genNode = (id: string, o: GenOpts, x: number, y: number): Node => ({
     resultTileId: null,
     progress: 0,
     errorMessage: null,
+    /* Carried explicitly, because this builds `data` field by field rather
+       than spreading. Adding storyboardSheet to GenOpts made it typecheck and
+       changed nothing — the template said board, the node data did not, and
+       orderShotTargets read the node. Image only: a clip carrying the flag
+       would be handed the permissive rulebook and be free to describe panels,
+       which is the render the rule exists to stop. */
+    ...(o.storyboardSheet && o.mediaType !== 'video' ? { storyboardSheet: true } : {}),
   },
 });
 
@@ -343,16 +354,23 @@ const FILM_STYLE =
   'One continuous shot, no cuts inside the clip. Slow deliberate camera.\n' +
   'Vertical 9:16.';
 
-const FILM_CHARACTER =
-  'Character reference sheet: one photorealistic 3D animated character, on a ' +
-  'plain mid-grey backdrop.\n\n' +
+/* The boy, as the director's cast entry rather than as a prompt.
+ *
+ * This used to be a full image prompt on its own node - the three-quarter
+ * views, the backdrop, the lighting - which is the character SHEET, not the
+ * character. The sheet is a thing the director can be asked to write; who he
+ * is has to be stated once and carried into all ten shots, which is what a
+ * cast entry is for. */
+const FILM_BOY =
   'A boy of about ten, thin, with dark tousled hair and large expressive brown ' +
-  'eyes. Wearing a faded oversized green jacket with frayed cuffs, a grey shirt ' +
-  'and worn trainers. Carrying a canvas satchel across one shoulder.\n\n' +
-  'Three views: three-quarter front on the left, side profile in the centre, ' +
-  'three-quarter back on the right. Neutral even lighting, full body, sharp ' +
-  'focus, natural skin and fabric texture.\n\n' +
-  'An original fictional character, not any real person.';
+  'eyes. A faded oversized green jacket with frayed cuffs, a grey shirt and worn ' +
+  'trainers, and a canvas satchel across one shoulder. An original fictional ' +
+  'character, not any real person.';
+
+const FILM_WORLD =
+  'A rain-soaked city at dusk and into the night: narrow streets of shuttered ' +
+  'shops, wet pavement holding the light, one weak streetlamp to a block, a lit ' +
+  'bakery window part-way along. Rain throughout, from streaks to downpour.';
 
 /** [key, label, the eight seconds] — the arc, in order. */
 /* ── 3D animal slapstick ──
@@ -406,6 +424,26 @@ const SLAPSTICK_SCENES = [
    'END ON the cactus spine, now bare — the same framing the video opened on, ' +
    'so it loops straight back to the drop.'],
 ] as const;
+
+/* What the director is given.
+ *
+ * The beats stay authored - they are the reason this template is worth
+ * shipping - but they are now a BRIEF rather than ten finished prompts. The
+ * director expands each into the shot its node actually needs, having seen
+ * the other nine, which is the thing ten separate prompt nodes could never
+ * do: nothing in the old shape knew that beat 4 had already turned the light
+ * off in the bakery. */
+const filmBrief = () => [
+  'A ten-beat wordless short. One boy, one night, told in faces and body '
+  + 'language. It opens on trouble, escalates to the lowest point, turns on an '
+  + 'unexpected kindness, and resolves warm — and the last shot echoes the '
+  + 'framing of the first so the piece loops.',
+  'The colour arc does real work and is not decoration: desaturated blue-grey '
+  + 'through the tense half, coldest at the lowest point, warming to gold from '
+  + 'the turn onward.',
+  'THE BEATS, in order:',
+  ...FILM_SCENES.map(([, label, body]) => `${label}\n${body}`),
+].join('\n\n');
 
 const FILM_SCENES = [
   ['hook', '1. Hook — Something Is Wrong',
@@ -1640,40 +1678,79 @@ export const BUILTIN_TEMPLATES: Template[] = [
       'The retention format: cold open on trouble, escalate, turn on an act of kindness, resolve warm — and frame the last shot to match the first so it loops. Every scene references the character sheet rather than the scene before it, because these are ten different moments and a face that drifts in scene 3 would otherwise poison the seven after it. The colour arc is the part most people skip and it does real work: desaturated blue-grey through the tense half, warming to gold at the turn. Ten 8s clips give you the spine, not the finished film — the 2-4 second cutting the format lives on happens in the edit, where you cover each beat from more than one angle.',
     category: 'Content',
     difficulty: 'Advanced',
-    nodeCount: 22,
+    nodeCount: 14,
     thumbnail: '🎬',
     nodes: [
-      promptNode('p_char', 'Character Design', FILM_CHARACTER, 40, 300),
+      promptNode('p_idea', 'The Film', filmBrief(), 40, 340),
+
+      /* One writer for all ten shots.
+       *
+       * This was ten hand-written prompt nodes, one per beat, each blind to
+       * the other nine — so nothing knew that beat 4 had already turned the
+       * bakery light off, and the only thing holding the boy together across
+       * the arc was the same paragraph pasted ten times. A director sees the
+       * whole set while it writes each one, and the cast, world and look below
+       * are stated once instead of ten times.
+       *
+       * colorTemp stays 'none' ON PURPOSE. Every other multi-shot piece wants
+       * one white balance for the whole film; this one is built on a colour
+       * ARC — cold blue-grey through the tense half, warming to gold from the
+       * turn — and pinning a single Kelvin value would flatten the thing the
+       * format lives on. The arc is carried in the brief, where it can change. */
+      storyNode('director', 'Story Director', 520, 340, {
+        platform: 'gemini',
+        beats: 10,
+        structure: 'free',
+        cameraProgression: 'dynamic',
+        audioMode: 'ambient',
+        visualPreset: 'cgi3d',
+        colorTemp: 'none',
+        lighting: 'intimate',
+        rules: ['samePerson'],
+        cast: [{ name: 'The boy', role: 'in every shot', look: FILM_BOY }],
+        world: FILM_WORLD,
+        look: FILM_STYLE,
+      }),
+
       genNode('g_char', {
         label: 'Character Sheet',
         mediaType: 'image',
         aspectRatio: '16:9',
         model: 'Nano Banana Pro',
-      }, 560, 260),
+      }, 1020, 40),
 
-      ...FILM_SCENES.flatMap(([key, label, body], i) => {
-        const y = i * 460;
-        return [
-          promptNode(`p_${key}`, label, body + '\n\n' + FILM_STYLE, 1060, y + 40),
-          genNode(`g_${key}`, {
-            label,
-            mediaType: 'video',
-            aspectRatio: '9:16',
-            duration: '8s',
-            model: 'Omni Flash',
-          }, 1580, y),
-        ];
-      }),
+      /* The plan for all ten beats as one picture. The panels share a canvas,
+         so the boy, the palette and the rain are composed together rather than
+         ten times over — which is the mechanism that holds a face across an
+         arc this long, and the reason it is worth one extra generation. */
+      genNode('g_board', {
+        label: 'Storyboard board',
+        mediaType: 'image',
+        aspectRatio: '16:9',
+        model: 'Nano Banana 2',
+        storyboardSheet: true,
+      }, 1020, 360),
+
+      ...FILM_SCENES.map(([key, label], i) => genNode(`g_${key}`, {
+        label,
+        mediaType: 'video',
+        aspectRatio: '9:16',
+        duration: '8s',
+        model: 'Omni Flash',
+      }, 1560, i * 300)),
     ],
     edges: [
-      tEdge('p_char', 'g_char'),
-    ].concat(FILM_SCENES.flatMap(([key]) => [
-      tEdge(`p_${key}`, `g_${key}`),
-      /* One design, ten scenes. Recognising the same face across the arc is
-         what makes the ending land — and a drifted face partway through would
-         otherwise be inherited by everything after it. */
-      iEdge('g_char', `g_${key}`),
-    ])),
+      tEdge('p_idea', 'director'),
+      tEdge('director', 'g_char'),
+      tEdge('director', 'g_board'),
+    ].concat(FILM_SCENES.map(([key]) => tEdge('director', `g_${key}`)))
+      .concat(FILM_SCENES.flatMap(([key]) => [
+        /* One design, ten scenes. Recognising the same face across the arc is
+           what makes the ending land — and a drifted face partway through
+           would otherwise be inherited by everything after it. */
+        iEdge('g_char', `g_${key}`),
+        iEdge('g_board', `g_${key}`),
+      ])),
   },
   {
     id: 'tpl_miniature_car',

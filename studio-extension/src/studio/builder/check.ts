@@ -203,7 +203,28 @@ export function checkPlan(plan: Plan): PlanProblem[] {
      to break something that was right. */
   const clips = steps.filter(isClip);
   if (story && clips.length >= 3) {
-    const linked = steps.some((s) => s.type === 'frame')
+    /* Every clip drawing on the SAME still is a continuity strategy, not the
+       absence of one — and for a piece made of separate moments it is the
+       better one. A frame chain carries a drifted face forward into every shot
+       after it; a shared reference cannot, because each clip is measured
+       against the original rather than against its predecessor.
+
+       The ten-beat emotional short is exactly that shape and this rule flagged
+       it, which is the failure the comment above warns about: a rule that
+       fires on a workflow somebody already ships. A storyboard board is the
+       same idea one step stronger, so it counts too. */
+    const anchorsOf = (st: PlanStep) => new Set(
+      (st.inputs || []).filter((i) => {
+        const d = byId.get(i);
+        return d && (d.type === 'image' || d.type === 'frame' || d.media === 'image');
+      }),
+    );
+    const perClip = clips.map(anchorsOf);
+    const sharedAnchor = perClip.length > 0
+      && Array.from(perClip[0]).some((id) => perClip.every((set) => set.has(id)));
+
+    const linked = sharedAnchor
+      || steps.some((s) => s.type === 'frame')
       || steps.some((s) => s.startFrame && s.endFrame)
       || clips.some((s) => (s.inputs || []).some((i) => {
         const d = byId.get(i);
