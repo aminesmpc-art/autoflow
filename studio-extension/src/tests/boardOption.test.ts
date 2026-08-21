@@ -37,6 +37,22 @@ describe('the checkbox on the node', () => {
     expect(before).toMatch(/\{!isVideo && !isText && \(/);
   });
 
+  it('is offered on every platform, not only Flow', () => {
+    /* It shipped inside the {!isChatGPT} block, next to Model and Ratio - and
+       isChatGPT means "is any chat platform", not ChatGPT. So the one control
+       with nothing to do with Flow appeared only on Flow, while Gemini and
+       ChatGPT image nodes, which draw boards perfectly well, had no way to
+       ask for one. orderShotTargets never looked at the platform.
+
+       Checked by position: the checkbox must sit AFTER that block closes. */
+    const check = NODE.indexOf('className="sn-check');
+    const flowOnly = NODE.indexOf('{!isChatGPT && (');
+    expect(flowOnly).toBeGreaterThan(-1);
+    const flowOnlyEnds = NODE.indexOf('{isGrok && !isText', flowOnly);
+    expect(flowOnlyEnds).toBeGreaterThan(flowOnly);
+    expect(check).toBeGreaterThan(flowOnlyEnds);
+  });
+
   it('says what it changes, not just what it is called', () => {
     expect(NODE).toMatch(/title="Ask the story director for one picture holding every shot/);
   });

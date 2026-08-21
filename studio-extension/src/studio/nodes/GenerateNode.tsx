@@ -544,29 +544,6 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                 </div>
               </div>
 
-              {/* Storyboard board.
-                  Stills only, because a board is a picture. It was reachable
-                  from a pasted JSON file and from nowhere else, so the one
-                  person who found it was the one who wrote the file - and
-                  everyone else built a separate anchor still per shot without
-                  ever learning the option existed.
-
-                  What it changes is which rulebook the shot is checked
-                  against: a board is asked to name its panels and its grid,
-                  and a clip is refused for doing the same. */}
-              {!isVideo && !isText && (
-                <label
-                  className="sn-check nodrag"
-                  title="Ask the story director for one picture holding every shot as a numbered panel, instead of a single scene"
-                >
-                  <input
-                    type="checkbox"
-                    checked={nodeData.storyboardSheet === true}
-                    onChange={(e) => set('storyboardSheet', e.target.checked)}
-                  />
-                  <span>Storyboard board</span>
-                </label>
-              )}
             </>
           )}
           {/* Imagine's controls live in their own component: they share no
@@ -577,6 +554,31 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               none of them, and the Ratio the runner sent was never applied. */}
           {isGrok && !isText && <GrokSettings nodeData={nodeData} set={set} isVideo={isVideo} />}
 
+            {/* Storyboard board.
+                Stills only, because a board is a picture — but on EVERY
+                platform, which is where this first shipped wrong. It sat
+                inside the {!isChatGPT} block alongside Model and Ratio, and
+                isChatGPT means "is any chat platform", not ChatGPT: so the
+                one control that has nothing to do with Flow appeared only on
+                Flow. Gemini and ChatGPT image nodes can draw a board perfectly
+                well, and orderShotTargets never looked at the platform.
+
+                What it changes is which rulebook the shot is checked
+                against: a board is asked to name its panels and its grid,
+                and a clip is refused for doing the same. */}
+            {!isVideo && !isText && (
+              <label
+                className="sn-check nodrag"
+                title="Ask the story director for one picture holding every shot as a numbered panel, instead of a single scene"
+              >
+                <input
+                  type="checkbox"
+                  checked={nodeData.storyboardSheet === true}
+                  onChange={(e) => set('storyboardSheet', e.target.checked)}
+                />
+                <span>Storyboard board</span>
+              </label>
+            )}
           {isChatGPT && (
             <span className="sn-bar__hint sn-field--wide">
               {isText
