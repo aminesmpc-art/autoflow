@@ -139,18 +139,89 @@ async function flushParked(port: chrome.runtime.Port): Promise<void> {
    keeps it resident; autoDiscardable stops Chrome dropping the platform tab
    out from under a running generation. */
 const KEEPALIVE_ALARM = 'studio-keepalive';
-let keptTabId: number | null = null;
+/* ── The one that actually un-throttles ──
+   A platform tab is opened with active:false, so it is hidden from the moment
+   it exists. Chrome applies intensive throttling to a hidden tab after five
+   minutes and clamps its timers to once a minute - and every adapter polls
+   with sleep() loops, so the whole run drops to one check a minute.
 
-async function startKeepalive(tabId: number): Promise<void> {
+   Keeping the worker alive does not help with that, and neither does
+   autoDiscardable: alive is not un-throttled and not-discarded is not either.
+   The only thing that resets Chrome's clock is the tab being VISIBLE, which
+   is what this alarm is for.
+
+   Note the period. Chrome clamps a packed extension's alarms to 30 seconds
+   however small a number is asked for, so 0.5 is what this actually is rather
+   than a wish for something faster. */
+const TAB_PING_ALARM = 'studio-tab-ping';
+const TAB_PING_MINUTES = 0.5;
+let keptTabId: number | null = null;
+let keptPlatform: Platform | null = null;
+
+async function startKeepalive(tabId: number, platform: Platform): Promise<void> {
   keptTabId = tabId;
+  keptPlatform = platform;
   chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.4 });
+  chrome.alarms.create(TAB_PING_ALARM, {
+    delayInMinutes: TAB_PING_MINUTES,
+    periodInMinutes: TAB_PING_MINUTES,
+  });
   try {
     await chrome.tabs.update(tabId, { autoDiscardable: false });
   } catch { /* the tab may have gone; the alarm still matters */ }
 }
 
+/**
+ * Keep the working tab visible, and check something is still listening in it.
+ *
+ * Bringing the tab forward is the part that matters: it is what stops Chrome
+ * throttling the adapter's polling down to once a minute. It also means this
+ * routine takes the foreground away from whatever else is open in that window,
+ * which is why it must stop the moment a run does - see the STUDIO_RUN_STATE
+ * handler. An alarm that outlives its run would pull the user off their own
+ * canvas twice a minute, forever.
+ */
+async function tabPingRoutine(): Promise<void> {
+  if (keptTabId === null) { await stopKeepalive(); return; }
+
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.get(keptTabId);
+  } catch {
+    diag('Bridge', 'The working tab was closed - stopping the keepalive.');
+    await stopKeepalive();
+    return;
+  }
+
+  if (!tab.active) {
+    try { await chrome.tabs.update(keptTabId, { active: true }); } catch { /* gone */ }
+  }
+
+  /* Every adapter answers PING, so a rejection here means nothing is listening
+     rather than that the message was ignored. That happens after an extension
+     reload, which leaves the old content script orphaned in a tab that is
+     still open: the run then waits out its full backstop against a page that
+     can no longer hear it. */
+  try {
+    await chrome.tabs.sendMessage(keptTabId, { type: 'PING' });
+  } catch {
+    const script = keptPlatform ? PLATFORMS[keptPlatform]?.script : undefined;
+    if (!script) return;
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: keptTabId }, files: [script] });
+      diag('Bridge', `No content script was listening in the ${
+        PLATFORMS[keptPlatform as Platform].name} tab - re-injected it.`);
+    } catch (err: any) {
+      diag('Bridge', `Cannot reach the ${PLATFORMS[keptPlatform as Platform].name} tab: ${
+        err?.message || err}`);
+    }
+  }
+}
+
 async function stopKeepalive(): Promise<void> {
   chrome.alarms.clear(KEEPALIVE_ALARM).catch(() => {});
+  chrome.alarms.clear(TAB_PING_ALARM).catch(() => {});
+  keptPlatform = null;
   if (keptTabId !== null) {
     try { await chrome.tabs.update(keptTabId, { autoDiscardable: true }); } catch { /* gone */ }
     keptTabId = null;
@@ -160,6 +231,7 @@ async function stopKeepalive(): Promise<void> {
 chrome.alarms.onAlarm.addListener((alarm) => {
   // Touching an API is enough to reset the idle timer.
   if (alarm.name === KEEPALIVE_ALARM) chrome.runtime.getPlatformInfo().catch(() => {});
+  if (alarm.name === TAB_PING_ALARM) tabPingRoutine().catch(() => { /* tab went */ });
 });
 
 /* ── Platform tabs ── */
@@ -484,6 +556,16 @@ chrome.runtime.onConnect.addListener((port) => {
     // Studio reports its own run lifecycle so the panel can show it.
     if (msg.type === 'STUDIO_RUN_STATE') {
       patchRunState(msg.payload || {});
+      /* The moment the run is over, stop holding the tab forward.
+       *
+       * The keepalive used to end only when the canvas was closed, which cost
+       * nothing while all it did was poke an API. It brings a tab to the front
+       * twice a minute now, so an alarm that outlives its run would pull the
+       * user off whatever they moved on to, indefinitely, with no run left to
+       * justify it. */
+      if (msg.payload && msg.payload.running === false) {
+        stopKeepalive().catch(() => { /* nothing was running */ });
+      }
       return;
     }
 
@@ -501,7 +583,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
     // Only arm the keepalive for work that actually takes minutes.
     if (msg.type === 'STUDIO_EXECUTE_NODE') {
-      startKeepalive(tabId).catch(() => { /* non-critical */ });
+      startKeepalive(tabId, platform).catch(() => { /* non-critical */ });
     }
 
     /* Applies to a tab we found as well as one we opened: a ChatGPT window the
