@@ -387,6 +387,121 @@ function readLatestReply(): string {
  * mean an image rendered anywhere else is invisible rather than ambiguous,
  * and invisible is the failure that wastes six minutes.
  */
+/* ── Gemini's three modes ──
+ *
+ * Gemini answers a bare prompt with whatever it feels like, so the adapter used
+ * to type into whichever composer happened to be there and hope. That is why an
+ * image node worked only when somebody had already set the mode by hand, and
+ * why a video node could never work at all: mediaType 'video' fell into the
+ * image tracker, which watches <img> elements and would wait out its whole
+ * backstop against a page playing a video.
+ *
+ * Each mode is a route, which is the useful part. Read off the live page:
+ *
+ *   /app      "Ask Gemini"           chat
+ *   /images   "Describe your image"  image generation
+ *   /videos   "Describe your video"  video generation, plus an aspect ratio
+ *
+ * Switched by CLICKING the sidebar link rather than assigning location.href.
+ * Gemini is an Angular SPA, so the anchor is a client-side route: the document
+ * survives and so does this content script. A real navigation would tear down
+ * the script in the middle of its own run and the node would hang until its
+ * backstop — which is the failure mode this whole file exists to avoid.
+ *
+ * Verified rather than assumed. The composer's placeholder and the sidebar's
+ * is-active class both say which mode is live, and both are POSITIVE signals:
+ * present when the mode is on rather than absent when it is off. */
+type GeminiMode = 'chat' | 'image' | 'video';
+
+const MODE_ROUTE: Record<GeminiMode, string> = {
+  chat: '/app', image: '/images', video: '/videos',
+};
+const MODE_PLACEHOLDER: Record<GeminiMode, RegExp> = {
+  chat: /ask gemini/i,
+  image: /describe your image/i,
+  video: /describe your video/i,
+};
+
+function currentMode(): GeminiMode | null {
+  const box = document.querySelector('[data-placeholder]');
+  const hint = (box?.getAttribute('data-placeholder') || '').trim();
+  for (const mode of ['image', 'video', 'chat'] as GeminiMode[]) {
+    if (MODE_PLACEHOLDER[mode].test(hint)) return mode;
+  }
+  /* No placeholder to read — a composer already carrying text has none. Fall
+     back to the sidebar, which marks the live route. */
+  const active = document.querySelector('a.gem-nav-list-item.is-active[href]');
+  const href = active?.getAttribute('href') || '';
+  for (const mode of ['image', 'video'] as GeminiMode[]) {
+    if (href === MODE_ROUTE[mode]) return mode;
+  }
+  return null;
+}
+
+/** Put Gemini in the mode this node needs. Returns a reason on failure. */
+async function ensureMode(want: GeminiMode): Promise<string | null> {
+  if (currentMode() === want) return null;
+
+  const link = document.querySelector<HTMLAnchorElement>(
+    `a.gem-nav-list-item[href="${MODE_ROUTE[want]}"]`,
+  );
+  if (!link) {
+    return `Gemini has no "${want}" mode in this account — the sidebar has no `
+      + `${MODE_ROUTE[want]} link. Image and video generation need a Gemini plan that offers them.`;
+  }
+
+  logLine(`Switching Gemini to ${want} mode`);
+  link.click();
+
+  /* Wait for the mode to actually be live rather than for a fixed delay. A
+     route change re-renders the composer, and typing into the old one is how a
+     prompt ends up submitted in the wrong mode. */
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    await sleep(250);
+    if (currentMode() === want) return null;
+  }
+  return `Gemini did not switch to ${want} mode — the composer still reads `
+    + `"${(document.querySelector('[data-placeholder]')?.getAttribute('data-placeholder') || '?')}".`;
+}
+
+/**
+ * Set the clip shape, when the node asked for one.
+ *
+ * Video mode only, and advisory: a ratio that cannot be set is worth saying out
+ * loud and not worth failing a generation over, because the clip still renders
+ * — in the wrong shape, which the user can see for themselves.
+ */
+async function setAspectRatio(ratio: string): Promise<void> {
+  const wantPortrait = /9\s*:\s*16/.test(ratio);
+  const wantLandscape = /16\s*:\s*9/.test(ratio);
+  if (!wantPortrait && !wantLandscape) return;
+
+  const btn = document.querySelector<HTMLElement>('button[aria-label^="Aspect ratio"]');
+  if (!btn) return;
+
+  const already = (btn.getAttribute('aria-label') || '');
+  if (wantPortrait && /portrait/i.test(already)) return;
+  if (wantLandscape && /landscape/i.test(already)) return;
+
+  btn.click();
+  await sleep(500);
+
+  const wanted = wantPortrait ? /portrait|9\s*:\s*16/i : /landscape|16\s*:\s*9/i;
+  const option = Array.from(
+    document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"], [role="option"], .cdk-overlay-pane button'),
+  ).find((el) => wanted.test(el.textContent || el.getAttribute('aria-label') || ''));
+
+  if (!option) {
+    logLine(`Could not set ${ratio} — the aspect ratio menu did not open`);
+    btn.click();                                   // put it back as we found it
+    return;
+  }
+  option.click();
+  await sleep(300);
+  logLine(`Aspect ratio set to ${ratio}`);
+}
+
 function collectResultImages(): HTMLImageElement[] {
   const composer = composerRegion();
 
@@ -474,9 +589,9 @@ async function revealFileInput(): Promise<HTMLInputElement | null> {
   const existing = findFileInput();
   if (existing) return existing;
 
-  const opener = Array.from(document.querySelectorAll<HTMLElement>('button')).find((b) => {
-    const label = `${b.getAttribute('aria-label') || ''} ${b.getAttribute('data-test-id') || ''}`;
-    return /add|upload|attach|image|file|plus/i.test(label) && isVisible(b);
+  const opener = Array.from(document.querySelectorAll<HTMLElement>('button, [role="button"]')).find((b) => {
+    const label = `${b.getAttribute('aria-label') || ''} ${b.getAttribute('data-test-id') || ''} ${b.getAttribute('data-testid') || ''} ${b.getAttribute('title') || ''} ${b.innerText || ''}`;
+    return /add|upload|attach|image|photo|file|plus/i.test(label) && isVisible(b);
   });
   if (!opener) return null;
 
@@ -683,7 +798,40 @@ async function handleExecute(payload: any): Promise<any> {
   }
 
   const wantsText = config?.mediaType === 'text';
-  const preexisting = new Set(collectResultImages().map((i) => i.currentSrc || i.src));
+  const wantsVideo = config?.mediaType === 'video';
+
+  /* Before anything is typed. Gemini answers a bare prompt with whatever it
+     feels like, so the mode has to be chosen rather than hoped for - and the
+     composer is re-rendered by the route change, so choosing it afterwards
+     would mean typing into an element that is about to be replaced. */
+  const modeFailure = await ensureMode(wantsText ? 'chat' : wantsVideo ? 'video' : 'image');
+  if (modeFailure) {
+    /* Hard for video, soft for everything else.
+     *
+     * A video node that cannot reach video mode is finished: chat will not
+     * produce a clip however long anyone waits, so failing now with a reason
+     * beats twelve minutes of silence.
+     *
+     * An image or text node is a different case. Typing a prompt into whatever
+     * composer is there and waiting for a picture is exactly what this adapter
+     * did before any of this existed, and it worked whenever the mode was
+     * already right. Refusing to run because a sidebar link moved would turn a
+     * cosmetic change on Gemini's part into a dead node. */
+    if (wantsVideo) {
+      send('STUDIO_NODE_ERROR', { nodeId, error: modeFailure });
+      return { success: false };
+    }
+    logLine(`${modeFailure} Carrying on in whatever mode is open.`);
+  }
+  composer = findComposer() || composer;      // the route change re-rendered it
+
+  if (wantsVideo && config?.aspectRatio) await setAspectRatio(String(config.aspectRatio));
+
+  const preexisting = new Set(
+    wantsVideo
+      ? collectResultVideos().map((v) => v.currentSrc || v.src)
+      : collectResultImages().map((i) => i.currentSrc || i.src),
+  );
   const priorReply = wantsText ? readLatestReply().trim() : '';
 
   const references: string[] = (config?.referenceImageData || [])
@@ -724,7 +872,7 @@ async function handleExecute(payload: any): Promise<any> {
     }));
   }
 
-  logLine(`Submitted — waiting for the ${wantsText ? 'reply' : 'image'}...`);
+  logLine(`Submitted — waiting for the ${wantsText ? 'reply' : wantsVideo ? 'clip' : 'image'}...`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 20 });
 
   // Hand the channel back now: Chrome closes a sendResponse channel long
@@ -732,9 +880,79 @@ async function handleExecute(payload: any): Promise<any> {
   startAntiThrottle();
   const work = wantsText
     ? trackTextReply(nodeId, priorReply, config?.rawReply === true)
-    : trackGeneration(nodeId, preexisting);
+    : wantsVideo
+      ? trackVideo(nodeId, preexisting)
+      : trackGeneration(nodeId, preexisting);
   work.finally(stopAntiThrottle);
   return { success: true };
+}
+
+/** Every finished clip on the page, ignoring anything still buffering. */
+function collectResultVideos(): HTMLVideoElement[] {
+  const composer = composerRegion();
+  return Array.from(document.querySelectorAll('video')).filter((v) => {
+    if (composer && composer.contains(v)) return false;
+    if (v.closest('user-query, [data-test-id="user-query"]')) return false;
+    const rect = v.getBoundingClientRect();
+    if (rect.width < 120 && rect.height < 120) return false;
+    /* A <video> exists from the moment the player mounts, long before there is
+       anything in it. readyState < 2 means not one frame has decoded, and a
+       poster is not a clip - the same mistake as reading Flow's thumbnail as a
+       finished render. */
+    return !!(v.currentSrc || v.src) && v.readyState >= 2;
+  });
+}
+
+/**
+ * Wait for a clip, then hand back the URL rather than the bytes.
+ *
+ * Unlike an image, a generated video is not captured into a data URL here. One
+ * clip is tens of megabytes; a data URL of it would be carried through
+ * sendMessage, parked in session storage on a dropped port, and written into
+ * the saved workflow. The URL is what every other video path in this extension
+ * passes, and the runner already knows how to fetch one when it needs frames.
+ */
+async function trackVideo(nodeId: string, preexisting: Set<string>): Promise<void> {
+  const startedAt = Date.now();
+  let stableSrc = '';
+  let stableCount = 0;
+
+  while (Date.now() - startedAt < 12 * 60 * 1000) {
+    await sleep(2000);
+    if (document.hidden) continue;          // a throttled tab reads nothing useful
+
+    const elapsed = Date.now() - startedAt;
+    send('STUDIO_NODE_PROGRESS', {
+      nodeId, progress: Math.min(90, 20 + Math.round((elapsed / (12 * 60 * 1000)) * 70)),
+    });
+
+    const fresh = collectResultVideos()
+      .filter((v) => !preexisting.has(v.currentSrc || v.src));
+    if (!fresh.length) continue;
+
+    const clip = fresh[fresh.length - 1];
+    const src = clip.currentSrc || clip.src;
+    if (src === stableSrc) stableCount++;
+    else { stableSrc = src; stableCount = 0; }
+
+    /* Two unchanged polls AND the site saying it has stopped. A clip whose src
+       is still being swapped is one Gemini is still assembling. */
+    if (stableCount >= 2 && !isGenerating() && turnFinished() !== false) {
+      logLine(`Clip captured (${Math.round((clip.duration || 0) * 10) / 10}s)`);
+      send('STUDIO_NODE_RESULT', {
+        nodeId, tileId: '',
+        videoUrl: src,
+        previewVideoUrl: src,
+        thumbnailUrl: clip.poster || '',
+      });
+      return;
+    }
+  }
+
+  send('STUDIO_NODE_ERROR', {
+    nodeId,
+    error: 'Gemini did not finish the clip in time — check the Gemini tab',
+  });
 }
 
 async function trackGeneration(nodeId: string, preexisting: Set<string>): Promise<void> {

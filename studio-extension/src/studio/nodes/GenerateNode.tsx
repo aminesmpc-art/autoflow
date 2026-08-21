@@ -146,7 +146,10 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
      same question as "is this Flow". Everything Flow-specific below — the
      model list, Frames mode — still checks the platform rather than this. */
   const isGrok = platform === 'grok';
-  const isVideo = mediaType === 'video' && (platform === 'flow' || isGrok);
+  /* Gemini's /videos route generates clips, so "is this a clip" is no longer
+     the same question as "is this Flow or Imagine". */
+  const isGemini = platform === 'gemini';
+  const isVideo = mediaType === 'video' && (platform === 'flow' || isGrok || isGemini);
   /* Frames mode: Flow takes a first and last still and interpolates between
      them. Video only — an image has no "between". */
   const isFrames = isVideo && platform === 'flow' && nodeData.creationType === 'frames';
@@ -373,12 +376,16 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               <span className="sn-field__label">Output</span>
               <select
                 className="sn-bar__sel nodrag"
-                value={isClaude ? 'text' : (mediaType === 'text' ? 'text' : isGrok && mediaType === 'video' ? 'video' : 'image')}
+                value={isClaude
+                  ? 'text'
+                  : (mediaType === 'text'
+                    ? 'text'
+                    : (isGrok || isGemini) && mediaType === 'video' ? 'video' : 'image')}
                 onChange={(e) => set('mediaType', e.target.value)}
               >
                 {!isClaude && <option value="image">Image</option>}
-                {/* Imagine generates clips; the other chats do not. */}
-                {isGrok && <option value="video">Video</option>}
+                {/* Imagine and Gemini generate clips; ChatGPT and Claude do not. */}
+                {(isGrok || isGemini) && <option value="video">Video</option>}
                 <option value="text">Text</option>
               </select>
             </label>
