@@ -52,6 +52,8 @@ const IMAGE_MODELS: readonly string[] = AVAILABLE_IMAGE_MODELS;
 
 const IMAGE_RATIOS = ['9:16', '16:9', '1:1', '4:3', '3:4'];
 const VIDEO_RATIOS = ['9:16', '16:9', '1:1'];
+/* Gemini's /videos route offers Landscape and Portrait, nothing else. */
+const GEMINI_VIDEO_RATIOS = ['9:16', '16:9'];
 /* Flow offers 10s as well — omitting it meant the longest clip length was
    simply unreachable from Studio. */
 const DURATIONS = ['4s', '6s', '8s', '10s'];
@@ -561,6 +563,30 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               none of them, and the Ratio the runner sent was never applied. */}
           {isGrok && !isText && <GrokSettings nodeData={nodeData} set={set} isVideo={isVideo} />}
 
+          {/* Gemini's video ratio, and only the two it has.
+              Flow's Ratio pills live in the Flow-only block above, so a Gemini
+              clip node had no way to choose a shape at all - the adapter reads
+              config.aspectRatio and there was nothing to set it. Two options
+              rather than five because /videos offers Landscape (16:9) and
+              Portrait (9:16) and nothing else. */}
+          {isGemini && isVideo && (
+            <div className="sn-field sn-field--wide" title="Clip shape">
+              <span className="sn-field__label">Ratio</span>
+              <div className="sn-seg nodrag">
+                {GEMINI_VIDEO_RATIOS.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    className={`sn-seg__btn ${ratio === r ? 'sn-seg__btn--on' : ''}`}
+                    onClick={() => set('aspectRatio', r)}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
             {/* Storyboard board.
                 Stills only, because a board is a picture — but on EVERY
                 platform, which is where this first shipped wrong. It sat
@@ -590,8 +616,8 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
             <span className="sn-bar__hint sn-field--wide">
               {isText
                 ? `Writes a prompt · needs a ${chatName} tab`
-                : isGrok && isVideo
-                  ? 'Clip · needs a Grok Imagine tab'
+                : isVideo
+                  ? `Clip · needs a ${isGrok ? 'Grok Imagine' : chatName} tab`
                   : `Image · needs a ${chatName} tab`}
             </span>
           )}
@@ -638,7 +664,10 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
         <span className={`sn-platform__dot ${isChat ? `sn-platform__dot--${platform}` : ''}`} />
         {!isChat ? 'Google Flow'
           : isText ? `${chatName} Writer`
-          : isVideo ? `${chatName} Imagine`
+          /* "Imagine" is the name of Grok's product, not a word for video.
+             A Gemini clip node read "Gemini Imagine", which is a product that
+             does not exist. */
+          : isVideo ? (isGrok ? 'Grok Imagine' : `${chatName} Video`)
           : `${chatName} Images`}
       </div>
 

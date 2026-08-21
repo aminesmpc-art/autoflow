@@ -50,6 +50,17 @@ describe('the routes, as the page actually has them', () => {
     expect(body).not.toMatch(/location\.assign/);
   });
 
+  it('reaches the sidebar by data-test-id, with the href as fallback', () => {
+    /* "images-side-nav-entry-button" / "videos-side-nav-entry-button" is what
+       Gemini's own tests hold on to, so it survives a route or class rename in
+       a way an href does not. Read straight off the live DOM. */
+    const at = SRC.indexOf('async function ensureMode');
+    const body = SRC.slice(at, SRC.indexOf('\n}', at));
+    expect(body).toMatch(/data-test-id="\$\{want\}s-side-nav-entry-button"/);
+    expect(body.indexOf('side-nav-entry-button'))
+      .toBeLessThan(body.indexOf('gem-nav-list-item[href'));
+  });
+
   it('reads the mode off the placeholder, which is a positive signal', () => {
     expect(SRC).toMatch(/chat: \/ask gemini\/i/);
     expect(SRC).toMatch(/image: \/describe your image\/i/);
@@ -100,11 +111,33 @@ describe('waiting for a clip', () => {
     return SRC.slice(at, SRC.indexOf('\nasync function', at + 10));
   };
 
-  it('ignores a player that has not decoded a frame', () => {
-    /* A <video> exists from the moment the player mounts. readyState < 2 means
-       nothing has decoded, and a poster is not a clip — the same mistake as
-       reading Flow's thumbnail as a finished render. */
-    expect(SRC).toMatch(/v\.readyState >= 2/);
+  it('does NOT require a decoded frame', () => {
+    /* The first version demanded readyState >= 2, reasoning from Flow, where a
+       poster appears long before the video exists. Gemini is the other way
+       round: the <video> only appears once the clip is finished, and it
+       arrives paused behind a play button with nothing buffered — readyState
+       0. So a finished clip was invisible, and a real run sat at 53% for five
+       and a half minutes while the video played on screen beside it. */
+    expect(SRC).not.toMatch(/readyState >= 2/);
+  });
+
+  it('finds the URL wherever the element keeps it', () => {
+    /* currentSrc is empty until loading starts, which for an unplayed clip is
+       never. The attribute or a <source> child is often the only copy. */
+    const at = SRC.indexOf('function videoSrc');
+    const body = SRC.slice(at, SRC.indexOf('\n}', at));
+    expect(body).toMatch(/v\.currentSrc/);
+    expect(body).toMatch(/v\.getAttribute\('src'\)/);
+    expect(body).toMatch(/querySelector\('source'\)/);
+  });
+
+  it('says what it can see when it cannot find one', () => {
+    /* "Still rendering" and "it is on screen and I cannot see it" look
+       identical from outside, and the second cost a five-minute wait. The
+       useful detail was that the player existed and had decoded nothing. */
+    const body = fn();
+    expect(body).toMatch(/No clip yet and nothing is rendering/);
+    expect(body).toMatch(/readyState \$\{all\.map/);
   });
 
   it('waits for the src to settle AND for the site to say it has stopped', () => {
@@ -166,5 +199,34 @@ describe('the node offers it', () => {
     /* ChatGPT and Claude have no video generation. Offering it would produce a
        node that runs, waits and fails. */
     expect(NODE).not.toMatch(/isChatGPT && <option value="video"/);
+  });
+});
+
+describe('what a Gemini clip node shows', () => {
+  it('does not call it "Gemini Imagine"', () => {
+    /* Imagine is the name of Grok's product. A Gemini clip node read "Gemini
+       Imagine", which is a product that does not exist. */
+    expect(NODE).toMatch(/isVideo \? \(isGrok \? 'Grok Imagine' : `\$\{chatName\} Video`\)/);
+  });
+
+  it('says Clip rather than Image under a video node', () => {
+    /* The hint tested `isGrok && isVideo`, so a Gemini clip node fell through
+       to "Image · needs a Gemini tab" while its Output select said Video. */
+    expect(NODE).toMatch(/: isVideo\s*\n\s*\? `Clip · needs a \$\{isGrok \? 'Grok Imagine' : chatName\} tab`/);
+  });
+
+  it('offers the two ratios Gemini actually has', () => {
+    /* Flow's Ratio pills live in the Flow-only block, so a Gemini clip node
+       had no way to choose a shape — the adapter reads config.aspectRatio and
+       nothing could set it. Two rather than five because /videos offers
+       Landscape and Portrait and nothing else. */
+    expect(NODE).toMatch(/const GEMINI_VIDEO_RATIOS = \['9:16', '16:9'\];/);
+    expect(NODE).toMatch(/\{isGemini && isVideo && \(/);
+    expect(NODE).toMatch(/GEMINI_VIDEO_RATIOS\.map\(\(r\) => \(/);
+  });
+
+  it('writes the ratio to the field the adapter reads', () => {
+    const at = NODE.indexOf('GEMINI_VIDEO_RATIOS.map');
+    expect(NODE.slice(at, at + 300)).toMatch(/set\('aspectRatio', r\)/);
   });
 });

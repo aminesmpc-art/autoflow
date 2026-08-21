@@ -442,7 +442,12 @@ function currentMode(): GeminiMode | null {
 async function ensureMode(want: GeminiMode): Promise<string | null> {
   if (currentMode() === want) return null;
 
-  const link = document.querySelector<HTMLAnchorElement>(
+  /* By data-test-id first — "images-side-nav-entry-button",
+     "videos-side-nav-entry-button" — which is what Gemini's own tests hold on
+     to, and survives a route or class rename. The href is the fallback. */
+  const link = document.querySelector<HTMLElement>(
+    `[data-test-id="${want}s-side-nav-entry-button"]`,
+  ) || document.querySelector<HTMLElement>(
     `a.gem-nav-list-item[href="${MODE_ROUTE[want]}"]`,
   );
   if (!link) {
@@ -829,7 +834,7 @@ async function handleExecute(payload: any): Promise<any> {
 
   const preexisting = new Set(
     wantsVideo
-      ? collectResultVideos().map((v) => v.currentSrc || v.src)
+      ? collectResultVideos().map((v) => videoSrc(v))
       : collectResultImages().map((i) => i.currentSrc || i.src),
   );
   const priorReply = wantsText ? readLatestReply().trim() : '';
@@ -895,12 +900,22 @@ function collectResultVideos(): HTMLVideoElement[] {
     if (v.closest('user-query, [data-test-id="user-query"]')) return false;
     const rect = v.getBoundingClientRect();
     if (rect.width < 120 && rect.height < 120) return false;
-    /* A <video> exists from the moment the player mounts, long before there is
-       anything in it. readyState < 2 means not one frame has decoded, and a
-       poster is not a clip - the same mistake as reading Flow's thumbnail as a
-       finished render. */
-    return !!(v.currentSrc || v.src) && v.readyState >= 2;
+    return !!videoSrc(v);
   });
+}
+
+/**
+ * The URL a <video> is showing, however it carries it.
+ *
+ * currentSrc is empty until the browser starts loading, and Gemini's finished
+ * clip arrives paused behind a play button with nothing buffered - so the
+ * attribute, or a <source> child, is often the only place the URL exists.
+ */
+function videoSrc(v: HTMLVideoElement): string {
+  return v.currentSrc
+    || v.getAttribute('src')
+    || v.querySelector('source')?.getAttribute('src')
+    || '';
 }
 
 /**
@@ -916,6 +931,7 @@ async function trackVideo(nodeId: string, preexisting: Set<string>): Promise<voi
   const startedAt = Date.now();
   let stableSrc = '';
   let stableCount = 0;
+  let explained = false;
 
   while (Date.now() - startedAt < 12 * 60 * 1000) {
     await sleep(2000);
@@ -926,12 +942,28 @@ async function trackVideo(nodeId: string, preexisting: Set<string>): Promise<voi
       nodeId, progress: Math.min(90, 20 + Math.round((elapsed / (12 * 60 * 1000)) * 70)),
     });
 
-    const fresh = collectResultVideos()
-      .filter((v) => !preexisting.has(v.currentSrc || v.src));
-    if (!fresh.length) continue;
+    const fresh = collectResultVideos().filter((v) => !preexisting.has(videoSrc(v)));
+    if (!fresh.length) {
+      /* "Still rendering" and "it is on screen and I cannot see it" look
+         identical from out here, and the second one cost a five-minute wait
+         staring at a clip that was already finished. Say which, once, well
+         before the timeout - and say what IS on the page, because the useful
+         detail last time was that the player existed and had decoded nothing. */
+      if (!explained && elapsed > 60_000 && !isGenerating()) {
+        explained = true;
+        const all = Array.from(document.querySelectorAll('video'));
+        logLine(
+          `No clip yet and nothing is rendering. ${all.length} <video> on the page`
+          + `${all.length ? ` (readyState ${all.map((v) => v.readyState).join(',')}, `
+            + `${all.filter((v) => videoSrc(v)).length} with a src)` : ''}`
+          + ` - open the Gemini tab and check.`,
+        );
+      }
+      continue;
+    }
 
     const clip = fresh[fresh.length - 1];
-    const src = clip.currentSrc || clip.src;
+    const src = videoSrc(clip);
     if (src === stableSrc) stableCount++;
     else { stableSrc = src; stableCount = 0; }
 
