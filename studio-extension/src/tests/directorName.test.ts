@@ -19,6 +19,8 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { getNodeDoc } from '../studio/nodes/nodeInfo';
 import { BUILTIN_TEMPLATES } from '../studio/templates/index';
+import { buildSpec } from '../studio/builder/spec';
+import { compilePlan } from '../studio/builder/plan';
 
 const read = (...p: string[]) => readFileSync(join(__dirname, '..', ...p), 'utf8');
 const CANVAS = read('studio', 'components', 'Canvas.tsx');
@@ -71,5 +73,36 @@ describe('what is stored did not move', () => {
        title would have silently dropped the info card. */
     expect(getNodeDoc('story')).not.toBeNull();
     expect(getNodeDoc('director')).toBeNull();
+  });
+});
+
+describe('the builder speaks the same language', () => {
+  const SPEC = buildSpec('a shoe ad');
+
+  it('calls it the Director where the model reads it', () => {
+    /* A person asking the builder for "a director" has to land on this node.
+       The manual said STORY DIRECTOR in one place, "story node" in another and
+       "story director" in a third — three names for one thing, none of them
+       the one now on the button. */
+    expect(SPEC).toMatch(/THE DIRECTOR \(ONE WRITER FOR ALL SHOTS\)/);
+    expect(SPEC).not.toMatch(/Connect one story node/);
+  });
+
+  it('says the type string did NOT change', () => {
+    /* The dangerous half. Renaming the vocabulary without this invites a model
+       to emit "type": "director", which compiles to nothing. */
+    expect(SPEC).toMatch(/The type string stays\s*\n?\s*"story"/);
+    expect(SPEC).toMatch(/write\s*\n?\s*"type": "story" even though the node is named Director/);
+  });
+
+  it('labels a built one Director, like a hand-added one', () => {
+    const { template } = compilePlan({
+      name: 't',
+      steps: [{ id: 's', type: 'story', platform: 'gemini', prompt: 'a shoe ad' }],
+    } as any);
+    const node = (template?.nodes || []).find((n: any) => n.id === 's');
+    expect(node?.data?.label).toBe('Director');
+    /* And still the type every saved workflow holds. */
+    expect(node?.type).toBe('story');
   });
 });

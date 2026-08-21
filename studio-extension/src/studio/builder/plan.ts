@@ -273,7 +273,7 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
       nodes.push({
         id: step.id, type: 'story', position: { x, y },
         data: {
-          type: 'story', label: step.label || 'Story Director',
+          type: 'story', label: step.label || 'Director',
           platform: step.platform || 'chatgpt',
           cast: Array.isArray(step.cast) ? step.cast : [],
           world: typeof step.world === 'string' ? step.world : '',

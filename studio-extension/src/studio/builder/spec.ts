@@ -122,7 +122,10 @@ export const NODE_MANUAL = `THE NODES, AND WHAT EACH IS FOR
                     If your step just needs words written before the shot, it is a
                     generate/text step, not an agent.
 
-  story     STORY DIRECTOR (ONE WRITER FOR ALL SHOTS)
+  story     THE DIRECTOR (ONE WRITER FOR ALL SHOTS)
+            Called "Director" everywhere a person sees it. The type string stays
+            "story" — that is what every saved workflow holds — so write
+            "type": "story" even though the node is named Director on the canvas.
             An orchestrator node that writes synchronized prompts for every connected
             shot in a single AI pass.
             Takes:  An optional story brief/idea in "prompt" or via T input.
@@ -199,9 +202,9 @@ HOW THEY GO TOGETHER
       generate video (grok)  ->  extend (+10s)  ->  extend (+10s)
     Lengthens a single camera take up to Grok's 30s ceiling without cutting.
 
-  Director for the whole story (Story Node).
+  One writer for the whole piece (the Director).
       story  ->  [shot1, shot2, shot3, shot4]
-    Connect one story node to every generate node in your scene. It inspects
+    Connect one Director to every generate node in your scene. It inspects
     their formats (media, ratio, duration) and writes all prompts together
     so characters, setting, and pacing match across the entire sequence.
 
@@ -216,7 +219,7 @@ HOW THEY GO TOGETHER
     Ask for the panel count that matches the number of clips (8 clips -> a 4x2
     board) and keep each caption to a short phrase — long captions render
     badly.
-    Set "storyboardSheet": true on that image step. A story director wired to
+    Set "storyboardSheet": true on that image step. A Director wired to
     it then asks it for a board instead of a scene; without the flag it is
     asked for one illustration and refused for mentioning panels.
 
