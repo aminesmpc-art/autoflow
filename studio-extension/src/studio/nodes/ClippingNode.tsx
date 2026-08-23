@@ -266,8 +266,9 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               onChange={(e) => onFile(e.target.files?.[0] ?? null)}
             />
             <p className="sn-clip__hint">
-              Already have a transcript? Wire a Prompt node into <strong>T</strong> and the
-              slowest stage is skipped.
+              <strong>T</strong> takes a <strong>transcript</strong> of this video, if the
+              creator published one — it skips the slowest stage. Direction and campaign
+              rules go in <strong>Settings</strong>, not here.
             </p>
           </div>
         )}

@@ -216,8 +216,26 @@ export function transcribeStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
     const probe = previous as ProbeLike;
 
     /* The escape hatch, and by far the cheapest path: many podcasts publish a
-       transcript, and using it turns eight minutes into nothing. */
+       transcript, and using it turns eight minutes into nothing.
+
+       Checked with the same rule as a transcript that came back from a chat,
+       because the failure mode is worse here and used to be silent. T is the
+       obvious place to wire a Prompt node, and a Prompt node is the obvious
+       place to write direction — so "we want good video with motion graphics"
+       became the transcript of a twenty-minute video. The survey then sliced
+       six words across ten candidate moments, asked a chat which were worth
+       posting, and got {"clips":[]} back, which was the only honest answer.
+       The user saw a failed ranking stage and no hint that the real mistake
+       was two stages earlier and theirs to fix. */
     if (cfg.pastedTranscript && cfg.pastedTranscript.trim()) {
+      const complaint = looksTranscribed(cfg.pastedTranscript, probe.durationSec);
+      if (complaint) {
+        throw new Error(
+          `The text wired into T ${complaint}. T takes a TRANSCRIPT of this video — `
+          + 'if you meant to give direction or rules, put it in Settings under the '
+          + 'brief instead, and leave T unwired so the video gets transcribed.',
+        );
+      }
       deps.log?.('using the transcript wired into T');
       return {
         chunks: [{ index: 0, start: 0, end: probe.durationSec, text: cfg.pastedTranscript.trim() }],

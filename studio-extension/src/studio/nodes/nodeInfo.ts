@@ -134,14 +134,15 @@ export const NODE_DOCS: Record<string, NodeDoc> = {
       'the moments from the audio, has them ranked against your campaign ' +
       'rules, and lays out a Cut node for each one.',
     inputs: [
-      { id: 'text', label: 'T — An existing transcript, if you already have one' },
+      { id: 'text', label: 'T — A transcript of this video, if one already exists' },
     ],
     outputs: [
       { id: 'text', label: 'T — Into the Cut nodes it lays out' },
     ],
     tip:
-      'Paste a transcript into the T input when the creator publishes one — ' +
-      'it skips the slowest stage entirely.',
+      'T is for a TRANSCRIPT, not for direction. Wire one in when the creator ' +
+      'published one and the slowest stage is skipped; anything else you want ' +
+      'to tell it goes in Settings.',
   },
 
   cut: {

@@ -151,10 +151,31 @@ describe('transcribe', () => {
     /* The escape hatch. Many podcasts publish a transcript, and using it
        turns eight minutes into nothing. */
     const h = harness();
-    const cfg = { ...h.cfg, pastedTranscript: 'already have this' };
+    const real = words(1500);                 // 600s at a normal speaking rate
+    const cfg = { ...h.cfg, pastedTranscript: real };
     const out = await transcribeStage(h.deps, cfg)(PROBE) as any;
     expect(h.sent).toHaveLength(0);
-    expect(out.chunks[0].text).toBe('already have this');
+    expect(out.chunks[0].text).toBe(real);
+  });
+
+  it('refuses text wired into T that cannot be a transcript', async () => {
+    /* This happened. T is the obvious port to wire a Prompt node into, and a
+       Prompt node is the obvious place to write direction, so "we want good
+       video with motion graphics" became the transcript of a 20-minute video.
+       Six words were sliced across ten candidate moments, a chat was asked
+       which were worth posting, and it correctly answered {"clips":[]} — and
+       the node blamed the ranking stage, two stages after the real mistake. */
+    const h = harness();
+    const cfg = { ...h.cfg, pastedTranscript: 'we want good video with motion graphics' };
+    await expect(transcribeStage(h.deps, cfg)(PROBE)).rejects.toThrow(/summary, not a transcript/);
+    await expect(transcribeStage(h.deps, cfg)(PROBE)).rejects.toThrow(/put it in Settings/);
+    expect(h.sent).toHaveLength(0);
+  });
+
+  it('refuses a pasted transcript with impossibly many words too', async () => {
+    const h = harness();
+    const cfg = { ...h.cfg, pastedTranscript: words(9000) };   // 900 wpm
+    await expect(transcribeStage(h.deps, cfg)(PROBE)).rejects.toThrow(/more than anyone can say/);
   });
 
   it('sends the audio up with every chunk', async () => {
