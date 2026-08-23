@@ -21,7 +21,7 @@ const read = (p: string) => readFileSync(join(__dirname, '..', p), 'utf8');
 
 describe('the runnable list', () => {
   it('contains every type that executes, and nothing that only carries data', () => {
-    expect([...RUNNABLE_NODE_TYPES].sort()).toEqual(['agent', 'extend', 'generate', 'story']);
+    expect([...RUNNABLE_NODE_TYPES].sort()).toEqual(['agent', 'clip', 'cut', 'extend', 'generate', 'story']);
     for (const t of ['prompt', 'image', 'frame']) {
       expect(isRunnableType(t)).toBe(false);
     }

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Cut harness</title>
+<!-- Loads the REAL studio bundle with a chrome.* shim, because a
+     chrome-extension:// page cannot be opened for inspection and the
+     component harness next door only covers the rail and one node.
+     Everything here is the shipped code; only the browser APIs are faked. -->
+<script>document.write('<link rel="stylesheet" href="dist/studio.css?v=' + Date.now() + '">')</script>
+<style>html,body{margin:0;height:100%;background:#0a0a0c}#root{height:100vh}</style>
+</head>
+<body>
+<script>
+// Minimal chrome surface the studio touches. Storage returns a seeded
+// workflow so the canvas has something real to lay out.
+const SEED = {
+  af_pending_workflow: {"name": "Clips from Escape 100 Cops", "nodes": [{"id": "clip1", "type": "clip", "position": {"x": 40, "y": 40}, "data": {"type": "clip", "label": "Clipping", "sourceName": "Escape 100 Cops, Win $500,000.mp4", "sourceSize": 357000000, "sourceKey": "mrbeast.mp4:75000000:1", "clipMode": "campaign", "wantedClips": 10, "campaignRules": "Do not use any logos, hashtags, watermarks, or content that is not affiliated with this campaign.", "clipRun": {"sourceKey": "mrbeast.mp4:75000000:1", "stages": {"ingest": {"status": "done", "tookMs": 900, "result": {"durationSec": 1400}}, "transcribe": {"status": "done", "tookMs": 214000, "result": {"duration": 1400, "chunks": []}}, "survey": {"status": "done", "tookMs": 64000, "result": {"moments": [{"rank": 1, "moment": 3, "hookLine": "Look at these straw bales right here.", "closingLine": "Darius has already been arrested.", "why": "A complete, high-stakes arrest that pays off instantly with no prior context."}, {"rank": 2, "moment": 7, "hookLine": "Start the timer!", "closingLine": "That should buy us some time.", "why": "The premise and the escape in one unbroken run."}, {"rank": 3, "moment": 11, "hookLine": "I don't think the cops realize there's tunnels under the city.", "closingLine": "we're already behind the line", "why": "A plan, executed, with a visible payoff."}]}}, "layout": {"status": "done", "tookMs": 40, "result": {"count": 3}}}}}}, {"id": "c1", "type": "cut", "position": {"x": 560, "y": 40}, "data": {"type": "cut", "label": "1. Look at these straw bales\u2026", "hookLine": "Look at these straw bales right here.", "closingLine": "Yeah, it's only been 10 minutes, and Darius has already been arrested.", "why": "A complete, high-stakes arrest that pays off instantly with no prior context.", "sourceKey": "mrbeast.mp4:75000000:1", "nearSec": 75, "aspectRatio": "9:16", "status": "idle", "cutReport": "cut 82.66\u2013114.45s (31.79s) \u00b7 tracked crop 304x540 \u00b7 speaker moved 32% of frame width across 4 samples \u00b7 audio kept \u00b7 5.22 MB", "mediaKey": "k1"}}, {"id": "c2", "type": "cut", "position": {"x": 560, "y": 340}, "data": {"type": "cut", "label": "2. Start the timer!", "hookLine": "Start the timer!", "closingLine": "That should buy us some time.", "why": "The premise and the escape in one unbroken run.", "sourceKey": "mrbeast.mp4:75000000:1", "nearSec": 75, "aspectRatio": "9:16", "status": "idle"}}, {"id": "c3", "type": "cut", "position": {"x": 560, "y": 640}, "data": {"type": "cut", "label": "3. I don't think the cops\u2026", "hookLine": "I don't think the cops realize there's tunnels under the city.", "closingLine": "we're already behind the line", "why": "A plan, executed, with a visible payoff.", "sourceKey": "gone.mp4:1:1", "nearSec": 75, "aspectRatio": "9:16", "status": "idle"}}], "edges": [{"id": "e1", "source": "clip1", "target": "c1", "sourceHandle": "text", "targetHandle": "text", "type": "default", "animated": true, "style": {"stroke": "#8b5cf6", "strokeWidth": 2.5}}, {"id": "e2", "source": "clip1", "target": "c2", "sourceHandle": "text", "targetHandle": "text", "type": "default", "animated": true, "style": {"stroke": "#8b5cf6", "strokeWidth": 2.5}}, {"id": "e3", "source": "clip1", "target": "c3", "sourceHandle": "text", "targetHandle": "text", "type": "default", "animated": true, "style": {"stroke": "#8b5cf6", "strokeWidth": 2.5}}]},
+  af_workflows: [],
+  af_settings: {},
+};
+const noop = () => {};
+window.chrome = {
+  runtime: {
+    id: 'harness',
+    sendMessage: () => Promise.resolve({}),
+    onMessage: { addListener: noop, removeListener: noop },
+    getURL: (p) => p,
+    lastError: null,
+  },
+  storage: {
+    local: {
+      get: (k) => Promise.resolve(typeof k === 'string' ? {[k]: SEED[k]} : SEED),
+      set: () => Promise.resolve(),
+      remove: () => Promise.resolve(),
+      onChanged: { addListener: noop },
+    },
+    onChanged: { addListener: noop },
+  },
+  tabs: { query: () => Promise.resolve([]), create: () => Promise.resolve({}), sendMessage: () => Promise.resolve({}) },
+  windows: { getCurrent: () => Promise.resolve({}) },
+  sidePanel: { open: () => Promise.resolve() },
+  identity: { launchWebAuthFlow: () => Promise.resolve('') },
+};
+</script>
+<div id="root"></div>
+<script>document.write('<scr' + 'ipt src="dist/studio.js?v=' + Date.now() + '"></scr' + 'ipt>')</script>
+</body>
+</html>

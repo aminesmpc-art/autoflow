@@ -3245,3 +3245,285 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   transform: translateY(-1px);
 }
 
+
+/* ══════════════════════════════════════════════════════════════════
+   Clipping node
+   A long recording in, a postable vertical clip out. Wider than a
+   Director because the stage rail is a permanent fixture: five stages
+   that cost very different amounts, and knowing which one you are
+   waiting on is most of what the node has to tell you.
+   ══════════════════════════════════════════════════════════════════ */
+.sn-wrap--kind-clip { width: 390px; min-width: 390px; }
+.sn-wrap--kind-clip .sn { border-color: var(--n-video); }
+.sn-wrap--kind-clip .sn-label__icon { background: var(--n-video-10); color: var(--n-video); }
+
+.sn--clip { min-width: 390px; width: 390px; border-left: 2px solid var(--n-video); }
+
+/* ── the stage rail ── */
+.sn-clip__stages {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--s-2);
+}
+.sn-clip__stage {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  padding: 3px var(--s-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-row);
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  text-align: left;
+  cursor: default;
+}
+.sn-clip__glyph { width: 1em; flex: none; text-align: center; }
+.sn-clip__stage-name { flex: 1; }
+.sn-clip__took { color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* Status is never colour alone — the glyph carries it too, so the rail
+   still reads for anyone who cannot separate these hues. */
+.sn-clip__stage--pending { color: var(--text-3); }
+.sn-clip__stage--running {
+  background: var(--busy-16);
+  border-color: var(--busy);
+  color: var(--busy);
+}
+.sn-clip__stage--done {
+  background: var(--ok-16);
+  border-color: var(--ok);
+  color: var(--ok);
+  cursor: pointer;
+}
+.sn-clip__stage--done:hover { border-color: var(--accent); }
+.sn-clip__stage--failed {
+  background: var(--bad-12);
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+/* ── tabs ── */
+.sn-clip__tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: var(--s-2);
+  padding: 3px;
+  background: var(--sunken);
+  border-radius: var(--r-ctrl);
+}
+.sn-clip__tab {
+  flex: 1;
+  padding: 3px var(--s-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--r-chip);
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  cursor: pointer;
+}
+.sn-clip__tab:hover { color: var(--text-2); }
+.sn-clip__tab--on { background: var(--surface-3); color: var(--text); }
+
+/* ── panels ── */
+.sn-clip__panel {
+  margin-top: var(--s-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.sn-clip__file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  background: var(--sunken);
+  border-radius: var(--r-row);
+  font-size: var(--t-micro);
+  color: var(--text-2);
+}
+.sn-clip__hint { margin: 0; font-size: var(--t-micro); color: var(--text-3); line-height: 1.45; }
+
+.sn-clip__quote {
+  padding: var(--s-2);
+  background: var(--sunken);
+  border-left: 2px solid var(--n-video);
+  border-radius: var(--r-row);
+  font-size: var(--t-micro);
+  color: var(--text);
+  line-height: 1.45;
+}
+.sn-clip__quote--end { border-left-color: var(--line-2); }
+.sn-clip__why { margin: 0; font-size: var(--t-micro); color: var(--text-3); line-height: 1.45; }
+
+/* ── beat map ── */
+.sn-clip__beats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 160px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.sn-clip__beat {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: var(--s-2);
+  padding: 3px var(--s-2);
+  border-radius: var(--r-row);
+  font-size: var(--t-micro);
+  background: var(--sunken);
+}
+.sn-clip__beat-t { color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sn-clip__beat-kind { font-weight: 600; white-space: nowrap; }
+.sn-clip__beat-caption {
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A-roll is the speaker, B-roll is a generated graphic. The word says which,
+   so the tint is reinforcement rather than the only signal. */
+.sn-clip__beat--a-roll .sn-clip__beat-kind { color: var(--n-video); }
+.sn-clip__beat--b-roll .sn-clip__beat-kind { color: var(--n-image); }
+
+/* ── Clipping: the ranked moments ─────────────────────────────
+   A survey returns ten of these, so the list scrolls inside the node rather
+   than making the node ten times taller. The rank is the whole point of the
+   list — it is what tells a clipper which three to run first — so it gets a
+   fixed gutter and the quote flows beside it. */
+.sn-clip__moments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.sn-clip__moment { display: flex; gap: var(--s-2); align-items: flex-start; }
+.sn-clip__moment-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.sn-clip__rank {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--n-video-10);
+  color: var(--n-video);
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Clipping: mode and rules ── */
+.sn-clip__modes { display: flex; gap: var(--s-1); align-items: center; }
+.sn-clip__mode {
+  flex: 1;
+  padding: 4px var(--s-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: transparent;
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  cursor: pointer;
+}
+.sn-clip__mode--on {
+  border-color: var(--n-video);
+  background: var(--n-video-10);
+  color: var(--n-video);
+}
+.sn-clip__count { display: flex; align-items: center; gap: 4px; font-size: var(--t-micro); color: var(--text-3); }
+.sn-clip__count input {
+  width: 44px;
+  padding: 4px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  color: var(--text);
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+}
+.sn-clip__rules {
+  width: 100%;
+  min-height: 96px;
+  padding: var(--s-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--t-micro);
+  line-height: 1.45;
+  resize: vertical;
+}
+
+/* ── The Cut node ─────────────────────────────────────────────
+   Narrower than the Clipping node that lays it out, because ten of them sit
+   in a column beside it and a full-width card would make that column a wall. */
+.sn-wrap--kind-cut { width: 300px; min-width: 300px; }
+.sn-wrap--kind-cut .sn { border-color: var(--n-video); }
+.sn-wrap--kind-cut .sn-label__icon { background: var(--n-video-10); color: var(--n-video); }
+
+.sn--cut { min-width: 300px; width: 300px; border-left: 2px solid var(--n-video); }
+.sn-cut__body { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-2); }
+
+/* The two lines define the clip, so they read as a pair: the opening one
+   marked in the accent, the closing one muted, the same way the single-clip
+   node showed a chosen window. */
+.sn-cut__line {
+  padding: var(--s-2);
+  background: var(--sunken);
+  border-left: 2px solid var(--n-video);
+  border-radius: var(--r-row);
+  font-size: var(--t-micro);
+  color: var(--text);
+  line-height: 1.45;
+}
+.sn-cut__line--in { border-left-color: var(--n-video); }
+.sn-cut__line--out { border-left-color: var(--line-2); }
+.sn-cut__why { margin: 0; font-size: var(--t-micro); color: var(--text-3); line-height: 1.45; }
+
+.sn-cut__result { display: flex; flex-direction: column; gap: var(--s-1); }
+/* Capped by height rather than width: the clip is 9:16, and letting a vertical
+   video size itself to a 300px card gives a node over 500px tall. */
+.sn-cut__video {
+  max-height: 260px;
+  max-width: 100%;
+  align-self: center;
+  border-radius: var(--r-row);
+  background: var(--canvas);
+}
+.sn-cut__meta {
+  display: flex;
+  gap: var(--s-2);
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.4;
+}
+.sn-cut__save {
+  flex: 0 0 auto;
+  padding: 3px var(--s-2);
+  border: 1px solid var(--n-video);
+  border-radius: var(--r-row);
+  background: var(--n-video-10);
+  color: var(--n-video);
+  font-size: var(--t-micro);
+  cursor: pointer;
+}
+.sn-cut__pending { font-size: var(--t-micro); color: var(--text-3); line-height: 1.45; }
+.sn-cut__warn {
+  padding: var(--s-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  color: var(--text-2);
+  border-left: 2px solid var(--n-video);
+  font-size: var(--t-micro);
+  line-height: 1.45;
+}

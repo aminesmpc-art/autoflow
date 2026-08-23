@@ -21,6 +21,8 @@ import '@xyflow/react/dist/style.css';
 import { Icon } from './Icon';
 import { getUpgradeTarget } from '../../shared/api';
 import { StoryNode } from '../nodes/StoryNode';
+import { ClippingNode } from '../nodes/ClippingNode';
+import { CutNode } from '../nodes/CutNode';
 import { canConnect, connectionProblem } from '../canvas/connect';
 import { BrandIcon } from './BrandIcon';
 import { useStudioStore, FREE_LIMITS } from '../store';
@@ -35,6 +37,7 @@ import { NodeBoundary } from './NodeBoundary';
 import { DeletableEdge } from '../canvas/DeletableEdge';
 import { runner } from '../engine/WorkflowRunner';
 import { bridge } from '../engine/bridge';
+import { mcpBridge, type McpBridgeStatus } from '../engine/mcpBridge';
 import { isRunnableType } from '../templates/validate';
 
 /* Register custom node types */
@@ -60,6 +63,8 @@ const nodeTypes = {
   extend: guarded(ExtendNode, 'Extend'),
   agent: guarded(AgentNode, 'Agent'),
   story: guarded(StoryNode, 'Director'),
+  clip: guarded(ClippingNode, 'Clipping'),
+  cut: guarded(CutNode, 'Cut'),
 };
 
 const edgeTypes = {
@@ -99,6 +104,7 @@ function CanvasInner() {
   } = useStudioStore();
 
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
+  const [mcpStatus, setMcpStatus] = useState<McpBridgeStatus>('disconnected');
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { zoomIn, zoomOut, fitView, setCenter } = useReactFlow();
@@ -129,23 +135,29 @@ function CanvasInner() {
      canvas is a real workflow, and this check silently disabled Run on one. */
   const canRun = nodes.some((n) => isRunnableType((n.data as any)?.type));
 
-  /* Connect bridge on mount */
+  /* Connect bridges on mount */
   useEffect(() => {
     bridge.connect();
-    loadEntitlements();
-    return () => bridge.disconnect();
-  }, [loadEntitlements]);
+    const unsubMcp = mcpBridge.onStatusChange(setMcpStatus);
+    useStudioStore.getState().loadEntitlements();
+    return () => {
+      bridge.disconnect();
+      unsubMcp();
+    };
+  }, []);
 
   /* Signing in happens in the side panel, which the canvas cannot see.
      Without this, someone who signs in with the canvas already open keeps
      looking at Free limits until they reopen it. */
   useEffect(() => {
     const onChange = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-      if (area === 'local' && changes.af_cached_profile) loadEntitlements();
+      if (area === 'local' && changes.af_cached_profile) {
+        useStudioStore.getState().loadEntitlements();
+      }
     };
     chrome.storage.onChanged.addListener(onChange);
     return () => chrome.storage.onChanged.removeListener(onChange);
-  }, [loadEntitlements]);
+  }, []);
 
   /* Ctrl/Cmd+S saves, as in every other editor */
   useEffect(() => {
@@ -568,6 +580,27 @@ function CanvasInner() {
     } as any);
   }, [addNode, nodes, guardAdd]);
 
+  /* The Clipping node. Its own node rather than a mode on the Director:
+     the Director writes prompts from an idea, this one reads a recording and
+     decides what is in it. Same canvas, opposite direction of travel. */
+  const addClipNode = useCallback(() => {
+    if (!guardAdd()) return;
+    const id = `clip_${Date.now()}`;
+    addNode({
+      id,
+      type: 'clip',
+      position: { x: 300, y: 250 + nodes.length * 50 },
+      data: {
+        type: 'clip',
+        label: `Clipping ${nodes.filter((x) => x.type === 'clip').length + 1}`,
+        platform: 'gemini',
+        sourceName: '',
+        sourceKey: '',
+        status: 'idle',
+      },
+    } as any);
+  }, [addNode, nodes, guardAdd]);
+
   const addAskNode = useCallback(() => {
     if (!guardAdd()) return;
     const id = `ask_${Date.now()}`;
@@ -652,6 +685,32 @@ function CanvasInner() {
               </button>
             </>
           )}
+          <span 
+            className="studio-topbar__stat"
+            title={mcpStatus === 'connected' ? 'MCP Bridge connected to Claude/Cursor (ws://localhost:8124)' : 'MCP Bridge offline (auto-reconnecting)'}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'help',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              background: mcpStatus === 'connected' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+              border: `1px solid ${mcpStatus === 'connected' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.06)'}`,
+            }}
+          >
+            <span style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              backgroundColor: mcpStatus === 'connected' ? '#10B981' : '#6B7280',
+              boxShadow: mcpStatus === 'connected' ? '0 0 8px #10B981' : 'none',
+              transition: 'all 0.3s ease'
+            }} />
+            <span style={{ fontSize: '0.78rem', color: mcpStatus === 'connected' ? '#10B981' : 'var(--text-muted)' }}>
+              MCP {mcpStatus === 'connected' ? 'Active' : 'Idle'}
+            </span>
+          </span>
           <button
             className="studio-topbar__icon"
             onClick={() => exportWorkflow()}
@@ -729,6 +788,12 @@ function CanvasInner() {
               <Icon name="story" kind="video" className="studio-toolbar__btn-icon" />
             </span>
             <span className="studio-toolbar__btn-label">Director</span>
+          </button>
+          <button className="studio-toolbar__btn studio-toolbar__btn--clip" onClick={addClipNode} aria-label="Add Clipping node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--clip">
+              <Icon name="story" kind="video" className="studio-toolbar__btn-icon" />
+            </span>
+            <span className="studio-toolbar__btn-label">Clipping</span>
           </button>
           <button className="studio-toolbar__btn studio-toolbar__btn--agent" onClick={addAgentNode} aria-label="Add Agent node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--agent">

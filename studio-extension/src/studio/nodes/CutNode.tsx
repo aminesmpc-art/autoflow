@@ -1,0 +1,134 @@
+/**
+ * One cut from the source video, as its own node.
+ *
+ * Emitted by the Clipping director, ten or so at a time. Each one holds the
+ * two lines its clip runs between and finds the seconds itself when it runs —
+ * see clip/emitPlan.ts for why the seconds are deliberately not baked in.
+ *
+ * ── This node is where the output finally became visible ──────────────────
+ *
+ * The pipeline produced a finished clip for weeks and nothing ever showed it.
+ * getMedia() had no callers outside its own file: the runner encoded a Blob,
+ * put it in a Map, and every way of looking at it went through a console log.
+ * The player below is the fix, and it is the reason the node has a body at all
+ * — a cut with no preview is a node you have to take on faith.
+ */
+
+import { memo, useCallback, useEffect, useState } from 'react';
+import { Handle, Position, type NodeProps } from '@xyflow/react';
+
+import { Icon } from '../components/Icon';
+import { useStudioStore } from '../store';
+import { NodeInfoBadge } from './NodeInfoBadge';
+import { getMedia, hasSource } from '../clip/sourceStore';
+
+function CutNodeInner({ id, data, selected }: NodeProps) {
+  const d = data as any;
+  const updateNodeData = useStudioStore((s) => s.updateNodeData);
+  const removeNode = useStudioStore((s) => s.removeNode);
+  const duplicateNode = useStudioStore((s) => s.duplicateNode);
+
+  const mediaKey: string = d.mediaKey || '';
+  const sourceKey: string = d.sourceKey || '';
+  const [url, setUrl] = useState('');
+
+  /* An object URL is a document-lifetime handle to a Blob. Left unrevoked,
+     every re-run of every cut node leaks its clip for as long as the tab
+     lives, and these are megabytes each. */
+  useEffect(() => {
+    const blob = mediaKey ? getMedia(mediaKey) : undefined;
+    if (!blob) { setUrl(''); return undefined; }
+    const next = URL.createObjectURL(blob);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [mediaKey, d.cutReport]);
+
+  const save = useCallback(() => {
+    if (!url) return;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${String(d.label || 'clip').replace(/[^\w.-]+/g, '_')}.mp4`;
+    a.click();
+  }, [url, d.label]);
+
+  /* The bytes live in memory for the life of the tab. After a reload the run
+     is still on the node and the source is not, which used to present as a
+     node that simply failed on Run with nothing explaining why. */
+  const sourceMissing = !!sourceKey && !hasSource(sourceKey);
+
+  return (
+    <div className={`sn-wrap sn-wrap--kind-cut ${selected ? 'sn-wrap--selected' : ''}`}>
+      <div className="sn-actions">
+        <button className="sn-actions__btn" onClick={() => duplicateNode(id)} title="Duplicate node">⧉</button>
+        <button className="sn-actions__btn sn-actions__btn--danger" onClick={() => removeNode(id)} title="Delete node">🗑</button>
+      </div>
+
+      <div className="sn sn--cut">
+        <Handle type="target" position={Position.Left} id="text" className="sn-port sn-port--text" style={{ top: 72 }}>
+          <span className="sn-port__glyph">T</span>
+        </Handle>
+
+        <div className="sn-bar">
+          <Icon name="story" kind="video" className="sn-label__icon" />
+          <input
+            className="sn-label__name nodrag"
+            value={d.label || 'Cut'}
+            onChange={(e) => updateNodeData(id, { label: e.target.value })}
+            placeholder="Cut"
+          />
+          <NodeInfoBadge type="cut" />
+          {d.status === 'running' ? (
+            <span className="sn-count sn-count--running">
+              {d.statusNote || 'Working…'}
+            </span>
+          ) : (
+            <span className="sn-story__badge">{url ? 'Ready' : '9:16'}</span>
+          )}
+        </div>
+
+        <div className="sn-cut__body">
+          {sourceMissing && (
+            <div className="sn-cut__warn">
+              The video is not loaded. Drop it on the Clipping node again — the
+              cut keeps its lines, only the bytes are gone.
+            </div>
+          )}
+
+          {/* The pair of lines IS the clip's definition, so it is the body of
+              the node rather than something behind a tab. */}
+          <div className="sn-cut__line sn-cut__line--in">
+            &ldquo;{d.hookLine || 'no opening line'}&rdquo;
+          </div>
+          <div className="sn-cut__line sn-cut__line--out">
+            &ldquo;{d.closingLine || 'no closing line'}&rdquo;
+          </div>
+
+          {d.why && <p className="sn-cut__why">{d.why}</p>}
+
+          {url ? (
+            <div className="sn-cut__result">
+              <video className="sn-cut__video nodrag" src={url} controls preload="metadata" />
+              <div className="sn-cut__meta">
+                <span>{d.cutReport || ''}</span>
+                <button type="button" className="sn-cut__save nodrag" onClick={save}>
+                  Save
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="sn-cut__pending">
+              Run this node to find the two lines in the audio and cut between them.
+            </div>
+          )}
+        </div>
+
+        <Handle type="source" position={Position.Right} id="result" className="sn-port sn-port--out" style={{ top: '50%' }}>
+          <span className="sn-port__glyph">→</span>
+        </Handle>
+      </div>
+    </div>
+  );
+}
+
+export const CutNode = memo(CutNodeInner);
+export default CutNode;

@@ -14,6 +14,14 @@
       "port": 8899
     },
     {
+      "name": "studio-harness-rw",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "studio-extension/_harness/serve.js"
+      ],
+      "port": 8899
+    },
+    {
       "name": "website",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

@@ -25,7 +25,7 @@ import { validateTemplate, isRunnableType } from '../templates/validate';
 import type { Template } from '../templates';
 
 /** What a plan may ask for. One name per node type the canvas can draw. */
-export type PlanStepType = 'image' | 'generate' | 'extend' | 'frame' | 'agent' | 'story';
+export type PlanStepType = 'image' | 'generate' | 'extend' | 'frame' | 'agent' | 'story' | 'cut';
 
 export interface PlanStep {
   id: string;
@@ -50,6 +50,26 @@ export interface PlanStep {
   /* Story director film language, decided once for the whole piece. */
   colorTemp?: string;
   lighting?: string;
+  /* ── A cut, from a video the user already has ──────────────────────
+     Named by the WORDS at each end rather than by a timestamp, because the
+     whole clipping pipeline is built on the measurement that models cannot
+     reliably timestamp a long recording but can quote it exactly. The node
+     finds the seconds itself, from the audio, when it runs.
+
+     `sourceKey` is filled in by whoever emits the plan, not by the model —
+     it identifies bytes held in memory and is meaningless to a chat. */
+  hookLine?: string;
+  closingLine?: string;
+  /** Why this moment is worth posting, in the words shown on the node. */
+  why?: string;
+  sourceKey?: string;
+  /* Roughly where in the recording to search, in seconds.
+     This is NOT a model's answer and never becomes the clip's boundary — it
+     comes from the loudness envelope, which is measurement. It exists so the
+     node searches a two-minute window instead of attaching a twenty-minute
+     WAV to a question, which is the exact size at which timestamp answers were
+     measured to turn into invented arithmetic. */
+  nearSec?: number;
   /** Step ids feeding this one — a still, a clip, or written text. */
   inputs?: string[];
   aspectRatio?: string;
@@ -150,6 +170,11 @@ function depthOf(id: string, byId: Map<string, PlanStep>, seen = new Set<string>
 const COL_W = 480;
 const ROW_H = 300;
 
+/* A cut node carries two quoted lines, a reason, and — once it has run — a
+   9:16 player. Measured against the shipped stylesheet in the canvas harness,
+   not guessed: an unrun cut is about 300px and a finished one about 560. */
+const CUT_ROW_H = 620;
+
 export interface CompileResult {
   template: Template | null;
   /** Everything wrong, in the words the user should see. */
@@ -175,10 +200,33 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
   }
   if (problems.length) return { template: null, problems };
 
-  const TYPES: PlanStepType[] = ['image', 'generate', 'extend', 'frame', 'agent', 'story'];
+  const TYPES: PlanStepType[] = ['image', 'generate', 'extend', 'frame', 'agent', 'story', 'cut'];
   for (const s of byId.values()) {
     if (!TYPES.includes(s.type)) {
       problems.push(`Step "${s.id}" has type "${s.type}"; use one of ${TYPES.join(', ')}.`);
+    }
+    /* A cut with no quoted ends cannot be located, and a cut that cannot be
+       located is a node that will fail the moment it is run. Refusing it here
+       turns a run-time failure on someone's canvas into a build-time message
+       naming the step. */
+    if (s.type === 'cut') {
+      if (!String(s.hookLine || '').trim()) {
+        problems.push(`Step "${s.id}" is a cut with no hookLine; quote the line it opens on.`);
+      }
+      if (!String(s.closingLine || '').trim()) {
+        problems.push(`Step "${s.id}" is a cut with no closingLine; quote the line it ends on.`);
+      }
+      /* A cut names bytes held in memory. The Clipping director fills this in
+         from the video that was dropped on it; nothing else can. Without the
+         check, a plan written by a chat — which has no video and no way to
+         know what a sourceKey is — compiles to a node that looks finished and
+         fails the moment anyone runs it. */
+      if (!String(s.sourceKey || '').trim()) {
+        problems.push(
+          `Step "${s.id}" is a cut with no video behind it. Cuts are laid out by `
+          + 'a Clipping node from a recording you dropped on it.',
+        );
+      }
     }
     /* A frame is the last still of one clip. Two clips into it is not a
        richer frame, it is an unanswerable question about which clip. */
@@ -186,7 +234,11 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
       const from = (s.inputs || []).map((i) => byId.get(i)).filter(Boolean);
       if (from.length !== 1) {
         problems.push(`Step "${s.id}" is a frame and takes ${from.length} inputs; it needs exactly one.`);
-      } else if (from[0]!.media !== 'video') {
+      /* A cut is video by construction — it has no `media` field to say so,
+         because nothing about it is chosen. Without this a plan that ends a
+         cut and starts a generated shot on its last frame, which is the whole
+         point of mixing real footage with B-roll, is rejected as "an image". */
+      } else if (from[0]!.type !== 'cut' && from[0]!.media !== 'video') {
         problems.push(
           `Step "${s.id}" takes its frame from "${from[0]!.id}", which makes `
           + `${from[0]!.media || 'an image'} rather than video.`
@@ -228,11 +280,16 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
 
   const nodes: any[] = [];
   const edges: any[] = [];
-  const rowInCol = new Map<number, number>();
-  const nextY = (col: number) => {
-    const row = rowInCol.get(col) || 0;
-    rowInCol.set(col, row + 1);
-    return 40 + row * ROW_H;
+  /* Y is accumulated rather than counted, so a type that needs more room than
+     a row can ask for it. Every existing type consumes exactly ROW_H, which
+     makes this identical to `40 + row * ROW_H` for them — but a cut node grows
+     a video player the moment it runs, and at one fixed row height a column of
+     ten of them overlapped as soon as the first finished. */
+  const yInCol = new Map<number, number>();
+  const nextY = (col: number, height: number = ROW_H) => {
+    const y = yInCol.get(col) ?? 40;
+    yInCol.set(col, y + height);
+    return y;
   };
   const edge = (source: string, target: string, sourceHandle: string, targetHandle: string, colour: string) => {
     edges.push({
@@ -264,6 +321,28 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
         data: { type: 'frame', label: step.label || 'Last frame', frameUrl: '' },
       });
       for (const m of step.inputs || []) edge(m, step.id, 'result', 'image_ref', '#3b82f6');
+      continue;
+    }
+
+    /* One postable clip, cut from a video the user already has.
+       No prompt, no platform, no generation: the material exists, and the
+       node's whole job is to find the two ends in the audio and encode what
+       is between them. The seconds are deliberately absent — see PlanStep. */
+    if (step.type === 'cut') {
+      nodes.push({
+        id: step.id, type: 'cut', position: { x, y: nextY(col, CUT_ROW_H) },
+        data: {
+          type: 'cut', label: step.label || 'Cut',
+          sourceKey: String(step.sourceKey || ''),
+          hookLine: String(step.hookLine || '').trim(),
+          closingLine: String(step.closingLine || '').trim(),
+          why: String(step.why || '').trim(),
+          nearSec: typeof step.nearSec === 'number' && step.nearSec >= 0 ? step.nearSec : 0,
+          aspectRatio: step.aspectRatio || '9:16',
+          status: 'idle',
+        },
+      });
+      for (const m of step.inputs || []) edge(m, step.id, 'text', 'text', '#8b5cf6');
       continue;
     }
 

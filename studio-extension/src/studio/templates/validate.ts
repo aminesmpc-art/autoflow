@@ -51,6 +51,19 @@ export const NODE_PORTS: Record<string, { in: string[]; out: string[] }> = {
      that, and giving it a distinct port shape would make it un-swappable with
      the node it is meant to grow out of. */
   agent: { in: ['text'], out: ['text'] },
+  /* The Clipping node. A long source goes in as a dropped file rather than
+     down a wire, so the only input is the optional pasted transcript that
+     lets a clipper skip the slowest stage entirely. It writes still and
+     motion prompts into the b-roll nodes it spawns, which is the same shape
+     as the Director: text out, to the nodes it is responsible for. */
+  clip: { in: ['text'], out: ['text'] },
+  /* One cut from the source, as its own node.
+     Text in, because that is where the Clipping director's wire lands — and
+     because a prompt node can override the pair of lines the cut looks for.
+     `result` out rather than `text`, because what comes out is a video clip:
+     the same port a generated clip emits, so a frame or an extend can chain
+     off real footage exactly as it chains off generated footage. */
+  cut: { in: ['text'], out: ['result'] },
 };
 
 /**
@@ -62,7 +75,7 @@ export const NODE_PORTS: Record<string, { in: string[]; out: string[] }> = {
  * filter unable to re-run one, and the runner's own step filter the only
  * place that knew. Prompt, image and frame carry data and never run.
  */
-export const RUNNABLE_NODE_TYPES = ['generate', 'extend', 'agent', 'story'] as const;
+export const RUNNABLE_NODE_TYPES = ['generate', 'extend', 'agent', 'story', 'clip', 'cut'] as const;
 
 export const isRunnableType = (type: unknown): boolean =>
   typeof type === 'string' && (RUNNABLE_NODE_TYPES as readonly string[]).includes(type);
@@ -106,7 +119,7 @@ export const portsFor = (node: any) => {
    Templates needing either were just filtered out of the gallery with an
    info-level log, so a published template simply never appeared.
    capabilities.test.ts now checks both against the code and the manifest. */
-export const RENDERABLE_NODE_TYPES = ['prompt', 'image', 'generate', 'frame', 'extend', 'agent', 'story'] as const;
+export const RENDERABLE_NODE_TYPES = ['prompt', 'image', 'generate', 'frame', 'extend', 'agent', 'story', 'clip', 'cut'] as const;
 
 /* ── Grok's extend arithmetic ──────────────────────────────────
    Imagine starts a clip at 6, 10 or 15 seconds and extends it by 6 or 10,
@@ -304,7 +317,13 @@ export function validateTemplate(tpl: any): string[] {
       continue;
     }
     const from = byId.get(incoming[0].source);
-    if (from?.type !== 'generate' || from?.data?.mediaType !== 'video') {
+    /* A cut produces video too. It has no mediaType saying so, because
+       nothing about a cut is chosen — it is always a vertical clip of footage
+       that already exists. Without this the one plan that mixes real footage
+       with a generated shot continuing from its last frame is rejected. */
+    const makesVideo = from?.type === 'cut'
+      || (from?.type === 'generate' && from?.data?.mediaType === 'video');
+    if (!makesVideo) {
       fail(`frame node "${n.id}" takes its frame from a ${from?.type || 'missing'} node, which produces no video`);
     }
   }

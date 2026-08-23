@@ -27,6 +27,14 @@ import {
 } from '../ask/storyPlan';
 import { runAgent, type AgentStep, type ToolOutcome } from './agent';
 import { toolsByName } from './tools';
+import { advance, describeRun, forSource, resultOf } from '../clip/stages';
+import { clipRunners, stagesToSkip } from '../clip/runClip';
+import { getMedia, getSource, putMedia } from '../clip/sourceStore';
+import { compilePlan } from '../builder/plan';
+
+/* How far right of the Clipping node its cuts are laid out. Wide enough that
+   the director and the first column of cuts do not overlap at any zoom. */
+const LAYOUT_GAP_X = 520;
 import {
   isFramesMode, extendChain, secondsOf, isRunnableType, GROK_MAX_TOTAL_SECONDS,
 } from '../templates/validate';
@@ -407,6 +415,8 @@ export class WorkflowRunner {
            silently skipped. The run finished instantly having done nothing. */
         case 'agent':
         case 'story':
+        case 'clip':
+        case 'cut':
         case 'extend':
         case 'generate': {
           // Nodes toggled off are skipped without consuming a generation
@@ -611,6 +621,19 @@ export class WorkflowRunner {
        explicit form of what an Ask AI node was doing by inference: the user
        wires it to the nodes it is responsible for, and it writes all of them
        in one reply having been shown what each of them is configured to do. */
+    /* A Clipping node reads a recording instead of writing from an idea, so
+       it leaves here too. Five staged asks, each cached on the node, rather
+       than one round trip. */
+    if (node.type === 'clip' || nodeData.type === 'clip') {
+      return this.executeClipNode(nodeId, nodeData, edges);
+    }
+
+    /* A Cut node encodes footage the user already has. Nothing is generated
+       and no platform is involved, so it never reaches the bridge. */
+    if (node.type === 'cut' || nodeData.type === 'cut') {
+      return this.executeCutNode(nodeId, nodeData);
+    }
+
     if (node.type === 'story' || nodeData.type === 'story') {
       const targets = this.shotTargetsFor(nodeId, edges);
       if (!targets.length) {
@@ -618,6 +641,9 @@ export class WorkflowRunner {
           'This Director is not wired to anything — connect its output to the '
           + 'nodes whose prompts it should write'
         );
+      }
+      if (!prompt.trim()) {
+        prompt = (nodeData.brief || nodeData.prompt || '').trim();
       }
       if (!prompt.trim()) {
         throw new Error('No idea connected — link a Prompt node to the T input');
@@ -1420,6 +1446,218 @@ export class WorkflowRunner {
       shotPrompts: best.shots.map((sh) => sh.prompt),
     });
     return { tileId: '', text: combined };
+  }
+
+  /**
+   * Run a Clipping node's five stages.
+   *
+   * The stage machine owns the ordering, the caching and the failure
+   * handling; this only supplies the runners and writes each transition back
+   * to the node so the rail redraws as it goes. Anything already finished is
+   * skipped — a failed cut must never re-trigger the transcription above it.
+   */
+  private async executeClipNode(
+    nodeId: string, nodeData: any, edges: Edge[],
+  ): Promise<NodeResult> {
+    const store = useStudioStore.getState();
+    const sourceKey: string = nodeData.sourceKey || '';
+    if (!sourceKey) {
+      throw new Error('No video on this node yet - drop a recording on it first.');
+    }
+
+    /* A transcript wired into T skips the slowest stage entirely, which is
+       worth having whenever the podcast publishes one. */
+    const pastedFrom = getNodeInputs(nodeId, edges).get('text')?.[0];
+    const pasted = pastedFrom ? this.nodeResults.get(pastedFrom)?.imageUrl : undefined;
+
+    /* Loaded here rather than at the top of the file. clipMedia pulls in
+       mediabunny, and a static import puts a browser-only media library into
+       the import graph of everything that touches the runner — twenty-one
+       test suites among them, one of which started failing on a missing
+       TextDecoder the moment this was wired up. Nothing about running a
+       Generate node should load a demuxer. */
+    const { clipMedia: media } = await import('../clip/clipMedia');
+
+    let latest = forSource(nodeData.clipRun, sourceKey);
+    const platform = chatPlatform(nodeData.platform);
+
+    const deps = {
+      ask: (message: string, options?: { firstTurn?: boolean; attachments?: string[] }) =>
+        this.askAgent(nodeId, platform, message, options?.firstTurn ?? false, options?.attachments),
+      getSource,
+      putMedia,
+      media,
+      log: (line: string) => {
+        console.log(`[Clip] ${line}`);
+        useStudioStore.getState().updateNodeData(nodeId, { statusNote: line });
+      },
+    };
+
+    const cfg = {
+      sourceKey,
+      pastedTranscript: pasted,
+      /* Campaign is the default. Paid clipping under someone else's brief is
+         the common case, and it is the one where guessing wrong costs an
+         account rather than a re-render. */
+      mode: (nodeData.clipMode === 'explainer' ? 'explainer' : 'campaign') as 'campaign' | 'explainer',
+      campaignRules: nodeData.campaignRules || undefined,
+      sourceName: nodeData.sourceName || undefined,
+      clipCount: typeof nodeData.wantedClips === 'number' ? nodeData.wantedClips : undefined,
+    };
+
+    const runners = clipRunners(deps, cfg);
+
+    latest = await advance(latest, {
+      runners,
+      skip: stagesToSkip(cfg),
+      onChange: (run) => {
+        latest = run;
+        useStudioStore.getState().updateNodeData(nodeId, { clipRun: run });
+      },
+    });
+
+    const failed = Object.entries(latest.stages).find(([, r]) => r.status === 'failed');
+    if (failed) throw new Error(failed[1].error || `The ${failed[0]} stage failed.`);
+
+    const layout = resultOf(latest, 'layout') as { plan?: any; count?: number } | undefined;
+    if (!layout?.plan) throw new Error('The survey produced no plan to lay out.');
+
+    const added = this.layOutCuts(nodeId, layout.plan);
+
+    store.updateNodeData(nodeId, { statusNote: '', clipCount: added });
+    console.log(`[Runner] Clipping "${nodeData.label}":\n${describeRun(latest).join('\n')}`);
+    return {
+      tileId: '',
+      text: `${added} cut${added === 1 ? '' : 's'} laid out from ${nodeData.sourceName || 'the video'}.`,
+    };
+  }
+
+  /**
+   * Put the surveyed cuts on the canvas, beside the node that surveyed them.
+   *
+   * Beside, rather than on a fresh canvas the way the sidepanel Builder does
+   * it: the source video is bytes held in memory against this node, and a new
+   * canvas would arrive with every cut already broken. Keeping the Clipping
+   * node in place is also what makes a second survey — different rules, more
+   * clips — something you can just run again.
+   *
+   * Ids are prefixed per run so laying out twice cannot collide, and a
+   * previous layout from THIS node is cleared first, because the alternative
+   * is twenty nodes where the user expected ten.
+   */
+  private layOutCuts(nodeId: string, plan: any): number {
+    const store = useStudioStore.getState();
+    const { template, problems } = compilePlan(plan, { id: nodeId });
+    if (!template) {
+      throw new Error(
+        `The surveyed clips could not be laid out: ${problems.join(' ')}`,
+      );
+    }
+
+    const origin = store.nodes.find((n) => n.id === nodeId);
+    const ox = (origin?.position?.x ?? 0) + LAYOUT_GAP_X;
+    const oy = origin?.position?.y ?? 0;
+    const tag = `${nodeId}__`;
+
+    const fresh = template.nodes.map((n: any) => ({
+      ...n,
+      id: `${tag}${n.id}`,
+      position: { x: ox + (n.position?.x ?? 0), y: oy + (n.position?.y ?? 0) },
+      data: { ...n.data, clipOwner: nodeId },
+    }));
+    const freshEdges = (template.edges || []).map((e: any) => ({
+      ...e,
+      id: `${tag}${e.id}`,
+      source: `${tag}${e.source}`,
+      target: `${tag}${e.target}`,
+    }));
+
+    /* Wire the director to each cut it laid out, so the canvas shows where
+       they came from and deleting the director is visibly a decision. */
+    for (const n of fresh) {
+      if (n.type !== 'cut') continue;
+      freshEdges.push({
+        id: `${tag}from_${n.id}`,
+        source: nodeId, target: n.id,
+        sourceHandle: 'text', targetHandle: 'text',
+        type: 'default', animated: true,
+        style: { stroke: '#8b5cf6', strokeWidth: 2.5 },
+      });
+    }
+
+    const keptNodes = store.nodes.filter((n) => (n.data as any)?.clipOwner !== nodeId);
+    const keptIds = new Set(keptNodes.map((n) => n.id));
+    keptIds.add(nodeId);
+    const keptEdges = store.edges.filter((e) => keptIds.has(e.source) && keptIds.has(e.target));
+
+    store.setNodes([...keptNodes, ...fresh] as any);
+    store.setEdges([...keptEdges, ...freshEdges] as any);
+
+    return fresh.filter((n: any) => n.type === 'cut').length;
+  }
+
+  /**
+   * One Cut node: find its two lines in the audio and encode between them.
+   *
+   * Nothing here reaches a generation platform. The footage exists; the asks
+   * are only ever "where is this line" and "where is the speaker", and both
+   * go to a chat the same way every other ask does.
+   */
+  private async executeCutNode(nodeId: string, nodeData: any): Promise<NodeResult> {
+    const store = useStudioStore.getState();
+    const sourceKey: string = nodeData.sourceKey || '';
+    const hookLine: string = String(nodeData.hookLine || '').trim();
+    const closingLine: string = String(nodeData.closingLine || '').trim();
+
+    if (!sourceKey) {
+      throw new Error(
+        'This cut has no video behind it. It is normally laid out by a Clipping '
+        + 'node, which is where the recording is dropped.',
+      );
+    }
+    if (!hookLine || !closingLine) {
+      throw new Error('A cut needs both the line it opens on and the line it ends on.');
+    }
+
+    // Lazily, for the same reason executeClipNode does it — mediabunny is big.
+    const { clipMedia: media } = await import('../clip/clipMedia');
+    const { runOneCut } = await import('../clip/runClip');
+
+    const platform = chatPlatform(nodeData.platform);
+    const result = await runOneCut({
+      ask: (message: string, options?: { firstTurn?: boolean; attachments?: string[] }) =>
+        this.askAgent(nodeId, platform, message, options?.firstTurn ?? false, options?.attachments),
+      getSource,
+      putMedia,
+      media,
+      log: (line: string) => {
+        console.log(`[Cut] ${line}`);
+        useStudioStore.getState().updateNodeData(nodeId, { statusNote: line });
+      },
+    }, {
+      sourceKey,
+      hookLine,
+      closingLine,
+      nearSec: typeof nodeData.nearSec === 'number' ? nodeData.nearSec : 0,
+    });
+
+    /* mediaKey is what the node's player reads back out of the store. Without
+       it the clip is encoded, held, and invisible — which is exactly how this
+       pipeline behaved before Cut nodes existed. */
+    store.updateNodeData(nodeId, {
+      mediaKey: result.mediaKey,
+      cutReport: result.report,
+      clipSeconds: result.clipSeconds,
+      statusNote: '',
+    });
+    console.log(`[Runner] Cut "${nodeData.label}": ${result.report}`);
+
+    const blob = getMedia(result.mediaKey);
+    return {
+      tileId: '',
+      videoUrl: blob ? URL.createObjectURL(blob) : undefined,
+      text: result.report,
+    };
   }
 
   private async askAgent(

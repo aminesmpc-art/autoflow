@@ -1,3 +1,9 @@
 node_modules/
 dist/
 *.js.map
+
+# Scratch for driving the clipping pipeline against real footage: source
+# video, cut WAVs, compiled ESM and the clips it produces. Hundreds of
+# megabytes, all of it regenerable, and none of it belongs in the repo — it
+# sat untracked at 459MB while `git add -A` was one keystroke away.
+_harness/

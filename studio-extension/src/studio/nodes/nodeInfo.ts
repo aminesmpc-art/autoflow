@@ -127,6 +127,40 @@ export const NODE_DOCS: Record<string, NodeDoc> = {
       'and raise it only if the task needs more thinking.',
   },
 
+  clip: {
+    title: 'Clipping',
+    description:
+      'Drop a long recording in. It transcribes the whole thing, shortlists ' +
+      'the moments from the audio, has them ranked against your campaign ' +
+      'rules, and lays out a Cut node for each one.',
+    inputs: [
+      { id: 'text', label: 'T — An existing transcript, if you already have one' },
+    ],
+    outputs: [
+      { id: 'text', label: 'T — Into the Cut nodes it lays out' },
+    ],
+    tip:
+      'Paste a transcript into the T input when the creator publishes one — ' +
+      'it skips the slowest stage entirely.',
+  },
+
+  cut: {
+    title: 'Cut',
+    description:
+      'One postable clip. It holds the first and last thing said, finds them ' +
+      'in the audio when it runs, snaps both ends to a pause, and cuts ' +
+      'vertical around the speaker.',
+    inputs: [
+      { id: 'text', label: 'T — From the Clipping node that laid this out' },
+    ],
+    outputs: [
+      { id: 'result', label: '→ The finished vertical clip' },
+    ],
+    tip:
+      'The lines are editable. Change either one and run it again to move ' +
+      'that end of the clip — no timestamps to work out.',
+  },
+
   story: {
     title: 'Director',
     description:
