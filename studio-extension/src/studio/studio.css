@@ -3253,11 +3253,11 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
    that cost very different amounts, and knowing which one you are
    waiting on is most of what the node has to tell you.
    ══════════════════════════════════════════════════════════════════ */
-.sn-wrap--kind-clip { width: 390px; min-width: 390px; }
+.sn-wrap--kind-clip { width: 470px; min-width: 470px; }
 .sn-wrap--kind-clip .sn { border-color: var(--n-video); }
 .sn-wrap--kind-clip .sn-label__icon { background: var(--n-video-10); color: var(--n-video); }
 
-.sn--clip { min-width: 390px; width: 390px; border-left: 2px solid var(--n-video); }
+.sn--clip { min-width: 470px; width: 470px; border-left: 2px solid var(--n-video); }
 
 /* ── the stage rail ── */
 .sn-clip__stages {
@@ -3615,3 +3615,78 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   line-height: 1.45;
 }
 .sn-clip__tally-drop { color: var(--bad); }
+
+/* ── Clipping: the settings that change a run, on the face ────
+   Chat, job, count and shape were behind a tab, so the four things that
+   decide what a run DOES were discoverable only by knowing to look. They
+   wrap rather than scroll: four controls on one line at 470px is tight in
+   English and impossible once a label is translated. */
+.sn-clip__strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+  padding: 0 var(--s-2) var(--s-2);
+}
+.sn-clip__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px var(--s-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--t-micro);
+  cursor: pointer;
+}
+.sn-clip__pick--num { cursor: default; color: var(--text-3); }
+.sn-clip__pick--num input {
+  width: 34px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--t-micro);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Clipping: one file control, not two ──────────────────────
+   The native input draws its own button and "no file chosen" text in the
+   browser's language, next to a filename the node was already printing — so
+   the video appeared twice and the actual control looked like a caption. */
+.sn-clip__drop {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-3) var(--s-2);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  cursor: pointer;
+  text-align: center;
+}
+.sn-clip__drop:hover { border-color: var(--n-video); }
+.sn-clip__drop input { display: none; }
+.sn-clip__drop--full { border-style: solid; text-align: left; }
+.sn-clip__drop-name {
+  font-size: var(--t-micro);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.sn-clip__drop-meta { font-size: var(--t-micro); color: var(--text-3); }
+
+/* ── Clipping: what to do next ────────────────────────────────
+   It reached 100% and stopped, with nothing to say the work had moved to
+   eight other nodes. */
+.sn-clip__next {
+  margin: 0 var(--s-2) var(--s-2);
+  padding: var(--s-2);
+  border-left: 2px solid var(--n-video);
+  border-radius: var(--r-row);
+  background: var(--n-video-10);
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  line-height: 1.45;
+}

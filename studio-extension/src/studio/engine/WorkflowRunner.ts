@@ -199,6 +199,15 @@ export class WorkflowRunner {
   /** Results from each node (nodeId → result) */
   private nodeResults = new Map<string, NodeResult>();
 
+  /* Set for the duration of a run, so a node that CREATES nodes can add them
+     to the run that made them.
+     The step list and the node snapshot are both built once, before the first
+     step — so cuts laid out by the Clipping node three stages in were absent
+     from both and simply never executed. The workflow finished, eight cut
+     nodes sat on the canvas untouched, and the only way to run them was to
+     press Run a second time. */
+  private extendRun: ((added: Node[]) => void) | null = null;
+
   /* Prompts written by one Ask AI node for several downstream nodes at once,
      in the order the contract listed them. Separate from nodeResults because
      the ask has ONE result and the consumers need one each — putting them in
@@ -310,6 +319,21 @@ export class WorkflowRunner {
 
     store.setRunProgress(0, generateSteps.length);
     let completedCount = 0;
+    let plannedTotal = generateSteps.length;
+
+    /* `steps` is walked with for-of over an array, which re-reads length on
+       every iteration, so appending mid-walk is visited rather than ignored.
+       `nodes` has to grow too: the loop looks each step's node up in it. */
+    this.extendRun = (added: Node[]) => {
+      for (const n of added) {
+        if (nodes.some((x) => x.id === n.id)) continue;
+        nodes.push(n);
+        steps.push({ nodeId: n.id, nodeType: String(n.type || ''), dependencies: [] });
+        if (isRunnableType(n.type) && (n.data as any)?.enabled !== false) plannedTotal += 1;
+      }
+      store.setRunProgress(completedCount, plannedTotal);
+      console.log(`[Runner] ${added.length} node(s) added to the run in flight`);
+    };
 
     /* Report the run to the side panel. During a run the user is watching the
        platform tab, not this canvas, so the panel is the only place they can
@@ -319,7 +343,7 @@ export class WorkflowRunner {
         running: true,
         paused: this.pauseRequested,
         done: completedCount,
-        total: generateSteps.length,
+        total: plannedTotal,
         ...patch,
       });
     report({ nodeLabel: 'Starting…', progress: 0, lastError: '' });
@@ -466,7 +490,7 @@ export class WorkflowRunner {
               errorMessage: `Skipped — upstream node failed: ${names}`,
             });
             completedCount++;
-            store.setRunProgress(completedCount, generateSteps.length);
+            store.setRunProgress(completedCount, plannedTotal);
             break;
           }
 
@@ -579,7 +603,7 @@ export class WorkflowRunner {
 
           // Don't abort the whole workflow — move on to the next node
           completedCount++;
-          store.setRunProgress(completedCount, generateSteps.length);
+          store.setRunProgress(completedCount, plannedTotal);
           break;
         }
 
@@ -590,11 +614,13 @@ export class WorkflowRunner {
 
     // Finished
     report({ running: false, paused: false, nodeLabel: '', progress: 0 });
+    /* Nothing may grow the run once it is over. */
+    this.extendRun = null;
     store.setCurrentNode(null);
     store.setRunning(false);
     store.setPaused(false);
     this.state = this.abortRequested ? 'stopped' : 'done';
-    console.log(`[Runner] Workflow ${this.state}. ${completedCount}/${generateSteps.length} completed.`);
+    console.log(`[Runner] Workflow ${this.state}. ${completedCount}/${plannedTotal} completed.`);
   }
 
   /** Execute a single generate node via Flow */
@@ -1609,6 +1635,11 @@ export class WorkflowRunner {
 
     store.setNodes([...keptNodes, ...fresh] as any);
     store.setEdges([...keptEdges, ...freshEdges] as any);
+
+    /* Hand them to the run that is still going, so the cuts this just laid out
+       actually get cut. Without it the workflow finished with every cut node
+       untouched and the only remedy was pressing Run a second time. */
+    this.extendRun?.(fresh as any);
 
     return fresh.filter((n: any) => n.type === 'cut').length;
   }

@@ -106,6 +106,23 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
      way at all to tell whether two were refused or two were lost. */
   const short = !!asked && moments.length < asked;
 
+  const laid = resultOf<{ count?: number }>(run, 'layout');
+  const cutCount: number = typeof laid?.count === 'number' ? laid.count : 0;
+
+  /* What to do next, in one line.
+     The node used to reach 100% and stop, with no sign that the work had
+     moved to eight other nodes — so a finished survey and a broken one
+     looked the same from here. */
+  const nextStep: string = !sourceName
+    ? 'Choose a video to start.'
+    : d.status === 'running'
+      ? ''
+      : cutCount
+        ? `${cutCount} cut${cutCount === 1 ? '' : 's'} laid out beside this node — they run with the workflow.`
+        : nextPending(run) === 'ingest'
+          ? 'Ready. Press Run.'
+          : '';
+
   const mode: 'campaign' | 'explainer' = d.clipMode === 'explainer' ? 'explainer' : 'campaign';
   const wanted: number = typeof d.wantedClips === 'number' ? d.wantedClips : DEFAULT_WANTED;
   const shortlist: number = typeof d.surveyCandidates === 'number' ? d.surveyCandidates : DEFAULT_SHORTLIST;
@@ -241,6 +258,50 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
           })}
         </div>
 
+        {/* ── the settings that change what a run does, on the face ──
+            These were behind a tab, which meant the chat, the job and the
+            number of clips were all discoverable only by knowing to look.
+            A run reads them every time; the node should state them every
+            time. The rest — the brief, and the two numbers most people never
+            touch — stay in a tab. */}
+        <div className="sn-clip__strip">
+          <select
+            className="sn-clip__pick nodrag"
+            value={chat}
+            title="Which chat does the thinking"
+            onChange={(e) => updateNodeData(id, { platform: e.target.value })}
+          >
+            {CHATS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select
+            className="sn-clip__pick nodrag"
+            value={mode}
+            title="Campaign work follows someone else's brief"
+            onChange={(e) => updateNodeData(id, { clipMode: e.target.value })}
+          >
+            <option value="campaign">Campaign</option>
+            <option value="explainer">Explainer</option>
+          </select>
+          <label className="sn-clip__pick sn-clip__pick--num" title="How many clips to make">
+            <input
+              type="number" min={1} max={20} className="nodrag"
+              value={wanted}
+              onChange={(e) => updateNodeData(id, {
+                wantedClips: Math.max(1, Math.min(20, Number(e.target.value) || DEFAULT_WANTED)),
+              })}
+            />
+            <span>clips</span>
+          </label>
+          <select
+            className="sn-clip__pick nodrag"
+            value={aspect}
+            title="The shape of the finished clips"
+            onChange={(e) => updateNodeData(id, { aspect: e.target.value })}
+          >
+            {ASPECTS.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+
         <div className="sn-clip__tabs">
           {(['source', 'moments', 'settings'] as Tab[]).map((t) => (
             <button
@@ -249,34 +310,44 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               className={`sn-clip__tab nodrag ${tab === t ? 'sn-clip__tab--on' : ''}`}
               onClick={() => setTab(t)}
             >
-              {t === 'source' ? 'Video' : t === 'moments' ? `Moments${moments.length ? ` (${moments.length})` : ''}` : 'Settings'}
+              {t === 'source' ? 'Video' : t === 'moments' ? `Moments${moments.length ? ` (${moments.length})` : ''}` : 'The brief'}
             </button>
           ))}
         </div>
 
         {tab === 'source' && (
           <div className="sn-clip__panel">
-            {sourceName ? (
-              <div className="sn-clip__file">
-                <strong>{sourceName}</strong>
-                <span>{d.sourceSize ? `${(d.sourceSize / 1e6).toFixed(1)} MB` : ''}</span>
-              </div>
-            ) : (
-              <div className="sn-story__empty">
-                <strong>Drop the creator&rsquo;s video here.</strong>
-                A long recording — the node finds the minute worth posting.
-              </div>
-            )}
-            <input
-              type="file"
-              accept="video/*"
-              className="nodrag"
-              onChange={(e) => onFile(e.target.files?.[0] ?? null)}
-            />
+            {/* One control, not two. The native input renders its own
+                "Choisir un fichier / no file chosen" in the browser's
+                language beside a filename the node was already showing, so
+                the video appeared twice and neither looked clickable. The
+                input is still the input — it is just wearing the label. */}
+            <label className={`sn-clip__drop nodrag ${sourceName ? 'sn-clip__drop--full' : ''}`}>
+              <input
+                type="file"
+                accept="video/*"
+                onChange={(e) => onFile(e.target.files?.[0] ?? null)}
+              />
+              {sourceName ? (
+                <>
+                  <strong className="sn-clip__drop-name">{sourceName}</strong>
+                  <span className="sn-clip__drop-meta">
+                    {d.sourceSize ? `${(d.sourceSize / 1e6).toFixed(0)} MB` : ''} · click to replace
+                  </span>
+                </>
+              ) : (
+                <>
+                  <strong className="sn-clip__drop-name">Choose the creator&rsquo;s video</strong>
+                  <span className="sn-clip__drop-meta">
+                    A long recording — this finds the moments worth posting
+                  </span>
+                </>
+              )}
+            </label>
             <p className="sn-clip__hint">
               <strong>T</strong> takes a <strong>transcript</strong> of this video, if the
               creator published one — it skips the slowest stage. Direction and campaign
-              rules go in <strong>Settings</strong>, not here.
+              rules go in <strong>the brief</strong>, not here.
             </p>
           </div>
         )}
@@ -416,6 +487,8 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
             />
           </div>
         )}
+
+        {nextStep && <div className="sn-clip__next">{nextStep}</div>}
 
         <Handle type="source" position={Position.Right} id="text" className="sn-port sn-port--text">
           <span className="sn-port__glyph">T</span>

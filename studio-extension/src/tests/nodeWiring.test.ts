@@ -161,3 +161,40 @@ describe('the checks themselves are not vacuous', () => {
     expect(registeredTypes().length).toBeGreaterThan(5);
   });
 });
+
+/* ------------------------------------------------------------------ */
+
+describe('nodes created during a run join that run', () => {
+  /* The Clipping node makes Cut nodes three stages into its own execution.
+     The runner builds its step list and its node snapshot ONCE, before the
+     first step, so the eight cuts it laid out were in neither: the workflow
+     finished, every cut sat untouched, and the only remedy was pressing Run a
+     second time. Nothing errored — the run simply did not include them.
+
+     Grepped rather than executed, in the same spirit as the runnable-type
+     guard next door: the failure mode is someone rebuilding the step list and
+     dropping the hook, which no test of existing behaviour would notice. */
+  const src = readFileSync(join(__dirname, '..', 'studio/engine/WorkflowRunner.ts'), 'utf8');
+
+  it('the runner offers a way to grow a run in flight', () => {
+    expect(src).toMatch(/private extendRun/);
+    expect(src).toMatch(/this\.extendRun = \(added/);
+  });
+
+  it('the step list and the node snapshot both grow, not just one', () => {
+    /* The loop looks each step's node up in `nodes`. Appending to `steps`
+       alone gives a step whose node cannot be found, and `continue` skips it
+       as silently as never adding it at all. */
+    const hook = src.slice(src.indexOf('this.extendRun = (added'), src.indexOf('this.extendRun = (added') + 700);
+    expect(hook).toMatch(/nodes\.push/);
+    expect(hook).toMatch(/steps\.push/);
+  });
+
+  it('the cuts it lays out are handed to the run that made them', () => {
+    expect(src).toMatch(/this\.extendRun\?\.\(/);
+  });
+
+  it('nothing may grow a run after it has ended', () => {
+    expect(src).toMatch(/this\.extendRun = null/);
+  });
+});
