@@ -95,8 +95,16 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
 
   const survey = resultOf<{
     moments?: Array<{ rank: number; hookLine: string; closingLine: string; why: string }>;
+    wanted?: number;
+    dropped?: string[];
   }>(run, 'survey');
   const moments = Array.isArray((survey as any)?.moments) ? (survey as any).moments : [];
+  const asked: number = typeof survey?.wanted === 'number' ? survey.wanted : 0;
+  const dropped: string[] = Array.isArray(survey?.dropped) ? survey!.dropped! : [];
+  /* Fewer clips than asked for is normal and needs saying, because the
+     alternative is a user counting eight nodes, expecting ten, and having no
+     way at all to tell whether two were refused or two were lost. */
+  const short = !!asked && moments.length < asked;
 
   const mode: 'campaign' | 'explainer' = d.clipMode === 'explainer' ? 'explainer' : 'campaign';
   const wanted: number = typeof d.wantedClips === 'number' ? d.wantedClips : DEFAULT_WANTED;
@@ -275,6 +283,20 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
 
         {tab === 'moments' && (
           <div className="sn-clip__panel">
+            {(short || dropped.length > 0) && (
+              <div className="sn-clip__tally">
+                {short && (
+                  <span>
+                    {moments.length} of {asked} asked for — the rest were not judged
+                    worth posting.
+                  </span>
+                )}
+                {dropped.map((reason, i) => (
+                  <span key={i} className="sn-clip__tally-drop">{reason}</span>
+                ))}
+              </div>
+            )}
+
             {moments.length ? (
               <div className="sn-clip__moments">
                 {moments.map((m: any) => (

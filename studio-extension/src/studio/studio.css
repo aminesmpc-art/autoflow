@@ -3598,3 +3598,20 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Clipping: why there are fewer clips than you asked for ───
+   Eight nodes when ten were requested is either the model declining to pad
+   the list or two of its answers being unusable. Those are opposite problems
+   and, unsaid, they look identical. */
+.sn-clip__tally {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.45;
+}
+.sn-clip__tally-drop { color: var(--bad); }

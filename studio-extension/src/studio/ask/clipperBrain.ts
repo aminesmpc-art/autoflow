@@ -1007,7 +1007,17 @@ export function surveyAsk(candidates: MomentCandidate[], options: SurveyOptions 
  * outcome the ask explicitly told it to avoid, and keeping the first is what a
  * ranked list means.
  */
-export function readSurvey(reply: unknown, candidateCount: number): SurveyMoment[] {
+export function readSurvey(
+  reply: unknown,
+  candidateCount: number,
+  /* Called once per entry thrown away, with a reason a person can act on.
+     Dropping silently is how a run asked for ten clips, laid out eight, and
+     offered nothing anywhere to say whether the model declined to pad the
+     list or whether two of its answers were unusable. Those are opposite
+     problems and they looked identical. */
+  onDrop?: (reason: string) => void,
+): SurveyMoment[] {
+  const drop = (reason: string) => { if (onDrop) onDrop(reason); };
   const o = readObject(reply);
   const raw = o && Array.isArray(o.clips) ? o.clips
     : Array.isArray(reply) ? reply
@@ -1018,17 +1028,24 @@ export function readSurvey(reply: unknown, candidateCount: number): SurveyMoment
   const taken = new Set<number>();
 
   for (const entry of raw) {
-    if (!entry || typeof entry !== 'object') continue;
+    if (!entry || typeof entry !== 'object') { drop('an entry was not an object'); continue; }
     const e = entry as Record<string, unknown>;
 
     const moment = num(e.moment ?? e.n ?? e.candidate);
-    if (moment === null) continue;
+    if (moment === null) { drop('a clip named no moment'); continue; }
     const n = Math.round(moment);
-    if (n < 1 || n > candidateCount || taken.has(n)) continue;
+    if (n < 1 || n > candidateCount) {
+      drop(`a clip named moment ${n}, which was not on the shortlist of ${candidateCount}`);
+      continue;
+    }
+    if (taken.has(n)) { drop(`two clips both chose moment ${n}; kept the first`); continue; }
 
     const hookLine = String(e.hook_line ?? e.hookLine ?? '').trim();
     const closingLine = String(e.closing_line ?? e.closingLine ?? '').trim();
-    if (!hookLine || !closingLine) continue;
+    if (!hookLine || !closingLine) {
+      drop(`moment ${n} quoted no ${hookLine ? 'closing' : 'opening'} line to cut on`);
+      continue;
+    }
 
     const broll: Array<{ prompt: string; seconds: number }> = [];
     for (const b of Array.isArray(e.broll) ? e.broll : []) {

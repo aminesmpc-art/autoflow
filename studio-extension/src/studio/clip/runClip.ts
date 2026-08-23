@@ -555,6 +555,10 @@ export interface SurveyResult {
   moments: SurveyMoment[];
   /** The shortlist they were chosen from, kept so the layout can read its seconds. */
   candidates: MomentCandidate[];
+  /** How many clips were asked for, so fewer can be explained rather than guessed at. */
+  wanted: number;
+  /** Why any of the reply's clips were thrown away. Empty is the normal case. */
+  dropped: string[];
 }
 
 export interface LayoutResult {
@@ -603,6 +607,7 @@ export function surveyStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
     deps.log?.(`${candidates.length} candidate moments from the audio`);
 
     const wanted = Math.max(1, cfg.clipCount ?? SURVEY_COUNT);
+    const dropped: string[] = [];
     const moments = readSurvey(
       await deps.ask(surveyAsk(candidates, {
         rules: cfg.campaignRules,
@@ -613,6 +618,7 @@ export function surveyStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
         broll: cfg.mode === 'explainer',
       }), { firstTurn: true }),
       candidates.length,
+      (reason) => dropped.push(reason),
     );
 
     if (!moments.length) {
@@ -621,9 +627,17 @@ export function surveyStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
         + 'moment from the shortlist, or quoted no lines to cut between.',
       );
     }
-    deps.log?.(`${moments.length} clip${moments.length === 1 ? '' : 's'} worth posting`);
+    for (const reason of dropped) deps.log?.(`dropped: ${reason}`);
 
-    return { moments, candidates } satisfies SurveyResult;
+    /* Fewer than asked for is a legitimate answer — the question says so, and
+       a video with six good moments should not be padded to ten. It is only
+       worth remarking on so the number is explained rather than wondered at. */
+    const asked = Math.min(wanted, candidates.length);
+    deps.log?.(moments.length < asked
+      ? `${moments.length} of ${asked} — the rest were not judged worth posting`
+      : `${moments.length} clip${moments.length === 1 ? '' : 's'} worth posting`);
+
+    return { moments, candidates, wanted: asked, dropped } satisfies SurveyResult;
   };
 }
 

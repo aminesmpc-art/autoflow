@@ -169,6 +169,31 @@ describe('reading a survey reply', () => {
     expect(out[0].broll).toEqual([{ prompt: 'x', seconds: 10 }, { prompt: 'y', seconds: 4 }]);
   });
 
+  it('says why it threw an entry away', () => {
+    /* A run asked for ten clips and laid out eight. Whether the model
+       declined to pad the list or two of its answers were unusable are
+       opposite problems, and unsaid they look identical. */
+    const drops: string[] = [];
+    readSurvey(reply([
+      { moment: 99, hook_line: 'a', closing_line: 'b' },
+      { moment: 1, hook_line: 'a', closing_line: 'b' },
+      { moment: 1, hook_line: 'again', closing_line: 'b' },
+      { moment: 2, hook_line: 'only an opening' },
+    ]), 3, (r) => drops.push(r));
+
+    expect(drops).toHaveLength(3);
+    expect(drops[0]).toMatch(/moment 99, which was not on the shortlist of 3/);
+    expect(drops[1]).toMatch(/two clips both chose moment 1/);
+    expect(drops[2]).toMatch(/moment 2 quoted no closing line/);
+  });
+
+  it('reports nothing when every clip was usable', () => {
+    const drops: string[] = [];
+    const out = readSurvey(reply([{ moment: 1, hook_line: 'a', closing_line: 'b' }]), 3, (r) => drops.push(r));
+    expect(out).toHaveLength(1);
+    expect(drops).toEqual([]);
+  });
+
   it('shrugs at rubbish rather than throwing', () => {
     for (const v of [undefined, null, '', 'not json', '{}', '{"clips":"nope"}', 42]) {
       expect(readSurvey(v, 3)).toEqual([]);
