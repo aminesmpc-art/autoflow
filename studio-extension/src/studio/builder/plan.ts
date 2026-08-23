@@ -341,6 +341,9 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
           why: String(step.why || '').trim(),
           nearSec: typeof step.nearSec === 'number' && step.nearSec >= 0 ? step.nearSec : 0,
           maxSeconds: typeof step.maxSeconds === 'number' && step.maxSeconds > 0 ? step.maxSeconds : undefined,
+          /* Inherited from the Clipping node that laid this out. A cut with no
+             platform silently used ChatGPT while its director used Gemini. */
+          platform: step.platform || '',
           aspectRatio: step.aspectRatio || '9:16',
           status: 'idle',
         },

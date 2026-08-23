@@ -40,6 +40,11 @@ export interface EmitOptions {
   sourceName?: string;
   /** Cap on a finished clip, carried onto every cut so each one enforces it. */
   maxSeconds?: number;
+  /* Which chat the cuts should use.
+     Without it every cut fell back to ChatGPT while the director it came from
+     was set to Gemini — so the node you configured and the nodes doing the
+     work disagreed, and nothing on screen said so. */
+  platform?: PlanStep['platform'];
 }
 
 /** A short, readable id that survives being looked at in JSON. */
@@ -90,6 +95,7 @@ export function emitPlan(
          is the safe reading of that. */
       nearSec: byN.get(m.moment)?.start ?? 0,
       maxSeconds: options.maxSeconds,
+      platform: options.platform,
       aspectRatio: '9:16',
     });
 

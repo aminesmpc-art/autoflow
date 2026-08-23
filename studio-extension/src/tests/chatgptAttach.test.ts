@@ -158,6 +158,32 @@ function autoAcceptUploads(h: Harness, delayMs = 100): void {
   });
 }
 
+/**
+ * Stand in for ChatGPT attaching a NON-image file.
+ *
+ * The composer renders every attachment as a file tile; only a picture puts an
+ * <img> inside its tile. Audio gets a waveform glyph and a filename, which is
+ * why counting <img> saw nothing and reported a WAV that was plainly sitting
+ * on screen as never having uploaded.
+ */
+function autoAcceptFileTiles(h: Harness, delayMs = 100): void {
+  h.fileInput.addEventListener('change', () => {
+    setTimeout(() => {
+      for (let i = 0; i < (h.fileInput.files?.length || 0); i++) {
+        const tile = document.createElement('div');
+        tile.setAttribute('role', 'group');
+        tile.className = 'relative flex group/file-tile text-token-text-primary';
+        tile.textContent = h.fileInput.files![i].name;
+        h.form.append(tile);
+      }
+    }, delayMs);
+  });
+}
+
+/** A valid, empty WAV — header only, which is all the attach path reads. */
+const SILENT_WAV =
+  'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+
 const errorsFrom = (h: Harness) =>
   h.sent.filter((m) => m.type === 'STUDIO_NODE_ERROR').map((m) => m.payload.error);
 
@@ -270,6 +296,58 @@ describe('ChatGPT reference upload', () => {
     expect(h.fileInput.files).toHaveLength(1);
     expect(clicked).toBe(1);
     expect(errorsFrom(h)).toEqual([]);
+  }, 20_000);
+
+  it('sends audio, which renders as a file tile and never as an image', async () => {
+    /* The clipping pipeline attaches a WAV for every transcription and every
+       locate. Counting <img> made all of them impossible on ChatGPT: the file
+       attached correctly, sat visibly in the composer, and was reported 45
+       seconds later as "Reference image did not finish uploading". */
+    const h = buildHarness();
+    autoAcceptFileTiles(h);
+
+    await h.execute({
+      nodeId: 'n1',
+      config: { prompt: 'Transcribe this audio word for word.', mediaType: 'text', referenceImageData: [SILENT_WAV] },
+    });
+    await new Promise((r) => setTimeout(r, 400));
+
+    expect(errorsFrom(h)).toEqual([]);
+    expect(h.fileInput.files).toHaveLength(1);
+    expect(h.fileInput.files![0].type).toBe('audio/wav');
+  }, 20_000);
+
+  it('does not double-count a picture, which is a tile AND an image', async () => {
+    /* An image attachment renders an <img> inside its own tile. Counting both
+       would reach the expected total with half the uploads finished. */
+    const h = buildHarness();
+    h.fileInput.addEventListener('change', () => {
+      setTimeout(() => {
+        // One of the two files has landed: one tile, with its image inside.
+        const tile = document.createElement('div');
+        tile.setAttribute('role', 'group');
+        tile.className = 'group/file-tile';
+        const img = document.createElement('img');
+        img.src = 'blob:preview';
+        tile.append(img);
+        h.form.append(tile);
+      }, 60);
+    });
+
+    /* Deliberately not awaited: one of two uploads never lands, so the right
+       behaviour is to keep waiting out the full upload budget. Awaiting it
+       would test the timeout rather than the counting. */
+    const running = h.execute({
+      nodeId: 'n1',
+      config: { prompt: 'two pictures', mediaType: 'image', referenceImageData: [RED_PNG, RED_PNG] },
+    });
+    running.catch(() => {});
+    await new Promise((r) => setTimeout(r, 1500));
+
+    // Two asked for, one landed. Counting the tile AND its <img> would make
+    // that look like two and send a half-attached message.
+    expect(h.sent.filter((m) => m.type === 'STUDIO_NODE_RESULT')).toHaveLength(0);
+    expect(errorsFrom(h)).toEqual([]);       // still waiting, not yet failed
   }, 20_000);
 
   it('fails instead of sending when the upload never lands', async () => {

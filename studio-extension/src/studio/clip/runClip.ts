@@ -120,6 +120,8 @@ export interface ClipConfig {
   surveyCandidates?: number;
   /** The cap on a finished clip. Carried onto every cut this lays out. */
   longestSeconds?: number;
+  /** Which chat is driving. Carried onto every cut this lays out. */
+  platform?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -656,6 +658,7 @@ export function layoutStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
       mode: cfg.mode === 'explainer' ? 'explainer' : 'campaign',
       sourceName: cfg.sourceName,
       maxSeconds: cfg.longestSeconds,
+      platform: cfg.platform as any,
     });
     const cuts = plan.steps.filter((s) => s.type === 'cut').length;
     deps.log?.(`laying out ${cuts} cut${cuts === 1 ? '' : 's'}`);

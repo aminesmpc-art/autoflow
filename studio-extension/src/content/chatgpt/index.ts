@@ -45,7 +45,13 @@ const MAX_CAPTURE_BYTES = 15 * 1024 * 1024;
 // the same budget as the answer — see waitForAttachments.
 const UPLOAD_TIMEOUT_MS = 45 * 1000;
 
-chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
+if ((window as any).__af_chatgpt_listener) {
+  try {
+    chrome.runtime?.onMessage?.removeListener?.((window as any).__af_chatgpt_listener);
+  } catch (_) {}
+}
+
+const _chatgptMessageHandler = (msg: any, _sender: any, sendResponse: (r?: any) => void) => {
   if (msg?.type === 'PING') { sendResponse({ pong: true }); return true; }
   if (msg?.type === 'STUDIO_EXECUTE_NODE') {
     handleExecute(msg.payload)
@@ -62,7 +68,10 @@ chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
     return true; // async
   }
   return false;
-});
+};
+
+(window as any).__af_chatgpt_listener = _chatgptMessageHandler;
+chrome.runtime.onMessage.addListener(_chatgptMessageHandler);
 
 /**
  * A line for the side panel's diagnostics, and for the console.
@@ -601,7 +610,24 @@ function composerRegion(): HTMLElement | null {
 
 /** Images inside the composer — attachment previews, not conversation results. */
 function attachmentCount(): number {
-  return (composerRegion() || document.body).querySelectorAll('img').length;
+  const region = composerRegion() || document.body;
+
+  /* Every attachment is a file tile, whatever is inside it.
+     This counted <img> only, which is fine for a picture and blind to
+     everything else — so a WAV attached correctly, sat visibly in the
+     composer, and was reported as "did not finish uploading" 45 seconds
+     later. The clipping pipeline sends audio for every transcription and
+     every locate, so on ChatGPT it could not do either.
+
+     Tiles, not a union with <img>: an image attachment renders an <img>
+     INSIDE its own tile, so counting both double-counts pictures and lets a
+     half-finished upload through. Measured on the live composer with one
+     WAV and one PNG attached — 1 img, 2 tiles. */
+  const tiles = region.querySelectorAll('div[role="group"][class*="file-tile"]').length;
+  if (tiles) return tiles;
+
+  // The old reading, kept as the fallback for when that markup next changes.
+  return region.querySelectorAll('img').length;
 }
 
 /**

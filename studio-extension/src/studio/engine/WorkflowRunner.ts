@@ -1546,6 +1546,9 @@ export class WorkflowRunner {
       surveyCandidates: typeof nodeData.surveyCandidates === 'number' ? nodeData.surveyCandidates : undefined,
       longestSeconds: typeof nodeData.longestSeconds === 'number' ? nodeData.longestSeconds : undefined,
       targetAspect: aspectRatioOf(nodeData.aspect),
+      /* The chat the user picked on this node, so the cuts it lays out use it
+         too rather than each falling back to the default on its own. */
+      platform,
     };
 
     const runners = clipRunners(deps, cfg);

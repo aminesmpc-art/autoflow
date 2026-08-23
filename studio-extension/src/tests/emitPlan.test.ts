@@ -74,6 +74,26 @@ describe('turning ranked moments into a plan', () => {
     expect(labelFor(2, '   ')).toBe('Clip 2');
   });
 
+  it('carries the chat the director was told to use onto every cut', () => {
+    /* A cut with no platform falls back to ChatGPT inside the runner. So a
+       director set to Gemini laid out cuts that quietly ran on ChatGPT — the
+       node you configured and the nodes doing the work disagreed, and the
+       only evidence was a ChatGPT tab opening. */
+    const plan = emitPlan([moment(), moment({ rank: 2, moment: 2 })], CANDIDATES,
+      { sourceKey: 's', mode: 'campaign', platform: 'gemini' });
+    expect(plan.steps.every((s) => s.platform === 'gemini')).toBe(true);
+  });
+
+  it('compiles that platform onto the node data the runner reads', () => {
+    const { template } = compilePlan({
+      steps: [{
+        id: 'c1', type: 'cut', hookLine: 'a', closingLine: 'b',
+        sourceKey: 'src', platform: 'gemini',
+      }],
+    });
+    expect((template!.nodes[0].data as any).platform).toBe('gemini');
+  });
+
   it('gives every cut a vertical aspect', () => {
     const plan = emitPlan([moment()], CANDIDATES, { sourceKey: 's', mode: 'campaign' });
     expect(plan.steps[0].aspectRatio).toBe('9:16');
