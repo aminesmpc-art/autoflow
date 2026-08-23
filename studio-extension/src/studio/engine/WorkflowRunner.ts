@@ -70,6 +70,20 @@ export const CHAT_PLATFORMS = ['chatgpt', 'gemini', 'grok', 'claude', 'zai'];
  * the brief to ChatGPT instead. Everything worked, on the wrong platform, and
  * the only symptom was that the answer did not sound like Claude.
  */
+/* "9:16" as a number the encoder can crop to.
+   Written as a lookup rather than by parsing the string, because a shape the
+   node cannot offer should fall back to vertical rather than to whatever
+   arithmetic a typo produces. */
+const ASPECT_RATIOS: Record<string, number> = {
+  '9:16': 9 / 16,
+  '1:1': 1,
+  '16:9': 16 / 9,
+};
+
+function aspectRatioOf(requested: unknown): number | undefined {
+  return ASPECT_RATIOS[String(requested || '')];
+}
+
 function chatPlatform(requested: unknown): string {
   const want = String(requested || '');
   if (CHAT_PLATFORMS.includes(want)) return want;
@@ -1503,6 +1517,9 @@ export class WorkflowRunner {
       campaignRules: nodeData.campaignRules || undefined,
       sourceName: nodeData.sourceName || undefined,
       clipCount: typeof nodeData.wantedClips === 'number' ? nodeData.wantedClips : undefined,
+      surveyCandidates: typeof nodeData.surveyCandidates === 'number' ? nodeData.surveyCandidates : undefined,
+      longestSeconds: typeof nodeData.longestSeconds === 'number' ? nodeData.longestSeconds : undefined,
+      targetAspect: aspectRatioOf(nodeData.aspect),
     };
 
     const runners = clipRunners(deps, cfg);
@@ -1639,6 +1656,8 @@ export class WorkflowRunner {
       hookLine,
       closingLine,
       nearSec: typeof nodeData.nearSec === 'number' ? nodeData.nearSec : 0,
+      maxSeconds: typeof nodeData.maxSeconds === 'number' ? nodeData.maxSeconds : undefined,
+      targetAspect: aspectRatioOf(nodeData.aspectRatio),
     });
 
     /* mediaKey is what the node's player reads back out of the store. Without

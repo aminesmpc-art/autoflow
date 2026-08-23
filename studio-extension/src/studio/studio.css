@@ -3527,3 +3527,74 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   font-size: var(--t-micro);
   line-height: 1.45;
 }
+
+/* ── Clipping: a stage that failed says so ────────────────────
+   The rail used to put the error in a title attribute, so a failed run showed
+   a red cross, a duration, and nothing else — visually identical to the node
+   being broken. The row now opens. */
+.sn-clip__stage-row { display: flex; flex-direction: column; }
+.sn-clip__note {
+  padding: 2px var(--s-2) 4px 26px;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.4;
+}
+.sn-clip__error {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  margin: 2px 0 4px;
+  padding: var(--s-2);
+  border-left: 2px solid var(--bad);
+  border-radius: var(--r-row);
+  background: var(--bad-12);
+}
+.sn-clip__error-text {
+  margin: 0;
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.sn-clip__retry {
+  padding: 3px var(--s-2);
+  border: 1px solid var(--bad);
+  border-radius: var(--r-row);
+  background: transparent;
+  color: var(--bad);
+  font-size: var(--t-micro);
+  cursor: pointer;
+}
+.sn-clip__retry:hover { background: var(--bad); color: var(--canvas); }
+
+/* ── Clipping: the settings tab ───────────────────────────────
+   One row per setting, label left and control right, so the column of
+   controls lines up and the node can be read down rather than across. */
+.sn-clip__settings { display: flex; flex-direction: column; gap: var(--s-2); }
+.sn-set {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  font-size: var(--t-micro);
+  color: var(--text-2);
+}
+.sn-set__label { color: var(--text-3); }
+.sn-set__label--block { display: block; margin-top: var(--s-1); }
+.sn-set__control {
+  flex: 0 0 auto;
+  min-width: 96px;
+  padding: 4px var(--s-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--t-micro);
+}
+.sn-set__control--num {
+  min-width: 0;
+  width: 64px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

@@ -70,6 +70,8 @@ export interface PlanStep {
      WAV to a question, which is the exact size at which timestamp answers were
      measured to turn into invented arithmetic. */
   nearSec?: number;
+  /** Cap on the finished clip, in seconds. */
+  maxSeconds?: number;
   /** Step ids feeding this one — a still, a clip, or written text. */
   inputs?: string[];
   aspectRatio?: string;
@@ -338,6 +340,7 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
           closingLine: String(step.closingLine || '').trim(),
           why: String(step.why || '').trim(),
           nearSec: typeof step.nearSec === 'number' && step.nearSec >= 0 ? step.nearSec : 0,
+          maxSeconds: typeof step.maxSeconds === 'number' && step.maxSeconds > 0 ? step.maxSeconds : undefined,
           aspectRatio: step.aspectRatio || '9:16',
           status: 'idle',
         },

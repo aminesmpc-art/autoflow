@@ -38,6 +38,8 @@ export interface EmitOptions {
   mode: 'campaign' | 'explainer';
   /** Names the workflow after the video it came from. */
   sourceName?: string;
+  /** Cap on a finished clip, carried onto every cut so each one enforces it. */
+  maxSeconds?: number;
 }
 
 /** A short, readable id that survives being looked at in JSON. */
@@ -87,6 +89,7 @@ export function emitPlan(
          lists were built from different runs, and 0 (search from the start)
          is the safe reading of that. */
       nearSec: byN.get(m.moment)?.start ?? 0,
+      maxSeconds: options.maxSeconds,
       aspectRatio: '9:16',
     });
 

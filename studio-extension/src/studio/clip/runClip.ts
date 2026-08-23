@@ -118,6 +118,8 @@ export interface ClipConfig {
   clipCount?: number;
   /** How many moments the audio shortlists for the model to rank. */
   surveyCandidates?: number;
+  /** The cap on a finished clip. Carried onto every cut this lays out. */
+  longestSeconds?: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -621,6 +623,7 @@ export function layoutStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
       sourceKey: cfg.sourceKey,
       mode: cfg.mode === 'explainer' ? 'explainer' : 'campaign',
       sourceName: cfg.sourceName,
+      maxSeconds: cfg.longestSeconds,
     });
     const cuts = plan.steps.filter((s) => s.type === 'cut').length;
     deps.log?.(`laying out ${cuts} cut${cuts === 1 ? '' : 's'}`);
@@ -659,6 +662,8 @@ export interface OneCutConfig {
   /** Where the audio said this moment is. Bounds the search, never the clip. */
   nearSec?: number;
   targetAspect?: number;
+  /** Hard cap on the finished clip. */
+  maxSeconds?: number;
 }
 
 /* How far either side of `nearSec` to look.
@@ -716,10 +721,17 @@ export async function runOneCut(
      an earlier utterance of a line that repeats. Estimating is better than
      encoding backwards. */
   const estimated = hookAt + estimateSeconds(`${hook} ${closing}`) + MIN_CLIP_SECONDS;
-  const rawEnd = closingAt !== null && closingAt > hookAt ? closingAt : estimated;
+  const found = closingAt !== null && closingAt > hookAt ? closingAt : estimated;
   if (closingAt === null || closingAt <= hookAt) {
     deps.log?.('closing line not located — ending on the estimate from the words');
   }
+
+  /* Capped. A closing line the model placed too late — or an estimate on a
+     slow speaker — otherwise produces a clip far past anything postable, and
+     the first anyone knows of it is a hundred-megabyte encode. */
+  const cap = cfg.maxSeconds ?? MAX_CLIP_SECONDS;
+  const rawEnd = Math.min(found, hookAt + cap);
+  if (rawEnd < found) deps.log?.(`clip capped at ${Math.round(cap)}s`);
 
   const startSec = await snapped(deps, file, hookAt, duration, 'clip start');
   const endSec = await snapped(deps, file, Math.min(duration, rawEnd), duration, 'clip end');
