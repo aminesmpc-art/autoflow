@@ -940,6 +940,11 @@ export interface SurveyMoment {
   /** 0-100, when the reply scored it. */
   score?: number;
   pillars?: Pillars;
+  /* What to write when posting it.
+     Asked for in the SAME reply that judges the clip, because that reply has
+     already read the words and formed an opinion — a second ask per clip
+     would be eight more round trips to re-read text it just summarised. */
+  title?: string;
   /** Explainer mode only: generated shots to cut in over the footage. */
   broll: Array<{ prompt: string; seconds: number }>;
 }
@@ -950,6 +955,11 @@ export interface SurveyOptions {
   count?: number;
   /** Whether generated B-roll is allowed at all. Campaign briefs forbid it. */
   broll?: boolean;
+  /* Whether the post text may carry hashtags and emoji.
+     Off under a campaign brief, which forbids "logos, hashtags, watermarks,
+     or content that is not affiliated with this campaign" — so a suggested
+     hashtag is not a nice extra, it is a rejected post. */
+  hashtags?: boolean;
   /* Below this, a clip is not worth posting and is refused.
      A number the model is held to rather than "do not pad the list", which is
      an instruction it may simply decline to follow. */
@@ -998,6 +1008,19 @@ export function surveyAsk(candidates: MomentCandidate[], options: SurveyOptions 
       c.text,
       '',
     ]),
+    'Also write "title" for each: what a person would put on the post.',
+    ...(options.hashtags
+      ? [
+        'Up to 12 words. You may use hashtags and emoji.',
+      ]
+      : [
+        'Up to 12 words, plain text. NO hashtags, NO emoji, no "link in bio",',
+        'nothing that looks like an advertisement. The campaign brief forbids',
+        'anything not affiliated with it, and a hashtag is exactly that.',
+        'Describe what happens; do not oversell it. A title the clip does not',
+        'deliver on is the kind of post these campaigns reject.',
+      ]),
+    '',
     'Score each one you choose, out of 100:',
     '  · hook       0-30  does the first three seconds make a stranger stay?',
     '  · value      0-40  is something actually delivered, densely, with no filler?',
@@ -1014,10 +1037,10 @@ export function surveyAsk(candidates: MomentCandidate[], options: SurveyOptions 
     '',
     broll
       ? '{"clips":[{"moment":2,"hook_line":"...","closing_line":"...","why":"...",'
-        + '"hook":26,"value":35,"standalone":18,"shareable":8,"score":87,'
+        + '"title":"...","hook":26,"value":35,"standalone":18,"shareable":8,"score":87,'
         + '"broll":[{"prompt":"a wide shot of ...","seconds":6}]}]}'
       : '{"clips":[{"moment":2,"hook_line":"...","closing_line":"...","why":"...",'
-        + '"hook":26,"value":35,"standalone":18,"shareable":8,"score":87}]}',
+        + '"title":"...","hook":26,"value":35,"standalone":18,"shareable":8,"score":87}]}',
     '',
     '"moment" is the number of one of the moments above. Use each at most once.',
     '"hook_line" is the first thing said in that clip and "closing_line" is the',
@@ -1133,6 +1156,7 @@ export function readSurvey(
       out.push({
         moment: n, rank: 0, hookLine, closingLine,
         why: String(e.why ?? '').trim(),
+        title: readTitle(e),
         score: summed, pillars, broll,
       });
       continue;
@@ -1148,6 +1172,7 @@ export function readSurvey(
       hookLine,
       closingLine,
       why: String(e.why ?? '').trim(),
+      title: readTitle(e),
       broll,
     });
   }
@@ -1160,6 +1185,25 @@ export function readSurvey(
   out.forEach((m, i) => { m.rank = i + 1; });
 
   return out;
+}
+
+/**
+ * The post text, trimmed of what a brief forbids.
+ *
+ * Stripped rather than refused: a model that added a hashtag wrote a usable
+ * title and one word too many, and throwing the clip away over it would cost
+ * far more than the word does. The strip lives here because it has to happen
+ * even when the ask was ignored — a rule enforced only by asking politely is
+ * not enforced at all.
+ */
+function readTitle(e: Record<string, unknown>): string | undefined {
+  const raw = String(e.title ?? e.post_title ?? '').trim();
+  if (!raw) return undefined;
+  const cleaned = raw
+    .replace(/#[\p{L}\p{N}_]+/gu, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return cleaned || undefined;
 }
 
 /**

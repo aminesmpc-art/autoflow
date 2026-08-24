@@ -3690,3 +3690,47 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   color: var(--text-2);
   line-height: 1.45;
 }
+
+/* ── Clipping: the score a clip has to beat ───────────────────
+   A slider rather than a number box: the useful question is "stricter or
+   looser than now", not "is 68 better than 71". */
+.sn-clip__score { display: flex; align-items: center; gap: var(--s-2); }
+.sn-clip__score input { width: 108px; accent-color: var(--n-video); }
+.sn-clip__score b {
+  min-width: 22px;
+  text-align: right;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Cut: the post text and what the clip scored ──────────────
+   Copyable because it is going into another app, and retyping it by hand is
+   exactly where a hashtag creeps back into a campaign post. */
+.sn-cut__post {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+}
+.sn-cut__post-text { flex: 1; font-size: var(--t-micro); color: var(--text); line-height: 1.45; }
+.sn-cut__copy {
+  flex: 0 0 auto;
+  padding: 2px var(--s-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: transparent;
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  cursor: pointer;
+}
+.sn-cut__copy:hover { border-color: var(--n-video); color: var(--n-video); }
+.sn-cut__score {
+  padding: 1px 6px;
+  border-radius: var(--r-row);
+  background: var(--n-video-10);
+  color: var(--n-video);
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+}

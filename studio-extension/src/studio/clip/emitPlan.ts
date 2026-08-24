@@ -108,6 +108,10 @@ export function emitPlan(
       hookLine: m.hookLine,
       closingLine: m.closingLine,
       why: m.why,
+      /* What to write when posting it, decided once by the reply that judged
+         the clip rather than asked for again per node. */
+      title: m.title,
+      score: m.score,
       /* Only when BOTH ends were found. A half-located clip keeps its
          measured start by way of nearSec and locates the rest, rather than
          running to an end nobody established. */

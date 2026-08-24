@@ -62,6 +62,10 @@ export interface PlanStep {
   closingLine?: string;
   /** Why this moment is worth posting, in the words shown on the node. */
   why?: string;
+  /** What to write when posting it. */
+  title?: string;
+  /** What it scored out of 100, when it was scored. */
+  score?: number;
   sourceKey?: string;
   /* Roughly where in the recording to search, in seconds.
      This is NOT a model's answer and never becomes the clip's boundary — it
@@ -347,6 +351,8 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
           hookLine: String(step.hookLine || '').trim(),
           closingLine: String(step.closingLine || '').trim(),
           why: String(step.why || '').trim(),
+          title: String(step.title || '').trim(),
+          score: typeof step.score === 'number' ? step.score : undefined,
           nearSec: typeof step.nearSec === 'number' && step.nearSec >= 0 ? step.nearSec : 0,
           startSec: typeof step.startSec === 'number' && step.startSec >= 0 ? step.startSec : undefined,
           endSec: typeof step.endSec === 'number' && step.endSec > 0 ? step.endSec : undefined,

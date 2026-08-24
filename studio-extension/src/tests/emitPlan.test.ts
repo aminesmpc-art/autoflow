@@ -296,6 +296,69 @@ describe('scoring a clip out of a hundred', () => {
   });
 });
 
+describe('the text you post it with', () => {
+  /* Asked for in the SAME reply that judges the clip. That reply has already
+     read the words and formed an opinion; a second ask per clip would be
+     eight more round trips to re-read text it just summarised. */
+  const reply = (clips: unknown[]) => JSON.stringify({ clips });
+  const clip = (over: Record<string, unknown> = {}) => ({
+    moment: 1, hook_line: 'an opening line here', closing_line: 'and a closing one',
+    ...over,
+  });
+
+  it('keeps the title the reply wrote', () => {
+    const out = readSurvey(reply([clip({ title: 'He gets caught in ten minutes' })]), 3);
+    expect(out[0].title).toBe('He gets caught in ten minutes');
+  });
+
+  it('strips hashtags even when the ask forbade them', () => {
+    /* A rule enforced only by asking politely is not enforced. The brief bans
+       hashtags outright, so a post carrying one is a rejected post — and the
+       model wrote a usable title plus one word too many, which is not worth
+       throwing the whole clip away over. */
+    const out = readSurvey(
+      reply([clip({ title: 'Caught in ten minutes #mrbeast #shorts' })]), 3,
+    );
+    expect(out[0].title).toBe('Caught in ten minutes');
+  });
+
+  it('strips a hashtag in any alphabet', () => {
+    const out = readSurvey(reply([clip({ title: 'Attrapé #chasse en dix minutes' })]), 3);
+    expect(out[0].title).toBe('Attrapé en dix minutes');
+  });
+
+  it('leaves no title rather than an empty one', () => {
+    expect(readSurvey(reply([clip({ title: '   ' })]), 3)[0].title).toBeUndefined();
+    expect(readSurvey(reply([clip({ title: '#only #tags' })]), 3)[0].title).toBeUndefined();
+    expect(readSurvey(reply([clip()]), 3)[0].title).toBeUndefined();
+  });
+
+  it('forbids hashtags and emoji in the question under a campaign', () => {
+    const ask = surveyAsk(CANDIDATES, { hashtags: false });
+    expect(ask).toMatch(/NO hashtags, NO emoji/);
+    expect(ask).toMatch(/forbids\s+anything not affiliated/);
+  });
+
+  it('allows them for your own content', () => {
+    const ask = surveyAsk(CANDIDATES, { hashtags: true });
+    expect(ask).toMatch(/You may use hashtags and emoji/);
+    expect(ask).not.toMatch(/NO hashtags/);
+  });
+
+  it('carries the title and the score onto the cut node', () => {
+    const plan = emitPlan(
+      [moment({ title: 'He gets caught in ten minutes', score: 87 })],
+      CANDIDATES, { sourceKey: 's', mode: 'campaign' },
+    );
+    expect(plan.steps[0].title).toBe('He gets caught in ten minutes');
+    expect(plan.steps[0].score).toBe(87);
+
+    const { template } = compilePlan({ steps: plan.steps as any });
+    expect((template!.nodes[0].data as any).title).toBe('He gets caught in ten minutes');
+    expect((template!.nodes[0].data as any).score).toBe(87);
+  });
+});
+
 describe('reading a survey reply', () => {
   const reply = (clips: unknown[]) => JSON.stringify({ clips });
 

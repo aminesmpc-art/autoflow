@@ -683,6 +683,10 @@ export function surveyStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
            question does not offer B-roll at all rather than offering it and
            discarding the answer. */
         broll: cfg.mode === 'explainer',
+        /* A campaign brief forbids "logos, hashtags, watermarks, or content
+           that is not affiliated with this campaign", so a suggested hashtag
+           is not a nice extra — it is a rejected post. */
+        hashtags: cfg.mode === 'explainer',
         minScore: cfg.minClipScore,
       }), { firstTurn: true }),
       candidates.length,

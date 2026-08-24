@@ -77,6 +77,11 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
             placeholder="Cut"
           />
           <NodeInfoBadge type="cut" />
+          {typeof d.score === 'number' && (
+            <span className="sn-cut__score" title="hook 30 · delivers 40 · stands alone 20 · worth sharing 10">
+              {d.score}
+            </span>
+          )}
           {d.status === 'running' ? (
             <span className="sn-count sn-count--running">
               {d.statusNote || 'Working…'}
@@ -104,6 +109,23 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
           </div>
 
           {d.why && <p className="sn-cut__why">{d.why}</p>}
+
+          {/* What to write when posting it, decided by the same reply that
+              judged the clip. Copyable, because it is going into another app
+              and retyping it is where hashtags creep back in. */}
+          {d.title && (
+            <div className="sn-cut__post">
+              <span className="sn-cut__post-text">{d.title}</span>
+              <button
+                type="button"
+                className="sn-cut__copy nodrag"
+                title="Copy the post text"
+                onClick={() => navigator.clipboard?.writeText(String(d.title))}
+              >
+                Copy
+              </button>
+            </div>
+          )}
 
           {url ? (
             <div className="sn-cut__result">

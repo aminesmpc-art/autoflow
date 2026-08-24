@@ -45,6 +45,11 @@ const DEFAULT_WANTED = 10;
 const DEFAULT_SHORTLIST = 14;
 /** The cap on a finished clip, in seconds. */
 const DEFAULT_LONGEST = 200;
+/* Out of a hundred, below which a clip is not worth posting.
+   Sixty rather than the seventy-five the blueprint suggested: at seventy-five
+   an ordinary talking-head video returns almost nothing, and a threshold that
+   refuses everything is not a standard, it is a broken node. */
+const DEFAULT_MIN_SCORE = 60;
 
 /* Every chat this build can drive, and what to call it on screen.
    The node used to name none of them and silently fall back to ChatGPT, which
@@ -127,6 +132,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
   const wanted: number = typeof d.wantedClips === 'number' ? d.wantedClips : DEFAULT_WANTED;
   const shortlist: number = typeof d.surveyCandidates === 'number' ? d.surveyCandidates : DEFAULT_SHORTLIST;
   const longest: number = typeof d.longestSeconds === 'number' ? d.longestSeconds : DEFAULT_LONGEST;
+  const minScore: number = typeof d.minClipScore === 'number' ? d.minClipScore : DEFAULT_MIN_SCORE;
   /* Defaults shown as the value rather than as a blank: a control whose box is
      empty reads as "not set", and the runner is using a default regardless. */
   const chat: string = CHATS.some((c) => c.id === d.platform) ? d.platform : 'chatgpt';
@@ -459,6 +465,23 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
                 })}
               />
             </label>
+
+            <label className="sn-set">
+              <span className="sn-set__label">Worth posting, above</span>
+              <span className="sn-clip__score">
+                <input
+                  type="range" min={30} max={95} step={5} className="nodrag"
+                  value={minScore}
+                  onChange={(e) => updateNodeData(id, { minClipScore: Number(e.target.value) })}
+                />
+                <b>{minScore}</b>
+              </span>
+            </label>
+            <p className="sn-clip__hint">
+              Each clip is scored out of 100 — hook 30, what it delivers 40, standing
+              alone 20, worth sharing 10. Anything below this is refused rather than
+              padding the list, so a thin video honestly returns fewer clips.
+            </p>
 
             <label className="sn-set">
               <span className="sn-set__label">Moments to weigh</span>
