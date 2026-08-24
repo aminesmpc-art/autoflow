@@ -19,6 +19,18 @@ class Settings(BaseSettings):
     gcp_credentials_json: str = ""  # Service account JSON as string
     gcs_bucket_name: str = "autoflow-extractor-videos"
 
+    # Where the CLIP endpoint talks to Vertex, and which model it asks for.
+    #
+    # Separate from gcp_location on purpose. The newest Gemini models are
+    # served ONLY from the global endpoint — asking us-central1 for
+    # gemini-3.7-flash returns "Publisher model ... was not found", which is
+    # what happened the first time this ran. gcp_location stays whatever the
+    # older analysis endpoint needs; this is the requirement of the model this
+    # endpoint chose, so it belongs to this endpoint.
+    clip_location: str = "global"
+    # Overridable without a deploy, for pinning to an older model in a hurry.
+    clip_model: str = ""
+
     # Stripe
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
