@@ -13,6 +13,7 @@
 
 import {
   bareWords,
+  framingFromReading,
   canFrameFromReading,
   facesFromReading,
   locateFromReading,
@@ -215,5 +216,57 @@ describe('framing a clip from the scenes already described', () => {
 describe('scenes during a clip', () => {
   it('returns those that overlap it', () => {
     expect(scenesDuring(SCENES, 95, 105).map((s) => s.start)).toEqual([90, 100]);
+  });
+});
+
+
+/* ------------------------------------------------------------------ */
+
+describe('what the reading already knows about framing', () => {
+  /* Three answers, not two. With two, a chart section cost one model call per
+     clip to rediscover something the reading had already reported: the
+     scenes were described, every speaker_x was null, and the cut sampled
+     eight stills to be told there was no speaker. */
+
+  it('tracks when the reading placed a speaker often enough', () => {
+    const f = framingFromReading(SCENES, 83, 108);
+    expect(f.kind).toBe('tracked');
+    if (f.kind === 'tracked') expect(f.faces).toHaveLength(2);
+  });
+
+  it('says NONE when it looked and found nobody on camera', () => {
+    /* The screen-recording case. This is an answer and must not cost an ask. */
+    const charts = reading({
+      scenes: [
+        { start: 0, end: 30, description: 'a chart', speaker_x: null },
+        { start: 30, end: 60, description: 'a whiteboard', speaker_x: null },
+      ],
+    });
+    expect(framingFromReading(charts, 5, 55).kind).toBe('none');
+  });
+
+  it('says UNKNOWN when the reading does not describe that stretch', () => {
+    /* Opposite situation, identical if you only count speaker positions. */
+    const elsewhere = reading({
+      scenes: [{ start: 600, end: 700, description: 'much later', speaker_x: 0.5 }],
+    });
+    expect(framingFromReading(elsewhere, 5, 55).kind).toBe('unknown');
+  });
+
+  it('says NONE rather than tracking on a single position', () => {
+    /* One sample is a fixed crop, which the frame-sampling ask would have
+       done better — but the reading still covered the clip, so asking adds
+       nothing over keeping the whole frame. */
+    const one = reading({
+      scenes: [
+        { start: 0, end: 40, description: 'a chart', speaker_x: null },
+        { start: 40, end: 60, description: 'a face', speaker_x: 0.4 },
+      ],
+    });
+    expect(framingFromReading(one, 5, 55).kind).toBe('none');
+  });
+
+  it('says UNKNOWN when there is no reading to speak of', () => {
+    expect(framingFromReading(reading(), 0, 30).kind).toBe('unknown');
   });
 });

@@ -812,6 +812,8 @@ export interface OneCutConfig {
   /* Where the speaker stands, relative to the clip's start. When present the
      stills are never cut and the frame-sampling ask never happens. */
   faces?: Array<{ t: number; x: number }>;
+  /** The reading looked and found nobody on camera. Fit, do not ask. */
+  noSpeaker?: boolean;
 }
 
 /* How far either side of `nearSec` to look.
@@ -919,7 +921,11 @@ export async function runOneCut(
     );
 
     let faces = supplied;
-    if (faces.length < 2) {
+    if (faces.length < 2 && cfg.noSpeaker) {
+      /* Already answered by the reading: keep the whole frame on a blurred
+         backdrop, which is what the ask would have concluded. */
+      deps.log?.('the reading found nobody on camera — fitting, nothing to ask');
+    } else if (faces.length < 2) {
       const times = frameTimes(endSec - startSec);
       const stills = await deps.media.frames(file, times.map((t) => startSec + t));
       faces = stills.length

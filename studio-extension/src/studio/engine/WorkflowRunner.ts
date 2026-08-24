@@ -1700,6 +1700,7 @@ export class WorkflowRunner {
       startSec: typeof nodeData.startSec === 'number' ? nodeData.startSec : undefined,
       endSec: typeof nodeData.endSec === 'number' ? nodeData.endSec : undefined,
       faces: Array.isArray(nodeData.faces) ? nodeData.faces : undefined,
+      noSpeaker: nodeData.noSpeaker === true,
     });
 
     /* mediaKey is what the node's player reads back out of the store. Without

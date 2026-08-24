@@ -82,6 +82,11 @@ export interface PlanStep {
   /* Where the speaker stands during the clip, relative to its own start.
      Saves sampling stills out of the video and asking about each one. */
   faces?: Array<{ t: number; x: number }>;
+  /* The reading looked and found nobody on camera. An answer, not a gap:
+     without it the cut samples stills and asks a chat where the speaker is,
+     is told there isn't one, and fits the frame — which is what the reading
+     said before the clip existed. */
+  noSpeaker?: boolean;
   /** Cap on the finished clip, in seconds. */
   maxSeconds?: number;
   /** Step ids feeding this one — a still, a clip, or written text. */
@@ -357,6 +362,7 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
           startSec: typeof step.startSec === 'number' && step.startSec >= 0 ? step.startSec : undefined,
           endSec: typeof step.endSec === 'number' && step.endSec > 0 ? step.endSec : undefined,
           faces: Array.isArray(step.faces) ? step.faces : undefined,
+          noSpeaker: step.noSpeaker === true ? true : undefined,
           maxSeconds: typeof step.maxSeconds === 'number' && step.maxSeconds > 0 ? step.maxSeconds : undefined,
           /* Inherited from the Clipping node that laid this out. A cut with no
              platform silently used ChatGPT while its director used Gemini. */

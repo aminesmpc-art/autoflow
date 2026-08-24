@@ -174,15 +174,57 @@ export function facesFromReading(
   return out;
 }
 
+/**
+ * What the reading already knows about framing this clip.
+ *
+ * Three answers, not two. The version with two spent an ask to rediscover the
+ * middle one: on a trading video the chart sections come back with
+ * speaker_x null on every scene — the reading has LOOKED and reported that
+ * nobody is on camera — and the cut then sampled eight stills to ask a chat
+ * where the speaker was, got "none", and fitted the frame anyway. That is a
+ * model call to learn something already in hand, once per clip.
+ *
+ *   tracked  the reading placed a speaker often enough to follow
+ *   none     the reading covered the clip and found nobody on camera
+ *   unknown  the reading does not describe this stretch, so ask
+ */
+export type Framing =
+  | { kind: 'tracked'; faces: FaceSample[] }
+  | { kind: 'none' }
+  | { kind: 'unknown' };
+
+export function framingFromReading(
+  reading: VideoReading,
+  startSec: number,
+  endSec: number,
+): Framing {
+  /* Two samples is the least that can describe movement. With one the crop is
+     a fixed position, which the frame-sampling ask would have done better. */
+  const faces = facesFromReading(reading, startSec, endSec);
+  if (faces.length >= 2) return { kind: 'tracked', faces };
+
+  /* Whether the reading describes this stretch at all — separately from
+     whether it found a person in it. A clip the reading never saw and a clip
+     it saw and found empty are opposite situations that look identical if
+     you only count speaker positions. */
+  const covered = reading.scenes.some(
+    (s) => s.end > startSec + SCENE_SLACK_SEC && s.start < endSec - SCENE_SLACK_SEC,
+  );
+  if (!covered) return { kind: 'unknown' };
+
+  /* Covered, and at most one speaker position in the whole clip. One sample
+     cannot describe movement, so this is the same answer as none: keep the
+     whole frame rather than crop to a place nobody stays. */
+  return { kind: 'none' };
+}
+
 /** Whether a reading covers a clip well enough to frame it without asking. */
 export function canFrameFromReading(
   reading: VideoReading,
   startSec: number,
   endSec: number,
 ): boolean {
-  /* Two samples is the least that can describe movement. With one the crop is
-     a fixed position, which the frame-sampling ask would have done better. */
-  return facesFromReading(reading, startSec, endSec).length >= 2;
+  return framingFromReading(reading, startSec, endSec).kind === 'tracked';
 }
 
 /** Scenes overlapping a span, for showing on the node. */

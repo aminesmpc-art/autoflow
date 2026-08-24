@@ -32,7 +32,7 @@
 import type { Plan, PlanStep } from '../builder/plan';
 import type { MomentCandidate, SurveyMoment } from '../ask/clipperBrain';
 import type { VideoReading } from './readingApi';
-import { canFrameFromReading, facesFromReading, locateFromReading } from './fromReading';
+import { framingFromReading, locateFromReading } from './fromReading';
 
 export interface EmitOptions {
   sourceKey: string;
@@ -94,11 +94,16 @@ export function emitPlan(
       ? locateFromReading(options.reading, m.hookLine, m.closingLine)
       : null;
 
-    const faces = found && options.reading && canFrameFromReading(
-      options.reading, found.startSec, found.endSec,
-    )
-      ? facesFromReading(options.reading, found.startSec, found.endSec)
-      : undefined;
+    /* What the reading already knows about framing. "Nobody on camera" is an
+       ANSWER, not a gap — spending an ask to rediscover it was costing one
+       model call per clip on exactly the screen-recorded footage where the
+       answer is most obvious. */
+    const framing = found && options.reading
+      ? framingFromReading(options.reading, found.startSec, found.endSec)
+      : { kind: 'unknown' as const };
+
+    const faces = framing.kind === 'tracked' ? framing.faces : undefined;
+    const noSpeaker = framing.kind === 'none' || undefined;
 
     steps.push({
       id: idFor(m.rank),
@@ -118,6 +123,7 @@ export function emitPlan(
       startSec: found?.exact ? found.startSec : undefined,
       endSec: found?.exact ? found.endSec : undefined,
       faces,
+      noSpeaker,
       /* The candidate's own second, from the loudness envelope. A moment the
          survey named but the shortlist never contained would have none — but
          readSurvey drops those, so an unmatched number here means the two
