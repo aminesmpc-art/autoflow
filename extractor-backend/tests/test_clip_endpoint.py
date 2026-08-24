@@ -184,6 +184,83 @@ class TestReadEndpoint:
         assert "no credentials" in status["error"]
 
 
+class TestAsk:
+    """The relay that took the ranking off a chat tab.
+
+    Worth guarding because it is the one endpoint that will take an arbitrary
+    prompt: it must require a caller, refuse an empty or enormous one, and
+    never grow attachments — anything needing a video belongs on /read, which
+    is metered as the expensive call it is."""
+
+    @pytest.fixture
+    def stub_gemini(self, monkeypatch):
+        seen = {}
+
+        class FakeModels:
+            def generate_content(self, *, model, contents, config):
+                seen['model'] = model
+                seen['prompt'] = contents[0]
+                seen['mime'] = getattr(config, 'response_mime_type', None)
+                return SimpleNamespace(text='{"clips":[]}')
+
+        monkeypatch.setattr(clip_api, "_vertex_credentials", lambda: None)
+        monkeypatch.setattr(clip_api.settings, "gemini_api_key", "test-key")
+        import google.genai as genai
+        monkeypatch.setattr(
+            genai, "Client", lambda **kw: SimpleNamespace(models=FakeModels())
+        )
+        return seen
+
+    def test_relays_the_prompt_and_returns_what_came_back(self, client, stub_gemini):
+        r = client.post("/api/clip/ask", json={"prompt": "rank these moments"})
+        assert r.status_code == 200
+        assert r.json()["text"] == '{"clips":[]}'
+        assert stub_gemini["prompt"] == "rank these moments"
+        assert stub_gemini["model"] == clip_api.CLIP_MODEL
+
+    def test_asks_for_json_by_default(self, client, stub_gemini):
+        client.post("/api/clip/ask", json={"prompt": "rank these"})
+        assert stub_gemini["mime"] == "application/json"
+
+    def test_refuses_an_empty_prompt_before_spending_anything(self, client, stub_gemini):
+        for bad in ("", "   "):
+            assert client.post("/api/clip/ask", json={"prompt": bad}).status_code == 400
+        assert "prompt" not in stub_gemini
+
+    def test_refuses_a_prompt_too_large_to_be_a_question(self, client, stub_gemini):
+        r = client.post("/api/clip/ask", json={"prompt": "x" * 200_001})
+        assert r.status_code == 413
+
+    def test_says_so_rather_than_hanging_when_the_model_refuses(self, client, monkeypatch):
+        class Boom:
+            def generate_content(self, **kw):
+                raise RuntimeError("quota exhausted")
+        monkeypatch.setattr(clip_api, "_vertex_credentials", lambda: None)
+        monkeypatch.setattr(clip_api.settings, "gemini_api_key", "k")
+        import google.genai as genai
+        monkeypatch.setattr(genai, "Client", lambda **kw: SimpleNamespace(models=Boom()))
+        r = client.post("/api/clip/ask", json={"prompt": "rank"})
+        assert r.status_code == 502
+        assert "quota exhausted" in r.json()["detail"]
+
+    def test_reports_an_empty_answer_rather_than_returning_one(self, client, monkeypatch):
+        """An empty reply parses to no clips, which downstream reads as "the
+        video has nothing worth posting" — a wrong answer that looks fine."""
+        class Silent:
+            def generate_content(self, **kw):
+                return SimpleNamespace(text="")
+        monkeypatch.setattr(clip_api, "_vertex_credentials", lambda: None)
+        monkeypatch.setattr(clip_api.settings, "gemini_api_key", "k")
+        import google.genai as genai
+        monkeypatch.setattr(genai, "Client", lambda **kw: SimpleNamespace(models=Silent()))
+        assert client.post("/api/clip/ask", json={"prompt": "rank"}).status_code == 502
+
+    def test_refuses_when_the_server_has_no_credentials(self, client, monkeypatch):
+        monkeypatch.setattr(clip_api, "_vertex_credentials", lambda: None)
+        monkeypatch.setattr(clip_api.settings, "gemini_api_key", "")
+        assert client.post("/api/clip/ask", json={"prompt": "rank"}).status_code == 503
+
+
 class TestStatusAndModel:
     def test_unknown_job_is_a_404_not_an_empty_success(self, client):
         assert client.get("/api/clip/status/nope").status_code == 404

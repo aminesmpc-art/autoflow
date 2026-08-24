@@ -17,7 +17,7 @@ import {
   ingestStage, transcribeStage, windowStage, cutStage, beatsStage,
   type ClipDeps, type ClipConfig, type ProbeLike, type WindowResult, type CutStageResult,
   stagesToSkip,
-  runOneCut,
+  runOneCut, surveyStage,
 } from '../studio/clip/runClip';
 import { LOCATE_SENTINEL } from '../studio/ask/clipperBrain';
 
@@ -632,6 +632,7 @@ jest.mock('../studio/clip/readingApi', () => {
       !!e && typeof e === 'object' && (e as any).unavailable === true,
     canReadOnServer: async () => true,
     readVideoOnServer: jest.fn(),
+    askOnServer: jest.fn(),
   };
 });
 
@@ -743,5 +744,104 @@ describe('reading on the server, when the server cannot', () => {
     const h = harness({ replies: new Array(6).fill('word '.repeat(600)) });
     await transcribeStage(h.deps, { ...h.cfg, readOnServer: false })(PROBE);
     expect(readingApi.readVideoOnServer).not.toHaveBeenCalled();
+  });
+});
+
+
+/* ------------------------------------------------------------------ */
+
+describe('ranking through the server', () => {
+  /* The ranking was the last step still going through a chat tab, and on a
+     real twenty-minute run it failed three times in a row — message channel
+     closed, did not finish answering, lost connection — while the API calls
+     either side of it worked first time. It is also the cheap part: reading
+     the video costs about 160k tokens and ranking about 3.5k. */
+
+  const readingApi = jest.requireMock('../studio/clip/readingApi');
+
+  const REPLY = JSON.stringify({ clips: [{
+    moment: 1, hook_line: 'Look at these straw bales right here',
+    closing_line: 'Darius has already been arrested', why: 'an arrest',
+    hook: 26, value: 35, standalone: 18, shareable: 8, score: 87,
+  }] });
+
+  /* Phrase-level chunks, which is what a server reading produces — and what
+     findTextMoments needs. The harness's fake audio is deliberately flat, so
+     the shortlist here comes entirely from what is said, which is the case
+     this whole path exists for. */
+  const LINES = [
+    'Most people lose money because they enter far too early.',
+    'The mistake is chasing the candle instead of waiting for it.',
+    'You should never enter without a confirmed structure shift.',
+    'That is why I wait for the fifteen minute retest every time.',
+    'Here is what nobody tells you about position sizing.',
+    'You need to risk one percent, not ten, on any single idea.',
+    'The problem is that greed feels exactly like conviction.',
+    'And that is how you survive a bad month.',
+  ];
+  const transcript = {
+    duration: 600,
+    chunks: LINES.map((text, i) => ({ index: i, start: i * 4, end: i * 4 + 3.6, text })),
+  };
+
+  beforeEach(() => {
+    readingApi.askOnServer.mockReset();
+  });
+
+  const cfgFor = (h: ReturnType<typeof harness>, over: Partial<ClipConfig> = {}) =>
+    ({ ...h.cfg, readOnServer: true, ...over });
+
+  it('puts the ranking to the server, not to a chat tab', async () => {
+    const h = harness();
+    readingApi.askOnServer.mockResolvedValue(REPLY);
+
+    const out = await surveyStage(h.deps, cfgFor(h))(transcript, undefined) as any;
+
+    expect(readingApi.askOnServer).toHaveBeenCalledTimes(1);
+    expect(h.sent).toHaveLength(0);                       // no chat ask at all
+    expect(out.moments).toHaveLength(1);
+    expect(h.logs.join(' ')).toMatch(/ranked on the server/);
+  });
+
+  it('sends the same prompt it would have sent the chat', async () => {
+    /* The prompt and the parser stay on this side. Only where the question is
+       put changes — a copy of either in Python would drift from the tested
+       one here. */
+    const h = harness();
+    readingApi.askOnServer.mockResolvedValue(REPLY);
+    await surveyStage(h.deps, cfgFor(h))(transcript, undefined);
+
+    const prompt = readingApi.askOnServer.mock.calls[0][0];
+    expect(prompt).toMatch(/hook       0-30/);
+    expect(prompt).toMatch(/MOMENT 1/);
+  });
+
+  it('falls back to the chat when the server cannot rank', async () => {
+    const h = harness({ replies: [REPLY] });
+    readingApi.askOnServer.mockRejectedValue(
+      new readingApi.ReadingUnavailable('not signed in'),
+    );
+
+    const out = await surveyStage(h.deps, cfgFor(h))(transcript, undefined) as any;
+
+    expect(h.sent).toHaveLength(1);                       // it asked the chat
+    expect(out.moments).toHaveLength(1);
+    expect(h.logs.join(' ')).toMatch(/ranking in the chat instead/);
+  });
+
+  it('does NOT fall back when the refusal is the user to act on', async () => {
+    const h = harness({ replies: [REPLY] });
+    readingApi.askOnServer.mockRejectedValue(new Error('You are out of readings.'));
+
+    await expect(surveyStage(h.deps, cfgFor(h))(transcript, undefined))
+      .rejects.toThrow(/out of readings/);
+    expect(h.sent).toHaveLength(0);
+  });
+
+  it('uses the chat when the node was set to use the chat', async () => {
+    const h = harness({ replies: [REPLY] });
+    await surveyStage(h.deps, cfgFor(h, { readOnServer: false }))(transcript, undefined);
+    expect(readingApi.askOnServer).not.toHaveBeenCalled();
+    expect(h.sent).toHaveLength(1);
   });
 });

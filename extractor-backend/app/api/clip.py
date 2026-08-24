@@ -283,6 +283,93 @@ async def clip_status(job_id: str) -> ClipJobStatus:
     return ClipJobStatus(**job)
 
 
+class AskRequest(BaseModel):
+    prompt: str
+    """Ask for a JSON object back. The caller still parses it."""
+    json_only: bool = True
+    max_output_tokens: int = 8192
+
+
+class AskResponse(BaseModel):
+    text: str
+    model: str
+
+
+@router.post("/ask", response_model=AskResponse)
+async def ask_model(
+    body: AskRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> AskResponse:
+    """
+    Put one text question to the model and return what it said.
+
+    A thin relay on purpose. The extension already builds this prompt and
+    parses the reply, both covered by tests, and moving either here would put
+    the same logic in TypeScript and Python where the two would drift. So the
+    server adds exactly what the browser cannot have: the key.
+
+    It exists because the ranking was the last step still going through a chat
+    tab, and on a real twenty-minute run that step failed three times in a row
+    — message channel closed, did not finish answering, lost connection —
+    while the two API calls either side of it worked first time. The judgement
+    is also the cheap part: the video costs about 160k tokens to read and the
+    ranking about 3.5k, so refusing to spend two percent more to remove the
+    most fragile step in the product was the wrong trade.
+
+    Text only. No attachments, and a bounded output — anything needing a video
+    goes through /read, which is metered as the expensive call it is.
+    """
+    prompt = (body.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="An empty prompt asks nothing.")
+    if len(prompt) > 200_000:
+        raise HTTPException(status_code=413, detail="That prompt is too long to send.")
+
+    if settings.enforce_extraction_limits:
+        from app.api.videos import enforce_extraction_limit
+
+        await enforce_extraction_limit(authorization)
+
+    from google import genai
+    from google.genai import types
+
+    credentials = _vertex_credentials()
+    if credentials is not None:
+        client = genai.Client(
+            vertexai=True,
+            project=settings.gcp_project_id,
+            location=settings.clip_location or "global",
+            credentials=credentials,
+        )
+    elif settings.gemini_api_key:
+        client = genai.Client(api_key=settings.gemini_api_key)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="This server has no Gemini credentials configured.",
+        )
+
+    config: dict[str, Any] = {"max_output_tokens": body.max_output_tokens}
+    if body.json_only:
+        config["response_mime_type"] = "application/json"
+
+    try:
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model=clip_model(),
+            contents=[prompt],
+            config=types.GenerateContentConfig(**config),
+        )
+    except Exception as exc:                                   # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"The model refused: {exc}") from exc
+
+    text = (getattr(response, "text", "") or "").strip()
+    if not text:
+        raise HTTPException(status_code=502, detail="The model returned nothing.")
+
+    return AskResponse(text=text, model=clip_model())
+
+
 @router.get("/model")
 async def describe_model() -> dict[str, Any]:
     """What this server would use, so a client can report it without guessing."""

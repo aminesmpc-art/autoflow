@@ -684,8 +684,30 @@ export function surveyStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
 
     const wanted = Math.max(1, cfg.clipCount ?? SURVEY_COUNT);
     const dropped: string[] = [];
+
+    /* Judged through the server when it can be, and through the chat when it
+       cannot. The prompt and the parser are the same either way — only where
+       the question is put changes — because the ranking was the last step
+       still depending on a browser tab staying healthy, and on a real run it
+       failed three times in a row while the API calls around it worked. */
+    const ask = async (prompt: string): Promise<string> => {
+      if (cfg.readOnServer) {
+        try {
+          const { askOnServer } = await import('./readingApi');
+          const reply = await askOnServer(prompt, { signal: deps.signal });
+          deps.log?.('ranked on the server');
+          return reply;
+        } catch (error) {
+          const { isUnavailable } = await import('./readingApi');
+          if (!isUnavailable(error)) throw error;
+          deps.log?.(`${(error as Error).message} — ranking in the chat instead`);
+        }
+      }
+      return deps.ask(prompt, { firstTurn: true });
+    };
+
     const moments = readSurvey(
-      await deps.ask(surveyAsk(candidates, {
+      await ask(surveyAsk(candidates, {
         rules: cfg.campaignRules,
         count: wanted,
         /* Campaign briefs forbid footage that is not the creator's own, so the
@@ -697,7 +719,7 @@ export function surveyStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
            is not a nice extra — it is a rejected post. */
         hashtags: cfg.mode === 'explainer',
         minScore: cfg.minClipScore,
-      }), { firstTurn: true }),
+      })),
       candidates.length,
       (reason) => dropped.push(reason),
       cfg.minClipScore ?? MIN_CLIP_SCORE,

@@ -247,6 +247,59 @@ export async function readVideoOnServer(
   throw new Error('The server was still reading the video after fifteen minutes.');
 }
 
+/**
+ * Put one text question to the model through the server.
+ *
+ * The prompt is built here and the reply is parsed here, exactly as they are
+ * for the chat path — the server only adds the key. Keeping the prompt and
+ * the parser on this side is the point: they are tested here, and a copy in
+ * Python would drift from them.
+ *
+ * This exists because the ranking was the last step still going through a
+ * chat tab, and on a real twenty-minute run it failed three times in a row —
+ * message channel closed, did not finish answering, lost connection — while
+ * the API calls either side of it worked first time. It is also the cheap
+ * part: reading the video costs about 160k tokens and this about 3.5k.
+ */
+export async function askOnServer(
+  prompt: string,
+  options: ReadOptions = {},
+): Promise<string> {
+  const token = await getAccessToken();
+  if (!token) throw new ReadingUnavailable('not signed in');
+
+  const base = options.baseUrl || (await getExtractorBase());
+
+  let response: Response;
+  try {
+    response = await fetch(`${base}/api/clip/ask`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, json_only: true }),
+      signal: options.signal,
+    });
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') throw e;
+    throw new ReadingUnavailable(`the reading service could not be reached at ${base}`);
+  }
+
+  if (!response.ok) {
+    const message = await describeFailure(response);
+    if (response.status === 404 || response.status === 503) {
+      throw new ReadingUnavailable(message);
+    }
+    throw new Error(message);
+  }
+
+  const body = (await response.json()) as { text?: string };
+  const text = String(body?.text || '').trim();
+  /* An empty answer parses to no clips, which the survey reads as "nothing in
+     this video is worth posting" — a wrong answer wearing the shape of a
+     right one. */
+  if (!text) throw new Error('The model returned nothing to the server.');
+  return text;
+}
+
 /** An HTTP failure, in words rather than a status code. */
 async function describeFailure(response: Response): Promise<string> {
   let detail = '';
