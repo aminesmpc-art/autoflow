@@ -29,12 +29,28 @@ app = FastAPI(
 )
 
 # CORS
+#
+# The Chrome extension calls this from a chrome-extension:// page, and that
+# origin can never be in a static list: it differs between an unpacked build
+# and a published one, so pinning it would work in development and break the
+# day the extension ships.
+#
+# Allowing any extension origin is deliberate rather than lazy. CORS is not
+# the security boundary here — every endpoint that costs anything requires a
+# bearer token this service verifies and a quota the Django API enforces, and
+# a bearer token is not a cookie the browser attaches on its own. An origin
+# that cannot authenticate gains nothing by being allowed to ask.
+#
+# The pattern is the real one: extension IDs are exactly 32 characters in a-p.
+EXTENSION_ORIGIN = r"^chrome-extension://[a-p]{32}$"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         os.getenv("FRONTEND_URL", "http://localhost:3000"),
     ],
+    allow_origin_regex=EXTENSION_ORIGIN,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
