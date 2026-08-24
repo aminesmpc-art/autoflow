@@ -44,6 +44,11 @@ from app.clip_analysis import CLIP_MODEL, ClipReading, read_video
 router = APIRouter()
 settings = get_settings()
 
+
+def clip_model() -> str:
+    """The model this server asks for, overridable without a deploy."""
+    return settings.clip_model or CLIP_MODEL
+
 # Same in-memory store the analysis endpoint uses. Fine for one worker and a
 # job that lives for a minute; a second instance would need Supabase, which is
 # already a noted limitation over there.
@@ -122,7 +127,7 @@ def _open_source(video_path: str, say) -> tuple[Any, Any, Any]:
         client = genai.Client(
             vertexai=True,
             project=settings.gcp_project_id,
-            location=settings.gcp_location,
+            location=settings.clip_location or "global",
             credentials=credentials,
         )
 
@@ -189,7 +194,7 @@ async def _run_job(job_id: str, video_path: str, duration_sec: float) -> None:
         client, source, cleanup = await asyncio.to_thread(_open_source, video_path, say)
 
         reading = await read_video(
-            client, source, duration_sec, model=CLIP_MODEL, on_progress=say
+            client, source, duration_sec, model=clip_model(), on_progress=say
         )
 
         jobs[job_id].update(
@@ -279,10 +284,13 @@ async def clip_status(job_id: str) -> ClipJobStatus:
 
 
 @router.get("/model")
-async def clip_model() -> dict[str, Any]:
+async def describe_model() -> dict[str, Any]:
     """What this server would use, so a client can report it without guessing."""
+    vertex = bool(settings.gcp_project_id and settings.gcp_credentials_json)
     return {
-        "model": CLIP_MODEL,
+        "model": clip_model(),
+        "via": "vertex" if vertex else "ai-studio",
+        "location": (settings.clip_location or "global") if vertex else None,
         "configured": bool(
             settings.gemini_api_key
             or (settings.gcp_project_id and settings.gcp_credentials_json)
