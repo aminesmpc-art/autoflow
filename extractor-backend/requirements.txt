@@ -7,7 +7,14 @@ python-multipart==0.0.9
 google-genai>=2.19.0
 google-cloud-storage>=2.14.0
 google-auth>=2.30.0
-supabase==2.9.0
+# supabase was removed, not loosened: nothing imports it. The only trace was
+# three unused settings in config.py, and a comment saying the in-memory job
+# store should "replace with Supabase in production" — planned, never built.
+#
+# It had to go because it pinned httpx<0.28 while google-genai needs >=0.28.1,
+# which is irreconcilable and failed the build. Keeping a dependency nothing
+# uses, at the cost of the one that does the work, is the wrong trade.
+# supabase==2.9.0
 stripe==10.0.0
 PyJWT>=2.8.0
 yt-dlp>=2024.1.0
