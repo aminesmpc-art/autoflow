@@ -342,11 +342,14 @@ describe('cutting', () => {
     expect(h.logs.join(' ')).toMatch(/already vertical/);
   });
 
-  it('centres the crop when it cannot tell where the speaker is', async () => {
-    /* Given nothing, do the thing that is never embarrassing. */
+  it('fits the whole frame when it cannot tell where the speaker is', async () => {
+    /* This centre-cropped, on the reasoning that a wrong static crop is still
+       a clip someone can post. A real trading video disproved it: with nobody
+       on camera, a 9:16 crop of a 640-wide chart keeps 202 pixels and loses
+       the axes, and one clip came back as blank whiteboard. */
     const h = harness({ replies: ['I could not identify a speaker.'] });
     const out = await cutStage(h.deps, h.cfg)(win, undefined) as CutStageResult;
-    expect(out.reframe).toBe('centre');
+    expect(out.reframe).toBe('fit');
   });
 
   it('keeps the finished clip somewhere node data can point at', async () => {

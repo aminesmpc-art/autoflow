@@ -109,6 +109,11 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
   const tracked = isTracked(plan);
   const fixed = staticRect(plan);
 
+  /* Fitting draws rather than crops, so it needs the canvas path that tracking
+     uses — a static crop rectangle cannot express "the whole frame, smaller,
+     on a blurred copy of itself". */
+  const fitting = plan?.mode === 'fit';
+
   /* Output size is decided ONCE and never varies. An encoder is configured a
      single time; a frame that arrives one pixel wider than the configuration
      is a hard failure partway through a run. reframe.ts guarantees constant
@@ -125,7 +130,7 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
 
   let canvas: OffscreenCanvas | null = null;
   let ctx: OffscreenCanvasRenderingContext2D | null = null;
-  if (tracked) {
+  if (tracked || fitting) {
     canvas = new OffscreenCanvas(outWidth, outHeight);
     ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Could not get a 2D context to draw the reframed video into.');
@@ -138,12 +143,50 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
     audio: silent ? { discard: true } : undefined,
     video: {
       quality: options.quality ?? DEFAULT_QUALITY,
-      ...(fixed ? { crop: fixed } : {}),
-      ...(tracked && ctx && canvas
+      ...(fixed && !fitting ? { crop: fixed } : {}),
+      ...((tracked || fitting) && ctx && canvas
         ? {
           processedWidth: outWidth,
           processedHeight: outHeight,
           process: (sample: VideoSample) => {
+            if (fitting) {
+              /* The whole frame, centred, over a blurred enlarged copy of
+                 itself. The backdrop is what stops a chart reading as a
+                 lazily reposted landscape video; black bars say "this was not
+                 made for here", which some campaign briefs penalise.
+
+                 Source dimensions come off the sample rather than the track:
+                 draw() honours rotation metadata, so a rotated source
+                 presents different dimensions here than the container
+                 advertises, and using the container's would letterbox it
+                 sideways. */
+              const sw = sample.displayWidth || sample.codedWidth;
+              const sh = sample.displayHeight || sample.codedHeight;
+
+              const cover = Math.max(outWidth / sw, outHeight / sh);
+              const contain = Math.min(outWidth / sw, outHeight / sh);
+
+              /* Blur scales with the frame, so a 640-wide clip and a
+                 1920-wide one look the same rather than one looking sharp. */
+              ctx!.filter = `blur(${Math.max(8, Math.round(outWidth / 24))}px)`;
+              sample.draw(
+                ctx!, 0, 0, sw, sh,
+                (outWidth - sw * cover) / 2, (outHeight - sh * cover) / 2,
+                sw * cover, sh * cover,
+              );
+              ctx!.filter = 'none';
+
+              sample.draw(
+                ctx!, 0, 0, sw, sh,
+                (outWidth - sw * contain) / 2, (outHeight - sh * contain) / 2,
+                sw * contain, sh * contain,
+              );
+              return new VideoSample(canvas!, {
+                timestamp: sample.timestamp,
+                duration: sample.duration,
+              });
+            }
+
             /* Timestamps here are ALREADY clip-relative — mediabunny rebases
                them against the trim before calling this, so a clip trimmed
                from 2s sees its first frame at 0, not at 2.

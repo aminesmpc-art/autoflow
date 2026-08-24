@@ -44,7 +44,7 @@ export interface FaceSample {
   y?: number;
 }
 
-export type ReframeMode = 'centre' | 'locked' | 'tracked';
+export type ReframeMode = 'centre' | 'locked' | 'tracked' | 'fit';
 
 export interface ReframePlan {
   mode: ReframeMode;
@@ -90,6 +90,34 @@ const even = (n: number): number => Math.max(2, Math.round(n / 2) * 2);
  * already vertical is cropped in height (or not at all) rather than being
  * squeezed sideways.
  */
+/**
+ * The output frame for content with nobody in it.
+ *
+ * Cropping assumes there is a subject to keep and background to discard. On a
+ * screen recording that assumption is false and the result is indefensible: a
+ * 9:16 crop of a 640-wide chart keeps 202 pixels of it, and on a sparse
+ * whiteboard the clip that came back was almost entirely blank white. Tested
+ * on a real trading video, where the loudest moments are all screen share.
+ *
+ * So the whole frame is kept at its own width and the FRAME grows instead —
+ * nothing is thrown away, and the source is never upscaled.
+ */
+export function fitRect(
+  srcWidth: number,
+  srcHeight: number,
+  targetAspect: number,
+): Rect {
+  if (!(srcWidth > 0) || !(srcHeight > 0) || !(targetAspect > 0)) {
+    return { left: 0, top: 0, width: 0, height: 0 };
+  }
+  const width = even(srcWidth);
+  /* Never shorter than the source: a target WIDER than the source would
+     otherwise produce a frame that crops vertically, which is the very thing
+     this exists to avoid. */
+  const height = even(Math.max(srcHeight, width / targetAspect));
+  return { left: 0, top: 0, width, height };
+}
+
 export function cropRect(
   srcWidth: number,
   srcHeight: number,
@@ -203,6 +231,10 @@ const median = (xs: number[]): number => {
 };
 
 export interface PlanOptions {
+  /* Whether content with nobody in it is fitted rather than cropped.
+     On by default. Turned off only where a caller genuinely wants a centre
+     crop of a screen recording, which is a choice nobody has yet wanted. */
+  fitWhenNobody?: boolean;
   /** Below this spread, the crop is locked. Defaults to LOCK_THRESHOLD. */
   lockThreshold?: number;
 }
@@ -229,6 +261,17 @@ export function planReframe(
     .sort((a, b) => a.t - b.t);
 
   if (!usable.length) {
+    /* Nobody on camera. Cropping would keep the middle third of whatever is
+       there — a chart with its axes gone, or a whiteboard's blank centre —
+       so the whole frame is kept and the frame is made taller around it. */
+    if (options.fitWhenNobody !== false) {
+      const rect = fitRect(srcWidth, srcHeight, targetAspect);
+      return {
+        mode: 'fit',
+        keyframes: [{ t: 0, rect, cut: false }],
+        why: 'nobody on camera — the whole frame is kept, on a blurred backdrop',
+      };
+    }
     return {
       mode: 'centre',
       keyframes: [{ t: 0, rect: centreRect, cut: false }],

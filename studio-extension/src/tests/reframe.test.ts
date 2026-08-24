@@ -16,7 +16,8 @@
  */
 
 import {
-  cropRect, planReframe, rectAt, LOCK_THRESHOLD, SHOT_CUT_JUMP,
+  cropRect,
+  fitRect, planReframe, rectAt, LOCK_THRESHOLD, SHOT_CUT_JUMP,
   type FaceSample,
 } from '../studio/media/reframe';
 
@@ -105,13 +106,18 @@ describe('the crop rectangle', () => {
 describe('planning the crop', () => {
   const at = (t: number, x: number): FaceSample => ({ t, x });
 
-  it('centres and stops when there are no positions at all', () => {
-    /* Given nothing, do the thing that is never embarrassing. A wrong static
-       crop is a clip someone can still post. */
+  it('fits rather than centre-cropping when there are no positions at all', () => {
+    /* This used to centre-crop, on the reasoning that a wrong static crop is
+       still a clip someone can post. Cutting a real trading video disproved
+       it: with nobody on camera the middle third of a chart loses its axes,
+       and one clip came back as blank whiteboard. Given nothing to centre on,
+       keeping everything is the thing that is never embarrassing.
+
+       The old behaviour is still reachable — see fitWhenNobody. */
     const p = planReframe([], HD.w, HD.h, NINE_SIXTEEN);
-    expect(p.mode).toBe('centre');
+    expect(p.mode).toBe('fit');
     expect(p.keyframes).toHaveLength(1);
-    expect(p.why).toMatch(/centred/);
+    expect(p.why).toMatch(/nobody on camera/);
   });
 
   it('LOCKS the crop when the speaker barely moves', () => {
@@ -305,5 +311,66 @@ describe('the thresholds are the ones the comments describe', () => {
 
   it('treats a quarter-frame jump as a camera change, not a person', () => {
     expect(SHOT_CUT_JUMP).toBeGreaterThan(LOCK_THRESHOLD * 2);
+  });
+});
+
+
+/* ------------------------------------------------------------------ */
+
+describe('content with nobody in it', () => {
+  /* Found by cutting a real trading video. Its loudest moments are all screen
+     share, and a 9:16 crop of a 640-wide chart keeps 202 pixels of it — the
+     axes gone. One clip came back almost entirely blank white, because the
+     middle third of that whiteboard was empty. Mechanically perfect, and
+     unusable. */
+
+  it('fits rather than crops when no speaker was found', () => {
+    const plan = planReframe([], 640, 360, 9 / 16);
+    expect(plan.mode).toBe('fit');
+    expect(plan.why).toMatch(/nobody on camera/);
+  });
+
+  it('keeps the full width of the source', () => {
+    const plan = planReframe([], 640, 360, 9 / 16);
+    expect(plan.keyframes[0].rect.width).toBe(640);
+  });
+
+  it('makes the frame taller instead of narrower', () => {
+    /* The frame grows around the content; the content is never cut down to
+       the frame. 640 wide at 9:16 is 1138 tall. */
+    const plan = planReframe([], 640, 360, 9 / 16);
+    const rect = plan.keyframes[0].rect;
+    expect(rect.height).toBeGreaterThan(360);
+    expect(rect.width / rect.height).toBeCloseTo(9 / 16, 2);
+  });
+
+  it('gives H.264 the even dimensions it requires', () => {
+    for (const [w, h] of [[641, 361], [1919, 1079], [640, 360]]) {
+      const rect = fitRect(w, h, 9 / 16);
+      expect(rect.width % 2).toBe(0);
+      expect(rect.height % 2).toBe(0);
+    }
+  });
+
+  it('never returns a frame shorter than the source', () => {
+    /* A target WIDER than the source would otherwise crop vertically, which
+       is the exact thing fitting exists to avoid. */
+    const rect = fitRect(640, 360, 16 / 9);
+    expect(rect.height).toBeGreaterThanOrEqual(360);
+  });
+
+  it('still crops when there IS somebody to crop around', () => {
+    const plan = planReframe([{ t: 0, x: 0.5 }, { t: 5, x: 0.5 }], 640, 360, 9 / 16);
+    expect(plan.mode).not.toBe('fit');
+    expect(plan.keyframes[0].rect.width).toBeLessThan(640);
+  });
+
+  it('can be told to centre-crop instead, for a caller that wants it', () => {
+    const plan = planReframe([], 640, 360, 9 / 16, { fitWhenNobody: false });
+    expect(plan.mode).toBe('centre');
+  });
+
+  it('shrugs at a source with no dimensions', () => {
+    expect(fitRect(0, 0, 9 / 16)).toEqual({ left: 0, top: 0, width: 0, height: 0 });
   });
 });
