@@ -1,0 +1,18 @@
+# The virtualenv is thousands of files and rebuilds from requirements.txt.
+# Untracked but not ignored is one `git add -A` away from being in the repo.
+.venv/
+venv/
+
+__pycache__/
+*.py[cod]
+
+# Secrets: the Gemini key, the service account JSON, Stripe. None of it may
+# reach the repo — this service exists precisely so those live on a server
+# rather than inside a Chrome extension anyone can unpack.
+.env
+.env.*
+!.env.example
+*-credentials.json
+service-account*.json
+
+.pytest_cache/

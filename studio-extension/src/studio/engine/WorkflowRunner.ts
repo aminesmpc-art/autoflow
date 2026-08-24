@@ -1549,6 +1549,10 @@ export class WorkflowRunner {
       /* The chat the user picked on this node, so the cuts it lays out use it
          too rather than each falling back to the default on its own. */
       platform,
+      /* One server call instead of six chat transcriptions. Defaults on: it
+         is faster, it brings the timings that let every cut skip its own
+         locating, and it degrades to the chat path when signed out. */
+      readOnServer: nodeData.readOnServer !== false,
     };
 
     const runners = clipRunners(deps, cfg);
@@ -1692,6 +1696,10 @@ export class WorkflowRunner {
       nearSec: typeof nodeData.nearSec === 'number' ? nodeData.nearSec : 0,
       maxSeconds: typeof nodeData.maxSeconds === 'number' ? nodeData.maxSeconds : undefined,
       targetAspect: aspectRatioOf(nodeData.aspectRatio),
+      /* Measured when the video was read, so this cut asks nothing at all. */
+      startSec: typeof nodeData.startSec === 'number' ? nodeData.startSec : undefined,
+      endSec: typeof nodeData.endSec === 'number' ? nodeData.endSec : undefined,
+      faces: Array.isArray(nodeData.faces) ? nodeData.faces : undefined,
     });
 
     /* mediaKey is what the node's player reads back out of the store. Without

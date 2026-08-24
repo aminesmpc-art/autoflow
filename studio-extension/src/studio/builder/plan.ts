@@ -70,6 +70,14 @@ export interface PlanStep {
      WAV to a question, which is the exact size at which timestamp answers were
      measured to turn into invented arithmetic. */
   nearSec?: number;
+  /* The clip's real boundaries, when a server reading supplied them.
+     Present means the node can cut without asking anything: the seconds came
+     from a reading of the audio, not from a model asked to guess at them. */
+  startSec?: number;
+  endSec?: number;
+  /* Where the speaker stands during the clip, relative to its own start.
+     Saves sampling stills out of the video and asking about each one. */
+  faces?: Array<{ t: number; x: number }>;
   /** Cap on the finished clip, in seconds. */
   maxSeconds?: number;
   /** Step ids feeding this one — a still, a clip, or written text. */
@@ -340,6 +348,9 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
           closingLine: String(step.closingLine || '').trim(),
           why: String(step.why || '').trim(),
           nearSec: typeof step.nearSec === 'number' && step.nearSec >= 0 ? step.nearSec : 0,
+          startSec: typeof step.startSec === 'number' && step.startSec >= 0 ? step.startSec : undefined,
+          endSec: typeof step.endSec === 'number' && step.endSec > 0 ? step.endSec : undefined,
+          faces: Array.isArray(step.faces) ? step.faces : undefined,
           maxSeconds: typeof step.maxSeconds === 'number' && step.maxSeconds > 0 ? step.maxSeconds : undefined,
           /* Inherited from the Clipping node that laid this out. A cut with no
              platform silently used ChatGPT while its director used Gemini. */

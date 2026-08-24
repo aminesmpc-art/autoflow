@@ -31,6 +31,8 @@
 
 import type { Plan, PlanStep } from '../builder/plan';
 import type { MomentCandidate, SurveyMoment } from '../ask/clipperBrain';
+import type { VideoReading } from './readingApi';
+import { canFrameFromReading, facesFromReading, locateFromReading } from './fromReading';
 
 export interface EmitOptions {
   sourceKey: string;
@@ -45,6 +47,11 @@ export interface EmitOptions {
      was set to Gemini — so the node you configured and the nodes doing the
      work disagreed, and nothing on screen said so. */
   platform?: PlanStep['platform'];
+  /* The server reading, when the video was read in one call.
+     Where a cut's two quoted lines can be found in it, the cut is given its
+     seconds and the speaker's position outright — which is four locate asks
+     and one frame-sampling ask it never has to make. */
+  reading?: VideoReading;
 }
 
 /** A short, readable id that survives being looked at in JSON. */
@@ -80,6 +87,19 @@ export function emitPlan(
   const byN = new Map(candidates.map((c) => [c.n, c]));
 
   for (const m of moments) {
+    /* Looked up rather than asked for. Returns null when either line cannot
+       be found, and the node falls back to locating from the audio — a miss
+       costs asks, and a wrong answer would cut the wrong part of the video. */
+    const found = options.reading
+      ? locateFromReading(options.reading, m.hookLine, m.closingLine)
+      : null;
+
+    const faces = found && options.reading && canFrameFromReading(
+      options.reading, found.startSec, found.endSec,
+    )
+      ? facesFromReading(options.reading, found.startSec, found.endSec)
+      : undefined;
+
     steps.push({
       id: idFor(m.rank),
       type: 'cut',
@@ -88,12 +108,20 @@ export function emitPlan(
       hookLine: m.hookLine,
       closingLine: m.closingLine,
       why: m.why,
+      /* Only when BOTH ends were found. A half-located clip keeps its
+         measured start by way of nearSec and locates the rest, rather than
+         running to an end nobody established. */
+      startSec: found?.exact ? found.startSec : undefined,
+      endSec: found?.exact ? found.endSec : undefined,
+      faces,
       /* The candidate's own second, from the loudness envelope. A moment the
          survey named but the shortlist never contained would have none — but
          readSurvey drops those, so an unmatched number here means the two
          lists were built from different runs, and 0 (search from the start)
          is the safe reading of that. */
-      nearSec: byN.get(m.moment)?.start ?? 0,
+      /* A measured start beats the loudness envelope's guess at where to
+         look; the envelope is only a search hint when nothing better exists. */
+      nearSec: found?.startSec ?? byN.get(m.moment)?.start ?? 0,
       maxSeconds: options.maxSeconds,
       platform: options.platform,
       aspectRatio: '9:16',

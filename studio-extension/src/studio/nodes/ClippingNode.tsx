@@ -130,6 +130,10 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
   /* Defaults shown as the value rather than as a blank: a control whose box is
      empty reads as "not set", and the runner is using a default regardless. */
   const chat: string = CHATS.some((c) => c.id === d.platform) ? d.platform : 'chatgpt';
+  /* Defaults on. Reading the video on the server is one call instead of six
+     chat transcriptions, and it returns the timings that let every cut skip
+     its own locating — so the slow path has to be chosen, not fallen into. */
+  const readOnServer: boolean = d.readOnServer !== false;
   const aspect: string = ASPECTS.some((a) => a.id === d.aspect) ? d.aspect : '9:16';
 
   const redoFrom = useCallback((stage: StageId) => {
@@ -426,6 +430,23 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               {mode === 'campaign'
                 ? 'Paid clipping under someone else’s brief. The cuts are the creator’s own footage and nothing else.'
                 : 'Your own content. Cuts can be laid out with generated B-roll beside them.'}
+            </p>
+
+            <label className="sn-set">
+              <span className="sn-set__label">Read the video</span>
+              <select
+                className="sn-set__control nodrag"
+                value={readOnServer ? 'server' : 'chat'}
+                onChange={(e) => updateNodeData(id, { readOnServer: e.target.value === 'server' })}
+              >
+                <option value="server">On the server — fast</option>
+                <option value="chat">In the chat — slow</option>
+              </select>
+            </label>
+            <p className="sn-clip__hint">
+              {readOnServer
+                ? 'One call reads the whole video and returns the timings, so each cut needs no further questions. Needs you to be signed in.'
+                : 'The audio is transcribed in the chat four minutes at a time. No account needed, but a twenty-minute video takes minutes and every cut then has to find its own lines.'}
             </p>
 
             <label className="sn-set">

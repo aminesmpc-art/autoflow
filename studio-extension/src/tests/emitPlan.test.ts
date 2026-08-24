@@ -102,6 +102,85 @@ describe('turning ranked moments into a plan', () => {
 
 /* ------------------------------------------------------------------ */
 
+describe('a plan built from a server reading', () => {
+  /* When the video was read in one call, the words came back with the seconds
+     they occupy. A cut built from that needs no locating and no frame
+     sampling — up to five model asks each, gone, for every clip. */
+  const READING: any = {
+    durationSec: 240,
+    language: 'en',
+    summary: '',
+    model: 'gemini-3.7-flash',
+    dropped: [],
+    segments: [
+      { start: 83.1, end: 85.4, text: 'Look at these straw bales right here.' },
+      { start: 96.0, end: 97.1, text: 'Show us your hands!' },
+      { start: 104.0, end: 108.3, text: 'Darius has already been arrested.' },
+    ],
+    scenes: [
+      { start: 80, end: 95, description: 'bales', speaker_x: 0.46 },
+      { start: 95, end: 110, description: 'an arrest', speaker_x: 0.38 },
+    ],
+  };
+
+  const withReading = (over: Partial<SurveyMoment> = {}) => emitPlan(
+    [moment({
+      hookLine: 'Look at these straw bales right here.',
+      closingLine: 'Darius has already been arrested.',
+      ...over,
+    })],
+    CANDIDATES,
+    { sourceKey: 's', mode: 'campaign', reading: READING },
+  );
+
+  it('gives the cut the seconds that were measured', () => {
+    const step = withReading().steps[0];
+    expect(step.startSec).toBe(83.1);
+    expect(step.endSec).toBe(108.3);
+  });
+
+  it('gives the cut the speaker positions already described', () => {
+    const step = withReading().steps[0];
+    expect(step.faces).toHaveLength(2);
+    expect(step.faces!.map((f) => f.x)).toEqual([0.46, 0.38]);
+    // Relative to the clip's own start, which is what planReframe measures.
+    expect(step.faces!.every((f) => f.t >= 0)).toBe(true);
+  });
+
+  it('points nearSec at the measured start rather than the envelope guess', () => {
+    expect(withReading().steps[0].nearSec).toBe(83.1);
+  });
+
+  it('leaves the cut to locate itself when a line is not in the reading', () => {
+    /* A miss costs asks. A wrong match cuts the wrong footage silently, so a
+       miss is the right outcome and must not be papered over. */
+    const step = withReading({ hookLine: 'We built a giant chocolate factory' }).steps[0];
+    expect(step.startSec).toBeUndefined();
+    expect(step.endSec).toBeUndefined();
+    expect(step.faces).toBeUndefined();
+  });
+
+  it('leaves it to locate when only one end was found', () => {
+    const step = withReading({ closingLine: 'a line nobody ever said here' }).steps[0];
+    expect(step.startSec).toBeUndefined();
+  });
+
+  it('compiles the measured data onto the node the runner reads', () => {
+    const { template } = compilePlan({ steps: withReading().steps as any });
+    const data = template!.nodes[0].data as any;
+    expect(data.startSec).toBe(83.1);
+    expect(data.endSec).toBe(108.3);
+    expect(data.faces).toHaveLength(2);
+  });
+
+  it('behaves exactly as before when there is no reading', () => {
+    const step = emitPlan([moment()], CANDIDATES, { sourceKey: 's', mode: 'campaign' }).steps[0];
+    expect(step.startSec).toBeUndefined();
+    expect(step.faces).toBeUndefined();
+    expect(step.nearSec).toBe(14);      // the envelope's candidate, as before
+  });
+});
+
 describe('the campaign rule, enforced where the decision is made', () => {
   const withBroll = [moment({ broll: [{ prompt: 'a wide shot of the field', seconds: 6 }] })];
 

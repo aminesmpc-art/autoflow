@@ -6,6 +6,32 @@
 import { AuthTokens, UserProfile, DailyUsageResponse } from '../types';
 
 const API_BASE = 'https://api.auto-flow.studio';
+
+/* The video-reading service.
+   A separate host because it does a different job: the Django API holds
+   accounts, plans and quotas, while this one holds a Gemini key and feeds it
+   whole videos. Overridable from storage so it can be pointed at a local
+   FastAPI while working on it, without rebuilding the extension. */
+const EXTRACTOR_BASE_DEFAULT = 'https://autoflow-extractor-production.up.railway.app';
+const EXTRACTOR_BASE_KEY = 'autoflow_extractor_base';
+
+export async function getExtractorBase(): Promise<string> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(EXTRACTOR_BASE_KEY, (result) => {
+      const stored = result?.[EXTRACTOR_BASE_KEY];
+      resolve(typeof stored === 'string' && stored ? stored.replace(/\/+$/, '') : EXTRACTOR_BASE_DEFAULT);
+    });
+  });
+}
+
+/* The bearer the extractor needs.
+   It verifies the same JWT the Django API issues, so there is one login and
+   one token — the extension never holds a Gemini key, which is the entire
+   reason that service exists. */
+export async function getAccessToken(): Promise<string | null> {
+  const tokens = await getStoredTokens();
+  return tokens?.access || null;
+}
 // Our own page, which embeds Whop's checkout widget with the email locked.
 // See getUpgradeTarget() for why we don't link straight to whop.com.
 const CHECKOUT_PAGE_URL = 'https://www.auto-flow.studio/checkout';
@@ -299,14 +325,20 @@ export async function loginWithGoogle(idToken: string): Promise<{ ok: boolean; m
   }
 }
 
-export async function getGoogleConfig(): Promise<{ client_id: string } | null> {
+export const DEFAULT_GOOGLE_CLIENT_ID =
+  '202771542299-9de70n12u6bci4tnolh94itjm8vrseej.apps.googleusercontent.com';
+
+export async function getGoogleConfig(): Promise<{ client_id: string }> {
   try {
-    const res = await timedFetch(`${API_BASE}/api/auth/google/config`);
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
+    const res = await timedFetch(`${API_BASE}/api/auth/google/config`, {}, 8000);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.client_id) return data;
+    }
+  } catch (err) {
+    console.warn('[AutoFlow] Backend config fetch timed out or failed, using fallback Google client ID:', err);
   }
+  return { client_id: DEFAULT_GOOGLE_CLIENT_ID };
 }
 
 export async function logout(): Promise<void> {

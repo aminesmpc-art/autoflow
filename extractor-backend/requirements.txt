@@ -2,7 +2,9 @@ fastapi==0.115.0
 uvicorn[standard]==0.30.0
 pydantic-settings==2.5.0
 python-multipart==0.0.9
-google-genai>=1.0.0
+# 2.x is required for Gemini 3: thinking_level, and VideoMetadata.fps for
+# sampling frames sparsely. 1.x has neither and fails at call time.
+google-genai>=2.19.0
 google-cloud-storage>=2.14.0
 google-auth>=2.30.0
 supabase==2.9.0

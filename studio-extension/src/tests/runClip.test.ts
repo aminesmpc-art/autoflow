@@ -17,6 +17,7 @@ import {
   ingestStage, transcribeStage, windowStage, cutStage, beatsStage,
   type ClipDeps, type ClipConfig, type ProbeLike, type WindowResult, type CutStageResult,
   stagesToSkip,
+  runOneCut,
 } from '../studio/clip/runClip';
 import { LOCATE_SENTINEL } from '../studio/ask/clipperBrain';
 
@@ -525,5 +526,92 @@ describe('campaign mode', () => {
     expect(stagesToSkip({ sourceKey: 'x', mode: 'campaign' })).toEqual({});
     expect(stagesToSkip({ sourceKey: 'x', mode: 'explainer' })).toEqual({});
     expect(stagesToSkip({ sourceKey: 'x' })).toEqual({});
+  });
+});
+
+
+/* ------------------------------------------------------------------ */
+
+describe('a cut whose boundaries were already read', () => {
+  /* THE saving. Locating a clip from the audio costs up to four asks — coarse
+     then narrowed, for each of two lines — plus one more to find the speaker
+     in sampled stills. When the video was read on the server, all five of
+     those were answered once, for the whole video, before any clip existed.
+
+     These count asks rather than checking output, because the output is the
+     same either way; what changed is what it cost. */
+
+  const KNOWN = {
+    sourceKey: 'p',
+    hookLine: 'Look at these straw bales right here',
+    closingLine: 'Darius has already been arrested',
+  };
+
+  it('asks nothing at all when the times and the framing are known', async () => {
+    const h = harness();
+    await runOneCut(h.deps, {
+      ...KNOWN,
+      startSec: 83.1,
+      endSec: 108.3,
+      faces: [{ t: 0, x: 0.46 }, { t: 12, x: 0.38 }, { t: 24, x: 0.5 }],
+    });
+    expect(h.sent).toHaveLength(0);
+  });
+
+  it('cuts the seconds it was given, snapped to the nearest pauses', async () => {
+    const h = harness();
+    const cut = await runOneCut(h.deps, {
+      ...KNOWN,
+      startSec: 83.1,
+      endSec: 108.3,
+      faces: [{ t: 0, x: 0.5 }, { t: 12, x: 0.5 }],
+    });
+    /* Snapping still happens: it is local arithmetic on audio already in
+       hand, it costs nothing, and it is what stops a clip opening mid-word. */
+    expect(cut.startSec).toBeCloseTo(83.1, 0);
+    expect(cut.endSec).toBeCloseTo(108.3, 0);
+    expect(cut.clipSeconds).toBeGreaterThan(20);
+  });
+
+  it('still asks where the speaker is when the reading did not say', async () => {
+    const h = harness({ replies: ['{"positions":[{"n":1,"x":0.4}]}'] });
+    await runOneCut(h.deps, { ...KNOWN, startSec: 83.1, endSec: 108.3 });
+    expect(h.sent).toHaveLength(1);
+    expect(h.sent[0].message).toMatch(/horizontal position/i);
+  });
+
+  it('refuses a single described position rather than framing on it', async () => {
+    /* One sample is a fixed crop, which the frame-sampling ask does better. */
+    const h = harness({ replies: ['{"positions":[{"n":1,"x":0.4}]}'] });
+    await runOneCut(h.deps, {
+      ...KNOWN, startSec: 83.1, endSec: 108.3, faces: [{ t: 0, x: 0.46 }],
+    });
+    expect(h.sent).toHaveLength(1);
+  });
+
+  it('locates from the audio when the boundaries were not read', async () => {
+    const h = harness({ replies: ['{"start_seconds": 20}', '{"start_seconds": 20}',
+      '{"start_seconds": 40}', '{"start_seconds": 40}', '{"positions":[{"n":1,"x":0.5}]}'] });
+    await runOneCut(h.deps, { ...KNOWN, nearSec: 30 });
+    expect(h.sent.length).toBeGreaterThanOrEqual(4);
+    expect(h.sent[0].message).toMatch(/At what second/i);
+  });
+
+  it('ignores boundaries that cannot be true and locates instead', async () => {
+    /* A start past the end of the video is a version skew between the
+       extension and the service, not a measurement. */
+    const h = harness({ replies: ['{"start_seconds": 20}', '{"start_seconds": 20}',
+      '{"start_seconds": 40}', '{"start_seconds": 40}', '{"positions":[{"n":1,"x":0.5}]}'] });
+    await runOneCut(h.deps, { ...KNOWN, startSec: 99999, endSec: 100050 });
+    expect(h.sent.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('caps a clip whose read end runs past the longest allowed', async () => {
+    const h = harness();
+    const cut = await runOneCut(h.deps, {
+      ...KNOWN, startSec: 10, endSec: 500, maxSeconds: 60,
+      faces: [{ t: 0, x: 0.5 }, { t: 30, x: 0.5 }],
+    });
+    expect(cut.clipSeconds).toBeLessThanOrEqual(62);
   });
 });

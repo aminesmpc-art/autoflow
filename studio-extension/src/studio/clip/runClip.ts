@@ -122,7 +122,19 @@ export interface ClipConfig {
   longestSeconds?: number;
   /** Which chat is driving. Carried onto every cut this lays out. */
   platform?: string;
+  /* Read the video on the server in one call instead of transcribing it in
+     the chat, four minutes at a time. Needs a signed-in account: the model
+     can only take a video natively through the API, and that key lives on a
+     server rather than inside an extension anyone can unpack. */
+  readOnServer?: boolean;
 }
+
+/* The transcribe stage's result.
+   A plain Transcript when the chat produced it; a Transcript plus the reading
+   it came from when the server did. Everything downstream works from the
+   Transcript alone, and uses the reading only to SKIP work it would otherwise
+   pay a model for. */
+export type TranscribeResult = Transcript & { reading?: import('./readingApi').VideoReading };
 
 /* ------------------------------------------------------------------ */
 /* Stage results                                                       */
@@ -246,6 +258,35 @@ export function transcribeStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
     }
 
     const file = requireSource(deps, cfg);
+
+    /* One call, on the server, when there is an account to bill it to.
+       Six chunked chat transcriptions take about 145 seconds on a twenty
+       minute video and come back with no timings; this comes back with the
+       seconds attached, which is what lets every cut skip its own locating. */
+    if (cfg.readOnServer) {
+      const { readVideoOnServer, canReadOnServer } = await import('./readingApi');
+      const { readingToTranscript } = await import('./fromReading');
+
+      /* Signed out, so there is no account to bill the reading to. Falling
+         back is better than failing, and saying so is better than falling
+         back quietly — the run is about to take two minutes instead of ten
+         seconds, and the reason is fixable. */
+      if (!(await canReadOnServer())) {
+        deps.log?.('not signed in — transcribing in the chat instead, which is slower');
+      } else {
+        const reading = await readVideoOnServer(file, probe.durationSec, {
+          signal: deps.signal,
+          onProgress: (line) => deps.log?.(line),
+        });
+        for (const reason of reading.dropped) deps.log?.(`dropped: ${reason}`);
+        deps.log?.(
+          `read by ${reading.model || 'the server'}: `
+          + `${reading.segments.length} phrases, ${reading.scenes.length} scenes`,
+        );
+        return { ...readingToTranscript(reading), reading } satisfies TranscribeResult;
+      }
+    }
+
     const plans = planChunks(probe.durationSec);
     const pieces: ChunkText[] = [];
 
@@ -557,6 +598,8 @@ export interface SurveyResult {
   moments: SurveyMoment[];
   /** The shortlist they were chosen from, kept so the layout can read its seconds. */
   candidates: MomentCandidate[];
+  /** The server reading, when there was one, so the layout can time the cuts exactly. */
+  reading?: import('./readingApi').VideoReading;
   /** How many clips were asked for, so fewer can be explained rather than guessed at. */
   wanted: number;
   /** Why any of the reply's clips were thrown away. Empty is the normal case. */
@@ -581,7 +624,7 @@ export interface LayoutResult {
  */
 export function surveyStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
   return async (previous, signal) => {
-    const transcript = previous as Transcript;
+    const transcript = previous as TranscribeResult;
     const file = requireSource(deps, cfg);
 
     const env = await envelopeOfSource(deps, file, transcript.duration);
@@ -639,7 +682,9 @@ export function surveyStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
       ? `${moments.length} of ${asked} — the rest were not judged worth posting`
       : `${moments.length} clip${moments.length === 1 ? '' : 's'} worth posting`);
 
-    return { moments, candidates, wanted: asked, dropped } satisfies SurveyResult;
+    return {
+      moments, candidates, wanted: asked, dropped, reading: transcript.reading,
+    } satisfies SurveyResult;
   };
 }
 
@@ -659,6 +704,7 @@ export function layoutStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
       sourceName: cfg.sourceName,
       maxSeconds: cfg.longestSeconds,
       platform: cfg.platform as any,
+      reading: survey.reading,
     });
     const cuts = plan.steps.filter((s) => s.type === 'cut').length;
     deps.log?.(`laying out ${cuts} cut${cuts === 1 ? '' : 's'}`);
@@ -699,6 +745,14 @@ export interface OneCutConfig {
   targetAspect?: number;
   /** Hard cap on the finished clip. */
   maxSeconds?: number;
+  /* Boundaries already measured by a server reading. When both are present
+     the two locate asks per line never happen — the seconds came from a
+     reading of the audio rather than from a model guessing at them. */
+  startSec?: number;
+  endSec?: number;
+  /* Where the speaker stands, relative to the clip's start. When present the
+     stills are never cut and the frame-sampling ask never happens. */
+  faces?: Array<{ t: number; x: number }>;
 }
 
 /* How far either side of `nearSec` to look.
@@ -738,20 +792,41 @@ export async function runOneCut(
 
   const probe = await deps.media.probe(file);
   const duration = probe.durationSec;
-  const near = Math.max(0, Math.min(duration, cfg.nearSec ?? 0));
-  const from = Math.max(0, near - SEARCH_BACK_SEC);
-  const to = Math.min(duration, from + SEARCH_BACK_SEC + SEARCH_FORWARD_SEC);
 
-  deps.log?.(`searching ${Math.round(from)}–${Math.round(to)}s for the opening line`);
-  const hookAt = await locateLine(deps, file, hook, from, to);
-  if (hookAt === null) {
-    throw new Error(
-      `Could not find "${hook.slice(0, 40)}…" in the audio around `
-      + `${Math.round(near)}s. Edit the opening line to match what is actually said.`,
+  /* Already known, from a reading of the whole video. Four asks — two per
+     line, coarse then narrowed — for something that was measured once when
+     the video was read. */
+  const known =
+    typeof cfg.startSec === 'number'
+    && typeof cfg.endSec === 'number'
+    && cfg.endSec > cfg.startSec
+    && cfg.startSec >= 0
+    && cfg.startSec < duration;
+
+  let hookAt: number | null;
+  let closingAt: number | null;
+
+  if (known) {
+    hookAt = cfg.startSec!;
+    closingAt = Math.min(duration, cfg.endSec!);
+    deps.log?.(
+      `boundaries already read: ${hookAt.toFixed(1)}–${closingAt.toFixed(1)}s, nothing to ask`,
     );
-  }
+  } else {
+    const near = Math.max(0, Math.min(duration, cfg.nearSec ?? 0));
+    const from = Math.max(0, near - SEARCH_BACK_SEC);
+    const to = Math.min(duration, from + SEARCH_BACK_SEC + SEARCH_FORWARD_SEC);
 
-  const closingAt = await locateLine(deps, file, closing, from, to);
+    deps.log?.(`searching ${Math.round(from)}–${Math.round(to)}s for the opening line`);
+    hookAt = await locateLine(deps, file, hook, from, to);
+    if (hookAt === null) {
+      throw new Error(
+        `Could not find "${hook.slice(0, 40)}…" in the audio around `
+        + `${Math.round(near)}s. Edit the opening line to match what is actually said.`,
+      );
+    }
+    closingAt = await locateLine(deps, file, closing, from, to);
+  }
   /* Ends before it begins is not a located end — it is the model having found
      an earlier utterance of a line that repeats. Estimating is better than
      encoding backwards. */
@@ -777,11 +852,24 @@ export async function runOneCut(
   let plan: ReframePlan | null = null;
   const aspect = cfg.targetAspect ?? DEFAULT_ASPECT;
   if (probe.video && !probe.alreadyVertical) {
-    const times = frameTimes(endSec - startSec);
-    const stills = await deps.media.frames(file, times.map((t) => startSec + t));
-    const faces = stills.length
-      ? readFaces(await deps.ask(faceAsk(stills.length), { firstTurn: true, attachments: stills }), times)
-      : [];
+    /* Where the speaker stands, already described by the reading. Cutting
+       eight stills out of the video and asking a chat to point at the person
+       in each is the same answer, several seconds and one ask later. */
+    const supplied = (cfg.faces || []).filter(
+      (f) => Number.isFinite(f.t) && Number.isFinite(f.x),
+    );
+
+    let faces = supplied;
+    if (faces.length < 2) {
+      const times = frameTimes(endSec - startSec);
+      const stills = await deps.media.frames(file, times.map((t) => startSec + t));
+      faces = stills.length
+        ? readFaces(await deps.ask(faceAsk(stills.length), { firstTurn: true, attachments: stills }), times)
+        : [];
+    } else {
+      deps.log?.(`framing from ${faces.length} described scenes, nothing to ask`);
+    }
+
     plan = planReframe(faces, probe.video.width, probe.video.height, aspect);
     deps.log?.(`reframe: ${plan.why}`);
   }
