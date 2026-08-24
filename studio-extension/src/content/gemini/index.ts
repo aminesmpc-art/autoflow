@@ -55,15 +55,22 @@ function logLine(line: string): void {
    extension is rebuilt — the tab must be reloaded too — and a stale
    script is indistinguishable from a broken fix unless it says which
    one it is. */
-const ADAPTER_BUILD = 'footer-v2';
+const ADAPTER_BUILD = 'video-data-v4';
 
 /** Backstop for a wedged tab. */
 const TEXT_CEILING_MS = 10 * 60 * 1000;
 const POLL_MS = 2000;
 const UPLOAD_TIMEOUT_MS = 45 * 1000;
 const MAX_CAPTURE_BYTES = 15 * 1024 * 1024;
+const MAX_VIDEO_CAPTURE_BYTES = 50 * 1024 * 1024;
 
-chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
+if ((window as any).__af_gemini_listener) {
+  try {
+    chrome.runtime?.onMessage?.removeListener?.((window as any).__af_gemini_listener);
+  } catch (_) {}
+}
+
+const _geminiMessageHandler = (msg: any, _sender: any, sendResponse: (r?: any) => void) => {
   if (msg?.type === 'PING') { sendResponse({ pong: true }); return true; }
   if (msg?.type === 'STUDIO_EXECUTE_NODE') {
     handleExecute(msg.payload)
@@ -80,7 +87,10 @@ chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
     return true;
   }
   return false;
-});
+};
+
+(window as any).__af_gemini_listener = _geminiMessageHandler;
+chrome.runtime.onMessage.addListener(_geminiMessageHandler);
 
 function send(type: string, payload: Record<string, unknown>): void {
   try { chrome.runtime.sendMessage({ type, payload }).catch(() => {}); } catch {}
@@ -154,9 +164,12 @@ function turnCount(): number {
  */
 function findNewChatControl(): HTMLElement | null {
   const sparkle = document.querySelector<HTMLElement>(
-    'a[data-test-id="side-nav-sparkle-button"]'
+    'a[data-test-id="side-nav-sparkle-button"], [data-test-id="side-nav-sparkle-button"]'
   );
-  if (sparkle && isVisible(sparkle)) return sparkle;
+  if (sparkle && isVisible(sparkle)) {
+    const a = sparkle.tagName.toLowerCase() === 'a' ? sparkle : sparkle.querySelector<HTMLElement>('a');
+    return a || sparkle;
+  }
 
   const byHref = Array.from(document.querySelectorAll<HTMLElement>('a[href="/app"]'))
     .find(isVisible);
@@ -269,13 +282,17 @@ function isGenerating(): boolean {
      markdown panel and the label announcer, and the footer gains a `complete`
      class when the turn ends — all of it maintained by Gemini for screen
      readers, which makes it far steadier than any button. */
-  const turns = document.querySelectorAll<HTMLElement>('model-response');
+  const turns = document.querySelectorAll<HTMLElement>('model-response, structured-content-container');
   const latest = turns[turns.length - 1];
   if (latest) {
     if (latest.querySelector('[aria-busy="true"]')) return true;
     const footer = latest.querySelector('.response-footer');
     if (footer) return !footer.classList.contains('complete');
   }
+
+  /* Active shimmer overlay on in-flight image generation */
+  const activeShimmer = document.querySelector('.shimmer-overlay:not(.done-generating)');
+  if (activeShimmer) return true;
 
   if (findStopButton()) return true;
   const btn = findSendButton() as HTMLButtonElement | null;
@@ -423,6 +440,11 @@ const MODE_PLACEHOLDER: Record<GeminiMode, RegExp> = {
 };
 
 function currentMode(): GeminiMode | null {
+  /* Route check first: client-side SPA navigation updates window.location.pathname */
+  const path = window.location.pathname;
+  if (path === '/videos' || path.startsWith('/videos/')) return 'video';
+  if (path === '/images' || path.startsWith('/images/')) return 'image';
+
   const box = document.querySelector('[data-placeholder]');
   const hint = (box?.getAttribute('data-placeholder') || '').trim();
   for (const mode of ['image', 'video', 'chat'] as GeminiMode[]) {
@@ -430,11 +452,12 @@ function currentMode(): GeminiMode | null {
   }
   /* No placeholder to read — a composer already carrying text has none. Fall
      back to the sidebar, which marks the live route. */
-  const active = document.querySelector('a.gem-nav-list-item.is-active[href]');
+  const active = document.querySelector('a.gem-nav-list-item.is-active[href], gem-nav-list-item.is-active a[href], a[aria-current="page"]');
   const href = active?.getAttribute('href') || '';
   for (const mode of ['image', 'video'] as GeminiMode[]) {
     if (href === MODE_ROUTE[mode]) return mode;
   }
+  if (path === '/app' || path === '/' || path.startsWith('/app/')) return 'chat';
   return null;
 }
 
@@ -444,16 +467,25 @@ async function ensureMode(want: GeminiMode): Promise<string | null> {
 
   /* By data-test-id first — "images-side-nav-entry-button",
      "videos-side-nav-entry-button" — which is what Gemini's own tests hold on
-     to, and survives a route or class rename. The href is the fallback. */
-  const link = document.querySelector<HTMLElement>(
+     to, and survives a route or class rename. The href is the fallback.
+
+     NOTE: The data-test-id sits on the <gem-nav-list-item> host element, but the
+     actual interactive Angular routerLink sits on the inner <a href="..."> tag.
+     Clicking the host element alone does not dispatch to the router link; we
+     must target the <a> element. */
+  const item = document.querySelector<HTMLElement>(
     `[data-test-id="${want}s-side-nav-entry-button"]`,
   ) || document.querySelector<HTMLElement>(
     `a.gem-nav-list-item[href="${MODE_ROUTE[want]}"]`,
+  ) || document.querySelector<HTMLElement>(
+    `a[href="${MODE_ROUTE[want]}"]`,
   );
-  if (!link) {
+  if (!item) {
     return `Gemini has no "${want}" mode in this account — the sidebar has no `
       + `${MODE_ROUTE[want]} link. Image and video generation need a Gemini plan that offers them.`;
   }
+
+  const link = (item.tagName.toLowerCase() === 'a' ? item : item.querySelector<HTMLElement>('a')) || item;
 
   logLine(`Switching Gemini to ${want} mode`);
   link.click();
@@ -470,6 +502,19 @@ async function ensureMode(want: GeminiMode): Promise<string | null> {
     + `"${(document.querySelector('[data-placeholder]')?.getAttribute('data-placeholder') || '?')}".`;
 }
 
+function findAspectRatioButton(): HTMLElement | null {
+  const byAria = Array.from(document.querySelectorAll<HTMLElement>('button[aria-label]'))
+    .find((b) => /aspect ratio|ratio/i.test(b.getAttribute('aria-label') || '') && isVisible(b));
+  if (byAria) return byAria;
+
+  const byIcon = Array.from(document.querySelectorAll<HTMLElement>('mat-icon[fonticon*="aspect" i], mat-icon[fonticon*="crop" i]'))
+    .map((i) => i.closest('button') as HTMLElement | null)
+    .find((b) => b && isVisible(b));
+  if (byIcon) return byIcon;
+
+  return null;
+}
+
 /**
  * Set the clip shape, when the node asked for one.
  *
@@ -482,7 +527,7 @@ async function setAspectRatio(ratio: string): Promise<void> {
   const wantLandscape = /16\s*:\s*9/.test(ratio);
   if (!wantPortrait && !wantLandscape) return;
 
-  const btn = document.querySelector<HTMLElement>('button[aria-label^="Aspect ratio"]');
+  const btn = document.querySelector<HTMLElement>('button[aria-label^="Aspect ratio"]') || findAspectRatioButton();
   if (!btn) return;
 
   const already = (btn.getAttribute('aria-label') || '');
@@ -490,16 +535,20 @@ async function setAspectRatio(ratio: string): Promise<void> {
   if (wantLandscape && /landscape/i.test(already)) return;
 
   btn.click();
-  await sleep(500);
 
   const wanted = wantPortrait ? /portrait|9\s*:\s*16/i : /landscape|16\s*:\s*9/i;
-  const option = Array.from(
-    document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"], [role="option"], .cdk-overlay-pane button'),
-  ).find((el) => wanted.test(el.textContent || el.getAttribute('aria-label') || ''));
+  let option: HTMLElement | undefined;
+  for (let i = 0; i < 8; i++) {
+    await sleep(200);
+    option = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"], [role="option"], .cdk-overlay-pane button, mat-option'),
+    ).find((el) => wanted.test(el.textContent || el.getAttribute('aria-label') || ''));
+    if (option) break;
+  }
 
   if (!option) {
     logLine(`Could not set ${ratio} — the aspect ratio menu did not open`);
-    btn.click();                                   // put it back as we found it
+    btn.click();
     return;
   }
   option.click();
@@ -517,7 +566,11 @@ function collectResultImages(): HTMLImageElement[] {
     if (composer && composer.contains(img)) return false;
     if (img.closest('user-query, [data-test-id="user-query"]')) return false;
     const rect = img.getBoundingClientRect();
-    if (rect.width < 180 && rect.height < 180) return false;
+    const parent = img.closest('generated-image, single-image, .attachment-container');
+    const parentRect = parent?.getBoundingClientRect();
+    const w = Math.max(rect.width, parentRect?.width || 0);
+    const h = Math.max(rect.height, parentRect?.height || 0);
+    if (w < 180 && h < 180 && rect.width < 180) return false;
     return img.complete && img.naturalWidth >= 256 && img.naturalHeight >= 256;
   };
 
@@ -534,7 +587,9 @@ function collectResultImages(): HTMLImageElement[] {
     return out;
   };
 
-  const turns = Array.from(document.querySelectorAll<HTMLElement>('model-response'));
+  const turns = Array.from(document.querySelectorAll<HTMLElement>(
+    'model-response, structured-content-container, generated-image, .attachment-container.generated-images'
+  ));
   const scoped = turns.length ? gather(turns) : [];
   return scoped.length ? scoped : gather([document]);
 }
@@ -589,30 +644,85 @@ function findFileInput(): HTMLInputElement | null {
     || document.querySelector<HTMLInputElement>('input[type="file"]');
 }
 
+function findUploadButton(): HTMLElement | null {
+  const composer = findComposer();
+  // Traverse up to the full input bar (beyond rich-textarea, which only holds the editor)
+  const bar = composer?.closest('.chat-input-container, .input-area-container, .bottom-container, .text-input-field, form')
+    || composer?.parentElement?.parentElement?.parentElement
+    || document.body;
+
+  // 1. Mat-icon check with 'add', 'add_circle', 'upload', 'attach_file' anywhere in the input bar
+  const icons = Array.from(bar.querySelectorAll<HTMLElement>('mat-icon')).filter((icon) => {
+    const glyph = (icon.getAttribute('fonticon') || icon.getAttribute('data-mat-icon-name') || icon.textContent || '').trim().toLowerCase();
+    return glyph === 'add' || glyph === 'add_circle' || glyph === 'upload' || glyph === 'attach_file';
+  });
+
+  for (const icon of icons) {
+    const btn = icon.closest('button, [role="button"]') as HTMLElement | null;
+    if (btn && isVisible(btn)) return btn;
+  }
+
+  // 2. Button aria-label, testid, or class in the bar (excluding mode pills like Images/Videos/Flash)
+  const byAria = Array.from(bar.querySelectorAll<HTMLElement>('button, [role="button"]')).find((b) => {
+    const label = (b.getAttribute('aria-label') || '').toLowerCase();
+    const testId = (b.getAttribute('data-test-id') || b.getAttribute('data-testid') || '').toLowerCase();
+    const text = (b.innerText || '').trim().toLowerCase();
+    if (text === 'images' || text === 'videos' || text === 'chat' || text.includes('flash') || text.includes('extended')) return false;
+    return /upload|attach|tools|add|plus/i.test(label)
+      || /upload|attach|tools|add|plus/i.test(testId)
+      || b.classList.contains('upload-button')
+      || b.classList.contains('attachment-button');
+  });
+  if (byAria) return byAria;
+
+  // 3. Fallback across entire document
+  const pageIcons = Array.from(document.querySelectorAll<HTMLElement>('mat-icon')).filter((icon) => {
+    const glyph = (icon.getAttribute('fonticon') || icon.getAttribute('data-mat-icon-name') || icon.textContent || '').trim().toLowerCase();
+    return glyph === 'add' || glyph === 'add_circle' || glyph === 'upload';
+  });
+  for (const icon of pageIcons) {
+    const btn = icon.closest('button, [role="button"]') as HTMLElement | null;
+    if (btn && isVisible(btn)) return btn;
+  }
+
+  return Array.from(document.querySelectorAll<HTMLElement>('button, [role="button"]')).find((b) => {
+    const label = `${b.getAttribute('aria-label') || ''} ${b.getAttribute('data-test-id') || ''} ${b.getAttribute('data-testid') || ''} ${b.getAttribute('title') || ''}`;
+    const text = (b.innerText || '').trim().toLowerCase();
+    if (text === 'images' || text === 'videos' || text === 'chat') return false;
+    return /add|upload|attach|image|photo|file|plus/i.test(label) && isVisible(b);
+  }) || null;
+}
+
 /** Gemini mounts its upload input behind the "+" menu on some surfaces. */
 async function revealFileInput(): Promise<HTMLInputElement | null> {
   const existing = findFileInput();
   if (existing) return existing;
 
-  const opener = Array.from(document.querySelectorAll<HTMLElement>('button, [role="button"]')).find((b) => {
-    const label = `${b.getAttribute('aria-label') || ''} ${b.getAttribute('data-test-id') || ''} ${b.getAttribute('data-testid') || ''} ${b.getAttribute('title') || ''} ${b.innerText || ''}`;
-    return /add|upload|attach|image|photo|file|plus/i.test(label) && isVisible(b);
-  });
+  const opener = findUploadButton();
   if (!opener) return null;
 
   opener.click();
-  for (let i = 0; i < 10; i++) {
-    await sleep(300);
+  for (let i = 0; i < 12; i++) {
+    await sleep(250);
     const input = findFileInput();
-    if (input) {
-      // Close the menu: an open overlay swallows the send click later.
-      document.body.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Escape', code: 'Escape', bubbles: true,
-      }));
-      return input;
+    if (input) return input;
+
+    // If a menu overlay opened, click the "Upload files" / "Upload from computer" item
+    const menuUpload = Array.from(
+      document.querySelectorAll<HTMLElement>('.cdk-overlay-pane [role="menuitem"], .cdk-overlay-pane button, mat-menu [role="menuitem"], mat-menu button')
+    ).find((item) => {
+      const label = `${item.getAttribute('aria-label') || ''} ${item.innerText || ''} ${item.textContent || ''}`;
+      return /upload|files|photo|image|computer/i.test(label) && isVisible(item);
+    });
+
+    if (menuUpload) {
+      menuUpload.click();
+      await sleep(250);
+      const afterMenuInput = findFileInput();
+      if (afterMenuInput) return afterMenuInput;
     }
   }
-  return null;
+  return findFileInput();
 }
 
 /** Angular tracks file inputs through its own change plumbing. */
@@ -691,9 +801,6 @@ function settledAttachmentCount(): number {
  * an image it never received — a run that looks perfect and is wrong.
  */
 async function attachReferences(dataUrls: string[]): Promise<string | null> {
-  const input = await revealFileInput();
-  if (!input) return 'Could not find Gemini\'s file upload — the reference image was not sent';
-
   let files: File[];
   try {
     files = dataUrls.map((url, i) => dataUrlToFile(url, `reference-${i + 1}`));
@@ -705,8 +812,37 @@ async function attachReferences(dataUrls: string[]): Promise<string | null> {
   const baseline = settledAttachmentCount();
   const dt = new DataTransfer();
   for (const f of files) dt.items.add(f);
-  input.files = dt.files;
-  triggerFileInputChange(input);
+
+  // 1. Direct clipboard paste & drop onto the composer (works across modes without menu clicks)
+  const composer = findComposer();
+  if (composer) {
+    composer.focus();
+    try {
+      composer.dispatchEvent(new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dt,
+      }));
+    } catch {}
+
+    try {
+      composer.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      composer.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      composer.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    } catch {}
+  }
+
+  // 2. File input fallback if paste didn't mount attachment chips
+  await sleep(300);
+  if (settledAttachmentCount() === baseline && attachmentCount() === baseline) {
+    const input = await revealFileInput();
+    if (input) {
+      input.files = dt.files;
+      triggerFileInputChange(input);
+    } else if (settledAttachmentCount() === baseline && attachmentCount() === baseline) {
+      return 'Could not find Gemini\'s file upload — the reference image was not sent';
+    }
+  }
 
   const deadline = Date.now() + UPLOAD_TIMEOUT_MS;
   let stable = 0;
@@ -749,13 +885,40 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 async function captureImage(img: HTMLImageElement): Promise<string> {
-  const resp = await fetch(img.currentSrc || img.src);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching image`);
-  const blob = await resp.blob();
-  if (blob.size > MAX_CAPTURE_BYTES) {
-    throw new Error(`Image too large to transfer (${Math.round(blob.size / 1e6)} MB)`);
+  const src = img.currentSrc || img.src || '';
+  if (!src) throw new Error('Image element has no src attribute');
+  if (src.startsWith('data:')) return src;
+
+  try {
+    const resp = await fetch(src);
+    if (resp.ok) {
+      const blob = await resp.blob();
+      if (blob.size > MAX_CAPTURE_BYTES) {
+        throw new Error(`Image too large to transfer (${Math.round(blob.size / 1e6)} MB)`);
+      }
+      const dataUrl = await blobToDataUrl(blob);
+      if (dataUrl && dataUrl.startsWith('data:')) return dataUrl;
+    }
+  } catch (e: any) {
+    console.warn('[AutoFlow Gemini] fetch blob failed, trying canvas fallback:', e?.message || e);
   }
-  return blobToDataUrl(blob);
+
+  // Fallback: draw directly to canvas from loaded <img> element
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth || img.width || 768;
+    canvas.height = img.naturalHeight || img.height || 768;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(img, 0, 0);
+      const dataUrl = canvas.toDataURL('image/png');
+      if (dataUrl && dataUrl.startsWith('data:')) return dataUrl;
+    }
+  } catch (e: any) {
+    console.warn('[AutoFlow Gemini] canvas capture failed:', e?.message || e);
+  }
+
+  throw new Error('Image could not be converted to data URL');
 }
 
 /* ── Execution ── */
@@ -889,17 +1052,22 @@ async function handleExecute(payload: any): Promise<any> {
       ? trackVideo(nodeId, preexisting)
       : trackGeneration(nodeId, preexisting);
   work.finally(stopAntiThrottle);
+
   return { success: true };
 }
 
 /** Every finished clip on the page, ignoring anything still buffering. */
 function collectResultVideos(): HTMLVideoElement[] {
   const composer = composerRegion();
-  return Array.from(document.querySelectorAll('video')).filter((v) => {
+  return Array.from(document.querySelectorAll<HTMLVideoElement>('generated-video video, video-player video, video')).filter((v) => {
     if (composer && composer.contains(v)) return false;
     if (v.closest('user-query, [data-test-id="user-query"]')) return false;
     const rect = v.getBoundingClientRect();
-    if (rect.width < 120 && rect.height < 120) return false;
+    const parent = v.closest('generated-video, video-player, model-response');
+    const parentRect = parent?.getBoundingClientRect();
+    const w = Math.max(rect.width, parentRect?.width || 0);
+    const h = Math.max(rect.height, parentRect?.height || 0);
+    if (w < 100 && h < 100 && rect.width < 100) return false;
     return !!videoSrc(v);
   });
 }
@@ -967,15 +1135,52 @@ async function trackVideo(nodeId: string, preexisting: Set<string>): Promise<voi
     if (src === stableSrc) stableCount++;
     else { stableSrc = src; stableCount = 0; }
 
-    /* Two unchanged polls AND the site saying it has stopped. A clip whose src
-       is still being swapped is one Gemini is still assembling. */
-    if (stableCount >= 2 && !isGenerating() && turnFinished() !== false) {
+    /* Two unchanged polls AND the site saying it has stopped generating. */
+    if (stableCount >= 2 && !isGenerating()) {
+      let videoDataUrl = '';
+      let referenceUrl = '';
+
+      // Capture poster / thumbnail frame if video has dimensions
+      if (clip.videoWidth > 0 && clip.videoHeight > 0) {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = clip.videoWidth;
+          canvas.height = clip.videoHeight;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(clip, 0, 0);
+            referenceUrl = canvas.toDataURL('image/jpeg', 0.92);
+          }
+        } catch {}
+      }
+
+      /* Fetch the mp4 bytes in the Gemini tab context (with Google cookies)
+         and inline as a data URL so the Chrome extension / studio canvas can play it */
+      try {
+        const resp = await fetch(src, { credentials: 'include' });
+        if (resp.ok) {
+          const blob = await resp.blob();
+          if (blob.size <= MAX_VIDEO_CAPTURE_BYTES) {
+            videoDataUrl = await blobToDataUrl(blob);
+            logLine(`Video inlined (${(blob.size / 1e6).toFixed(1)} MB)`);
+          } else {
+            console.warn(`[AutoFlow Gemini] Video too large to inline (${(blob.size / 1e6).toFixed(1)} MB)`);
+          }
+        }
+      } catch (e: any) {
+        console.warn('[AutoFlow Gemini] Could not fetch video bytes:', e?.message || e);
+      }
+
       logLine(`Clip captured (${Math.round((clip.duration || 0) * 10) / 10}s)`);
       send('STUDIO_NODE_RESULT', {
-        nodeId, tileId: '',
+        nodeId,
+        tileId: '',
         videoUrl: src,
-        previewVideoUrl: src,
-        thumbnailUrl: clip.poster || '',
+        imageUrl: videoDataUrl || referenceUrl || src,
+        thumbnailUrl: referenceUrl || clip.poster || '',
+        previewUrl: referenceUrl || clip.poster || '',
+        previewVideoUrl: videoDataUrl || src,
+        referenceUrl,
       });
       return;
     }
@@ -1024,12 +1229,12 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
     if (src === stableSrc) stableCount++;
     else { stableSrc = src; stableCount = 0; }
 
-    /* The footer is the only positive signal that the turn is over, so it has
-       the deciding vote when it can be read. false means still writing — keep
-       waiting even though the text looks settled. */
-    if (stableCount >= 2 && !isGenerating() && turnFinished() !== false) {
+    /* An image has settled across two polls and the page is not generating. */
+    if (stableCount >= 2 && !isGenerating()) {
       try {
+        logLine(`Capturing generated image...`);
         const dataUrl = await captureImage(candidate);
+        logLine(`Image captured (${Math.round(dataUrl.length / 1024)} KB)`);
         send('STUDIO_NODE_RESULT', {
           nodeId, tileId: '',
           imageUrl: dataUrl, thumbnailUrl: dataUrl, previewUrl: dataUrl,
