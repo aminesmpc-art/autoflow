@@ -111,6 +111,12 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
      way at all to tell whether two were refused or two were lost. */
   const short = !!asked && moments.length < asked;
 
+  /* Why the slow path was taken, if it was. Persisted on the transcribe
+     result rather than logged, because a log line is overwritten by the next
+     one and this is the most actionable thing a run can tell you. */
+  const transcribed = resultOf<{ fallback?: string }>(run, 'transcribe');
+  const fallback: string = transcribed?.fallback || '';
+
   const laid = resultOf<{ count?: number }>(run, 'layout');
   const cutCount: number = typeof laid?.count === 'number' ? laid.count : 0;
 
@@ -529,6 +535,14 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               placeholder={'Paste the campaign brief here — word for word.\n\nThe rules are shown to the chat when it ranks the moments, so a brief that bans misrepresentation or engagement farming actually changes what gets chosen.'}
               onChange={(e) => updateNodeData(id, { campaignRules: e.target.value })}
             />
+          </div>
+        )}
+
+        {fallback && (
+          <div className="sn-clip__slow">
+            Transcribed in the chat because {fallback}. That is the slow path —
+            one server call would have taken seconds and given every cut its
+            timings.
           </div>
         )}
 

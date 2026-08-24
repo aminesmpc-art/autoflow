@@ -651,6 +651,34 @@ describe('reading on the server, when the server cannot', () => {
     readingApi.readVideoOnServer.mockReset();
   });
 
+  it('keeps the reason on the run, not just in a log line', async () => {
+    /* This happened. A run fell back to the chat, said why once, and the next
+       progress line overwrote it — so afterwards a fallback run and a normal
+       one were indistinguishable, and the most actionable fact about it (two
+       minutes instead of ten seconds, for a fixable reason) was gone. */
+    const h = harness({ replies: new Array(6).fill('word '.repeat(600)) });
+    readingApi.readVideoOnServer.mockRejectedValue(
+      new readingApi.ReadingUnavailable('this server does not offer video reading yet'),
+    );
+
+    const out = await transcribeStage(h.deps, serverCfg(h))(PROBE) as any;
+
+    expect(out.fallback).toBe('this server does not offer video reading yet');
+    // and it survives later progress, because it is on the result
+    expect(h.logs[h.logs.length - 1]).not.toMatch(/does not offer/);
+  });
+
+  it('leaves no fallback reason when the server did the reading', async () => {
+    const h = harness();
+    readingApi.readVideoOnServer.mockResolvedValue({
+      durationSec: 600, language: 'en', summary: '', model: 'gemini-3.7-flash',
+      dropped: [], scenes: [],
+      segments: [{ start: 1, end: 4, text: 'a phrase that is long enough' }],
+    });
+    const out = await transcribeStage(h.deps, serverCfg(h))(PROBE) as any;
+    expect(out.fallback).toBeUndefined();
+  });
+
   it('falls back to the chat when the endpoint is not deployed', async () => {
     const h = harness({ replies: new Array(6).fill('word '.repeat(600)) });
     readingApi.readVideoOnServer.mockRejectedValue(

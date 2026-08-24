@@ -137,7 +137,16 @@ export interface ClipConfig {
    it came from when the server did. Everything downstream works from the
    Transcript alone, and uses the reading only to SKIP work it would otherwise
    pay a model for. */
-export type TranscribeResult = Transcript & { reading?: import('./readingApi').VideoReading };
+export type TranscribeResult = Transcript & {
+  reading?: import('./readingApi').VideoReading;
+  /* Why the slow path was taken, when it was.
+     Kept on the RESULT rather than logged, because a log line goes to
+     statusNote and the next one overwrites it — so the single most important
+     thing about a run ("this took two minutes instead of ten seconds, and
+     here is the fixable reason") survived for about a second, and afterwards
+     a fallback run was indistinguishable from a normal one. */
+  fallback?: string;
+};
 
 /* ------------------------------------------------------------------ */
 /* Stage results                                                       */
@@ -261,6 +270,7 @@ export function transcribeStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
     }
 
     const file = requireSource(deps, cfg);
+    let fellBackBecause: string | undefined;
 
     /* One call, on the server, when there is an account to bill it to.
        Six chunked chat transcriptions take about 145 seconds on a twenty
@@ -292,9 +302,8 @@ export function transcribeStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
            user's to act on, and falling back would hide them behind two
            minutes of chat transcription and a bill they did not expect. */
         if (!isUnavailable(error)) throw error;
-        deps.log?.(
-          `${(error as Error).message} — transcribing in the chat instead, which is slower`,
-        );
+        fellBackBecause = (error as Error).message;
+        deps.log?.(`${fellBackBecause} — transcribing in the chat instead, which is slower`);
       }
     }
 
@@ -317,7 +326,7 @@ export function transcribeStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
       deps.log?.(`transcribed ${plan.index + 1}/${plans.length}`);
     }
 
-    return stitch(pieces, probe.durationSec);
+    return { ...stitch(pieces, probe.durationSec), fallback: fellBackBecause } satisfies TranscribeResult;
   };
 }
 

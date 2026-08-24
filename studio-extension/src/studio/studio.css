@@ -3734,3 +3734,17 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   font-size: var(--t-micro);
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Clipping: why this run took the slow path ────────────────
+   The reason used to be a log line, and the next log line overwrote it — so
+   the single most actionable fact about a run survived about a second. */
+.sn-clip__slow {
+  margin: 0 var(--s-2) var(--s-2);
+  padding: var(--s-2);
+  border-left: 2px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.45;
+}
