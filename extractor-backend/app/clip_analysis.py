@@ -257,6 +257,42 @@ MIN_WORDS_PER_SEC = 0.4
 MAX_WORDS_PER_SEC = 8.0
 
 
+def _offset_for(
+    raw: list[Segment], window_start: float, window_end: float
+) -> float:
+    """
+    Whether this window's answers are absolute or relative, decided by which
+    reading puts more of them inside the window they were asked about.
+
+    Given start_offset, the model timestamps against the ORIGINAL video, not
+    against the clip it was shown. Assuming otherwise cost 351 of 515 segments
+    on the first real run: everything after the first window was shifted past
+    the end of its own window and thrown away, so a twenty-minute video came
+    back transcribed for seven.
+
+    Measured per window rather than assumed either way, because the convention
+    is the model's to choose and it may not choose the same one twice. The
+    tell is unambiguous when it matters: a relative timestamp cannot exceed
+    the window's own length, and the value that exposed this was 422s inside a
+    420s window.
+    """
+    if not raw or window_start <= 0:
+        return 0.0
+
+    def inside(offset: float) -> int:
+        n = 0
+        for seg in raw:
+            t = parse_timecode(seg.start)
+            if t is None:
+                continue
+            t += offset
+            if window_start - 1.0 <= t <= window_end + 1.0:
+                n += 1
+        return n
+
+    return 0.0 if inside(0.0) >= inside(window_start) else window_start
+
+
 def validate_segments(
     raw: list[Segment],
     *,
@@ -273,6 +309,7 @@ def validate_segments(
     say. Nothing is kept because it parsed.
     """
     drop = on_drop or (lambda _reason: None)
+    offset = _offset_for(raw, window_start, window_end)
     out: list[TimedSegment] = []
 
     for index, seg in enumerate(raw):
@@ -287,10 +324,8 @@ def validate_segments(
             drop(f'segment {index + 1} ("{text[:40]}") had an unreadable timecode')
             continue
 
-        # Timings are relative to the window the model was shown; the caller
-        # asked about a slice of a longer video and gets absolute seconds back.
-        start += window_start
-        end += window_start
+        start += offset
+        end += offset
 
         if end <= start:
             drop(f'segment {index + 1} ("{text[:40]}") ends before it starts')
@@ -333,13 +368,17 @@ def validate_scenes(
 ) -> list[TimedScene]:
     """Scenes, with the same time checks and a bounded speaker position."""
     out: list[TimedScene] = []
+    offset = _offset_for(
+        [Segment(start=s.start, end=s.end, text="x") for s in raw],
+        window_start, window_end,
+    )
     for scene in raw:
         start = parse_timecode(scene.start)
         end = parse_timecode(scene.end)
         if start is None or end is None:
             continue
-        start += window_start
-        end += window_start
+        start += offset
+        end += offset
         if end <= start or start > window_end + 1.0:
             continue
 
