@@ -217,6 +217,85 @@ describe('the campaign rule, enforced where the decision is made', () => {
 
 /* ------------------------------------------------------------------ */
 
+describe('scoring a clip out of a hundred', () => {
+  /* "Rank these" produces an order with nothing behind it and no way to
+     refuse the bottom of the list. Scored parts make the ranking explainable
+     and make "not worth posting" a threshold rather than a politely worded
+     hope in the prompt. */
+  const reply = (clips: unknown[]) => JSON.stringify({ clips });
+  const scored = (moment: number, parts: number[], over: Record<string, unknown> = {}) => ({
+    moment, hook_line: `opening line for ${moment}`, closing_line: `closing line for ${moment}`,
+    hook: parts[0], value: parts[1], standalone: parts[2], shareable: parts[3],
+    score: parts.reduce((a, b) => a + b, 0), ...over,
+  });
+
+  it('keeps the parts and the total', () => {
+    const out = readSurvey(reply([scored(1, [26, 35, 18, 8])]), 3, undefined, 60);
+    expect(out[0].score).toBe(87);
+    expect(out[0].pillars).toEqual({ hook: 26, value: 35, standalone: 18, shareable: 8 });
+  });
+
+  it('refuses a clip below the score worth posting', () => {
+    /* The point of the threshold: a video without ten good moments comes back
+       with fewer, instead of ten with three bad ones at the end. */
+    const drops: string[] = [];
+    const out = readSurvey(
+      reply([scored(1, [26, 35, 18, 8]), scored(2, [8, 12, 6, 2])]),
+      3, (r) => drops.push(r), 60,
+    );
+    expect(out).toHaveLength(1);
+    expect(drops[0]).toMatch(/scored 28, below the 60/);
+  });
+
+  it('refuses a score whose parts do not add up', () => {
+    /* Parts that disagree with the total mean the number was written first
+       and the reasoning after it. */
+    const drops: string[] = [];
+    const out = readSurvey(
+      reply([scored(1, [10, 10, 5, 2], { score: 95 })]), 3, (r) => drops.push(r), 60,
+    );
+    expect(out).toEqual([]);
+    expect(drops[0]).toMatch(/but its parts add to 27/);
+  });
+
+  it('clamps a part scored past its own maximum', () => {
+    /* Judging the clip, not gaming the total — so it costs the difference
+       rather than the whole entry. */
+    const out = readSurvey(
+      reply([{ ...scored(1, [50, 35, 18, 8]), score: 111 }]), 3, undefined, 60,
+    );
+    expect(out[0].pillars!.hook).toBe(30);
+    expect(out[0].score).toBe(91);
+  });
+
+  it('ranks by what they scored, not by the order they arrived', () => {
+    const out = readSurvey(
+      reply([scored(1, [20, 25, 12, 5]), scored(2, [28, 38, 19, 9])]), 3, undefined, 60,
+    );
+    expect(out[0].moment).toBe(2);
+    expect(out.map((m) => m.rank)).toEqual([1, 2]);
+  });
+
+  it('still accepts a reply that scored nothing', () => {
+    /* The threshold cannot be applied to something never measured, and
+       refusing it would be stricter than the ask was. */
+    const out = readSurvey(
+      reply([{ moment: 1, hook_line: 'a line here', closing_line: 'and another' }]),
+      3, undefined, 60,
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].score).toBeUndefined();
+  });
+
+  it('puts the rubric and the threshold in the question', () => {
+    const ask = surveyAsk(CANDIDATES, { minScore: 72 });
+    expect(ask).toMatch(/hook       0-30/);
+    expect(ask).toMatch(/value      0-40/);
+    expect(ask).toMatch(/scoring 72 or more/);
+    expect(ask).toMatch(/should come back with fewer/);
+  });
+});
+
 describe('reading a survey reply', () => {
   const reply = (clips: unknown[]) => JSON.stringify({ clips });
 

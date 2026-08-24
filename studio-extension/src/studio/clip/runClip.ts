@@ -21,7 +21,7 @@ import {
   beatAsk, checkBeats, blockingClipProblems, locateAsk, locateWindow,
   readBeats, readLocate, readWindow, repairBeats, repairWindow, windowAsk,
   campaignAsk, estimateSeconds, wordsOf,
-  surveyAsk, readSurvey, SURVEY_COUNT,
+  surveyAsk, readSurvey, SURVEY_COUNT, MIN_CLIP_SCORE,
   MAX_CLIP_SECONDS, MIN_CLIP_SECONDS,
   type Beat, type LocatedWindow, type MomentCandidate, type SurveyMoment,
   type Transcript,
@@ -31,6 +31,7 @@ import { faceAsk, frameTimes, readFaces, transcribeAsk } from './prompts';
 import { planReframe, type ReframePlan } from '../media/reframe';
 import { envelopeOf, findPeaks, joinEnvelopes, textNear, type Envelope } from './peaks';
 import { emitPlan } from './emitPlan';
+import { blendMoments, findTextMoments } from './textMoments';
 import type { Plan } from '../builder/plan';
 import { snapToSilence } from '../media/silence';
 import type { StageId, StageRunner } from './stages';
@@ -122,6 +123,8 @@ export interface ClipConfig {
   longestSeconds?: number;
   /** Which chat is driving. Carried onto every cut this lays out. */
   platform?: string;
+  /** Out of 100, below which a clip is not worth posting. */
+  minClipScore?: number;
   /* Read the video on the server in one call instead of transcribing it in
      the chat, four minutes at a time. Needs a signed-in account: the model
      can only take a video natively through the API, and that key lives on a
@@ -638,11 +641,22 @@ export function surveyStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
     const env = await envelopeOfSource(deps, file, transcript.duration);
     if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
 
-    const peaks = findPeaks(env, {
-      spanSec: SURVEY_SPAN_SEC,
-      count: cfg.surveyCandidates ?? SURVEY_CANDIDATES,
-    });
-    if (!peaks.length) {
+    const wantCandidates = cfg.surveyCandidates ?? SURVEY_CANDIDATES;
+    const peaks = findPeaks(env, { spanSec: SURVEY_SPAN_SEC, count: wantCandidates });
+
+    /* The other half of the shortlist, from what is SAID.
+       Loudness is the right signal for a chase and the wrong one for a
+       tutorial: run against a real trading video it picked a chart section as
+       the strongest moment and rated a genuine piece of advice unremarkable.
+       This needs phrase-level timings to exist, so it contributes nothing on
+       a chat-built transcript and everything on a server reading. */
+    const spoken = findTextMoments(transcript.chunks, { count: wantCandidates });
+    if (spoken.length) {
+      deps.log?.(`${spoken.length} moments from what is said, ${peaks.length} from the sound`);
+    }
+
+    const blended = blendMoments(peaks, spoken, wantCandidates);
+    if (!blended.length) {
       throw new Error(
         'The audio has no moments that stand out from the rest of it — nothing '
         + 'is louder or busier than average. A recording at a constant level '
@@ -650,14 +664,14 @@ export function surveyStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
       );
     }
 
-    const candidates: MomentCandidate[] = peaks.map((p, i) => ({
+    const candidates: MomentCandidate[] = blended.map((p, i) => ({
       n: i + 1,
       start: p.start,
       end: p.end,
       why: p.why,
       text: textNear(transcript.chunks, p.start, p.end),
     }));
-    deps.log?.(`${candidates.length} candidate moments from the audio`);
+    deps.log?.(`${candidates.length} candidate moments to rank`);
 
     const wanted = Math.max(1, cfg.clipCount ?? SURVEY_COUNT);
     const dropped: string[] = [];
@@ -669,9 +683,11 @@ export function surveyStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
            question does not offer B-roll at all rather than offering it and
            discarding the answer. */
         broll: cfg.mode === 'explainer',
+        minScore: cfg.minClipScore,
       }), { firstTurn: true }),
       candidates.length,
       (reason) => dropped.push(reason),
+      cfg.minClipScore ?? MIN_CLIP_SCORE,
     );
 
     if (!moments.length) {

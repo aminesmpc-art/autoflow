@@ -913,6 +913,22 @@ export function readChosenMoment(reply: unknown): number | null {
    arithmetic sequence showed up when this was measured.
    ============================================================ */
 
+/* What a clip scored, out of 100.
+   Four pillars rather than one number, because "rank these" produces an order
+   with nothing behind it and no way to refuse the bottom of the list. Scored
+   parts make the ranking explainable on the node, and make "not worth posting"
+   a threshold rather than a hope expressed in the prompt. */
+export interface Pillars {
+  /** Does the opening three seconds make you stay? 0-30. */
+  hook: number;
+  /** Is there something of value in it, densely? 0-40. */
+  value: number;
+  /** Does it stand alone, with no setup? 0-20. */
+  standalone: number;
+  /** Would anyone send it to a friend? 0-10. */
+  shareable: number;
+}
+
 export interface SurveyMoment {
   /** Which shortlisted candidate this is. */
   moment: number;
@@ -921,6 +937,9 @@ export interface SurveyMoment {
   hookLine: string;
   closingLine: string;
   why: string;
+  /** 0-100, when the reply scored it. */
+  score?: number;
+  pillars?: Pillars;
   /** Explainer mode only: generated shots to cut in over the footage. */
   broll: Array<{ prompt: string; seconds: number }>;
 }
@@ -931,7 +950,18 @@ export interface SurveyOptions {
   count?: number;
   /** Whether generated B-roll is allowed at all. Campaign briefs forbid it. */
   broll?: boolean;
+  /* Below this, a clip is not worth posting and is refused.
+     A number the model is held to rather than "do not pad the list", which is
+     an instruction it may simply decline to follow. */
+  minScore?: number;
 }
+
+/* Sixty out of a hundred.
+   Low enough that a decent moment on an ordinary video survives, high enough
+   that a video without ten good moments returns six rather than padding to
+   ten. Chosen to make the threshold do the job the prompt was asking for
+   politely. */
+export const MIN_CLIP_SCORE = 60;
 
 /** What a survey asks for when nothing says otherwise. */
 export const SURVEY_COUNT = 10;
@@ -939,6 +969,7 @@ export const SURVEY_COUNT = 10;
 export function surveyAsk(candidates: MomentCandidate[], options: SurveyOptions = {}): string {
   const count = Math.max(1, Math.min(candidates.length, options.count ?? SURVEY_COUNT));
   const broll = !!options.broll;
+  const minScore = options.minScore ?? MIN_CLIP_SCORE;
 
   return [
     `You are choosing the ${count} best moments from one video to post as short`,
@@ -967,13 +998,26 @@ export function surveyAsk(candidates: MomentCandidate[], options: SurveyOptions 
       c.text,
       '',
     ]),
+    'Score each one you choose, out of 100:',
+    '  · hook       0-30  does the first three seconds make a stranger stay?',
+    '  · value      0-40  is something actually delivered, densely, with no filler?',
+    '  · standalone 0-20  does it make sense with no setup and end resolved?',
+    '  · shareable  0-10  would somebody send it to a friend or argue in the replies?',
+    '',
+    `Only include a clip scoring ${minScore} or more. A video without ${count} good`,
+    'moments should come back with fewer — that is the right answer, not a failure.',
+    'Do not lower your standards to fill the list, and do not inflate a score to',
+    'keep a clip you like.',
+    '',
     `Choose up to ${count}, best first. Reply with this JSON and nothing else —`,
     'no code fence, no preamble:',
     '',
     broll
       ? '{"clips":[{"moment":2,"hook_line":"...","closing_line":"...","why":"...",'
+        + '"hook":26,"value":35,"standalone":18,"shareable":8,"score":87,'
         + '"broll":[{"prompt":"a wide shot of ...","seconds":6}]}]}'
-      : '{"clips":[{"moment":2,"hook_line":"...","closing_line":"...","why":"..."}]}',
+      : '{"clips":[{"moment":2,"hook_line":"...","closing_line":"...","why":"...",'
+        + '"hook":26,"value":35,"standalone":18,"shareable":8,"score":87}]}',
     '',
     '"moment" is the number of one of the moments above. Use each at most once.',
     '"hook_line" is the first thing said in that clip and "closing_line" is the',
@@ -992,8 +1036,8 @@ export function surveyAsk(candidates: MomentCandidate[], options: SurveyOptions 
         'creator\u2019s own footage and nothing else.',
       ]),
     '',
-    `Fewer than ${count} is a fine answer if the video does not have ${count} moments`,
-    'worth posting. Do not pad the list.',
+    '"score" must be the four parts added up. A clip whose parts do not sum to',
+    'its score will be thrown away, so add them.',
   ].join('\n');
 }
 
@@ -1016,6 +1060,8 @@ export function readSurvey(
      list or whether two of its answers were unusable. Those are opposite
      problems and they looked identical. */
   onDrop?: (reason: string) => void,
+  /** Below this, a scored clip is refused. Unscored clips are unaffected. */
+  minScore?: number,
 ): SurveyMoment[] {
   const drop = (reason: string) => { if (onDrop) onDrop(reason); };
   const o = readObject(reply);
@@ -1058,10 +1104,47 @@ export function readSurvey(
       broll.push({ prompt, seconds: Math.max(4, Math.min(10, Math.round(secs))) });
     }
 
+    /* The four parts, when the reply scored it.
+       Read as parts rather than as the total, because the total alone cannot
+       be checked: parts that do not add up mean the score was written first
+       and the reasoning after it. */
+    const read = readPillars(e);
+    const claimed = num(e.score);
+
+    if (read) {
+      const { pillars, rawSum } = read;
+      const summed = pillars.hook + pillars.value + pillars.standalone + pillars.shareable;
+      /* Checked against the RAW parts, before clamping. Whether the reply
+         could add up is a different question from whether it scored a part
+         past its maximum, and only the first means the number was written
+         before the reasoning. */
+      if (claimed !== null && Math.abs(claimed - rawSum) > 1) {
+        drop(
+          `moment ${n} scored ${claimed} but its parts add to ${rawSum}, `
+          + 'so the score was not worked out',
+        );
+        continue;
+      }
+      if (minScore !== undefined && summed < minScore) {
+        drop(`moment ${n} scored ${summed}, below the ${minScore} worth posting`);
+        continue;
+      }
+      taken.add(n);
+      out.push({
+        moment: n, rank: 0, hookLine, closingLine,
+        why: String(e.why ?? '').trim(),
+        score: summed, pillars, broll,
+      });
+      continue;
+    }
+
+    /* No scores at all. Older replies and simpler asks are still usable —
+       the threshold simply cannot be applied to something that was never
+       measured, and refusing them would be stricter than the ask was. */
     taken.add(n);
     out.push({
       moment: n,
-      rank: out.length + 1,
+      rank: 0,
       hookLine,
       closingLine,
       why: String(e.why ?? '').trim(),
@@ -1069,5 +1152,44 @@ export function readSurvey(
     });
   }
 
+  /* Ranked by what they scored, where they were scored at all — the reply's
+     own order is a claim about quality that the numbers can now check. */
+  if (out.some((m) => typeof m.score === 'number')) {
+    out.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  }
+  out.forEach((m, i) => { m.rank = i + 1; });
+
   return out;
+}
+
+/**
+ * The four parts, clamped, alongside what they added to before clamping.
+ *
+ * Both are needed and they answer different questions: the raw sum says
+ * whether the reply could do arithmetic, and the clamped parts are what the
+ * clip is actually worth.
+ */
+function readPillars(
+  e: Record<string, unknown>,
+): { pillars: Pillars; rawSum: number } | null {
+  const hook = num(e.hook ?? e.hook_score);
+  const value = num(e.value ?? e.value_score);
+  const standalone = num(e.standalone ?? e.standalone_score);
+  const shareable = num(e.shareable ?? e.shareability ?? e.shareability_score);
+  if (hook === null || value === null || standalone === null || shareable === null) {
+    return null;
+  }
+  /* Clamped rather than refused: a model that scored the hook 35 out of 30 was
+     judging the clip, not gaming the total, and the clamp costs it the
+     difference. */
+  const clamp = (v: number, max: number) => Math.max(0, Math.min(max, v));
+  return {
+    pillars: {
+      hook: clamp(hook, 30),
+      value: clamp(value, 40),
+      standalone: clamp(standalone, 20),
+      shareable: clamp(shareable, 10),
+    },
+    rawSum: hook + value + standalone + shareable,
+  };
 }
