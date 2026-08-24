@@ -10,6 +10,7 @@ falls over on its own long before the model does.
 
 from __future__ import annotations
 
+import base64
 import io
 import os
 from types import SimpleNamespace
@@ -185,12 +186,15 @@ class TestReadEndpoint:
 
 
 class TestAsk:
-    """The relay that took the ranking off a chat tab.
+    """The relay that took the ranking, and then the per-cut asks, off a chat tab.
 
     Worth guarding because it is the one endpoint that will take an arbitrary
-    prompt: it must require a caller, refuse an empty or enormous one, and
-    never grow attachments — anything needing a video belongs on /read, which
-    is metered as the expensive call it is."""
+    prompt: it must require a caller, and refuse an empty or enormous one.
+
+    It now also takes attachments, which the docstring here previously said it
+    never would. The line that mattered in that reasoning was about VIDEO — the
+    expensive call, metered on /read — so the tests below pin that exclusion
+    down explicitly rather than leaving it resting on the absence of a field."""
 
     @pytest.fixture
     def stub_gemini(self, monkeypatch):
@@ -199,7 +203,9 @@ class TestAsk:
         class FakeModels:
             def generate_content(self, *, model, contents, config):
                 seen['model'] = model
-                seen['prompt'] = contents[0]
+                seen['contents'] = contents
+                # Media leads, the question closes. See ask_model.
+                seen['prompt'] = contents[-1]
                 seen['mime'] = getattr(config, 'response_mime_type', None)
                 return SimpleNamespace(text='{"clips":[]}')
 
@@ -260,6 +266,128 @@ class TestAsk:
         monkeypatch.setattr(clip_api.settings, "gemini_api_key", "")
         assert client.post("/api/clip/ask", json={"prompt": "rank"}).status_code == 503
 
+
+
+class TestAskAttachments:
+    """The two asks a cut falls back on when the reading cannot answer it:
+    a span of audio to find a line in, and eight stills to point at a speaker
+    in. Small, bounded, and emphatically not a video."""
+
+    @pytest.fixture
+    def stub_gemini(self, monkeypatch):
+        seen = {}
+
+        class FakeModels:
+            def generate_content(self, *, model, contents, config):
+                seen['contents'] = contents
+                return SimpleNamespace(text='{"positions":[]}')
+
+        monkeypatch.setattr(clip_api, "_vertex_credentials", lambda: None)
+        monkeypatch.setattr(clip_api.settings, "gemini_api_key", "test-key")
+        import google.genai as genai
+        monkeypatch.setattr(
+            genai, "Client", lambda **kw: SimpleNamespace(models=FakeModels())
+        )
+        return seen
+
+    @staticmethod
+    def data_url(mime: str, payload: bytes = b"\x00\x01\x02\x03") -> str:
+        return f"data:{mime};base64,{base64.b64encode(payload).decode()}"
+
+    def test_sends_the_bytes_it_was_given(self, client, stub_gemini):
+        r = client.post("/api/clip/ask", json={
+            "prompt": "where is the speaker",
+            "attachments": [self.data_url("image/jpeg", b"stillbytes")],
+        })
+        assert r.status_code == 200
+        parts = stub_gemini["contents"]
+        assert len(parts) == 2
+        assert parts[0].inline_data.data == b"stillbytes"
+        assert parts[0].inline_data.mime_type == "image/jpeg"
+
+    def test_puts_the_media_before_the_question(self, client, stub_gemini):
+        """The prompts these carry describe what was attached — "these are 8
+        stills, in order" — which only reads correctly after the stills."""
+        client.post("/api/clip/ask", json={
+            "prompt": "these are 2 stills",
+            "attachments": [self.data_url("image/jpeg"), self.data_url("image/jpeg")],
+        })
+        contents = stub_gemini["contents"]
+        assert contents[-1] == "these are 2 stills"
+        assert len(contents) == 3
+
+    def test_takes_audio_too(self, client, stub_gemini):
+        r = client.post("/api/clip/ask", json={
+            "prompt": "when is this line said",
+            "attachments": [self.data_url("audio/wav", b"RIFFsomething")],
+        })
+        assert r.status_code == 200
+        assert stub_gemini["contents"][0].inline_data.mime_type == "audio/wav"
+
+    def test_refuses_a_video(self, client, stub_gemini):
+        """The whole point of /read is that reading a video is the metered,
+        expensive call. A video smuggled in here would route around that."""
+        r = client.post("/api/clip/ask", json={
+            "prompt": "read this",
+            "attachments": [self.data_url("video/mp4", b"\x00" * 64)],
+        })
+        assert r.status_code == 415
+        assert "contents" not in stub_gemini
+
+    def test_refuses_to_fetch_a_link(self, client, stub_gemini):
+        """A server that fetches whatever URL a caller names, with a service
+        account attached, is a request-forgery hole."""
+        for link in ("https://example.com/a.jpg", "file:///etc/passwd", "gs://b/o"):
+            r = client.post("/api/clip/ask", json={
+                "prompt": "look", "attachments": [link],
+            })
+            assert r.status_code == 400, link
+        assert "contents" not in stub_gemini
+
+    def test_refuses_more_attachments_than_a_question_needs(self, client, stub_gemini):
+        r = client.post("/api/clip/ask", json={
+            "prompt": "look",
+            "attachments": [self.data_url("image/jpeg")] * 13,
+        })
+        assert r.status_code == 400
+        assert "contents" not in stub_gemini
+
+    def test_refuses_attachments_over_the_size_cap(self, client, stub_gemini, monkeypatch):
+        monkeypatch.setattr(clip_api, "MAX_ATTACHMENT_BYTES", 1024)
+        r = client.post("/api/clip/ask", json={
+            "prompt": "look",
+            "attachments": [self.data_url("image/jpeg", b"\x00" * 2048)],
+        })
+        assert r.status_code == 413
+        assert "contents" not in stub_gemini
+
+    def test_counts_the_total_not_each_one(self, client, stub_gemini, monkeypatch):
+        """Eight stills that each pass and together do not is the case that
+        matters; checking them one at a time would let it through."""
+        monkeypatch.setattr(clip_api, "MAX_ATTACHMENT_BYTES", 1024)
+        r = client.post("/api/clip/ask", json={
+            "prompt": "look",
+            "attachments": [self.data_url("image/jpeg", b"\x00" * 600)] * 2,
+        })
+        assert r.status_code == 413
+
+    def test_refuses_something_that_is_not_base64(self, client, stub_gemini):
+        r = client.post("/api/clip/ask", json={
+            "prompt": "look", "attachments": ["data:image/jpeg,not-base64"],
+        })
+        assert r.status_code == 400
+
+    def test_refuses_an_empty_attachment(self, client, stub_gemini):
+        """Decodes fine, costs a part, carries nothing."""
+        r = client.post("/api/clip/ask", json={
+            "prompt": "look", "attachments": ["data:image/jpeg;base64,"],
+        })
+        assert r.status_code == 400
+
+    def test_still_works_with_none_at_all(self, client, stub_gemini):
+        r = client.post("/api/clip/ask", json={"prompt": "rank these moments"})
+        assert r.status_code == 200
+        assert stub_gemini["contents"] == ["rank these moments"]
 
 class TestStatusAndModel:
     def test_unknown_job_is_a_404_not_an_empty_success(self, client):
