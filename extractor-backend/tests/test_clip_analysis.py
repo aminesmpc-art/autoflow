@@ -127,6 +127,37 @@ class TestValidation:
         assert out[0].start == pytest.approx(415.0)
         assert out[0].end == pytest.approx(418.0)
 
+    def test_reads_absolute_timings_without_shifting_them_again(self):
+        """THE bug from the first real run. Given start_offset, the model
+        timestamps against the ORIGINAL video, not against the clip it was
+        shown. Adding the window start on top pushed everything past the end
+        of its own window, so 351 of 515 segments were thrown away and a
+        twenty-minute video came back transcribed for seven."""
+        # A window covering 405-825s, answered in the original timeline.
+        raw = [seg("07:00", "07:03"), seg("10:00", "10:03"), seg("13:00", "13:03")]
+        out = validate_segments(raw, window_start=405.0, window_end=825.0)
+        assert len(out) == 3
+        assert [round(s.start) for s in out] == [420, 600, 780]
+
+    def test_still_shifts_a_window_answered_relatively(self):
+        """The convention is the model's to choose, so it is decided per
+        window by which reading puts more answers inside the window."""
+        raw = [seg("00:10", "00:13"), seg("01:00", "01:03")]
+        out = validate_segments(raw, window_start=405.0, window_end=825.0)
+        assert [round(s.start) for s in out] == [415, 465]
+
+    def test_a_relative_timing_cannot_exceed_the_window_length(self):
+        """The tell that settled it: the value was 422s inside a 420s window,
+        which no relative timestamp can be."""
+        out = validate_segments([seg("07:02", "07:05")], window_start=405.0, window_end=825.0)
+        assert len(out) == 1
+        assert round(out[0].start) == 422
+
+    def test_the_first_window_is_unaffected_either_way(self):
+        """Offset zero is why this hid: window one looked perfect."""
+        out = validate_segments([seg("00:10", "00:13")], window_start=0.0, window_end=420.0)
+        assert round(out[0].start) == 10
+
     def test_refuses_a_segment_that_ends_before_it_starts(self):
         assert kept([seg("01:30", "01:20")]) == []
         assert "ends before it starts" in reasons([seg("01:30", "01:20")])[0]
