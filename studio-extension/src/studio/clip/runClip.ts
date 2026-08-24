@@ -264,16 +264,10 @@ export function transcribeStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
        minute video and come back with no timings; this comes back with the
        seconds attached, which is what lets every cut skip its own locating. */
     if (cfg.readOnServer) {
-      const { readVideoOnServer, canReadOnServer } = await import('./readingApi');
+      const { readVideoOnServer, isUnavailable } = await import('./readingApi');
       const { readingToTranscript } = await import('./fromReading');
 
-      /* Signed out, so there is no account to bill the reading to. Falling
-         back is better than failing, and saying so is better than falling
-         back quietly — the run is about to take two minutes instead of ten
-         seconds, and the reason is fixable. */
-      if (!(await canReadOnServer())) {
-        deps.log?.('not signed in — transcribing in the chat instead, which is slower');
-      } else {
+      try {
         const reading = await readVideoOnServer(file, probe.durationSec, {
           signal: deps.signal,
           onProgress: (line) => deps.log?.(line),
@@ -284,6 +278,20 @@ export function transcribeStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
           + `${reading.segments.length} phrases, ${reading.scenes.length} scenes`,
         );
         return { ...readingToTranscript(reading), reading } satisfies TranscribeResult;
+      } catch (error) {
+        /* Only when the server CANNOT do this — no endpoint, no credentials,
+           unreachable, or signed out. The extension and the service deploy
+           separately, so a build that knows about video reading routinely
+           meets a service that does not yet; failing the run over that would
+           break clipping entirely for a feature nobody asked for.
+
+           A quota refusal or an oversized video is NOT this. Those are the
+           user's to act on, and falling back would hide them behind two
+           minutes of chat transcription and a bill they did not expect. */
+        if (!isUnavailable(error)) throw error;
+        deps.log?.(
+          `${(error as Error).message} — transcribing in the chat instead, which is slower`,
+        );
       }
     }
 

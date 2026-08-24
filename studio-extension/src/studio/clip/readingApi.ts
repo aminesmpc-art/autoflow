@@ -56,6 +56,28 @@ export interface VideoReading {
   model: string;
 }
 
+/**
+ * The server cannot do this — as opposed to refusing this particular request.
+ *
+ * A distinction worth a class, because the two need opposite handling. A quota
+ * refusal or a video over the size limit is the user's to act on and must be
+ * shown. A server that has never heard of the endpoint, or has no key
+ * configured, is nothing the user did: the extension ships and the service
+ * deploys separately, so an extension that knows about video reading will
+ * routinely meet a service that does not yet. That has to fall back to the
+ * chat, not fail the run.
+ */
+export class ReadingUnavailable extends Error {
+  readonly unavailable = true;
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReadingUnavailable';
+  }
+}
+
+export const isUnavailable = (e: unknown): boolean =>
+  !!e && typeof e === 'object' && (e as { unavailable?: boolean }).unavailable === true;
+
 export interface ReadOptions {
   signal?: AbortSignal;
   onProgress?: (line: string) => void;
@@ -146,7 +168,7 @@ export async function readVideoOnServer(
   const say = options.onProgress || (() => {});
   const token = await getAccessToken();
   if (!token) {
-    throw new Error('Reading a video on the server needs you to be signed in.');
+    throw new ReadingUnavailable('not signed in');
   }
 
   const base = options.baseUrl || (await getExtractorBase());
@@ -156,15 +178,28 @@ export async function readVideoOnServer(
   form.append('duration_sec', String(durationSec));
 
   say(`sending ${(file.size / 1e6).toFixed(0)} MB up to be read`);
-  const started = await fetch(`${base}/api/clip/read`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: form,
-    signal: options.signal,
-  });
+  let started: Response;
+  try {
+    started = await fetch(`${base}/api/clip/read`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+      signal: options.signal,
+    });
+  } catch (e) {
+    /* Aborting is the user stopping the run, not the server being absent. */
+    if ((e as Error)?.name === 'AbortError') throw e;
+    throw new ReadingUnavailable(`the reading service could not be reached at ${base}`);
+  }
 
   if (!started.ok) {
-    throw new Error(await describeFailure(started));
+    const message = await describeFailure(started);
+    /* 404 is the ordinary case while a build is ahead of its server; 503 is a
+       server with no model credentials. Neither is the user's problem. */
+    if (started.status === 404 || started.status === 503) {
+      throw new ReadingUnavailable(message);
+    }
+    throw new Error(message);
   }
 
   const { job_id: jobId } = (await started.json()) as { job_id?: string };
@@ -231,7 +266,10 @@ async function describeFailure(response: Response): Promise<string> {
     return detail || 'That video is larger than the server will accept.';
   }
   if (response.status === 503) {
-    return detail || 'The reading service is not configured on the server.';
+    return detail || 'the server has no model credentials configured';
+  }
+  if (response.status === 404) {
+    return 'this server does not offer video reading yet';
   }
   return detail || `The reading service answered ${response.status}.`;
 }

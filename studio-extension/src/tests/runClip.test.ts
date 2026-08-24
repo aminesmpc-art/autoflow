@@ -615,3 +615,102 @@ describe('a cut whose boundaries were already read', () => {
     expect(cut.clipSeconds).toBeLessThanOrEqual(62);
   });
 });
+
+
+/* ------------------------------------------------------------------ */
+
+jest.mock('../studio/clip/readingApi', () => {
+  class ReadingUnavailable extends Error {
+    readonly unavailable = true;
+  }
+  return {
+    ReadingUnavailable,
+    isUnavailable: (e: unknown) =>
+      !!e && typeof e === 'object' && (e as any).unavailable === true,
+    canReadOnServer: async () => true,
+    readVideoOnServer: jest.fn(),
+  };
+});
+
+describe('reading on the server, when the server cannot', () => {
+  /* The extension ships through a store review and the service deploys on a
+     push, so a build that knows about video reading routinely meets a service
+     that does not yet. On the day this was written the deployed extractor
+     answered 404 to the new endpoint — with readOnServer defaulting on, that
+     would have failed Transcribe for every user, over a feature nobody had
+     asked for and whose absence costs nothing but time. */
+
+  const readingApi = jest.requireMock('../studio/clip/readingApi');
+
+  const serverCfg = (h: ReturnType<typeof harness>) => ({ ...h.cfg, readOnServer: true });
+
+  beforeEach(() => {
+    readingApi.readVideoOnServer.mockReset();
+  });
+
+  it('falls back to the chat when the endpoint is not deployed', async () => {
+    const h = harness({ replies: new Array(6).fill('word '.repeat(600)) });
+    readingApi.readVideoOnServer.mockRejectedValue(
+      new readingApi.ReadingUnavailable('this server does not offer video reading yet'),
+    );
+
+    const out = await transcribeStage(h.deps, serverCfg(h))(PROBE) as any;
+
+    expect(out.chunks.length).toBeGreaterThan(0);      // the run continued
+    expect(out.reading).toBeUndefined();
+    expect(h.sent.length).toBeGreaterThan(0);          // via the chat
+    expect(h.logs.join(' ')).toMatch(/does not offer video reading yet/);
+    expect(h.logs.join(' ')).toMatch(/chat instead/);
+  });
+
+  it('falls back when the service cannot be reached at all', async () => {
+    const h = harness({ replies: new Array(6).fill('word '.repeat(600)) });
+    readingApi.readVideoOnServer.mockRejectedValue(
+      new readingApi.ReadingUnavailable('the reading service could not be reached'),
+    );
+    const out = await transcribeStage(h.deps, serverCfg(h))(PROBE) as any;
+    expect(out.chunks.length).toBeGreaterThan(0);
+  });
+
+  it('does NOT fall back when the refusal is the user to act on', async () => {
+    /* A quota refusal hidden behind two minutes of chat transcription is a
+       bill they did not expect and a limit they never saw. */
+    const h = harness({ replies: new Array(6).fill('word '.repeat(600)) });
+    readingApi.readVideoOnServer.mockRejectedValue(
+      new Error('You are out of video readings on your current plan.'),
+    );
+
+    await expect(transcribeStage(h.deps, serverCfg(h))(PROBE)).rejects.toThrow(/out of video readings/);
+    expect(h.sent).toHaveLength(0);       // nothing was spent in the chat
+  });
+
+  it('uses the reading and asks nobody anything when the server can', async () => {
+    const h = harness();
+    readingApi.readVideoOnServer.mockResolvedValue({
+      durationSec: 600,
+      language: 'en',
+      summary: 'a chase',
+      model: 'gemini-3.7-flash',
+      dropped: [],
+      segments: [
+        { start: 83.1, end: 85.4, text: 'Look at these straw bales right here.' },
+        { start: 104.0, end: 108.3, text: 'Darius has already been arrested.' },
+      ],
+      scenes: [{ start: 80, end: 110, description: 'a field', speaker_x: 0.4 }],
+    });
+
+    const out = await transcribeStage(h.deps, serverCfg(h))(PROBE) as any;
+
+    expect(h.sent).toHaveLength(0);                    // no chat transcription
+    expect(out.reading).toBeDefined();
+    expect(out.chunks).toHaveLength(2);
+    expect(out.chunks[0]).toMatchObject({ start: 83.1, end: 85.4 });
+    expect(h.logs.join(' ')).toMatch(/gemini-3\.7-flash/);
+  });
+
+  it('never asks the server when the node was set to use the chat', async () => {
+    const h = harness({ replies: new Array(6).fill('word '.repeat(600)) });
+    await transcribeStage(h.deps, { ...h.cfg, readOnServer: false })(PROBE);
+    expect(readingApi.readVideoOnServer).not.toHaveBeenCalled();
+  });
+});
