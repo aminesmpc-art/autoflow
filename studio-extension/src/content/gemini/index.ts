@@ -55,6 +55,8 @@ function logLine(line: string): void {
    extension is rebuilt — the tab must be reloaded too — and a stale
    script is indistinguishable from a broken fix unless it says which
    one it is. */
+import { tidyAwayConversation, waitForNoDialog } from './tidy';
+
 const ADAPTER_BUILD = 'video-data-v4';
 
 /** Backstop for a wedged tab. */
@@ -921,6 +923,8 @@ async function captureImage(img: HTMLImageElement): Promise<string> {
   throw new Error('Image could not be converted to data URL');
 }
 
+/* Clearing up after a node — see ./tidy.ts */
+
 /* ── Execution ── */
 
 async function handleExecute(payload: any): Promise<any> {
@@ -936,6 +940,13 @@ async function handleExecute(payload: any): Promise<any> {
   logLine(`Executing node ${nodeId} [adapter ${ADAPTER_BUILD}]`);
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 10 });
 
+  /* The previous node may still be clearing up after itself. Tidying runs
+     after that node's answer was sent, so the runner can legitimately start
+     this one while a confirm dialog is still open — and a modal overlay
+     swallows the New Chat click, which would land this node's prompt in the
+     previous node's thread. Waiting a moment is cheaper than that. */
+  await waitForNoDialog();
+
   /* Isolate this node first. It has to happen before the composer lookup and
      before the baseline snapshots below, because the reset remounts the
      composer and empties the thread — doing it after would invalidate both,
@@ -949,6 +960,11 @@ async function handleExecute(payload: any): Promise<any> {
   } else {
     console.log('[AutoFlow Gemini] Continuing the current thread (agent turn)');
   }
+
+  /* Read after the reset and before the prompt. Together with the path this
+     lands on afterwards it is what proves the finished thread is one this node
+     created, and so the only thing it may tidy away. */
+  const pathBefore = location.pathname;
 
   let composer = findComposer();
   for (let i = 0; !composer && i < 10; i++) {
@@ -1052,6 +1068,26 @@ async function handleExecute(payload: any): Promise<any> {
       ? trackVideo(nodeId, preexisting)
       : trackGeneration(nodeId, preexisting);
   work.finally(stopAntiThrottle);
+
+  /* After the answer, never instead of it. The result has already been sent by
+     the time this runs, so the worst a failure here can do is leave a row in
+     the sidebar.
+
+     Text threads only, unless asked otherwise. A clipping run's threads are
+     machine chatter — "give the horizontal position of the SPEAKER in each of
+     these 8 stills" — and nobody will ever open one again. A thread that
+     produced a picture or a clip is not that: the node captures one result,
+     and the thread is where the others, and any higher-quality version, still
+     live. Deleting those to tidy a sidebar would throw away work to save a
+     row, so it needs saying explicitly rather than defaulting on. */
+  const tidy = config?.deleteWhenDone === true
+    || (wantsText && config?.deleteWhenDone !== false);
+
+  if (config?.newChat !== 'never' && tidy) {
+    work
+      .then(() => tidyAwayConversation(pathBefore))
+      .catch((e: any) => console.warn('[AutoFlow Gemini] Could not tidy the thread:', e?.message || e));
+  }
 
   return { success: true };
 }

@@ -1701,6 +1701,9 @@ export class WorkflowRunner {
       endSec: typeof nodeData.endSec === 'number' ? nodeData.endSec : undefined,
       faces: Array.isArray(nodeData.faces) ? nodeData.faces : undefined,
       noSpeaker: nodeData.noSpeaker === true,
+      /* Defaults on, so a cut laid out before this flag existed still puts
+         its fallback asks to the API rather than to a chat tab. */
+      readOnServer: nodeData.readOnServer !== false,
     });
 
     /* mediaKey is what the node's player reads back out of the store. Without

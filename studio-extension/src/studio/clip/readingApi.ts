@@ -261,21 +261,36 @@ export async function readVideoOnServer(
  * the API calls either side of it worked first time. It is also the cheap
  * part: reading the video costs about 160k tokens and this about 3.5k.
  */
+export interface AskOptions extends ReadOptions {
+  /* data: URLs the model should see alongside the question — a span of audio
+     to find a line in, or the stills sampled across a clip.
+
+     The server refuses anything that is not audio or an image. A video belongs
+     on /read, which is metered as the expensive call it is; smuggling one
+     through here would route it around its own accounting. */
+  attachments?: string[];
+}
+
 export async function askOnServer(
   prompt: string,
-  options: ReadOptions = {},
+  options: AskOptions = {},
 ): Promise<string> {
   const token = await getAccessToken();
   if (!token) throw new ReadingUnavailable('not signed in');
 
   const base = options.baseUrl || (await getExtractorBase());
+  const attachments = (options.attachments || []).filter(
+    (a) => typeof a === 'string' && a.startsWith('data:'),
+  );
 
   let response: Response;
   try {
     response = await fetch(`${base}/api/clip/ask`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, json_only: true }),
+      body: JSON.stringify(
+        attachments.length ? { prompt, json_only: true, attachments } : { prompt, json_only: true },
+      ),
       signal: options.signal,
     });
   } catch (e) {

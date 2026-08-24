@@ -19,6 +19,8 @@ does: a long video takes longer to read than a proxy will hold a request open.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import os
 import tempfile
 import uuid
@@ -283,16 +285,104 @@ async def clip_status(job_id: str) -> ClipJobStatus:
     return ClipJobStatus(**job)
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# The relay
+# ──────────────────────────────────────────────────────────────────────────
+
+# Enough for the eight stills a reframe samples, with room to spare.
+MAX_ATTACHMENTS = 12
+
+# One span of speech is the large case: 150 seconds of 16kHz mono WAV is about
+# 4.8MB, and base64 makes it a third larger again on the wire. The cap sits well
+# above that and well below a video.
+MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
+
+ATTACHMENT_KINDS = ("audio/", "image/")
+
+
 class AskRequest(BaseModel):
     prompt: str
     """Ask for a JSON object back. The caller still parses it."""
     json_only: bool = True
     max_output_tokens: int = 8192
+    """data: URLs — a span of audio, or stills cut from the video."""
+    attachments: list[str] = []
 
 
 class AskResponse(BaseModel):
     text: str
     model: str
+
+
+def _decode_attachments(raw: list[str]) -> list[tuple[bytes, str]]:
+    """
+    Data URLs the caller already holds, as bytes the model can be shown.
+
+    Audio and stills only, never a video. Not squeamishness about size: a video
+    costs on the order of 160k tokens to read where a still costs a few hundred,
+    and /read is the endpoint metered for that. Letting one through here would
+    route the expensive call around its own accounting.
+
+    Nothing is fetched. Accepting an `https://` attachment would make this
+    endpoint issue arbitrary outbound requests on a caller's say-so, with a
+    service account attached — server-side request forgery, not a feature.
+    """
+    if len(raw) > MAX_ATTACHMENTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At most {MAX_ATTACHMENTS} attachments per question.",
+        )
+
+    out: list[tuple[bytes, str]] = []
+    total = 0
+    for item in raw:
+        text = (item or "").strip()
+        if not text.startswith("data:"):
+            raise HTTPException(
+                status_code=400,
+                detail="Attachments must be data: URLs, not links to fetch.",
+            )
+
+        header, _, payload = text.partition(",")
+        mime = header[len("data:"):].split(";", 1)[0].strip().lower()
+        if ";base64" not in header:
+            raise HTTPException(
+                status_code=400,
+                detail="Attachments must be base64 data: URLs.",
+            )
+
+        # Checked before decoding. A caller that attaches a video should be told
+        # so, not have 300MB of it base64-decoded into this process first.
+        if not mime.startswith(ATTACHMENT_KINDS):
+            raise HTTPException(
+                status_code=415,
+                detail=(
+                    f"{mime or 'That'} cannot be attached to a question — audio "
+                    "and stills only. A video goes to /read."
+                ),
+            )
+
+        try:
+            blob = base64.b64decode(payload, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise HTTPException(
+                status_code=400, detail=f"An attachment could not be decoded: {exc}"
+            ) from exc
+        if not blob:
+            raise HTTPException(status_code=400, detail="An attachment was empty.")
+
+        total += len(blob)
+        if total > MAX_ATTACHMENT_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    "Those attachments come to more than the "
+                    f"{MAX_ATTACHMENT_BYTES // (1024 * 1024)}MB limit."
+                ),
+            )
+        out.append((blob, mime))
+
+    return out
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -301,29 +391,40 @@ async def ask_model(
     authorization: Optional[str] = Header(default=None),
 ) -> AskResponse:
     """
-    Put one text question to the model and return what it said.
+    Put one question to the model and return what it said.
 
-    A thin relay on purpose. The extension already builds this prompt and
-    parses the reply, both covered by tests, and moving either here would put
+    A thin relay on purpose. The extension already builds these prompts and
+    parses the replies, both covered by tests, and moving either here would put
     the same logic in TypeScript and Python where the two would drift. So the
     server adds exactly what the browser cannot have: the key.
 
     It exists because the ranking was the last step still going through a chat
     tab, and on a real twenty-minute run that step failed three times in a row
-    — message channel closed, did not finish answering, lost connection —
-    while the two API calls either side of it worked first time. The judgement
-    is also the cheap part: the video costs about 160k tokens to read and the
-    ranking about 3.5k, so refusing to spend two percent more to remove the
-    most fragile step in the product was the wrong trade.
+    — message channel closed, did not finish answering, lost connection — while
+    the two API calls either side of it worked first time. The judgement is also
+    the cheap part: the video costs about 160k tokens to read and the ranking
+    about 3.5k, so refusing to spend two percent more to remove the most fragile
+    step in the product was the wrong trade.
 
-    Text only. No attachments, and a bounded output — anything needing a video
-    goes through /read, which is metered as the expensive call it is.
+    ── Why it takes attachments ──────────────────────────────────────────────
+
+    It did not, and the reasoning was that anything needing media belongs on
+    /read. That held while the only media was a video. It stopped holding for
+    the two asks a cut falls back on when the reading cannot answer it: finding
+    a spoken line in a span of audio, and pointing at the speaker across eight
+    stills. Those are small — the stills come to a few hundred kilobytes — and
+    sending them to a chat tab meant opening a conversation, uploading through a
+    composer, waiting on a reply, and leaving the thread behind to be cleaned
+    up. The video exclusion is kept as an explicit check rather than as an
+    absence, because it is the part that was load-bearing.
     """
     prompt = (body.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="An empty prompt asks nothing.")
     if len(prompt) > 200_000:
         raise HTTPException(status_code=413, detail="That prompt is too long to send.")
+
+    attachments = _decode_attachments(body.attachments or [])
 
     if settings.enforce_extraction_limits:
         from app.api.videos import enforce_extraction_limit
@@ -353,11 +454,19 @@ async def ask_model(
     if body.json_only:
         config["response_mime_type"] = "application/json"
 
+    # Media first, question last. The prompts these carry describe what was
+    # attached — "these are 8 stills, in order" — which reads as a question
+    # about something already shown rather than a promise about what follows.
+    contents: list[Any] = [
+        types.Part.from_bytes(data=blob, mime_type=mime) for blob, mime in attachments
+    ]
+    contents.append(prompt)
+
     try:
         response = await asyncio.to_thread(
             client.models.generate_content,
             model=clip_model(),
-            contents=[prompt],
+            contents=contents,
             config=types.GenerateContentConfig(**config),
         )
     except Exception as exc:                                   # noqa: BLE001

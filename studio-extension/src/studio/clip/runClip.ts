@@ -690,21 +690,8 @@ export function surveyStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
        the question is put changes — because the ranking was the last step
        still depending on a browser tab staying healthy, and on a real run it
        failed three times in a row while the API calls around it worked. */
-    const ask = async (prompt: string): Promise<string> => {
-      if (cfg.readOnServer) {
-        try {
-          const { askOnServer } = await import('./readingApi');
-          const reply = await askOnServer(prompt, { signal: deps.signal });
-          deps.log?.('ranked on the server');
-          return reply;
-        } catch (error) {
-          const { isUnavailable } = await import('./readingApi');
-          if (!isUnavailable(error)) throw error;
-          deps.log?.(`${(error as Error).message} — ranking in the chat instead`);
-        }
-      }
-      return deps.ask(prompt, { firstTurn: true });
-    };
+    const judge = serverFirstAsk(deps, cfg.readOnServer === true, { did: 'ranked', doing: 'ranking' });
+    const ask = (prompt: string): Promise<string> => judge(prompt, { firstTurn: true });
 
     const moments = readSurvey(
       await ask(surveyAsk(candidates, {
@@ -764,6 +751,9 @@ export function layoutStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
       maxSeconds: cfg.longestSeconds,
       platform: cfg.platform as any,
       reading: survey.reading,
+      /* Inherited, so a director set to the chat does not lay out nine nodes
+         that quietly use the API instead. */
+      readOnServer: cfg.readOnServer !== false,
     });
     const cuts = plan.steps.filter((s) => s.type === 'cut').length;
     deps.log?.(`laying out ${cuts} cut${cuts === 1 ? '' : 's'}`);
@@ -793,6 +783,63 @@ export function clipRunners(
    transcript, no stage machine, no beats.
    ============================================================ */
 
+/**
+ * Put a question to the server, and to a chat tab only when the server cannot.
+ *
+ * Every model decision in this pipeline goes through the API now: the reading,
+ * the ranking, and — through this — the two asks a cut falls back on when the
+ * reading could not answer it. What is left in the browser is decoding, cutting
+ * and encoding, which is work a server would have to send the file back and
+ * forth to do.
+ *
+ * Three reasons this is not just "cheaper":
+ *
+ *   · A chat ask means opening a conversation, uploading through a composer,
+ *     waiting on a streamed reply, and leaving a thread behind. The same
+ *     question over HTTP is one request.
+ *   · The tab is the fragile part. On a real twenty-minute run the ranking
+ *     failed three times in a row — message channel closed, did not finish
+ *     answering, lost connection — while the API calls either side of it
+ *     worked first time.
+ *   · The chat path cannot be told which model to use, and Gemini's composer
+ *     answers with whatever mode happens to be selected.
+ *
+ * The fallback survives on purpose. `unavailable` means the server CANNOT do
+ * this — no endpoint, no credentials, unreachable, signed out — and the
+ * extension and the service deploy separately, so a build that knows about
+ * this endpoint will routinely meet a service that does not yet. Anything else
+ * — a quota refusal, a rejected attachment, a model error — is a real answer
+ * and is raised rather than quietly retried somewhere else at ten times the
+ * latency.
+ */
+export function serverFirstAsk(
+  deps: ClipDeps,
+  onServer: boolean,
+  /* Both tenses, because the two lines this writes need different ones and a
+     log that says "asking in the chat instead" for every step does not say
+     which step fell back — which is the only thing the line is for. */
+  step: { did: string; doing: string },
+): ClipDeps['ask'] {
+  if (!onServer) return (message, options) => deps.ask(message, options);
+
+  return async (message, options) => {
+    try {
+      const { askOnServer } = await import('./readingApi');
+      const reply = await askOnServer(message, {
+        signal: deps.signal,
+        attachments: options?.attachments,
+      });
+      deps.log?.(`${step.did} on the server`);
+      return reply;
+    } catch (error) {
+      const { isUnavailable } = await import('./readingApi');
+      if (!isUnavailable(error)) throw error;
+      deps.log?.(`${(error as Error).message} — ${step.doing} in the chat instead`);
+      return deps.ask(message, options);
+    }
+  };
+}
+
 export interface OneCutConfig {
   sourceKey: string;
   /** The first thing said in the clip, quoted from the transcript. */
@@ -814,6 +861,11 @@ export interface OneCutConfig {
   faces?: Array<{ t: number; x: number }>;
   /** The reading looked and found nobody on camera. Fit, do not ask. */
   noSpeaker?: boolean;
+  /* Where the two fallback asks go when the reading could not answer them.
+     Inherited from the Clipping node that laid this cut out, so a director set
+     to the chat does not quietly emit nine nodes that use the API. Defaults on
+     for a node saved before the flag existed. */
+  readOnServer?: boolean;
 }
 
 /* How far either side of `nearSec` to look.
@@ -854,6 +906,13 @@ export async function runOneCut(
   const probe = await deps.media.probe(file);
   const duration = probe.durationSec;
 
+  /* Both of the asks below are fallbacks — the reading answers them outright
+     whenever it covers the clip. When one does fire it goes to the API, so a
+     run makes no chat calls at all and the only work left in the browser is
+     decode, cut and encode. */
+  const onServer = cfg.readOnServer !== false;
+  const netDeps: ClipDeps = { ...deps, ask: serverFirstAsk(deps, onServer, { did: 'answered', doing: 'asking' }) };
+
   /* Already known, from a reading of the whole video. Four asks — two per
      line, coarse then narrowed — for something that was measured once when
      the video was read. */
@@ -879,14 +938,14 @@ export async function runOneCut(
     const to = Math.min(duration, from + SEARCH_BACK_SEC + SEARCH_FORWARD_SEC);
 
     deps.log?.(`searching ${Math.round(from)}–${Math.round(to)}s for the opening line`);
-    hookAt = await locateLine(deps, file, hook, from, to);
+    hookAt = await locateLine(netDeps, file, hook, from, to);
     if (hookAt === null) {
       throw new Error(
         `Could not find "${hook.slice(0, 40)}…" in the audio around `
         + `${Math.round(near)}s. Edit the opening line to match what is actually said.`,
       );
     }
-    closingAt = await locateLine(deps, file, closing, from, to);
+    closingAt = await locateLine(netDeps, file, closing, from, to);
   }
   /* Ends before it begins is not a located end — it is the model having found
      an earlier utterance of a line that repeats. Estimating is better than
@@ -929,7 +988,10 @@ export async function runOneCut(
       const times = frameTimes(endSec - startSec);
       const stills = await deps.media.frames(file, times.map((t) => startSec + t));
       faces = stills.length
-        ? readFaces(await deps.ask(faceAsk(stills.length), { firstTurn: true, attachments: stills }), times)
+        ? readFaces(
+          await netDeps.ask(faceAsk(stills.length), { firstTurn: true, attachments: stills }),
+          times,
+        )
         : [];
     } else {
       deps.log?.(`framing from ${faces.length} described scenes, nothing to ask`);

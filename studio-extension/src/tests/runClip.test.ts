@@ -536,6 +536,12 @@ describe('campaign mode', () => {
 /* ------------------------------------------------------------------ */
 
 describe('a cut whose boundaries were already read', () => {
+  /* These count asks made THROUGH A CHAT, so they pin readOnServer: false.
+     Not to dodge the change — where those asks go by default moved to the API,
+     and the block at the end of this file covers that — but because the claim
+     each one makes is "an ask still happens here", and the chat is where an
+     ask is countable in this harness. The chat path is still reachable: it is
+     what a run falls back to when the service cannot answer. */
   /* THE saving. Locating a clip from the audio costs up to four asks — coarse
      then narrowed, for each of two lines — plus one more to find the speaker
      in sampled stills. When the video was read on the server, all five of
@@ -578,7 +584,7 @@ describe('a cut whose boundaries were already read', () => {
 
   it('still asks where the speaker is when the reading did not say', async () => {
     const h = harness({ replies: ['{"positions":[{"n":1,"x":0.4}]}'] });
-    await runOneCut(h.deps, { ...KNOWN, startSec: 83.1, endSec: 108.3 });
+    await runOneCut(h.deps, { ...KNOWN, startSec: 83.1, endSec: 108.3, readOnServer: false });
     expect(h.sent).toHaveLength(1);
     expect(h.sent[0].message).toMatch(/horizontal position/i);
   });
@@ -588,6 +594,7 @@ describe('a cut whose boundaries were already read', () => {
     const h = harness({ replies: ['{"positions":[{"n":1,"x":0.4}]}'] });
     await runOneCut(h.deps, {
       ...KNOWN, startSec: 83.1, endSec: 108.3, faces: [{ t: 0, x: 0.46 }],
+      readOnServer: false,
     });
     expect(h.sent).toHaveLength(1);
   });
@@ -595,7 +602,7 @@ describe('a cut whose boundaries were already read', () => {
   it('locates from the audio when the boundaries were not read', async () => {
     const h = harness({ replies: ['{"start_seconds": 20}', '{"start_seconds": 20}',
       '{"start_seconds": 40}', '{"start_seconds": 40}', '{"positions":[{"n":1,"x":0.5}]}'] });
-    await runOneCut(h.deps, { ...KNOWN, nearSec: 30 });
+    await runOneCut(h.deps, { ...KNOWN, nearSec: 30, readOnServer: false });
     expect(h.sent.length).toBeGreaterThanOrEqual(4);
     expect(h.sent[0].message).toMatch(/At what second/i);
   });
@@ -605,7 +612,7 @@ describe('a cut whose boundaries were already read', () => {
        extension and the service, not a measurement. */
     const h = harness({ replies: ['{"start_seconds": 20}', '{"start_seconds": 20}',
       '{"start_seconds": 40}', '{"start_seconds": 40}', '{"positions":[{"n":1,"x":0.5}]}'] });
-    await runOneCut(h.deps, { ...KNOWN, startSec: 99999, endSec: 100050 });
+    await runOneCut(h.deps, { ...KNOWN, startSec: 99999, endSec: 100050, readOnServer: false });
     expect(h.sent.length).toBeGreaterThanOrEqual(4);
   });
 
@@ -843,5 +850,127 @@ describe('ranking through the server', () => {
     await surveyStage(h.deps, cfgFor(h, { readOnServer: false }))(transcript, undefined);
     expect(readingApi.askOnServer).not.toHaveBeenCalled();
     expect(h.sent).toHaveLength(1);
+  });
+});
+
+
+/* ------------------------------------------------------------------ */
+
+describe('the asks a cut cannot avoid go to the API, not to a chat tab', () => {
+  /* The reading answers both of these outright whenever it covers the clip,
+     and the tests above pin that down by counting asks. These are about what
+     happens when it does NOT: a clip the reading never described, or one whose
+     quoted lines could not be found in it.
+
+     Before this, those fell through to the chat — which meant opening a
+     conversation, uploading eight stills through a composer, waiting on a
+     streamed reply, and leaving a thread behind. Same question, same parser,
+     one HTTP request. */
+
+  const readingApi = jest.requireMock('../studio/clip/readingApi');
+
+  const UNLOCATED = {
+    sourceKey: 'p',
+    hookLine: 'Look at these straw bales right here',
+    closingLine: 'Darius has already been arrested',
+    nearSec: 100,
+  };
+
+  beforeEach(() => {
+    readingApi.askOnServer.mockReset();
+  });
+
+  it('locates a line through the server', async () => {
+    const h = harness();
+    readingApi.askOnServer.mockResolvedValue('{"start_seconds": 12}');
+
+    await runOneCut(h.deps, { ...UNLOCATED, readOnServer: true });
+
+    expect(readingApi.askOnServer).toHaveBeenCalled();
+    expect(h.sent).toHaveLength(0);                    // nothing went to a chat
+  });
+
+  it('sends the audio with it', async () => {
+    /* The question is "when is this line said in THIS span". Without the span
+       attached the model is being asked to recall a video it has never heard,
+       and will answer anyway. */
+    const h = harness();
+    readingApi.askOnServer.mockResolvedValue('{"start_seconds": 12}');
+
+    await runOneCut(h.deps, { ...UNLOCATED, readOnServer: true });
+
+    const [, options] = readingApi.askOnServer.mock.calls[0];
+    expect(options.attachments).toHaveLength(1);
+    expect(options.attachments[0]).toMatch(/^data:audio\/wav;base64,/);
+  });
+
+  it('sends the sampled stills with the framing question', async () => {
+    const h = harness();
+    readingApi.askOnServer.mockResolvedValue(
+      JSON.stringify({ positions: [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ n, x: 0.3 })) }),
+    );
+
+    await runOneCut(h.deps, {
+      sourceKey: 'p',
+      hookLine: 'Look at these straw bales right here',
+      closingLine: 'Darius has already been arrested',
+      startSec: 83.1, endSec: 95.4,
+      readOnServer: true,
+    });
+
+    const framing = readingApi.askOnServer.mock.calls.at(-1);
+    expect(framing[1].attachments.length).toBeGreaterThan(1);
+    expect(framing[1].attachments[0]).toMatch(/^data:image\//);
+    expect(h.sent).toHaveLength(0);
+  });
+
+  it('is what a cut does by default, including one saved before the flag', async () => {
+    /* Node data is persisted, so cuts laid out by an older build come back
+       with readOnServer undefined. Defaulting that to the chat would leave
+       every existing workflow on the slow path silently. */
+    const h = harness();
+    readingApi.askOnServer.mockResolvedValue('{"start_seconds": 12}');
+
+    await runOneCut(h.deps, { ...UNLOCATED });        // no flag at all
+
+    expect(readingApi.askOnServer).toHaveBeenCalled();
+    expect(h.sent).toHaveLength(0);
+  });
+
+  it('uses the chat when the director was set to the chat', async () => {
+    const h = harness({ replies: ['{"start_seconds": 12}', '{"start_seconds": 20}', '{"positions":[]}'] });
+
+    await runOneCut(h.deps, { ...UNLOCATED, readOnServer: false });
+
+    expect(readingApi.askOnServer).not.toHaveBeenCalled();
+    expect(h.sent.length).toBeGreaterThan(0);
+  });
+
+  it('falls back to the chat when the server cannot answer at all', async () => {
+    const h = harness({ replies: ['{"start_seconds": 12}', '{"start_seconds": 20}', '{"positions":[]}'] });
+    readingApi.askOnServer.mockRejectedValue(
+      new readingApi.ReadingUnavailable('not signed in'),
+    );
+
+    await runOneCut(h.deps, { ...UNLOCATED, readOnServer: true });
+
+    expect(h.sent.length).toBeGreaterThan(0);
+    expect(h.logs.join(' ')).toMatch(/not signed in/);
+    expect(h.logs.join(' ')).toMatch(/chat instead/);
+  });
+
+  it('raises a real refusal rather than quietly re-asking a chat', async () => {
+    /* A quota refusal, a rejected attachment, or a model error is an ANSWER.
+       Retrying it through a chat tab would spend a minute arriving at the same
+       place, and hide the reason the run should have stopped on. */
+    const h = harness({ replies: ['{"start_seconds": 12}'] });
+    readingApi.askOnServer.mockRejectedValue(
+      new Error('You are out of video readings on your current plan.'),
+    );
+
+    await expect(
+      runOneCut(h.deps, { ...UNLOCATED, readOnServer: true }),
+    ).rejects.toThrow(/out of video readings/);
+    expect(h.sent).toHaveLength(0);
   });
 });

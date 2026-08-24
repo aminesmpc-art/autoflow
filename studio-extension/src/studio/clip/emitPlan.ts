@@ -52,6 +52,10 @@ export interface EmitOptions {
      seconds and the speaker's position outright — which is four locate asks
      and one frame-sampling ask it never has to make. */
   reading?: VideoReading;
+  /* Where a cut puts its fallback asks. Carried onto every cut rather than
+     read from a setting at run time, so a node keeps the behaviour it was laid
+     out with even if the director is changed afterwards. */
+  readOnServer?: boolean;
 }
 
 /** A short, readable id that survives being looked at in JSON. */
@@ -124,6 +128,7 @@ export function emitPlan(
       endSec: found?.exact ? found.endSec : undefined,
       faces,
       noSpeaker,
+      readOnServer: options.readOnServer !== false,
       /* The candidate's own second, from the loudness envelope. A moment the
          survey named but the shortlist never contained would have none — but
          readSurvey drops those, so an unmatched number here means the two
