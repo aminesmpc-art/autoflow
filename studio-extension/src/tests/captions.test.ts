@@ -364,3 +364,51 @@ describe('the styles that light a word up', () => {
     }
   });
 });
+
+describe('two cues are never on screen at once', () => {
+  /* The intermittent timing fault, reproduced.
+     Holding a short cue to a minimum length used to run AFTER the overlap trim
+     and take the minimum unconditionally, which put each cue back on top of the
+     next one. cueAt returns the first cue that matches, so the screen showed
+     the PREVIOUS line while the current one was being spoken — a whole word
+     behind, and only ever on cues under the minimum, which is why most lines
+     looked perfect and some lagged. */
+
+  const FAST = [
+    { start: 0, end: 0.25, text: 'so' },
+    { start: 0.25, end: 0.5, text: 'then' },
+    { start: 0.5, end: 3.0, text: 'this is the important part here' },
+  ];
+
+  it('shows the words being spoken, not the ones before them', () => {
+    const cues = cuesForClip(FAST, 0, 3);
+    expect(cueAt(cues, 0.30)?.text).toBe('then');
+    expect(cueAt(cues, 0.55)?.text).toMatch(/^this is the/);
+  });
+
+  it('leaves no overlap anywhere, however short the phrases', () => {
+    const cues = cuesForClip(FAST, 0, 3);
+    for (let i = 0; i < cues.length - 1; i++) {
+      expect(cues[i].endSec).toBeLessThanOrEqual(cues[i + 1].startSec + 1e-9);
+    }
+  });
+
+  it('still holds a short cue when the time after it is free', () => {
+    /* The minimum is worth having — a two-frame caption is a flicker. It just
+       may not be taken out of the next cue's time. */
+    const lonely = [{ start: 0, end: 0.1, text: 'go' }];
+    const cues = cuesForClip(lonely, 0, 5);
+    expect(cues[0].endSec).toBeGreaterThanOrEqual(0.4);
+  });
+
+  it('leaves a cue short rather than stealing time it cannot have', () => {
+    const cues = cuesForClip(FAST, 0, 3);
+    expect(cues[0].endSec).toBeCloseTo(0.25, 5);
+  });
+
+  it('never runs the last cue past the end of the clip', () => {
+    const late = [{ start: 2.9, end: 3.0, text: 'end' }];
+    const cues = cuesForClip(late, 0, 3);
+    expect(cues[cues.length - 1].endSec).toBeLessThanOrEqual(3 + 1e-9);
+  });
+});

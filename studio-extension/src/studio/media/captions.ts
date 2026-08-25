@@ -174,16 +174,38 @@ export function cuesForClip(
 
   out.sort((a, b) => a.startSec - b.startSec);
 
-  /* Two cues on screen at once is a rendering bug, not a style. Where the
-     arithmetic overlaps them, the earlier one gives way. */
+  const clipLength = clipEndSec - clipStartSec;
+
+  /* Hold a very short cue longer, but ONLY into time nothing else wants.
+   *
+   * This used to run after the overlap trim below and take the minimum
+   * unconditionally, which put the previous cue back on top of the next one:
+   *
+   *     so   [0    -> 0.25]  became  [0    -> 0.40]
+   *     then [0.25 -> 0.50]  became  [0.25 -> 0.65]
+   *
+   * and cueAt returns the first cue that matches, so at 0.30s the screen said
+   * "so" while "then" was being spoken. A whole word behind, on exactly the
+   * fast speech where the words are shortest. That is the intermittent timing
+   * fault — it fires only when a cue is under MIN_CUE_SEC, so most lines look
+   * perfect and some lag.
+   *
+   * A brief flicker of the right words beats a longer look at the wrong ones,
+   * so where there is no room the cue simply stays short. */
+  for (let i = 0; i < out.length; i++) {
+    const ceiling = i + 1 < out.length ? out[i + 1].startSec : clipLength;
+    const wanted = out[i].startSec + MIN_CUE_SEC;
+    out[i].endSec = Math.max(out[i].endSec, Math.min(wanted, ceiling));
+  }
+
+  /* Two cues on screen at once is a rendering bug, not a style. Kept after the
+     hold above rather than before it, so nothing can reintroduce an overlap
+     once this has run. */
   for (let i = 0; i < out.length - 1; i++) {
     if (out[i].endSec > out[i + 1].startSec) out[i].endSec = out[i + 1].startSec;
   }
 
-  return out.filter((c) => c.endSec > c.startSec).map((c) => ({
-    ...c,
-    endSec: Math.max(c.endSec, Math.min(c.startSec + MIN_CUE_SEC, clipEndSec - clipStartSec)),
-  }));
+  return out.filter((c) => c.endSec > c.startSec);
 }
 
 /** Which cue is on screen at a given second, or null. */
