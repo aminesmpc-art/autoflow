@@ -43,6 +43,7 @@ interface StudioState {
   edges: Edge[];
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
+  removeEdge: (edgeId: string) => void;
   onNodesChange: (changes: any[]) => void;
   onEdgesChange: (changes: any[]) => void;
 
@@ -58,6 +59,8 @@ interface StudioState {
   currentNodeId: string | null;
   runProgress: { current: number; total: number };
   setRunning: (running: boolean) => void;
+  /** Save because a run finished, even if this canvas was never saved. */
+  persistAfterRun: () => Promise<void>;
   setPaused: (paused: boolean) => void;
   setCurrentNode: (nodeId: string | null) => void;
   setRunProgress: (current: number, total: number) => void;
@@ -110,7 +113,7 @@ interface StudioState {
    at ten, so a user was refused five runs before the figure in front of them
    said they would be. freeLimit.test.ts checks all three against the server,
    which is the only authority. */
-export const FREE_LIMITS = { nodes: 0, runsPerMonth: 10 } as const;
+export const FREE_LIMITS = { nodes: 10, runsPerMonth: 10 } as const;
 
 /** Runs are counted per calendar month, keyed so a new month resets itself */
 const runKey = () => `studio_runs_${new Date().toISOString().slice(0, 7)}`;
@@ -239,7 +242,7 @@ export function normalizeWorkflow(nodes: Node[], edges: Edge[]): { nodes: Node[]
      here, so the repair belongs here rather than at each call site. */
   const normEdges = migrateFrameEdges(normNodes, edges).map((edge) => ({
     ...edge,
-    type: 'default',
+    type: 'deletable',
     animated: true,
     style: { stroke: '#8b5cf6', strokeWidth: 2.5 },
   }));
@@ -275,6 +278,10 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   onEdgesChange: (changes) => {
     set((s) => ({ edges: applyEdgeChanges(changes, s.edges) }));
     if (changes.some((c: any) => c.type !== 'select')) touch();
+  },
+  removeEdge: (edgeId) => {
+    set((s) => ({ edges: s.edges.filter((e) => e.id !== edgeId) }));
+    touch();
   },
 
   /* ── Node CRUD ── */
@@ -318,6 +325,26 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   currentNodeId: null,
   runProgress: { current: 0, total: 0 },
   setRunning: (running) => set({ isRunning: running }),
+
+  /**
+   * Write the workflow down because a run just finished.
+   *
+   * Autosave deliberately ignores a canvas that has never been saved by
+   * hand, so scratch workspaces do not pile up in storage. That is right
+   * for a canvas somebody was poking at and wrong for one that has just
+   * spent ten minutes reading a video, ranking it and cutting nine clips.
+   * A finished run is the strongest possible evidence the work is worth
+   * keeping, so this saves regardless of whether the workflow was known.
+   *
+   * Everything a run produces is node data — the stages, the reading, the
+   * boundaries, the caption phrases — so writing the nodes writes the run.
+   * The clips and the source live in the vault beside it.
+   */
+  persistAfterRun: async () => {
+    const s = get();
+    if (!s.nodes.length) return;
+    await s.saveWorkflow();
+  },
   setPaused: (paused) => set({ isPaused: paused }),
   setCurrentNode: (nodeId) => set({ currentNodeId: nodeId }),
   setRunProgress: (current, total) => set({ runProgress: { current, total } }),
@@ -588,7 +615,16 @@ function scheduleAutosave(): void {
   if (autosaveTimer) clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(async () => {
     const s = useStudioStore.getState();
-    if (!s.isDirty || s.isRunning || s.nodes.length === 0) return;
+    if (!s.isDirty || s.nodes.length === 0) return;
+
+    /* A run in progress is a reason to WAIT, not to give up.
+       This used to return here, and returning armed nothing else — so the
+       timer that fired during a run was the LAST one. Every node update
+       afterwards happened inside the run, the run ended without touching
+       anything, and a finished clipping job was never written down. Reopening
+       the workflow then showed nothing and asked for the whole thing again. */
+    if (s.isRunning) { scheduleAutosave(); return; }
+
     const known = s.savedWorkflows.some((w) => w.id === s.workflow.id);
     if (!known) return;
     await s.saveWorkflow();

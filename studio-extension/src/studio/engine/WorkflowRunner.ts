@@ -620,6 +620,14 @@ export class WorkflowRunner {
     store.setRunning(false);
     store.setPaused(false);
     this.state = this.abortRequested ? 'stopped' : 'done';
+
+    /* Write it down NOW, not on the next edit.
+       Autosave waits for the run to end, and nothing edits a workflow
+       after it finishes — so without this the last thing saved is the
+       state before the run, and reopening asks for the whole job again.
+       A stopped run is saved too: the stages it did complete are worth
+       exactly as much as the ones a finished run completed. */
+    void useStudioStore.getState().persistAfterRun();
     console.log(`[Runner] Workflow ${this.state}. ${completedCount}/${plannedTotal} completed.`);
   }
 
