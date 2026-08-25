@@ -76,7 +76,8 @@ export interface ClipMedia {
   frames(file: File, timesSec: number[]): Promise<string[]>;
   cut(file: File, options: {
     startSec: number; endSec: number; plan?: ReframePlan | null; silent?: boolean;
-    captions?: Array<{ startSec: number; endSec: number; text: string }>;
+    captions?: import('../media/captions').CaptionCue[];
+    captionStyle?: import('../media/captions').CaptionStyle;
   }): Promise<CutLike>;
 }
 
@@ -110,6 +111,8 @@ export interface ClipConfig {
      of short-form views happen with the sound off, so a clip without them is
      one most of its audience cannot follow. */
   captions?: boolean;
+  /** Which look the burned-in words take. See CaptionPreset. */
+  captionPreset?: import('../media/captions').CaptionPreset;
   mode?: ClipMode;
   /** Verbatim rules from the campaign brief, shown to the model. */
   campaignRules?: string;
@@ -549,6 +552,7 @@ export function layoutStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
          that quietly use the API instead. */
       readOnServer: cfg.readOnServer !== false,
       captions: cfg.captions !== false,
+      captionPreset: cfg.captionPreset,
     });
     const cuts = plan.steps.filter((s) => s.type === 'cut').length;
     deps.log?.(`laying out ${cuts} cut${cuts === 1 ? '' : 's'}`);
@@ -661,6 +665,8 @@ export interface OneCutConfig {
      went wrong when they were worked out any earlier.
      About 85% of short-form views happen with the sound off. */
   captionPhrases?: Array<{ start: number; end: number; text: string }>;
+  /** Which look. See CaptionPreset — 'clean' unless the node says otherwise. */
+  captionStyle?: import('../media/captions').CaptionStyle;
   /* Where the two fallback asks go when the reading could not answer them.
      Inherited from the Clipping node that laid this cut out, so a director set
      to the chat does not quietly emit nine nodes that use the API. Defaults on
@@ -813,7 +819,10 @@ export async function runOneCut(
   const captions = phrases.length ? cuesForClip(phrases, startSec, endSec) : [];
   if (captions.length) deps.log?.(`burning in ${captions.length} caption cues`);
 
-  const out = await deps.media.cut(file, { startSec, endSec, plan, captions });
+  const out = await deps.media.cut(file, {
+    startSec, endSec, plan, captions,
+    captionStyle: cfg.captionStyle,
+  });
   /* Keyed by the lines rather than by the source, because a source now has
      many clips and `sourceKey#clip` would have every Cut node overwriting the
      one before it. */

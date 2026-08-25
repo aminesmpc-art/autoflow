@@ -232,7 +232,12 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
                would show the first cue for the whole clip. */
             if (captioning) {
               const cue = cueAt(captions, sample.timestamp);
-              if (cue) drawCaption(ctx!, cue, outWidth, outHeight, options.captionStyle);
+              /* The timestamp goes in as well as being used to pick the cue:
+                 the highlighting presets need to know which WORD is being said
+                 right now, not just which line is up. */
+              if (cue) {
+                drawCaption(ctx!, cue, outWidth, outHeight, options.captionStyle, sample.timestamp);
+              }
             }
 
             return new VideoSample(canvas!, {

@@ -91,6 +91,7 @@ export interface PlanStep {
      at cut time, against the boundaries the encoder actually used — see
      emitPlan for why they cannot be worked out any earlier. */
   captionPhrases?: Array<{ start: number; end: number; text: string }>;
+  captionPreset?: string;
   /** Cap on the finished clip, in seconds. */
   maxSeconds?: number;
   /** Step ids feeding this one — a still, a clip, or written text. */
@@ -369,6 +370,7 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
           readOnServer: step.readOnServer !== false,
           captionPhrases: Array.isArray(step.captionPhrases) && step.captionPhrases.length
             ? step.captionPhrases : undefined,
+          captionPreset: step.captionPreset || undefined,
           maxSeconds: typeof step.maxSeconds === 'number' && step.maxSeconds > 0 ? step.maxSeconds : undefined,
           /* Inherited from the Clipping node that laid this out. A cut with no
              platform silently used ChatGPT while its director used Gemini. */

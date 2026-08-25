@@ -54,6 +54,8 @@ export interface EmitOptions {
   reading?: VideoReading;
   /** Burn the spoken words into the picture. On unless turned off. */
   captions?: boolean;
+  /** Which look. Carried onto every cut so they match across a workflow. */
+  captionPreset?: import('../media/captions').CaptionPreset;
   /* Where a cut puts its fallback asks. Carried onto every cut rather than
      read from a setting at run time, so a node keeps the behaviour it was laid
      out with even if the director is changed afterwards. */
@@ -177,6 +179,7 @@ export function emitPlan(
       captionPhrases: options.captions === false || !found || !options.reading
         ? undefined
         : phrasesAround(options.reading.segments, found, byN.get(m.moment)?.start ?? 0, options.maxSeconds),
+      captionPreset: options.captionPreset,
       readOnServer: options.readOnServer !== false,
       /* The candidate's own second, from the loudness envelope. A moment the
          survey named but the shortlist never contained would have none — but

@@ -1556,6 +1556,7 @@ export class WorkflowRunner {
       /* Burn the words into the picture. On unless turned off — about 85% of
          short-form views happen with the sound off. */
       captions: nodeData.captions !== false,
+      captionPreset: nodeData.captionPreset || undefined,
     };
 
     const runners = clipRunners(deps, cfg);
@@ -1715,6 +1716,7 @@ export class WorkflowRunner {
       /* The words, in the video's own seconds. runOneCut turns them into cue
          times once it knows where the clip really begins. */
       captionPhrases: Array.isArray(nodeData.captionPhrases) ? nodeData.captionPhrases : undefined,
+      captionStyle: nodeData.captionPreset ? { preset: nodeData.captionPreset } : undefined,
     });
 
     /* mediaKey is what the node's player reads back out of the store. Without

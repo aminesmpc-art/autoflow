@@ -252,3 +252,115 @@ describe('cues follow the boundaries the encoder actually used', () => {
     }
   });
 });
+
+describe('the styles that light a word up', () => {
+  /* The word-by-word highlight is the most used style on high-performing
+     explainer content: each word lighting up is a micro-event, and the colour
+     moving left to right pulls the eye along the line. Captioned clips take
+     about 40% more views, and viewers are around 80% more likely to finish one.
+
+     Word timings are divided across a cue by characters, exactly as cues are
+     divided across a phrase — a fraction of a second out, which a highlight
+     tolerates and a cut point does not. */
+
+  function recorder() {
+    const calls: Array<{ op: string; text: string; fill: string }> = [];
+    const ctx = {
+      save: () => {}, restore: () => {},
+      measureText: (s: string) => ({ width: s.length * 10 }),
+      strokeText: (t: string) => calls.push({ op: 'stroke', text: t, fill: String(ctx.fillStyle) }),
+      fillText: (t: string) => calls.push({ op: 'fill', text: t, fill: String(ctx.fillStyle) }),
+      font: '', textAlign: '', textBaseline: '', lineJoin: '',
+      miterLimit: 0, strokeStyle: '', fillStyle: '', lineWidth: 0,
+    };
+    return { calls, ctx: ctx as unknown as CanvasRenderingContext2D };
+  }
+
+  const cue = cuesFromPhrase({ start: 0, end: 4, text: 'one two three four' })[0];
+
+  it('gives every word its own span', () => {
+    expect(cue.words).toHaveLength(4);
+    expect(cue.words![0].startSec).toBeCloseTo(0, 5);
+    expect(cue.words![3].endSec).toBeCloseTo(4, 5);
+  });
+
+  it('leaves no gap between one word and the next', () => {
+    for (let i = 0; i < cue.words!.length - 1; i++) {
+      expect(cue.words![i].endSec).toBeCloseTo(cue.words![i + 1].startSec, 5);
+    }
+  });
+
+  it('colours only the word being spoken', () => {
+    const { ctx, calls } = recorder();
+    const mid = (cue.words![1].startSec + cue.words![1].endSec) / 2;
+
+    drawCaption(ctx, cue, 1080, 1920, { preset: 'bold' }, mid);
+
+    const fills = calls.filter((c) => c.op === 'fill');
+    const active = fills.filter((c) => c.fill === '#ffd400').map((c) => c.text);
+    expect(active).toEqual(['TWO']);
+  });
+
+  it('moves the highlight along as the clip plays', () => {
+    const seen: string[] = [];
+    for (const word of cue.words!) {
+      const { ctx, calls } = recorder();
+      drawCaption(ctx, cue, 1080, 1920, { preset: 'bold' }, (word.startSec + word.endSec) / 2);
+      seen.push(calls.filter((c) => c.op === 'fill' && c.fill === '#ffd400')[0]?.text);
+    }
+    expect(seen).toEqual(['ONE', 'TWO', 'THREE', 'FOUR']);
+  });
+
+  it('dims what has not been said yet in karaoke', () => {
+    const { ctx, calls } = recorder();
+    drawCaption(ctx, cue, 1080, 1920, { preset: 'karaoke' }, 0.2);
+
+    const fills = calls.filter((c) => c.op === 'fill');
+    expect(fills[0].fill).toBe('#4ade80');
+    expect(fills[1].fill).toBe('rgba(255,255,255,0.55)');
+  });
+
+  it('highlights nothing when the caller does not know the time', () => {
+    /* Better a plain line than a wrong word lit up. */
+    const { ctx, calls } = recorder();
+    drawCaption(ctx, cue, 1080, 1920, { preset: 'bold' });
+    const fills = calls.filter((c) => c.op === 'fill');
+    expect(fills.every((f) => f.fill === '#ffffff')).toBe(true);
+  });
+
+  it('never highlights under the plain presets', () => {
+    for (const preset of ['clean', 'minimal'] as const) {
+      const { ctx, calls } = recorder();
+      drawCaption(ctx, cue, 1080, 1920, { preset }, 1);
+      expect(calls.filter((c) => c.op === 'fill').every((f) => f.fill === '#ffffff')).toBe(true);
+    }
+  });
+
+  it('keeps the speaker\u2019s own capitals under minimal', () => {
+    const { ctx, calls } = recorder();
+    const mixed = cuesFromPhrase({ start: 0, end: 2, text: 'The Fed said' })[0];
+    drawCaption(ctx, mixed, 1080, 1920, { preset: 'minimal' }, 0.5);
+    expect(calls.filter((c) => c.op === 'fill').map((c) => c.text)).toEqual(['The', 'Fed', 'said']);
+  });
+
+  it('still draws a cue that arrived with no word spans', () => {
+    /* A cut node laid out before word spans existed. */
+    const { ctx, calls } = recorder();
+    drawCaption(
+      ctx,
+      { startSec: 0, endSec: 2, text: 'older cue here' },
+      1080, 1920, { preset: 'bold' }, 1,
+    );
+    expect(calls.filter((c) => c.op === 'fill').map((c) => c.text)).toEqual(['OLDER', 'CUE', 'HERE']);
+  });
+
+  it('strokes every word before filling it', () => {
+    const { ctx, calls } = recorder();
+    drawCaption(ctx, cue, 1080, 1920, { preset: 'bold' }, 1);
+    for (let i = 0; i < calls.length; i += 2) {
+      expect(calls[i].op).toBe('stroke');
+      expect(calls[i + 1].op).toBe('fill');
+      expect(calls[i].text).toBe(calls[i + 1].text);
+    }
+  });
+});

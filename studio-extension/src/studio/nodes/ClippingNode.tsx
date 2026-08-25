@@ -166,6 +166,10 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
 
   /* Default ON. See the toggle for why. */
   const captions: boolean = d.captions !== false;
+  /* Plain by default. The highlighting styles perform better on explainer
+     content and look wrong on someone else's footage, so the choice is the
+     clipper's rather than a default. */
+  const captionPreset: string = d.captionPreset || 'clean';
 
   const mode: 'campaign' | 'explainer' = d.clipMode === 'explainer' ? 'explainer' : 'campaign';
   const wanted: number = typeof d.wantedClips === 'number' ? d.wantedClips : DEFAULT_WANTED;
@@ -376,6 +380,22 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
             />
             <span>Captions</span>
           </label>
+          {/* Only worth showing when the words are being burned in at all.
+              Sits beside the toggle rather than in a tab because it changes
+              what comes out of the encoder, same as the toggle does. */}
+          {captions && (
+            <select
+              className="sn-clip__pick nodrag"
+              value={captionPreset}
+              title="How the burned-in words look"
+              onChange={(e) => updateNodeData(id, { captionPreset: e.target.value })}
+            >
+              <option value="clean">Clean</option>
+              <option value="bold">Bold — word lights up</option>
+              <option value="karaoke">Karaoke</option>
+              <option value="minimal">Minimal</option>
+            </select>
+          )}
         </div>
 
         <div className="sn-clip__tabs">

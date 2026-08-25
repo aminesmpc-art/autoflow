@@ -29,8 +29,14 @@ import { join } from 'path';
 const SRC = join(__dirname, '..', 'content', 'zai', 'index.ts');
 
 /* Exercised through the source rather than the bundle: isThinkingOrGenerating
-   is internal, and the states below are about which selectors it trusts. */
-const source = () => readFileSync(SRC, 'utf8');
+   is internal, and the states below are about which selectors it trusts.
+
+   Line endings are normalised on the way in. Git checks this repository out
+   with CRLF on Windows, so an assertion about a function ending in a newline
+   and a brace passes or fails depending on whether the file was last written
+   by an editor or by git -- which is not a property of the code it is meant
+   to be guarding. */
+const source = () => readFileSync(SRC, 'utf8').replace(/\r\n/g, '\n');
 
 describe('the selectors it relies on', () => {
   it('no longer matches Tailwind utilities', () => {
