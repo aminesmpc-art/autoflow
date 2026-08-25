@@ -45,12 +45,36 @@ export interface ReadScene {
   on_screen_text?: string | null;
 }
 
+/**
+ * One sample of where the person talking is, measured on the server.
+ *
+ * Not asked for — detected. The scenes carry a speaker_x too, and on real
+ * footage it came back null for 8 of 8 scenes while this agreed with a
+ * dedicated model ask to 0.009 of frame width. These are what framing uses.
+ */
+export interface TrackedFace {
+  /** Seconds into the WHOLE video, not into any clip. */
+  t: number;
+  /** Centre of the face across the frame, 0 at the left edge and 1 at the right. */
+  x: number;
+  /** Face width as a fraction of frame width — how close they are to camera. */
+  size?: number;
+  /** How much this looked like a person facing the camera. */
+  weight?: number;
+}
+
 export interface VideoReading {
   durationSec: number;
   language: string;
   summary: string;
   segments: ReadSegment[];
   scenes: ReadScene[];
+  /* Where the speaker is over time, about twice a second.
+     Empty means NOT MEASURED — this server cannot track faces, or the codec
+     defeated it. It must never be read as "nobody was on camera": believing
+     that of a missing answer is exactly what left every clip letterboxed on a
+     blurred backdrop instead of cropped onto the speaker. */
+  faces: TrackedFace[];
   /** Anything the server threw away, in words a person can act on. */
   dropped: string[];
   model: string;
@@ -142,12 +166,34 @@ function readReading(body: unknown, fallbackDuration: number): VideoReading | nu
   }
 
   const duration = Number(o.duration_sec);
+  /* Checked rather than taken. A position outside the frame is not a position,
+     and a NaN would travel all the way into a crop rectangle before anything
+     noticed — the resulting clip is not obviously wrong, it is just framed on
+     nothing. */
+  const faces: TrackedFace[] = [];
+  for (const raw of Array.isArray(o.faces) ? o.faces : []) {
+    if (!raw || typeof raw !== 'object') continue;
+    const f = raw as Record<string, unknown>;
+    const t = Number(f.t);
+    const x = Number(f.x);
+    if (!Number.isFinite(t) || t < 0) continue;
+    if (!Number.isFinite(x) || x < 0 || x > 1) continue;
+    faces.push({
+      t,
+      x,
+      size: Number.isFinite(Number(f.size)) ? Number(f.size) : undefined,
+      weight: Number.isFinite(Number(f.weight)) ? Number(f.weight) : undefined,
+    });
+  }
+  faces.sort((a, b) => a.t - b.t);
+
   return {
     durationSec: Number.isFinite(duration) && duration > 0 ? duration : fallbackDuration,
     language: String(o.language ?? 'en'),
     summary: String(o.summary ?? ''),
     segments,
     scenes,
+    faces,
     dropped: (Array.isArray(o.dropped) ? o.dropped : []).map(String),
     model: String(o.model ?? ''),
   };

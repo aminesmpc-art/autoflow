@@ -28,6 +28,7 @@ const reading = (over: Partial<VideoReading> = {}): VideoReading => ({
   summary: '',
   segments: [],
   scenes: [],
+  faces: [],
   dropped: [],
   model: 'gemini-3.7-flash',
   ...over,
@@ -289,5 +290,93 @@ describe('what the reading already knows about framing', () => {
 
   it('says UNKNOWN when there is no reading to speak of', () => {
     expect(framingFromReading(reading(), 0, 30).kind).toBe('unknown');
+  });
+});
+
+
+describe('framing from the measured track', () => {
+  /* The track is a face detector run over the video on the server, about twice
+     a second. The scenes' own speaker_x is asked for instead of measured, and
+     on real footage came back null for 8 of 8 scenes — which is what left every
+     clip letterboxed instead of cropped onto the speaker. */
+
+  const track = (points: Array<[number, number]>) =>
+    reading({ faces: points.map(([t, x]) => ({ t, x })) });
+
+  it('uses the track in preference to what the scenes claimed', () => {
+    /* When both exist the measured one wins. They disagree here on purpose:
+       0.2 from the scene, 0.8 from the detector. */
+    const both = reading({
+      faces: [{ t: 10, x: 0.8 }, { t: 11, x: 0.8 }, { t: 12, x: 0.8 }],
+      scenes: [
+        { start: 0, end: 15, description: 'a', speaker_x: 0.2 },
+        { start: 15, end: 30, description: 'b', speaker_x: 0.2 },
+      ],
+    });
+    const faces = facesFromReading(both, 5, 20);
+    expect(faces.every((f) => f.x === 0.8)).toBe(true);
+  });
+
+  it('gives times relative to the clip, not to the video', () => {
+    /* planReframe builds a crop path along the clip's own timeline. Absolute
+       seconds here would put every keyframe past the end of a clip cut from
+       ten minutes in, and the crop would never move. */
+    const faces = facesFromReading(track([[100, 0.4], [100.5, 0.45], [101, 0.5]]), 100, 130);
+    expect(faces.map((f) => f.t)).toEqual([0, 0.5, 1]);
+  });
+
+  it('takes only the samples inside the clip', () => {
+    const faces = facesFromReading(
+      track([[0, 0.1], [50, 0.5], [51, 0.55], [200, 0.9]]), 40, 60,
+    );
+    expect(faces.map((f) => f.x)).toEqual([0.5, 0.55]);
+  });
+
+  it('falls back to the scenes when nothing was tracked', () => {
+    /* An older server sends scenes and no track. One coarse position per shot
+       beats none. */
+    const old = reading({
+      faces: [],
+      scenes: [
+        { start: 0, end: 15, description: 'a', speaker_x: 0.3 },
+        { start: 15, end: 30, description: 'b', speaker_x: 0.6 },
+      ],
+    });
+    expect(facesFromReading(old, 0, 30).map((f) => f.x)).toEqual([0.3, 0.6]);
+  });
+
+  it('falls back rather than framing on a single tracked sample', () => {
+    /* One sample cannot describe movement, and the scenes may have two. */
+    const one = reading({
+      faces: [{ t: 5, x: 0.9 }],
+      scenes: [
+        { start: 0, end: 15, description: 'a', speaker_x: 0.3 },
+        { start: 15, end: 30, description: 'b', speaker_x: 0.6 },
+      ],
+    });
+    expect(facesFromReading(one, 0, 30).map((f) => f.x)).toEqual([0.3, 0.6]);
+  });
+
+  it('tracks a clip the detector covered', () => {
+    const f = framingFromReading(track([[10, 0.4], [10.5, 0.42], [11, 0.44]]), 5, 20);
+    expect(f.kind).toBe('tracked');
+    if (f.kind === 'tracked') expect(f.faces).toHaveLength(3);
+  });
+
+  it('asks when nothing was tracked and nothing was described', () => {
+    /* An empty track means NOT MEASURED — this server cannot track faces, or
+       the codec defeated it. Reading it as "nobody was on camera" is the bug
+       that shipped once already. */
+    expect(framingFromReading(reading({ faces: [] }), 0, 30).kind).toBe('unknown');
+  });
+
+  it('gives planReframe enough samples to follow someone who moves', () => {
+    /* The point of the track. Eight guesses across thirty seconds produce a
+       crop that jumps; two samples a second produce one that follows. */
+    const points: Array<[number, number]> = [];
+    for (let i = 0; i <= 60; i++) points.push([100 + i * 0.5, 0.3 + i * 0.005]);
+    const faces = facesFromReading(track(points), 100, 130);
+    expect(faces.length).toBeGreaterThan(50);
+    expect(faces[0].x).toBeLessThan(faces[faces.length - 1].x);
   });
 });

@@ -146,17 +146,35 @@ export function locateFromReading(
 const SCENE_SLACK_SEC = 2;
 
 /**
- * Where the speaker stands during a clip, from the scenes already described.
+ * Where the speaker is during a clip.
  *
- * Replaces cutting eight stills out of the video and asking a chat to point at
- * the person in each. Times are relative to the clip's own start, which is
- * what planReframe expects.
+ * Two sources, in order of how much they can be trusted.
+ *
+ * The TRACK is measured: a face detector run over the video on the server,
+ * about twice a second, while the model was reading the same file. On real
+ * footage it agrees with a dedicated model ask to 0.009 of frame width, and it
+ * gives sixty samples across a thirty second clip rather than eight — which is
+ * the difference between a crop that follows someone and a crop that jumps
+ * between eight guesses at where they were.
+ *
+ * The SCENES are asked for, and in practice are not answered: measured on the
+ * same footage, speaker_x came back null for 8 of 8 scenes. They are kept as a
+ * fallback only because a server too old to track faces still sends them, and
+ * one coarse position per shot beats none.
+ *
+ * Times come out relative to the clip's own start, which is what planReframe
+ * expects.
  */
 export function facesFromReading(
   reading: VideoReading,
   startSec: number,
   endSec: number,
 ): FaceSample[] {
+  const tracked = (reading.faces || [])
+    .filter((f) => f.t >= startSec && f.t <= endSec)
+    .map((f) => ({ t: Math.max(0, f.t - startSec), x: f.x }));
+  if (tracked.length >= 2) return tracked;
+
   const out: FaceSample[] = [];
   for (const scene of reading.scenes) {
     if (typeof scene.speaker_x !== 'number') continue;
