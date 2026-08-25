@@ -6,6 +6,12 @@
 export type BridgeStatus = 'disconnected' | 'connecting' | 'connected';
 
 export interface NodeExecutionConfig {
+  /* A video already in the Flow library, attached to the prompt so a
+     generation matches the look of the clip it belongs beside. A NAME, not
+     bytes: getting a video INTO Flow cannot be automated — see
+     content/flow/uploadVideo.ts — so the clipper puts it there once by hand
+     and this finds it again every time. */
+  styleReference?: string;
   prompt: string;
   model: string;
   /** 'text' asks ChatGPT for a written answer instead of an image — the reply

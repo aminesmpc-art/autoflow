@@ -908,6 +908,13 @@ export class WorkflowRunner {
       extendSeconds: isExtendNode ? (nodeData.extendSeconds || '+10s') : undefined,
       extendFromVideo,
       creationType: nodeData.creationType || 'ingredients',
+      /* A video already in the Flow library, attached to the prompt so the
+         generation matches the look of the clip it belongs beside. The upload
+         cannot be automated, so this is a NAME the clipper put there once —
+         see content/flow/uploadVideo.ts for why. */
+      styleReference: typeof nodeData.styleReference === 'string'
+        ? nodeData.styleReference
+        : undefined,
       /* Flow's voice picker. Left out of this payload the node's dropdown
          would set a field nothing ever read — the control would look like it
          worked and change nothing about the clip. */
@@ -1694,7 +1701,7 @@ export class WorkflowRunner {
    * and this refuses it again — a node sitting on the canvas is an invitation
    * to use it, and the account doing the earning is worth more than a cutaway.
    */
-  private layOutBroll(nodeId: string, ops: any[], mode: string): number {
+  private layOutBroll(nodeId: string, ops: any[], mode: string, styleReference = ''): number {
     if (mode !== 'explainer') return 0;
     const cutaways = (ops || []).filter((o) => o?.kind === 'broll' && String(o.what || '').trim());
     if (!cutaways.length) return 0;
@@ -1723,6 +1730,10 @@ export class WorkflowRunner {
         aspectRatio: '9:16',
         duration: WorkflowRunner.brollDuration(op.seconds),
         creationType: 'ingredients',
+        /* Inherited from the cut that laid this out, so every cutaway for a
+           clip matches the same footage. The upload itself cannot be
+           automated — the clipper puts it in the library once by hand. */
+        styleReference: styleReference || undefined,
         status: 'idle',
         enabled: true,
         /* Owned by this cut, so laying out again replaces rather than doubles,
@@ -1853,6 +1864,7 @@ export class WorkflowRunner {
       nodeId,
       result.editSheet || [],
       nodeData.clipMode === 'explainer' ? 'explainer' : 'campaign',
+      typeof nodeData.styleReference === 'string' ? nodeData.styleReference : '',
     );
     if (cutaways) {
       store.updateNodeData(nodeId, { brollCount: cutaways });

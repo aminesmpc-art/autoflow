@@ -1168,6 +1168,33 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
     updatedAt: Date.now(),
   };
 
+  /* A video already in the Flow library, put on the prompt so the generation
+     matches the look of the footage it belongs beside.
+   *
+     Attached HERE, before the queue starts, because the ingredient has to be
+     on the prompt when the engine submits it.
+   *
+     Best effort, always. Getting a video INTO the library cannot be automated
+     — every DOM route was tried against the live site and all are dead, see
+     content/flow/uploadVideo.ts — so the clipper uploads it once by hand and
+     this finds it by name. When it is not there, or Flow has moved something,
+     the generation still runs; it just runs without the reference, which is
+     exactly what it did before this existed. */
+  const styleRef = String(config.styleReference || '').trim();
+  if (styleRef) {
+    try {
+      const { attachFromLibrary } = await import('./libraryPicker');
+      const attached = await attachFromLibrary(styleRef, {
+        log: (line) => console.log(`[AutoFlow Studio] ${line}`),
+      });
+      if (!attached.ok) {
+        console.warn(`[AutoFlow Studio] no style reference: ${attached.reason}`);
+      }
+    } catch (e: any) {
+      console.warn('[AutoFlow Studio] style reference failed:', e?.message || e);
+    }
+  }
+
   console.log(`[AutoFlow Studio] Handing the node to the engine ${since()}`);
   // Start the queue (non-blocking)
   const result = await startQueue(queue);
@@ -1597,6 +1624,17 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
     // <img> + % badge, which a completion-first check misreads as done)
     let state = getStudioTileState(trackedTile, isVideoNode);
 
+    // CRITICAL: Prevent early false-completion!
+    // 1. If Flow's API says the video is still generating or queued, the video is NOT completed.
+    const serviceStillWorking = apiState === 'generating' || apiState === 'queued';
+    if (state === 'completed' && serviceStillWorking) {
+      state = 'generating';
+    } else if (state === 'completed' && isVideoNode && wait < 10 && apiState !== 'completed') {
+      // 2. Video rendering on Google Flow cannot legitimately finish in < 10 seconds
+      // without API confirmation. Early 'completed' at wait < 10s is a false alarm from old DOM nodes.
+      state = 'generating';
+    }
+
     /* Say WHY it is still waiting, every fifteen seconds.
        A node ran for twenty minutes and the whole of Diagnostics said "Tile
        not in DOM yet" — and an 'unknown' tile said nothing at all, so the
@@ -1625,7 +1663,6 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
          When the service says it is still working, the guess is not needed and
          must not expire: a long render would otherwise be declared finished
          at 45s and hand the next node an empty frame. */
-      const serviceStillWorking = apiState === 'generating' || apiState === 'queued';
       /* Three different waits, because three different things are known.
            still working  — no clock at all; the render is not done.
            finished       — the clip EXISTS and the page is behind. Worth
@@ -1665,6 +1702,9 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
     }
 
     if (state === 'completed') {
+      if (serviceStillWorking) {
+        continue;
+      }
       /* One last look, at the only moment that matters.
          Everything below reads the tile ONCE — the last frame especially,
          because it has to be captured while the tile is definitely here. If
@@ -1679,9 +1719,26 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
       }
       logLine(`Tile completed! (id=${trackedTile.getAttribute('data-tile-id') || trackedTile.id || 'unknown'})`);
       const tileId = trackedTile.getAttribute('data-tile-id') || trackedTile.id || '';
-      const mediaUrl = extractTileMediaUrl(trackedTile);
-      const previewSrc = extractTilePreviewSrc(trackedTile);
-      await sendStudioResult(nodeId, tileId, mediaUrl, previewSrc, trackedTile);
+      let mediaUrl = extractTileMediaUrl(trackedTile);
+      let previewSrc = extractTilePreviewSrc(trackedTile);
+
+      // Detail View / API fallback: if mediaUrl is missing for a video node
+      if (isVideoNode && !mediaUrl) {
+        const apiMatch = prompt.mediaId
+          ? findStatusByMediaId(prompt.mediaId)
+          : findStatusByPromptText(promptText);
+        if (apiMatch?.mediaId) {
+          mediaUrl = `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=${apiMatch.mediaId}`;
+        } else {
+          // Check detail view video element on page
+          const mainVideo = document.querySelector('main video, [class*="detail"] video, div[role="main"] video, video[src]') as HTMLVideoElement | null;
+          if (mainVideo) {
+            mediaUrl = mainVideo.currentSrc || mainVideo.src || mainVideo.querySelector('source')?.getAttribute('src') || '';
+          }
+        }
+      }
+
+      await sendStudioResult(nodeId, tileId, mediaUrl, previewSrc, trackedTile, promptText, prompt.mediaId);
       return;
     }
 
@@ -1736,12 +1793,24 @@ async function sendStudioResult(
   tileId: string,
   mediaUrl?: string,
   previewSrc?: string,
-  tile?: Element | null
+  tile?: Element | null,
+  promptText?: string,
+  mediaId?: string,
 ): Promise<void> {
+  // If mediaUrl was not passed or is empty, try resolving from API
+  if (!mediaUrl && (mediaId || promptText)) {
+    const apiMatch = mediaId
+      ? findStatusByMediaId(mediaId)
+      : (promptText ? findStatusByPromptText(promptText) : null);
+    if (apiMatch?.mediaId) {
+      mediaUrl = `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=${apiMatch.mediaId}`;
+    }
+  }
+
   // Flow's tile URLs are page-scoped (blob:) or need the page's auth context,
   // so they cannot be rendered from the chrome-extension:// Studio page.
   // Convert to self-contained data URLs here, where fetch still works.
-  const stills = await buildStudioStills(previewSrc || mediaUrl || '');
+  const stills = await buildStudioStills(mediaUrl || previewSrc || '');
   let previewUrl = stills.preview;
 
   /* Videos rarely carry a poster, so a frame is drawn off the <video> itself.
@@ -1750,7 +1819,14 @@ async function sendStudioResult(
      videoWidth is 0, and captureVideoFrame's first line returns '' on exactly
      that. The element has to be loaded first — which is what the end-frame
      capture further down does, and what this never learned to do. */
-  const videoEl = tile?.querySelector('video') || null;
+  let videoEl = tile?.querySelector('video') || null;
+  if (!videoEl) {
+    const pageVideo = document.querySelector('main video, [class*="detail"] video, div[role="main"] video, video') as HTMLVideoElement | null;
+    if (pageVideo && (pageVideo.src || pageVideo.currentSrc || pageVideo.querySelector('source'))) {
+      videoEl = pageVideo;
+    }
+  }
+
   if (!previewUrl && videoEl) {
     previewUrl = captureVideoFrame(videoEl);
   }
@@ -1758,6 +1834,8 @@ async function sendStudioResult(
   // Ship the playable video itself when it's small enough to travel
   let previewVideoUrl = '';
   if (videoEl && mediaUrl) {
+    previewVideoUrl = await buildStudioVideoData(mediaUrl);
+  } else if (!previewVideoUrl && mediaUrl) {
     previewVideoUrl = await buildStudioVideoData(mediaUrl);
   }
 
@@ -1870,9 +1948,9 @@ async function sendStudioResult(
         tileId,
         imageUrl: mediaUrl || '',
         thumbnailUrl: mediaUrl || '',
-        previewUrl,
+        previewUrl: previewUrl || stills.preview || '',
         previewVideoUrl,
-        referenceUrl,
+        referenceUrl: referenceUrl || (videoEl ? '' : stills.reference) || '',
       },
     }).catch(() => {});
   } catch {}
