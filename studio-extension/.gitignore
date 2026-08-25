@@ -7,3 +7,8 @@ dist/
 # megabytes, all of it regenerable, and none of it belongs in the repo — it
 # sat untracked at 459MB while `git add -A` was one keystroke away.
 _harness/
+
+# Packaged builds. Produced by `npm run package`, named after the manifest
+# version, and regenerated on demand — a binary in git that a command rebuilds
+# is a merge conflict waiting to happen.
+autoflow-studio-*.zip
