@@ -266,7 +266,15 @@ export function readEditSheet(reply: unknown, context: SheetContext): SheetResul
       continue;
     }
 
-    const what = String(o.what ?? '').trim();
+    /* A punch IS its own instruction, and the model often leaves `what` empty
+       for exactly that reason — the kind already says push in on the speaker.
+       Dropping those was measured against the real endpoint costing three
+       beats on one clip, including the only one before the 3 second mark,
+       which is the threshold that most decides whether a clip travels.
+       Everything else still has to say what to do: a cutaway with no
+       description is nothing to generate, and a sound with no name is nothing
+       to find. */
+    const what = String(o.what ?? '').trim() || (kind === 'punch' ? 'punch in' : '');
     if (!what) {
       dropped.push(`${kind} at ${stamp(at)} says nothing about what to do`);
       continue;

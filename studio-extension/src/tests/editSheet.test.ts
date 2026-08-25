@@ -261,3 +261,44 @@ describe('the sheet as something to read in CapCut', () => {
     expect(text).toContain('he says 400k');
   });
 });
+
+describe('a punch is its own instruction', () => {
+  /* Found against the deployed model, not in a unit test. The model routinely
+     leaves `what` empty on a punch because the kind already says push in on
+     the speaker — and dropping those cost one clip three beats, including the
+     ONLY one before the 3 second mark, which is the threshold that most
+     decides whether a clip travels. Re-measured after the fix: 5 kept and 3
+     dropped with the first beat at 3.4s became 7 kept, none dropped, first
+     beat at 1.2s. */
+
+  it('keeps a punch that came back with no description', () => {
+    const { ops, dropped } = readEditSheet(
+      reply([{ at: 1.2, kind: 'punch', why: 'early visual reset' }]), context(),
+    );
+    expect(ops).toHaveLength(1);
+    expect(ops[0].what).toBe('punch in');
+    expect(dropped).toEqual([]);
+  });
+
+  it('keeps the model’s own words when it did describe one', () => {
+    const { ops } = readEditSheet(
+      reply([{ at: 1.2, kind: 'punch', what: 'punch in tight on speaker' }]), context(),
+    );
+    expect(ops[0].what).toBe('punch in tight on speaker');
+  });
+
+  it('still refuses a cutaway with nothing to generate', () => {
+    /* The kind does not say what to make, so there is nothing to hand a video
+       model. Same for a sound with no name — nothing to go and find. */
+    const { ops, dropped } = readEditSheet(
+      reply([
+        { at: 2, seconds: 2, kind: 'broll', what: '' },
+        { at: 4, kind: 'sfx', what: '  ' },
+        { at: 6, kind: 'text', what: '' },
+      ]),
+      context({ mode: 'explainer' }),
+    );
+    expect(ops).toHaveLength(0);
+    expect(dropped).toHaveLength(3);
+  });
+});
