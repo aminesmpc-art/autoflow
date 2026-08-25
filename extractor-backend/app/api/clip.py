@@ -312,6 +312,20 @@ class AskRequest(BaseModel):
 class AskResponse(BaseModel):
     text: str
     model: str
+    """How many attachments this server actually put in front of the model.
+
+    Here so a caller can tell an answer about its stills from an answer about
+    nothing. A build of this service that predates attachments ignores the
+    field entirely — Pydantic drops unknown keys — and answers the prompt as
+    plain text, so "where is the speaker in each of these 8 stills" comes back
+    with eight confident positions for images the model never saw.
+
+    Observed in production, not imagined: during the rolling deploy that
+    shipped attachments, one instance returned 415 for a video and the other
+    answered it. The extension and this service deploy separately, so a client
+    ahead of its server is the normal state, not the exception.
+    """
+    attachments_received: int = 0
 
 
 def _decode_attachments(raw: list[str]) -> list[tuple[bytes, str]]:
@@ -476,7 +490,9 @@ async def ask_model(
     if not text:
         raise HTTPException(status_code=502, detail="The model returned nothing.")
 
-    return AskResponse(text=text, model=clip_model())
+    return AskResponse(
+        text=text, model=clip_model(), attachments_received=len(attachments)
+    )
 
 
 @router.get("/model")

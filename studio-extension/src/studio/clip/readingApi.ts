@@ -306,7 +306,29 @@ export async function askOnServer(
     throw new Error(message);
   }
 
-  const body = (await response.json()) as { text?: string };
+  const body = (await response.json()) as { text?: string; attachments_received?: number };
+
+  /* An answer about the attachments, or an answer about nothing.
+     A build of the service that predates attachments ignores the field — the
+     server's model drops unknown keys — and answers the prompt as plain text.
+     "Where is the speaker in each of these 8 stills" then comes back with
+     eight confident positions for images the model never saw, which is a
+     fabricated answer wearing the shape of a real one.
+
+     Observed during the rolling deploy that shipped attachments: one instance
+     refused a video and the other answered it. The extension ships through a
+     store review and the service deploys on a push, so a client ahead of its
+     server is the normal state.
+
+     Unavailable rather than an error, because it is precisely "this server
+     cannot do this" — so the caller falls back to the chat, which CAN carry
+     the attachments, instead of failing the run. */
+  if (attachments.length && Number(body?.attachments_received) !== attachments.length) {
+    throw new ReadingUnavailable(
+      'this server answered without looking at the attachment',
+    );
+  }
+
   const text = String(body?.text || '').trim();
   /* An empty answer parses to no clips, which the survey reads as "nothing in
      this video is worth posting" — a wrong answer wearing the shape of a
