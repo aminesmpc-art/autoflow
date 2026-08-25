@@ -1,5 +1,5 @@
 /**
- * The five stages, wired to real asks.
+ * The stages, wired to real asks, and the single cut that runs on its own.
  *
  * These tests assert what was SENT, not only what came back. That is where
  * this pipeline's failures live: the reply always parses, so the interesting
@@ -8,18 +8,21 @@
  * repair round was spent before giving up, and whether a stage refused before
  * spending an encode on input it already knew was wrong.
  *
+ * The node surveys; it no longer cuts. What used to be tested here as three
+ * more stages — choose the window, cut it, direct the beats over it — is now
+ * one Cut node per moment, so those claims are tested against runOneCut.
+ *
  * Every media operation is faked. Not to make the tests easy — decode and
  * encode need WebCodecs, which does not exist here — but the orchestration is
  * the part with the judgement in it, and it is fully reachable this way.
  */
 
 import {
-  ingestStage, transcribeStage, windowStage, cutStage, beatsStage,
-  type ClipDeps, type ClipConfig, type ProbeLike, type WindowResult, type CutStageResult,
+  ingestStage, transcribeStage, surveyStage,
+  type ClipDeps, type ClipConfig, type ProbeLike,
   stagesToSkip,
-  runOneCut, surveyStage,
+  runOneCut,
 } from '../studio/clip/runClip';
-import { LOCATE_SENTINEL } from '../studio/ask/clipperBrain';
 
 /* ------------------------------------------------------------------ */
 
@@ -229,303 +232,19 @@ describe('transcribe', () => {
 
 /* ------------------------------------------------------------------ */
 
-describe('choosing the moment', () => {
-  const pick = JSON.stringify({ hook_line: HOOK, closing_line: CLOSE });
-  const at = (n: number) => JSON.stringify({ start_seconds: n });
-
-  it('locates each boundary twice, narrowing the second time', async () => {
-    /* The two-stage narrowing. A chunk-wide ask lands near a second; a minute
-       cut around that answer is the regime that scored 0.68s. One ask would
-       be "about right", which is a clip that opens mid-word. */
-    const h = harness({ replies: [pick, at(120), at(30), at(300), at(30)] });
-    await windowStage(h.deps, h.cfg)(TRANSCRIPT);
-    const locating = h.sent.filter((s) => /At what second/.test(s.message));
-    expect(locating).toHaveLength(4);            // two lines, two passes each
-    for (const s of locating) expect(s.attachments).toBe(1);
-  });
-
-  it('narrows to a shorter span on the second pass', async () => {
-    const h = harness({ replies: [pick, at(120), at(30), at(300), at(30)] });
-    await windowStage(h.deps, h.cfg)(TRANSCRIPT);
-    const spans = h.media.audioSpans.map(([a, b]) => b - a);
-    expect(Math.min(...spans)).toBeLessThanOrEqual(60);
-    expect(Math.max(...spans)).toBeGreaterThan(60);
-  });
-
-  it('locates the END rather than estimating it from word count', async () => {
-    /* A window whose length came from counting words ends mid-sentence
-       whenever the speaker slows down.
-     *
-       The arithmetic, because it is easy to get wrong and I did: the coarse
-       ask answers against the whole chunk, then a 60s window is cut around
-       that answer and the SECOND answer is relative to THAT window. So a
-       coarse 120 narrows to [90,150], and a fine 30 means 90+30 = 120 — not
-       30. The first version of this test asserted 30 and accused the code. */
-    const h = harness({ replies: [pick, at(120), at(30), at(175), at(25)] });
-    const out = await windowStage(h.deps, h.cfg)(TRANSCRIPT) as WindowResult;
-    expect(out.startSec).toBeCloseTo(120, 0);              // 90 + 30
-    /* Close: coarse 175 -> window [145,205], fine 25 -> 170, plus how long
-       the closing line takes to say. Not start + estimate. */
-    expect(out.endSec).toBeGreaterThan(170);
-    expect(out.endSec).toBeLessThan(180);
-  });
-
-  it('spends one repair round on a paraphrased pick, then succeeds', async () => {
-    /* A model that paraphrases the hook answered from an impression of the
-       transcript, so its span is a guess too. Worth one more ask. */
-    const bad = JSON.stringify({ hook_line: 'the property sector is collapsing', closing_line: CLOSE });
-    const h = harness({ replies: [bad, pick, at(120), at(30), at(300), at(30)] });
-    const out = await windowStage(h.deps, h.cfg)(TRANSCRIPT) as WindowResult;
-    expect(out).toBeTruthy();
-    expect(h.sent[1].message).toMatch(/word for word/i);
-  });
-
-  it('refuses after the repair round rather than cutting on a guess', async () => {
-    const bad = JSON.stringify({ hook_line: 'nothing like this', closing_line: 'nor this' });
-    const h = harness({ replies: [bad, bad] });
-    await expect(windowStage(h.deps, h.cfg)(TRANSCRIPT)).rejects.toThrow(/does not match the transcript|No usable moment/);
-  });
-
-  it('refuses when the opening line cannot be found in the audio', async () => {
-    const h = harness({ replies: [pick, '', ''] });
-    await expect(windowStage(h.deps, h.cfg)(TRANSCRIPT)).rejects.toThrow(/could not be found in the audio/);
-  });
-
-  it('treats a sentinel echo as no answer', async () => {
-    /* The measured prompt failure: an example value copied back verbatim. */
-    const h = harness({ replies: [pick, JSON.stringify({ start_seconds: LOCATE_SENTINEL })] });
-    await expect(windowStage(h.deps, h.cfg)(TRANSCRIPT)).rejects.toThrow(/could not be found/);
-  });
-});
-
-/* ------------------------------------------------------------------ */
-
-describe('cutting', () => {
-  const win: WindowResult = { window: {} as any, startSec: 100, endSec: 160, text: CLIP_TEXT };
-
-  it('snaps both boundaries onto a pause before encoding', async () => {
-    /* The buffer spans target±1.5s with its pause at 0.9-1.3s into it, so the
-       middle of that pause is 0.4s BEFORE the asked-for moment. A working
-       snap moves the boundary there; no snap leaves it where it was. */
-    const h = harness({ replies: [JSON.stringify({ positions: [{ n: 1, x: 0.5 }] })] });
-    const out = await cutStage(h.deps, h.cfg)(win, undefined) as CutStageResult;
-    expect(out.startSec).toBeCloseTo(win.startSec - 0.4, 1);
-    expect(out.endSec).toBeCloseTo(win.endSec - 0.4, 1);
-    expect(h.logs.join(' ')).toMatch(/clip start: snapped/);
-    expect(h.logs.join(' ')).toMatch(/clip end: snapped/);
-  });
-
-  it('asks where the speaker is ONCE, with every still attached', async () => {
-    /* One ask carrying eight stills, not eight asks carrying one. */
-    const h = harness({ replies: [JSON.stringify({ positions: [{ n: 1, x: 0.4 }, { n: 2, x: 0.4 }] })] });
-    await cutStage(h.deps, h.cfg)(win, undefined);
-    const faceAsks = h.sent.filter((s) => /horizontal position/.test(s.message));
-    expect(faceAsks).toHaveLength(1);
-    expect(faceAsks[0].attachments).toBeGreaterThan(1);
-  });
-
-  it('samples the stills from inside the chosen clip, not the whole file', async () => {
-    const h = harness({ replies: ['{}'] });
-    await cutStage(h.deps, h.cfg)(win, undefined);
-    const times = h.media.frameTimes[0];
-    for (const t of times) {
-      expect(t).toBeGreaterThanOrEqual(win.startSec);
-      expect(t).toBeLessThanOrEqual(win.endSec + 1);
-    }
-  });
-
-  it('skips the reframe on a source that is already vertical', async () => {
-    const h = harness({ probe: { alreadyVertical: true }, replies: [] });
-    const out = await cutStage(h.deps, h.cfg)(win, undefined) as CutStageResult;
-    expect(h.sent.filter((s) => /horizontal position/.test(s.message))).toHaveLength(0);
-    expect(out.reframe).toBe('none');
-    expect(h.logs.join(' ')).toMatch(/already vertical/);
-  });
-
-  it('fits the whole frame when it cannot tell where the speaker is', async () => {
-    /* This centre-cropped, on the reasoning that a wrong static crop is still
-       a clip someone can post. A real trading video disproved it: with nobody
-       on camera, a 9:16 crop of a 640-wide chart keeps 202 pixels and loses
-       the axes, and one clip came back as blank whiteboard. */
-    const h = harness({ replies: ['I could not identify a speaker.'] });
-    const out = await cutStage(h.deps, h.cfg)(win, undefined) as CutStageResult;
-    expect(out.reframe).toBe('fit');
-  });
-
-  it('keeps the finished clip somewhere node data can point at', async () => {
-    const h = harness({ replies: ['{}'] });
-    const out = await cutStage(h.deps, h.cfg)(win, undefined) as CutStageResult;
-    expect(h.stored.has(out.mediaKey)).toBe(true);
-  });
-
-  it('refuses if snapping collapses the clip', async () => {
-    const h = harness({ replies: ['{}'] });
-    /* Both boundaries snap to the same pause, so a clip whose end was already
-       level with its start comes back with no length at all. Refusing beats
-       handing the encoder a zero-length range. */
-    await expect(
-      cutStage(h.deps, h.cfg)({ ...win, endSec: win.startSec }, undefined),
-    ).rejects.toThrow(/no length/);
-  });
-});
-
-/* ------------------------------------------------------------------ */
-
-describe('directing the beats', () => {
-  const cut: CutStageResult = {
-    mediaKey: 'k', startSec: 100, endSec: 130, clipSeconds: 30,
-    width: 608, height: 1080, reframe: 'locked', report: '',
-  };
-
-  it('sends the clip AUDIO up with the ask', async () => {
-    /* The Editor is deciding when to cut away from a face, and what decides
-       it is delivery — where the speaker leans in, pauses before the
-       punchline. A transcript cannot carry that. */
-    const h = harness({ replies: [beatsReply(30)] });
-    await beatsStage(h.deps, h.cfg, () => CLIP_TEXT)(cut);
-    const ask = h.sent.find((s) => /a-roll/.test(s.message));
-    expect(ask).toBeDefined();
-    expect(ask!.attachments).toBe(1);
-    expect(h.media.audioSpans).toContainEqual([100, 130]);
-  });
-
-  it('returns the beats when they tile the clip', async () => {
-    const h = harness({ replies: [beatsReply(30)] });
-    const out = await beatsStage(h.deps, h.cfg, () => CLIP_TEXT)(cut) as any;
-    expect(out.beats).toHaveLength(3);
-    expect(out.beats[2].end).toBe(30);
-  });
-
-  it('spends one repair round on a map with a hole in it', async () => {
-    /* A gap is a stretch of finished video with nothing assigned to it —
-       invisible in the reply, fatal at the end of a run. */
-    const holed = JSON.stringify({
-      beats: [
-        { n: 1, start: 0, end: 6, edit: 'a-roll', caption: HOOK },
-        { n: 2, start: 20, end: 30, edit: 'a-roll', caption: CLOSE },
-      ],
-    });
-    const h = harness({ replies: [holed, beatsReply(30)] });
-    const out = await beatsStage(h.deps, h.cfg, () => CLIP_TEXT)(cut) as any;
-    expect(h.sent[1].message).toMatch(/cannot be built as written/);
-    expect(out.beats).toHaveLength(3);
-  });
-
-  it('refuses after the repair round rather than shipping a holed map', async () => {
-    const holed = JSON.stringify({
-      beats: [{ n: 1, start: 0, end: 6, edit: 'a-roll', caption: HOOK }],
-    });
-    const h = harness({ replies: [holed, holed] });
-    await expect(beatsStage(h.deps, h.cfg, () => CLIP_TEXT)(cut)).rejects.toThrow(/cannot be built/);
-  });
-
-  it('passes advisories through instead of failing on them', async () => {
-    /* Opening on a graphic is a preference, not a defect. Blocking on taste
-       is how a repair loop spends its rounds arguing. */
-    const opensOnGraphic = JSON.stringify({
-      beats: [
-        {
-          n: 1, start: 0, end: 8, edit: 'b-roll', caption: HOOK,
-          still_prompt: 'a paper chart on cream', motion_prompt: 'it grows',
-        },
-        { n: 2, start: 8, end: 30, edit: 'a-roll', caption: CLOSE },
-      ],
-    });
-    const h = harness({ replies: [opensOnGraphic] });
-    const out = await beatsStage(h.deps, h.cfg, () => CLIP_TEXT)(cut) as any;
-    expect(out.beats).toHaveLength(2);
-    expect(out.advisories.join(' ')).toMatch(/opens on a graphic|talking head/);
-  });
-});
-
-/* ------------------------------------------------------------------ */
-
-describe('campaign mode', () => {
-  const pick = JSON.stringify({ moment: 2, hook_line: HOOK, closing_line: CLOSE });
-  const at = (n: number) => JSON.stringify({ start_seconds: n });
-
-  /** Loud-and-varied in the middle, quiet either side, so peaks exist. */
-  const dynamic = (target: number, radius: number) => {
-    const rate = 16000;
-    const n = Math.round(rate * radius * 2);
-    const s = new Float32Array(n);
-    let seed = 7;
-    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return (seed / 0xffffffff) * 2 - 1; };
-    for (let i = 0; i < n; i++) {
-      const t = target - radius + i / rate;
-      /* A busy stretch between 300 and 360 seconds, calm elsewhere. */
-      const loud = t > 300 && t < 360;
-      const swing = loud && Math.floor(t * 0.7) % 2 === 0;
-      s[i] = rnd() * (loud ? (swing ? 0.85 : 0.2) : 0.12);
-    }
-    return { samples: s, sampleRate: rate, startSec: target - radius };
-  };
-
-  function campaignHarness(replies: string[]) {
-    const h = harness({ replies });
-    h.deps.media.pcmAround = async (_f, target, radius) => dynamic(target, radius);
-    return h;
-  }
-
-  it('shortlists from the audio and asks the model to choose', async () => {
-    /* The division that matters. Asked to find a moment in a transcript
-       alone, a model reaches for the most quotable sentence — which in a
-       chase video is the narration, the calmest part of the recording. */
-    const h = campaignHarness([pick, at(120), at(30), at(175), at(25)]);
-    await windowStage(h.deps, { ...h.cfg, mode: 'campaign' })(TRANSCRIPT);
-    const ask = h.sent[0].message;
-    expect(ask).toMatch(/MOMENT 1/);
-    expect(ask).toMatch(/shortlisted from the audio/);
-    expect(ask).not.toMatch(/HOOK \(first/);      // not the explainer ask
-  });
-
-  it('puts the campaign rules in front of the model', async () => {
-    const h = campaignHarness([pick, at(120), at(30), at(175), at(25)]);
-    await windowStage(h.deps, {
-      ...h.cfg, mode: 'campaign',
-      campaignRules: 'Do not use any logos, hashtags, watermarks, or unaffiliated content.',
-    })(TRANSCRIPT);
-    expect(h.sent[0].message).toMatch(/logos, hashtags, watermarks/);
-  });
-
-  it('still demands the boundaries as verbatim quotes', async () => {
-    /* Same reply shape as the explainer ask, so the same checking applies.
-       A campaign clip that opens mid-word is the "low quality post" a brief
-       rejects. */
-    const h = campaignHarness([pick, at(120), at(30), at(175), at(25)]);
-    await windowStage(h.deps, { ...h.cfg, mode: 'campaign' })(TRANSCRIPT);
-    expect(h.sent[0].message).toMatch(/WORD FOR WORD/);
-    expect(h.sent[0].message).toMatch(/mid-sentence/);
-  });
-
-  it('still refuses a paraphrased pick', async () => {
-    const bad = JSON.stringify({ moment: 1, hook_line: 'nothing like this', closing_line: 'nor this' });
-    const h = campaignHarness([bad, bad]);
-    await expect(windowStage(h.deps, { ...h.cfg, mode: 'campaign' })(TRANSCRIPT))
-      .rejects.toThrow(/does not match the transcript|No usable moment/);
-  });
-
-  it('falls back to reading the transcript when the audio has no dynamics', async () => {
-    /* A lecture, or a badly levelled export. Refusing outright would be worse
-       than choosing the way the explainer does. */
-    const h = harness({ replies: [JSON.stringify({ hook_line: HOOK, closing_line: CLOSE }), at(120), at(30), at(175), at(25)] });
-    h.deps.media.pcmAround = async (_f, target, radius) => ({
-      samples: new Float32Array(16000 * radius * 2).fill(0.3),
-      sampleRate: 16000,
-      startSec: target - radius,
-    });
-    await windowStage(h.deps, { ...h.cfg, mode: 'campaign' })(TRANSCRIPT);
-    expect(h.sent[0].message).toMatch(/HOOK/);
-    expect(h.logs.join(' ')).toMatch(/no peaks in the audio/);
-  });
-
+describe('what campaign mode still decides', () => {
   /* Campaign mode used to skip the beats stage, because a brief forbidding
      "content that is not affiliated with this campaign" forbids a generated
      graphic. The rule survives; the stage does not. It is now enforced where
      the decision is actually made — surveyAsk does not OFFER B-roll under a
      campaign, and emitPlan drops any that arrives anyway. Both are tested in
-     emitPlan.test.ts, which is where this claim went. */
-  it('skips nothing, in either mode', async () => {
+     emitPlan.test.ts, which is where this claim went.
+
+     What used to sit here besides this was five tests of the window stage's
+     campaign branch — the audio shortlist, the rules in the prompt, the
+     verbatim-quote demand. That stage is gone: the moment is chosen by the
+     survey now, and those claims are tested against surveyStage. */
+  it('skips nothing, in either mode', () => {
     expect(stagesToSkip({ sourceKey: 'x', mode: 'campaign' })).toEqual({});
     expect(stagesToSkip({ sourceKey: 'x', mode: 'explainer' })).toEqual({});
     expect(stagesToSkip({ sourceKey: 'x' })).toEqual({});
@@ -972,5 +691,79 @@ describe('the asks a cut cannot avoid go to the API, not to a chat tab', () => {
       runOneCut(h.deps, { ...UNLOCATED, readOnServer: true }),
     ).rejects.toThrow(/out of video readings/);
     expect(h.sent).toHaveLength(0);
+  });
+});
+
+
+/* ------------------------------------------------------------------ */
+
+describe('captions are timed against the clip that was actually encoded', () => {
+  /* The reported bug: "the caption not follow the voice at all".
+
+     Cue times used to be worked out when the cut was laid out, from the second
+     the reading placed the clip at. But a cut moves before a frame is encoded —
+     it snaps each boundary to the nearest silence, and if the closing line was
+     not found exactly it re-locates both ends from the audio entirely. The words
+     stayed timed from a number that had already been thrown away.
+
+     These assert against what reaches the ENCODER, because that is the only
+     place the two timelines have to agree. */
+
+  const PHRASES = [
+    { start: 100, end: 104, text: 'the first thing said here' },
+    { start: 104, end: 108, text: 'and then the second thing' },
+  ];
+
+  it('hands the encoder cues relative to the snapped start, not the planned one', async () => {
+    const h = harness();
+    await runOneCut(h.deps, {
+      sourceKey: 'p',
+      hookLine: 'Look at these straw bales right here',
+      closingLine: 'Darius has already been arrested',
+      startSec: 100, endSec: 108,
+      captionPhrases: PHRASES,
+      readOnServer: false,
+    });
+
+    const cut = h.media.cuts[0];
+    expect(cut.captions?.length).toBeGreaterThan(0);
+
+    /* The harness puts a pause just before the middle of every window it is
+       asked about, so both boundaries snap slightly earlier. The first word is
+       spoken at 100 and the clip now begins before it — so its cue must start
+       AFTER zero, by exactly the amount the boundary moved. */
+    const shift = 100 - cut.startSec;
+    expect(shift).toBeGreaterThan(0);
+    expect(cut.captions[0].startSec).toBeCloseTo(shift, 1);
+  });
+
+  it('never lets a cue start before the clip does', async () => {
+    const h = harness();
+    await runOneCut(h.deps, {
+      sourceKey: 'p',
+      hookLine: 'Look at these straw bales right here',
+      closingLine: 'Darius has already been arrested',
+      startSec: 102, endSec: 108,
+      /* A phrase that began before this clip. Its tail is still heard, so it
+         is captioned — but from the top of the clip, never from before it. */
+      captionPhrases: PHRASES,
+      readOnServer: false,
+    });
+
+    for (const cue of h.media.cuts[0].captions || []) {
+      expect(cue.startSec).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('burns nothing in when the words were not carried', async () => {
+    const h = harness();
+    await runOneCut(h.deps, {
+      sourceKey: 'p',
+      hookLine: 'Look at these straw bales right here',
+      closingLine: 'Darius has already been arrested',
+      startSec: 100, endSec: 108,
+      readOnServer: false,
+    });
+    expect(h.media.cuts[0].captions).toEqual([]);
   });
 });

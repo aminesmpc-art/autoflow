@@ -656,11 +656,11 @@ export interface OneCutConfig {
   faces?: Array<{ t: number; x: number }>;
   /** The reading looked and found nobody on camera. Fit, do not ask. */
   noSpeaker?: boolean;
-  /* The words to burn into the picture, timed against this clip. Computed
-     once when the cut was laid out, from the reading that was already in hand,
-     so a cut node carries its own captions and needs nothing at run time.
+  /* The spoken phrases, in the VIDEO's own seconds. Turned into cue times
+     below, once the clip's real boundaries are known — see emitPlan for what
+     went wrong when they were worked out any earlier.
      About 85% of short-form views happen with the sound off. */
-  captions?: Array<{ startSec: number; endSec: number; text: string }>;
+  captionPhrases?: Array<{ start: number; end: number; text: string }>;
   /* Where the two fallback asks go when the reading could not answer them.
      Inherited from the Clipping node that laid this cut out, so a director set
      to the chat does not quietly emit nine nodes that use the API. Defaults on
@@ -801,9 +801,16 @@ export async function runOneCut(
     deps.log?.(`reframe: ${plan.why}`);
   }
 
-  const captions = (cfg.captions || []).filter(
-    (c) => c && Number.isFinite(c.startSec) && Number.isFinite(c.endSec) && c.endSec > c.startSec,
+  /* Cue times, worked out HERE and nowhere earlier.
+     startSec and endSec above are the snapped, possibly re-located boundaries
+     the encoder is about to use. Timing the words against anything else — the
+     planned second, the candidate second — is what made the captions run
+     ahead of the voice. */
+  const phrases = (cfg.captionPhrases || []).filter(
+    (p) => p && Number.isFinite(p.start) && Number.isFinite(p.end) && p.end > p.start,
   );
+  const { cuesForClip } = await import('../media/captions');
+  const captions = phrases.length ? cuesForClip(phrases, startSec, endSec) : [];
   if (captions.length) deps.log?.(`burning in ${captions.length} caption cues`);
 
   const out = await deps.media.cut(file, { startSec, endSec, plan, captions });
