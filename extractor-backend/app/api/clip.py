@@ -186,18 +186,62 @@ def _open_source(video_path: str, say) -> tuple[Any, Any, Any]:
 # ──────────────────────────────────────────────────────────────────────────
 
 
+def _track_faces_quietly(video_path: str, say) -> list:
+    """
+    Where the speaker is, or nothing at all.
+
+    Never raises. A reading that comes back with words, timings and scenes but
+    no face track is still a good reading — the caller falls back to asking a
+    model per clip, which is what it did before this existed. Failing the whole
+    job because a codec was unusual would trade the expensive, working part for
+    the cheap, optional one.
+    """
+    from app.clip_analysis import TrackedFace
+    from app.face_track import FaceTrackingUnavailable, track_faces
+
+    try:
+        points = track_faces(video_path, on_progress=say)
+    except FaceTrackingUnavailable as exc:
+        say(f"not tracking faces: {exc}")
+        return []
+    except Exception as exc:                                   # noqa: BLE001
+        say(f"face tracking failed: {exc}")
+        return []
+
+    return [
+        TrackedFace(t=round(p.t, 3), x=round(p.x, 4), size=round(p.size, 4), weight=p.weight)
+        for p in points
+    ]
+
+
 async def _run_job(job_id: str, video_path: str, duration_sec: float) -> None:
     def say(line: str) -> None:
         jobs[job_id]["step"] = line
 
     cleanup = None
+    faces_task = None
     try:
         jobs[job_id]["status"] = "processing"
+
+        # Started first and awaited last. Tracking faces is CPU work on the file
+        # already sitting on this disk, and everything after it here is spent
+        # waiting on a network — uploading the video, then the model reading it.
+        # Run in sequence it would add half a minute to a twenty minute video;
+        # run alongside, it lands inside time already being spent.
+        faces_task = asyncio.create_task(
+            asyncio.to_thread(_track_faces_quietly, video_path, say)
+        )
+
         client, source, cleanup = await asyncio.to_thread(_open_source, video_path, say)
 
         reading = await read_video(
             client, source, duration_sec, model=clip_model(), on_progress=say
         )
+
+        reading.faces = await faces_task
+        faces_task = None
+        if reading.faces:
+            say(f"tracked the speaker across {len(reading.faces)} frames")
 
         jobs[job_id].update(
             status="completed", step="done", result=reading.model_dump()
@@ -207,6 +251,15 @@ async def _run_job(job_id: str, video_path: str, duration_sec: float) -> None:
     except Exception as exc:                                   # noqa: BLE001
         jobs[job_id].update(status="failed", step="failed", error=str(exc))
     finally:
+        # Before the file is removed, always. A cancelled read leaves the
+        # tracker mid-decode, and deleting the video underneath it turns a
+        # failed reading into a crash in a thread nobody is watching.
+        if faces_task is not None:
+            faces_task.cancel()
+            try:
+                await faces_task
+            except (asyncio.CancelledError, Exception):         # noqa: BLE001
+                pass
         if cleanup:
             await asyncio.to_thread(cleanup)
         try:

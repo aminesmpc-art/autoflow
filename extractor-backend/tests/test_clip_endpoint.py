@@ -19,7 +19,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api import clip as clip_api
-from app.clip_analysis import ClipReading, TimedScene, TimedSegment
+from app.clip_analysis import ClipReading, TimedScene, TimedSegment, TrackedFace
+
+clip_api_face = TrackedFace
 from app.main import app
 
 
@@ -429,6 +431,117 @@ class TestAnswersAboutNothing:
         and honest on the plain-text path too."""
         r = client.post("/api/clip/ask", json={"prompt": "rank these"})
         assert r.json()["attachments_received"] == 0
+
+
+class TestFaceTrackOnTheRead:
+    """The track rides along with the reading that was happening anyway.
+
+    It is CPU work on a file already on this disk, and everything else in the
+    job is spent waiting on a network — the upload, then the model. Run in
+    sequence it would add about half a minute to a twenty minute video; run
+    alongside, it lands inside time already being spent."""
+
+    def test_returns_the_track_with_the_reading(self, client, stub_read, monkeypatch):
+        monkeypatch.setattr(
+            clip_api, "_track_faces_quietly",
+            lambda path, say: [clip_api_face(t=0.0, x=0.34), clip_api_face(t=0.5, x=0.58)],
+        )
+        name, data, mime = a_video()
+        r = client.post(
+            "/api/clip/read", files={"file": (name, data, mime)},
+            data={"duration_sec": "240.0"},
+        )
+        status = client.get(f"/api/clip/status/{r.json()['job_id']}").json()
+        assert status["status"] == "completed"
+        assert [f["x"] for f in status["result"]["faces"]] == [0.34, 0.58]
+
+    def test_a_reading_still_succeeds_when_tracking_cannot_run(self, client, stub_read, monkeypatch):
+        """Words, timings and scenes are the expensive part and they worked.
+        Failing the job because a codec was unusual would throw away the
+        working half for the optional one — the caller just asks a model per
+        clip instead, which is what it did before this existed."""
+        def unavailable(path, say):
+            return []
+
+        monkeypatch.setattr(clip_api, "_track_faces_quietly", unavailable)
+        name, data, mime = a_video()
+        r = client.post(
+            "/api/clip/read", files={"file": (name, data, mime)},
+            data={"duration_sec": "240.0"},
+        )
+        status = client.get(f"/api/clip/status/{r.json()['job_id']}").json()
+        assert status["status"] == "completed"
+        assert status["result"]["faces"] == []
+        assert status["result"]["segments"]          # the reading itself survived
+
+    def test_the_video_is_still_there_while_it_is_being_tracked(self, client, stub_read, monkeypatch):
+        """The job deletes the upload when it finishes. Deleting it out from
+        under a decode in a worker thread turns a slow read into a crash
+        nobody is watching."""
+        seen = {}
+
+        def check(path, say):
+            seen["existed"] = os.path.exists(path)
+            return []
+
+        monkeypatch.setattr(clip_api, "_track_faces_quietly", check)
+        name, data, mime = a_video()
+        client.post(
+            "/api/clip/read", files={"file": (name, data, mime)},
+            data={"duration_sec": "240.0"},
+        )
+        assert seen["existed"] is True
+        assert not os.path.exists(stub_read["path"])
+
+    def test_a_failed_reading_does_not_leave_the_tracker_running(self, client, monkeypatch):
+        """Nothing may outlive the job and touch the file after it is gone."""
+        def boom(path, say):
+            raise RuntimeError("no credentials on this server")
+
+        monkeypatch.setattr(clip_api, "_open_source", boom)
+        monkeypatch.setattr(clip_api, "_track_faces_quietly", lambda path, say: [])
+        name, data, mime = a_video()
+        r = client.post(
+            "/api/clip/read", files={"file": (name, data, mime)},
+            data={"duration_sec": "240.0"},
+        )
+        status = client.get(f"/api/clip/status/{r.json()['job_id']}").json()
+        assert status["status"] == "failed"
+
+
+class TestTrackFacesQuietly:
+    """The wrapper that must never take a reading down with it."""
+
+    def test_returns_nothing_when_the_detector_is_missing(self, monkeypatch):
+        from app import face_track
+
+        def unavailable(*a, **kw):
+            raise face_track.FaceTrackingUnavailable("opencv is not installed")
+
+        monkeypatch.setattr(face_track, "track_faces", unavailable)
+        assert clip_api._track_faces_quietly("/nope.mp4", lambda _: None) == []
+
+    def test_swallows_anything_else_the_decoder_throws(self, monkeypatch):
+        from app import face_track
+
+        def boom(*a, **kw):
+            raise ValueError("some codec surprise")
+
+        monkeypatch.setattr(face_track, "track_faces", boom)
+        assert clip_api._track_faces_quietly("/nope.mp4", lambda _: None) == []
+
+    def test_says_why_it_gave_up(self, monkeypatch):
+        """Silence here reads as "there was nobody on camera", which is the
+        exact confusion that broke framing once already."""
+        from app import face_track
+
+        def boom(*a, **kw):
+            raise ValueError("some codec surprise")
+
+        monkeypatch.setattr(face_track, "track_faces", boom)
+        said = []
+        clip_api._track_faces_quietly("/nope.mp4", said.append)
+        assert any("face tracking failed" in line for line in said)
 
 class TestStatusAndModel:
     def test_unknown_job_is_a_404_not_an_empty_success(self, client):

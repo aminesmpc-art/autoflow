@@ -233,12 +233,30 @@ class TimedScene(BaseModel):
     on_screen_text: Optional[str] = None
 
 
+class TrackedFace(BaseModel):
+    """One sample of where the person talking is, measured rather than asked.
+
+    Produced by app.face_track, which runs while the model is reading the same
+    file. See that module for why the scenes' own speaker_x could not do this
+    job: measured on the same footage it answered for 0 of 8 scenes, while this
+    agrees with a dedicated model ask to 0.009 of frame width.
+    """
+    t: float
+    x: float
+    size: float = 0.0
+    weight: float = 0.0
+
+
 class ClipReading(BaseModel):
     duration_sec: float
     language: str = "en"
     summary: str = ""
     segments: list[TimedSegment] = Field(default_factory=list)
     scenes: list[TimedScene] = Field(default_factory=list)
+    """Where the speaker is over time, about twice a second. Empty when this
+    server cannot track faces, which the caller must treat as "not measured"
+    rather than as "nobody on camera"."""
+    faces: list[TrackedFace] = Field(default_factory=list)
     """Why anything was thrown away. Empty is the normal case."""
     dropped: list[str] = Field(default_factory=list)
     model: str = CLIP_MODEL

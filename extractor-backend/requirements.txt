@@ -21,3 +21,13 @@ yt-dlp>=2024.1.0
 httpx>=0.27.0
 aiofiles>=24.0.0
 json-repair>=0.30.0
+
+# Face detection for vertical reframing, plus the video decoding to feed it.
+# headless because this server has no display: the GUI build pulls libGL and
+# friends, which a slim image does not have and does not want.
+#
+# It replaces a model call per clip. Measured on the same footage: the
+# whole-video reading answered where the speaker was for 0 of 8 scenes, a
+# dedicated model ask was right but cost 18.6s per clip, and this agrees with
+# that ask to 0.009 of frame width at 14.8ms per frame.
+opencv-python-headless>=4.9.0
