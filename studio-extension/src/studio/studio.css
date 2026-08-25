@@ -3405,7 +3405,69 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   max-height: 220px;
   overflow-y: auto;
 }
-.sn-clip__moment { display: flex; gap: var(--s-2); align-items: flex-start; }
+.sn-clip__moment {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.sn-clip__moment-head { display: flex; gap: var(--s-2); align-items: center; }
+
+/* The score, with the line it had to clear.
+   A number alone leaves a clipper guessing whether 62 is good; the survey
+   posts above 60, so the bar shows where that sits. Colour is a second
+   channel on the same fact, never the only one — the number is always
+   readable on its own. */
+.sn-clip__score { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.sn-clip__score-bar {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  min-width: 0;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.sn-clip__score-fill { display: block; height: 100%; border-radius: 999px; background: currentColor; }
+.sn-clip__score-num {
+  flex: 0 0 auto;
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+  color: currentColor;
+}
+.sn-clip__score--high { color: var(--ok); }
+.sn-clip__score--ok { color: var(--warn); }
+.sn-clip__score--low { color: var(--bad); }
+
+/* What to write when posting it — computed by the reply that judged the clip
+   and, until now, thrown away before it reached the screen. */
+.sn-clip__caption {
+  font-size: var(--t-micro);
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+/* What the read came back with. The face count is the load-bearing part: a
+   read that tracked nobody frames every clip on a blurred backdrop instead of
+   cropping to the speaker, and that is invisible until you watch the output. */
+.sn-clip__read {
+  margin: 0 var(--s-2) var(--s-2);
+  padding: 5px var(--s-2);
+  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: var(--t-micro);
+  color: var(--text-3);
+}
+.sn-clip__read--untracked {
+  color: var(--warn);
+  border-color: var(--warn-16);
+  background: var(--warn-16);
+}
 .sn-clip__moment-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .sn-clip__rank {
   flex: 0 0 auto;

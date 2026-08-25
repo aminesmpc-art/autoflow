@@ -99,7 +99,19 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
   const lines = describeRun(run);
 
   const survey = resultOf<{
-    moments?: Array<{ rank: number; hookLine: string; closingLine: string; why: string }>;
+    /* score, title and pillars were computed on every run and thrown away
+       here, so the node showed a rank and a quote for a clip it had already
+       judged out of 100 and written a caption for. Judging a clip is the one
+       thing this panel is for. */
+    moments?: Array<{
+      rank: number;
+      hookLine: string;
+      closingLine: string;
+      why: string;
+      score?: number;
+      title?: string;
+      pillars?: Record<string, number>;
+    }>;
     wanted?: number;
     dropped?: string[];
   }>(run, 'survey');
@@ -114,8 +126,26 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
   /* Why the slow path was taken, if it was. Persisted on the transcribe
      result rather than logged, because a log line is overwritten by the next
      one and this is the most actionable thing a run can tell you. */
-  const transcribed = resultOf<{ fallback?: string }>(run, 'transcribe');
+  const transcribed = resultOf<{
+    fallback?: string;
+    reading?: { segments?: unknown[]; scenes?: unknown[]; faces?: unknown[] };
+  }>(run, 'transcribe');
   const fallback: string = transcribed?.fallback || '';
+
+  /* What the read came back with, in the node rather than in a log line that
+     the next one overwrites. The face count is the load-bearing part: a read
+     that tracked nobody frames every clip on a blurred backdrop instead of
+     cropping to the speaker, and that failure is invisible until you watch
+     the finished clips. */
+  const reading = transcribed?.reading;
+  const tracked = reading?.faces?.length ?? 0;
+  const readSummary: string = reading
+    ? [
+      `${reading.segments?.length ?? 0} phrases`,
+      `${reading.scenes?.length ?? 0} scenes`,
+      tracked ? `speaker tracked over ${tracked} frames` : 'speaker not tracked',
+    ].join(' · ')
+    : '';
 
   const laid = resultOf<{ count?: number }>(run, 'layout');
   const cutCount: number = typeof laid?.count === 'number' ? laid.count : 0;
@@ -274,6 +304,16 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
           })}
         </div>
 
+        {/* What the read found. Not a log line — a log line is overwritten by
+            the next one, and "speaker not tracked" is the difference between
+            a clip cropped to the person and a clip letterboxed on a blurred
+            backdrop, which nobody discovers until they watch the output. */}
+        {readSummary && (
+          <div className={`sn-clip__read ${tracked ? '' : 'sn-clip__read--untracked'}`}>
+            {readSummary}
+          </div>
+        )}
+
         {/* ── the settings that change what a run does, on the face ──
             These were behind a tab, which meant the chat, the job and the
             number of clips were all discoverable only by knowing to look.
@@ -386,15 +426,44 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
 
             {moments.length ? (
               <div className="sn-clip__moments">
-                {moments.map((m: any) => (
-                  <div key={m.rank} className="sn-clip__moment">
-                    <span className="sn-clip__rank">{m.rank}</span>
-                    <div className="sn-clip__moment-body">
-                      <div className="sn-clip__quote">&ldquo;{m.hookLine}&rdquo;</div>
-                      {m.why && <p className="sn-clip__why">{m.why}</p>}
+                {moments.map((m: any) => {
+                  /* 60 is the threshold the survey posts above. Showing the
+                     number without showing where the line is leaves a clipper
+                     guessing whether 62 is good. */
+                  const score = typeof m.score === 'number' ? Math.max(0, Math.min(100, m.score)) : null;
+                  const band = score === null ? '' : score >= 80 ? 'high' : score >= 60 ? 'ok' : 'low';
+                  return (
+                    <div key={m.rank} className="sn-clip__moment">
+                      <div className="sn-clip__moment-head">
+                        <span className="sn-clip__rank">{m.rank}</span>
+                        {score !== null && (
+                          <span
+                            className={`sn-clip__score sn-clip__score--${band}`}
+                            title={
+                              m.pillars
+                                ? Object.entries(m.pillars)
+                                  .map(([k, v]) => `${k} ${v}`)
+                                  .join(' · ')
+                                : 'out of 100'
+                            }
+                          >
+                            <span className="sn-clip__score-bar">
+                              <span className="sn-clip__score-fill" style={{ width: `${score}%` }} />
+                            </span>
+                            <span className="sn-clip__score-num">{Math.round(score)}</span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="sn-clip__moment-body">
+                        {/* The caption, written by the same reply that judged
+                            the clip. It was being computed and discarded. */}
+                        {m.title && <div className="sn-clip__caption">{m.title}</div>}
+                        <div className="sn-clip__quote">&ldquo;{m.hookLine}&rdquo;</div>
+                        {m.why && <p className="sn-clip__why">{m.why}</p>}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="sn-story__empty">
