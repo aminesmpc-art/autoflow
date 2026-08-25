@@ -1700,7 +1700,12 @@ export class WorkflowRunner {
       startSec: typeof nodeData.startSec === 'number' ? nodeData.startSec : undefined,
       endSec: typeof nodeData.endSec === 'number' ? nodeData.endSec : undefined,
       faces: Array.isArray(nodeData.faces) ? nodeData.faces : undefined,
-      noSpeaker: nodeData.noSpeaker === true,
+      /* noSpeaker is deliberately NOT read back any more. It meant "the
+         reading looked and found nobody on camera", which measurement showed
+         a null speaker_x never actually says — and Cut nodes laid out while
+         that was believed still carry the flag in their saved data. Honouring
+         it would keep those workflows framing on a blurred backdrop for ever,
+         with nothing on screen to explain why. */
       /* Defaults on, so a cut laid out before this flag existed still puts
          its fallback asks to the API rather than to a chat tab. */
       readOnServer: nodeData.readOnServer !== false,

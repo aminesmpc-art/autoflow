@@ -234,15 +234,22 @@ describe('what the reading already knows about framing', () => {
     if (f.kind === 'tracked') expect(f.faces).toHaveLength(2);
   });
 
-  it('says NONE when it looked and found nobody on camera', () => {
-    /* The screen-recording case. This is an answer and must not cost an ask. */
+  it('asks when the reading gave no position, however well it covered the clip', () => {
+    /* This used to answer NONE — "it looked and found nobody" — to save an ask
+       on screen-recorded footage. Measured against the real endpoint, that
+       reading of a null is simply false: ten stills of a woman talking
+       straight to camera, encoded to forty seconds, came back with 8 scenes
+       and 0 speaker positions, while the dedicated ask placed all ten
+       correctly. A null means the reading did not answer, not that nobody is
+       there — and treating it as an answer left every clip letterboxed on a
+       blurred backdrop instead of cropped onto the speaker. */
     const charts = reading({
       scenes: [
         { start: 0, end: 30, description: 'a chart', speaker_x: null },
         { start: 30, end: 60, description: 'a whiteboard', speaker_x: null },
       ],
     });
-    expect(framingFromReading(charts, 5, 55).kind).toBe('none');
+    expect(framingFromReading(charts, 5, 55).kind).toBe('unknown');
   });
 
   it('says UNKNOWN when the reading does not describe that stretch', () => {
@@ -253,17 +260,31 @@ describe('what the reading already knows about framing', () => {
     expect(framingFromReading(elsewhere, 5, 55).kind).toBe('unknown');
   });
 
-  it('says NONE rather than tracking on a single position', () => {
-    /* One sample is a fixed crop, which the frame-sampling ask would have
-       done better — but the reading still covered the clip, so asking adds
-       nothing over keeping the whole frame. */
+  it('asks rather than framing on a single position', () => {
+    /* One sample is a fixed crop, and the frame-sampling ask returns eight.
+       The ask is one HTTP request now, so there is nothing to save by
+       settling for the worse answer. */
     const one = reading({
       scenes: [
         { start: 0, end: 40, description: 'a chart', speaker_x: null },
         { start: 40, end: 60, description: 'a face', speaker_x: 0.4 },
       ],
     });
-    expect(framingFromReading(one, 5, 55).kind).toBe('none');
+    expect(framingFromReading(one, 5, 55).kind).toBe('unknown');
+  });
+
+  it('never claims nobody is on camera, because it cannot know that', () => {
+    /* The regression this file now guards. Every shape of missing position —
+       covered, uncovered, partial — must come out as "ask", never as an
+       answer. */
+    const shapes = [
+      reading({ scenes: [{ start: 0, end: 60, description: 'a chart', speaker_x: null }] }),
+      reading({ scenes: [{ start: 0, end: 60, description: 'a face', speaker_x: 0.4 }] }),
+      reading({ scenes: [] }),
+    ];
+    for (const r of shapes) {
+      expect(framingFromReading(r, 5, 55).kind).toBe('unknown');
+    }
   });
 
   it('says UNKNOWN when there is no reading to speak of', () => {

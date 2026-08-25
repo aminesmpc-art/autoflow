@@ -86,7 +86,6 @@ export interface PlanStep {
      without it the cut samples stills and asks a chat where the speaker is,
      is told there isn't one, and fits the frame — which is what the reading
      said before the clip existed. */
-  noSpeaker?: boolean;
   readOnServer?: boolean;
   /** Cap on the finished clip, in seconds. */
   maxSeconds?: number;
@@ -363,7 +362,6 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
           startSec: typeof step.startSec === 'number' && step.startSec >= 0 ? step.startSec : undefined,
           endSec: typeof step.endSec === 'number' && step.endSec > 0 ? step.endSec : undefined,
           faces: Array.isArray(step.faces) ? step.faces : undefined,
-          noSpeaker: step.noSpeaker === true ? true : undefined,
           readOnServer: step.readOnServer !== false,
           maxSeconds: typeof step.maxSeconds === 'number' && step.maxSeconds > 0 ? step.maxSeconds : undefined,
           /* Inherited from the Clipping node that laid this out. A cut with no

@@ -177,20 +177,39 @@ export function facesFromReading(
 /**
  * What the reading already knows about framing this clip.
  *
- * Three answers, not two. The version with two spent an ask to rediscover the
- * middle one: on a trading video the chart sections come back with
- * speaker_x null on every scene — the reading has LOOKED and reported that
- * nobody is on camera — and the cut then sampled eight stills to ask a chat
- * where the speaker was, got "none", and fitted the frame anyway. That is a
- * model call to learn something already in hand, once per clip.
+ * Two answers, not three. There WAS a third — "the reading looked and found
+ * nobody on camera" — added to save an ask on screen-recorded footage where
+ * the answer seemed obvious. It was wrong, and it cost the product its
+ * framing.
+ *
+ * ── The measurement that killed it ────────────────────────────────────────
+ *
+ * Ten stills of a woman talking straight to camera, held four seconds each,
+ * encoded to a forty second video and put through both paths:
+ *
+ *   the dedicated ask   0.34 0.58 0.57 0.54 0.57 0.58 0.72 0.51 0.52 0.73
+ *   the whole-video     null null null null null null null null (8 scenes,
+ *                       0 of 8 with a position)
+ *
+ * The dedicated answers are right — frame 3 reads 0.58 by eye and came back
+ * 0.57. The reading returned NOTHING, on footage that is nothing but a face.
+ *
+ * So a null speaker_x does not mean "nobody is on camera". It means "the
+ * reading did not answer". Reading the first into the second turned every clip
+ * into the no-speaker case: no ask, no crop, and a 16:9 frame letterboxed into
+ * the middle of a blurred 9:16 backdrop — the person still in it, but small and
+ * uncentred, which is precisely the complaint that sent me to measure this.
+ *
+ * An absent answer is now what it always was: a reason to ask. The ask is a
+ * single HTTP request that takes about nineteen seconds for ten stills, and it
+ * is worth every one of them — a clip that does not show the person talking is
+ * not a clip.
  *
  *   tracked  the reading placed a speaker often enough to follow
- *   none     the reading covered the clip and found nobody on camera
- *   unknown  the reading does not describe this stretch, so ask
+ *   unknown  it did not, whatever the reason, so ask
  */
 export type Framing =
   | { kind: 'tracked'; faces: FaceSample[] }
-  | { kind: 'none' }
   | { kind: 'unknown' };
 
 export function framingFromReading(
@@ -203,19 +222,10 @@ export function framingFromReading(
   const faces = facesFromReading(reading, startSec, endSec);
   if (faces.length >= 2) return { kind: 'tracked', faces };
 
-  /* Whether the reading describes this stretch at all — separately from
-     whether it found a person in it. A clip the reading never saw and a clip
-     it saw and found empty are opposite situations that look identical if
-     you only count speaker positions. */
-  const covered = reading.scenes.some(
-    (s) => s.end > startSec + SCENE_SLACK_SEC && s.start < endSec - SCENE_SLACK_SEC,
-  );
-  if (!covered) return { kind: 'unknown' };
-
-  /* Covered, and at most one speaker position in the whole clip. One sample
-     cannot describe movement, so this is the same answer as none: keep the
-     whole frame rather than crop to a place nobody stays. */
-  return { kind: 'none' };
+  /* Deliberately no branch on whether the reading COVERED this stretch. It
+     covered all forty seconds of the measurement above and still answered
+     nothing, so coverage says nothing about whether a person is there. */
+  return { kind: 'unknown' };
 }
 
 /** Whether a reading covers a clip well enough to frame it without asking. */

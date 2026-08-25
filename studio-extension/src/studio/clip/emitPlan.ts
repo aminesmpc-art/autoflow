@@ -107,7 +107,6 @@ export function emitPlan(
       : { kind: 'unknown' as const };
 
     const faces = framing.kind === 'tracked' ? framing.faces : undefined;
-    const noSpeaker = framing.kind === 'none' || undefined;
 
     steps.push({
       id: idFor(m.rank),
@@ -127,7 +126,6 @@ export function emitPlan(
       startSec: found?.exact ? found.startSec : undefined,
       endSec: found?.exact ? found.endSec : undefined,
       faces,
-      noSpeaker,
       readOnServer: options.readOnServer !== false,
       /* The candidate's own second, from the loudness envelope. A moment the
          survey named but the shortlist never contained would have none — but
