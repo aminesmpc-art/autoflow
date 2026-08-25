@@ -3829,3 +3829,68 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
 }
 .sn-clip__toggle input { margin: 0; accent-color: var(--n-video); cursor: pointer; }
 .sn-clip__toggle--on { color: var(--text); border-color: var(--n-video); }
+
+/* ── Cut: the edit plan ──
+   A list of timecoded instructions to follow in CapCut. Nothing here is
+   rendered onto the clip, so it reads as a checklist rather than as a preview:
+   the timecode leads, because that is what you scrub to. */
+.sn-cut__sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  background: var(--surface-2);
+}
+.sn-cut__sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.sn-cut__ops {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 168px;
+  overflow-y: auto;
+}
+.sn-cut__op {
+  display: grid;
+  grid-template-columns: 40px 46px 1fr;
+  gap: 6px;
+  align-items: baseline;
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  line-height: 1.4;
+}
+.sn-cut__op-at {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+/* Colour carries the KIND, and the word is there too — a clipper scanning for
+   every cutaway should not have to remember which hue meant which. */
+.sn-cut__op-kind { text-transform: uppercase; letter-spacing: 0.4px; }
+.sn-cut__op--broll .sn-cut__op-kind { color: var(--n-video); }
+.sn-cut__op--punch .sn-cut__op-kind { color: var(--ok); }
+.sn-cut__op--text  .sn-cut__op-kind { color: var(--accent); }
+.sn-cut__op--sfx   .sn-cut__op-kind { color: var(--warn); }
+.sn-cut__op--intro .sn-cut__op-kind,
+.sn-cut__op--outro .sn-cut__op-kind { color: var(--text-3); }
+.sn-cut__op-what { color: var(--text); min-width: 0; }
+
+/* Legal but flat. Amber rather than red: nothing is wrong, something is
+   missing, and those should not look the same. */
+.sn-cut__sheet-gap {
+  margin: 0;
+  font-size: var(--t-micro);
+  color: var(--warn);
+  line-height: 1.4;
+}

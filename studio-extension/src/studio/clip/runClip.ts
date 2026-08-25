@@ -24,6 +24,7 @@ import {
   type MomentCandidate, type SurveyMoment,
   type Transcript,
 } from '../ask/clipperBrain';
+import type { EditOp } from './editSheet';
 import { planChunks, stitch, looksTranscribed, type ChunkText } from './chunks';
 import { faceAsk, frameTimes, readFaces, transcribeAsk } from './prompts';
 import { planReframe, type ReframePlan } from '../media/reframe';
@@ -113,6 +114,9 @@ export interface ClipConfig {
   captions?: boolean;
   /** Which look the burned-in words take. See CaptionPreset. */
   captionPreset?: import('../media/captions').CaptionPreset;
+  /* Plan what to add to each finished clip, for finishing in CapCut.
+     Off by default: it costs one ask per cut. */
+  planEdit?: boolean;
   mode?: ClipMode;
   /** Verbatim rules from the campaign brief, shown to the model. */
   campaignRules?: string;
@@ -160,6 +164,14 @@ export type TranscribeResult = Transcript & {
 
 export interface CutStageResult {
   mediaKey: string;
+  /* What to ADD to this clip, and when. Not rendered onto it — the
+     finishing happens in CapCut, so this is a list of timed instructions
+     and, later, the assets to go with them. See clip/editSheet.ts. */
+  editSheet?: import('./editSheet').EditOp[];
+  /** Anything the plan asked for that could not be followed. */
+  editDropped?: string[];
+  /** Stretches the plan leaves flat. Legal, but worth saying. */
+  editGaps?: string[];
   startSec: number;
   endSec: number;
   clipSeconds: number;
@@ -553,6 +565,7 @@ export function layoutStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
       readOnServer: cfg.readOnServer !== false,
       captions: cfg.captions !== false,
       captionPreset: cfg.captionPreset,
+      planEdit: cfg.planEdit === true,
     });
     const cuts = plan.steps.filter((s) => s.type === 'cut').length;
     deps.log?.(`laying out ${cuts} cut${cuts === 1 ? '' : 's'}`);
@@ -667,6 +680,14 @@ export interface OneCutConfig {
   captionPhrases?: Array<{ start: number; end: number; text: string }>;
   /** Which look. See CaptionPreset — 'clean' unless the node says otherwise. */
   captionStyle?: import('../media/captions').CaptionStyle;
+  /* Plan what to add to the finished clip. Off by default: it costs an
+     ask, and a clipper who only wants the cut should not pay for one. */
+  planEdit?: boolean;
+  /** Campaign work forbids generated footage. Shapes what may be planned. */
+  mode?: 'campaign' | 'explainer';
+  /** What the clip is about, from the reply that judged it. */
+  title?: string;
+  why?: string;
   /* Where the two fallback asks go when the reading could not answer them.
      Inherited from the Clipping node that laid this cut out, so a director set
      to the chat does not quietly emit nine nodes that use the API. Defaults on
@@ -829,6 +850,16 @@ export async function runOneCut(
   const mediaKey = `${cfg.sourceKey}#${hook.slice(0, 24)}`;
   deps.putMedia(mediaKey, out.blob);
 
+  /* Planned AFTER the clip exists and never allowed to cost it.
+     The cut is the thing that took minutes and cannot be remade for free;
+     the sheet is one text ask over a transcript already in hand. Throwing
+     the first away because the second failed would be the wrong trade by
+     several orders of magnitude. */
+  let sheet: Awaited<ReturnType<typeof planTheEdit>> = {};
+  if (cfg.planEdit) {
+    sheet = await planTheEdit(deps, cfg, captions, endSec - startSec, onServer);
+  }
+
   return {
     mediaKey,
     startSec,
@@ -838,5 +869,61 @@ export async function runOneCut(
     height: out.height,
     reframe: plan ? plan.mode : 'none',
     report: out.report,
+    ...sheet,
   } satisfies CutStageResult;
+}
+
+
+/**
+ * Ask what to add to a finished clip, and refuse anything that cannot be done.
+ *
+ * Soft all the way through. Every failure here returns an empty sheet and lets
+ * the cut stand: the clip took minutes of decoding and encoding, the sheet is
+ * one text ask, and no version of this is worth losing the first for the
+ * second. The node shows what came back, including what was refused.
+ */
+async function planTheEdit(
+  deps: ClipDeps,
+  cfg: OneCutConfig,
+  captions: Array<{ startSec: number; endSec: number; text: string }>,
+  clipSeconds: number,
+  onServer: boolean,
+): Promise<{ editSheet?: EditOp[]; editDropped?: string[]; editGaps?: string[] }> {
+  /* The clip's own words, already timed against it by the caption pass. Asking
+     over anything else would put the instructions on a different timeline than
+     the clip they belong to, which is the fault captions had. */
+  if (!captions.length) {
+    deps.log?.('no words in this clip to plan an edit around');
+    return {};
+  }
+
+  try {
+    const { editSheetAsk, readEditSheet, sheetGaps } = await import('./editSheet');
+    const context = {
+      clipSeconds,
+      title: cfg.title,
+      why: cfg.why,
+      mode: cfg.mode,
+      phrases: captions.map((c) => ({ startSec: c.startSec, endSec: c.endSec, text: c.text })),
+    };
+
+    const ask = serverFirstAsk(deps, onServer, { did: 'planned the edit', doing: 'planning the edit' });
+    const { ops, dropped } = readEditSheet(
+      await ask(editSheetAsk(context), { firstTurn: true }),
+      context,
+    );
+
+    for (const reason of dropped) deps.log?.(`edit dropped: ${reason}`);
+    const gaps = sheetGaps(ops, clipSeconds);
+    deps.log?.(
+      ops.length
+        ? `${ops.length} thing${ops.length === 1 ? '' : 's'} to add in the edit`
+        : 'nothing worth adding to this clip',
+    );
+
+    return { editSheet: ops, editDropped: dropped, editGaps: gaps };
+  } catch (error) {
+    deps.log?.(`could not plan the edit: ${(error as Error)?.message || error}`);
+    return {};
+  }
 }

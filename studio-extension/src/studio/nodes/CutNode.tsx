@@ -21,6 +21,13 @@ import { Icon } from '../components/Icon';
 import { useStudioStore } from '../store';
 import { NodeInfoBadge } from './NodeInfoBadge';
 import { getMedia, hasSource } from '../clip/sourceStore';
+import { sheetAsText, type EditOp } from '../clip/editSheet';
+
+/** A timecode a person can find in CapCut's timeline. */
+function stamp(sec: number): string {
+  const s = Math.max(0, Number(sec) || 0);
+  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+}
 
 function CutNodeInner({ id, data, selected }: NodeProps) {
   const d = data as any;
@@ -55,6 +62,14 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
      is still on the node and the source is not, which used to present as a
      node that simply failed on Run with nothing explaining why. */
   const sourceMissing = !!sourceKey && !hasSource(sourceKey);
+
+  /* Planned once when the cut was made and kept on the node, so it survives a
+     reopen with everything else the run produced. */
+  const sheet: any[] = Array.isArray(d.editSheet) ? d.editSheet : [];
+  const gaps: string[] = Array.isArray(d.editGaps) ? d.editGaps : [];
+  /* Built by the same function that formats it anywhere else, so the text
+     on the clipboard and the text in a log cannot drift apart. */
+  const sheetText = sheetAsText(sheet as EditOp[], d.title);
 
   return (
     <div className={`sn-wrap sn-wrap--kind-cut ${selected ? 'sn-wrap--selected' : ''}`}>
@@ -124,6 +139,41 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
               >
                 Copy
               </button>
+            </div>
+          )}
+
+          {/* What to ADD, and when. Nothing here is rendered onto the clip —
+              the finishing happens in CapCut, so this is a list of timecoded
+              instructions to follow there, copyable in one go because it is
+              going into another app. */}
+          {sheet.length > 0 && (
+            <div className="sn-cut__sheet">
+              <div className="sn-cut__sheet-head">
+                <span>Edit plan</span>
+                <button
+                  type="button"
+                  className="sn-cut__copy nodrag"
+                  title="Copy the whole sheet"
+                  onClick={() => navigator.clipboard?.writeText(sheetText)}
+                >
+                  Copy
+                </button>
+              </div>
+              <ol className="sn-cut__ops">
+                {sheet.map((op: any, i: number) => (
+                  <li key={i} className={`sn-cut__op sn-cut__op--${op.kind}`}>
+                    <span className="sn-cut__op-at">{stamp(op.atSec)}</span>
+                    <span className="sn-cut__op-kind">{op.kind}</span>
+                    <span className="sn-cut__op-what">{op.what}</span>
+                  </li>
+                ))}
+              </ol>
+              {/* Legal but flat. A sheet can pass every check and still leave
+                  the middle of a clip empty, which is the difference between
+                  one that was followed and one that worked. */}
+              {gaps.length > 0 && (
+                <p className="sn-cut__sheet-gap">{gaps.join(' · ')}</p>
+              )}
             </div>
           )}
 

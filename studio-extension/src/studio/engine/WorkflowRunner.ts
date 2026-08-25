@@ -1565,6 +1565,7 @@ export class WorkflowRunner {
          short-form views happen with the sound off. */
       captions: nodeData.captions !== false,
       captionPreset: nodeData.captionPreset || undefined,
+      planEdit: nodeData.planEdit === true,
     };
 
     const runners = clipRunners(deps, cfg);
@@ -1725,6 +1726,11 @@ export class WorkflowRunner {
          times once it knows where the clip really begins. */
       captionPhrases: Array.isArray(nodeData.captionPhrases) ? nodeData.captionPhrases : undefined,
       captionStyle: nodeData.captionPreset ? { preset: nodeData.captionPreset } : undefined,
+      /* Planned once, when the cut is made, and kept on the node. */
+      planEdit: nodeData.planEdit === true,
+      mode: nodeData.clipMode === 'explainer' ? 'explainer' : 'campaign',
+      title: typeof nodeData.title === 'string' ? nodeData.title : undefined,
+      why: typeof nodeData.why === 'string' ? nodeData.why : undefined,
     });
 
     /* mediaKey is what the node's player reads back out of the store. Without
@@ -1734,6 +1740,11 @@ export class WorkflowRunner {
       mediaKey: result.mediaKey,
       cutReport: result.report,
       clipSeconds: result.clipSeconds,
+      /* The sheet lives on the node so it survives a reopen with everything
+         else the run produced. It is small — a dozen lines of text. */
+      editSheet: result.editSheet,
+      editDropped: result.editDropped,
+      editGaps: result.editGaps,
       statusNote: '',
     });
     console.log(`[Runner] Cut "${nodeData.label}": ${result.report}`);

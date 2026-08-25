@@ -56,6 +56,8 @@ export interface EmitOptions {
   captions?: boolean;
   /** Which look. Carried onto every cut so they match across a workflow. */
   captionPreset?: import('../media/captions').CaptionPreset;
+  /** Plan what to ADD to each finished clip. See clip/editSheet.ts. */
+  planEdit?: boolean;
   /* Where a cut puts its fallback asks. Carried onto every cut rather than
      read from a setting at run time, so a node keeps the behaviour it was laid
      out with even if the director is changed afterwards. */
@@ -180,6 +182,10 @@ export function emitPlan(
         ? undefined
         : phrasesAround(options.reading.segments, found, byN.get(m.moment)?.start ?? 0, options.maxSeconds),
       captionPreset: options.captionPreset,
+      /* The director's settings, carried onto the cut rather than read at
+         run time, so a clip keeps the brief it was planned under. */
+      planEdit: options.planEdit === true,
+      mode: options.mode,
       readOnServer: options.readOnServer !== false,
       /* The candidate's own second, from the loudness envelope. A moment the
          survey named but the shortlist never contained would have none — but

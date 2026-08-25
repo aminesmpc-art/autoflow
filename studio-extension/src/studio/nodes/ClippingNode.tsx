@@ -170,6 +170,9 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
      content and look wrong on someone else's footage, so the choice is the
      clipper's rather than a default. */
   const captionPreset: string = d.captionPreset || 'clean';
+  /* Off by default. It is one more ask per cut, and a clipper who only wants
+     the clip should not pay for a plan they are not going to follow. */
+  const planEdit: boolean = d.planEdit === true;
 
   const mode: 'campaign' | 'explainer' = d.clipMode === 'explainer' ? 'explainer' : 'campaign';
   const wanted: number = typeof d.wantedClips === 'number' ? d.wantedClips : DEFAULT_WANTED;
@@ -396,6 +399,21 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               <option value="minimal">Minimal</option>
             </select>
           )}
+          {/* One extra ask per cut, so it is off unless asked for. What it
+              produces is a timed list of what to ADD — nothing is rendered
+              onto the clip, because the finishing happens in CapCut. */}
+          <label
+            className={`sn-clip__toggle nodrag ${planEdit ? 'sn-clip__toggle--on' : ''}`}
+            title="Plan what to add to each clip, with timecodes for CapCut"
+          >
+            <input
+              type="checkbox"
+              className="nodrag"
+              checked={planEdit}
+              onChange={(e) => updateNodeData(id, { planEdit: e.target.checked })}
+            />
+            <span>Edit plan</span>
+          </label>
         </div>
 
         <div className="sn-clip__tabs">
