@@ -205,3 +205,63 @@ export function describeChunks(chunks: OmniChunk[]): string {
   return `${chunks.length} pieces: ${lengths}s`
     + (rough ? ` — ${rough} join${rough === 1 ? '' : 's'} lands mid-sentence` : ' — every join is in a pause');
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   Rebasing a clip's own data onto one chunk
+   ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Why anything needs shifting at all.
+ *
+ * A reframe plan's keyframes and a caption's cues are both timed against the
+ * CLIP — zero is where the clip starts. A chunk is encoded as its own video, so
+ * its first frame arrives at zero too. Handing chunk three the clip's plan
+ * unchanged points every keyframe seventeen seconds into a nine second piece,
+ * and nothing moves; handing it the clip's cues shows the wrong words or none.
+ *
+ * This is the same fault captions had once already — cue times built against a
+ * boundary the encoder did not end up using — so it is a pure function with
+ * tests rather than three lines inside an encode loop.
+ */
+
+/** Cues that fall inside a chunk, retimed to start at zero. */
+export function cuesForChunk<T extends { startSec: number; endSec: number }>(
+  cues: T[],
+  chunk: { startSec: number; endSec: number },
+): T[] {
+  const out: T[] = [];
+  for (const cue of cues) {
+    if (cue.endSec <= chunk.startSec || cue.startSec >= chunk.endSec) continue;
+    const startSec = Math.max(cue.startSec, chunk.startSec) - chunk.startSec;
+    const endSec = Math.min(cue.endSec, chunk.endSec) - chunk.startSec;
+    if (endSec - startSec < 0.08) continue;
+    out.push({ ...cue, startSec, endSec });
+  }
+  return out;
+}
+
+/**
+ * A reframe plan retimed onto a chunk.
+ *
+ * Keyframes before the chunk are not dropped — the last one before it is kept,
+ * pinned to zero, because it is what the crop should be as the chunk opens. Drop
+ * it and the chunk starts at whatever the first keyframe INSIDE it says, which
+ * is the crop arriving late.
+ */
+export function planForChunk<
+  P extends { keyframes: Array<{ t: number } & Record<string, unknown>> },
+>(plan: P | null | undefined, chunk: { startSec: number; endSec: number }): P | null {
+  if (!plan || !Array.isArray(plan.keyframes) || !plan.keyframes.length) return plan ?? null;
+
+  const inside = plan.keyframes.filter((k) => k.t >= chunk.startSec && k.t < chunk.endSec);
+  const before = plan.keyframes.filter((k) => k.t < chunk.startSec).pop();
+
+  const keyframes = [
+    ...(before ? [{ ...before, t: 0, cut: true }] : []),
+    ...inside.map((k) => ({ ...k, t: Math.max(0, k.t - chunk.startSec) })),
+  ];
+
+  /* Two keyframes at zero is the opening one twice over. Keep the real one. */
+  const deduped = keyframes.filter((k, i) => i === 0 || k.t > 0);
+  return { ...plan, keyframes: deduped.length ? deduped : plan.keyframes.slice(0, 1) };
+}

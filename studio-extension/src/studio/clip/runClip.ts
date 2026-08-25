@@ -170,6 +170,11 @@ export interface CutStageResult {
   editSheet?: import('./editSheet').EditOp[];
   /** Anything the plan asked for that could not be followed. */
   editDropped?: string[];
+  /* The clip in pieces Omni will take, keyed like the clip itself with
+     a part suffix. Empty when it already fits. */
+  omniParts?: Array<{ mediaKey: string; index: number; of: number; seconds: number; cutsSpeech: boolean }>;
+  /** The split in one line, for the node. */
+  omniSplit?: string;
   /** Stretches the plan leaves flat. Legal, but worth saying. */
   editGaps?: string[];
   startSec: number;
@@ -683,6 +688,11 @@ export interface OneCutConfig {
   /* Plan what to add to the finished clip. Off by default: it costs an
      ask, and a clipper who only wants the cut should not pay for one. */
   planEdit?: boolean;
+  /* Also encode the clip in pieces Omni will accept. Flow refuses
+     anything over ten seconds, so a longer cut has to go in parts or not
+     at all. Off by default: it is N more encodes for a clip most people
+     will post as one. */
+  omniParts?: boolean;
   /** Campaign work forbids generated footage. Shapes what may be planned. */
   mode?: 'campaign' | 'explainer';
   /** What the clip is about, from the reply that judged it. */
@@ -850,6 +860,52 @@ export async function runOneCut(
   const mediaKey = `${cfg.sourceKey}#${hook.slice(0, 24)}`;
   deps.putMedia(mediaKey, out.blob);
 
+  /* Encoded from the SOURCE, not from the finished clip.
+     Cutting an encode out of an encode is a second generation loss for
+     no reason — every piece here is the same pixels the whole clip would
+     have had, because the bounds are simply shifted into the source.
+
+     The plan and the captions are rebased per piece. Both are timed
+     against the CLIP, and a piece is encoded as its own video starting at
+     zero — hand piece three the clip's plan unchanged and every keyframe
+     points past the end of it. */
+  const parts: NonNullable<CutStageResult['omniParts']> = [];
+  let omniSplit: string | undefined;
+  if (cfg.omniParts) {
+    const { planOmniChunks, describeChunks, cuesForChunk, planForChunk } =
+      await import('./omniChunks');
+    const pieces = planOmniChunks(
+      endSec - startSec,
+      captions.map((c) => ({ startSec: c.startSec, endSec: c.endSec })),
+    );
+    omniSplit = describeChunks(pieces);
+
+    /* One piece means it already fits, and re-encoding the whole clip
+       under a second key would just be the same file twice. */
+    if (pieces.length > 1) {
+      deps.log?.(omniSplit);
+      for (const piece of pieces) {
+        if (deps.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+        const out = await deps.media.cut(file, {
+          startSec: startSec + piece.startSec,
+          endSec: startSec + piece.endSec,
+          plan: planForChunk(plan as any, piece) as typeof plan,
+          captions: cuesForChunk(captions, piece),
+          captionStyle: cfg.captionStyle,
+        });
+        const partKey = `${mediaKey}#part${piece.index}`;
+        deps.putMedia(partKey, out.blob);
+        parts.push({
+          mediaKey: partKey,
+          index: piece.index,
+          of: piece.of,
+          seconds: piece.seconds,
+          cutsSpeech: piece.cutsSpeech,
+        });
+      }
+    }
+  }
+
   /* Planned AFTER the clip exists and never allowed to cost it.
      The cut is the thing that took minutes and cannot be remade for free;
      the sheet is one text ask over a transcript already in hand. Throwing
@@ -869,6 +925,8 @@ export async function runOneCut(
     height: out.height,
     reframe: plan ? plan.mode : 'none',
     report: out.report,
+    omniParts: parts.length ? parts : undefined,
+    omniSplit,
     ...sheet,
   } satisfies CutStageResult;
 }

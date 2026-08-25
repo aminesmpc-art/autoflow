@@ -12,7 +12,9 @@
 
 import {
   OMNI_MAX_SEC,
+  cuesForChunk,
   describeChunks,
+  planForChunk,
   planOmniChunks,
   type ChunkPhrase,
 } from '../studio/clip/omniChunks';
@@ -219,5 +221,125 @@ describe('the cap holds on BOTH sides of a boundary', () => {
     /* The fix must not have bought safety by refusing to snap at all. */
     const phrases = speech([[0, 9.0], [10.0, 19.3]]);
     expect(planOmniChunks(19.3, phrases)[0].endSec).toBeCloseTo(9.5, 1);
+  });
+});
+
+describe('rebasing a clip’s own data onto one chunk', () => {
+  /* A chunk is encoded as its own video, so its first frame arrives at zero.
+     The clip's plan and cues are timed against the CLIP. Handing chunk three
+     the clip's plan unchanged points every keyframe seventeen seconds into a
+     nine second piece and nothing moves.
+
+     This is the same fault captions had once — times built against a boundary
+     the encoder did not use — which is why it is pure and tested rather than
+     three lines inside an encode loop. */
+
+  const chunk = { startSec: 8.7, endSec: 17.3 };
+
+  describe('cues', () => {
+    const cues = [
+      { startSec: 0, endSec: 4, text: 'before the chunk' },
+      { startSec: 9, endSec: 11, text: 'inside it' },
+      { startSec: 16, endSec: 20, text: 'straddles the end' },
+      { startSec: 20, endSec: 24, text: 'after it' },
+    ];
+
+    it('keeps only what is heard in the chunk', () => {
+      const out = cuesForChunk(cues, chunk);
+      expect(out.map((c) => c.text)).toEqual(['inside it', 'straddles the end']);
+    });
+
+    it('retimes them to start at zero', () => {
+      const out = cuesForChunk(cues, chunk);
+      expect(out[0].startSec).toBeCloseTo(0.3, 5);   // 9 - 8.7
+      expect(out[0].endSec).toBeCloseTo(2.3, 5);
+    });
+
+    it('clips one that runs past the end of the chunk', () => {
+      /* The rest of that sentence belongs to the next piece. */
+      const out = cuesForChunk(cues, chunk);
+      const last = out[out.length - 1];
+      expect(last.endSec).toBeCloseTo(chunk.endSec - chunk.startSec, 5);
+    });
+
+    it('never emits a cue starting before zero', () => {
+      for (const c of cuesForChunk(cues, chunk)) {
+        expect(c.startSec).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('drops a sliver too short to read', () => {
+      const sliver = [{ startSec: 17.25, endSec: 17.31, text: 'x' }];
+      expect(cuesForChunk(sliver, chunk)).toEqual([]);
+    });
+
+    it('keeps everything else on the cue', () => {
+      const out = cuesForChunk(cues, chunk);
+      expect(out[0].text).toBe('inside it');
+    });
+  });
+
+  describe('the reframe plan', () => {
+    const plan = {
+      mode: 'tracked',
+      why: 'speaker moved',
+      keyframes: [
+        { t: 0, rect: { left: 0 }, cut: false },
+        { t: 5, rect: { left: 50 }, cut: false },
+        { t: 10, rect: { left: 100 }, cut: false },
+        { t: 15, rect: { left: 150 }, cut: false },
+        { t: 20, rect: { left: 200 }, cut: false },
+      ],
+    };
+
+    it('retimes the keyframes inside the chunk', () => {
+      const out = planForChunk(plan, chunk)!;
+      const inside = out.keyframes.filter((k) => (k.rect as any).left >= 100 && (k.rect as any).left <= 150);
+      /* 10 - 8.7 and 15 - 8.7, compared loosely: the exact float artefact of
+         that subtraction is not a property worth pinning. */
+      expect(inside).toHaveLength(2);
+      expect(inside[0].t).toBeCloseTo(1.3, 6);
+      expect(inside[1].t).toBeCloseTo(6.3, 6);
+    });
+
+    it('opens on the crop that was live when the chunk began', () => {
+      /* The keyframe BEFORE the chunk is what the crop should be as it opens.
+         Drop it and the chunk starts wherever the first keyframe inside says,
+         which is the crop arriving late. */
+      const out = planForChunk(plan, chunk)!;
+      expect(out.keyframes[0].t).toBe(0);
+      expect((out.keyframes[0].rect as any).left).toBe(50);   // the t=5 one
+    });
+
+    it('never emits a keyframe before zero', () => {
+      for (const k of planForChunk(plan, chunk)!.keyframes) {
+        expect(k.t).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('does not stack two keyframes at zero', () => {
+      const atZero = planForChunk(plan, { startSec: 0, endSec: 8 })!
+        .keyframes.filter((k) => k.t === 0);
+      expect(atZero).toHaveLength(1);
+    });
+
+    it('keeps the plan’s own settings', () => {
+      const out = planForChunk(plan, chunk)!;
+      expect(out.mode).toBe('tracked');
+      expect(out.why).toBe('speaker moved');
+    });
+
+    it('leaves a locked plan usable', () => {
+      /* One keyframe covering the whole clip. Every chunk should still get it. */
+      const locked = { mode: 'locked', why: 'still', keyframes: [{ t: 0, rect: { left: 9 } }] };
+      const out = planForChunk(locked, chunk)!;
+      expect(out.keyframes).toHaveLength(1);
+      expect((out.keyframes[0].rect as any).left).toBe(9);
+    });
+
+    it('passes a missing plan straight through', () => {
+      expect(planForChunk(null, chunk)).toBeNull();
+      expect(planForChunk(undefined, chunk)).toBeNull();
+    });
   });
 });

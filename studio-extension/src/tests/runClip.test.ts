@@ -767,3 +767,79 @@ describe('captions are timed against the clip that was actually encoded', () => 
     expect(h.media.cuts[0].captions).toEqual([]);
   });
 });
+
+
+/* ------------------------------------------------------------------ */
+
+describe('cutting a clip into pieces Omni will take', () => {
+  /* Flow refuses anything over ten seconds, so a longer cut goes in parts or
+     not at all. Every part is encoded from the SOURCE — cutting an encode out
+     of an encode is a second generation loss for nothing — with the plan and
+     the captions rebased, because a part is its own video starting at zero. */
+
+  const LONG = {
+    sourceKey: 'p',
+    hookLine: 'Look at these straw bales right here',
+    closingLine: 'Darius has already been arrested',
+    readOnServer: false,
+  };
+
+  it('leaves a clip that already fits as one file', async () => {
+    const h = harness();
+    const out: any = await runOneCut(h.deps, {
+      ...LONG, startSec: 100, endSec: 108, omniParts: true,
+    });
+    expect(out.omniParts).toBeUndefined();
+    expect(out.omniSplit).toMatch(/one piece/);
+  });
+
+  it('cuts a long clip into parts, each under the cap', async () => {
+    const h = harness();
+    const out: any = await runOneCut(h.deps, {
+      ...LONG, startSec: 100, endSec: 126, maxSeconds: 40, omniParts: true,
+    });
+    expect(out.omniParts.length).toBeGreaterThan(1);
+    for (const p of out.omniParts) expect(p.seconds).toBeLessThanOrEqual(10.000001);
+  });
+
+  it('takes every part out of the source, not out of the finished clip', async () => {
+    /* The bounds handed to the encoder must be SOURCE seconds. Cutting the
+       already-encoded clip would cost a second generation for nothing. */
+    const h = harness();
+    await runOneCut(h.deps, {
+      ...LONG, startSec: 100, endSec: 126, maxSeconds: 40, omniParts: true,
+    });
+    const parts = h.media.cuts.slice(1);          // the first cut is the whole clip
+    expect(parts.length).toBeGreaterThan(1);
+    for (const c of parts) expect(c.startSec).toBeGreaterThanOrEqual(99);
+  });
+
+  it('covers the clip end to end across the parts', async () => {
+    const h = harness();
+    await runOneCut(h.deps, {
+      ...LONG, startSec: 100, endSec: 126, maxSeconds: 40, omniParts: true,
+    });
+    const parts = h.media.cuts.slice(1).sort((a: any, b: any) => a.startSec - b.startSec);
+    for (let i = 0; i < parts.length - 1; i++) {
+      expect(parts[i].endSec).toBeCloseTo(parts[i + 1].startSec, 4);
+    }
+  });
+
+  it('numbers the parts so they can be found again', async () => {
+    const h = harness();
+    const out: any = await runOneCut(h.deps, {
+      ...LONG, startSec: 100, endSec: 126, maxSeconds: 40, omniParts: true,
+    });
+    expect(out.omniParts.map((p: any) => `${p.index}/${p.of}`))
+      .toEqual(out.omniParts.map((_: any, i: number) => `${i + 1}/${out.omniParts.length}`));
+    for (const p of out.omniParts) expect(p.mediaKey).toMatch(/#part\d+$/);
+  });
+
+  it('does none of it unless asked', async () => {
+    /* It is N more encodes for a clip most people will post as one. */
+    const h = harness();
+    const out: any = await runOneCut(h.deps, { ...LONG, startSec: 100, endSec: 126, maxSeconds: 40 });
+    expect(out.omniParts).toBeUndefined();
+    expect(h.media.cuts).toHaveLength(1);
+  });
+});
