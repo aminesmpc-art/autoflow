@@ -164,6 +164,9 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
           ? 'Ready. Press Run.'
           : '';
 
+  /* Default ON. See the toggle for why. */
+  const captions: boolean = d.captions !== false;
+
   const mode: 'campaign' | 'explainer' = d.clipMode === 'explainer' ? 'explainer' : 'campaign';
   const wanted: number = typeof d.wantedClips === 'number' ? d.wantedClips : DEFAULT_WANTED;
   const shortlist: number = typeof d.surveyCandidates === 'number' ? d.surveyCandidates : DEFAULT_SHORTLIST;
@@ -356,6 +359,23 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
           >
             {ASPECTS.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
+          {/* On the face rather than in a tab, because it changes what comes
+              out of the encoder and because most people should leave it on:
+              about 85% of short-form views happen with the sound off, so a
+              clip without captions is one most of its audience cannot
+              follow. */}
+          <label
+            className={`sn-clip__toggle nodrag ${captions ? 'sn-clip__toggle--on' : ''}`}
+            title="Burn the spoken words into the picture"
+          >
+            <input
+              type="checkbox"
+              className="nodrag"
+              checked={captions}
+              onChange={(e) => updateNodeData(id, { captions: e.target.checked })}
+            />
+            <span>Captions</span>
+          </label>
         </div>
 
         <div className="sn-clip__tabs">

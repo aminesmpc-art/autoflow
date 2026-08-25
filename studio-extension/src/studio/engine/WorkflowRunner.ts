@@ -1553,6 +1553,9 @@ export class WorkflowRunner {
          is faster, it brings the timings that let every cut skip its own
          locating, and it degrades to the chat path when signed out. */
       readOnServer: nodeData.readOnServer !== false,
+      /* Burn the words into the picture. On unless turned off — about 85% of
+         short-form views happen with the sound off. */
+      captions: nodeData.captions !== false,
     };
 
     const runners = clipRunners(deps, cfg);
@@ -1709,6 +1712,9 @@ export class WorkflowRunner {
       /* Defaults on, so a cut laid out before this flag existed still puts
          its fallback asks to the API rather than to a chat tab. */
       readOnServer: nodeData.readOnServer !== false,
+      /* Worked out when this cut was laid out, from the reading that was in
+         hand then. Carried on the node so it needs nothing at run time. */
+      captions: Array.isArray(nodeData.captions) ? nodeData.captions : undefined,
     });
 
     /* mediaKey is what the node's player reads back out of the store. Without

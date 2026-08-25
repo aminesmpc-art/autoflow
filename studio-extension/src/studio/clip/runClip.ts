@@ -18,12 +18,10 @@
  */
 
 import {
-  beatAsk, checkBeats, blockingClipProblems, locateAsk, locateWindow,
-  readBeats, readLocate, readWindow, repairBeats, repairWindow, windowAsk,
-  campaignAsk, estimateSeconds, wordsOf,
+  locateAsk, readLocate, estimateSeconds,
   surveyAsk, readSurvey, SURVEY_COUNT, MIN_CLIP_SCORE,
   MAX_CLIP_SECONDS, MIN_CLIP_SECONDS,
-  type Beat, type LocatedWindow, type MomentCandidate, type SurveyMoment,
+  type MomentCandidate, type SurveyMoment,
   type Transcript,
 } from '../ask/clipperBrain';
 import { planChunks, stitch, looksTranscribed, type ChunkText } from './chunks';
@@ -78,6 +76,7 @@ export interface ClipMedia {
   frames(file: File, timesSec: number[]): Promise<string[]>;
   cut(file: File, options: {
     startSec: number; endSec: number; plan?: ReframePlan | null; silent?: boolean;
+    captions?: Array<{ startSec: number; endSec: number; text: string }>;
   }): Promise<CutLike>;
 }
 
@@ -107,6 +106,10 @@ export type ClipMode = 'campaign' | 'explainer';
 
 export interface ClipConfig {
   sourceKey: string;
+  /* Burn the spoken words into the picture. On unless turned off: about 85%
+     of short-form views happen with the sound off, so a clip without them is
+     one most of its audience cannot follow. */
+  captions?: boolean;
   mode?: ClipMode;
   /** Verbatim rules from the campaign brief, shown to the model. */
   campaignRules?: string;
@@ -152,14 +155,6 @@ export type TranscribeResult = Transcript & {
 /* Stage results                                                       */
 /* ------------------------------------------------------------------ */
 
-export interface WindowResult {
-  window: LocatedWindow;
-  startSec: number;
-  endSec: number;
-  /** The clip's own words, for directing the beats against. */
-  text: string;
-}
-
 export interface CutStageResult {
   mediaKey: string;
   startSec: number;
@@ -171,16 +166,8 @@ export interface CutStageResult {
   report: string;
 }
 
-export interface BeatsResult {
-  beats: Beat[];
-  advisories: string[];
-}
-
 /** How far either side of a chosen moment to look for a pause. */
 const SNAP_RADIUS_SEC = 1.5;
-
-/** One repair round. A second rarely helps and always costs. */
-const REPAIR_ROUNDS = 1;
 
 const DEFAULT_ASPECT = 9 / 16;
 
@@ -393,102 +380,6 @@ async function envelopeOfSource(
   return joinEnvelopes(parts);
 }
 
-/**
- * Campaign mode's choice of moment: the audio shortlists, the model judges.
- *
- * Asked to find a moment in a transcript alone, a model reaches for the most
- * quotable sentence — which in a chase video is the narration, the calmest
- * part of the whole recording.
- */
-async function campaignPick(
-  deps: ClipDeps, cfg: ClipConfig, file: File, transcript: Transcript, durationSec: number,
-): Promise<string> {
-  const env = await envelopeOfSource(deps, file, durationSec);
-  const peaks = findPeaks(env, { spanSec: 45, count: 4 });
-  deps.log?.(`${peaks.length} candidate moments from the audio`);
-
-  if (!peaks.length) {
-    /* No dynamics to shortlist from — a lecture, or a badly levelled export.
-       Fall back to reading the transcript rather than refusing outright. */
-    deps.log?.('no peaks in the audio — choosing from the transcript instead');
-    return windowAsk(transcript);
-  }
-
-  const candidates: MomentCandidate[] = peaks.map((p, i) => ({
-    n: i + 1,
-    start: p.start,
-    end: p.end,
-    why: p.why,
-    text: textNear(transcript.chunks, p.start, p.end),
-  }));
-  return campaignAsk(candidates, cfg.campaignRules);
-}
-
-export function windowStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
-  return async (previous) => {
-    const transcript = previous as Transcript;
-    const file = requireSource(deps, cfg);
-
-    const opening = cfg.mode === 'campaign'
-      ? await campaignPick(deps, cfg, file, transcript, transcript.duration)
-      : windowAsk(transcript);
-
-    let pick = readWindow(await deps.ask(opening, { firstTurn: true }));
-    let located = pick ? locateWindow(pick, transcript) : { window: null, problems: [] };
-
-    for (let round = 0; round < REPAIR_ROUNDS; round++) {
-      const blocking = blockingClipProblems(located.problems);
-      if (pick && located.window && !blocking.length) break;
-      deps.log?.('the moment it picked did not check out — asking again');
-      pick = readWindow(await deps.ask(
-        pick ? repairWindow(located.problems) : opening,
-      ));
-      located = pick ? locateWindow(pick, transcript) : { window: null, problems: [] };
-    }
-
-    if (!pick || !located.window) {
-      const why = located.problems.map((p) => p.detail).join(' ');
-      throw new Error(`No usable moment came back. ${why}`.trim());
-    }
-    if (blockingClipProblems(located.problems).length) {
-      throw new Error(
-        `The chosen moment does not match the transcript. `
-        + blockingClipProblems(located.problems).map((p) => p.detail).join(' '),
-      );
-    }
-
-    const chunk = transcript.chunks[located.window.chunk] || transcript.chunks[0];
-
-    const hookAt = await locateLine(deps, file, pick.hookLine, chunk.start, chunk.end);
-    if (hookAt === null) {
-      throw new Error('The opening line could not be found in the audio, so there is no point to cut from.');
-    }
-
-    /* The end is located too rather than estimated from the start. A window
-       whose length came from a word count is a clip that ends mid-sentence
-       whenever the speaker slows down. */
-    const closeAt = await locateLine(deps, file, pick.closingLine, chunk.start, chunk.end);
-    const endSec = closeAt !== null
-      ? closeAt + estimateSeconds(pick.closingLine)
-      : hookAt + located.window.estimatedSeconds;
-
-    if (!(endSec > hookAt)) {
-      throw new Error('The closing line was found before the opening one, so the clip would run backwards.');
-    }
-
-    const words = wordsOf(chunk.text);
-    const text = words.join(' ');
-
-    deps.log?.(`clip ${hookAt.toFixed(1)}–${endSec.toFixed(1)}s`);
-    return {
-      window: located.window,
-      startSec: hookAt,
-      endSec: Math.min(endSec, hookAt + MAX_CLIP_SECONDS),
-      text,
-    } satisfies WindowResult;
-  };
-}
-
 /** Move a boundary onto a real pause, when there is one to move to. */
 async function snapped(
   deps: ClipDeps, file: File, target: number, durationSec: number, label: string,
@@ -500,103 +391,6 @@ async function snapped(
   return snap.found ? snap.seconds : target;
 }
 
-export function cutStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
-  return async (previous, signal) => {
-    const win = previous as WindowResult;
-    const file = requireSource(deps, cfg);
-    const probe = await deps.media.probe(file);
-
-    const startSec = await snapped(deps, file, win.startSec, probe.durationSec, 'clip start');
-    const endSec = await snapped(deps, file, win.endSec, probe.durationSec, 'clip end');
-    if (!(endSec > startSec)) {
-      throw new Error('Snapping to the nearest pauses left the clip with no length.');
-    }
-
-    /* Where the speaker is, asked once for every sampled still rather than
-       once per still. */
-    let plan: ReframePlan | null = null;
-    const aspect = cfg.targetAspect ?? DEFAULT_ASPECT;
-    if (probe.video && !probe.alreadyVertical) {
-      const times = frameTimes(endSec - startSec);
-      const stills = await deps.media.frames(file, times.map((t) => startSec + t));
-      const faces = stills.length
-        ? readFaces(await deps.ask(faceAsk(stills.length), { firstTurn: true, attachments: stills }), times)
-        : [];
-      plan = planReframe(faces, probe.video.width, probe.video.height, aspect);
-      deps.log?.(`reframe: ${plan.why}`);
-    } else if (probe.video) {
-      deps.log?.('source is already vertical — no reframe');
-    }
-
-    if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
-    const out = await deps.media.cut(file, { startSec, endSec, plan });
-    const mediaKey = `${cfg.sourceKey}#clip`;
-    deps.putMedia(mediaKey, out.blob);
-
-    return {
-      mediaKey,
-      startSec,
-      endSec,
-      clipSeconds: endSec - startSec,
-      width: out.width,
-      height: out.height,
-      reframe: plan ? plan.mode : 'none',
-      report: out.report,
-    } satisfies CutStageResult;
-  };
-}
-
-export function beatsStage(deps: ClipDeps, cfg: ClipConfig, clipText: () => string): StageRunner {
-  return async (previous) => {
-    const cut = previous as CutStageResult;
-    const file = requireSource(deps, cfg);
-    const text = clipText();
-
-    /* The clip's own audio goes up with the ask. The Editor is deciding when
-       to cut away from a face, and the thing that decides it is delivery —
-       where the speaker leans in, speeds up, pauses before the punchline. A
-       transcript cannot carry any of that. */
-    const audio = await deps.media.audioDataUrl(file, cut.startSec, cut.endSec);
-
-    let reply = await deps.ask(beatAsk(cut.clipSeconds, text), { firstTurn: true, attachments: [audio] });
-    let beats = readBeats(reply);
-    let problems = checkBeats(beats, cut.clipSeconds, text);
-
-    for (let round = 0; round < REPAIR_ROUNDS; round++) {
-      if (beats.length && !blockingClipProblems(problems).length) break;
-      deps.log?.('the beat map did not tile the clip — asking for the beats that failed');
-      reply = await deps.ask(repairBeats(problems, cut.clipSeconds));
-      const repaired = readBeats(reply);
-      if (repaired.length) {
-        beats = repaired;
-        problems = checkBeats(beats, cut.clipSeconds, text);
-      }
-    }
-
-    const blocking = blockingClipProblems(problems);
-    if (!beats.length || blocking.length) {
-      throw new Error(
-        `The beat map cannot be built: ${(blocking.length ? blocking : problems)
-          .slice(0, 3).map((p) => p.detail).join(' ')}`,
-      );
-    }
-
-    const advisories = problems
-      .filter((p) => !blockingClipProblems([p]).length)
-      .map((p) => (p.shot ? `Beat ${p.shot} ${p.detail}` : p.detail));
-
-    deps.log?.(`${beats.length} beats, ${beats.filter((b) => b.edit === 'b-roll').length} graphics`);
-    return { beats, advisories } satisfies BeatsResult;
-  };
-}
-
-/**
- * The five runners, ready for the stage machine.
- *
- * `clipText` is a function rather than a value because the beats stage needs
- * the window stage's text, and the stage machine only ever hands a runner the
- * result immediately before it.
- */
 /**
  * Stages this configuration does not need, and why.
  *
@@ -754,6 +548,7 @@ export function layoutStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
       /* Inherited, so a director set to the chat does not lay out nine nodes
          that quietly use the API instead. */
       readOnServer: cfg.readOnServer !== false,
+      captions: cfg.captions !== false,
     });
     const cuts = plan.steps.filter((s) => s.type === 'cut').length;
     deps.log?.(`laying out ${cuts} cut${cuts === 1 ? '' : 's'}`);
@@ -861,6 +656,11 @@ export interface OneCutConfig {
   faces?: Array<{ t: number; x: number }>;
   /** The reading looked and found nobody on camera. Fit, do not ask. */
   noSpeaker?: boolean;
+  /* The words to burn into the picture, timed against this clip. Computed
+     once when the cut was laid out, from the reading that was already in hand,
+     so a cut node carries its own captions and needs nothing at run time.
+     About 85% of short-form views happen with the sound off. */
+  captions?: Array<{ startSec: number; endSec: number; text: string }>;
   /* Where the two fallback asks go when the reading could not answer them.
      Inherited from the Clipping node that laid this cut out, so a director set
      to the chat does not quietly emit nine nodes that use the API. Defaults on
@@ -1001,7 +801,12 @@ export async function runOneCut(
     deps.log?.(`reframe: ${plan.why}`);
   }
 
-  const out = await deps.media.cut(file, { startSec, endSec, plan });
+  const captions = (cfg.captions || []).filter(
+    (c) => c && Number.isFinite(c.startSec) && Number.isFinite(c.endSec) && c.endSec > c.startSec,
+  );
+  if (captions.length) deps.log?.(`burning in ${captions.length} caption cues`);
+
+  const out = await deps.media.cut(file, { startSec, endSec, plan, captions });
   /* Keyed by the lines rather than by the source, because a source now has
      many clips and `sourceKey#clip` would have every Cut node overwriting the
      one before it. */

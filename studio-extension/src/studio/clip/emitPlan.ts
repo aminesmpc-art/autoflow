@@ -33,6 +33,7 @@ import type { Plan, PlanStep } from '../builder/plan';
 import type { MomentCandidate, SurveyMoment } from '../ask/clipperBrain';
 import type { VideoReading } from './readingApi';
 import { framingFromReading, locateFromReading } from './fromReading';
+import { cuesForClip } from '../media/captions';
 
 export interface EmitOptions {
   sourceKey: string;
@@ -52,6 +53,8 @@ export interface EmitOptions {
      seconds and the speaker's position outright — which is four locate asks
      and one frame-sampling ask it never has to make. */
   reading?: VideoReading;
+  /** Burn the spoken words into the picture. On unless turned off. */
+  captions?: boolean;
   /* Where a cut puts its fallback asks. Carried onto every cut rather than
      read from a setting at run time, so a node keeps the behaviour it was laid
      out with even if the director is changed afterwards. */
@@ -126,6 +129,12 @@ export function emitPlan(
       startSec: found?.exact ? found.startSec : undefined,
       endSec: found?.exact ? found.endSec : undefined,
       faces,
+      /* Burned in at cut time. Computed here rather than in the Cut node
+         because the reading is in hand HERE — the node would otherwise have to
+         carry the whole transcript to recover four seconds of words. */
+      captions: options.captions === false || !found || !options.reading
+        ? undefined
+        : cuesForClip(options.reading.segments, found.startSec, found.endSec),
       readOnServer: options.readOnServer !== false,
       /* The candidate's own second, from the loudness envelope. A moment the
          survey named but the shortlist never contained would have none — but

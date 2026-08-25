@@ -39,6 +39,7 @@ import {
 } from 'mediabunny';
 
 import { rectAt, type Rect, type ReframePlan } from './reframe';
+import { cueAt, drawCaption, type CaptionCue, type CaptionStyle } from './captions';
 
 export interface CutOptions {
   startSec: number;
@@ -51,6 +52,11 @@ export interface CutOptions {
   onProgress?: (fraction: number) => void;
   /** Defaults to QUALITY_HIGH. */
   quality?: Quality;
+  /* Burned into the picture, timed against the CLIP. About 85% of short-form
+     views happen with the sound off, so this is not decoration — it is
+     whether most of the audience can follow the clip at all. */
+  captions?: CaptionCue[];
+  captionStyle?: CaptionStyle;
 }
 
 export interface CutResult {
@@ -114,6 +120,14 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
      on a blurred copy of itself". */
   const fitting = plan?.mode === 'fit';
 
+  /* Captions are painted onto the frame, so they need the same canvas the
+     reframing paths use. Without this a clip with no reframe — an already
+     vertical source — took mediabunny's straight-through route and the text
+     had nowhere to be drawn. */
+  const captions = (options.captions || []).filter((c) => c.endSec > c.startSec);
+  const captioning = captions.length > 0;
+  const drawing = tracked || fitting || captioning;
+
   /* Output size is decided ONCE and never varies. An encoder is configured a
      single time; a frame that arrives one pixel wider than the configuration
      is a hard failure partway through a run. reframe.ts guarantees constant
@@ -130,7 +144,7 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
 
   let canvas: OffscreenCanvas | null = null;
   let ctx: OffscreenCanvasRenderingContext2D | null = null;
-  if (tracked || fitting) {
+  if (drawing) {
     canvas = new OffscreenCanvas(outWidth, outHeight);
     ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Could not get a 2D context to draw the reframed video into.');
@@ -143,8 +157,11 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
     audio: silent ? { discard: true } : undefined,
     video: {
       quality: options.quality ?? DEFAULT_QUALITY,
-      ...(fixed && !fitting ? { crop: fixed } : {}),
-      ...((tracked || fitting) && ctx && canvas
+      /* Only when nothing is being drawn. Handing mediabunny a crop while
+         also drawing that crop onto a canvas applies it twice, and the second
+         one lands on an already-cropped frame. */
+      ...(fixed && !drawing ? { crop: fixed } : {}),
+      ...(drawing && ctx && canvas
         ? {
           processedWidth: outWidth,
           processedHeight: outHeight,
@@ -181,12 +198,7 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
                 (outWidth - sw * contain) / 2, (outHeight - sh * contain) / 2,
                 sw * contain, sh * contain,
               );
-              return new VideoSample(canvas!, {
-                timestamp: sample.timestamp,
-                duration: sample.duration,
-              });
-            }
-
+            } else if (plan) {
             /* Timestamps here are ALREADY clip-relative — mediabunny rebases
                them against the trim before calling this, so a clip trimmed
                from 2s sees its first frame at 0, not at 2.
@@ -196,15 +208,33 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
                late by exactly the trim start, so a clip cut from 1s showed
                the frame the plan wanted a second earlier. It was found by
                checking the colour of the output pixels, and by nothing else. */
-            const r = rectAt(plan!, sample.timestamp);
-            /* draw() honours rotation metadata, which is what stops a
-               portrait phone clip being cropped as though it were
-               landscape. */
-            sample.draw(
-              ctx!,
-              r.left, r.top, r.width, r.height,
-              0, 0, outWidth, outHeight,
-            );
+              const r = rectAt(plan, sample.timestamp);
+              /* draw() honours rotation metadata, which is what stops a
+                 portrait phone clip being cropped as though it were
+                 landscape. */
+              sample.draw(
+                ctx!,
+                r.left, r.top, r.width, r.height,
+                0, 0, outWidth, outHeight,
+              );
+            } else {
+              /* Captions on a clip that needs no reframe — an already vertical
+                 source. The picture passes through at its own size and only
+                 the text is added. */
+              const sw = sample.displayWidth || sample.codedWidth;
+              const sh = sample.displayHeight || sample.codedHeight;
+              sample.draw(ctx!, 0, 0, sw, sh, 0, 0, outWidth, outHeight);
+            }
+
+            /* Seconds, not microseconds. Every keyframe time in a reframe plan
+               is in seconds and rectAt is fed this same value directly above,
+               so the units are already established — getting it wrong here
+               would show the first cue for the whole clip. */
+            if (captioning) {
+              const cue = cueAt(captions, sample.timestamp);
+              if (cue) drawCaption(ctx!, cue, outWidth, outHeight, options.captionStyle);
+            }
+
             return new VideoSample(canvas!, {
               timestamp: sample.timestamp,
               duration: sample.duration,

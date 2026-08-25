@@ -3411,7 +3411,7 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   gap: 5px;
   padding: var(--s-2);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-ctrl);
   background: var(--surface-2);
 }
 .sn-clip__moment-head { display: flex; gap: var(--s-2); align-items: center; }
@@ -3427,11 +3427,11 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   flex: 1;
   height: 4px;
   min-width: 0;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--line);
   overflow: hidden;
 }
-.sn-clip__score-fill { display: block; height: 100%; border-radius: 999px; background: currentColor; }
+.sn-clip__score-fill { display: block; height: 100%; border-radius: var(--r-pill); background: currentColor; }
 .sn-clip__score-num {
   flex: 0 0 auto;
   font-size: var(--t-micro);
@@ -3457,7 +3457,7 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
 .sn-clip__read {
   margin: 0 var(--s-2) var(--s-2);
   padding: 5px var(--s-2);
-  border-radius: 6px;
+  border-radius: var(--r-chip);
   background: var(--surface-2);
   border: 1px solid var(--line);
   font-size: var(--t-micro);
@@ -3810,3 +3810,22 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   color: var(--text-3);
   line-height: 1.45;
 }
+
+/* Clipping: the captions toggle.
+   Shaped like the selects beside it so the strip reads as one row of
+   settings rather than a row plus a stray checkbox. */
+.sn-clip__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px var(--s-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  cursor: pointer;
+  user-select: none;
+}
+.sn-clip__toggle input { margin: 0; accent-color: var(--n-video); cursor: pointer; }
+.sn-clip__toggle--on { color: var(--text); border-color: var(--n-video); }
