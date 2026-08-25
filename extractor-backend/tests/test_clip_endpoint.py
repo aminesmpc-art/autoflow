@@ -389,6 +389,47 @@ class TestAskAttachments:
         assert r.status_code == 200
         assert stub_gemini["contents"] == ["rank these moments"]
 
+
+class TestAnswersAboutNothing:
+    """A server that ignores attachments must be distinguishable from one that
+    read them.
+
+    Not hypothetical. During the rolling deploy that shipped attachments, the
+    same probe returned 415 from one instance and a cheerful 200 from the
+    other — the older build dropped the unknown `attachments` key and answered
+    "read this" as plain text. Put the framing prompt through that and it
+    returns eight confident speaker positions for stills it never saw."""
+
+    @pytest.fixture
+    def stub_gemini(self, monkeypatch):
+        class FakeModels:
+            def generate_content(self, **kw):
+                return SimpleNamespace(text='{"positions":[]}')
+
+        monkeypatch.setattr(clip_api, "_vertex_credentials", lambda: None)
+        monkeypatch.setattr(clip_api.settings, "gemini_api_key", "test-key")
+        import google.genai as genai
+        monkeypatch.setattr(
+            genai, "Client", lambda **kw: SimpleNamespace(models=FakeModels())
+        )
+
+    @staticmethod
+    def data_url(mime: str = "image/jpeg") -> str:
+        return f"data:{mime};base64,{base64.b64encode(b'bytes').decode()}"
+
+    def test_says_how_many_it_put_in_front_of_the_model(self, client, stub_gemini):
+        r = client.post("/api/clip/ask", json={
+            "prompt": "where is the speaker",
+            "attachments": [self.data_url(), self.data_url(), self.data_url()],
+        })
+        assert r.json()["attachments_received"] == 3
+
+    def test_says_zero_when_there_were_none(self, client, stub_gemini):
+        """The count is what a caller checks against, so it has to be present
+        and honest on the plain-text path too."""
+        r = client.post("/api/clip/ask", json={"prompt": "rank these"})
+        assert r.json()["attachments_received"] == 0
+
 class TestStatusAndModel:
     def test_unknown_job_is_a_404_not_an_empty_success(self, client):
         assert client.get("/api/clip/status/nope").status_code == 404
