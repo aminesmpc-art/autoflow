@@ -33,7 +33,6 @@ import type { Plan, PlanStep } from '../builder/plan';
 import type { MomentCandidate, SurveyMoment } from '../ask/clipperBrain';
 import type { VideoReading } from './readingApi';
 import { framingFromReading, locateFromReading } from './fromReading';
-import { cuesForClip } from '../media/captions';
 
 export interface EmitOptions {
   sourceKey: string;
@@ -59,6 +58,39 @@ export interface EmitOptions {
      read from a setting at run time, so a node keeps the behaviour it was laid
      out with even if the director is changed afterwards. */
   readOnServer?: boolean;
+}
+
+
+/* How far a cut may wander from where the reading placed it.
+   Mirrors runOneCut: it searches SEARCH_BACK before the candidate second and
+   SEARCH_FORWARD after it whenever the boundaries were not exact. Carrying the
+   phrases for that whole window is a few kilobytes and means the captions are
+   there wherever the cut lands. */
+const SEARCH_BACK_SEC = 20;
+const SEARCH_FORWARD_SEC = 130;
+
+/* A clip snapped to silence starts up to SNAP_RADIUS_SEC from the planned
+   second, so the window is padded rather than cut to the exact span. */
+const SNAP_PAD_SEC = 2;
+
+function phrasesAround(
+  segments: Array<{ start: number; end: number; text: string }>,
+  found: { startSec: number; endSec: number; exact: boolean } | null,
+  nearSec: number,
+  maxSeconds?: number,
+): Array<{ start: number; end: number; text: string }> {
+  let from: number;
+  let to: number;
+  if (found?.exact) {
+    from = found.startSec - SNAP_PAD_SEC;
+    to = found.endSec + SNAP_PAD_SEC;
+  } else {
+    from = Math.max(0, nearSec - SEARCH_BACK_SEC);
+    to = from + SEARCH_BACK_SEC + SEARCH_FORWARD_SEC + (maxSeconds ?? 90);
+  }
+  return segments
+    .filter((seg) => seg.end > from && seg.start < to)
+    .map((seg) => ({ start: seg.start, end: seg.end, text: seg.text }));
 }
 
 /** A short, readable id that survives being looked at in JSON. */
@@ -129,12 +161,22 @@ export function emitPlan(
       startSec: found?.exact ? found.startSec : undefined,
       endSec: found?.exact ? found.endSec : undefined,
       faces,
-      /* Burned in at cut time. Computed here rather than in the Cut node
-         because the reading is in hand HERE — the node would otherwise have to
-         carry the whole transcript to recover four seconds of words. */
-      captions: options.captions === false || !found || !options.reading
+      /* The spoken phrases, in the VIDEO's own seconds — not cue times.
+         The cues used to be worked out here, against found.startSec, and they
+         did not follow the voice. Two reasons, and the second is the bad one:
+
+           · the cut SNAPS its boundaries to the nearest silence, up to 1.5s
+             either way, so the clip does not begin where this thought it would
+           · when the closing line was not found exactly, startSec is left
+             undefined on purpose so the cut re-locates both ends from the
+             audio — landing anywhere in a 150 second search window, while the
+             captions stayed timed from a number it had already discarded
+
+         Cue times can only be worked out against the boundaries the encoder
+         actually used, so they are worked out there. This carries the words. */
+      captionPhrases: options.captions === false || !found || !options.reading
         ? undefined
-        : cuesForClip(options.reading.segments, found.startSec, found.endSec),
+        : phrasesAround(options.reading.segments, found, byN.get(m.moment)?.start ?? 0, options.maxSeconds),
       readOnServer: options.readOnServer !== false,
       /* The candidate's own second, from the loudness envelope. A moment the
          survey named but the shortlist never contained would have none — but

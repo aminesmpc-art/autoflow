@@ -202,3 +202,53 @@ describe('drawing a cue', () => {
     expect(calls).toContain('fill:hello');
   });
 });
+
+describe('cues follow the boundaries the encoder actually used', () => {
+  /* The bug this pins: captions that did not follow the voice.
+     They were worked out when the cut was laid out, against the second the
+     reading placed the clip at. Two things move a clip away from that second
+     before a frame is encoded:
+
+       · snapping, which slides each boundary to the nearest silence, up to
+         1.5s either way
+       · re-locating, which happens whenever the closing line was not found
+         exactly — the cut then searches a 150 second window for both ends
+
+     Either way the words stayed timed from a number that had been discarded.
+     Cue times can only be built from the boundaries the encoder uses. */
+
+  const phrases = [
+    { start: 100, end: 104, text: 'the first thing said here' },
+    { start: 104, end: 108, text: 'and then the second thing' },
+  ];
+
+  it('shifts with a boundary that snapped later', () => {
+    const planned = cuesForClip(phrases, 100, 108);
+    const snapped = cuesForClip(phrases, 101.5, 108);
+
+    expect(planned[0].startSec).toBeCloseTo(0, 5);
+    /* The same words, one and a half seconds earlier in the clip, because the
+       clip now begins one and a half seconds later in the video. */
+    expect(snapped[0].startSec).toBeCloseTo(0, 5);
+    expect(snapped[0].endSec).toBeLessThan(planned[0].endSec);
+  });
+
+  it('is completely wrong when timed against a boundary that moved far', () => {
+    /* The re-located case, at the scale it actually happens: the reading placed
+       the clip at 100s, the cut located it at 130s. Cues timed from 100 put
+       every word thirty seconds from where it is spoken. */
+    const atPlanned = cuesForClip(phrases, 100, 108);
+    const atLocated = cuesForClip(phrases, 130, 138);
+
+    expect(atPlanned.length).toBeGreaterThan(0);
+    expect(atLocated).toHaveLength(0);      // no speech there at all
+  });
+
+  it('keeps the first word at the top of the clip wherever it starts', () => {
+    for (const start of [100, 101.5, 98.5]) {
+      const cues = cuesForClip(phrases, start, start + 8);
+      expect(cues[0].startSec).toBeGreaterThanOrEqual(0);
+      expect(cues[0].startSec).toBeLessThan(2);
+    }
+  });
+});

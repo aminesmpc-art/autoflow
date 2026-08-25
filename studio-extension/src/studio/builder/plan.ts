@@ -87,8 +87,10 @@ export interface PlanStep {
      is told there isn't one, and fits the frame — which is what the reading
      said before the clip existed. */
   readOnServer?: boolean;
-  /** Cue list burned into the picture at cut time. */
-  captions?: Array<{ startSec: number; endSec: number; text: string }>;
+  /* The spoken phrases in the VIDEO's own seconds. Cue times are worked out
+     at cut time, against the boundaries the encoder actually used — see
+     emitPlan for why they cannot be worked out any earlier. */
+  captionPhrases?: Array<{ start: number; end: number; text: string }>;
   /** Cap on the finished clip, in seconds. */
   maxSeconds?: number;
   /** Step ids feeding this one — a still, a clip, or written text. */
@@ -365,7 +367,8 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
           endSec: typeof step.endSec === 'number' && step.endSec > 0 ? step.endSec : undefined,
           faces: Array.isArray(step.faces) ? step.faces : undefined,
           readOnServer: step.readOnServer !== false,
-          captions: Array.isArray(step.captions) && step.captions.length ? step.captions : undefined,
+          captionPhrases: Array.isArray(step.captionPhrases) && step.captionPhrases.length
+            ? step.captionPhrases : undefined,
           maxSeconds: typeof step.maxSeconds === 'number' && step.maxSeconds > 0 ? step.maxSeconds : undefined,
           /* Inherited from the Clipping node that laid this out. A cut with no
              platform silently used ChatGPT while its director used Gemini. */

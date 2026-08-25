@@ -1712,9 +1712,9 @@ export class WorkflowRunner {
       /* Defaults on, so a cut laid out before this flag existed still puts
          its fallback asks to the API rather than to a chat tab. */
       readOnServer: nodeData.readOnServer !== false,
-      /* Worked out when this cut was laid out, from the reading that was in
-         hand then. Carried on the node so it needs nothing at run time. */
-      captions: Array.isArray(nodeData.captions) ? nodeData.captions : undefined,
+      /* The words, in the video's own seconds. runOneCut turns them into cue
+         times once it knows where the clip really begins. */
+      captionPhrases: Array.isArray(nodeData.captionPhrases) ? nodeData.captionPhrases : undefined,
     });
 
     /* mediaKey is what the node's player reads back out of the store. Without
