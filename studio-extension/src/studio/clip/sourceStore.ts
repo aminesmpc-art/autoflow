@@ -13,12 +13,24 @@
  * stages that need to read the video again — cutting, mainly — need the file
  * back, and the fix is to drop it on the node once more.
  *
- * The alternative is the File System Access API, whose handles CAN be stored
- * in IndexedDB and re-permissioned later. That is the right answer eventually.
- * It is not the right answer first, because it needs a permission prompt on
- * every reopen and a fallback for when the user says no — which is this, so
- * this has to exist either way.
+ * ── That cost turned out to be too high ──────────────────────────────────
+ *
+ * A workflow that ran perfectly, reopened the next day, showed eight Cut nodes
+ * all saying "the video is not loaded" and nothing to show for a finished run.
+ * The paragraph above is still true — a File cannot be serialised into node
+ * data — but the conclusion was wrong: the bytes do not have to live only in
+ * this tab.
+ *
+ * ./vault.ts keeps both the clips and the source in IndexedDB, and everything
+ * below writes through to it. These Maps are now the fast path in front of
+ * that, not the only copy.
+ *
+ * The File System Access API is still not the answer: its handles need a
+ * permission prompt on every reopen, and they give back the SOURCE when what a
+ * finished workflow actually needs back is the OUTPUT.
  */
+
+import * as vault from './vault';
 
 /** Source videos, by the key held in node data. */
 const sources = new Map<string, File>();
@@ -41,6 +53,10 @@ export function sourceKeyFor(file: File): string {
 
 export function putSource(key: string, file: File): void {
   sources.set(key, file);
+  /* Written through, not awaited. A drop should feel instant, and a vault
+     that cannot write must not stop a run — it only means the next reopen
+     asks for the file again, which is exactly what happened before. */
+  void vault.saveSource(key, file);
 }
 
 export function getSource(key: string): File | undefined {
@@ -51,6 +67,7 @@ export const hasSource = (key: string): boolean => sources.has(key);
 
 export function putMedia(key: string, blob: Blob): void {
   media.set(key, blob);
+  void vault.saveMedia(key, blob);
 }
 
 export function getMedia(key: string): Blob | undefined {
@@ -69,12 +86,37 @@ export function forget(key: string): void {
   for (const k of [...media.keys()]) {
     if (k === key || k.startsWith(`${key}#`)) media.delete(k);
   }
+  void vault.drop(key);
 }
 
 /** Everything, for a node that is being deleted or a test that just ran. */
 export function forgetAll(): void {
   sources.clear();
   media.clear();
+}
+
+/**
+ * Put back what previous sessions produced.
+ *
+ * Called once when Studio opens, before the canvas renders, so a Cut node
+ * mounts with its clip already in hand rather than mounting broken and
+ * repairing itself a moment later.
+ *
+ * Anything already in memory WINS. A file dropped in this session is the one
+ * the user just chose; a restored copy of the same key is the same bytes at
+ * best and a stale namesake at worst.
+ */
+export async function hydrate(): Promise<{ sources: number; media: number }> {
+  const { restore } = await import('./vault');
+  const kept = await restore();
+
+  for (const { key, file } of kept.sources) {
+    if (!sources.has(key)) sources.set(key, file);
+  }
+  for (const { key, blob } of kept.media) {
+    if (!media.has(key)) media.set(key, blob);
+  }
+  return { sources: kept.sources.length, media: kept.media.length };
 }
 
 /** What is held right now, for the node's report and for leak checks. */
