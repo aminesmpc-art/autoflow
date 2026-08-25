@@ -71,6 +71,8 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
      on the clipboard and the text in a log cannot drift apart. */
   const sheetText = sheetAsText(sheet as EditOp[], d.title);
   const brollCount: number = typeof d.brollCount === 'number' ? d.brollCount : 0;
+  /* Inherited from the director that laid this cut out. */
+  const campaign: boolean = d.clipMode !== 'explainer';
 
   /* The clip in pieces Flow will accept. Saving them is the point: Flow's own
      file input is `multiple`, so however many parts there are it is still ONE
@@ -205,6 +207,17 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
                   cutaway wants one to two seconds and the shortest clip Flow
                   makes is four, so every generated asset arrives longer than
                   the line above asks for. It is a trim, not a fault. */}
+              {/* Why there is no cutaway on the sheet.
+                  Campaign work forbids footage that is not the creator's own,
+                  so the director is never OFFERED broll and nothing is refused
+                  — which means the absence is silent, and a clipper wondering
+                  where the generated shots went has nothing to read. */}
+              {campaign && (
+                <p className="sn-cut__sheet-note">
+                  Campaign mode — no generated footage, so no cutaways are
+                  planned. Switch the Clipping node to Explainer for those.
+                </p>
+              )}
               {brollCount > 0 && (
                 <p className="sn-cut__sheet-note">
                   {brollCount} cutaway{brollCount === 1 ? '' : 's'} generated beside this

@@ -1729,6 +1729,11 @@ export class WorkflowRunner {
         platform: 'flow',
         aspectRatio: '9:16',
         duration: WorkflowRunner.brollDuration(op.seconds),
+        /* Named rather than left to the adapter's default. Omni is the only
+           Flow model that takes a duration at all, and the only one that edits
+           from a reference — so a cutaway that quietly fell back to Veo would
+           ignore both the length asked for and the style reference. */
+        model: 'Omni Flash',
         creationType: 'ingredients',
         /* Inherited from the cut that laid this out, so every cutaway for a
            clip matches the same footage. The upload itself cannot be

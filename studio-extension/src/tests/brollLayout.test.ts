@@ -133,3 +133,32 @@ describe('the duration Flow will actually give back', () => {
     expect(runner).toMatch(/for \(const step of \[4, 6, 8, 10\]\) if \(want <= step\) return `\$\{step\}s`;/);
   });
 });
+
+describe('which model a cutaway asks for', () => {
+  it('names Omni Flash rather than relying on a default', () => {
+    /* Omni is the only Flow model that takes a duration at all, and the only
+       one that edits from a reference. A cutaway that quietly fell back to Veo
+       would ignore both the length asked for and the style reference — and
+       would do it silently, since the generation still succeeds. */
+    expect(layOut).toMatch(/model: 'Omni Flash'/);
+  });
+
+  it('sends it to Flow, not to a chat', () => {
+    expect(layOut).toMatch(/platform: 'flow'/);
+    expect(layOut).toMatch(/mediaType: 'video'/);
+  });
+});
+
+describe('when no cutaway is planned at all', () => {
+  it('the Cut node says campaign mode is why', () => {
+    /* The silent case. Under a campaign brief the director is never OFFERED
+       broll, so nothing is refused and nothing is logged — a clipper wondering
+       where the generated shots went has nothing at all to read. */
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const node = readFileSync(
+      join(__dirname, '..', 'studio', 'nodes', 'CutNode.tsx'), 'utf8',
+    ).replace(/\r\n/g, '\n');
+    expect(node).toMatch(/Campaign mode — no generated footage/);
+    expect(node).toMatch(/Switch the Clipping node to Explainer/);
+  });
+});
