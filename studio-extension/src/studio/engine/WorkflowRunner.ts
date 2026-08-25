@@ -35,6 +35,10 @@ import { compilePlan } from '../builder/plan';
 /* How far right of the Clipping node its cuts are laid out. Wide enough that
    the director and the first column of cuts do not overlap at any zoom. */
 const LAYOUT_GAP_X = 520;
+
+/* Vertical spacing for the cutaways a Cut node lays out. A generate node
+   is far shorter than a Cut node, so they stack tighter. */
+const BROLL_ROW_H = 240;
 import {
   isFramesMode, extendChain, secondsOf, isRunnableType, GROK_MAX_TOTAL_SECONDS,
 } from '../templates/validate';
@@ -1664,6 +1668,95 @@ export class WorkflowRunner {
     return fresh.filter((n: any) => n.type === 'cut').length;
   }
 
+
+  /* What Flow will actually generate. A cutaway wants one to two seconds and
+     the shortest clip Flow makes is four, so every asset arrives longer than
+     the sheet asks for. That is not a problem to solve here — it is a trim in
+     CapCut, and the node says so — but it does mean the duration is rounded UP
+     to something Flow offers rather than passed through and silently ignored. */
+  private static brollDuration(seconds?: number): string {
+    const want = Math.max(1, seconds ?? 2);
+    for (const step of [4, 6, 8, 10]) if (want <= step) return `${step}s`;
+    return '10s';
+  }
+
+  /**
+   * Put the sheet's cutaways on the canvas, beside the cut that planned them.
+   *
+   * Each one carries the second it belongs at IN ITS LABEL, because that is the
+   * whole point: a folder of unlabelled clips is a puzzle, and the same folder
+   * with "@0:03 for 1.8s" on each one is an edit. The sheet on the Cut node and
+   * the label on the asset say the same thing so neither has to be trusted
+   * alone.
+   *
+   * Explainer only. The sheet already refuses a cutaway under a campaign brief,
+   * and this refuses it again — a node sitting on the canvas is an invitation
+   * to use it, and the account doing the earning is worth more than a cutaway.
+   */
+  private layOutBroll(nodeId: string, ops: any[], mode: string): number {
+    if (mode !== 'explainer') return 0;
+    const cutaways = (ops || []).filter((o) => o?.kind === 'broll' && String(o.what || '').trim());
+    if (!cutaways.length) return 0;
+
+    const store = useStudioStore.getState();
+    const origin = store.nodes.find((n) => n.id === nodeId);
+    const ox = (origin?.position?.x ?? 0) + LAYOUT_GAP_X;
+    const oy = origin?.position?.y ?? 0;
+    const tag = `${nodeId}__b`;
+
+    const at = (sec: number): string => {
+      const s = Math.max(0, Number(sec) || 0);
+      return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    };
+
+    const fresh = cutaways.map((op, i) => ({
+      id: `${tag}${i + 1}`,
+      type: 'generate',
+      position: { x: ox, y: oy + i * BROLL_ROW_H },
+      data: {
+        type: 'generate',
+        label: `@${at(op.atSec)}${op.seconds ? ` for ${Number(op.seconds).toFixed(1)}s` : ''}`,
+        prompt: String(op.what).trim(),
+        mediaType: 'video',
+        platform: 'flow',
+        aspectRatio: '9:16',
+        duration: WorkflowRunner.brollDuration(op.seconds),
+        creationType: 'ingredients',
+        status: 'idle',
+        enabled: true,
+        /* Owned by this cut, so laying out again replaces rather than doubles,
+           and so the canvas can show where it came from. */
+        brollOwner: nodeId,
+        brollAtSec: op.atSec,
+        brollHoldSec: op.seconds,
+      },
+    }));
+
+    const freshEdges = fresh.map((n) => ({
+      id: `${tag}from_${n.id}`,
+      source: nodeId,
+      target: n.id,
+      sourceHandle: 'text',
+      targetHandle: 'text',
+      type: 'default',
+      animated: true,
+      style: { stroke: '#f97316', strokeWidth: 2 },
+    }));
+
+    const keptNodes = store.nodes.filter((n) => (n.data as any)?.brollOwner !== nodeId);
+    const keptIds = new Set(keptNodes.map((n) => n.id));
+    keptIds.add(nodeId);
+    const keptEdges = store.edges.filter((e) => keptIds.has(e.source) && keptIds.has(e.target));
+
+    store.setNodes([...keptNodes, ...fresh] as any);
+    store.setEdges([...keptEdges, ...freshEdges] as any);
+
+    /* Into the run that is still going, so they generate now rather than
+       waiting for somebody to press Run a second time. */
+    this.extendRun?.(fresh as any);
+    return fresh.length;
+  }
+
   /**
    * One Cut node: find its two lines in the audio and encode between them.
    *
@@ -1747,6 +1840,18 @@ export class WorkflowRunner {
       editGaps: result.editGaps,
       statusNote: '',
     });
+
+    /* The assets the sheet asked for, generated beside the clip they belong
+       to and labelled with the second they go at. */
+    const cutaways = this.layOutBroll(
+      nodeId,
+      result.editSheet || [],
+      nodeData.clipMode === 'explainer' ? 'explainer' : 'campaign',
+    );
+    if (cutaways) {
+      store.updateNodeData(nodeId, { brollCount: cutaways });
+      console.log(`[Runner] ${cutaways} cutaway(s) laid out for "${nodeData.label}"`);
+    }
     console.log(`[Runner] Cut "${nodeData.label}": ${result.report}`);
 
     const blob = getMedia(result.mediaKey);

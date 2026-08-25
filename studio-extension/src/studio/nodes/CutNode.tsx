@@ -70,6 +70,7 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
   /* Built by the same function that formats it anywhere else, so the text
      on the clipboard and the text in a log cannot drift apart. */
   const sheetText = sheetAsText(sheet as EditOp[], d.title);
+  const brollCount: number = typeof d.brollCount === 'number' ? d.brollCount : 0;
 
   return (
     <div className={`sn-wrap sn-wrap--kind-cut ${selected ? 'sn-wrap--selected' : ''}`}>
@@ -173,6 +174,16 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
                   one that was followed and one that worked. */}
               {gaps.length > 0 && (
                 <p className="sn-cut__sheet-gap">{gaps.join(' · ')}</p>
+              )}
+              {/* Said plainly, because the numbers disagree on purpose. A
+                  cutaway wants one to two seconds and the shortest clip Flow
+                  makes is four, so every generated asset arrives longer than
+                  the line above asks for. It is a trim, not a fault. */}
+              {brollCount > 0 && (
+                <p className="sn-cut__sheet-note">
+                  {brollCount} cutaway{brollCount === 1 ? '' : 's'} generated beside this
+                  node — each is at least 4s, so trim to the hold above.
+                </p>
               )}
             </div>
           )}

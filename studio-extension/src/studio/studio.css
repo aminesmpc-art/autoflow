@@ -3894,3 +3894,12 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   color: var(--warn);
   line-height: 1.4;
 }
+
+/* A note, not a warning: the generated assets are longer than the sheet asks
+   and that is expected, so it reads in the quiet colour rather than amber. */
+.sn-cut__sheet-note {
+  margin: 0;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.4;
+}
