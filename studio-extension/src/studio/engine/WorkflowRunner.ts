@@ -1570,6 +1570,7 @@ export class WorkflowRunner {
       captions: nodeData.captions !== false,
       captionPreset: nodeData.captionPreset || undefined,
       planEdit: nodeData.planEdit === true,
+      omniParts: nodeData.omniParts === true,
     };
 
     const runners = clipRunners(deps, cfg);
@@ -1821,6 +1822,7 @@ export class WorkflowRunner {
       captionStyle: nodeData.captionPreset ? { preset: nodeData.captionPreset } : undefined,
       /* Planned once, when the cut is made, and kept on the node. */
       planEdit: nodeData.planEdit === true,
+      omniParts: nodeData.omniParts === true,
       mode: nodeData.clipMode === 'explainer' ? 'explainer' : 'campaign',
       title: typeof nodeData.title === 'string' ? nodeData.title : undefined,
       why: typeof nodeData.why === 'string' ? nodeData.why : undefined,
@@ -1838,6 +1840,10 @@ export class WorkflowRunner {
       editSheet: result.editSheet,
       editDropped: result.editDropped,
       editGaps: result.editGaps,
+      /* The pieces Omni will take, kept on the node so they survive a
+         reopen with everything else the run produced. */
+      omniParts: result.omniParts,
+      omniSplit: result.omniSplit,
       statusNote: '',
     });
 

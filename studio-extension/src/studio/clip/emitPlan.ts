@@ -58,6 +58,8 @@ export interface EmitOptions {
   captionPreset?: import('../media/captions').CaptionPreset;
   /** Plan what to ADD to each finished clip. See clip/editSheet.ts. */
   planEdit?: boolean;
+  /** Encode every cut in pieces Omni will take. See clip/omniChunks.ts. */
+  omniParts?: boolean;
   /* Where a cut puts its fallback asks. Carried onto every cut rather than
      read from a setting at run time, so a node keeps the behaviour it was laid
      out with even if the director is changed afterwards. */
@@ -185,6 +187,7 @@ export function emitPlan(
       /* The director's settings, carried onto the cut rather than read at
          run time, so a clip keeps the brief it was planned under. */
       planEdit: options.planEdit === true,
+      omniParts: options.omniParts === true,
       mode: options.mode,
       readOnServer: options.readOnServer !== false,
       /* The candidate's own second, from the loudness envelope. A moment the

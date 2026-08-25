@@ -72,6 +72,32 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
   const sheetText = sheetAsText(sheet as EditOp[], d.title);
   const brollCount: number = typeof d.brollCount === 'number' ? d.brollCount : 0;
 
+  /* The clip in pieces Flow will accept. Saving them is the point: Flow's own
+     file input is `multiple`, so however many parts there are it is still ONE
+     pick — which is what makes chunking bearable given that the upload itself
+     cannot be automated. */
+  const parts: any[] = Array.isArray(d.omniParts) ? d.omniParts : [];
+  const omniSplit: string = typeof d.omniSplit === 'string' ? d.omniSplit : '';
+
+  const saveParts = useCallback(() => {
+    const base = String(d.label || 'clip').replace(/[^\w.-]+/g, '_');
+    parts.forEach((part, i) => {
+      const blob = getMedia(part.mediaKey);
+      if (!blob) return;
+      /* Staggered. Chrome throttles a burst of downloads from one gesture and
+         silently drops the tail, which would leave the pick short of pieces
+         with nothing saying so. */
+      setTimeout(() => {
+        const href = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = href;
+        a.download = `${base}-part${part.index}of${part.of}.mp4`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(href), 10000);
+      }, i * 400);
+    });
+  }, [parts, d.label]);
+
   return (
     <div className={`sn-wrap sn-wrap--kind-cut ${selected ? 'sn-wrap--selected' : ''}`}>
       <div className="sn-actions">
@@ -185,6 +211,24 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
                   node — each is at least 4s, so trim to the hold above.
                 </p>
               )}
+            </div>
+          )}
+
+          {/* The pieces, and the one button that gets them all onto disk.
+              Flow's picker takes several files at once, so N parts is still a
+              single pick — see saveParts for why they are staggered. */}
+          {parts.length > 1 && (
+            <div className="sn-cut__parts">
+              <div className="sn-cut__parts-head">
+                <span>{omniSplit || `${parts.length} parts for Omni`}</span>
+                <button type="button" className="sn-cut__copy nodrag" onClick={saveParts}>
+                  Save all
+                </button>
+              </div>
+              <p className="sn-cut__parts-note">
+                Flow edits 10s at a time. Save these, then pick them together in
+                Flow — the file dialog takes them all at once.
+              </p>
             </div>
           )}
 

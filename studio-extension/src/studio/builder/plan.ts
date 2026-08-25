@@ -93,6 +93,7 @@ export interface PlanStep {
   captionPhrases?: Array<{ start: number; end: number; text: string }>;
   captionPreset?: string;
   planEdit?: boolean;
+  omniParts?: boolean;
   mode?: string;
   /** Cap on the finished clip, in seconds. */
   maxSeconds?: number;
@@ -374,6 +375,7 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
             ? step.captionPhrases : undefined,
           captionPreset: step.captionPreset || undefined,
           planEdit: step.planEdit === true ? true : undefined,
+          omniParts: step.omniParts === true ? true : undefined,
           clipMode: step.mode || undefined,
           maxSeconds: typeof step.maxSeconds === 'number' && step.maxSeconds > 0 ? step.maxSeconds : undefined,
           /* Inherited from the Clipping node that laid this out. A cut with no

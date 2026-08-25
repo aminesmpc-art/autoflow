@@ -173,6 +173,9 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
   /* Off by default. It is one more ask per cut, and a clipper who only wants
      the clip should not pay for a plan they are not going to follow. */
   const planEdit: boolean = d.planEdit === true;
+  /* Off by default: N more encodes per clip, and only worth paying when the
+     pieces are going to Omni. */
+  const omniParts: boolean = d.omniParts === true;
 
   const mode: 'campaign' | 'explainer' = d.clipMode === 'explainer' ? 'explainer' : 'campaign';
   const wanted: number = typeof d.wantedClips === 'number' ? d.wantedClips : DEFAULT_WANTED;
@@ -413,6 +416,21 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               onChange={(e) => updateNodeData(id, { planEdit: e.target.checked })}
             />
             <span>Edit plan</span>
+          </label>
+          {/* Flow refuses anything over ten seconds, so a longer cut has to go
+              to Omni in pieces. Off by default because it is one more encode
+              per piece, for a clip most people will post whole. */}
+          <label
+            className={`sn-clip__toggle nodrag ${omniParts ? 'sn-clip__toggle--on' : ''}`}
+            title="Also encode each clip in ≤10s pieces Omni will accept"
+          >
+            <input
+              type="checkbox"
+              className="nodrag"
+              checked={omniParts}
+              onChange={(e) => updateNodeData(id, { omniParts: e.target.checked })}
+            />
+            <span>Omni parts</span>
           </label>
         </div>
 

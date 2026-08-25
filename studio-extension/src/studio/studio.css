@@ -3903,3 +3903,30 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   color: var(--text-3);
   line-height: 1.4;
 }
+
+/* ── Cut: the pieces Omni will take ──
+   A statement of fact plus one button, because the only action here is getting
+   them onto disk for a single multi-file pick in Flow. */
+.sn-cut__parts {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  background: var(--surface-2);
+}
+.sn-cut__parts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  font-size: var(--t-micro);
+  color: var(--text-2);
+}
+.sn-cut__parts-note {
+  margin: 0;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.4;
+}

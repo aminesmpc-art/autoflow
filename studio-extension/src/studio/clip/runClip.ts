@@ -117,6 +117,9 @@ export interface ClipConfig {
   /* Plan what to add to each finished clip, for finishing in CapCut.
      Off by default: it costs one ask per cut. */
   planEdit?: boolean;
+  /* Also encode every cut in pieces Omni will take. Flow refuses
+     anything over ten seconds. */
+  omniParts?: boolean;
   mode?: ClipMode;
   /** Verbatim rules from the campaign brief, shown to the model. */
   campaignRules?: string;
@@ -571,6 +574,7 @@ export function layoutStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
       captions: cfg.captions !== false,
       captionPreset: cfg.captionPreset,
       planEdit: cfg.planEdit === true,
+      omniParts: cfg.omniParts === true,
     });
     const cuts = plan.steps.filter((s) => s.type === 'cut').length;
     deps.log?.(`laying out ${cuts} cut${cuts === 1 ? '' : 's'}`);
