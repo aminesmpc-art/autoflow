@@ -917,7 +917,14 @@ export async function runOneCut(
      several orders of magnitude. */
   let sheet: Awaited<ReturnType<typeof planTheEdit>> = {};
   if (cfg.planEdit) {
-    sheet = await planTheEdit(deps, cfg, captions, endSec - startSec, onServer);
+    sheet = await planTheEdit(
+      deps, cfg, captions, endSec - startSec, onServer,
+      /* Every join, as a second into the clip: the running total of the parts
+         before it. The clip's own opening is not a join — nothing was spliced
+         there — so the last total is dropped rather than the first. */
+      parts.slice(0, -1).map((_, i) =>
+        parts.slice(0, i + 1).reduce((sum, part) => sum + part.seconds, 0)),
+    );
   }
 
   return {
@@ -950,6 +957,9 @@ async function planTheEdit(
   captions: Array<{ startSec: number; endSec: number; text: string }>,
   clipSeconds: number,
   onServer: boolean,
+  /* Where the clip was split for Omni. Each join is a real cut in the finished
+     edit, and covering a cut is what a whoosh is for. */
+  seams: number[] = [],
 ): Promise<{ editSheet?: EditOp[]; editDropped?: string[]; editGaps?: string[] }> {
   /* The clip's own words, already timed against it by the caption pass. Asking
      over anything else would put the instructions on a different timeline than
@@ -967,6 +977,7 @@ async function planTheEdit(
       why: cfg.why,
       mode: cfg.mode,
       phrases: captions.map((c) => ({ startSec: c.startSec, endSec: c.endSec, text: c.text })),
+      seams,
     };
 
     const ask = serverFirstAsk(deps, onServer, { did: 'planned the edit', doing: 'planning the edit' });

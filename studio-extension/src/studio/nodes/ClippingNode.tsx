@@ -398,6 +398,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
             >
               <option value="clean">Clean</option>
               <option value="bold">Bold — word lights up</option>
+              <option value="emphasis">Emphasis — mixed case</option>
               <option value="karaoke">Karaoke</option>
               <option value="minimal">Minimal</option>
             </select>

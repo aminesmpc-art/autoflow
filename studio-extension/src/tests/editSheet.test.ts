@@ -302,3 +302,153 @@ describe('a punch is its own instruction', () => {
     expect(dropped).toHaveLength(3);
   });
 });
+
+describe('tone decides what may be done', () => {
+  /* The most uncomfortable finding in the research: viewers detect EMOTIONAL
+     misalignment about 68% faster than technical flaws, and the commonest tell
+     of an amateur edit is that none of the cuts feel motivated.
+
+     A plan built only on timing rules will put an air-horn over a line about
+     somebody losing their job, and every other check in this file would pass
+     it. So the model states the tone first, and the playful moves are refused
+     in code as well as in the prompt. */
+
+  const withTone = (tone: string, ops: unknown[]) => JSON.stringify({ tone, ops });
+
+  it('asks how the clip feels before anything is planned', () => {
+    const ask = editSheetAsk(context());
+    expect(ask).toMatch(/upbeat/);
+    expect(ask).toMatch(/serious/);
+    expect(ask).toMatch(/wrong feeling faster/i);
+  });
+
+  it('reports the tone it was told', () => {
+    expect(readEditSheet(withTone('serious', []), context()).tone).toBe('serious');
+    expect(readEditSheet(withTone('upbeat', []), context()).tone).toBe('upbeat');
+  });
+
+  it('falls back to neutral rather than guessing', () => {
+    expect(readEditSheet(withTone('elated', []), context()).tone).toBe('neutral');
+    expect(readEditSheet(reply([]), context()).tone).toBe('neutral');
+  });
+
+  it('refuses a speed ramp on serious material', () => {
+    const { ops, dropped } = readEditSheet(
+      withTone('serious', [{ at: 3, seconds: 0.5, kind: 'ramp', what: 'slow then snap' }]),
+      context(),
+    );
+    expect(ops).toHaveLength(0);
+    expect(dropped[0]).toMatch(/wrong feeling/);
+  });
+
+  it('refuses a comedy sound on serious material', () => {
+    const { ops, dropped } = readEditSheet(
+      withTone('serious', [{ at: 3, kind: 'sfx', what: 'record scratch' }]),
+      context(),
+    );
+    expect(ops).toHaveLength(0);
+    expect(dropped[0]).toMatch(/wrong feeling/);
+  });
+
+  it('still allows a sound that carries weight on serious material', () => {
+    /* A riser or an impact belongs on serious content. A slide whistle never
+       does. The distinction is the whole point — banning all sound would be
+       just as wrong in the other direction. */
+    const { ops } = readEditSheet(
+      withTone('serious', [
+        { at: 3, kind: 'sfx', what: 'riser' },
+        { at: 6, kind: 'sfx', what: 'impact' },
+      ]),
+      context(),
+    );
+    expect(ops).toHaveLength(2);
+  });
+
+  it('allows the playful moves when the clip is not serious', () => {
+    const { ops } = readEditSheet(
+      withTone('upbeat', [
+        { at: 3, seconds: 0.5, kind: 'ramp', what: 'slow then snap' },
+        { at: 5, kind: 'sfx', what: 'boing' },
+      ]),
+      context(),
+    );
+    expect(ops).toHaveLength(2);
+  });
+});
+
+describe('how long each kind may hold', () => {
+  /* An effect over roughly four tenths of a second "feels like a loading
+     screen". A punch is deliberately not in that group: it is a framing change
+     that persists, not an animation that plays, and lumping the two together
+     is how a punch-in becomes a twitch. */
+
+  it('keeps a zoom momentary', () => {
+    const long = readEditSheet(reply([{ at: 3, seconds: 2, kind: 'zoom', what: 'push on 400,000' }]), context());
+    expect(long.ops).toHaveLength(0);
+    expect(long.dropped[0]).toMatch(/past the 0.6s/);
+  });
+
+  it('accepts a zoom that lands and goes', () => {
+    const ok = readEditSheet(reply([{ at: 3, seconds: 0.35, kind: 'zoom', what: 'push on 400,000' }]), context());
+    expect(ok.ops).toHaveLength(1);
+  });
+
+  it('gives a ramp a little more room, since it is two moves', () => {
+    expect(readEditSheet(reply([{ at: 3, seconds: 0.8, kind: 'ramp', what: 'slow then snap' }]), context()).ops)
+      .toHaveLength(1);
+  });
+
+  it('lets a punch hold, because it is framing and not an animation', () => {
+    expect(readEditSheet(reply([{ at: 3, seconds: 4, kind: 'punch', what: 'push in' }]), context()).ops)
+      .toHaveLength(1);
+  });
+});
+
+describe('covering the joins', () => {
+  /* A clip too long for Omni is edited in pieces and rejoined, so every seam
+     is a splice between two independently generated treatments — exactly the
+     discontinuity a transition sound exists to hide.
+
+     Added in code rather than asked for: the model is never told where the
+     seams are, because they are decided by arithmetic AFTER the plan, and a
+     model guessing would put sounds over cuts that do not exist. */
+
+  it('puts a whoosh on every join', () => {
+    const { ops } = readEditSheet(reply([]), context({ seams: [8.7, 17.3] }));
+    const whooshes = ops.filter((o) => o.kind === 'sfx');
+    expect(whooshes.map((o) => o.atSec)).toEqual([8.7, 17.3]);
+    expect(whooshes[0].what).toBe('whoosh');
+  });
+
+  it('says why it is there', () => {
+    const { ops } = readEditSheet(reply([]), context({ seams: [8.7] }));
+    expect(ops[0].why).toMatch(/join between two generated pieces/);
+  });
+
+  it('does not double up on a sound already at that moment', () => {
+    /* Two sounds at one instant is a mistake, not emphasis. */
+    const { ops } = readEditSheet(
+      reply([{ at: 8.8, kind: 'sfx', what: 'impact' }]),
+      context({ seams: [8.7] }),
+    );
+    expect(ops.filter((o) => o.kind === 'sfx')).toHaveLength(1);
+    expect(ops[0].what).toBe('impact');
+  });
+
+  it('ignores a seam at the very start, which is not a join', () => {
+    const { ops } = readEditSheet(reply([]), context({ seams: [0] }));
+    expect(ops).toHaveLength(0);
+  });
+
+  it('adds nothing when the clip was never split', () => {
+    expect(readEditSheet(reply([]), context()).ops).toHaveLength(0);
+  });
+
+  it('keeps the sheet in time order with the joins in it', () => {
+    const { ops } = readEditSheet(
+      reply([{ at: 12, kind: 'punch', what: 'push in' }]),
+      context({ seams: [8.7] }),
+    );
+    expect(ops.map((o) => o.atSec)).toEqual([8.7, 12]);
+  });
+});

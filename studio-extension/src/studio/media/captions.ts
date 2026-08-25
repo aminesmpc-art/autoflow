@@ -243,7 +243,7 @@ export function cueAt(cues: CaptionCue[], t: number): CaptionCue | null {
  * a highlight and NOT real for a cut point, which is why the same arithmetic
  * is refused there.
  */
-export type CaptionPreset = 'clean' | 'bold' | 'karaoke' | 'minimal';
+export type CaptionPreset = 'clean' | 'bold' | 'karaoke' | 'minimal' | 'emphasis';
 
 export interface CaptionStyle {
   preset?: CaptionPreset;
@@ -308,6 +308,22 @@ const PRESETS: Record<CaptionPreset, Omit<ResolvedStyle, 'y'>> = {
     activeColor: '#4ade80', restColor: 'rgba(255,255,255,0.55)', highlight: true,
   },
 
+  /* Mixed case, heavy, with the spoken word lit.
+   *
+     Here because the research contradicted what shipped: mixed-case bold for
+     emphasis "has become default in short-form" for 2026, while every preset
+     above is uppercase. Uppercase is not wrong — it is simply not the current
+     default, and that is a choice worth offering rather than assuming.
+   *
+     It also reads at a smaller size than the shouting presets, because lower
+     case letters carry more shape to recognise, so it covers less of the
+     picture for the same legibility. */
+  emphasis: {
+    size: 0.046, uppercase: false, weight: 800,
+    color: '#ffffff', strokeColor: 'rgba(0,0,0,0.92)',
+    activeColor: '#ffd400', restColor: '#ffffff', highlight: true,
+  },
+
   /* For content where shouting is wrong — an interview, anything sombre. Keeps
      the speaker's own capitalisation and says nothing with colour. */
   minimal: {
@@ -317,7 +333,7 @@ const PRESETS: Record<CaptionPreset, Omit<ResolvedStyle, 'y'>> = {
   },
 };
 
-export const CAPTION_PRESETS: CaptionPreset[] = ['clean', 'bold', 'karaoke', 'minimal'];
+export const CAPTION_PRESETS: CaptionPreset[] = ['clean', 'bold', 'emphasis', 'karaoke', 'minimal'];
 
 function resolve(style: CaptionStyle): ResolvedStyle {
   const base = PRESETS[style.preset || 'clean'] || PRESETS.clean;

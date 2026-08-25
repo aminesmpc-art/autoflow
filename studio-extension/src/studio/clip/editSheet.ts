@@ -56,9 +56,21 @@ export interface EditOp {
   why: string;
 }
 
-export type EditKind = 'broll' | 'punch' | 'text' | 'sfx' | 'intro' | 'outro';
+export type EditKind =
+  | 'broll' | 'punch' | 'text' | 'sfx' | 'intro' | 'outro'
+  /* A speed ramp — slow to about half for half a second, then snap. Named
+     the strongest single retention tool in the 2026 write-ups, and placed
+     in the 2-4s window where three independent sources agree the drop-off
+     is decided. */
+  | 'ramp'
+  /* A momentary push on a word, timed to land with that word highlighted in
+     the caption. Two channels saying the same thing at the same instant —
+     the write-ups call it double emphasis. */
+  | 'zoom';
 
-export const EDIT_KINDS: EditKind[] = ['broll', 'punch', 'text', 'sfx', 'intro', 'outro'];
+export const EDIT_KINDS: EditKind[] = [
+  'broll', 'punch', 'text', 'sfx', 'intro', 'outro', 'ramp', 'zoom',
+];
 
 /* A cutaway shorter than this does not register; longer than this and the
    voice outruns the picture. The upper bound is the payoff case. */
@@ -68,6 +80,31 @@ const BROLL_MAX_SEC = 4.0;
 /* An overlay or callout may sit longer than a cutaway, since the footage keeps
    playing underneath it. */
 const OVERLAY_MAX_SEC = 6.0;
+
+/* How long each kind may hold.
+ *
+ * The momentary ones are bounded tightly on measured advice: an effect over
+ * roughly four tenths of a second "feels like a loading screen". A ramp gets
+ * a little more room because it is two moves — slow, then snap.
+ *
+ * A punch is deliberately NOT in that group. It is a framing change that
+ * persists, not an animation that plays, so it holds as long as the shot
+ * wants. Lumping the two together is how a punch-in becomes a twitch. */
+const HOLD: Record<EditKind, { min: number; max: number }> = {
+  broll: { min: BROLL_MIN_SEC, max: BROLL_MAX_SEC },
+  intro: { min: BROLL_MIN_SEC, max: BROLL_MAX_SEC },
+  outro: { min: BROLL_MIN_SEC, max: BROLL_MAX_SEC },
+  text: { min: 0.6, max: OVERLAY_MAX_SEC },
+  punch: { min: 0.3, max: OVERLAY_MAX_SEC },
+  zoom: { min: 0.15, max: 0.6 },
+  ramp: { min: 0.2, max: 0.9 },
+  sfx: { min: 0.05, max: 2.0 },
+};
+
+/* Where the drop-off is decided, and where a ramp or a keyword push belongs.
+   Three separate sources put the same window here. */
+export const EMPHASIS_FROM_SEC = 2.0;
+export const EMPHASIS_TO_SEC = 4.0;
 
 /* The window in which the first visual beat has to land. Retention at three
    seconds is what decides whether a short travels. */
@@ -86,6 +123,28 @@ const opsAllowed = (clipSeconds: number): number =>
 /** Two ops of these kinds cannot occupy the same moment. */
 const OCCUPIES_PICTURE: EditKind[] = ['broll', 'intro', 'outro'];
 
+/**
+ * How the clip feels, which decides what may be done to it.
+ *
+ * Here because of the single most uncomfortable finding in the research:
+ * viewers detect EMOTIONAL misalignment about 68% faster than technical
+ * flaws, and the commonest tell of an amateur edit is that "none of the cuts
+ * feel motivated".
+ *
+ * A plan built only on timing rules will cheerfully put an air-horn on a line
+ * about somebody losing their job, and every timing check in this file would
+ * pass it. So the model states the tone before it plans, and the playful
+ * moves are refused on serious material in code as well as in the prompt.
+ */
+export type ClipTone = 'upbeat' | 'neutral' | 'serious';
+
+/* Sounds that are a joke by nature. A riser or an impact carries weight and
+   belongs on serious material; a slide whistle never does. Matched on the
+   name the model gives, which is why the prompt asks it to NAME the sound
+   rather than describe it. */
+const PLAYFUL_SFX =
+  /boing|pop\b|cartoon|record.?scratch|air.?horn|slide.?whistle|ding|quack|fart|bruh|vine/i;
+
 export interface SheetContext {
   /** How long the finished cut runs. */
   clipSeconds: number;
@@ -96,6 +155,9 @@ export interface SheetContext {
   phrases: Array<{ startSec: number; endSec: number; text: string }>;
   /** Campaign work forbids footage that is not the creator's own. */
   mode?: 'campaign' | 'explainer';
+  /* Where this clip was cut into pieces for Omni. A join is a real cut in
+     the finished edit, and a cut is exactly what a whoosh exists to hide. */
+  seams?: number[];
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -154,8 +216,15 @@ export function editSheetAsk(context: SheetContext): string {
     '       the cheapest way to reset attention. Prefer it.',
     'text   a word, number or short phrase on screen. Quote or paraphrase',
     '       something actually said at that second.',
-    'sfx    a named sound effect — whoosh, impact, riser. Name it; do not',
-    '       describe it at length.',
+    'sfx    a named sound effect. NAME it — whoosh, impact, riser — do not',
+    '       describe it. riser goes BEFORE a reveal to build it; impact goes',
+    '       AFTER, to land it; whoosh covers a transition or a cut.',
+    'ramp   a speed ramp: slow to about half, then snap back. The strongest',
+    `       single move for retention, and it belongs between ${EMPHASIS_FROM_SEC}s and`,
+    `       ${EMPHASIS_TO_SEC}s where the drop-off is decided.`,
+    'zoom   a quick push on ONE word, landing exactly as that word is said.',
+    '       Pair it with a text on the same word: two channels saying the',
+    '       same thing at once.',
   );
 
   if (campaign) {
@@ -177,6 +246,18 @@ export function editSheetAsk(context: SheetContext): string {
 
   lines.push(
     '',
+    'THE TEST FOR A SOUND',
+    '',
+    'Take it away. If the moment gets less CLEAR without it, it is doing real',
+    'work. If the only thing that drops is energy, it is decoration — leave it',
+    'out. Most clips need one or two sounds, not six.',
+    '',
+    'HOW LONG THINGS RUN',
+    '',
+    'A zoom or a ramp is momentary — under half a second. Anything longer',
+    'reads as a loading screen. A punch-in is different: it is a framing',
+    'change that stays, so it holds as long as the shot wants.',
+    '',
     'RULES',
     '',
     `· At most ${budget} instructions. Fewer, placed well, beats more.`,
@@ -184,8 +265,15 @@ export function editSheetAsk(context: SheetContext): string {
     '· Two things cannot be on screen at once. Do not overlap broll with broll.',
     '· If a moment does not need anything, leave it alone.',
     '',
+    'FIRST, SAY HOW IT FEELS',
+    '',
+    'Before planning anything, judge the tone of what is said: "upbeat",',
+    '"neutral" or "serious". Then plan for THAT. A speed ramp or a comedy',
+    'sound on a serious moment is worse than adding nothing — viewers notice',
+    'a wrong feeling faster than they notice a technical mistake.',
+    '',
     'Reply with JSON only:',
-    '{"ops":[{"at":2.4,"seconds":1.8,"kind":"broll",'
+    '{"tone":"upbeat","ops":[{"at":2.4,"seconds":1.8,"kind":"broll",'
       + '"what":"a phone screen filling with short videos","why":"he says 400,000 a month"}]}',
   );
 
@@ -224,6 +312,8 @@ export interface SheetResult {
   ops: EditOp[];
   /** Everything refused, in words a person can act on. */
   dropped: string[];
+  /** How the model judged the clip, which decided what it was allowed. */
+  tone: ClipTone;
 }
 
 /**
@@ -242,6 +332,10 @@ export function readEditSheet(reply: unknown, context: SheetContext): SheetResul
   const runtime = context.clipSeconds;
   const campaign = context.mode === 'campaign';
   const budget = opsAllowed(runtime);
+
+  const said = String(root?.tone ?? '').trim().toLowerCase();
+  const tone: ClipTone =
+    said === 'upbeat' || said === 'serious' ? said : 'neutral';
 
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
@@ -280,17 +374,27 @@ export function readEditSheet(reply: unknown, context: SheetContext): SheetResul
       continue;
     }
 
+    /* Playful moves on serious material. Every timing check in this file
+       would pass an air-horn over a line about somebody losing their job,
+       and that is the mistake viewers catch fastest. */
+    if (tone === 'serious' && kind === 'ramp') {
+      dropped.push(`a speed ramp at ${stamp(at)} is the wrong feeling for this clip`);
+      continue;
+    }
+    if (tone === 'serious' && kind === 'sfx' && PLAYFUL_SFX.test(String(o.what ?? ''))) {
+      dropped.push(`"${String(o.what).trim()}" at ${stamp(at)} is the wrong feeling for this clip`);
+      continue;
+    }
+
     let seconds = num(o.seconds);
     if (seconds !== null) {
-      const cap = kind === 'broll' || kind === 'intro' || kind === 'outro'
-        ? BROLL_MAX_SEC
-        : OVERLAY_MAX_SEC;
-      if (seconds < BROLL_MIN_SEC && kind !== 'sfx' && kind !== 'punch') {
+      const { min, max } = HOLD[kind];
+      if (seconds < min) {
         dropped.push(`${kind} at ${stamp(at)} holds ${seconds}s, too short to register`);
         continue;
       }
-      if (seconds > cap) {
-        dropped.push(`${kind} at ${stamp(at)} holds ${seconds}s, past the ${cap}s a ${kind} should`);
+      if (seconds > max) {
+        dropped.push(`${kind} at ${stamp(at)} holds ${seconds}s, past the ${max}s a ${kind} should`);
         continue;
       }
       /* Never past the end. A cutaway starting at 18s of a 19s clip cannot
@@ -327,12 +431,40 @@ export function readEditSheet(reply: unknown, context: SheetContext): SheetResul
     kept.push(op);
   }
 
+  /* A whoosh over every join.
+   *
+   * Masking a cut is the oldest job a whoosh has, and these are real cuts: a
+   * clip too long for Omni is edited in pieces and rejoined, so each seam is a
+   * splice between two independently generated treatments. That is exactly the
+   * discontinuity a transition sound exists to cover.
+   *
+   * Added here rather than asked for, because the model is not told where the
+   * seams are — they are decided by arithmetic after the plan, and a model
+   * guessing at them would put sounds over cuts that are not there.
+   *
+   * Never on top of a sound the model already placed there: two sounds at one
+   * moment is a mistake, not emphasis. */
+  for (const seam of context.seams || []) {
+    if (!(seam > 0) || seam >= runtime) continue;
+    const alreadyCovered = kept.some(
+      (op) => op.kind === 'sfx' && Math.abs(op.atSec - seam) < 0.35,
+    );
+    if (alreadyCovered) continue;
+    kept.push({
+      atSec: seam,
+      kind: 'sfx',
+      what: 'whoosh',
+      why: 'covers the join between two generated pieces',
+    });
+  }
+  kept.sort((a, b) => a.atSec - b.atSec);
+
   if (kept.length > budget) {
     dropped.push(`${kept.length - budget} more than a ${runtime.toFixed(1)}s clip has room for`);
     kept.length = budget;
   }
 
-  return { ops: kept, dropped };
+  return { ops: kept, dropped, tone };
 }
 
 /**
