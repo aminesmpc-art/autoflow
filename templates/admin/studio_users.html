@@ -1,7 +1,7 @@
 {% extends 'admin/base.html' %}
 {% load i18n unfold %}
 
-{% block title %}Studio Creators | AutoFlow Control Center{% endblock %}
+{% block title %}Active Creators | AutoFlow Control Center{% endblock %}
 
 {% block branding %}
     {% include "unfold/helpers/site_branding.html" %}
@@ -228,10 +228,10 @@
         color: #ffffff;
         font-size: 0.85rem;
         outline: none;
-        width: 170px;
+        width: 180px;
         transition: all 0.2s ease;
     }
-    .af-search-input:focus { border-color: #10b981; width: 210px; box-shadow: 0 0 10px rgba(16,185,129,0.3); }
+    .af-search-input:focus { border-color: #10b981; width: 220px; box-shadow: 0 0 10px rgba(16,185,129,0.3); }
     .af-search-icon {
         position: absolute;
         left: 0.75rem;
@@ -459,7 +459,7 @@
             <div class="af-brand-icon">🎬</div>
             <div class="af-brand-text">
                 <h1>AutoFlow Studio Control Center</h1>
-                <p>Real-time analytics, quota management, and telemetry for Studio Creators.</p>
+                <p>Real-time analytics, quota management, and telemetry for active creators.</p>
             </div>
         </div>
         <div class="af-live-badge">
@@ -483,10 +483,10 @@
     <div class="af-kpi-grid">
         <div class="af-kpi-card purple">
             <div class="af-kpi-header">
-                <div class="af-kpi-label">Studio Creators</div>
-                <div class="af-kpi-icon">🎨</div>
+                <div class="af-kpi-label">Active Creators</div>
+                <div class="af-kpi-icon">🎯</div>
             </div>
-            <div class="af-kpi-val" id="kpi-studio-creators">{{ kpis.total_studio_users }}</div>
+            <div class="af-kpi-val" id="kpi-studio-creators">{{ kpis.total_active_users }}</div>
             <div class="af-kpi-sub">
                 <span>{{ kpis.total_users }} Total Signups</span> · <span>{{ kpis.pro_users }} Pro 💎</span>
             </div>
@@ -522,12 +522,12 @@
 
     <!-- Main Dual Panel Layout -->
     <div class="af-main-layout">
-        <!-- Left: Studio Users Table -->
+        <!-- Left: Active Creators Table -->
         <div class="af-panel">
             <div class="af-panel-header">
                 <div class="af-panel-title">
                     <span>👥</span>
-                    <span>Studio Creators Directory</span>
+                    <span>Active Creators Directory</span>
                 </div>
                 <form method="get" class="af-filter-bar">
                     <div class="af-search-box">
@@ -535,11 +535,14 @@
                         <input type="text" name="q" value="{{ search_query }}" placeholder="Search creator…" class="af-search-input" />
                     </div>
                     <button type="submit" class="af-tab-btn">Search</button>
-                    <a href="?activity=studio" class="af-tab-btn {% if activity_filter == 'studio' %}active{% endif %}">🎬 Studio Creators</a>
+                    <a href="?activity=active" class="af-tab-btn {% if activity_filter == 'active' and not search_query %}active{% endif %}">🎯 Active Creators</a>
                     <a href="?activity=active_today" class="af-tab-btn {% if activity_filter == 'active_today' %}active{% endif %}">⚡ Active Today</a>
                     <a href="?plan=pro" class="af-tab-btn {% if plan_filter == 'pro' %}active{% endif %}">Pro 💎</a>
                     <a href="?plan=free" class="af-tab-btn {% if plan_filter == 'free' %}active{% endif %}">Free</a>
-                    <a href="?activity=all" class="af-tab-btn {% if activity_filter == 'all' %}active{% endif %}">All ({{ kpis.total_users }})</a>
+                    <a href="?activity=all" class="af-tab-btn {% if activity_filter == 'all' %}active{% endif %}">All Users ({{ kpis.total_users }})</a>
+                    {% if search_query %}
+                        <a href="?" class="af-tab-btn" style="color: #f87171;">✕ Clear</a>
+                    {% endif %}
                 </form>
             </div>
 
@@ -635,7 +638,7 @@
                         {% empty %}
                             <tr>
                                 <td colspan="6" style="text-align:center; padding:3rem; color:var(--af-text-muted);">
-                                    No Studio creators found matching your criteria.
+                                    No active creators found matching your criteria.
                                 </td>
                             </tr>
                         {% endfor %}
@@ -702,7 +705,7 @@
                 const nodesEl = document.getElementById('kpi-nodes-today');
                 const dauEl = document.getElementById('kpi-dau');
 
-                if (studioEl) studioEl.textContent = data.kpis.total_studio_users;
+                if (studioEl) studioEl.textContent = data.kpis.total_active_users;
                 if (runsEl) runsEl.textContent = data.kpis.monthly_studio_runs;
                 if (nodesEl) nodesEl.textContent = data.kpis.today_nodes_executed;
                 if (dauEl) dauEl.textContent = data.kpis.dau_count;
