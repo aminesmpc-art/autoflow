@@ -20,13 +20,17 @@ from apps.usage.models import DailyUsage, MonthlyUsage, UsageEvent
 logger = logging.getLogger(__name__)
 
 # ── Plan limits ──
-FREE_TEXT_DAILY_LIMIT = getattr(settings, "FREE_TEXT_DAILY_LIMIT", 100)
+FREE_TEXT_DAILY_LIMIT = getattr(settings, "FREE_TEXT_DAILY_LIMIT", 50)
 FREE_FULL_DAILY_LIMIT = getattr(settings, "FREE_FULL_DAILY_LIMIT", 20)
 FREE_DOWNLOAD_DAILY_LIMIT = getattr(settings, "FREE_DOWNLOAD_DAILY_LIMIT", 20)
 # Queue run limits (per mode)
 FREE_LITE_DAILY_LIMIT = getattr(settings, "FREE_LITE_DAILY_LIMIT", 3)
 FREE_FLOW_DAILY_LIMIT = getattr(settings, "FREE_FLOW_DAILY_LIMIT", 5)
 FREE_FULL_DAILY_LIMIT_RUNS = getattr(settings, "FREE_FULL_DAILY_LIMIT_RUNS", 1)
+# Studio workflow limits (visual builder) — 10 runs per MONTH, plus 50 node executions per DAY.
+FREE_STUDIO_MONTHLY_LIMIT = getattr(settings, "FREE_STUDIO_MONTHLY_LIMIT", 10)
+FREE_STUDIO_DAILY_NODE_LIMIT = getattr(settings, "FREE_STUDIO_DAILY_NODE_LIMIT", 50)
+FREE_STUDIO_MAX_NODES = getattr(settings, "FREE_STUDIO_MAX_NODES", 0)
 # Keep legacy constant for backward compat
 FREE_DAILY_LIMIT = FREE_TEXT_DAILY_LIMIT
 
@@ -688,6 +692,125 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
             "remaining": remaining,
             "period": period,
             "message": f"Queue run recorded. {remaining} {mode} run(s) remaining.",
+        }
+
+
+def consume_studio_run(user, node_count: int = 1, generate_count: int = None) -> dict:
+    """Check + consume a Studio workflow run (10 runs / month, 50 nodes / day)."""
+    now = timezone.now()
+    today = now.date()
+    if generate_count is None:
+        generate_count = node_count
+    generate_count = max(0, int(generate_count))
+
+    get_or_create_monthly_usage(user, now.year, now.month)
+    get_or_create_daily_usage(user, today)
+
+    with transaction.atomic():
+        profile = Profile.objects.get(user=user)
+        monthly = MonthlyUsage.objects.select_for_update().get(
+            user=user, year=now.year, month=now.month
+        )
+        usage = DailyUsage.objects.select_for_update().get(user=user, date=today)
+
+        if not profile.is_pro:
+            # 1. Monthly workflow run allowance (10 runs / month)
+            if monthly.studio_runs_used >= FREE_STUDIO_MONTHLY_LIMIT:
+                return {
+                    "allowed": False,
+                    "used": monthly.studio_runs_used,
+                    "limit": FREE_STUDIO_MONTHLY_LIMIT,
+                    "remaining": 0,
+                    "runs_used": monthly.studio_runs_used,
+                    "runs_limit": FREE_STUDIO_MONTHLY_LIMIT,
+                    "runs_remaining": 0,
+                    "nodes_used_today": usage.free_prompts_used,
+                    "nodes_limit_today": FREE_STUDIO_DAILY_NODE_LIMIT,
+                    "nodes_remaining_today": max(0, FREE_STUDIO_DAILY_NODE_LIMIT - usage.free_prompts_used),
+                    "period": "month",
+                    "message": f"You've used all {FREE_STUDIO_MONTHLY_LIMIT} free workflow runs this month. "
+                               "Upgrade to Pro for unlimited runs.",
+                }
+
+            # 2. Daily node execution budget (50 nodes / day)
+            nodes_remaining_today = max(0, FREE_STUDIO_DAILY_NODE_LIMIT - usage.free_prompts_used)
+            if node_count > nodes_remaining_today:
+                return {
+                    "allowed": False,
+                    "used": monthly.studio_runs_used,
+                    "limit": FREE_STUDIO_MONTHLY_LIMIT,
+                    "remaining": max(0, FREE_STUDIO_MONTHLY_LIMIT - monthly.studio_runs_used),
+                    "runs_used": monthly.studio_runs_used,
+                    "runs_limit": FREE_STUDIO_MONTHLY_LIMIT,
+                    "runs_remaining": max(0, FREE_STUDIO_MONTHLY_LIMIT - monthly.studio_runs_used),
+                    "nodes_used_today": usage.free_prompts_used,
+                    "nodes_limit_today": FREE_STUDIO_DAILY_NODE_LIMIT,
+                    "nodes_remaining_today": nodes_remaining_today,
+                    "period": "day",
+                    "message": (
+                        f"This workflow requires {node_count} node(s), but you only have "
+                        f"{nodes_remaining_today} node(s) remaining today ({FREE_STUDIO_DAILY_NODE_LIMIT}/day limit). "
+                        "Resets tomorrow at midnight. Upgrade to Pro for unlimited."
+                    ),
+                }
+
+        nodes_to_charge = node_count if not profile.is_pro else (generate_count or 0)
+        if nodes_to_charge > 0:
+            usage.text_prompts_used += nodes_to_charge
+            usage.free_prompts_used += nodes_to_charge
+            usage.total_prompts_used += nodes_to_charge
+            usage.save()
+
+            import uuid as _uuid
+            batch_id = str(_uuid.uuid4())[:8]
+            for i in range(max(1, generate_count or 1)):
+                UsageEvent.objects.create(
+                    user=user,
+                    event_type=UsageEvent.EventType.CONSUME_PROMPT,
+                    prompt_count=1,
+                    metadata={
+                        "source": "studio",
+                        "source_used": "pro" if profile.is_pro else "free",
+                        "prompt_type": "text",
+                        "status": "pending",
+                        "batch_id": batch_id,
+                        "seq": i,
+                    },
+                )
+
+        monthly.studio_runs_used += 1
+        monthly.save()
+
+        UsageEvent.objects.create(
+            user=user,
+            event_type=UsageEvent.EventType.QUEUE_STARTED,
+            prompt_count=node_count,
+            metadata={
+                "source": "studio",
+                "node_count": node_count,
+                "generate_count": generate_count,
+            },
+        )
+
+        runs_remaining = 999 if profile.is_pro else max(
+            0, FREE_STUDIO_MONTHLY_LIMIT - monthly.studio_runs_used
+        )
+        nodes_remaining = 999 if profile.is_pro else max(
+            0, FREE_STUDIO_DAILY_NODE_LIMIT - usage.free_prompts_used
+        )
+        return {
+            "allowed": True,
+            "used": monthly.studio_runs_used if not profile.is_pro else 0,
+            "limit": FREE_STUDIO_MONTHLY_LIMIT if not profile.is_pro else 999,
+            "remaining": runs_remaining,
+            "runs_used": monthly.studio_runs_used if not profile.is_pro else 0,
+            "runs_limit": FREE_STUDIO_MONTHLY_LIMIT if not profile.is_pro else 999,
+            "runs_remaining": runs_remaining,
+            "nodes_used_today": usage.free_prompts_used if not profile.is_pro else 0,
+            "nodes_limit_today": FREE_STUDIO_DAILY_NODE_LIMIT if not profile.is_pro else 999,
+            "nodes_remaining_today": nodes_remaining,
+            "period": "day",
+            "message": f"Studio run recorded. {runs_remaining} run(s) left this month, {nodes_remaining} node(s) left today.",
         }
 
 

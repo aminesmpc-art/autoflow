@@ -100,6 +100,17 @@ UNFOLD = {
                 ],
             },
             {
+                "title": "Studio & Daily Analytics",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Studio & Daily Users",
+                        "icon": "auto_awesome_motion",
+                        "link": "/admin/studio-users/",
+                    },
+                ],
+            },
+            {
                 "title": "Plans & Usage",
                 "separator": True,
                 "items": [
@@ -301,7 +312,8 @@ VERIFY_EMAIL_BASE_URL = config(
 VERIFICATION_TOKEN_EXPIRY_HOURS = config(
     "VERIFICATION_TOKEN_EXPIRY_HOURS", default=24, cast=int
 )
-FREE_DAILY_PROMPT_LIMIT = config("FREE_DAILY_PROMPT_LIMIT", default=30, cast=int)
+FREE_DAILY_PROMPT_LIMIT = config("FREE_DAILY_PROMPT_LIMIT", default=50, cast=int)
+FREE_TEXT_DAILY_LIMIT = config("FREE_TEXT_DAILY_LIMIT", default=50, cast=int)
 
 # ── Whop ──
 WHOP_WEBHOOK_SECRET = config("WHOP_WEBHOOK_SECRET", default="")
