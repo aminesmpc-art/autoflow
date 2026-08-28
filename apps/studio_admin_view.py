@@ -1,5 +1,7 @@
 """Studio Users & Daily Users Admin View."""
 import logging
+from datetime import timedelta
+
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models import Count, Q, Sum
@@ -35,6 +37,16 @@ class StudioUsersDashboardView(View):
         pro_users = Profile.objects.filter(is_pro_active=True).count()
         free_users = max(0, total_users - pro_users)
 
+        # ── Find All Adopted Users (Users who have actually run prompts/nodes/workflows) ──
+        event_user_ids = set(UsageEvent.objects.values_list("user_id", flat=True).distinct())
+        daily_user_ids = set(DailyUsage.objects.filter(total_prompts_used__gt=0).values_list("user_id", flat=True).distinct())
+        monthly_user_ids = set(MonthlyUsage.objects.filter(Q(studio_runs_used__gt=0) | Q(full_runs_used__gt=0)).values_list("user_id", flat=True).distinct())
+        pro_user_ids = set(Profile.objects.filter(is_pro_active=True).values_list("user_id", flat=True).distinct())
+
+        adopted_user_ids = event_user_ids | daily_user_ids | monthly_user_ids | pro_user_ids
+        total_adopted = len(adopted_user_ids)
+
+        # Daily Active Users (active today)
         dau_user_ids = set(
             DailyUsage.objects.filter(date=today, total_prompts_used__gt=0).values_list("user_id", flat=True)
         ) | set(
@@ -42,16 +54,19 @@ class StudioUsersDashboardView(View):
         )
         dau_count = len(dau_user_ids)
 
+        # Daily Node Executions Today
         today_nodes_agg = DailyUsage.objects.filter(date=today).aggregate(
             total_nodes=Sum("free_prompts_used")
         )
         today_nodes_executed = today_nodes_agg["total_nodes"] or 0
 
+        # Total Studio Workflow Runs This Month
         monthly_runs_agg = MonthlyUsage.objects.filter(year=year, month=month).aggregate(
             total_runs=Sum("studio_runs_used")
         )
         monthly_studio_runs = monthly_runs_agg["total_runs"] or 0
 
+        # Total Generations Today
         today_events_qs = UsageEvent.objects.filter(created_at__date=today)
         today_generations_done = today_events_qs.filter(
             event_type="consume_prompt", metadata__status="done"
@@ -61,11 +76,21 @@ class StudioUsersDashboardView(View):
             event_type="consume_prompt", metadata__status="failed"
         ).aggregate(s=Sum("prompt_count"))["s"] or 0
 
+        # ── Search & Filter ──
         search_query = request.GET.get("q", "").strip().lower()
         plan_filter = request.GET.get("plan", "").strip().lower()
-        activity_filter = request.GET.get("activity", "").strip().lower()
+        # Default activity filter is "adopted" (only users who have used it!)
+        activity_filter = request.GET.get("activity", "adopted").strip().lower()
 
-        users_qs = CustomUser.objects.select_related("profile").order_by("-created_at")
+        users_qs = CustomUser.objects.select_related("profile")
+
+        # Apply Activity Filter
+        if activity_filter == "adopted":
+            users_qs = users_qs.filter(id__in=adopted_user_ids)
+        elif activity_filter == "active_today":
+            users_qs = users_qs.filter(id__in=dau_user_ids)
+        elif activity_filter == "all":
+            pass  # show all registered accounts
 
         if search_query:
             users_qs = users_qs.filter(email__icontains=search_query)
@@ -75,7 +100,8 @@ class StudioUsersDashboardView(View):
         elif plan_filter == "free":
             users_qs = users_qs.filter(Q(profile__is_pro_active=False) | Q(profile__isnull=True))
 
-        users_list = list(users_qs[:150])
+        users_qs = users_qs.order_by("-created_at")
+        users_list = list(users_qs[:200])
         user_ids = [u.id for u in users_list]
 
         monthly_usage_map = {
@@ -85,10 +111,12 @@ class StudioUsersDashboardView(View):
             d.user_id: d for d in DailyUsage.objects.filter(user_id__in=user_ids, date=today)
         }
 
-        # Latest event per user (portable across SQLite and Postgres)
+        # Latest event and lifetime prompt count per user
         latest_events = {}
+        lifetime_counts = {}
         for ev in UsageEvent.objects.filter(user_id__in=user_ids).order_by("created_at"):
             latest_events[ev.user_id] = ev
+            lifetime_counts[ev.user_id] = lifetime_counts.get(ev.user_id, 0) + ev.prompt_count
 
         studio_users = []
         for u in users_list:
@@ -108,11 +136,8 @@ class StudioUsersDashboardView(View):
             nodes_pct = min(100, round((nodes_today / FREE_STUDIO_DAILY_NODE_LIMIT * 100))) if not is_pro else 0
 
             last_ev = latest_events.get(u.id)
-
-            if activity_filter == "active_today" and u.id not in dau_user_ids:
-                continue
-            if activity_filter == "active_month" and runs_used == 0:
-                continue
+            last_seen = last_ev.created_at if last_ev else u.created_at
+            total_activity = lifetime_counts.get(u.id, 0) + (daily.total_prompts_used if daily else 0)
 
             studio_users.append({
                 "user": u,
@@ -127,10 +152,15 @@ class StudioUsersDashboardView(View):
                 "nodes_limit": nodes_limit,
                 "nodes_remaining": nodes_remaining,
                 "nodes_pct": nodes_pct,
-                "last_seen": last_ev.created_at if last_ev else u.created_at,
+                "total_activity": total_activity,
+                "last_seen": last_seen,
                 "last_event_type": last_ev.event_type if last_ev else "signup",
             })
 
+        # Sort users by most recently active first
+        studio_users.sort(key=lambda x: x["last_seen"], reverse=True)
+
+        # ── Live Activity Feed (Latest 35 Studio & Queue events) ──
         live_events_qs = (
             UsageEvent.objects.select_related("user")
             .filter(Q(metadata__source="studio") | Q(event_type__in=["consume_prompt", "queue_started"]))
@@ -156,6 +186,7 @@ class StudioUsersDashboardView(View):
             "title": "Studio & Daily Users Analytics",
             "kpis": {
                 "total_users": total_users,
+                "total_adopted": total_adopted,
                 "dau_count": dau_count,
                 "pro_users": pro_users,
                 "free_users": free_users,
