@@ -1,0 +1,536 @@
+{% extends 'admin/base.html' %}
+{% load i18n unfold %}
+
+{% block title %}Studio & Daily Users | AutoFlow Admin{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block content %}
+<style>
+    /* ── Studio Glassmorphism Theme ── */
+    :root {
+        --glass-bg: rgba(255, 255, 255, 0.03);
+        --glass-border: rgba(255, 255, 255, 0.08);
+        --glass-hover: rgba(255, 255, 255, 0.06);
+        --glass-border-hover: rgba(16, 185, 129, 0.4);
+        --text-muted: #9ca3af;
+        --text-body: #d1d5db;
+        --text-heading: #f9fafb;
+    }
+
+    .studio-dashboard {
+        padding: 1.5rem;
+        color: var(--text-body);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* ── Header ── */
+    .studio-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    .studio-title-group h1 {
+        font-size: 1.875rem;
+        font-weight: 800;
+        color: #f9fafb;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    .studio-subtitle {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        margin-top: 0.25rem;
+    }
+
+    /* ── KPI Grid ── */
+    .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1.25rem;
+        margin-bottom: 2rem;
+    }
+    .kpi-card {
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        padding: 1.25rem 1.5rem;
+        backdrop-filter: blur(16px);
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    .kpi-card:hover {
+        transform: translateY(-2px);
+        border-color: var(--glass-border-hover);
+        background: var(--glass-hover);
+        box-shadow: 0 12px 30px rgba(0,0,0,0.3);
+    }
+    .kpi-card::before {
+        content: ''; position: absolute; top:-40px; right:-40px; width:90px; height:90px;
+        background: radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 70%);
+        border-radius: 50%;
+    }
+    .kpi-card.purple::before { background: radial-gradient(circle, rgba(139,92,246,0.2) 0%, transparent 70%); }
+    .kpi-card.gold::before { background: radial-gradient(circle, rgba(234,179,8,0.2) 0%, transparent 70%); }
+    .kpi-card.blue::before { background: radial-gradient(circle, rgba(59,130,246,0.2) 0%, transparent 70%); }
+
+    .kpi-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        margin-bottom: 0.5rem;
+    }
+    .kpi-value {
+        font-size: 2rem;
+        font-weight: 800;
+        color: #fff;
+        line-height: 1.1;
+    }
+    .kpi-sub {
+        font-size: 0.8rem;
+        color: #34d399;
+        margin-top: 0.35rem;
+        font-weight: 500;
+    }
+
+    /* ── Main Layout (Table 2fr + Live Feed 1fr) ── */
+    .studio-main-grid {
+        display: grid;
+        grid-template-columns: 2.2fr 1fr;
+        gap: 1.5rem;
+    }
+    @media (max-width: 1200px) {
+        .studio-main-grid { grid-template-columns: 1fr; }
+    }
+
+    .studio-panel {
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        padding: 1.5rem;
+        backdrop-filter: blur(16px);
+    }
+    .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.25rem;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+    .panel-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #f9fafb;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    /* ── Search & Filter ── */
+    .search-filter-bar {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    .search-input {
+        background: rgba(0,0,0,0.3);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        padding: 0.5rem 0.85rem;
+        color: #fff;
+        font-size: 0.85rem;
+        outline: none;
+    }
+    .search-input:focus { border-color: #10b981; }
+    .filter-btn {
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        padding: 0.5rem 0.75rem;
+        color: var(--text-body);
+        font-size: 0.85rem;
+        text-decoration: none;
+        transition: all 0.2s ease;
+    }
+    .filter-btn.active, .filter-btn:hover {
+        background: rgba(16,185,129,0.15);
+        border-color: #10b981;
+        color: #34d399;
+    }
+
+    /* ── Users Table ── */
+    .table-responsive {
+        overflow-x: auto;
+    }
+    .studio-table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        font-size: 0.88rem;
+    }
+    .studio-table th {
+        color: var(--text-muted);
+        font-weight: 600;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--glass-border);
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
+    }
+    .studio-table td {
+        padding: 1rem;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+        vertical-align: middle;
+    }
+    .studio-table tr:hover td {
+        background: rgba(255,255,255,0.02);
+    }
+
+    .user-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-weight: 600;
+        color: #fff;
+    }
+    .avatar-circle {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #10b981, #6366f1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        color: #fff;
+        font-weight: 700;
+    }
+
+    /* Badges */
+    .badge {
+        display: inline-block;
+        padding: 0.2rem 0.6rem;
+        border-radius: 9999px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+    }
+    .badge-pro { background: rgba(167,139,250,0.15); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.3); }
+    .badge-free { background: rgba(52,211,153,0.15); color: #6ee7b7; border: 1px solid rgba(52,211,153,0.3); }
+
+    /* Progress bar */
+    .prog-bar-wrap {
+        width: 100%;
+        min-width: 110px;
+    }
+    .prog-bar-bg {
+        height: 6px;
+        background: rgba(255,255,255,0.08);
+        border-radius: 9999px;
+        overflow: hidden;
+        margin-top: 0.3rem;
+    }
+    .prog-bar-fill {
+        height: 100%;
+        border-radius: 9999px;
+        transition: width 0.3s ease;
+    }
+    .fill-green { background: #10b981; }
+    .fill-yellow { background: #f59e0b; }
+    .fill-red { background: #ef4444; }
+
+    /* Actions */
+    .action-btn-group {
+        display: flex;
+        gap: 0.4rem;
+    }
+    .action-btn {
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.1);
+        color: #d1d5db;
+        border-radius: 6px;
+        padding: 0.35rem 0.6rem;
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .action-btn:hover {
+        background: rgba(255,255,255,0.15);
+        color: #fff;
+        border-color: rgba(255,255,255,0.25);
+    }
+    .action-btn.pro:hover {
+        background: rgba(167,139,250,0.25);
+        border-color: #a78bfa;
+        color: #c4b5fd;
+    }
+
+    /* ── Live Activity Stream ── */
+    .live-stream-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        max-height: 600px;
+        overflow-y: auto;
+        padding-right: 0.5rem;
+    }
+    .stream-item {
+        background: rgba(0,0,0,0.2);
+        border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 10px;
+        padding: 0.75rem;
+        font-size: 0.8rem;
+        transition: all 0.2s ease;
+    }
+    .stream-item:hover {
+        border-color: rgba(16,185,129,0.3);
+        background: rgba(255,255,255,0.03);
+    }
+    .stream-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.3rem;
+    }
+    .stream-user {
+        font-weight: 600;
+        color: #fff;
+        font-size: 0.82rem;
+    }
+    .stream-time {
+        color: var(--text-muted);
+        font-size: 0.72rem;
+    }
+    .stream-detail {
+        color: var(--text-body);
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .dot-green { background: #10b981; box-shadow: 0 0 6px #10b981; }
+    .dot-yellow { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
+    .dot-red { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+</style>
+
+<div class="studio-dashboard">
+    <!-- Header -->
+    <div class="studio-header">
+        <div class="studio-title-group">
+            <h1>🎬 Studio Users & Daily Analytics</h1>
+            <div class="studio-subtitle">Monitor real-time workflow runs, daily node executions, and manage user quotas.</div>
+        </div>
+    </div>
+
+    <!-- Messages -->
+    {% if messages %}
+        <div style="margin-bottom: 1.5rem;">
+            {% for message in messages %}
+                <div style="padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.88rem; margin-bottom: 0.5rem; {% if message.tags == 'success' %}background: rgba(16,185,129,0.2); border: 1px solid #10b981; color: #34d399;{% else %}background: rgba(239,68,68,0.2); border: 1px solid #ef4444; color: #f87171;{% endif %}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <!-- Top KPI Cards -->
+    <div class="kpi-grid">
+        <div class="kpi-card purple">
+            <div class="kpi-label">Total Users / Studio</div>
+            <div class="kpi-value">{{ kpis.total_users }}</div>
+            <div class="kpi-sub">{{ kpis.pro_users }} Pro 💎 · {{ kpis.free_users }} Free</div>
+        </div>
+        <div class="kpi-card gold">
+            <div class="kpi-label">Studio Runs This Month</div>
+            <div class="kpi-value">{{ kpis.monthly_studio_runs }}</div>
+            <div class="kpi-sub">Allowance: {{ kpis.monthly_limit }} runs/mo for Free</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Nodes Executed Today</div>
+            <div class="kpi-value">{{ kpis.today_nodes_executed }}</div>
+            <div class="kpi-sub">Budget: {{ kpis.daily_node_limit }} nodes/day per user</div>
+        </div>
+        <div class="kpi-card blue">
+            <div class="kpi-label">Daily Active Users (DAU)</div>
+            <div class="kpi-value">{{ kpis.dau_count }}</div>
+            <div class="kpi-sub">Active in the last 24h</div>
+        </div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="studio-main-grid">
+        <!-- Users Management Panel -->
+        <div class="studio-panel">
+            <div class="panel-header">
+                <div class="panel-title">👥 Studio Users Management</div>
+                <form method="get" class="search-filter-bar">
+                    <input type="text" name="q" value="{{ search_query }}" placeholder="Search email…" class="search-input" />
+                    <button type="submit" class="filter-btn">Search</button>
+                    <a href="?plan=pro" class="filter-btn {% if plan_filter == 'pro' %}active{% endif %}">Pro 💎</a>
+                    <a href="?plan=free" class="filter-btn {% if plan_filter == 'free' %}active{% endif %}">Free</a>
+                    <a href="?activity=active_today" class="filter-btn {% if activity_filter == 'active_today' %}active{% endif %}">Active Today</a>
+                    {% if search_query or plan_filter or activity_filter %}
+                        <a href="?" class="filter-btn" style="color: #f87171;">Clear</a>
+                    {% endif %}
+                </form>
+            </div>
+
+            <div class="table-responsive">
+                <table class="studio-table">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Plan</th>
+                            <th>Monthly Runs ({{ kpis.monthly_limit }}/mo)</th>
+                            <th>Daily Nodes ({{ kpis.daily_node_limit }}/day)</th>
+                            <th>Last Active</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in studio_users %}
+                            <tr>
+                                <td>
+                                    <div class="user-pill">
+                                        <div class="avatar-circle">{{ item.email|first|upper }}</div>
+                                        <span>{{ item.email }}</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if item.is_pro %}
+                                        <span class="badge badge-pro">PRO 💎</span>
+                                    {% else %}
+                                        <span class="badge badge-free">FREE</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="prog-bar-wrap">
+                                        <div style="display:flex; justify-content:space-between; font-size:0.75rem;">
+                                            <span><strong>{{ item.runs_used }}</strong>/{{ item.runs_limit }} used</span>
+                                            <span style="color:var(--text-muted);">{{ item.runs_remaining }} left</span>
+                                        </div>
+                                        <div class="prog-bar-bg">
+                                            <div class="prog-bar-fill {% if item.runs_pct > 80 %}fill-red{% elif item.runs_pct > 50 %}fill-yellow{% else %}fill-green{% endif %}" style="width: {{ item.runs_pct }}%;"></div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="prog-bar-wrap">
+                                        <div style="display:flex; justify-content:space-between; font-size:0.75rem;">
+                                            <span><strong>{{ item.nodes_today }}</strong>/{{ item.nodes_limit }} today</span>
+                                            <span style="color:var(--text-muted);">{{ item.nodes_remaining }} left</span>
+                                        </div>
+                                        <div class="prog-bar-bg">
+                                            <div class="prog-bar-fill {% if item.nodes_pct > 80 %}fill-red{% elif item.nodes_pct > 50 %}fill-yellow{% else %}fill-green{% endif %}" style="width: {{ item.nodes_pct }}%;"></div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span style="font-size:0.75rem; color:var(--text-muted);">
+                                        {{ item.last_seen|timesince }} ago
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="action-btn-group">
+                                        <!-- Grant +5 Runs -->
+                                        <form method="post" style="display:inline;">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="user_id" value="{{ item.user.id }}" />
+                                            <input type="hidden" name="action" value="grant_runs" />
+                                            <input type="hidden" name="amount" value="5" />
+                                            <button type="submit" class="action-btn" title="Grant +5 monthly runs">+5 Runs</button>
+                                        </form>
+
+                                        <!-- Reset Daily Nodes -->
+                                        <form method="post" style="display:inline;">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="user_id" value="{{ item.user.id }}" />
+                                            <input type="hidden" name="action" value="reset_daily_nodes" />
+                                            <button type="submit" class="action-btn" title="Reset daily node allowance to 50">⚡ Reset</button>
+                                        </form>
+
+                                        <!-- Toggle Pro -->
+                                        <form method="post" style="display:inline;">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="user_id" value="{{ item.user.id }}" />
+                                            <input type="hidden" name="action" value="toggle_pro" />
+                                            <button type="submit" class="action-btn pro" title="Toggle Pro/Free">
+                                                {% if item.is_pro %}Downgrade{% else %}Make Pro{% endif %}
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="6" style="text-align:center; padding:2rem; color:var(--text-muted);">
+                                    No users found matching your search.
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Live Activity Stream Panel -->
+        <div class="studio-panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <span class="dot dot-green" style="margin-right:4px;"></span>
+                    Live Activity Stream
+                </div>
+            </div>
+
+            <div class="live-stream-list">
+                {% for ev in live_feed %}
+                    <div class="stream-item">
+                        <div class="stream-top">
+                            <span class="stream-user">{{ ev.user_email }}</span>
+                            <span class="stream-time">{{ ev.created_at|timesince }} ago</span>
+                        </div>
+                        <div class="stream-detail">
+                            {% if ev.status == 'done' %}
+                                <span class="dot dot-green"></span>
+                            {% elif ev.status == 'failed' %}
+                                <span class="dot dot-red"></span>
+                            {% else %}
+                                <span class="dot dot-yellow"></span>
+                            {% endif %}
+                            <span>
+                                {% if ev.event_type == 'queue_started' %}
+                                    🚀 <strong>Workflow Run</strong> ({{ ev.node_count }} nodes)
+                                {% elif ev.event_type == 'consume_prompt' %}
+                                    ⚡ <strong>Prompt Gen</strong> ({{ ev.prompt_type }})
+                                {% else %}
+                                    {{ ev.event_type }}
+                                {% endif %}
+                            </span>
+                        </div>
+                    </div>
+                {% empty %}
+                    <div style="text-align:center; padding:1.5rem; color:var(--text-muted); font-size:0.85rem;">
+                        No recent activity recorded today.
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

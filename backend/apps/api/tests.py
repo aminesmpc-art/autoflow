@@ -18,8 +18,11 @@ from apps.plans.services import (
     FREE_LITE_DAILY_LIMIT,
     FREE_FLOW_DAILY_LIMIT,
     FREE_FULL_DAILY_LIMIT_RUNS,
+    FREE_STUDIO_MONTHLY_LIMIT,
+    FREE_STUDIO_MAX_NODES,
     consume_prompt,
     consume_queue_run,
+    consume_studio_run,
     can_start_queue,
     get_entitlement_snapshot,
     get_free_remaining,
@@ -201,7 +204,7 @@ class EntitlementTests(TestCase):
         self.profile.is_pro_active = True
         self.profile.save()
 
-        for _ in range(50):  # way beyond free limit
+        for _ in range(120):  # way beyond free limit (50)
             result = consume_prompt(self.user)
             self.assertTrue(result["allowed"])
             self.assertEqual(result["source_used"], "pro")
@@ -210,6 +213,112 @@ class EntitlementTests(TestCase):
 # ================================================================
 # QUEUE RUN LIMIT TESTS
 # ================================================================
+
+
+class StudioRunLimitTests(TestCase):
+    """Studio workflow limits: monthly runs + per-workflow node cap."""
+
+    def setUp(self):
+        self.user = CustomUser.objects.create_user("studio@example.com", "pass123", is_active=True)
+        self.profile = Profile.objects.create(user=self.user, plan_type=PlanType.FREE)
+
+    def test_free_monthly_limit(self):
+        for i in range(FREE_STUDIO_MONTHLY_LIMIT):
+            result = consume_studio_run(self.user, node_count=3)
+            self.assertTrue(result["allowed"], f"Run {i+1} should be allowed")
+        result = consume_studio_run(self.user, node_count=3)
+        self.assertFalse(result["allowed"])
+        self.assertIn("free workflow runs", result["message"].lower())
+
+    def test_free_daily_nodes_budget(self):
+        # 1st run: 30 nodes (allowed, 20 left)
+        result1 = consume_studio_run(self.user, node_count=30)
+        self.assertTrue(result1["allowed"])
+        self.assertEqual(result1["nodes_remaining_today"], 20)
+
+        # 2nd run: 25 nodes (blocked: needs 25, only 20 left)
+        result2 = consume_studio_run(self.user, node_count=25)
+        self.assertFalse(result2["allowed"])
+        self.assertIn("node(s) remaining today", result2["message"].lower())
+
+    def test_pro_unlimited_runs_and_nodes(self):
+        self.profile.plan_type = PlanType.PRO
+        self.profile.is_pro_active = True
+        self.profile.save()
+        for _ in range(FREE_STUDIO_MONTHLY_LIMIT + 5):
+            result = consume_studio_run(self.user, node_count=50)
+            self.assertTrue(result["allowed"])
+
+    def test_endpoint_forbidden_when_over(self):
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        for _ in range(FREE_STUDIO_MONTHLY_LIMIT):
+            consume_studio_run(self.user, node_count=2)
+        resp = client.post("/api/usage/studio-run", {"node_count": 2}, format="json")
+        self.assertEqual(resp.status_code, 403)
+        self.assertFalse(resp.json()["allowed"])
+
+    def test_generations_charge_the_daily_prompt_allowance(self):
+        """Studio runs consume daily node credits (5 nodes = 5 credits)."""
+        from apps.usage.models import DailyUsage
+        consume_studio_run(self.user, node_count=5, generate_count=3)
+        usage = DailyUsage.objects.get(user=self.user, date=timezone.now().date())
+        self.assertEqual(usage.text_prompts_used, 5)
+        self.assertEqual(usage.free_prompts_used, 5)
+        self.assertEqual(usage.total_prompts_used, 5)
+
+    def test_only_generate_nodes_are_charged(self):
+        """A 5-node workflow charges 5 daily node credits."""
+        from apps.usage.models import DailyUsage
+        consume_studio_run(self.user, node_count=5, generate_count=2)
+        usage = DailyUsage.objects.get(user=self.user, date=timezone.now().date())
+        self.assertEqual(usage.total_prompts_used, 5)
+
+    def test_creates_settleable_prompt_events(self):
+        """Pending per-prompt events must exist so the dashboard can count them."""
+        from apps.usage.models import UsageEvent
+        consume_studio_run(self.user, node_count=4, generate_count=3)
+        events = UsageEvent.objects.filter(
+            user=self.user, event_type="consume_prompt", metadata__source="studio"
+        )
+        self.assertEqual(events.count(), 3)
+        self.assertTrue(all(e.metadata["status"] == "pending" for e in events))
+
+    def test_blocked_when_daily_prompts_exhausted(self):
+        """Free user with no prompts left cannot start a Studio run."""
+        from apps.usage.models import DailyUsage
+        usage = DailyUsage.objects.get_or_create(
+            user=self.user, date=timezone.now().date()
+        )[0]
+        usage.free_prompts_used = FREE_DAILY_LIMIT
+        usage.save()
+
+        result = consume_studio_run(self.user, node_count=2, generate_count=2)
+        self.assertFalse(result["allowed"])
+        self.assertIn("node", result["message"].lower())
+        # A blocked run must not consume the monthly Studio allowance either
+        self.assertEqual(result["period"], "day")
+
+    def test_pro_ignores_daily_prompt_limit(self):
+        from apps.usage.models import DailyUsage
+        self.profile.plan_type = PlanType.PRO
+        self.profile.is_pro_active = True
+        self.profile.save()
+        usage = DailyUsage.objects.get_or_create(
+            user=self.user, date=timezone.now().date()
+        )[0]
+        usage.free_prompts_used = FREE_DAILY_LIMIT
+        usage.save()
+
+        result = consume_studio_run(self.user, node_count=9, generate_count=6)
+        self.assertTrue(result["allowed"])
+
+    def test_snapshot_includes_studio_fields(self):
+        consume_studio_run(self.user, node_count=2)
+        snap = get_entitlement_snapshot(self.user)
+        self.assertEqual(snap["studio_runs_this_month"], 1)
+        self.assertEqual(snap["studio_monthly_limit"], FREE_STUDIO_MONTHLY_LIMIT)
+        self.assertEqual(snap["studio_remaining_this_month"], FREE_STUDIO_MONTHLY_LIMIT - 1)
 
 
 class QueueRunLimitTests(TestCase):

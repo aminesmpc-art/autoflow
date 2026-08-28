@@ -204,7 +204,7 @@ class EntitlementTests(TestCase):
         self.profile.is_pro_active = True
         self.profile.save()
 
-        for _ in range(50):  # way beyond free limit
+        for _ in range(120):  # way beyond free limit (50)
             result = consume_prompt(self.user)
             self.assertTrue(result["allowed"])
             self.assertEqual(result["source_used"], "pro")
@@ -228,18 +228,18 @@ class StudioRunLimitTests(TestCase):
             self.assertTrue(result["allowed"], f"Run {i+1} should be allowed")
         result = consume_studio_run(self.user, node_count=3)
         self.assertFalse(result["allowed"])
-        self.assertIn("limit reached", result["message"].lower())
+        self.assertIn("free workflow runs", result["message"].lower())
 
-    def test_free_node_cap(self):
-        result = consume_studio_run(self.user, node_count=FREE_STUDIO_MAX_NODES + 1)
-        self.assertFalse(result["allowed"])
-        self.assertIn("nodes", result["message"].lower())
-        # A blocked run must NOT consume from the allowance
-        self.assertEqual(result["used"], 0)
+    def test_free_daily_nodes_budget(self):
+        # 1st run: 30 nodes (allowed, 20 left)
+        result1 = consume_studio_run(self.user, node_count=30)
+        self.assertTrue(result1["allowed"])
+        self.assertEqual(result1["nodes_remaining_today"], 20)
 
-    def test_node_cap_boundary_allowed(self):
-        result = consume_studio_run(self.user, node_count=FREE_STUDIO_MAX_NODES)
-        self.assertTrue(result["allowed"])
+        # 2nd run: 25 nodes (blocked: needs 25, only 20 left)
+        result2 = consume_studio_run(self.user, node_count=25)
+        self.assertFalse(result2["allowed"])
+        self.assertIn("node(s) remaining today", result2["message"].lower())
 
     def test_pro_unlimited_runs_and_nodes(self):
         self.profile.plan_type = PlanType.PRO
@@ -259,20 +259,20 @@ class StudioRunLimitTests(TestCase):
         self.assertFalse(resp.json()["allowed"])
 
     def test_generations_charge_the_daily_prompt_allowance(self):
-        """Studio generations must consume prompts like the sidepanel queue."""
+        """Studio runs consume daily node credits (5 nodes = 5 credits)."""
         from apps.usage.models import DailyUsage
         consume_studio_run(self.user, node_count=5, generate_count=3)
         usage = DailyUsage.objects.get(user=self.user, date=timezone.now().date())
-        self.assertEqual(usage.text_prompts_used, 3)
-        self.assertEqual(usage.free_prompts_used, 3)
-        self.assertEqual(usage.total_prompts_used, 3)
+        self.assertEqual(usage.text_prompts_used, 5)
+        self.assertEqual(usage.free_prompts_used, 5)
+        self.assertEqual(usage.total_prompts_used, 5)
 
     def test_only_generate_nodes_are_charged(self):
-        """A 5-node workflow with 2 Generate nodes charges 2, not 5."""
+        """A 5-node workflow charges 5 daily node credits."""
         from apps.usage.models import DailyUsage
         consume_studio_run(self.user, node_count=5, generate_count=2)
         usage = DailyUsage.objects.get(user=self.user, date=timezone.now().date())
-        self.assertEqual(usage.total_prompts_used, 2)
+        self.assertEqual(usage.total_prompts_used, 5)
 
     def test_creates_settleable_prompt_events(self):
         """Pending per-prompt events must exist so the dashboard can count them."""
@@ -295,7 +295,7 @@ class StudioRunLimitTests(TestCase):
 
         result = consume_studio_run(self.user, node_count=2, generate_count=2)
         self.assertFalse(result["allowed"])
-        self.assertIn("prompt", result["message"].lower())
+        self.assertIn("node", result["message"].lower())
         # A blocked run must not consume the monthly Studio allowance either
         self.assertEqual(result["period"], "day")
 
