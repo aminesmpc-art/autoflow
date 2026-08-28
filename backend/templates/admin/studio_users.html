@@ -1,7 +1,7 @@
 {% extends 'admin/base.html' %}
 {% load i18n unfold %}
 
-{% block title %}Active Creators | AutoFlow Control Center{% endblock %}
+{% block title %}Studio Users | AutoFlow{% endblock %}
 
 {% block branding %}
     {% include "unfold/helpers/site_branding.html" %}
@@ -9,744 +9,469 @@
 
 {% block content %}
 <style>
-    /* ============================================================
-       AutoFlow Studio Executive Control Center (v3 Theme)
-       Design: High-contrast Dark Obsidian, Ambient Neon, Frosted Glass
-       ============================================================ */
-    :root {
-        --af-bg: #030712;
-        --af-card: #0f172a;
-        --af-card-hover: #1e293b;
-        --af-border: #1e293b;
-        --af-border-glow: #3b82f6;
-        --af-emerald: #10b981;
-        --af-emerald-glow: rgba(16, 185, 129, 0.25);
-        --af-purple: #8b5cf6;
-        --af-amber: #f59e0b;
-        --af-text-head: #ffffff;
-        --af-text-body: #cbd5e1;
-        --af-text-muted: #64748b;
-    }
+/* ── Reset & Base ── */
+.su { all: unset; display: block; box-sizing: border-box; }
+.su *, .su *::before, .su *::after { box-sizing: border-box; margin: 0; padding: 0; }
+.su {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #e1e7ef;
+    background: #09090b;
+    padding: 2rem 2.5rem;
+    min-height: 100vh;
+    margin: -1.5rem -1rem;
+}
+.su a { color: inherit; text-decoration: none; }
 
-    .af-dashboard-wrap {
-        background: var(--af-bg);
-        color: var(--af-text-body);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        padding: 2rem;
-        border-radius: 20px;
-        margin: -1.5rem -1rem;
-        box-shadow: inset 0 0 60px rgba(0,0,0,0.6);
-        min-height: 100vh;
-    }
+/* ── Page Header ── */
+.su-header { margin-bottom: 2.25rem; }
+.su-header h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fafafa;
+    letter-spacing: -0.025em;
+    margin-bottom: 0.25rem;
+}
+.su-header p {
+    font-size: 0.875rem;
+    color: #71717a;
+}
 
-    /* ── Top Bar ── */
-    .af-topbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 2rem;
-        flex-wrap: wrap;
-        gap: 1.25rem;
-        padding-bottom: 1.5rem;
-        border-bottom: 1px solid rgba(255,255,255,0.06);
-    }
-    .af-brand-title {
-        display: flex;
-        align-items: center;
-        gap: 0.85rem;
-    }
-    .af-brand-icon {
-        width: 44px;
-        height: 44px;
-        border-radius: 12px;
-        background: linear-gradient(135deg, #10b981, #6366f1);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.4rem;
-        box-shadow: 0 0 20px rgba(16,185,129,0.4);
-    }
-    .af-brand-text h1 {
-        font-size: 1.75rem;
-        font-weight: 800;
-        color: #ffffff !important;
-        margin: 0;
-        letter-spacing: -0.03em;
-    }
-    .af-brand-text p {
-        color: var(--af-text-muted);
-        font-size: 0.88rem;
-        margin: 0.2rem 0 0 0;
-    }
+/* ── Flash messages ── */
+.su-flash {
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 1.25rem;
+}
+.su-flash.ok { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+.su-flash.err { background: #450a0a; color: #fca5a5; border: 1px solid #991b1b; }
 
-    .af-live-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        background: rgba(16,185,129,0.1);
-        border: 1px solid rgba(16,185,129,0.3);
-        padding: 0.5rem 1rem;
-        border-radius: 9999px;
-        font-size: 0.8rem;
-        font-weight: 700;
-        color: #34d399;
-    }
-    .af-pulse-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #10b981;
-        box-shadow: 0 0 10px #10b981;
-        animation: pulseRadar 2s infinite ease-in-out;
-    }
-    @keyframes pulseRadar { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.4); opacity: 0.5; } }
+/* ── Stat Cards Grid ── */
+.su-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+@media (max-width: 1100px) { .su-stats { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .su-stats { grid-template-columns: 1fr; } }
 
-    /* ── Hero KPI Cards ── */
-    .af-kpi-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 1.25rem;
-        margin-bottom: 2rem;
-    }
-    .af-kpi-card {
-        background: var(--af-card);
-        border: 1px solid var(--af-border);
-        border-radius: 18px;
-        padding: 1.5rem;
-        position: relative;
-        overflow: hidden;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-    }
-    .af-kpi-card:hover {
-        transform: translateY(-3px);
-        border-color: rgba(59, 130, 246, 0.5);
-        box-shadow: 0 12px 32px rgba(0,0,0,0.5);
-    }
-    .af-kpi-card::before {
-        content: ''; position: absolute; top: -40px; right: -40px; width: 100px; height: 100px;
-        background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%);
-        border-radius: 50%; pointer-events: none;
-    }
-    .af-kpi-card.purple::before { background: radial-gradient(circle, rgba(139,92,246,0.2) 0%, transparent 70%); }
-    .af-kpi-card.emerald::before { background: radial-gradient(circle, rgba(16,185,129,0.2) 0%, transparent 70%); }
-    .af-kpi-card.amber::before { background: radial-gradient(circle, rgba(245,158,11,0.2) 0%, transparent 70%); }
+.su-stat {
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    transition: border-color 0.2s;
+}
+.su-stat:hover { border-color: #3f3f46; }
+.su-stat-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #71717a;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+}
+.su-stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #fafafa;
+    letter-spacing: -0.03em;
+    line-height: 1;
+}
+.su-stat-note {
+    font-size: 0.8rem;
+    color: #52525b;
+    margin-top: 0.5rem;
+}
+.su-stat-note em { font-style: normal; color: #a1a1aa; }
 
-    .af-kpi-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.75rem;
-    }
-    .af-kpi-label {
-        font-size: 0.75rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--af-text-muted);
-    }
-    .af-kpi-icon {
-        width: 34px;
-        height: 34px;
-        border-radius: 8px;
-        background: rgba(255,255,255,0.04);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.1rem;
-        border: 1px solid rgba(255,255,255,0.06);
-    }
-    .af-kpi-val {
-        font-size: 2.35rem;
-        font-weight: 900;
-        color: #ffffff !important;
-        line-height: 1.1;
-        letter-spacing: -0.03em;
-    }
-    .af-kpi-sub {
-        font-size: 0.82rem;
-        color: #34d399;
-        margin-top: 0.6rem;
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-        gap: 0.4rem;
-    }
+/* ── Main 2-col layout ── */
+.su-grid {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 1.5rem;
+    align-items: start;
+}
+@media (max-width: 1100px) { .su-grid { grid-template-columns: 1fr; } }
 
-    /* ── Main Layout ── */
-    .af-main-layout {
-        display: grid;
-        grid-template-columns: 2.4fr 1fr;
-        gap: 1.5rem;
-    }
-    @media (max-width: 1200px) {
-        .af-main-layout { grid-template-columns: 1fr; }
-    }
+/* ── Card / Panel ── */
+.su-card {
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 12px;
+    overflow: hidden;
+}
+.su-card-head {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #27272a;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+.su-card-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: #fafafa;
+}
 
-    /* Panels */
-    .af-panel {
-        background: var(--af-card);
-        border: 1px solid var(--af-border);
-        border-radius: 18px;
-        padding: 1.5rem;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.3);
-    }
-    .af-panel-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1.5rem;
-        flex-wrap: wrap;
-        gap: 1rem;
-    }
-    .af-panel-title {
-        font-size: 1.15rem;
-        font-weight: 800;
-        color: #ffffff !important;
-        display: flex;
-        align-items: center;
-        gap: 0.6rem;
-    }
+/* ── Filter / Search Bar ── */
+.su-filters {
+    display: flex;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.su-search {
+    background: #09090b;
+    border: 1px solid #3f3f46;
+    border-radius: 6px;
+    padding: 0.4375rem 0.75rem;
+    color: #fafafa;
+    font-size: 0.8125rem;
+    outline: none;
+    width: 160px;
+    transition: border-color 0.15s;
+}
+.su-search:focus { border-color: #a1a1aa; }
+.su-search::placeholder { color: #52525b; }
 
-    /* Filter Bar */
-    .af-filter-bar {
-        display: flex;
-        gap: 0.4rem;
-        flex-wrap: wrap;
-        align-items: center;
-    }
-    .af-search-box {
-        position: relative;
-        display: flex;
-        align-items: center;
-    }
-    .af-search-input {
-        background: #030712;
-        border: 1px solid #334155;
-        border-radius: 10px;
-        padding: 0.55rem 1rem 0.55rem 2.2rem;
-        color: #ffffff;
-        font-size: 0.85rem;
-        outline: none;
-        width: 180px;
-        transition: all 0.2s ease;
-    }
-    .af-search-input:focus { border-color: #10b981; width: 220px; box-shadow: 0 0 10px rgba(16,185,129,0.3); }
-    .af-search-icon {
-        position: absolute;
-        left: 0.75rem;
-        color: var(--af-text-muted);
-        font-size: 0.9rem;
-    }
+.su-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 6px;
+    padding: 0.4375rem 0.625rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #a1a1aa;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.su-pill:hover { background: #3f3f46; color: #e4e4e7; }
+.su-pill.on { background: #fafafa; color: #09090b; border-color: #fafafa; }
 
-    .af-tab-btn {
-        background: rgba(255,255,255,0.04);
-        border: 1px solid #1e293b;
-        border-radius: 10px;
-        padding: 0.55rem 0.85rem;
-        color: #94a3b8;
-        font-size: 0.82rem;
-        font-weight: 600;
-        text-decoration: none;
-        transition: all 0.2s ease;
-        cursor: pointer;
-    }
-    .af-tab-btn.active, .af-tab-btn:hover {
-        background: rgba(16,185,129,0.15);
-        border-color: #10b981;
-        color: #34d399;
-    }
+/* ── Table ── */
+.su-table-wrap { overflow-x: auto; }
+.su-table { width: 100%; border-collapse: collapse; }
+.su-table th {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: #52525b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid #27272a;
+    background: #18181b;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+.su-table td {
+    padding: 0.875rem 1rem;
+    font-size: 0.8125rem;
+    border-bottom: 1px solid #1f1f23;
+    vertical-align: middle;
+}
+.su-table tr:hover td { background: #1c1c20; }
 
-    /* ── Table Styling ── */
-    .af-table-wrap {
-        overflow-x: auto;
-        border-radius: 12px;
-        border: 1px solid #1e293b;
-    }
-    .af-table {
-        width: 100%;
-        border-collapse: collapse;
-        text-align: left;
-        font-size: 0.88rem;
-    }
-    .af-table th {
-        background: #090e1a;
-        color: #94a3b8;
-        font-weight: 700;
-        padding: 0.9rem 1.1rem;
-        border-bottom: 1px solid #1e293b;
-        text-transform: uppercase;
-        font-size: 0.72rem;
-        letter-spacing: 0.06em;
-    }
-    .af-table td {
-        padding: 1.1rem;
-        border-bottom: 1px solid #1e293b;
-        vertical-align: middle;
-        color: #cbd5e1;
-        background: #0f172a;
-    }
-    .af-table tr:hover td {
-        background: #151f33;
-    }
+/* User Cell */
+.su-user {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    min-width: 200px;
+}
+.su-av {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: #3f3f46;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: #e4e4e7;
+    flex-shrink: 0;
+}
+.su-user-name { color: #fafafa; font-weight: 500; }
+.su-user-date { font-size: 0.6875rem; color: #52525b; }
 
-    .af-user-cell {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-    .af-avatar {
-        width: 34px;
-        height: 34px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #10b981, #6366f1);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 0.85rem;
-        color: #ffffff;
-        font-weight: 800;
-        box-shadow: 0 0 10px rgba(99,102,241,0.3);
-    }
-    .af-user-meta strong {
-        color: #ffffff;
-        display: block;
-        font-size: 0.88rem;
-    }
-    .af-user-meta span {
-        font-size: 0.75rem;
-        color: var(--af-text-muted);
-    }
+/* Badge */
+.su-badge {
+    display: inline-block;
+    padding: 0.1875rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+.su-badge.pro { background: #312e81; color: #a5b4fc; }
+.su-badge.free { background: #14532d; color: #86efac; }
 
-    /* Badges */
-    .af-badge-pro {
-        background: rgba(139,92,246,0.2);
-        color: #c4b5fd;
-        border: 1px solid rgba(139,92,246,0.4);
-        padding: 0.25rem 0.65rem;
-        border-radius: 9999px;
-        font-size: 0.72rem;
-        font-weight: 800;
-        letter-spacing: 0.04em;
-    }
-    .af-badge-free {
-        background: rgba(16,185,129,0.15);
-        color: #6ee7b7;
-        border: 1px solid rgba(16,185,129,0.3);
-        padding: 0.25rem 0.65rem;
-        border-radius: 9999px;
-        font-size: 0.72rem;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-    }
+/* Meter */
+.su-meter { min-width: 110px; }
+.su-meter-head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.6875rem;
+    color: #71717a;
+    margin-bottom: 4px;
+}
+.su-meter-head strong { color: #d4d4d8; font-weight: 600; }
+.su-meter-track {
+    height: 4px;
+    background: #27272a;
+    border-radius: 99px;
+    overflow: hidden;
+}
+.su-meter-fill {
+    height: 100%;
+    border-radius: 99px;
+    transition: width 0.3s;
+}
+.fill-ok { background: #22c55e; }
+.fill-warn { background: #eab308; }
+.fill-crit { background: #ef4444; }
 
-    /* Quota Meters */
-    .af-meter-box {
-        width: 100%;
-        min-width: 125px;
-    }
-    .af-meter-labels {
-        display: flex;
-        justify-content: space-between;
-        font-size: 0.75rem;
-        margin-bottom: 0.35rem;
-    }
-    .af-meter-track {
-        height: 7px;
-        background: #030712;
-        border: 1px solid #1e293b;
-        border-radius: 9999px;
-        overflow: hidden;
-    }
-    .af-meter-fill {
-        height: 100%;
-        border-radius: 9999px;
-        transition: width 0.4s ease;
-    }
-    .meter-emerald { background: linear-gradient(90deg, #059669, #10b981); }
-    .meter-amber { background: linear-gradient(90deg, #d97706, #f59e0b); }
-    .meter-rose { background: linear-gradient(90deg, #dc2626, #ef4444); }
+/* Action Buttons */
+.su-actions { display: flex; gap: 0.3125rem; }
+.su-btn {
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    color: #a1a1aa;
+    border-radius: 6px;
+    padding: 0.3125rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+.su-btn:hover { background: #3f3f46; color: #fafafa; }
 
-    /* Action Buttons */
-    .af-btn-group {
-        display: flex;
-        gap: 0.4rem;
-        flex-wrap: wrap;
-    }
-    .af-act-btn {
-        background: rgba(255,255,255,0.05);
-        border: 1px solid #334155;
-        color: #cbd5e1;
-        border-radius: 8px;
-        padding: 0.4rem 0.75rem;
-        font-size: 0.75rem;
-        font-weight: 700;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-    .af-act-btn:hover {
-        background: #1e293b;
-        color: #ffffff;
-        border-color: #64748b;
-        transform: translateY(-1px);
-    }
-    .af-act-btn.runs:hover {
-        background: rgba(16,185,129,0.2);
-        border-color: #10b981;
-        color: #34d399;
-    }
-    .af-act-btn.reset:hover {
-        background: rgba(245,158,11,0.2);
-        border-color: #f59e0b;
-        color: #fbbf24;
-    }
-    .af-act-btn.pro:hover {
-        background: rgba(139,92,246,0.25);
-        border-color: #a78bfa;
-        color: #c4b5fd;
-    }
+/* ── Live Feed ── */
+.su-feed { padding: 0.75rem; max-height: 640px; overflow-y: auto; }
+.su-feed-item {
+    padding: 0.75rem;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+    transition: background 0.15s;
+}
+.su-feed-item:hover { background: #1c1c20; }
+.su-feed-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.25rem;
+}
+.su-feed-email { font-size: 0.8125rem; font-weight: 600; color: #e4e4e7; }
+.su-feed-time { font-size: 0.6875rem; color: #52525b; }
+.su-feed-desc { font-size: 0.75rem; color: #71717a; }
+.su-feed-desc strong { color: #a1a1aa; font-weight: 500; }
 
-    /* ── Live Stream Panel ── */
-    .af-stream-list {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-        max-height: 650px;
-        overflow-y: auto;
-        padding-right: 0.35rem;
-    }
-    .af-stream-item {
-        background: #030712;
-        border: 1px solid #1e293b;
-        border-radius: 12px;
-        padding: 0.9rem;
-        transition: all 0.2s ease;
-        animation: fadeIn 0.3s ease-out;
-    }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
-    .af-stream-item:hover {
-        border-color: #3b82f6;
-        background: #0a1120;
-    }
-    .af-stream-head {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.4rem;
-    }
-    .af-stream-email {
-        font-weight: 700;
-        color: #ffffff;
-        font-size: 0.82rem;
-    }
-    .af-stream-time {
-        color: var(--af-text-muted);
-        font-size: 0.72rem;
-    }
-    .af-stream-body {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        font-size: 0.8rem;
-        color: #cbd5e1;
-    }
+.su-live-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+    margin-right: 6px;
+    animation: blink 2s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* ── Empty state ── */
+.su-empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #52525b;
+    font-size: 0.875rem;
+}
 </style>
 
-<div class="af-dashboard-wrap">
-    <!-- Topbar Header -->
-    <div class="af-topbar">
-        <div class="af-brand-title">
-            <div class="af-brand-icon">🎬</div>
-            <div class="af-brand-text">
-                <h1>AutoFlow Studio Control Center</h1>
-                <p>Real-time analytics, quota management, and telemetry for active creators.</p>
-            </div>
+<div class="su">
+    <!-- Header -->
+    <div class="su-header">
+        <h1>Studio Users</h1>
+        <p>Monitor active creators, manage quotas, and track real-time usage.</p>
+    </div>
+
+    <!-- Flash messages -->
+    {% if messages %}{% for message in messages %}
+        <div class="su-flash {% if message.tags == 'success' %}ok{% else %}err{% endif %}">{{ message }}</div>
+    {% endfor %}{% endif %}
+
+    <!-- Stats row -->
+    <div class="su-stats">
+        <div class="su-stat">
+            <div class="su-stat-label">Active Creators</div>
+            <div class="su-stat-value" id="kpi-active">{{ kpis.total_active_users }}</div>
+            <div class="su-stat-note"><em>{{ kpis.pro_users }}</em> Pro · <em>{{ kpis.free_users }}</em> Free</div>
         </div>
-        <div class="af-live-badge">
-            <span class="af-pulse-dot"></span>
-            <span>Live Telemetry Radar (Auto-Refreshing)</span>
+        <div class="su-stat">
+            <div class="su-stat-label">Runs This Month</div>
+            <div class="su-stat-value" id="kpi-runs">{{ kpis.monthly_studio_runs }}</div>
+            <div class="su-stat-note">Free limit: <em>{{ kpis.monthly_limit }}/mo</em></div>
+        </div>
+        <div class="su-stat">
+            <div class="su-stat-label">Nodes Today</div>
+            <div class="su-stat-value" id="kpi-nodes">{{ kpis.today_nodes_executed }}</div>
+            <div class="su-stat-note">Budget: <em>{{ kpis.daily_node_limit }}/day</em> per user</div>
+        </div>
+        <div class="su-stat">
+            <div class="su-stat-label">DAU</div>
+            <div class="su-stat-value" id="kpi-dau">{{ kpis.dau_count }}</div>
+            <div class="su-stat-note">Active in the last 24h</div>
         </div>
     </div>
 
-    <!-- Feedback Alerts -->
-    {% if messages %}
-        <div style="margin-bottom: 1.5rem;">
-            {% for message in messages %}
-                <div style="padding: 0.85rem 1.25rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; margin-bottom: 0.5rem; {% if message.tags == 'success' %}background: rgba(16,185,129,0.2); border: 1px solid #10b981; color: #34d399;{% else %}background: rgba(239,68,68,0.2); border: 1px solid #ef4444; color: #f87171;{% endif %}">
-                    {{ message }}
-                </div>
-            {% endfor %}
-        </div>
-    {% endif %}
-
-    <!-- 4 Hero KPI Cards -->
-    <div class="af-kpi-grid">
-        <div class="af-kpi-card purple">
-            <div class="af-kpi-header">
-                <div class="af-kpi-label">Active Creators</div>
-                <div class="af-kpi-icon">🎯</div>
-            </div>
-            <div class="af-kpi-val" id="kpi-studio-creators">{{ kpis.total_active_users }}</div>
-            <div class="af-kpi-sub">
-                <span>{{ kpis.total_users }} Total Signups</span> · <span>{{ kpis.pro_users }} Pro 💎</span>
-            </div>
-        </div>
-
-        <div class="af-kpi-card emerald">
-            <div class="af-kpi-header">
-                <div class="af-kpi-label">Studio Runs This Month</div>
-                <div class="af-kpi-icon">🏃</div>
-            </div>
-            <div class="af-kpi-val" id="kpi-monthly-runs">{{ kpis.monthly_studio_runs }}</div>
-            <div class="af-kpi-sub">Free Budget: {{ kpis.monthly_limit }} runs/month</div>
-        </div>
-
-        <div class="af-kpi-card amber">
-            <div class="af-kpi-header">
-                <div class="af-kpi-label">Nodes Executed Today</div>
-                <div class="af-kpi-icon">⚡</div>
-            </div>
-            <div class="af-kpi-val" id="kpi-nodes-today">{{ kpis.today_nodes_executed }}</div>
-            <div class="af-kpi-sub">Allowance: {{ kpis.daily_node_limit }} nodes/day per user</div>
-        </div>
-
-        <div class="af-kpi-card">
-            <div class="af-kpi-header">
-                <div class="af-kpi-label">Daily Active Creators (DAU)</div>
-                <div class="af-kpi-icon">🟢</div>
-            </div>
-            <div class="af-kpi-val" id="kpi-dau">{{ kpis.dau_count }}</div>
-            <div class="af-kpi-sub">Active in the last 24h</div>
-        </div>
-    </div>
-
-    <!-- Main Dual Panel Layout -->
-    <div class="af-main-layout">
-        <!-- Left: Active Creators Table -->
-        <div class="af-panel">
-            <div class="af-panel-header">
-                <div class="af-panel-title">
-                    <span>👥</span>
-                    <span>Active Creators Directory</span>
-                </div>
-                <form method="get" class="af-filter-bar">
-                    <div class="af-search-box">
-                        <span class="af-search-icon">🔍</span>
-                        <input type="text" name="q" value="{{ search_query }}" placeholder="Search creator…" class="af-search-input" />
-                    </div>
-                    <button type="submit" class="af-tab-btn">Search</button>
-                    <a href="?activity=active" class="af-tab-btn {% if activity_filter == 'active' and not search_query %}active{% endif %}">🎯 Active Creators</a>
-                    <a href="?activity=active_today" class="af-tab-btn {% if activity_filter == 'active_today' %}active{% endif %}">⚡ Active Today</a>
-                    <a href="?plan=pro" class="af-tab-btn {% if plan_filter == 'pro' %}active{% endif %}">Pro 💎</a>
-                    <a href="?plan=free" class="af-tab-btn {% if plan_filter == 'free' %}active{% endif %}">Free</a>
-                    <a href="?activity=all" class="af-tab-btn {% if activity_filter == 'all' %}active{% endif %}">All Users ({{ kpis.total_users }})</a>
-                    {% if search_query %}
-                        <a href="?" class="af-tab-btn" style="color: #f87171;">✕ Clear</a>
-                    {% endif %}
+    <!-- Main grid -->
+    <div class="su-grid">
+        <!-- Left: table -->
+        <div class="su-card">
+            <div class="su-card-head">
+                <span class="su-card-title">Creators</span>
+                <form method="get" class="su-filters">
+                    <input type="text" name="q" value="{{ search_query }}" placeholder="Search email…" class="su-search" />
+                    <button type="submit" class="su-pill">Search</button>
+                    <a href="?activity=active" class="su-pill {% if activity_filter == 'active' and not search_query %}on{% endif %}">Active</a>
+                    <a href="?activity=active_today" class="su-pill {% if activity_filter == 'active_today' %}on{% endif %}">Today</a>
+                    <a href="?plan=pro" class="su-pill {% if plan_filter == 'pro' %}on{% endif %}">Pro</a>
+                    <a href="?plan=free" class="su-pill {% if plan_filter == 'free' %}on{% endif %}">Free</a>
+                    <a href="?activity=all" class="su-pill {% if activity_filter == 'all' %}on{% endif %}">All</a>
+                    {% if search_query %}<a href="?" class="su-pill" style="color:#ef4444">Clear</a>{% endif %}
                 </form>
             </div>
 
-            <div class="af-table-wrap">
-                <table class="af-table">
+            <div class="su-table-wrap">
+                <table class="su-table">
                     <thead>
                         <tr>
-                            <th>Creator</th>
+                            <th>User</th>
                             <th>Plan</th>
-                            <th>Monthly Runs ({{ kpis.monthly_limit }}/mo)</th>
-                            <th>Daily Nodes ({{ kpis.daily_node_limit }}/day)</th>
-                            <th>Last Active</th>
-                            <th>Admin Actions</th>
+                            <th>Runs ({{ kpis.monthly_limit }}/mo)</th>
+                            <th>Nodes ({{ kpis.daily_node_limit }}/day)</th>
+                            <th>Last seen</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for item in studio_users %}
-                            <tr>
-                                <td>
-                                    <div class="af-user-cell">
-                                        <div class="af-avatar">{{ item.email|first|upper }}</div>
-                                        <div class="af-user-meta">
-                                            <strong>{{ item.email }}</strong>
-                                            <span>Joined {{ item.user.created_at|date:"M d, Y" }}</span>
-                                        </div>
+                        {% for u in studio_users %}
+                        <tr>
+                            <td>
+                                <div class="su-user">
+                                    <div class="su-av">{{ u.email|first|upper }}</div>
+                                    <div>
+                                        <div class="su-user-name">{{ u.email }}</div>
+                                        <div class="su-user-date">{{ u.user.created_at|date:"M d, Y" }}</div>
                                     </div>
-                                </td>
-                                <td>
-                                    {% if item.is_pro %}
-                                        <span class="af-badge-pro">PRO 💎</span>
-                                    {% else %}
-                                        <span class="af-badge-free">FREE</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <div class="af-meter-box">
-                                        <div class="af-meter-labels">
-                                            <span style="color:#ffffff; font-weight:700;">{{ item.runs_used }}/{{ item.runs_limit }}</span>
-                                            <span style="color:var(--af-text-muted);">{{ item.runs_remaining }} left</span>
-                                        </div>
-                                        <div class="af-meter-track">
-                                            <div class="af-meter-fill {% if item.runs_pct > 80 %}meter-rose{% elif item.runs_pct > 50 %}meter-amber{% else %}meter-emerald{% endif %}" style="width: {{ item.runs_pct }}%;"></div>
-                                        </div>
+                                </div>
+                            </td>
+                            <td><span class="su-badge {% if u.is_pro %}pro{% else %}free{% endif %}">{{ u.plan_name }}</span></td>
+                            <td>
+                                <div class="su-meter">
+                                    <div class="su-meter-head">
+                                        <strong>{{ u.runs_used }}/{{ u.runs_limit }}</strong>
+                                        <span>{{ u.runs_remaining }} left</span>
                                     </div>
-                                </td>
-                                <td>
-                                    <div class="af-meter-box">
-                                        <div class="af-meter-labels">
-                                            <span style="color:#ffffff; font-weight:700;">{{ item.nodes_today }}/{{ item.nodes_limit }}</span>
-                                            <span style="color:var(--af-text-muted);">{{ item.nodes_remaining }} left</span>
-                                        </div>
-                                        <div class="af-meter-track">
-                                            <div class="af-meter-fill {% if item.nodes_pct > 80 %}meter-rose{% elif item.nodes_pct > 50 %}meter-amber{% else %}meter-emerald{% endif %}" style="width: {{ item.nodes_pct }}%;"></div>
-                                        </div>
+                                    <div class="su-meter-track">
+                                        <div class="su-meter-fill {% if u.runs_pct > 80 %}fill-crit{% elif u.runs_pct > 50 %}fill-warn{% else %}fill-ok{% endif %}" style="width:{{ u.runs_pct }}%"></div>
                                     </div>
-                                </td>
-                                <td>
-                                    <span style="font-size:0.8rem; color:#94a3b8;">
-                                        {{ item.last_seen|timesince }} ago
-                                    </span>
-                                </td>
-                                <td>
-                                    <div class="af-btn-group">
-                                        <!-- +5 Runs Action -->
-                                        <form method="post" style="display:inline;">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="user_id" value="{{ item.user.id }}" />
-                                            <input type="hidden" name="action" value="grant_runs" />
-                                            <input type="hidden" name="amount" value="5" />
-                                            <button type="submit" class="af-act-btn runs" title="Add 5 monthly runs">+5 Runs</button>
-                                        </form>
-
-                                        <!-- Reset Nodes Action -->
-                                        <form method="post" style="display:inline;">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="user_id" value="{{ item.user.id }}" />
-                                            <input type="hidden" name="action" value="reset_daily_nodes" />
-                                            <button type="submit" class="af-act-btn reset" title="Reset daily node budget to 50">⚡ Reset</button>
-                                        </form>
-
-                                        <!-- Toggle Pro Action -->
-                                        <form method="post" style="display:inline;">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="user_id" value="{{ item.user.id }}" />
-                                            <input type="hidden" name="action" value="toggle_pro" />
-                                            <button type="submit" class="af-act-btn pro" title="Toggle Pro Membership">
-                                                {% if item.is_pro %}Downgrade{% else %}Make Pro{% endif %}
-                                            </button>
-                                        </form>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="su-meter">
+                                    <div class="su-meter-head">
+                                        <strong>{{ u.nodes_today }}/{{ u.nodes_limit }}</strong>
+                                        <span>{{ u.nodes_remaining }} left</span>
                                     </div>
-                                </td>
-                            </tr>
+                                    <div class="su-meter-track">
+                                        <div class="su-meter-fill {% if u.nodes_pct > 80 %}fill-crit{% elif u.nodes_pct > 50 %}fill-warn{% else %}fill-ok{% endif %}" style="width:{{ u.nodes_pct }}%"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td style="color:#71717a;font-size:0.8125rem">{{ u.last_seen|timesince }} ago</td>
+                            <td>
+                                <div class="su-actions">
+                                    <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="user_id" value="{{ u.user.id }}"><input type="hidden" name="action" value="grant_runs"><input type="hidden" name="amount" value="5"><button type="submit" class="su-btn">+5 runs</button></form>
+                                    <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="user_id" value="{{ u.user.id }}"><input type="hidden" name="action" value="reset_daily_nodes"><button type="submit" class="su-btn">Reset</button></form>
+                                    <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="user_id" value="{{ u.user.id }}"><input type="hidden" name="action" value="toggle_pro"><button type="submit" class="su-btn">{% if u.is_pro %}→ Free{% else %}→ Pro{% endif %}</button></form>
+                                </div>
+                            </td>
+                        </tr>
                         {% empty %}
-                            <tr>
-                                <td colspan="6" style="text-align:center; padding:3rem; color:var(--af-text-muted);">
-                                    No active creators found matching your criteria.
-                                </td>
-                            </tr>
+                        <tr><td colspan="6" class="su-empty">No creators found.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <!-- Right: Live Activity Radar Feed -->
-        <div class="af-panel">
-            <div class="af-panel-header">
-                <div class="af-panel-title">
-                    <span class="af-pulse-dot"></span>
-                    <span>Live Activity Radar</span>
-                </div>
+        <!-- Right: live feed -->
+        <div class="su-card">
+            <div class="su-card-head">
+                <span class="su-card-title"><span class="su-live-dot"></span>Live Feed</span>
             </div>
-
-            <div class="af-stream-list" id="af-live-stream-container">
+            <div class="su-feed" id="su-feed">
                 {% for ev in live_feed %}
-                    <div class="af-stream-item">
-                        <div class="af-stream-head">
-                            <span class="af-stream-email">{{ ev.user_email }}</span>
-                            <span class="af-stream-time">{{ ev.time_ago }}</span>
-                        </div>
-                        <div class="af-stream-body">
-                            {% if ev.source == 'studio' or ev.event_type == 'queue_started' %}
-                                <span style="font-size:1.1rem;">🎬</span>
-                                <span><strong>Studio Run:</strong> {{ ev.node_count }} node(s)</span>
-                            {% elif ev.event_type == 'consume_prompt' %}
-                                <span style="font-size:1.1rem;">⚡</span>
-                                <span><strong>Prompt:</strong> {{ ev.prompt_type }} generation</span>
-                            {% else %}
-                                <span>{{ ev.event_type }}</span>
-                            {% endif %}
-                        </div>
+                <div class="su-feed-item">
+                    <div class="su-feed-top">
+                        <span class="su-feed-email">{{ ev.user_email }}</span>
+                        <span class="su-feed-time">{{ ev.time_ago }}</span>
                     </div>
+                    <div class="su-feed-desc">
+                        {% if ev.source == 'studio' or ev.event_type == 'queue_started' %}
+                            <strong>Workflow</strong> · {{ ev.node_count }} node{{ ev.node_count|pluralize }}
+                        {% elif ev.event_type == 'consume_prompt' %}
+                            <strong>Prompt</strong> · {{ ev.prompt_type }}
+                        {% else %}
+                            {{ ev.event_type }}
+                        {% endif %}
+                    </div>
+                </div>
                 {% empty %}
-                    <div style="text-align:center; padding:2rem; color:var(--af-text-muted); font-size:0.85rem;">
-                        No activity detected today yet.
-                    </div>
+                <div class="su-empty">No activity yet today.</div>
                 {% endfor %}
             </div>
         </div>
     </div>
 </div>
 
-<!-- ── Live Auto-Refresh Script (Every 6 Seconds) ── -->
 <script>
-(function() {
-    let pollingInterval = null;
-
-    async function fetchLiveFeed() {
+(function(){
+    setInterval(async function(){
         try {
-            const res = await fetch(window.location.pathname + '?format=json', {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            });
-            if (!res.ok) return;
-            const data = await res.json();
-
-            // Update KPI values smoothly
-            if (data.kpis) {
-                const studioEl = document.getElementById('kpi-studio-creators');
-                const runsEl = document.getElementById('kpi-monthly-runs');
-                const nodesEl = document.getElementById('kpi-nodes-today');
-                const dauEl = document.getElementById('kpi-dau');
-
-                if (studioEl) studioEl.textContent = data.kpis.total_active_users;
-                if (runsEl) runsEl.textContent = data.kpis.monthly_studio_runs;
-                if (nodesEl) nodesEl.textContent = data.kpis.today_nodes_executed;
-                if (dauEl) dauEl.textContent = data.kpis.dau_count;
-            }
-
-            // Update Live Activity Stream
-            if (data.live_feed && data.live_feed.length > 0) {
-                const container = document.getElementById('af-live-stream-container');
-                if (!container) return;
-
-                let html = '';
-                data.live_feed.forEach(ev => {
-                    let icon = '⚡';
-                    let desc = `<strong>Prompt:</strong> ${ev.prompt_type} generation`;
-                    if (ev.source === 'studio' || ev.event_type === 'queue_started') {
-                        icon = '🎬';
-                        desc = `<strong>Studio Run:</strong> ${ev.node_count} node(s)`;
+            const r = await fetch(location.pathname+'?format=json',{headers:{'X-Requested-With':'XMLHttpRequest'}});
+            if(!r.ok) return;
+            const d = await r.json();
+            if(d.kpis){
+                const m = {active:'kpi-active',monthly_studio_runs:'kpi-runs',today_nodes_executed:'kpi-nodes',dau_count:'kpi-dau'};
+                for(const[k,id] of Object.entries(m)){
+                    const el=document.getElementById(id);
+                    if(el){
+                        const v = k==='active' ? d.kpis.total_active_users : d.kpis[k];
+                        if(v!==undefined) el.textContent=v;
                     }
-
-                    html += `
-                        <div class="af-stream-item">
-                            <div class="af-stream-head">
-                                <span class="af-stream-email">${ev.user_email}</span>
-                                <span class="af-stream-time">${ev.time_ago}</span>
-                            </div>
-                            <div class="af-stream-body">
-                                <span style="font-size:1.1rem;">${icon}</span>
-                                <span>${desc}</span>
-                            </div>
-                        </div>
-                    `;
-                });
-                container.innerHTML = html;
+                }
             }
-        } catch (e) {
-            console.debug('[AutoFlow] Polling feed error:', e);
-        }
-    }
-
-    // Auto-refresh every 6 seconds
-    pollingInterval = setInterval(fetchLiveFeed, 6000);
+            if(d.live_feed&&d.live_feed.length){
+                const c=document.getElementById('su-feed');
+                if(!c) return;
+                c.innerHTML=d.live_feed.map(e=>{
+                    const desc = (e.source==='studio'||e.event_type==='queue_started')
+                        ? `<strong>Workflow</strong> · ${e.node_count} node${e.node_count!==1?'s':''}`
+                        : e.event_type==='consume_prompt'
+                        ? `<strong>Prompt</strong> · ${e.prompt_type}`
+                        : e.event_type;
+                    return `<div class="su-feed-item"><div class="su-feed-top"><span class="su-feed-email">${e.user_email}</span><span class="su-feed-time">${e.time_ago}</span></div><div class="su-feed-desc">${desc}</div></div>`;
+                }).join('');
+            }
+        }catch(e){}
+    }, 8000);
 })();
 </script>
 {% endblock %}
