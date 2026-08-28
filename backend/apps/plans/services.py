@@ -138,6 +138,20 @@ def grant_reward_credits(
 # ── Entitlement snapshot ──
 
 
+def _next_month_start(now):
+    """Midnight on the first of next month, in the current timezone.
+
+    The monthly allowance resets when the MonthlyUsage row for the new
+    year/month is created, which is the first time anything is consumed in it
+    — so this is the boundary, not a scheduled job.
+    """
+    if now.month == 12:
+        return now.replace(year=now.year + 1, month=1, day=1,
+                           hour=0, minute=0, second=0, microsecond=0)
+    return now.replace(month=now.month + 1, day=1,
+                       hour=0, minute=0, second=0, microsecond=0)
+
+
 def get_entitlement_snapshot(user) -> dict:
     """Full snapshot of a user's current entitlement state."""
     profile = Profile.objects.select_related("user").get(user=user)
@@ -207,6 +221,18 @@ def get_entitlement_snapshot(user) -> dict:
         "full_runs_this_month": monthly.full_runs_used,
         "full_monthly_limit": FREE_FULL_DAILY_LIMIT_RUNS,
         "full_remaining_this_month": full_daily_remaining if not profile.is_pro else 999,
+        # Studio workflow limits (monthly)
+        "studio_runs_this_month": monthly.studio_runs_used,
+        "studio_monthly_limit": FREE_STUDIO_MONTHLY_LIMIT,
+        "studio_remaining_this_month": (
+            999 if profile.is_pro
+            else max(0, FREE_STUDIO_MONTHLY_LIMIT - monthly.studio_runs_used)
+        ),
+        # 0 = no cap, for Pro and now for free too.
+        "studio_max_nodes": 0 if profile.is_pro else FREE_STUDIO_MAX_NODES,
+        # When the monthly allowance resets, because "why can I not run"
+        # is always followed by "when can I".
+        "studio_reset_at": _next_month_start(now).isoformat(),
     }
 
 
@@ -696,13 +722,30 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
 
 
 def consume_studio_run(user, node_count: int = 1, generate_count: int = None) -> dict:
-    """Check + consume a Studio workflow run (10 runs / month, 50 nodes / day)."""
+    """Check + consume a Studio workflow run (monthly allowance).
+
+    Enforces THREE free-tier caps server-side: runs per month, nodes per
+    workflow, and the shared daily prompt allowance. The extension mirrors
+    the first two for instant feedback, but its counters live in
+    chrome.storage where the user can edit them — this is the authoritative
+    gate.
+
+    node_count     — every node on the canvas; gates workflow size.
+    generate_count — only the Generate nodes, i.e. the number of prompts
+                     actually submitted to Flow. These are charged against
+                     the same daily prompt allowance the sidepanel queue
+                     uses, because they cost the user the same generations.
+                     Defaults to node_count when the caller predates this
+                     argument, which over-charges slightly rather than
+                     letting Studio run free.
+    """
     now = timezone.now()
     today = now.date()
     if generate_count is None:
         generate_count = node_count
     generate_count = max(0, int(generate_count))
 
+    # Ensure the rows exist outside the lock (mirrors consume_queue_run)
     get_or_create_monthly_usage(user, now.year, now.month)
     get_or_create_daily_usage(user, today)
 
@@ -754,6 +797,7 @@ def consume_studio_run(user, node_count: int = 1, generate_count: int = None) ->
                     ),
                 }
 
+        # ── Charge node execution against the daily node allowance ──
         nodes_to_charge = node_count if not profile.is_pro else (generate_count or 0)
         if nodes_to_charge > 0:
             usage.text_prompts_used += nodes_to_charge
@@ -761,6 +805,7 @@ def consume_studio_run(user, node_count: int = 1, generate_count: int = None) ->
             usage.total_prompts_used += nodes_to_charge
             usage.save()
 
+            # Per-prompt events, mirroring consume_queue_run
             import uuid as _uuid
             batch_id = str(_uuid.uuid4())[:8]
             for i in range(max(1, generate_count or 1)):
@@ -778,6 +823,7 @@ def consume_studio_run(user, node_count: int = 1, generate_count: int = None) ->
                     },
                 )
 
+        # Count runs for Pro too — monitoring, not enforcement
         monthly.studio_runs_used += 1
         monthly.save()
 

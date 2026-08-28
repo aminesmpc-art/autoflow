@@ -69,6 +69,27 @@ def _extract_whop_payload(payload: dict) -> dict:
     }
 
 
+def _provision_paid_customer(email: str):
+    """Create an account for a paying customer who never registered.
+
+    Returns the user, or None if provisioning failed — in which case the caller
+    parks the webhook exactly as before, so a failure here can never lose a
+    payment. The welcome email is only sent when we actually created the
+    account, because Whop sends several webhooks per purchase.
+    """
+    try:
+        from apps.users.services import provision_paid_user, start_paid_account_setup
+
+        user, created = provision_paid_user(email)
+        if created:
+            start_paid_account_setup(user)
+            logger.info("Auto-provisioned Pro account for paying customer %s", email)
+        return user
+    except Exception as exc:
+        logger.exception("Failed to provision account for paid customer %s: %s", email, exc)
+        return None
+
+
 def process_whop_webhook(event: WebhookEvent):
     """Process a Whop webhook event.
 
@@ -103,15 +124,25 @@ def process_whop_webhook(event: WebhookEvent):
             user = CustomUser.objects.get(email=user_email)
             event.linked_user = user
         except CustomUser.DoesNotExist:
-            # User hasn't registered yet — keep webhook UNPROCESSED
-            # so it can be picked up when they register
-            logger.info(
-                "Whop webhook: user %s not found yet (type: %s). "
-                "Will auto-link when they register.",
-                user_email, event_type,
-            )
-            # DON'T mark as processed — leave it for auto-linking on registration
-            return
+            # They paid without ever registering. Parking the webhook and
+            # waiting for them to sign up is a silent dead end — nothing tells
+            # them an account is needed, and nothing tells us they're stuck.
+            # For anything that represents money arriving, build the account.
+            user = None
+            if event_type in ACTIVATION_EVENTS or event_type == "payment.succeeded":
+                user = _provision_paid_customer(user_email)
+
+            if user is None:
+                # Not a purchase (e.g. a cancellation for someone we never
+                # knew), or provisioning failed. Leave it for auto-linking.
+                logger.info(
+                    "Whop webhook: user %s not found (type: %s). "
+                    "Will auto-link when they register.",
+                    user_email, event_type,
+                )
+                return
+
+            event.linked_user = user
 
         if event_type in ACTIVATION_EVENTS:
             sync_profile_plan(

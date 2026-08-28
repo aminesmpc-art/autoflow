@@ -105,6 +105,42 @@ def dashboard_callback(request, context):
         year=today.year, month=today.month,
     ).aggregate(t=Sum("full_runs_used"))["t"] or 0
 
+    # ── Studio (visual workflow builder) ──
+    # Runs are logged as UsageEvents with metadata.source == "studio"; the
+    # per-run node count rides in prompt_count. MonthlyUsage.studio_runs_used
+    # is the authoritative monthly counter the limit gate increments.
+    from apps.plans.services import FREE_STUDIO_MONTHLY_LIMIT
+
+    # Scope to the per-RUN event. consume_studio_run also emits one
+    # consume_prompt event per generation tagged source=studio, so filtering on
+    # source alone counts prompts as runs.
+    studio_today_qs = UsageEvent.objects.filter(
+        created_at__date=today,
+        event_type="queue_started",
+        metadata__source="studio",
+    )
+    studio_runs_today = studio_today_qs.count()
+    studio_nodes_today = studio_today_qs.aggregate(s=Sum("prompt_count"))["s"] or 0
+    studio_users_today = studio_today_qs.values("user").distinct().count()
+    # `yesterday` is defined further down; compute it locally for this trend
+    studio_runs_yesterday = UsageEvent.objects.filter(
+        created_at__date=today - timedelta(days=1),
+        event_type="queue_started",
+        metadata__source="studio",
+    ).count()
+
+    studio_month_qs = MonthlyUsage.objects.filter(year=today.year, month=today.month)
+    studio_runs_month = studio_month_qs.aggregate(s=Sum("studio_runs_used"))["s"] or 0
+    studio_users_month = studio_month_qs.filter(studio_runs_used__gt=0).count()
+    # Free users who exhausted the monthly allowance — direct upgrade signal
+    studio_capped_users = studio_month_qs.filter(
+        studio_runs_used__gte=FREE_STUDIO_MONTHLY_LIMIT,
+        user__profile__is_pro_active=False,
+    ).count()
+    studio_avg_nodes = (
+        round(studio_nodes_today / studio_runs_today, 1) if studio_runs_today else 0
+    )
+
     active_today = DailyUsage.objects.filter(date=today).count()
     total_events = UsageEvent.objects.filter(created_at__date=today).count()
 
@@ -569,6 +605,14 @@ def dashboard_callback(request, context):
                 "icon": "play_circle",
             },
             {
+                "title": "Studio Runs Today",
+                "metric": studio_runs_today,
+                "footer": trend(studio_runs_today, studio_runs_yesterday),
+                "highlight": f"{studio_runs_month} this month · {studio_users_month} users",
+                "icon": "account_tree",
+                "accent": "purple",
+            },
+            {
                 "title": "Pending Webhooks",
                 "metric": pending_webhooks,
                 "footer": "⚠️ Needs attention!" if pending_webhooks else "All processed ✓",
@@ -576,6 +620,17 @@ def dashboard_callback(request, context):
                 "accent": "red" if pending_webhooks else None,
             },
         ],
+        # Studio (visual workflow builder)
+        "studio": {
+            "runs_today": studio_runs_today,
+            "runs_month": studio_runs_month,
+            "users_today": studio_users_today,
+            "users_month": studio_users_month,
+            "nodes_today": studio_nodes_today,
+            "avg_nodes": studio_avg_nodes,
+            "capped_users": studio_capped_users,
+            "monthly_limit": FREE_STUDIO_MONTHLY_LIMIT,
+        },
         # Submitted prompts (sent to Google Flow)
         "submitted": {
             "sent": today_submitted,
