@@ -37,14 +37,17 @@ class StudioUsersDashboardView(View):
         pro_users = Profile.objects.filter(is_pro_active=True).count()
         free_users = max(0, total_users - pro_users)
 
-        # ── Find All Adopted Users (Users who have actually run prompts/nodes/workflows) ──
-        event_user_ids = set(UsageEvent.objects.values_list("user_id", flat=True).distinct())
-        daily_user_ids = set(DailyUsage.objects.filter(total_prompts_used__gt=0).values_list("user_id", flat=True).distinct())
-        monthly_user_ids = set(MonthlyUsage.objects.filter(Q(studio_runs_used__gt=0) | Q(full_runs_used__gt=0)).values_list("user_id", flat=True).distinct())
-        pro_user_ids = set(Profile.objects.filter(is_pro_active=True).values_list("user_id", flat=True).distinct())
-
-        adopted_user_ids = event_user_ids | daily_user_ids | monthly_user_ids | pro_user_ids
-        total_adopted = len(adopted_user_ids)
+        # ── Find STRICT Studio Users (Users who have run Studio workflows or nodes) ──
+        studio_monthly_users = set(
+            MonthlyUsage.objects.filter(studio_runs_used__gt=0).values_list("user_id", flat=True)
+        )
+        studio_event_users = set(
+            UsageEvent.objects.filter(
+                Q(metadata__source="studio") | Q(event_type__icontains="studio")
+            ).values_list("user_id", flat=True)
+        )
+        studio_user_ids = studio_monthly_users | studio_event_users
+        total_studio_users = len(studio_user_ids)
 
         # Daily Active Users (active today)
         dau_user_ids = set(
@@ -79,14 +82,14 @@ class StudioUsersDashboardView(View):
         # ── Search & Filter ──
         search_query = request.GET.get("q", "").strip().lower()
         plan_filter = request.GET.get("plan", "").strip().lower()
-        # Default activity filter is "adopted" (only users who have used it!)
-        activity_filter = request.GET.get("activity", "adopted").strip().lower()
+        # Default activity filter is "studio" (STRICT Studio users only!)
+        activity_filter = request.GET.get("activity", "studio").strip().lower()
 
         users_qs = CustomUser.objects.select_related("profile")
 
         # Apply Activity Filter
-        if activity_filter == "adopted":
-            users_qs = users_qs.filter(id__in=adopted_user_ids)
+        if activity_filter == "studio":
+            users_qs = users_qs.filter(id__in=studio_user_ids)
         elif activity_filter == "active_today":
             users_qs = users_qs.filter(id__in=dau_user_ids)
         elif activity_filter == "all":
@@ -186,7 +189,7 @@ class StudioUsersDashboardView(View):
             "title": "Studio & Daily Users Analytics",
             "kpis": {
                 "total_users": total_users,
-                "total_adopted": total_adopted,
+                "total_studio_users": total_studio_users,
                 "dau_count": dau_count,
                 "pro_users": pro_users,
                 "free_users": free_users,
