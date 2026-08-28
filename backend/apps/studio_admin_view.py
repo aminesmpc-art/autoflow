@@ -1,11 +1,9 @@
-"""Studio Users & Daily Users Executive Admin View."""
-import json
+"""Studio Users admin dashboard — active creators, quotas, live feed."""
 import logging
-from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
-from django.db.models import Count, Q, Sum
+from django.db.models import Max, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -29,88 +27,66 @@ logger = logging.getLogger(__name__)
 class StudioUsersDashboardView(View):
     template_name = "admin/studio_users.html"
 
+    # ── GET ──────────────────────────────────────────────────────
     def get(self, request):
         now = timezone.now()
         today = timezone.localdate()
-        year = now.year
-        month = now.month
+        year, month = now.year, now.month
 
+        # ── KPIs (lightweight aggregate queries) ──
         total_users = CustomUser.objects.count()
         pro_users = Profile.objects.filter(is_pro_active=True).count()
         free_users = max(0, total_users - pro_users)
 
-        # ── Find All Active Users (Prompt Gen, Node Executions, Workflow Runs, Pro) ──
-        event_user_ids = set(UsageEvent.objects.values_list("user_id", flat=True).distinct())
-        daily_user_ids = set(
-            DailyUsage.objects.filter(
-                Q(free_prompts_used__gt=0) | Q(total_prompts_used__gt=0) | Q(text_prompts_used__gt=0)
-            ).values_list("user_id", flat=True).distinct()
+        today_nodes_agg = DailyUsage.objects.filter(date=today).aggregate(
+            n=Sum("total_prompts_used"),
         )
-        monthly_user_ids = set(
+        today_nodes_executed = today_nodes_agg["n"] or 0
+
+        monthly_runs_agg = MonthlyUsage.objects.filter(
+            year=year, month=month,
+        ).aggregate(
+            studio=Sum("studio_runs_used"),
+            full=Sum("full_runs_used"),
+        )
+        monthly_studio_runs = (monthly_runs_agg["studio"] or 0) + (monthly_runs_agg["full"] or 0)
+
+        # ── Active user IDs (use DB-level distinct, no Python sets) ──
+        active_user_ids = set()
+        active_user_ids.update(
+            UsageEvent.objects.values_list("user_id", flat=True).distinct()[:5000]
+        )
+        active_user_ids.update(
+            DailyUsage.objects.filter(total_prompts_used__gt=0)
+            .values_list("user_id", flat=True).distinct()[:5000]
+        )
+        active_user_ids.update(
             MonthlyUsage.objects.filter(
                 Q(studio_runs_used__gt=0) | Q(full_runs_used__gt=0)
-            ).values_list("user_id", flat=True).distinct()
+            ).values_list("user_id", flat=True).distinct()[:5000]
         )
-        pro_user_ids = set(Profile.objects.filter(is_pro_active=True).values_list("user_id", flat=True).distinct())
-
-        active_user_ids = event_user_ids | daily_user_ids | monthly_user_ids | pro_user_ids
+        active_user_ids.update(
+            Profile.objects.filter(is_pro_active=True)
+            .values_list("user_id", flat=True)[:5000]
+        )
         total_active_users = len(active_user_ids)
 
-        # Daily Active Users (active today)
-        dau_user_ids = set(
-            DailyUsage.objects.filter(
-                Q(free_prompts_used__gt=0) | Q(total_prompts_used__gt=0) | Q(text_prompts_used__gt=0),
-                date=today,
-            ).values_list("user_id", flat=True)
-        ) | set(
-            UsageEvent.objects.filter(created_at__date=today).values_list("user_id", flat=True)
+        # DAU
+        dau_user_ids = set()
+        dau_user_ids.update(
+            DailyUsage.objects.filter(date=today, total_prompts_used__gt=0)
+            .values_list("user_id", flat=True)
+        )
+        dau_user_ids.update(
+            UsageEvent.objects.filter(created_at__date=today)
+            .values_list("user_id", flat=True)
         )
         dau_count = len(dau_user_ids)
 
-        # Daily Node Executions Today
-        today_nodes_agg = DailyUsage.objects.filter(date=today).aggregate(
-            free_nodes=Sum("free_prompts_used"),
-            total_nodes=Sum("total_prompts_used"),
-        )
-        today_nodes_executed = max(
-            today_nodes_agg.get("free_nodes") or 0,
-            today_nodes_agg.get("total_nodes") or 0
-        )
+        # ── Live feed ──
+        live_feed = self._build_live_feed(now)
 
-        # Total Studio Workflow Runs This Month
-        monthly_runs_agg = MonthlyUsage.objects.filter(year=year, month=month).aggregate(
-            studio_runs=Sum("studio_runs_used"),
-            full_runs=Sum("full_runs_used"),
-        )
-        monthly_studio_runs = max(
-            monthly_runs_agg.get("studio_runs") or 0,
-            monthly_runs_agg.get("full_runs") or 0
-        )
-
-        # ── Live Activity Feed (Latest 40 events) ──
-        live_events_qs = (
-            UsageEvent.objects.select_related("user")
-            .filter(Q(metadata__source="studio") | Q(event_type__in=["consume_prompt", "queue_started", "reward_granted"]))
-            .order_by("-created_at")[:40]
-        )
-
-        live_feed = []
-        for ev in live_events_qs:
-            meta = ev.metadata or {}
-            live_feed.append({
-                "id": str(ev.id),
-                "user_email": ev.user.email if ev.user else "Anonymous",
-                "event_type": ev.event_type,
-                "prompt_count": ev.prompt_count,
-                "source": meta.get("source", "studio" if "studio" in ev.event_type else "queue"),
-                "status": meta.get("status", "done"),
-                "prompt_type": meta.get("prompt_type", "workflow"),
-                "node_count": meta.get("node_count", ev.prompt_count or 1),
-                "created_at_formatted": ev.created_at.strftime("%H:%M:%S"),
-                "time_ago": f"{int((now - ev.created_at).total_seconds() // 60)}m ago" if (now - ev.created_at).total_seconds() >= 60 else "just now",
-            })
-
-        # Return JSON for AJAX Live Polling
+        # JSON endpoint for AJAX polling
         if request.GET.get("format") == "json" or request.headers.get("x-requested-with") == "XMLHttpRequest":
             return JsonResponse({
                 "kpis": {
@@ -125,73 +101,81 @@ class StudioUsersDashboardView(View):
                 "live_feed": live_feed,
             })
 
-        # ── Search & Filter ──
-        search_query = request.GET.get("q", "").strip().lower()
+        # ── Filter & search ──
+        search_query = request.GET.get("q", "").strip()
         plan_filter = request.GET.get("plan", "").strip().lower()
         activity_filter = request.GET.get("activity", "active").strip().lower()
 
         users_qs = CustomUser.objects.select_related("profile")
 
         if search_query:
-            # When searching an email, search across all users matching that email
             users_qs = users_qs.filter(email__icontains=search_query)
-        else:
-            if activity_filter == "active":
-                users_qs = users_qs.filter(id__in=active_user_ids)
-            elif activity_filter == "active_today":
-                users_qs = users_qs.filter(id__in=dau_user_ids)
-            elif activity_filter == "all":
-                pass
+        elif activity_filter == "active":
+            users_qs = users_qs.filter(id__in=active_user_ids)
+        elif activity_filter == "active_today":
+            users_qs = users_qs.filter(id__in=dau_user_ids)
+        # "all" → no filter
 
         if plan_filter == "pro":
             users_qs = users_qs.filter(profile__is_pro_active=True)
         elif plan_filter == "free":
-            users_qs = users_qs.filter(Q(profile__is_pro_active=False) | Q(profile__isnull=True))
+            users_qs = users_qs.filter(
+                Q(profile__is_pro_active=False) | Q(profile__isnull=True)
+            )
 
-        users_qs = users_qs.order_by("-created_at")
-        users_list = list(users_qs[:200])
+        users_list = list(users_qs.order_by("-created_at")[:200])
         user_ids = [u.id for u in users_list]
 
-        monthly_usage_map = {
-            m.user_id: m for m in MonthlyUsage.objects.filter(user_id__in=user_ids, year=year, month=month)
+        # Batch-load usage data (2 queries, not N+1)
+        monthly_map = {
+            m.user_id: m
+            for m in MonthlyUsage.objects.filter(
+                user_id__in=user_ids, year=year, month=month,
+            )
         }
-        daily_usage_map = {
-            d.user_id: d for d in DailyUsage.objects.filter(user_id__in=user_ids, date=today)
+        daily_map = {
+            d.user_id: d
+            for d in DailyUsage.objects.filter(user_id__in=user_ids, date=today)
         }
 
-        latest_events = {}
-        lifetime_counts = {}
-        for ev in UsageEvent.objects.filter(user_id__in=user_ids).order_by("created_at"):
-            latest_events[ev.user_id] = ev
-            lifetime_counts[ev.user_id] = lifetime_counts.get(ev.user_id, 0) + ev.prompt_count
+        # Latest event per user — single aggregation query instead of loading all rows
+        latest_event_map = {}
+        if user_ids:
+            latest_qs = (
+                UsageEvent.objects.filter(user_id__in=user_ids)
+                .values("user_id")
+                .annotate(last_at=Max("created_at"))
+            )
+            latest_event_map = {row["user_id"]: row["last_at"] for row in latest_qs}
 
+        # Build user rows
         studio_users = []
         for u in users_list:
             prof = getattr(u, "profile", None)
             is_pro = bool(prof and prof.is_pro_active)
-            monthly = monthly_usage_map.get(u.id)
-            daily = daily_usage_map.get(u.id)
+            monthly = monthly_map.get(u.id)
+            daily = daily_map.get(u.id)
 
-            runs_used = max(
-                (monthly.studio_runs_used if monthly else 0),
-                (monthly.full_runs_used if monthly else 0)
+            runs_used = (
+                (monthly.studio_runs_used if monthly else 0)
+                + (monthly.full_runs_used if monthly else 0)
             )
             runs_limit = 999 if is_pro else FREE_STUDIO_MONTHLY_LIMIT
-            runs_remaining = 999 if is_pro else max(0, FREE_STUDIO_MONTHLY_LIMIT - runs_used)
-            runs_pct = min(100, round((runs_used / FREE_STUDIO_MONTHLY_LIMIT * 100))) if not is_pro else 0
-
-            nodes_today = max(
-                (daily.free_prompts_used if daily else 0),
-                (daily.total_prompts_used if daily else 0),
-                (daily.text_prompts_used if daily else 0)
+            runs_remaining = 999 if is_pro else max(0, runs_limit - runs_used)
+            runs_pct = (
+                min(100, round(runs_used / FREE_STUDIO_MONTHLY_LIMIT * 100))
+                if not is_pro else 0
             )
-            nodes_limit = 999 if is_pro else FREE_STUDIO_DAILY_NODE_LIMIT
-            nodes_remaining = 999 if is_pro else max(0, FREE_STUDIO_DAILY_NODE_LIMIT - nodes_today)
-            nodes_pct = min(100, round((nodes_today / FREE_STUDIO_DAILY_NODE_LIMIT * 100))) if not is_pro else 0
 
-            last_ev = latest_events.get(u.id)
-            last_seen = last_ev.created_at if last_ev else u.created_at
-            total_activity = lifetime_counts.get(u.id, 0) + (daily.total_prompts_used if daily else 0)
+            nodes_today = daily.total_prompts_used if daily else 0
+            nodes_limit = 999 if is_pro else FREE_STUDIO_DAILY_NODE_LIMIT
+            nodes_remaining = 999 if is_pro else max(0, nodes_limit - nodes_today)
+            nodes_pct = (
+                min(100, round(nodes_today / FREE_STUDIO_DAILY_NODE_LIMIT * 100))
+                if not is_pro else 0
+            )
+
+            last_seen = latest_event_map.get(u.id) or u.created_at
 
             studio_users.append({
                 "user": u,
@@ -206,15 +190,13 @@ class StudioUsersDashboardView(View):
                 "nodes_limit": nodes_limit,
                 "nodes_remaining": nodes_remaining,
                 "nodes_pct": nodes_pct,
-                "total_activity": total_activity,
                 "last_seen": last_seen,
-                "last_event_type": last_ev.event_type if last_ev else "signup",
             })
 
         studio_users.sort(key=lambda x: x["last_seen"], reverse=True)
 
-        context = {
-            "title": "Studio & Daily Users Analytics",
+        return render(request, self.template_name, {
+            "title": "Studio Users",
             "kpis": {
                 "total_users": total_users,
                 "total_active_users": total_active_users,
@@ -231,9 +213,9 @@ class StudioUsersDashboardView(View):
             "search_query": search_query,
             "plan_filter": plan_filter,
             "activity_filter": activity_filter,
-        }
-        return render(request, self.template_name, context)
+        })
 
+    # ── POST ─────────────────────────────────────────────────────
     def post(self, request):
         action = request.POST.get("action")
         user_id = request.POST.get("user_id")
@@ -252,7 +234,7 @@ class StudioUsersDashboardView(View):
             monthly.studio_runs_used = max(0, monthly.studio_runs_used - amount)
             monthly.full_runs_used = max(0, monthly.full_runs_used - amount)
             monthly.save()
-            messages.success(request, f"Granted +{amount} monthly runs to {user.email}.")
+            messages.success(request, f"Granted +{amount} runs to {user.email}.")
 
         elif action == "reset_daily_nodes":
             daily = get_or_create_daily_usage(user, today)
@@ -260,7 +242,7 @@ class StudioUsersDashboardView(View):
             daily.total_prompts_used = 0
             daily.text_prompts_used = 0
             daily.save()
-            messages.success(request, f"Reset daily node budget to 50 for {user.email}.")
+            messages.success(request, f"Reset daily nodes for {user.email}.")
 
         elif action == "toggle_pro":
             profile, _ = Profile.objects.get_or_create(user=user)
@@ -268,6 +250,42 @@ class StudioUsersDashboardView(View):
             profile.plan_type = PlanType.PRO if profile.is_pro_active else PlanType.FREE
             profile.save()
             state = "PRO" if profile.is_pro_active else "FREE"
-            messages.success(request, f"Changed plan for {user.email} to {state}.")
+            messages.success(request, f"{user.email} → {state}.")
 
         return redirect(request.path)
+
+    # ── Helpers ──────────────────────────────────────────────────
+    @staticmethod
+    def _build_live_feed(now):
+        """Build the latest 40 events for the live feed sidebar."""
+        events = (
+            UsageEvent.objects.select_related("user")
+            .filter(
+                Q(metadata__source="studio")
+                | Q(event_type__in=["consume_prompt", "queue_started", "reward_granted"])
+            )
+            .order_by("-created_at")[:40]
+        )
+        feed = []
+        for ev in events:
+            meta = ev.metadata or {}
+            seconds_ago = (now - ev.created_at).total_seconds()
+            if seconds_ago < 60:
+                time_ago = "just now"
+            elif seconds_ago < 3600:
+                time_ago = f"{int(seconds_ago // 60)}m ago"
+            else:
+                time_ago = f"{int(seconds_ago // 3600)}h ago"
+
+            feed.append({
+                "id": str(ev.id),
+                "user_email": ev.user.email if ev.user else "Anonymous",
+                "event_type": ev.event_type,
+                "prompt_count": ev.prompt_count,
+                "source": meta.get("source", "queue"),
+                "status": meta.get("status", "done"),
+                "prompt_type": meta.get("prompt_type", "workflow"),
+                "node_count": meta.get("node_count", ev.prompt_count or 1),
+                "time_ago": time_ago,
+            })
+        return feed
