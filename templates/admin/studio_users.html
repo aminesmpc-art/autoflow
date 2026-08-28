@@ -1,7 +1,7 @@
 {% extends 'admin/base.html' %}
 {% load i18n unfold %}
 
-{% block title %}Studio & Daily Users | AutoFlow Admin{% endblock %}
+{% block title %}Studio Creators | AutoFlow Admin{% endblock %}
 
 {% block branding %}
     {% include "unfold/helpers/site_branding.html" %}
@@ -148,14 +148,14 @@
         color: #ffffff;
         font-size: 0.85rem;
         outline: none;
-        width: 170px;
+        width: 160px;
     }
     .search-input:focus { border-color: #10b981; }
     .filter-btn {
         background: #1e293b;
         border: 1px solid #334155;
         border-radius: 8px;
-        padding: 0.5rem 0.8rem;
+        padding: 0.5rem 0.75rem;
         color: #cbd5e1;
         font-size: 0.82rem;
         font-weight: 600;
@@ -338,7 +338,7 @@
     <div class="studio-header">
         <div class="studio-title-group">
             <h1>🎬 Studio Users & Daily Analytics</h1>
-            <div class="studio-subtitle">Showing active/adopted creators who actively build workflows and generate prompts.</div>
+            <div class="studio-subtitle">Showing creators who have specifically launched and executed AutoFlow Studio workflows.</div>
         </div>
     </div>
 
@@ -356,8 +356,8 @@
     <!-- Top KPI Cards -->
     <div class="kpi-grid">
         <div class="kpi-card purple">
-            <div class="kpi-label">Adopted Creators / Total</div>
-            <div class="kpi-value">{{ kpis.total_adopted }}</div>
+            <div class="kpi-label">Studio Creators / Total</div>
+            <div class="kpi-value">{{ kpis.total_studio_users }}</div>
             <div class="kpi-sub">{{ kpis.total_users }} Total Signups · {{ kpis.pro_users }} Pro 💎</div>
         </div>
         <div class="kpi-card gold">
@@ -382,11 +382,11 @@
         <!-- Users Management Panel -->
         <div class="studio-panel">
             <div class="panel-header">
-                <div class="panel-title">👥 Active Studio Users</div>
+                <div class="panel-title">👥 Studio Creators (Workflow Users)</div>
                 <form method="get" class="search-filter-bar">
                     <input type="text" name="q" value="{{ search_query }}" placeholder="Search email…" class="search-input" />
                     <button type="submit" class="filter-btn">Search</button>
-                    <a href="?activity=adopted" class="filter-btn {% if activity_filter == 'adopted' %}active{% endif %}">🎯 Adopted Users</a>
+                    <a href="?activity=studio" class="filter-btn {% if activity_filter == 'studio' %}active{% endif %}">🎬 Studio Creators</a>
                     <a href="?activity=active_today" class="filter-btn {% if activity_filter == 'active_today' %}active{% endif %}">⚡ Active Today</a>
                     <a href="?plan=pro" class="filter-btn {% if plan_filter == 'pro' %}active{% endif %}">Pro 💎</a>
                     <a href="?plan=free" class="filter-btn {% if plan_filter == 'free' %}active{% endif %}">Free</a>
@@ -483,7 +483,7 @@
                         {% empty %}
                             <tr>
                                 <td colspan="6" style="text-align:center; padding:2rem; color:#94a3b8;">
-                                    No active users found matching your search.
+                                    No Studio creators found matching your search.
                                 </td>
                             </tr>
                         {% endfor %}
