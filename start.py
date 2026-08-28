@@ -16,6 +16,10 @@ if __name__ == "__main__":
     # Run migrations
     run("python manage.py migrate --noinput --verbosity 1")
 
+    # Cache table for the database cache backend (login lockout + throttles).
+    # Idempotent: prints "already exists" and changes nothing on later boots.
+    run("python manage.py createcachetable")
+
     # Collect static files
     run("python manage.py collectstatic --noinput")
 
