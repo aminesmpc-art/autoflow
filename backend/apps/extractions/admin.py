@@ -9,15 +9,36 @@ from .models import SavedExtraction
 @admin.register(SavedExtraction)
 class SavedExtractionAdmin(ModelAdmin):
     list_display = (
-        "video_display", "user_display", "content_badges",
+        "video_display", "user_display", "visibility_display", "content_badges",
         "shot_count", "char_count", "time_display",
     )
-    list_filter = ("created_at",)
+    # is_public drives the public gallery and the sitemap, so it needs to be
+    # filterable at a glance; the bulk actions below handle changing it.
+    list_filter = ("is_public", "created_at")
     search_fields = ("video_name", "user__email")
     readonly_fields = ("created_at", "updated_at")
     date_hierarchy = "created_at"
     list_per_page = 25
     list_display_links = ("video_display",)
+    actions = ("make_private", "make_public")
+
+    @admin.display(description="Visibility", ordering="is_public")
+    def visibility_display(self, obj):
+        if obj.is_public:
+            return format_html(
+                '<span style="color:#fbbf24;font-weight:500;">🌐 Public</span>'
+            )
+        return format_html('<span style="color:#9ca3af;">🔒 Private</span>')
+
+    @admin.action(description="Make private (remove from public gallery)")
+    def make_private(self, request, queryset):
+        n = queryset.update(is_public=False)
+        self.message_user(request, f"{n} extraction(s) are now private.")
+
+    @admin.action(description="Publish to public gallery")
+    def make_public(self, request, queryset):
+        n = queryset.update(is_public=True)
+        self.message_user(request, f"{n} extraction(s) are now public.")
 
     @admin.display(description="Video", ordering="video_name")
     def video_display(self, obj):

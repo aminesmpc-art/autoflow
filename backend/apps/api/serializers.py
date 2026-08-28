@@ -83,6 +83,7 @@ class SavedExtractionSerializer(serializers.ModelSerializer):
             "voiceover_text",
             "character_sheets",
             "shots",
+            "is_public",
             "created_at",
         ]
         read_only_fields = ["id", "created_at"]

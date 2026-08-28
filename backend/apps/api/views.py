@@ -66,6 +66,7 @@ DISPOSABLE_EMAIL_DOMAINS = {
 
 
 
+
 class RegisterView(APIView):
     permission_classes = [AllowAny]
 
@@ -583,6 +584,28 @@ class ConsumeQueueRunView(APIView):
         return Response(result, status=http_status)
 
 
+class ConsumeStudioRunView(APIView):
+    """Check + consume a Studio workflow run (monthly allowance, node cap)."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            node_count = max(1, int(request.data.get("node_count", 1)))
+            raw_gen = request.data.get("generate_count")
+            generate_count = None if raw_gen is None else max(0, int(raw_gen))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "node_count and generate_count must be integers."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        from apps.plans.services import consume_studio_run
+        result = consume_studio_run(
+            request.user, node_count=node_count, generate_count=generate_count
+        )
+        http_status = status.HTTP_200_OK if result["allowed"] else status.HTTP_403_FORBIDDEN
+        return Response(result, status=http_status)
+
+
 # ================================================================
 # REWARDS
 # ================================================================
@@ -834,8 +857,13 @@ class PublicExtractionsView(APIView):
         from apps.extractions.models import SavedExtraction
         from .serializers import SavedExtractionSerializer
         
-        # Get the 50 most recent extractions
-        extractions = SavedExtraction.objects.all().order_by("-created_at")[:50]
+        # Only what the owner chose to publish. This feeds /prompts and the
+        # sitemap, so an unfiltered queryset published — and had Google index —
+        # every saved extraction, including private uploads.
+        extractions = (
+            SavedExtraction.objects.filter(is_public=True)
+            .order_by("-created_at")[:50]
+        )
         serializer = SavedExtractionSerializer(extractions, many=True)
         return Response(serializer.data)
 
@@ -848,55 +876,59 @@ class PublicExtractionDetailView(APIView):
         from .serializers import SavedExtractionSerializer
         from django.shortcuts import get_object_or_404
         
-        extraction = get_object_or_404(SavedExtraction, pk=pk)
+        # Unfiltered, this served any extraction by id to anyone who guessed one.
+        extraction = get_object_or_404(SavedExtraction, pk=pk, is_public=True)
         serializer = SavedExtractionSerializer(extraction)
         return Response(serializer.data)
+
+
+def extraction_limit_state(user) -> dict:
+    """Current extraction quota for a user.
+
+    Shared by the pre-flight check and the create endpoint so the two can never
+    disagree — the browser check is advisory, and before this was shared the
+    create path enforced nothing at all.
+    """
+    from apps.extractions.models import SavedExtraction
+    from django.utils import timezone
+
+    profile = getattr(user, "profile", None)
+    is_pro = profile.is_pro if profile else False
+    now = timezone.now()
+
+    if is_pro:
+        # PRO: 20 per day
+        count = SavedExtraction.objects.filter(
+            user=user,
+            created_at__year=now.year,
+            created_at__month=now.month,
+            created_at__day=now.day,
+        ).count()
+        limit, period = 20, "day"
+    else:
+        # FREE: 4 per month
+        count = SavedExtraction.objects.filter(
+            user=user,
+            created_at__year=now.year,
+            created_at__month=now.month,
+        ).count()
+        limit, period = 4, "month"
+
+    return {
+        "allowed": count < limit,
+        "used": count,
+        "limit": limit,
+        "remaining": max(0, limit - count),
+        "period": period,
+        "is_pro": is_pro,
+    }
 
 
 class SavedExtractionCheckLimitView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        from apps.extractions.models import SavedExtraction
-        from django.utils import timezone
-        
-        user = request.user
-        profile = getattr(user, "profile", None)
-        is_pro = profile.is_pro if profile else False
-        
-        now = timezone.now()
-        
-        if is_pro:
-            # PRO: 20 per day
-            count = SavedExtraction.objects.filter(
-                user=user,
-                created_at__year=now.year,
-                created_at__month=now.month,
-                created_at__day=now.day
-            ).count()
-            limit = 20
-            period = "day"
-        else:
-            # FREE: 4 per month
-            count = SavedExtraction.objects.filter(
-                user=user,
-                created_at__year=now.year,
-                created_at__month=now.month
-            ).count()
-            limit = 4
-            period = "month"
-            
-        allowed = count < limit
-        remaining = max(0, limit - count)
-        
-        return Response({
-            "allowed": allowed,
-            "used": count,
-            "limit": limit,
-            "remaining": remaining,
-            "period": period,
-            "is_pro": is_pro
-        })
+        return Response(extraction_limit_state(request.user))
 
 
 class SavedExtractionsView(APIView):
@@ -912,13 +944,28 @@ class SavedExtractionsView(APIView):
 
     def post(self, request):
         from .serializers import SavedExtractionSerializer
-        
+
+        # The browser calls check-limit before analysing, but that is advisory —
+        # anything speaking to this endpoint directly could save without bound.
+        state = extraction_limit_state(request.user)
+        if not state["allowed"]:
+            return Response(
+                {
+                    "detail": (
+                        f"You have reached your limit of {state['limit']} extractions "
+                        f"per {state['period']}."
+                    ),
+                    **state,
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
         serializer = SavedExtractionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         # Save to database
         serializer.save(user=request.user)
-        
+
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
@@ -927,10 +974,34 @@ class SavedExtractionDetailView(APIView):
 
     def delete(self, request, pk):
         from apps.extractions.models import SavedExtraction
-        
+
         try:
             extraction = SavedExtraction.objects.get(pk=pk, user=request.user)
             extraction.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
         except SavedExtraction.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    def patch(self, request, pk):
+        """Publish or unpublish one's own extraction.
+
+        Scoped to request.user, so this can only ever change the caller's own
+        rows — publishing someone else's work is not addressable.
+        """
+        from apps.extractions.models import SavedExtraction
+        from .serializers import SavedExtractionSerializer
+
+        try:
+            extraction = SavedExtraction.objects.get(pk=pk, user=request.user)
+        except SavedExtraction.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if "is_public" not in request.data:
+            return Response(
+                {"detail": "Nothing to update. Send is_public."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        extraction.is_public = bool(request.data["is_public"])
+        extraction.save(update_fields=["is_public", "updated_at"])
+        return Response(SavedExtractionSerializer(extraction).data)

@@ -2,6 +2,7 @@
 from django.urls import path
 
 from . import views
+from apps.workflows import community_views, views as workflow_views
 
 urlpatterns = [
     # Auth
@@ -20,11 +21,22 @@ urlpatterns = [
 
     # Entitlements
     path("entitlements", views.EntitlementsView.as_view(), name="entitlements"),
+    # Studio workflow templates — served so that adding one no longer needs a
+    # Chrome Web Store review. See apps/workflows/models.py.
+    path("templates", workflow_views.TemplateListView.as_view(), name="templates-list"),
+    path("templates/publish", workflow_views.TemplatePublishView.as_view(), name="templates-publish"),
+    # Community templates — user-submitted, moderated, liked. Separate from
+    # the official bundle above so a failure in one cannot take out the other.
+    path("templates/community", community_views.CommunityListView.as_view(), name="community-list"),
+    path("templates/community/submit", community_views.CommunitySubmitView.as_view(), name="community-submit"),
+    path("templates/community/<int:pk>", community_views.CommunityDetailView.as_view(), name="community-detail"),
+    path("templates/community/<int:pk>/like", community_views.CommunityLikeView.as_view(), name="community-like"),
 
     # Usage
     path("usage/consume", views.ConsumePromptView.as_view(), name="usage-consume"),
     path("usage/download", views.ConsumeDownloadView.as_view(), name="usage-download"),
     path("usage/queue-run", views.ConsumeQueueRunView.as_view(), name="usage-queue-run"),
+    path("usage/studio-run", views.ConsumeStudioRunView.as_view(), name="usage-studio-run"),
     path("usage/events", views.UsageEventView.as_view(), name="usage-events"),
 
     # Rewards

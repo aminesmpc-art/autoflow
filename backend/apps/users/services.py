@@ -150,6 +150,131 @@ def send_verification_email(user: CustomUser, token: EmailVerificationToken):
         logger.error("Failed to send verification email to %s: %s", user.email, exc)
 
 
+def provision_paid_user(email: str) -> tuple[CustomUser, bool]:
+    """Create an account for someone who paid on Whop before signing up.
+
+    Returns (user, created). Idempotent — safe to call for every webhook of a
+    purchase, since Whop sends both membership.activated and payment.succeeded.
+
+    Two deliberate choices:
+
+    - `is_active=True`. Whop already collected this address and charged it, and
+      the whole point of provisioning is that the buyer never had to register.
+      Parking them behind a verification click would recreate the dead end we
+      are fixing.
+    - A real, random password rather than `set_unusable_password()`.
+      request_password_reset() refuses accounts without a usable password
+      ("This account uses Google Sign-in"), so an unusable one would leave the
+      buyer with no way to ever set credentials. The random value is never
+      shown to anyone; the buyer sets their own via the emailed code, and the
+      ordinary Forgot Password flow keeps working as the fallback.
+    """
+    import secrets
+    from django.db import IntegrityError, transaction
+
+    email = CustomUser.objects.normalize_email((email or "").strip())
+    if not email:
+        raise ValueError("Cannot provision an account without an email")
+
+    existing = CustomUser.objects.filter(email__iexact=email).first()
+    if existing:
+        # Profile may be missing on legacy rows, and sync_profile_plan() is a
+        # .filter().update() that silently no-ops without one.
+        Profile.objects.get_or_create(user=existing)
+        return existing, False
+
+    try:
+        with transaction.atomic():
+            user = CustomUser.objects.create_user(
+                email=email,
+                password=secrets.token_urlsafe(32),
+                is_active=True,
+            )
+            Profile.objects.create(user=user)
+    except IntegrityError:
+        # Concurrent webhooks for the same purchase raced us to it.
+        user = CustomUser.objects.filter(email__iexact=email).first()
+        if not user:
+            raise
+        Profile.objects.get_or_create(user=user)
+        return user, False
+
+    logger.info("Provisioned account for paid customer %s", email)
+    return user, True
+
+
+def start_paid_account_setup(user: CustomUser):
+    """Email a provisioned buyer a code to set their own password."""
+    import threading
+
+    token = PasswordResetToken.objects.create(
+        user=user,
+        code=PasswordResetToken.generate_code(),
+        expires_at=PasswordResetToken.default_expiry(),
+    )
+    threading.Thread(
+        target=send_paid_account_ready_email,
+        args=(user, token),
+        daemon=True,
+    ).start()
+    return token
+
+
+def send_paid_account_ready_email(user: CustomUser, token: PasswordResetToken):
+    """Tell a paying customer their Pro account exists and how to get into it."""
+    try:
+        import resend
+
+        api_key = getattr(settings, "RESEND_API_KEY", "")
+        if not api_key:
+            logger.warning(
+                "RESEND_API_KEY not set — paid customer %s was provisioned but "
+                "cannot be told about it", user.email,
+            )
+            return
+
+        resend.api_key = api_key
+
+        text_content = (
+            f"Hi,\n\n"
+            f"Thanks for subscribing to AutoFlow Pro! We've created your account "
+            f"using this email address, and Pro is already active on it.\n\n"
+            f"To sign in, set a password with this code: {token.code}\n\n"
+            f"In the AutoFlow extension, open the Account tab, choose "
+            f"\"Forgot password\", enter {user.email}, and use the code above.\n\n"
+            f"The code is valid for 1 hour. If it expires, just request a new "
+            f"one from the same screen — your account and Pro subscription stay "
+            f"exactly as they are.\n\n"
+            f"— The AutoFlow Team"
+        )
+
+        try:
+            html_content = render_to_string("users/paid_account_ready.html", {
+                "code": token.code,
+                "email": user.email,
+                "year": datetime.now().year,
+            })
+        except Exception:
+            html_content = None
+
+        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "AutoFlow <noreply@auto-flow.studio>")
+
+        params = {
+            "from": from_email,
+            "to": [user.email],
+            "subject": "Your AutoFlow Pro account is ready",
+            "text": text_content,
+        }
+        if html_content:
+            params["html"] = html_content
+
+        resend.Emails.send(params)
+        logger.info("Paid-account-ready email sent to %s via Resend", user.email)
+
+    except Exception as exc:
+        logger.error("Failed to send paid-account-ready email to %s: %s", user.email, exc)
+
+
 def request_password_reset(email: str) -> tuple[bool, str]:
     """Request a password reset. Generates a 6-digit code and emails it."""
     try:
