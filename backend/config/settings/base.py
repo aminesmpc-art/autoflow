@@ -43,6 +43,7 @@ LOCAL_APPS = [
     "apps.webhooks",
     "apps.extractions",
     "apps.marketing",
+    "apps.workflows",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -288,6 +289,28 @@ SIMPLE_JWT = {
     "USER_ID_CLAIM": "user_id",
 }
 
+# ── Cache ──
+# The login lockout in apps.api.views.LoginView and the DRF throttle counters
+# both count through the cache. Django's default is LocMemCache, which lives
+# inside a single process: under `gunicorn --workers 3` that meant three
+# independent tallies, so a user retrying a password saw "Too many failed
+# login attempts" only on the worker that happened to answer, and the counts
+# reset on every deploy. Postgres is already provisioned, so the database
+# cache makes the count shared without adding another service to run.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "django_cache_table",
+        "OPTIONS": {
+            # One key per client IP per throttle scope, plus one per IP for the
+            # login lockout. The backend default of 300 would start culling at
+            # a few hundred visitors and quietly reset whichever counters it
+            # dropped, which is the failure mode this whole change is undoing.
+            "MAX_ENTRIES": 10000,
+        },
+    }
+}
+
 # ── CORS ──
 CORS_ALLOWED_ORIGINS = config(
     "CORS_ALLOWED_ORIGINS",
@@ -314,6 +337,8 @@ VERIFICATION_TOKEN_EXPIRY_HOURS = config(
 )
 FREE_DAILY_PROMPT_LIMIT = config("FREE_DAILY_PROMPT_LIMIT", default=50, cast=int)
 FREE_TEXT_DAILY_LIMIT = config("FREE_TEXT_DAILY_LIMIT", default=50, cast=int)
+FREE_STUDIO_MAX_NODES = config("FREE_STUDIO_MAX_NODES", default=10, cast=int)
+FREE_STUDIO_MONTHLY_LIMIT = config("FREE_STUDIO_MONTHLY_LIMIT", default=10, cast=int)
 
 # ── Whop ──
 WHOP_WEBHOOK_SECRET = config("WHOP_WEBHOOK_SECRET", default="")
@@ -347,3 +372,8 @@ LOGGING = {
         "apps": {"handlers": ["console"], "level": "DEBUG", "propagate": False},
     },
 }
+
+# Shared secret for scripts/publish-templates.js in the extension repo.
+# A build script rather than a person, so a bearer token beats a real account:
+# a leaked one can replace the template bundle and nothing else.
+TEMPLATE_PUBLISH_TOKEN = config("TEMPLATE_PUBLISH_TOKEN", default="")
