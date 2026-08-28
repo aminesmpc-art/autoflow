@@ -4,7 +4,7 @@
   "description": "AutoFlow Studio \u2014 Visual node workflows for AI video and image generation",
   "scripts": {
     "build": "webpack --mode production --bail",
-    "build:publish": "webpack --mode production --bail && del dist\\*.map 2>nul || true",
+    "build:publish": "webpack --mode production --bail",
     "package": "npm run build:publish && node scripts/package.js",
     "build:dev": "webpack --mode development --devtool source-map --bail",
     "dev": "webpack --mode development --watch",

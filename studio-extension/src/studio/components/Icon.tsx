@@ -23,7 +23,7 @@
 import React from 'react';
 
 export type IconName =
-  | 'prompt' | 'image' | 'clip' | 'bolt' | 'chat' | 'agent' | 'frame' | 'extend'
+  | 'prompt' | 'image' | 'clip' | 'bolt' | 'chat' | 'agent' | 'frame' | 'extend' | 'story'
   | 'play' | 'pause' | 'back' | 'upgrade' | 'import' | 'check' | 'alert' | 'dot';
 
 /* Paths only. The wrapper owns size, stroke and colour so a new icon cannot
@@ -35,6 +35,8 @@ const PATHS: Record<IconName, React.ReactNode> = {
   image: <><rect x="3" y="5" width="18" height="14" rx="1.6" /><circle cx="8.5" cy="9.5" r="1.4" /><path d="M3.5 16.5l4.2-4a1.6 1.6 0 0 1 2.2 0l3.4 3.3M13.7 14.2l1.9-1.8a1.6 1.6 0 0 1 2.2 0l2.7 2.6" /></>,
   // A clapperboard: this one makes a clip.
   clip: <><path d="M3 9.6h18V19a1.4 1.4 0 0 1-1.4 1.4H4.4A1.4 1.4 0 0 1 3 19V9.6z" /><path d="M3.2 9.6l.9-3.8a1.2 1.2 0 0 1 1.4-.9l14.2 3a1.2 1.2 0 0 1 .9 1.4l-.1.3" /><path d="M8.8 5.2L7.4 9.4M14.2 6.3l-1.4 4.2" /></>,
+  // Story / Director: script book / story flow
+  story: <><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5z" /><path d="M6 6h10M6 10h10M6 14h6" /></>,
   // Grok's mark is a bolt, and so is the speed of it.
   bolt: <path d="M13.2 2.8L5 13.6h5.6l-.8 7.6 8.2-10.8h-5.6l.8-7.6z" />,
   // Ask a chat model.
