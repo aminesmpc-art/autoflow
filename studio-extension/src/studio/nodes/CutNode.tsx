@@ -81,6 +81,108 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
   const parts: any[] = Array.isArray(d.omniParts) ? d.omniParts : [];
   const omniSplit: string = typeof d.omniSplit === 'string' ? d.omniSplit : '';
 
+  /* ── Letting AutoFlow do the upload ──────────────────────────────────
+     Flow ignores every synthetic file event, so the only way to hand it a
+     file is to intercept the file chooser through Chrome's debugger. That
+     works, and it costs something visible: Chrome puts a banner across the
+     top of the Flow tab for as long as the debugger is attached.
+
+     Which is why the switch is here and not in a settings screen. Nobody
+     goes looking for a permission they have not been asked for yet, and a
+     banner appearing unannounced on somebody's Flow tab is the kind of
+     surprise that gets an extension uninstalled. The offer is made where the
+     files are, at the moment it would help, and it explains itself first.
+
+     `null` means we have not read the flag yet — distinct from false, so the
+     button does not flicker from "Upload" to "Turn on" on first paint. */
+  const [uploadOn, setUploadOn] = useState<boolean | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [upload, setUpload] = useState<{ state: string; message: string }>(
+    { state: 'idle', message: '' },
+  );
+
+  useEffect(() => {
+    let alive = true;
+    chrome.storage.local.get(['af_debug_upload'])
+      .then((got) => { if (alive) setUploadOn(got?.af_debug_upload === true); })
+      .catch(() => { if (alive) setUploadOn(false); });
+    return () => { alive = false; };
+  }, []);
+
+  /* Base64 is a third larger than the bytes it carries, and all of it travels
+     through one runtime message. Nine parts of a long clip can pass what the
+     channel will take, and the failure is not a clean error — so it is
+     checked here, where "use Save all instead" is still useful advice. */
+  const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
+
+  const asDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('could not read the clip'));
+    reader.readAsDataURL(blob);
+  });
+
+  const sendToFlow = useCallback(async () => {
+    setAsking(false);
+    setUpload({ state: 'working', message: 'Preparing…' });
+
+    const base = String(d.label || 'clip').replace(/[^\w.-]+/g, '_');
+    const blobs = parts
+      .map((part) => ({ part, blob: getMedia(part.mediaKey) }))
+      .filter((x) => x.blob) as Array<{ part: any; blob: Blob }>;
+
+    if (!blobs.length) {
+      setUpload({ state: 'error', message: 'The pieces are no longer in memory — re-run the cut.' });
+      return;
+    }
+
+    const total = blobs.reduce((sum, x) => sum + x.blob.size, 0);
+    if (total > MAX_UPLOAD_BYTES) {
+      setUpload({
+        state: 'error',
+        message: `These pieces total ${(total / 1024 / 1024).toFixed(0)}MB, too much to send in one go. Use Save all and pick them in Flow.`,
+      });
+      return;
+    }
+
+    try {
+      const files = await Promise.all(blobs.map(async ({ part, blob }) => ({
+        dataUrl: await asDataUrl(blob),
+        filename: `${base}-part${part.index}of${part.of}.mp4`,
+      })));
+
+      setUpload({ state: 'working', message: 'Uploading — Chrome will show a debugging banner.' });
+      const reply = await chrome.runtime.sendMessage({ type: 'DEBUG_UPLOAD_TO_FLOW', files });
+
+      if (reply?.ok) {
+        setUpload({ state: 'done', message: `${files.length} piece${files.length === 1 ? '' : 's'} sent to Flow.` });
+      } else {
+        setUpload({ state: 'error', message: reply?.error || 'The upload did not go through.' });
+      }
+    } catch (e: any) {
+      setUpload({ state: 'error', message: e?.message || 'The upload did not go through.' });
+    }
+  }, [parts, d.label]);
+
+  /** Say yes to the banner, then upload — one press, not two. */
+  const enableAndSend = useCallback(async () => {
+    try {
+      await chrome.storage.local.set({ af_debug_upload: true });
+      setUploadOn(true);
+      await sendToFlow();
+    } catch {
+      setUpload({ state: 'error', message: 'Could not save that choice.' });
+    }
+  }, [sendToFlow]);
+
+  const turnOff = useCallback(async () => {
+    try {
+      await chrome.storage.local.set({ af_debug_upload: false });
+      setUploadOn(false);
+      setUpload({ state: 'idle', message: '' });
+    } catch { /* leave it as it was */ }
+  }, []);
+
   const saveParts = useCallback(() => {
     const base = String(d.label || 'clip').replace(/[^\w.-]+/g, '_');
     parts.forEach((part, i) => {
@@ -234,14 +336,77 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
             <div className="sn-cut__parts">
               <div className="sn-cut__parts-head">
                 <span>{omniSplit || `${parts.length} parts for Omni`}</span>
-                <button type="button" className="sn-cut__copy nodrag" onClick={saveParts}>
-                  Save all
-                </button>
+                <span style={{ display: 'flex', gap: '6px' }}>
+                  <button type="button" className="sn-cut__copy nodrag" onClick={saveParts}>
+                    Save all
+                  </button>
+                  {/* Offered even when the switch is off — pressing it is how
+                      somebody finds out the option exists. It explains itself
+                      before it does anything. */}
+                  <button
+                    type="button"
+                    className="sn-cut__copy nodrag"
+                    disabled={uploadOn === null || upload.state === 'working'}
+                    onClick={() => (uploadOn ? sendToFlow() : setAsking(true))}
+                    title="Let AutoFlow put these into Flow for you"
+                  >
+                    {upload.state === 'working' ? 'Uploading…' : 'Upload to Flow'}
+                  </button>
+                </span>
               </div>
-              <p className="sn-cut__parts-note">
-                Flow edits 10s at a time. Save these, then pick them together in
-                Flow — the file dialog takes them all at once.
-              </p>
+
+              {asking ? (
+                /* The whole cost, before anything happens. Written out rather
+                   than summarised, because "allow debugging?" means nothing
+                   until you have seen the banner it puts on your tab. */
+                <div className="sn-cut__parts-note" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <span>
+                    To upload for you, AutoFlow attaches Chrome&apos;s debugger to your Flow
+                    tab. Chrome shows a banner across the top while it does, and it will
+                    not work if you have DevTools open on that tab. Nothing else uses it.
+                  </span>
+                  <span style={{ display: 'flex', gap: '6px' }}>
+                    <button type="button" className="sn-cut__copy nodrag" onClick={enableAndSend}>
+                      Turn on and upload
+                    </button>
+                    <button type="button" className="sn-cut__copy nodrag" onClick={() => setAsking(false)}>
+                      Not now
+                    </button>
+                  </span>
+                </div>
+              ) : (
+                <p className="sn-cut__parts-note">
+                  Flow edits 10s at a time. Save these, then pick them together in
+                  Flow — the file dialog takes them all at once.
+                  {uploadOn && (
+                    /* However it was turned on, it can be turned off from the
+                       same place. A switch with no way back is a trap. */
+                    <>
+                      {' '}Automatic upload is on.{' '}
+                      <button
+                        type="button"
+                        className="nodrag"
+                        onClick={turnOff}
+                        style={{
+                          background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                          font: 'inherit', color: 'inherit', textDecoration: 'underline',
+                        }}
+                      >
+                        Turn it off
+                      </button>.
+                    </>
+                  )}
+                </p>
+              )}
+
+              {upload.state !== 'idle' && upload.state !== 'working' && (
+                <p
+                  className="sn-cut__parts-note"
+                  style={{ color: upload.state === 'error' ? 'var(--danger, #ff6b6b)' : 'var(--n-video)' }}
+                >
+                  {upload.message}
+                </p>
+              )}
             </div>
           )}
 

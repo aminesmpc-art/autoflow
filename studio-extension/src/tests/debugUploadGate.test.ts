@@ -143,3 +143,76 @@ describe('the dialog it needs is opened by code that already worked', () => {
     expect((attach as RegExpExecArray)[0]).toMatch(/openMediaDialog\(deps\)/);
   });
 });
+
+describe('the switch the user actually sees', () => {
+  /* The switch lives on the Cut node, beside the pieces it would upload, and
+     not in a settings screen — there isn't one, and burying a permission
+     somewhere nobody looks means the banner arrives unexplained.
+
+     Rendered assertions would be better than reading the source, but this
+     project has no React test renderer and adding one for four checks is a
+     worse trade than these. What they protect is the ORDER of the offer:
+     explain, then ask, then attach. */
+  const CUT = fs.readFileSync(
+    path.resolve(__dirname, '../studio/nodes/CutNode.tsx'), 'utf8',
+  );
+
+  it('reads the stored flag rather than assuming', () => {
+    expect(CUT).toMatch(/chrome\.storage\.local\.get\(\['af_debug_upload'\]\)/);
+    expect(CUT).toMatch(/got\?\.af_debug_upload === true/);
+  });
+
+  it('treats "not read yet" as different from "off"', () => {
+    /* Otherwise the button paints as "off" and changes under the cursor a
+       frame later. */
+    expect(CUT).toMatch(/useState<boolean \| null>\(null\)/);
+    expect(CUT).toMatch(/uploadOn === null/);
+  });
+
+  it('explains before it attaches, when the flag is off', () => {
+    /* The property: pressing Upload while off opens the explanation. It must
+       not call the send. */
+    expect(CUT).toMatch(/onClick=\{\(\) => \(uploadOn \? sendToFlow\(\) : setAsking\(true\)\)\}/);
+  });
+
+  it('the explanation names the two things that surprise people', () => {
+    expect(CUT).toMatch(/banner/i);
+    expect(CUT).toMatch(/DevTools/);
+  });
+
+  it('turning it on and uploading is one press, not two', () => {
+    const fn = /const enableAndSend = useCallback\([\s\S]*?\n  \}, \[/.exec(CUT);
+    expect(fn).not.toBeNull();
+    const text = (fn as RegExpExecArray)[0];
+    expect(text).toMatch(/af_debug_upload: true/);
+    expect(text).toMatch(/sendToFlow\(\)/);
+  });
+
+  it('and it can be turned off from the same place', () => {
+    /* A switch with no way back is a trap. */
+    expect(CUT).toMatch(/af_debug_upload: false/);
+    expect(CUT).toMatch(/Turn it off/);
+  });
+
+  it('refuses a payload too big for one runtime message', () => {
+    /* Base64 is a third larger than the bytes, and it all goes through one
+       sendMessage. Nine parts of a long clip can pass what the channel takes,
+       and that failure is not a clean error — so it is caught where "use Save
+       all instead" is still useful advice. */
+    expect(CUT).toMatch(/MAX_UPLOAD_BYTES/);
+    expect(CUT).toMatch(/Use Save all and pick them in Flow/);
+  });
+
+  it('sends the message the worker actually listens for', () => {
+    /* Two names typed out in two files. A rename in one is a button that
+       silently does nothing. */
+    expect(CUT).toMatch(/type: 'DEBUG_UPLOAD_TO_FLOW'/);
+    expect(WORKER).toMatch(/msg\?\.type === 'DEBUG_UPLOAD_TO_FLOW'/);
+  });
+
+  it('sends files in the shape the module reads', () => {
+    expect(CUT).toMatch(/dataUrl: await asDataUrl\(blob\)/);
+    expect(CUT).toMatch(/filename: `\$\{base\}-part/);
+    expect(MODULE).toMatch(/files: Array<\{ dataUrl: string; filename: string \}>/);
+  });
+});
