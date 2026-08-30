@@ -31,7 +31,10 @@ const unlocalizedPaths = [
   '/pricing',
   '/privacy',
   '/terms',
-  '/changelog'
+  '/changelog',
+  /* Not linked from the nav or the sitemap yet — it is held back until it
+     has images. Listed here so it can be previewed at its real URL. */
+  '/clipping'
 ];
 
 export function middleware(request) {

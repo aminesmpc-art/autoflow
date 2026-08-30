@@ -9,6 +9,7 @@ import {
   buildStudioWorkflow,
   downloadStudioWorkflow,
 } from "./studioWorkflow";
+import { studioInstalled, sendToStudio, toBuildOptions, estimateInStudio } from "./studioBridge";
 
 /* Extraction options. Mirrors ExtractionOptions in
    extractor-backend/app/api/videos.py — the engine validates and falls back on
@@ -94,6 +95,15 @@ export default function ExtractorPage() {
   const [saveStatus, setSaveStatus] = useState("idle");
   const [studioOpts, setStudioOpts] = useState(DEFAULT_STUDIO_OPTS);
   const [studioSent, setStudioSent] = useState(false);
+  /* null while we are still asking. The three states are different on screen:
+     asking shows nothing, installed shows a Send button, missing shows the
+     download and a line saying where the extension is. */
+  const [hasStudio, setHasStudio] = useState(null);
+  const [studioSend, setStudioSend] = useState({ state: "idle", message: "", notes: [] });
+  /* What Studio says it would build. Null until it has answered, and null for
+     ever if it is not installed — in which case the page's own count is the
+     right one, because the page's own builder is what will run. */
+  const [studioCost, setStudioCost] = useState(null);
   const [extractOpts, setExtractOpts] = useState(DEFAULT_EXTRACT_OPTS);
   const [showExtractOpts, setShowExtractOpts] = useState(false);
   const [savedId, setSavedId] = useState(null);
@@ -128,6 +138,52 @@ export default function ExtractorPage() {
 
   const setStudioOpt = (key, value) =>
     setStudioOpts((prev) => ({ ...prev, [key]: value }));
+
+  /* Ask once whether Studio is installed. The answer decides which button the
+     Send section shows, so it is asked as soon as there is a result to send
+     rather than at the moment of the click — a button that changes shape under
+     the cursor is worse than one that was always right. */
+  useEffect(() => {
+    if (!result?.shots?.length) return;
+    let alive = true;
+    studioInstalled().then((yes) => { if (alive) setHasStudio(yes); });
+    return () => { alive = false; };
+  }, [result]);
+
+  /* Re-asked on every option change, because the answer depends on them: the
+     count under the button should always be the count the button produces. */
+  useEffect(() => {
+    if (!hasStudio || !result?.shots?.length) return;
+    let alive = true;
+    estimateInStudio(result, toBuildOptions(studioOpts, result.video_name))
+      .then((cost) => { if (alive) setStudioCost(cost); });
+    return () => { alive = false; };
+  }, [hasStudio, result, studioOpts]);
+
+  /** Hand the extraction to the extension, which builds and opens it. */
+  const handleSendToStudio = async () => {
+    if (!result) return;
+    setStudioSend({ state: "sending", message: "", notes: [] });
+    const reply = await sendToStudio(
+      result,
+      toBuildOptions(studioOpts, result.video_name || "Extracted Workflow"),
+    );
+    if (reply.ok) {
+      setStudioSend({
+        state: "sent",
+        message: `Opened in Studio \u2014 ${reply.nodes} nodes. If the canvas didn't come up, open the extension and it's waiting.`,
+        /* Shots that were too thin to build, or a shot list longer than the
+           cap. Shown because the alternative is a workflow quietly smaller
+           than the analysis, discovered on the canvas or not at all. */
+        notes: reply.notes || [],
+      });
+      return;
+    }
+    /* A missing extension is not a failure to report as one — it is the
+       download path, which still works and is offered right below. */
+    if (reply.missing) setHasStudio(false);
+    setStudioSend({ state: "error", message: reply.error, notes: [] });
+  };
 
   // Built on every render so the counts below always match the current options.
   // Cheap — a handful of shots, no I/O.
@@ -895,14 +951,17 @@ export default function ExtractorPage() {
                   </div>
 
                   {/* ── Send to Studio ──
-                      A .json in Studio's own export format. Studio already
-                      imports that shape, so this needs no extension update. */}
+                      Straight into the extension when it is installed: the
+                      page hands over the EXTRACTION and Studio compiles it
+                      with its own builder, so there is one node schema rather
+                      than a copy of it living here. The .json download stays
+                      for anyone without the extension. */}
                   <div style={{ marginTop: "32px", padding: "28px", background: "#000", border: "1px solid var(--primary)" }}>
                     <h4 className="terminal-text" style={{ fontSize: "1.2rem", margin: "0 0 8px 0", color: "white", textShadow: "none" }}>
                       ⚡ Build an AutoFlow Studio Workflow
                     </h4>
                     <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--text-secondary)", margin: "0 0 24px 0", textShadow: "none" }}>
-                      Every shot becomes real nodes with its prompts already wired in — no copy-pasting, nothing left to rebuild by hand.
+                      Every shot becomes real nodes with its prompts already wired in — characters connected to every still, each still to its own clip. No copy-pasting, nothing left to rebuild by hand.
                     </p>
 
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "16px", marginBottom: "24px" }}>
@@ -990,28 +1049,102 @@ export default function ExtractorPage() {
                     )}
 
                     <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
-                      <button
-                        className="cyber-btn"
-                        style={{ padding: "16px 32px", background: "var(--primary)", color: "#000", fontWeight: 700 }}
-                        disabled={!studioPreview || studioPreview.nodes.length === 0}
-                        onClick={() => {
-                          downloadStudioWorkflow(
-                            result,
-                            studioOpts,
-                            (result.video_name || "Extracted Workflow")
-                          );
-                          setStudioSent(true);
-                        }}
-                      >
-                        ↓ Download Workflow
-                      </button>
+                      {hasStudio !== false ? (
+                        <button
+                          className="cyber-btn"
+                          style={{ padding: "16px 32px", background: "var(--primary)", color: "#000", fontWeight: 700 }}
+                          disabled={
+                            !studioPreview
+                            || studioPreview.nodes.length === 0
+                            || studioSend.state === "sending"
+                          }
+                          onClick={handleSendToStudio}
+                        >
+                          {studioSend.state === "sending" ? "Building…" : "⚡ Open in Studio"}
+                        </button>
+                      ) : (
+                        <button
+                          className="cyber-btn"
+                          style={{ padding: "16px 32px", background: "var(--primary)", color: "#000", fontWeight: 700 }}
+                          disabled={!studioPreview || studioPreview.nodes.length === 0}
+                          onClick={() => {
+                            downloadStudioWorkflow(
+                              result,
+                              studioOpts,
+                              (result.video_name || "Extracted Workflow")
+                            );
+                            setStudioSent(true);
+                          }}
+                        >
+                          ↓ Download Workflow
+                        </button>
+                      )}
                       <span className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--text-secondary)", textShadow: "none" }}>
-                        {studioPreview?.nodes.length ?? 0} nodes · {studioGenCount} generation{studioGenCount === 1 ? "" : "s"}
+                        {studioCost ? (
+                          <>
+                            {studioCost.total} generation{studioCost.total === 1 ? "" : "s"}
+                            {" · "}
+                            {[
+                              studioCost.characters && `${studioCost.characters} character${studioCost.characters === 1 ? "" : "s"}`,
+                              studioCost.stills && `${studioCost.stills} still${studioCost.stills === 1 ? "" : "s"}`,
+                              studioCost.clips && `${studioCost.clips} clip${studioCost.clips === 1 ? "" : "s"}`,
+                            ].filter(Boolean).join(" · ")}
+                          </>
+                        ) : (
+                          <>{studioPreview?.nodes.length ?? 0} nodes · {studioGenCount} generation{studioGenCount === 1 ? "" : "s"}</>
+                        )}
                       </span>
+
+                      {/* Once the extension is there, the file is the fallback
+                          rather than the route — quiet, and still one click. */}
+                      {hasStudio && (
+                        <button
+                          onClick={() => {
+                            downloadStudioWorkflow(
+                              result,
+                              studioOpts,
+                              (result.video_name || "Extracted Workflow")
+                            );
+                            setStudioSent(true);
+                          }}
+                          className="terminal-text"
+                          style={{
+                            background: "none", border: "none", padding: 0, cursor: "pointer",
+                            fontSize: "0.85rem", color: "var(--text-secondary)",
+                            textDecoration: "underline", textShadow: "none",
+                          }}
+                        >
+                          or download the .json
+                        </button>
+                      )}
                     </div>
 
-                    {studioSent && (
+                    {studioSend.state === "sent" && (
                       <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--primary)", marginTop: "20px", marginBottom: 0, textShadow: "none" }}>
+                        ✓ {studioSend.message}
+                      </p>
+                    )}
+
+                    {studioSend.notes.length > 0 && (
+                      <ul className="terminal-text" style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "12px 0 0 0", paddingLeft: "20px", textShadow: "none", lineHeight: 1.6 }}>
+                        {studioSend.notes.map((note, i) => <li key={i}>{note}</li>)}
+                      </ul>
+                    )}
+
+                    {studioSend.state === "error" && (
+                      <p className="terminal-text" style={{ fontSize: "0.9rem", color: "#ff6b6b", marginTop: "20px", marginBottom: 0, textShadow: "none" }}>
+                        {studioSend.message}
+                      </p>
+                    )}
+
+                    {hasStudio === false && (
+                      <p className="terminal-text" style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "16px", marginBottom: 0, textShadow: "none" }}>
+                        Install the AutoFlow Studio extension and reload this page to send workflows straight to the canvas.
+                      </p>
+                    )}
+
+                    {studioSent && (
+                      <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--primary)", marginTop: "12px", marginBottom: 0, textShadow: "none" }}>
                         ✓ Saved. In the extension open <strong>Studio → Import</strong> and pick the file.
                       </p>
                     )}

@@ -256,44 +256,165 @@ describe('what goes back to the model', () => {
 describe('it does not nag about the workflows that ship', () => {
   const { TEMPLATES } = require('../studio/templates/index');
 
-  it('finds nothing wrong with any shipped template', () => {
-    /* Templates are nodes and edges, not steps, so they are read back into
-       plan shape first — inputs from the edges, prompt text from the prompt
-       node feeding each step. Anything the checker flags here is a rule that
-       would have fired on a workflow somebody already uses. */
-    const complaints: string[] = [];
-    for (const t of TEMPLATES) {
-      const byId = new Map<string, any>(t.nodes.map((n: any) => [n.id, n]));
-      const steps = t.nodes
-        .filter((n: any) => n.data.type !== 'prompt')
-        .map((n: any) => {
-          const ins = t.edges.filter((e: any) => e.target === n.id);
-          const promptSrc = ins
-            .map((e: any) => byId.get(e.source))
-            .find((s: any) => s?.data?.type === 'prompt');
-          return {
-            id: n.id,
-            type: n.data.type === 'generate' ? 'generate' : n.data.type,
-            media: n.data.mediaType,
-            platform: n.data.platform,
-            label: n.data.label,
-            prompt: promptSrc ? promptSrc.data.text : undefined,
-            voice: n.data.voice,
-            cast: n.data.cast,
-            audioMode: n.data.audioMode,
-            inputs: ins
-              .map((e: any) => e.source)
-              .filter((id: string) => byId.get(id)?.data?.type !== 'prompt'),
-            startFrame: n.data.creationType === 'frames'
-              ? ins.find((e: any) => e.targetHandle === 'frame_start')?.source : undefined,
-            endFrame: n.data.creationType === 'frames'
-              ? ins.find((e: any) => e.targetHandle === 'frame_end')?.source : undefined,
-          };
-        });
-      for (const p of checkPlan({ steps } as Plan)) {
-        complaints.push(`${t.id}: ${p.code}${p.step ? ` on ${p.step}` : ''}`);
-      }
-    }
-    expect(complaints).toEqual([]);
+  /* The corpus check that lived here has moved to planCheckShipped.test.ts,
+     and it did not simply move — it was weaker than it looked.
+
+     It read each template back into plan shape to run the checks against it,
+     which is right, but the mapping carried only the fields the checks needed
+     AT THE TIME: prompt, inputs, voice, cast, audioMode, frames. Not
+     aspectRatio, not model, not duration. So a rule about any of those could
+     fire on every shipped template and this test would still pass — it was
+     asserting that no check complains about fields it never supplied.
+
+     The mixedAspect rule is exactly that case. It reads aspectRatio, and it
+     was verified against the templates only because the new file maps the
+     field and asserts the mapping is right before trusting the result.
+
+     One corpus, in one place, with a mapping that checks itself. */
+});
+
+
+/* ── Three checks added after the extractor's own converter showed what a
+      wired workflow is worth. Each is the same class as everything above: it
+      compiles, it opens, it runs, and it is worse than what was asked for. ── */
+
+describe('a still that is generated and then abandoned', () => {
+  /* The one that costs money outright. A generation runs, is paid for, and
+     appears nowhere in the finished video. */
+
+  it('catches a still nothing takes, while the others do feed clips', () => {
+    const bad: Plan = {
+      steps: [
+        still('s1'),
+        still('s2'),                                   // nothing ever takes this one
+        clip('c1', { inputs: ['s1'] }),
+        clip('c2', { inputs: ['s1'] }),
+      ],
+    };
+    assertCompiles(bad);
+    expect(codes(bad)).toContain('orphanStill');
+    expect(checkPlan(bad).find((x) => x.code === 'orphanStill')!.step).toBe('s2');
+  });
+
+  it('leaves the same plan alone once the still is wired in', () => {
+    const good: Plan = {
+      steps: [
+        still('s1'),
+        still('s2'),
+        clip('c1', { inputs: ['s1'] }),
+        clip('c2', { inputs: ['s2'] }),
+      ],
+    };
+    assertCompiles(good);
+    expect(codes(good)).not.toContain('orphanStill');
+  });
+
+  it('says nothing when the picture IS the deliverable', () => {
+    /* A poster workflow has no clips at all, and a still that ends the chain
+       is the whole point. Firing here would break every image template that
+       ships. */
+    const poster: Plan = { steps: [still('s1'), still('s2')] };
+    expect(codes(poster)).not.toContain('orphanStill');
+  });
+
+  it('says nothing when no still feeds a clip anywhere', () => {
+    /* Clips generated from text, plus a still that is its own output. The
+       plan never established the still-feeds-clip pattern, so a loose still
+       is not evidence of an oversight. */
+    const mixed: Plan = { steps: [still('s1'), clip('c1'), clip('c2')] };
+    expect(codes(mixed)).not.toContain('orphanStill');
+  });
+});
+
+describe('a prompt that is not yet a prompt', () => {
+  it('catches a label standing in for a shot', () => {
+    const bad: Plan = { steps: [{ ...still('s1'), prompt: 'a man' }, clip('c1', { inputs: ['s1'] })] };
+    assertCompiles(bad);
+    expect(codes(bad)).toContain('thinPrompt');
+  });
+
+  it('quotes it back, so the message says which step and what it said', () => {
+    const bad: Plan = { steps: [{ ...still('s1'), prompt: 'a man' }, clip('c1', { inputs: ['s1'] })] };
+    expect(checkPlan(bad).find((x) => x.code === 'thinPrompt')!.detail).toContain('"a man"');
+  });
+
+  it('leaves a real prompt alone', () => {
+    const good: Plan = {
+      steps: [
+        { ...still('s1'), prompt: 'a man in a grey coat at a rain-lit bus stop, shot on 35mm' },
+        clip('c1', { inputs: ['s1'] }),
+      ],
+    };
+    expect(codes(good)).not.toContain('thinPrompt');
+  });
+
+  it('says nothing about a step whose text arrives at run time', () => {
+    /* An Ask AI step writes the prompt for the one after it. That step is
+       SUPPOSED to be thin here — the words do not exist yet, and complaining
+       about it would break the pattern the brief teaches. */
+    const written: Plan = {
+      steps: [
+        { id: 'w1', type: 'generate', media: 'text', platform: 'chatgpt', label: 'Write it',
+          prompt: 'Write a shot description for a rain-lit bus stop at night.' },
+        { ...clip('c1'), prompt: undefined, inputs: ['w1'] },
+      ],
+    };
+    expect(codes(written)).not.toContain('thinPrompt');
+  });
+
+  it('counts words as well as characters', () => {
+    /* "a photorealistic" is long enough by characters and still says nothing;
+       "dawn, kitchen, wide, handheld" is short and says plenty. Both rules
+       apply, or one of those two comes out wrong. */
+    const wordy: Plan = {
+      steps: [{ ...still('s1'), prompt: 'an extraordinarily photorealistic' }, clip('c1', { inputs: ['s1'] })],
+    };
+    expect(codes(wordy)).toContain('thinPrompt');
+  });
+});
+
+describe('clips that cannot be cut together', () => {
+  it('catches a piece shot in two shapes', () => {
+    const bad: Plan = {
+      steps: [clip('c1', { aspectRatio: '9:16' }), clip('c2', { aspectRatio: '16:9' })],
+    };
+    assertCompiles(bad);
+    expect(codes(bad)).toContain('mixedAspect');
+  });
+
+  it('names the shapes, so the message is actionable', () => {
+    const bad: Plan = {
+      steps: [clip('c1', { aspectRatio: '9:16' }), clip('c2', { aspectRatio: '16:9' })],
+    };
+    const detail = checkPlan(bad).find((x) => x.code === 'mixedAspect')!.detail;
+    expect(detail).toContain('9:16');
+    expect(detail).toContain('16:9');
+  });
+
+  it('leaves a piece shot in one shape alone', () => {
+    const good: Plan = {
+      steps: [clip('c1', { aspectRatio: '9:16' }), clip('c2', { aspectRatio: '9:16' })],
+    };
+    expect(codes(good)).not.toContain('mixedAspect');
+  });
+
+  it('says nothing about a single clip', () => {
+    const one: Plan = { steps: [clip('c1', { aspectRatio: '16:9' })] };
+    expect(codes(one)).not.toContain('mixedAspect');
+  });
+
+  it('says nothing when the stills differ but the clips agree', () => {
+    /* A square character sheet next to 9:16 shots is right — a turnaround
+       cropped to vertical loses the outer poses. Only the CLIPS have to match,
+       because only the clips are cut together. */
+    const sheets: Plan = {
+      steps: [
+        { ...still('s1'), aspectRatio: '1:1' },
+        { ...still('s2'), aspectRatio: '9:16' },
+        clip('c1', { aspectRatio: '9:16', inputs: ['s1'] }),
+        clip('c2', { aspectRatio: '9:16', inputs: ['s2'] }),
+      ],
+    };
+    expect(codes(sheets)).not.toContain('mixedAspect');
   });
 });

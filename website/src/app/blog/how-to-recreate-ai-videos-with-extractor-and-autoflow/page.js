@@ -70,6 +70,8 @@ export default function BlogPost() {
             <h4>📖 In This Article</h4>
             <ol>
               <li><a href="#intro">The Power of Reverse-Engineering</a></li>
+              <li><a href="#one-click">The Fast Way: One Button to Studio</a></li>
+              <li><a href="#manual">The Manual Route (Queue Manager)</a></li>
               <li><a href="#step-1">Step 1: Generate Characters (Nano Banana 2)</a></li>
               <li><a href="#step-2">Step 2: Batch Generate Images</a></li>
               <li><a href="#step-3">Step 3: Auto Character Mapping</a></li>
@@ -83,7 +85,46 @@ export default function BlogPost() {
               With the <strong>Video Prompt Extractor</strong>, you can reverse-engineer any MP4 or WebM video to reveal its hidden Image Prompts (Midjourney) and Video Motion Prompts (Runway/Sora).
             </p>
             <p>
-              But extracting the prompts is only half the battle. In this tutorial, we will show you how to seamlessly export those extracted prompts directly into the <strong><Link href="/">AutoFlow Chrome Extension</Link></strong> to automatically batch-generate the entire scene timeline in minutes.
+              But extracting the prompts is only half the battle — they still have to become a video.
+              This tutorial covers both routes: the one-button hand-off into{" "}
+              <strong><Link href="/studio">AutoFlow Studio</Link></strong>, which builds the whole wired
+              workflow for you, and the manual copy-and-paste route through the{" "}
+              <strong><Link href="/">AutoFlow Queue Manager</Link></strong> for batch generation.
+            </p>
+
+            <h2 id="one-click">The Fast Way: One Button to Studio</h2>
+            <p>
+              Everything below this section still works, and for a long time it was the only route.
+              It is no longer the fastest one. If you have <strong><Link href="/studio">AutoFlow Studio</Link></strong> installed,
+              the Extractor now builds the whole workflow for you and opens it on the canvas.
+            </p>
+            <p>
+              Run your extraction as usual, scroll to <strong>Build an AutoFlow Studio Workflow</strong>,
+              choose what you want built, and press <strong>Open in Studio</strong>. That is the whole
+              procedure. What arrives on the canvas is not a list of prompts to sort out — it is a
+              wired graph:
+            </p>
+            <ul>
+              <li>Every <strong>character sheet</strong> becomes its own node, shot square so a turnaround keeps its outer poses.</li>
+              <li>Every shot becomes a <strong>still</strong>, with all of the character sheets connected into it. That is what holds a face still across a dozen shots, and it is the wiring people skip by hand because it is tedious.</li>
+              <li>Every still feeds <strong>its own clip</strong> — never a neighbouring one, which is how continuity breaks with no explanation.</li>
+            </ul>
+            <p>
+              The count under the button is what Studio itself says it will generate, not an estimate
+              the website worked out separately — so the number you read is the number you pay for.
+              Change the build mode to <em>Stills only</em> to see the look before committing to video.
+            </p>
+            <p>
+              Don&apos;t have the extension? The button becomes <strong>Download Workflow</strong> and you
+              get the same graph as a file to import. Nothing is lost either way.
+            </p>
+
+            <h2 id="manual">The Manual Route (Queue Manager)</h2>
+            <p>
+              The rest of this guide covers the copy-and-paste route through the{" "}
+              <strong>AutoFlow Queue Manager</strong> extension. It is worth reading if you use Queue
+              Manager rather than Studio, if you want the images on your own disk between the two
+              stages, or if you simply want to see what the one-click route is doing on your behalf.
             </p>
 
             <h2 id="step-1">Step 1: Generate Characters (Example: Nano Banana 2)</h2>

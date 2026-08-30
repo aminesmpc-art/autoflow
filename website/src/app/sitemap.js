@@ -12,8 +12,8 @@ export default async function sitemap() {
     { path: '/privacy', lastmod: '2026-04-01' },
     { path: '/terms', lastmod: '2026-04-01' },
     { path: '/prompts', lastmod: '2026-07-04' },
-    { path: '/extractor', lastmod: '2026-07-04' },
-    { path: '/changelog', lastmod: '2026-06-16' },
+    { path: '/extractor', lastmod: '2026-08-25' },
+    { path: '/changelog', lastmod: '2026-08-25' },
   ];
   
   const staticSitemaps = routes.map(({ path: route, lastmod }) => {
