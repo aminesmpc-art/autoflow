@@ -18,6 +18,7 @@
 
 import { ScannedAsset, ScannedTileState, PromptHistoryEntry } from '../../types';
 import { getPromptHistory } from '../../shared/storage';
+import { matchesFlowText, FLOW_STRINGS, isFlowErrorText } from './flowStrings';
 import {
   findAssetCards,
   isVisible,
@@ -115,10 +116,10 @@ function extractBatchMetadata(card: Element): { modelName: string; createdAt: st
     if (text.length > 30 && text.length > longestText.length) {
       // Skip texts that are clearly not prompts
       const lower = text.toLowerCase();
-      const isNoise = /^(failed|retry|reuse|delete|download|share|created|edited)/i.test(text) ||
-        lower.includes('not been charged') || lower.includes('try again') ||
-        lower.includes('violate our') || lower.includes('violates our') ||
-        lower.includes('generating harmful') || lower.includes('content policy');
+      const isNoise = /^(created|edited)/i.test(text) ||
+        matchesFlowText(text, 'generationFailed') || matchesFlowText(text, 'retry') ||
+        matchesFlowText(text, 'reusePrompt') || matchesFlowText(text, 'download') ||
+        matchesFlowText(text, 'deleteTile') || isFlowErrorText(lower);
       if (!isNoise) {
         longestText = text;
       }
@@ -146,10 +147,10 @@ function extractBatchMetadata(card: Element): { modelName: string; createdAt: st
           .replace(/\s+/g, ' ')
           .trim();
         if (cleaned.length > 30 && cleaned.length > longestText.length) {
-          const isNoise = /^(failed|retry|reuse|delete|download|share|created|edited)/i.test(cleaned) ||
-            cleaned.toLowerCase().includes('not been charged') ||
-            cleaned.toLowerCase().includes('violate our') || cleaned.toLowerCase().includes('violates our') ||
-            cleaned.toLowerCase().includes('generating harmful') || cleaned.toLowerCase().includes('content policy');
+          const isNoise = /^(created|edited)/i.test(cleaned) ||
+            matchesFlowText(cleaned, 'generationFailed') || matchesFlowText(cleaned, 'retry') ||
+            matchesFlowText(cleaned, 'reusePrompt') || matchesFlowText(cleaned, 'download') ||
+            matchesFlowText(cleaned, 'deleteTile') || isFlowErrorText(cleaned.toLowerCase());
           if (!isNoise) {
             longestText = cleaned;
           }
@@ -176,10 +177,10 @@ function extractBatchMetadata(card: Element): { modelName: string; createdAt: st
         .replace(/\s+/g, ' ')
         .trim();
       if (text.length > 50 && text.length > longestText.length && text.length < 2000) {
-        const isNoise = /^(failed|retry|reuse|delete|download|share|created|edited)/i.test(text) ||
-          text.toLowerCase().includes('not been charged') || text.toLowerCase().includes('try again') ||
-          text.toLowerCase().includes('violate our') || text.toLowerCase().includes('violates our') ||
-          text.toLowerCase().includes('generating harmful') || text.toLowerCase().includes('content policy') ||
+        const isNoise = /^(created|edited)/i.test(text) ||
+          matchesFlowText(text, 'generationFailed') || matchesFlowText(text, 'retry') ||
+          matchesFlowText(text, 'reusePrompt') || matchesFlowText(text, 'download') ||
+          matchesFlowText(text, 'deleteTile') || isFlowErrorText(text.toLowerCase()) ||
           /^(Veo|Imagen|Nano|Omni)\s/i.test(text) || /^(Created|Edited)\s/i.test(text);
         if (!isNoise) {
           longestText = text;
@@ -523,17 +524,9 @@ function buildGroups(rawTiles: RawTile[]): TileGroup[] {
 
   // Detect error messages that should NOT be used as grouping keys
   function isErrorText(label: string): boolean {
-    const lower = label.toLowerCase();
-    return (
-      lower.includes('please try a different prompt') ||
-      lower.includes('not been charged') ||
-      lower.includes('try again later') ||
-      lower.includes('unable to generate') ||
-      lower.includes('violates our') ||
-      lower.includes('content policy') ||
-      lower.includes('generation failed') ||
-      /^audio generation\s*\./i.test(label)
-    );
+    return isFlowErrorText(label) ||
+      matchesFlowText(label, 'contentPolicy') ||
+      /^audio generation\s*\./i.test(label);
   }
 
   // ── Step 1: Group tiles by row (groupIndex) ──
@@ -673,19 +666,9 @@ function enrichAndBuild(groups: TileGroup[], history: PromptHistoryEntry[]): Sca
 
   // Detect error messages (same logic as buildGroups)
   function isErrorLabel(label: string): boolean {
-    const lower = label.toLowerCase();
-    return (
-      lower.includes('please try a different prompt') ||
-      lower.includes('not been charged') ||
-      lower.includes('try again later') ||
-      lower.includes('unable to generate') ||
-      lower.includes('violates our') ||
-      lower.includes('violate our') ||
-      lower.includes('content policy') ||
-      lower.includes('generation failed') ||
-      lower.includes('generating harmful') ||
-      /^audio generation\s*\./i.test(label)
-    );
+    return isFlowErrorText(label) ||
+      matchesFlowText(label, 'contentPolicy') ||
+      /^audio generation\s*\./i.test(label);
   }
 
   // Try to match each group to a saved history position
@@ -1107,7 +1090,7 @@ export async function downloadAssetByMenu(locator: string, resolution?: string):
     if (downloadTrigger) break;
     // Fallback: check text content
     const text = item.textContent?.toLowerCase() || '';
-    if (text.includes('download')) {
+    if (matchesFlowText(text, 'download')) {
       downloadTrigger = item;
       break;
     }
@@ -1198,10 +1181,10 @@ export function isUpscalingActive(): boolean {
   for (const t of toasts) {
     if (!isVisible(t)) continue;
     const text = t.textContent?.toLowerCase() || '';
-    if (text.includes('upscaling') || text.includes('upscale')) return true;
+    if (matchesFlowText(text, 'upscaling')) return true;
   }
   const allText = document.body.innerText?.toLowerCase() || '';
-  return allText.includes('upscaling your video');
+  return matchesFlowText(allText, 'upscaling');
 }
 
 /**
@@ -1244,10 +1227,10 @@ export function isExtendedVideoDownloadingActive(): boolean {
     if (!isVisible(t)) continue;
     const text = t.textContent?.toLowerCase() || '';
     // Look for "Downloading your extended video."
-    if (text.includes('downloading') && text.includes('extend')) return true;
+    if (matchesFlowText(text, 'downloading') && text.includes('extend')) return true;
   }
   const allText = document.body.innerText?.toLowerCase() || '';
-  return allText.includes('downloading your extended video');
+  return matchesFlowText(allText, 'downloading') && allText.includes('extend');
 }
 
 /**
@@ -1438,7 +1421,7 @@ export async function retrySingleTile(
     for (const item of items) {
       if (!isVisible(item)) continue;
       const text = item.textContent?.toLowerCase() || '';
-      if (text.includes('reuse') && text.includes('prompt')) return true;
+      if (matchesFlowText(text, 'reusePrompt')) return true;
     }
     return false;
   }
@@ -1495,7 +1478,7 @@ export async function retrySingleTile(
   for (const item of menuItems) {
     if (!isVisible(item)) continue;
     const text = item.textContent?.toLowerCase() || '';
-    if (text.includes('reuse') && text.includes('prompt')) {
+    if (matchesFlowText(text, 'reusePrompt')) {
       reuseItem = item;
       break;
     }

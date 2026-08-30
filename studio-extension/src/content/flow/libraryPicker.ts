@@ -36,6 +36,8 @@
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+import { matchesFlowText, placeholderSelector } from './flowStrings';
+
 export interface AttachResult {
   ok: boolean;
   /** What stopped it, in words the clipper can act on. */
@@ -50,13 +52,7 @@ interface Deps {
   step?: number;
 }
 
-const labelled = (doc: Document, text: string): HTMLElement | undefined =>
-  Array.from(doc.querySelectorAll<HTMLElement>('button,[role="menuitem"],div,span'))
-    .find((e) => (e.textContent || '').trim() === text);
 
-const containing = (doc: Document, pattern: RegExp): HTMLElement | undefined =>
-  Array.from(doc.querySelectorAll<HTMLElement>('button'))
-    .find((b) => pattern.test((b.textContent || '').trim()));
 
 /**
  * A click Flow will believe.
@@ -104,6 +100,55 @@ export function attachedCount(doc: Document = document): number {
 }
 
 /**
+ * Open Flow's video media dialog.
+ *
+ * Lifted out of attachFromLibrary rather than written fresh, because these
+ * three clicks are the only part of reaching Flow's media UI that is known to
+ * work, and a second copy would drift from the one that does. Two callers
+ * need it now: picking an existing asset by name, and the debugger upload,
+ * which needs the dialog on screen before CDP can find the Upload button
+ * inside it.
+ *
+ * Every step is tolerant of already being there — pressing "create" when the
+ * composer is open is harmless — so calling this twice is not an error.
+ */
+export async function openMediaDialog(deps: Deps = {}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const doc = deps.doc || document;
+  const step = deps.step ?? 700;
+
+  const composer = Array.from(doc.querySelectorAll<HTMLElement>('button'))
+    .find((b) => {
+      const text = (b.textContent || '').trim();
+      return text.includes('add_2') && matchesFlowText(text, 'create');
+    });
+  if (composer) { press(composer); await sleep(step); }
+
+  /* The + sits in the composer row. Matched by size and position as well as
+     label because "add" alone also matches the project's "Add Media". */
+  const plus = Array.from(doc.querySelectorAll<HTMLElement>('button')).find((b) => {
+    const r = b.getBoundingClientRect();
+    const view = doc.defaultView || window;
+    return r.width > 0 && r.width < 60
+      && r.top > view.innerHeight * 0.5
+      && (b.textContent || '').trim() === 'add';
+  });
+  if (plus) { press(plus); await sleep(step); }
+
+  const videos = Array.from(doc.querySelectorAll<HTMLElement>('button,[role="menuitem"],div,span'))
+    .find((e) => {
+      const text = (e.textContent || '').trim();
+      return text.includes('videocam') && matchesFlowText(text, 'video');
+    });
+  if (!videos) return { ok: false, reason: 'the Videos tab is not where it was — Flow has changed' };
+  press(videos);
+  await sleep(step);
+
+  const dialog = doc.querySelector('[role="dialog"], mat-dialog-container');
+  if (!dialog) return { ok: false, reason: 'the media dialog did not open' };
+  return { ok: true };
+}
+
+/**
  * Find a video in the library by name and put it on the prompt.
  *
  * Returns rather than throws at every step, because a style reference is an
@@ -122,29 +167,12 @@ export async function attachFromLibrary(
 
   const before = attachedCount(doc);
 
-  const composer = containing(doc, /add_2Create/);
-  if (composer) { press(composer); await sleep(step); }
-
-  /* The + sits in the composer row. Matched by size and position as well as
-     label because "add" alone also matches the project's "Add Media". */
-  const plus = Array.from(doc.querySelectorAll<HTMLElement>('button')).find((b) => {
-    const r = b.getBoundingClientRect();
-    const view = doc.defaultView || window;
-    return r.width > 0 && r.width < 60
-      && r.top > view.innerHeight * 0.5
-      && (b.textContent || '').trim() === 'add';
-  });
-  if (plus) { press(plus); await sleep(step); }
-
-  const videos = labelled(doc, 'videocamVideos');
-  if (!videos) return { ok: false, reason: 'the Videos tab is not where it was — Flow has changed' };
-  press(videos);
-  await sleep(step);
+  const opened = await openMediaDialog(deps);
+  if (!opened.ok) return { ok: false, reason: opened.reason };
 
   const dialog = doc.querySelector('[role="dialog"], mat-dialog-container');
   const search = dialog
-    && Array.from(dialog.querySelectorAll('input'))
-      .find((i) => /search/i.test(i.getAttribute('placeholder') || ''));
+    && dialog.querySelector<HTMLInputElement>(placeholderSelector('search'));
   if (!search) return { ok: false, reason: 'the asset search box is not where it was' };
 
   /* Searched by the name it was uploaded under. uploadVideo.libraryName is
@@ -167,7 +195,8 @@ export async function attachFromLibrary(
   press(target);
   await sleep(step);
 
-  const confirm = containing(doc, /Add to Prompt/i);
+  const confirm = Array.from(doc.querySelectorAll<HTMLElement>('button'))
+    .find((b) => matchesFlowText((b.textContent || '').trim(), 'addToPrompt'));
   if (!confirm) return { ok: false, reason: 'no "Add to Prompt" to press' };
   press(confirm);
   await sleep(step + 500);

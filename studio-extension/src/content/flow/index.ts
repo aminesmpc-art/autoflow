@@ -5,6 +5,7 @@
    ============================================================ */
 
 import { ImageMeta, Message, QueueObject } from '../../types';
+import { openMediaDialog } from './libraryPicker';
 import { AutomationEngine, isRunLocked } from './automation';
 import { scanProjectForVideos, previewAsset, retrySingleTile, downloadAssetByMenu, waitForUpscalingDone, waitForExtendedVideoDownloadDone } from './scanner';
 import {
@@ -17,7 +18,7 @@ import {
   initApiHelper, isApiAvailable, isCacheFresh, activeStatusCheck,
   findStatusByMediaId, findStatusByPromptText, classifyError,
 } from './apiHelper';
-import { matchesFlowText } from './flowStrings';
+import { matchesFlowText, exactMatchFlowText, FLOW_STRINGS } from './flowStrings';
 import { registerStudioImage, releaseStudioImages } from './studioImages';
 import { pickReferenceStill } from './studioFrames';
 import { captureVideoFrame, captureVideoEndFrame, framesFromVideoBlob } from './videoFrames';
@@ -130,8 +131,8 @@ if (!(window as any).__autoflow_injected) {
   const deactivateAgent = () => {
     const agentBtn = document.querySelector('button[aria-pressed="true"]');
     if (agentBtn) {
-      const text = agentBtn.querySelector('.content')?.textContent?.trim();
-      if (text === 'Agent') {
+      const text = agentBtn.querySelector('.content')?.textContent || '';
+      if (exactMatchFlowText(text, 'agent')) {
         (agentBtn as HTMLElement).click();
       }
     }
@@ -712,6 +713,15 @@ async function handleMessage(msg: Message): Promise<any> {
         (engine as any).onImageApiCompleted?.(msg.payload);
       }
       return { success: true };
+    }
+
+    /* The debugger upload asks for this before attaching: CDP finds the
+       "Upload media" button by looking inside an open dialog, so the dialog
+       has to be on screen first. Reuses the opener the library picker uses,
+       rather than a second set of selectors for the same three clicks. */
+    case 'PREPARE_VIDEO_UPLOAD' as any: {
+      const opened = await openMediaDialog();
+      return opened.ok ? { ok: true } : { error: opened.reason };
     }
 
     case 'PING':
@@ -1782,7 +1792,14 @@ function extractTileErrorText(tile: Element): string {
   const raw = (tile.textContent || '').replace(/\s+/g, ' ').trim();
   if (!raw) return '';
   // Drop the leading "Failed" heading so the message isn't "failed — Failed …"
-  const body = raw.replace(/^failed[\s:—-]*/i, '').trim() || raw;
+  let body = raw;
+  for (const prefix of FLOW_STRINGS.generationFailed) {
+    if (body.toLowerCase().startsWith(prefix.toLowerCase())) {
+      body = body.slice(prefix.length).replace(/^[\s:—-]+/, '');
+      break;
+    }
+  }
+  body = body.trim() || raw;
   return body.length > 160 ? `${body.slice(0, 160)}…` : body;
 }
 

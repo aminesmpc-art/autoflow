@@ -109,7 +109,7 @@ import {
   findExtendGenerateButton,
 } from './selectors';
 import type { TileSnapshot, FailedTileInfo, TileState } from './selectors';
-import { matchesFlowText, exactMatchFlowText, closeAriaSelectors, FLOW_STRINGS } from './flowStrings';
+import { matchesFlowText, exactMatchFlowText, closeAriaSelectors, FLOW_STRINGS, searchInputSelector, isQuotaError, isSafetyViolation } from './flowStrings';
 import {
   getAllCachedStatuses,
   getRemainingCredits,
@@ -1067,7 +1067,7 @@ export class AutomationEngine {
       const agentBtn = document.querySelector('button[aria-pressed="true"]') as HTMLElement | null;
       if (agentBtn) {
         const label = agentBtn.querySelector('.content')?.textContent?.trim();
-        if (label === 'Agent') {
+        if (label && exactMatchFlowText(label, 'agent')) {
           this.log('warn', 'Agent mode is active — clicking to deactivate');
           simulateClick(agentBtn);
           await sleep(1000);
@@ -1215,7 +1215,7 @@ export class AutomationEngine {
              let retryBtn: Element | null = null;
              if (isParentInHistorySidebar) {
                // Detail view: find a retry button inside the history step
-               retryBtn = stateEl.querySelector('button[aria-label*="retry"], button[aria-label*="Retry"], button[aria-label*="réessayer"], button[aria-label*="Réessayer"], button[aria-label*="Reintentar"], button[aria-label*="Wiederholen"]') || null;
+               retryBtn = stateEl.querySelector(FLOW_STRINGS.retry.map(t => `button[aria-label*="${t}"]`).join(', ')) || null;
                if (!retryBtn) {
                  const currentBtns = Array.from(document.querySelectorAll('button'));
                  retryBtn = currentBtns.find(b => {
@@ -1300,7 +1300,7 @@ export class AutomationEngine {
       
       // 2. Detail view check: history sidebar generating box appears
       const historyTextRaw = document.body.innerText?.toLowerCase() || '';
-      if (historyTextRaw.includes('generation.') && historyTextRaw.includes('update your settings')) return true;
+      if (matchesFlowText(historyTextRaw, 'queued') || matchesFlowText(historyTextRaw, 'preparing')) return true;
       
       // 3. Button check: disabled or disappeared
       if (!document.body.contains(genBtn)) return true;
@@ -1953,7 +1953,7 @@ export class AutomationEngine {
        and is not a styled-components hash, so it survives both a redesign and
        a locale. */
     const searchInput = (document.querySelector('#add-menu-input')
-      || document.querySelector('input[aria-label*="Search"], input[placeholder*="Search"], input[placeholder*="Rechercher"], input[placeholder*="Buscar"], input[placeholder*="Suchen"], input[placeholder*="Cerca"], input[placeholder*="Pesquisar"]')) as HTMLInputElement;
+      || document.querySelector(searchInputSelector())) as HTMLInputElement;
     if (searchInput && isVisible(searchInput)) {
       this.log('info', `Searching for voice "${voiceName}"...`);
       searchInput.focus();
@@ -2159,14 +2159,35 @@ export class AutomationEngine {
    * Close the VIEW settings panel.
    */
   private async closeViewSettingsPanel(): Promise<void> {
-    if (!isViewSettingsOpen() || this.stopped) return;
-    document.body.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Escape', code: 'Escape', bubbles: true, cancelable: true,
-    }));
-    await humanDelay(200, 400);
+    if (!isViewSettingsOpen() && !document.querySelector('[role="menu"], [data-radix-menu-content]')) return;
+    
+    // Method 1: Dispatch Escape on active element, document, and body
+    const active = document.activeElement as HTMLElement | null;
+    if (active) {
+      active.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+    }
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+    await humanDelay(200, 350);
+
+    // Method 2: Click the gear trigger button to toggle it closed
     if (isViewSettingsOpen()) {
-      document.body.click();
-      await humanDelay(200, 400);
+      const trigger = findViewSettingsTrigger();
+      if (trigger) {
+        simulateClick(trigger);
+        await humanDelay(200, 350);
+      }
+    }
+
+    // Method 3: Click outside (main canvas area)
+    if (isViewSettingsOpen()) {
+      const main = document.querySelector('main, #canvas, [role="main"]');
+      if (main) {
+        simulateClick(main);
+      } else {
+        document.body.click();
+      }
+      await humanDelay(200, 350);
     }
   }
 
@@ -2194,21 +2215,18 @@ export class AutomationEngine {
     const flowKey = toggleKeys[toggleKey];
     const otherFlowKeys = Object.values(toggleKeys).filter(k => k !== flowKey);
 
-    const allBtns = document.querySelectorAll('button[role="tab"]');
+    const allBtns = document.querySelectorAll('button[role="tab"], button[data-state]');
     for (const btn of allBtns) {
-      const label = btn.getAttribute('aria-label');
-      if (label !== 'On') continue;
+      const label = (btn.getAttribute('aria-label') || btn.textContent || '').trim().toLowerCase();
+      const isOnButton = matchesFlowText(label, 'toggleOn') || label === 'on' || label === 'activé' || label === 'activée';
+      if (!isOnButton) continue;
 
-      // Walk up level by level to find the NEAREST ancestor that contains
-      // the toggle label. This avoids matching a shared parent that holds
-      // ALL toggles (which caused "Sound On hover" to match everything).
+      // Walk up level by level to find the row ancestor containing our toggle text
       let matched = false;
       let ancestor: Element | null = btn.parentElement;
-      for (let i = 0; i < 5 && ancestor; i++) {
+      for (let i = 0; i < 6 && ancestor; i++) {
         const ancestorText = ancestor.textContent?.toLowerCase() || '';
         if (flowKey && matchesFlowText(ancestorText, flowKey)) {
-          // Make sure this ancestor does NOT also contain other toggle labels —
-          // if it does, we're too high up. Keep walking to find a tighter match.
           const containsOthers = otherFlowKeys.some(k => matchesFlowText(ancestorText, k));
           if (!containsOthers) {
             matched = true;
@@ -2221,15 +2239,24 @@ export class AutomationEngine {
 
       // Check if already active
       const state = btn.getAttribute('data-state');
-      if (state === 'active') {
+      const selected = btn.getAttribute('aria-selected');
+      if (state === 'active' || selected === 'true') {
         this.log('info', `${toggleKey}: already ON`);
         return;
       }
 
-      // Click it ON
+      // Click it ON using all event dispatch strategies for Radix UI
+      this.log('info', `Enabling "${toggleKey}"...`);
       simulateClick(btn);
-      this.log('info', `Enabled "${toggleKey}"`);
+      nativeClick(btn);
+      await reactTrigger(btn, 'onMouseDown');
+      await reactTrigger(btn, 'onPointerDown');
       await humanDelay(300, 500);
+
+      const afterState = btn.getAttribute('data-state');
+      if (afterState === 'active') {
+        this.log('info', `Confirmed "${toggleKey}" is ON`);
+      }
       return;
     }
 
@@ -3528,28 +3555,17 @@ export class AutomationEngine {
       if (!errorText) continue;
 
       // Rate limiting / unusual activity
-      if (lower.includes('too quickly') || lower.includes('queue full') ||
-        lower.includes('limit reached') || lower.includes('exhausted') ||
-        lower.includes('quota') ||
-        lower.includes('unusual activity') || lower.includes('actividad inusual') ||
-        lower.includes('activité inhabituelle') || lower.includes('ungewöhnliche aktivität') ||
-        lower.includes('attività insolita')) {
+      if (isQuotaError(lower)) {
         return `Rate limited: ${errorText}`;
       }
 
       // Policy / content violations
-      if (lower.includes('violate') || lower.includes('policies') ||
-        lower.includes('blocked') || lower.includes('rejected') ||
-        lower.includes('prominent people') || lower.includes('minors') ||
-        lower.includes('harmful content')) {
+      if (isSafetyViolation(lower) || matchesFlowText(lower, 'safetyError')) {
         return `Policy violation: ${errorText}`;
       }
 
       // Generic errors
-      if (lower.includes('error') || lower.includes('failed') || lower.includes('unable') ||
-        lower.includes('cannot') || lower.includes('capacity') ||
-        lower.includes('unavailable') || lower.includes('oops') ||
-        matchesFlowText(lower, 'tryAgain') || lower.includes('something went wrong')) {
+      if (matchesFlowText(lower, 'genericError') || matchesFlowText(lower, 'generationFailed') || matchesFlowText(lower, 'unableToGenerate') || matchesFlowText(lower, 'tryAgain')) {
         return errorText;
       }
     }
@@ -3559,7 +3575,7 @@ export class AutomationEngine {
     for (const toast of toasts) {
       if (!isVisible(toast)) continue;
       const text = toast.textContent?.toLowerCase() || '';
-      if (text.includes('failed') || text.includes('error') || text.includes('violate')) {
+      if (matchesFlowText(text, 'genericError') || matchesFlowText(text, 'generationFailed') || matchesFlowText(text, 'violate')) {
         return toast.textContent?.trim() || 'Unknown error';
       }
     }
@@ -5174,10 +5190,7 @@ private async detectAndReportFailures(): Promise<void> {
         // DOM-based safety check: if the failed tile mentions policy/safety violations,
         // don't waste retries — the same prompt will fail again.
         const tileText = (matchedTile.element.textContent || '').toLowerCase();
-        const isSafetyBlock = tileText.includes('violat') || tileText.includes('polic') ||
-          tileText.includes('safety') || tileText.includes('prominent') ||
-          tileText.includes('inappropriate') || tileText.includes('harmful') ||
-          tileText.includes('blocked') || tileText.includes('prohibited');
+        const isSafetyBlock = isSafetyViolation(tileText);
         
         if (isSafetyBlock) {
           this.updatePromptStatus(idx, 'failed', 'Safety/policy block (DOM)');

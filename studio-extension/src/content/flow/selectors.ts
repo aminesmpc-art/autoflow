@@ -3,7 +3,7 @@
    Robust selectors using aria-labels, roles, visible text,
    and stable data-* attributes. Avoids brittle CSS paths.
    ============================================================ */
-import { matchesFlowText, exactMatchFlowText } from './flowStrings';
+import { matchesFlowText, exactMatchFlowText, FLOW_STRINGS, ariaLabelSelector } from './flowStrings';
 
 /** Sleep helper */
 export function sleep(ms: number): Promise<void> {
@@ -251,7 +251,7 @@ export function findGenerateButton(): Element | null {
   }
 
   // Strategy 3: aria-label fallback
-  const ariaLabels = ['Send', 'Generate', 'submit', 'Run'];
+  const ariaLabels = FLOW_STRINGS.send;
   for (const label of ariaLabels) {
     const btns = document.querySelectorAll(`button[aria-label*="${label}"]`);
     for (const btn of btns) {
@@ -572,7 +572,7 @@ export function findFrameButton(label: 'Start' | 'End'): Element | null {
   if (promptInput) {
     let outerContainer = promptInput.parentElement;
     for (let i = 0; i < 8 && outerContainer; i++) {
-      if (outerContainer.textContent?.includes('End') || outerContainer.querySelector('img')) {
+      if (matchesFlowText(outerContainer.textContent || '', 'end') || outerContainer.querySelector('img')) {
         break;
       }
       outerContainer = outerContainer.parentElement;
@@ -589,7 +589,7 @@ export function findFrameButton(label: 'Start' | 'End'): Element | null {
         if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return false;
 
         // A candidate is a slot if its text is "Start" or "End", or it contains an img/video
-        const isSlot = text === 'Start' || text === 'End' || el.querySelector('img, video') !== null;
+        const isSlot = exactMatchFlowText(text, 'start') || exactMatchFlowText(text, 'end') || el.querySelector('img, video') !== null;
         return isSlot;
       });
 
@@ -608,14 +608,16 @@ export function findFrameButton(label: 'Start' | 'End'): Element | null {
   const divButtons = document.querySelectorAll('div[type="button"][aria-haspopup="dialog"]');
   for (const div of divButtons) {
     const text = (div.textContent || '').trim();
-    if (text === label && isVisible(div)) return div;
+    const isMatch = label === 'Start' ? exactMatchFlowText(text, 'start') : exactMatchFlowText(text, 'end');
+    if (isMatch && isVisible(div)) return div;
   }
 
   // Strategy 2: Any element with aria-haspopup="dialog" containing exact text
   const haspopup = document.querySelectorAll('[aria-haspopup="dialog"]');
   for (const el of haspopup) {
     const text = (el.textContent || '').trim();
-    if (text === label && isVisible(el)) return el;
+    const isMatch = label === 'Start' ? exactMatchFlowText(text, 'start') : exactMatchFlowText(text, 'end');
+    if (isMatch && isVisible(el)) return el;
   }
 
   return null;
@@ -908,10 +910,10 @@ export function findFrameSlots(): FrameSlots | null {
   ).filter(isVisible);
   if (triggers.length < 2) return null;
 
-  const byText = (word: RegExp) =>
-    triggers.find((t) => word.test((t.textContent || '').trim()));
-  const start = byText(/^start$/i) || triggers[0];
-  const end = byText(/^end$/i) || triggers[1];
+  const byFlowKey = (key: keyof typeof FLOW_STRINGS) =>
+    triggers.find((t) => exactMatchFlowText((t.textContent || '').trim(), key as any));
+  const start = byFlowKey('start') || triggers[0];
+  const end = byFlowKey('end') || triggers[1];
   return start && end && start !== end ? { start, end } : null;
 }
 
@@ -1025,7 +1027,7 @@ export function assetOptionSelected(row: Element): boolean {
 /** The button that commits the selection into the slot. */
 export function findAddToPromptButton(dialog: Element): HTMLElement | null {
   const buttons = Array.from(dialog.querySelectorAll<HTMLElement>('button')).filter(isVisible);
-  const byText = buttons.find((b) => /add to prompt/i.test((b.textContent || '').trim()));
+  const byText = buttons.find((b) => matchesFlowText((b.textContent || '').trim(), 'addToPrompt'));
   if (byText) return byText;
 
   /* Fallback by shape, for a translated UI: the widest plain button in the
@@ -1044,7 +1046,10 @@ export function findAddToPromptButton(dialog: Element): HTMLElement | null {
 export function findUploadsTab(dialog: Element): HTMLElement | null {
   const tabs = Array.from(dialog.querySelectorAll<HTMLElement>('[role="tab"]')).filter(isVisible);
   return (
-    tabs.find((t) => /upload|drive_folder_upload/i.test((t.textContent || '').trim())) || null
+    tabs.find((t) => {
+      const text = (t.textContent || '').trim();
+      return matchesFlowText(text, 'upload') || /drive_folder_upload/i.test(text);
+    }) || null
   );
 }
 
@@ -1499,11 +1504,10 @@ export function getTileState(tile: Element): TileState {
   }
 
   // ── Signal 5: error text overlay ("failed", "error", "violated", "cancelled") ──
-  if (tileTextRaw.includes('generation failed') || tileTextRaw.includes('violate') ||
-    matchesFlowText(tileTextRaw, 'tryAgain') || tileTextRaw.includes('unable to generate') ||
-    tileTextRaw.includes('blocked') ||
-    matchesFlowText(tileTextRaw, 'generationCancelled') ||
-    matchesFlowText(tileTextRaw, 'generationFailed')) {
+  if (matchesFlowText(tileTextRaw, 'generationFailed') || matchesFlowText(tileTextRaw, 'violate') ||
+    matchesFlowText(tileTextRaw, 'tryAgain') || matchesFlowText(tileTextRaw, 'unableToGenerate') ||
+    matchesFlowText(tileTextRaw, 'blocked') ||
+    matchesFlowText(tileTextRaw, 'generationCancelled')) {
     return 'failed';
   }
 
@@ -1533,7 +1537,7 @@ export function getTileState(tile: Element): TileState {
   if (tileTextRaw.includes('generation.') && tileTextRaw.includes('update your settings')) {
     return 'generating';
   }
-  if (tileTextRaw.includes('queued') || tileTextRaw.includes('preparing') || tileTextRaw.includes('creating video') || tileTextRaw.includes('almost finished') || tileTextRaw.includes('is preparing')) {
+  if (matchesFlowText(tileTextRaw, 'queued') || matchesFlowText(tileTextRaw, 'preparing')) {
     return 'generating';
   }
 
@@ -2154,7 +2158,7 @@ export function findViewSettingsTrigger(): Element | null {
     if (rect.width <= 48 && rect.height <= 48 && text.length <= 20) {
       // Check if this button contains a single icon and no other content
       const hasIcon = btn.querySelector('i, span[class*="symbol"]');
-      if (hasIcon && !text.includes('video') && !text.includes('image') &&
+      if (hasIcon && !matchesFlowText(text, 'video') && !matchesFlowText(text, 'image') &&
         !text.includes('veo') && !text.includes('nano') &&
         !text.includes('add') && !text.includes('create')) {
         return btn;
@@ -2169,9 +2173,20 @@ export function findViewSettingsTrigger(): Element | null {
  */
 export function isViewSettingsOpen(): boolean {
   const trigger = findViewSettingsTrigger();
-  if (!trigger) return false;
-  return trigger.getAttribute('aria-expanded') === 'true' ||
-    trigger.getAttribute('data-state') === 'open';
+  if (trigger && (trigger.getAttribute('aria-expanded') === 'true' || trigger.getAttribute('data-state') === 'open')) {
+    return true;
+  }
+  // Check if any open menu / popover container with view mode or toggle settings is visible in DOM
+  const popups = document.querySelectorAll('[role="menu"], [data-radix-menu-content], [data-radix-popper-content-wrapper]');
+  for (const popup of popups) {
+    if (isVisible(popup)) {
+      const text = popup.textContent || '';
+      if (matchesFlowText(text, 'clearPromptOnSubmit') || matchesFlowText(text, 'showTileDetails') || matchesFlowText(text, 'grid') || matchesFlowText(text, 'batch')) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -2380,7 +2395,7 @@ export function findModeButton(modeName: string): Element | null {
   // Multilingual matching for every label that Flow translates. 'Video' is
   // the critical one: FR "Vidéo" never matched the English substring path,
   // which silently left the engine in Image mode on French UIs.
-  const MULTILINGUAL_KEYS = ['grid', 'batch', 'video', 'image', 'ingredients', 'frames'] as const;
+  const MULTILINGUAL_KEYS = ['grid', 'batch', 'video', 'image', 'ingredients', 'frames', 'voice', 'character'] as const;
   const flowKey = (MULTILINGUAL_KEYS as readonly string[]).includes(lower)
     ? (lower as (typeof MULTILINGUAL_KEYS)[number])
     : null;
@@ -3188,7 +3203,7 @@ export function findVoiceTabInDialog(): Element | null {
   const tabs = document.querySelectorAll('button[role="tab"]');
   for (const tab of tabs) {
     const text = (tab.textContent || '').trim();
-    if (text.endsWith('Voices') || text.endsWith('Voice') || text.endsWith('Audio')) {
+    if (text.endsWith('Voices') || matchesFlowText(text, 'voice')) {
       if (isVisible(tab)) return tab;
     }
   }
@@ -3201,7 +3216,7 @@ export function findVoiceTabInDialog(): Element | null {
   const elements = document.querySelectorAll('[role="tab"], [role="menuitem"], button');
   for (const el of elements) {
     const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
-    if (aria === 'voice' || aria === 'voices' || aria === 'audio') {
+    if (matchesFlowText(aria, 'voice')) {
       if (isVisible(el)) return el;
     }
   }
@@ -3216,7 +3231,7 @@ export function findImageTabInDialog(): Element | null {
   const tabs = document.querySelectorAll('button[role="tab"]');
   for (const tab of tabs) {
     const text = (tab.textContent || '').trim();
-    if (text.endsWith('Images') || text.endsWith('Image')) {
+    if (matchesFlowText(text, 'image')) {
       if (isVisible(tab)) return tab;
     }
   }
@@ -3229,7 +3244,7 @@ export function findImageTabInDialog(): Element | null {
   const elements = document.querySelectorAll('[role="tab"], [role="menuitem"], button');
   for (const el of elements) {
     const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
-    if (aria === 'image' || aria === 'images') {
+    if (matchesFlowText(aria, 'image')) {
       if (isVisible(el)) return el;
     }
   }
