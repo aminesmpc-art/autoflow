@@ -23,6 +23,11 @@
 > right by definition, because it is the one that runs.
 >
 > Pushing a feature branch to `origin` deploys nothing; merging to `main` does.
+>
+> **The `railway-backend` remote is dead.** It points at `aminesmpc-art/autoflow-backend`,
+> which the service used to deploy from and no longer does — `railway status` shows one
+> service. Its `main` is 20 commits and 11 days behind `origin/main`. Pushing a fix there
+> now deploys nothing while looking exactly like it worked.
 
 Production-ready Django backend for the AutoFlow Chrome extension.
 Handles user accounts, email-verified auth, free/pro plan logic, daily usage limits,
