@@ -39,6 +39,49 @@ import { runner } from '../engine/WorkflowRunner';
 
 type Tab = 'source' | 'moments' | 'settings';
 
+/**
+ * The earliest stage each setting shapes.
+ *
+ * Read against the three places a setting actually reaches:
+ *
+ *   transcribe  readOnServer picks which reading is taken at all.
+ *   survey      what the moments are chosen from, and how many.
+ *   layout      emitPlan's options — what gets baked into each cut when the
+ *               plan is emitted, and therefore what the cut runs with.
+ *
+ * A setting absent from this table changes nothing that has already been
+ * computed — a label, or which tab is open — and leaves the run alone.
+ *
+ * Getting one of these WRONG is quiet in both directions: too late and the
+ * setting does nothing, too early and a twenty-minute read is thrown away for
+ * a caption preset. So each entry is the earliest stage that reads the value,
+ * not the stage where its effect becomes visible.
+ */
+const STAGE_FOR_SETTING: Record<string, StageId> = {
+  /* One server reading versus six chat transcriptions — a different reading
+     entirely, and every timing after it comes from whichever was taken. */
+  readOnServer: 'transcribe',
+
+  /* Which moments get picked, and how many are considered. */
+  clipMode: 'survey',
+  campaignRules: 'survey',
+  wantedClips: 'survey',
+  surveyCandidates: 'survey',
+  minClipScore: 'survey',
+  /* The chat is chosen here and inherited by every cut the plan lays out, so
+     changing it after the survey would leave the cuts on the old one. */
+  platform: 'survey',
+
+  /* emitPlan's options. All of these are written into the cut steps, which is
+     why changing one on a finished run did nothing until the layout re-ran. */
+  captions: 'layout',
+  captionPreset: 'layout',
+  planEdit: 'layout',
+  omniParts: 'layout',
+  aspect: 'layout',
+  longestSeconds: 'layout',
+};
+
 /** What the model is asked for when the node has not been told otherwise. */
 const DEFAULT_WANTED = 10;
 /** How many moments the audio shortlists for the model to rank. */
@@ -196,6 +239,42 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
   }, [id, run, updateNodeData]);
 
   /**
+   * Change a setting, and un-finish the stages it just made wrong.
+   *
+   * A finished stage never runs again — `advance` skips anything settled, which
+   * is the whole point of running a twenty-minute read once. But the settings
+   * that SHAPED those stages went on being editable, and changing one after the
+   * fact did nothing at all: the node still read 100%, Run had no pending stage
+   * to work on, and the cuts kept whatever the plan was emitted with.
+   *
+   * Ticking "Edit plan" on a finished run was the worst version of it — the box
+   * stayed ticked, so it looked like the setting had taken, and the reason no
+   * cutaways ever appeared was invisible.
+   *
+   * So a setting now says which stage it belongs to, and changing it marks that
+   * stage and everything after it pending. No work happens here: the rail drops
+   * off 100% and Run has something to do, which is the signal that was missing.
+   */
+  const changeSetting = useCallback((patch: Record<string, unknown>) => {
+    const stages = Object.keys(patch)
+      .map((k) => STAGE_FOR_SETTING[k])
+      .filter(Boolean) as StageId[];
+
+    if (!stages.length) {
+      updateNodeData(id, patch as any);
+      return;
+    }
+
+    /* The EARLIEST stage any of these settings touches. A patch that changes
+       both the shortlist and the aspect has to go back as far as the shortlist,
+       or the layout re-runs against moments chosen under the old one. */
+    const earliest = stages.reduce((a, b) =>
+      (STAGE_ORDER.indexOf(a) <= STAGE_ORDER.indexOf(b) ? a : b));
+
+    updateNodeData(id, { ...patch, clipRun: invalidateFrom(run, earliest) } as any);
+  }, [id, run, updateNodeData]);
+
+  /**
    * Try a failed stage again, without re-running the ones above it.
    *
    * The rail already let you re-run from a stage that SUCCEEDED, which is the
@@ -338,7 +417,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
             className="sn-clip__pick nodrag"
             value={chat}
             title="Which chat does the thinking"
-            onChange={(e) => updateNodeData(id, { platform: e.target.value })}
+            onChange={(e) => changeSetting({ platform: e.target.value })}
           >
             {CHATS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
@@ -346,7 +425,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
             className="sn-clip__pick nodrag"
             value={mode}
             title="Campaign work follows someone else's brief"
-            onChange={(e) => updateNodeData(id, { clipMode: e.target.value })}
+            onChange={(e) => changeSetting({ clipMode: e.target.value })}
           >
             <option value="campaign">Campaign</option>
             <option value="explainer">Explainer</option>
@@ -355,7 +434,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
             <input
               type="number" min={1} max={20} className="nodrag"
               value={wanted}
-              onChange={(e) => updateNodeData(id, {
+              onChange={(e) => changeSetting({
                 wantedClips: Math.max(1, Math.min(20, Number(e.target.value) || DEFAULT_WANTED)),
               })}
             />
@@ -365,7 +444,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
             className="sn-clip__pick nodrag"
             value={aspect}
             title="The shape of the finished clips"
-            onChange={(e) => updateNodeData(id, { aspect: e.target.value })}
+            onChange={(e) => changeSetting({ aspect: e.target.value })}
           >
             {ASPECTS.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
@@ -382,7 +461,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               type="checkbox"
               className="nodrag"
               checked={captions}
-              onChange={(e) => updateNodeData(id, { captions: e.target.checked })}
+              onChange={(e) => changeSetting({ captions: e.target.checked })}
             />
             <span>Captions</span>
           </label>
@@ -394,7 +473,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               className="sn-clip__pick nodrag"
               value={captionPreset}
               title="How the burned-in words look"
-              onChange={(e) => updateNodeData(id, { captionPreset: e.target.value })}
+              onChange={(e) => changeSetting({ captionPreset: e.target.value })}
             >
               <option value="clean">Clean</option>
               <option value="bold">Bold — word lights up</option>
@@ -414,7 +493,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               type="checkbox"
               className="nodrag"
               checked={planEdit}
-              onChange={(e) => updateNodeData(id, { planEdit: e.target.checked })}
+              onChange={(e) => changeSetting({ planEdit: e.target.checked })}
             />
             <span>Edit plan</span>
           </label>
@@ -429,7 +508,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               type="checkbox"
               className="nodrag"
               checked={omniParts}
-              onChange={(e) => updateNodeData(id, { omniParts: e.target.checked })}
+              onChange={(e) => changeSetting({ omniParts: e.target.checked })}
             />
             <span>Omni parts</span>
           </label>
@@ -562,7 +641,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               <select
                 className="sn-set__control nodrag"
                 value={chat}
-                onChange={(e) => updateNodeData(id, { platform: e.target.value })}
+                onChange={(e) => changeSetting({ platform: e.target.value })}
               >
                 {CHATS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -576,7 +655,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
                     key={m}
                     type="button"
                     className={`sn-clip__mode nodrag ${mode === m ? 'sn-clip__mode--on' : ''}`}
-                    onClick={() => updateNodeData(id, { clipMode: m })}
+                    onClick={() => changeSetting({ clipMode: m })}
                   >
                     {m === 'campaign' ? 'Campaign' : 'Explainer'}
                   </button>
@@ -595,7 +674,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               <select
                 className="sn-set__control nodrag"
                 value={readOnServer ? 'server' : 'chat'}
-                onChange={(e) => updateNodeData(id, { readOnServer: e.target.value === 'server' })}
+                onChange={(e) => changeSetting({ readOnServer: e.target.value === 'server' })}
               >
                 <option value="server">On the server — fast</option>
                 <option value="chat">In the chat — slow</option>
@@ -612,7 +691,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               <input
                 type="number" min={1} max={20} className="sn-set__control sn-set__control--num nodrag"
                 value={wanted}
-                onChange={(e) => updateNodeData(id, {
+                onChange={(e) => changeSetting({
                   wantedClips: Math.max(1, Math.min(20, Number(e.target.value) || DEFAULT_WANTED)),
                 })}
               />
@@ -624,7 +703,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
                 <input
                   type="range" min={30} max={95} step={5} className="nodrag"
                   value={minScore}
-                  onChange={(e) => updateNodeData(id, { minClipScore: Number(e.target.value) })}
+                  onChange={(e) => changeSetting({ minClipScore: Number(e.target.value) })}
                 />
                 <b>{minScore}</b>
               </span>
@@ -640,7 +719,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               <input
                 type="number" min={4} max={30} className="sn-set__control sn-set__control--num nodrag"
                 value={shortlist}
-                onChange={(e) => updateNodeData(id, {
+                onChange={(e) => changeSetting({
                   surveyCandidates: Math.max(4, Math.min(30, Number(e.target.value) || DEFAULT_SHORTLIST)),
                 })}
               />
@@ -655,7 +734,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               <select
                 className="sn-set__control nodrag"
                 value={aspect}
-                onChange={(e) => updateNodeData(id, { aspect: e.target.value })}
+                onChange={(e) => changeSetting({ aspect: e.target.value })}
               >
                 {ASPECTS.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
@@ -666,7 +745,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               <input
                 type="number" min={15} max={600} className="sn-set__control sn-set__control--num nodrag"
                 value={longest}
-                onChange={(e) => updateNodeData(id, {
+                onChange={(e) => changeSetting({
                   longestSeconds: Math.max(15, Math.min(600, Number(e.target.value) || DEFAULT_LONGEST)),
                 })}
               />
@@ -680,6 +759,10 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               value={d.campaignRules || ''}
               placeholder={'Paste the campaign brief here — word for word.\n\nThe rules are shown to the chat when it ranks the moments, so a brief that bans misrepresentation or engagement farming actually changes what gets chosen.'}
               onChange={(e) => updateNodeData(id, { campaignRules: e.target.value })}
+              /* On blur, not on change: this is a textarea, and invalidating
+                 the survey on every keystroke would throw away a 29-second
+                 ranking one letter at a time. */
+              onBlur={(e) => changeSetting({ campaignRules: e.target.value })}
             />
           </div>
         )}

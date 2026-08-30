@@ -384,6 +384,15 @@ QUALITY BAR
   of coffee" is not a prompt; the example above is the standard.
 - Prefer the fewest steps that actually deliver the idea. More nodes are not
   better — connected nodes are.
+- Every still you generate must be named in the "inputs" of something. A still
+  nothing uses is a generation the user pays for that appears nowhere in the
+  finished video.
+- Every clip in one piece takes the SAME "aspectRatio". They are shots of one
+  video; mixed shapes cannot be cut together. A character sheet is the one
+  exception — shoot that "1:1" so the outer poses stay in frame.
+- A prompt of three or four words is a label, not a shot. If a step carries its
+  own prompt, write the shot: what is in frame, how it is lit, how the camera
+  moves.
 
 PLATFORMS
 

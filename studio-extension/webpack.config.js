@@ -13,6 +13,7 @@ module.exports = (env, argv) => {
   return {
     entry: {
       background: './src/background/service-worker.ts',
+    'studio-bridge': './src/content/web/index.ts',
       'flow-content': './src/content/flow/index.ts',
       'chatgpt-content': './src/content/chatgpt/index.ts',
       'gemini-content': './src/content/gemini/index.ts',

@@ -9,6 +9,14 @@
    surface with no purpose here and every reason to rot.
    ============================================================ */
 
+/* The worker's only import, and static rather than lazy on purpose.
+
+   As `await import('./debugUpload')` webpack emitted it as chunk 720, and a
+   service worker cannot fetch a chunk the way a page can — the upload would
+   have failed at the first click, on the one path that needed it. Costs ~16KB
+   in a worker that is already far larger than that. */
+import { uploadToFlow } from './debugUpload';
+
 type Platform = 'flow' | 'chatgpt' | 'gemini' | 'grok' | 'claude' | 'zai';
 
 /** The Studio window's long-lived port. Null whenever Studio is closed. */
@@ -1102,6 +1110,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
 
+  /* The website's Extractor, handing a built workflow over.
+     Same action as the panel's, and deliberately a separate name: this one
+     arrives from a content script on a page, so a reader tracing "who can open
+     my canvas" sees both callers rather than one shared label. */
+  if (msg?.type === 'OPEN_STUDIO') {
+    openStudio().catch(() => {});
+    return false;
+  }
+
+  /* Upload clips to Flow by driving a real file chooser.
+     OFF unless the user turned it on — see DEBUG_UPLOAD_KEY below. */
+  if (msg?.type === 'DEBUG_UPLOAD_TO_FLOW') {
+    debugUploadToFlow(msg)
+      .then(sendResponse)
+      .catch((e: any) => sendResponse({ ok: false, error: e?.message || String(e) }));
+    return true;
+  }
+
   if (msg?.type === 'PANEL_CONTROL') {
     // The runner lives in the Studio window, so control is a request, not a
     // command — if Studio is closed there is nothing running to control.
@@ -1254,3 +1280,64 @@ chrome.action.onClicked.addListener(async (tab) => {
   } catch { /* fall through to the canvas */ }
   await openStudio();
 });
+
+
+/* ── Uploading a clip to Flow with the debugger ──────────────────────────
+   Flow ignores every synthetic file event a content script can produce —
+   uploadVideo.ts records the five routes tried and why each is dead. The one
+   thing that does work is what Puppeteer does: intercept the file chooser
+   through the Chrome DevTools Protocol, which the browser treats exactly like
+   a real pick.
+
+   It is off unless asked for, and the switch is deliberately a stored flag
+   read HERE rather than a check in whatever offers the button:
+
+     · attaching the debugger puts a banner across the top of the user's Flow
+       tab saying this extension is debugging their browser. Nobody should
+       meet that by accident.
+     · the `debugger` permission is one of the most heavily scrutinised in the
+       Web Store. Declaring it is unavoidable to ship the feature at all;
+       using it without being asked is not.
+     · a gate in the UI is a gate one new caller can walk around. This one
+       every caller goes through, because it is the only path to the module. */
+const DEBUG_UPLOAD_KEY = 'af_debug_upload';
+
+async function debugUploadEnabled(): Promise<boolean> {
+  try {
+    const got = await chrome.storage.local.get([DEBUG_UPLOAD_KEY]);
+    return got?.[DEBUG_UPLOAD_KEY] === true;
+  } catch {
+    /* Storage unreachable is not consent. */
+    return false;
+  }
+}
+
+async function debugUploadToFlow(msg: any): Promise<{ ok: boolean; error?: string }> {
+  if (!(await debugUploadEnabled())) {
+    return {
+      ok: false,
+      error: 'Debugger upload is off. Turn on "Upload to Flow automatically" in '
+        + 'Settings first — it attaches Chrome\'s debugger to your Flow tab and '
+        + 'shows a banner while it does.',
+    };
+  }
+
+  const files = Array.isArray(msg?.files) ? msg.files : [];
+  if (!files.length) return { ok: false, error: 'nothing to upload' };
+
+  const tabId = typeof msg?.tabId === 'number' ? msg.tabId : (await findFlowTab());
+  if (!tabId) return { ok: false, error: 'no Flow tab is open' };
+
+  return uploadToFlow(tabId, files);
+}
+
+/** The Flow tab to drive, when the caller did not name one. */
+async function findFlowTab(): Promise<number | null> {
+  try {
+    const tabs = await chrome.tabs.query({ url: 'https://labs.google/*' });
+    const withProject = tabs.find((t) => /\/project\//.test(t.url || ''));
+    return (withProject || tabs[0])?.id ?? null;
+  } catch {
+    return null;
+  }
+}

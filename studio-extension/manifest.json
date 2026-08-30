@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AutoFlow Studio \u2014 Node Workflows for AI Video",
-  "version": "1.1.0",
-  "description": "Node workflows that drive Google Veo, ChatGPT, Claude, Gemini and Grok from one canvas. Independent tool, no affiliation.",
+  "version": "0.28.0",
+  "description": "Visual node workflows that automate multi-step AI video generation in your browser. Independent tool, no affiliation.",
   "minimum_chrome_version": "114",
   "offline_enabled": false,
   "homepage_url": "https://auto-flow.studio",
@@ -13,7 +13,9 @@
     "scripting",
     "alarms",
     "identity",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "downloads",
+    "debugger"
   ],
   "host_permissions": [
     "https://labs.google/*",
@@ -22,7 +24,9 @@
     "https://gemini.google.com/*",
     "https://grok.com/*",
     "https://claude.ai/*",
-    "https://chat.z.ai/*"
+    "https://chat.z.ai/*",
+    "https://www.auto-flow.studio/*",
+    "https://auto-flow.studio/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -104,6 +108,16 @@
       ],
       "js": [
         "zai-content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.auto-flow.studio/*",
+        "https://auto-flow.studio/*"
+      ],
+      "js": [
+        "studio-bridge.js"
       ],
       "run_at": "document_idle"
     }

@@ -29,7 +29,8 @@ export interface PlanProblem {
   code:
     | 'noContinuity' | 'voiceOnFrames'
     | 'voiceWithoutImage' | 'unknownVoice' | 'voiceButSilent' | 'castVoiceUnused'
-    | 'storyUnused' | 'uploadUnused' | 'lonelyStory' | 'tooManyReferences';
+    | 'storyUnused' | 'uploadUnused' | 'lonelyStory' | 'tooManyReferences'
+    | 'orphanStill' | 'thinPrompt' | 'mixedAspect';
   /** What to tell the model, in its own terms. */
   detail: string;
 }
@@ -73,6 +74,15 @@ const HUMAN: Record<PlanProblem['code'], string> = {
   tooManyReferences:
     'One shot is given more reference pictures than Flow accepts, so the extra ones '
     + 'would be dropped when the clip is generated.',
+  orphanStill:
+    'One of the stills is generated and then never used. You would pay for it and '
+    + 'it would not appear anywhere in the finished video.',
+  thinPrompt:
+    'One step has barely any prompt, so what comes back is whatever the model felt '
+    + 'like — and it will not match the shots around it.',
+  mixedAspect:
+    'The clips are not all the same shape, so they cannot be cut together without '
+    + 'bars down the side or a crop that loses part of the frame.',
 };
 
 /**
@@ -112,6 +122,41 @@ export function explainPlan(problems: PlanProblem[]): string[] {
    that were right. Reinstating it needs a signal that is actually about shot
    boundaries — the model naming them in a field of its own, not prose read
    with a regex. */
+
+/* Long enough to be a shot rather than a label. Both apply: "a photorealistic"
+   is nineteen characters and still says nothing, and "dawn, kitchen, wide" is
+   three words that do. */
+const THIN_PROMPT_CHARS = 24;
+const THIN_PROMPT_WORDS = 4;
+
+const clean = (v: unknown): string => String(v ?? '').replace(/\s+/g, ' ').trim();
+
+/* A duplicate-work check lived here too, and lasted one test run.
+
+   The idea: two steps with the same media, the same prompt and the same inputs
+   are one shot generated twice, and the canvas has no seed, so nothing tells
+   them apart except the bill.
+
+   Two shipped templates say otherwise, and both are deliberate:
+
+     tpl_ab_models    one prompt, two models, side by side. THE POINT is that
+                      the prompt does not change. Adding `model` to the
+                      fingerprint saves this one.
+
+     tpl_pool_fails   one brief through FOUR identical Ask AI nodes. Same
+                      prompt, same inputs, same model, and its own description
+                      explains why: they run as consecutive turns in one
+                      conversation, each told to differ from the last, so a
+                      single Run gives four unrelated wipeouts.
+
+   The second cannot be saved by a better fingerprint. Running one prompt more
+   than once to get more than one answer is an established pattern in this
+   product, and nothing in a plan separates a deliberate second take from a
+   careless copy-paste. So the check would have to guess, and a check that
+   guesses spends a repair round on every build that uses the pattern.
+
+   Reinstating it needs the model to SAY it meant one shot — a field, not an
+   inference from two steps happening to match. */
 
 const isGen = (s: PlanStep) => s.type === 'generate' || s.type === 'extend' || s.type === 'agent';
 const isClip = (s: PlanStep) => isGen(s) && s.media === 'video';
@@ -286,6 +331,64 @@ export function checkPlan(plan: Plan): PlanProblem[] {
         step: s.id, code: 'uploadUnused',
         detail: 'is an upload slot nothing uses. Either feed it into a step or remove it — it '
           + 'asks the user for a picture and then ignores it.',
+      });
+    }
+  }
+
+  /* ── A still that is generated and then abandoned ──
+     The upload check above is about a picture the USER supplies. This is the
+     one that costs money: a generation that runs, is paid for, and appears
+     nowhere in the finished video.
+
+     Deliberately narrow. A plan whose deliverable IS a picture is a perfectly
+     good plan, and a still that ends the chain is only wrong when the plan has
+     already shown it knows the pattern — there are clips, and other stills DO
+     feed them. Then a loose one is an oversight rather than an intention.
+     Without that second condition this fires on every poster and every
+     thumbnail workflow. */
+  const genStills = steps.filter((s) => isGen(s) && s.media === 'image');
+  if (clips.length && genStills.some((s) => used(s.id))) {
+    for (const s of genStills) {
+      if (!used(s.id)) {
+        out.push({
+          step: s.id, code: 'orphanStill',
+          detail: 'generates a still that no later step takes as an input, while the other '
+            + 'stills in this plan do feed one. It costs a generation and appears nowhere. '
+            + 'Either list it in the "inputs" of the shot it belongs to, or remove it.',
+        });
+      }
+    }
+  }
+
+  /* ── A prompt that is not yet a prompt ──
+     "a man" produces a picture of nobody in particular, and next to shots that
+     were written properly it reads as a different video. Only checked when the
+     step carries its OWN prompt: a step fed by a story director or an Ask AI
+     step is supposed to be thin here, because the text arrives at run time. */
+  for (const s of steps) {
+    if (!isGen(s)) continue;
+    const own = clean(s.prompt);
+    if (!own || textInputs(s).length) continue;
+    if (own.length < THIN_PROMPT_CHARS || own.split(' ').length < THIN_PROMPT_WORDS) {
+      out.push({
+        step: s.id, code: 'thinPrompt',
+        detail: `has "${own}" as its whole prompt. That is a label, not a shot — say what is `
+          + 'in frame, how it is lit and how the camera moves.',
+      });
+    }
+  }
+
+  /* ── Clips that cannot be cut together ──
+     Every shot of one piece has to be the same shape. Mixing them is not a
+     generation that fails; it is an edit that cannot be assembled without bars
+     or a crop, discovered at the end, after everything is paid for. */
+  if (clips.length > 1) {
+    const shapes = Array.from(new Set(clips.map((s) => s.aspectRatio).filter(Boolean) as string[]));
+    if (shapes.length > 1) {
+      out.push({
+        step: '', code: 'mixedAspect',
+        detail: `the clips are in ${shapes.length} different aspect ratios (${shapes.join(', ')}). `
+          + 'They are shots of one video and cannot be cut together. Put every clip in the same one.',
       });
     }
   }

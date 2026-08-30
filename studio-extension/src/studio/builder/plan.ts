@@ -99,6 +99,12 @@ export interface PlanStep {
   maxSeconds?: number;
   /** Step ids feeding this one — a still, a clip, or written text. */
   inputs?: string[];
+  /* Which model runs this step, by the name the picker shows.
+     Left off, the compiler picks the house default for the media. It exists
+     because a caller that already knows — the website's Extractor, where the
+     person chose from a dropdown — otherwise has its choice silently replaced
+     by that default, and the node runs on a model nobody picked. */
+  model?: string;
   aspectRatio?: string;
   duration?: string;
   /** Grok extend only. */
@@ -472,7 +478,7 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
         mediaType: media,
         ...(step.storyboardSheet && media !== 'video' ? { storyboardSheet: true } : {}),
         ...(step.preset && media === 'text' ? { preset: step.preset } : {}),
-        model: media === 'video' ? 'Omni Flash' : 'Nano Banana Pro',
+        model: step.model || (media === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),
         aspectRatio: step.aspectRatio || (media === 'video' ? '9:16' : '1:1'),
         duration: step.duration || '6s',
         creationType: step.startFrame && step.endFrame ? 'frames' : 'ingredients',
