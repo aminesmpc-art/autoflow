@@ -25,3 +25,6 @@ staticfiles/
 # OS
 .DS_Store
 Thumbs.db
+
+# The template must stay tracked — it names the variables and holds no values.
+!.env.example

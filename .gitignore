@@ -12,6 +12,9 @@ whenimageisaddtotheprompt.html
 # Secrets — never commit .env files
 .env
 .env.*
+# ...but the template is the one file here that must be committed: it is what
+# tells anyone setting this up which variables exist, and it holds no values.
+!.env.example
 *.env
 .vercel
 
