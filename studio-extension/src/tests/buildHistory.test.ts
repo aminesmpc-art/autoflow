@@ -32,9 +32,15 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 const DIST = join(__dirname, '../../dist');
-const SRC = readFileSync(join(__dirname, '..', 'sidepanel', 'index.ts'), 'utf8');
-const WORKER = readFileSync(
-  join(__dirname, '..', 'background', 'service-worker.ts'), 'utf8');
+/* Line endings normalised on read. Windows checkouts have core.autocrlf on,
+   so these files are CRLF in the working tree while the regexes below are
+   written with a bare newline escape — so these assertions failed on the
+   developer's machine and passed in CI, which is the worst way round. */
+const readSrc = (...p: string[]) =>
+  readFileSync(join(...p), 'utf8').replace(/\r\n/g, '\n');
+
+const SRC = readSrc(__dirname, '..', 'sidepanel', 'index.ts');
+const WORKER = readSrc(__dirname, '..', 'background', 'service-worker.ts');
 const CSS = () => readFileSync(join(DIST, 'sidepanel.css'), 'utf8');
 
 function mountPanel(): void {

@@ -145,13 +145,31 @@ describe('waiting for a clip', () => {
     expect(body).toMatch(/stableCount >= 2 && !isGenerating\(\) && turnFinished\(\) !== false/);
   });
 
-  it('hands back the URL rather than the bytes', () => {
-    /* One clip is tens of megabytes. A data URL of it would travel through
-       sendMessage, park in session storage on a dropped port, and be written
-       into the saved workflow. */
+  it('always hands back the URL, whatever else it sends', () => {
+    /* This used to also forbid the bytes outright: one clip is tens of
+       megabytes, and a data URL of it travels through sendMessage, parks in
+       session storage on a dropped port, and is written into the saved
+       workflow.
+
+       The adapter now inlines them anyway, and deliberately — a Gemini-hosted
+       URL needs Google's cookies, so a clip handed back as a bare URL will not
+       play anywhere outside the tab that made it. Both adapters that generate
+       video do the same thing.
+
+       So the prohibition became the bound instead, which is what actually
+       protects the user. The concern was real and was not theoretical: at the
+       old 50MB ceiling the message reached ~67MB, over what sendMessage takes,
+       and the rejection was swallowed — the node simply never got its result.
+       What is asserted now is that the URL is always there as the fallback,
+       and that the inlining is capped at a size the wire accepts. */
     const body = fn();
     expect(body).toMatch(/videoUrl: src/);
-    expect(body).not.toMatch(/captureImage|toDataURL|FileReader/);
+    expect(body).toMatch(/blob\.size <= MAX_VIDEO_CAPTURE_BYTES/);
+
+    const cap = /const MAX_VIDEO_CAPTURE_BYTES = (\d+) \* 1024 \* 1024;/.exec(SRC);
+    expect(cap).not.toBeNull();
+    /* base64 is 4/3 of the bytes; sendMessage takes roughly 64MB. */
+    expect(Number((cap as RegExpExecArray)[1]) * 4 / 3).toBeLessThan(48);
   });
 
   it('gives up with a reason rather than silently', () => {

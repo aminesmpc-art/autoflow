@@ -135,10 +135,10 @@ export const NODE_MANUAL = `THE NODES, AND WHAT EACH IS FOR
               - cast: [ { "name": "Name", "look": "Appearance description", "role": "position/role" } ]
               - world: "Setting and environment description"
               - look: "Visual style, camera aesthetics, and lighting rules"
-              - structure: "hook" | "transform" | "loop" | "ugcAd" | "free"
-              - cameraProgression: "dynamic" | "establishingToClose" | "actionTracking" | "propped" | "fixed"
-              - audioMode: "cinematic" | "ambient" | "dialogue" | "none"
-              - visualPreset: "liveAction" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime" | "none"
+              - structure: "hook" | "transform" | "buildTimelapse" | "craftTransform" | "loop" | "ugcAd" | "free"
+              - cameraProgression: "dynamic" | "establishingToClose" | "actionTracking" | "macroOrbit" | "propped" | "fixed"
+              - audioMode: "cinematic" | "ambient" | "dialogue" | "asmrCraft" | "none"
+              - visualPreset: "liveAction" | "miniatureMacro" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime" | "none"
               - colorTemp: "daylight" (5600K) | "tungsten" (3200K) | "amber" (1800K) |
                            "moon" (6800K) | "none". ONE white balance for the whole piece.
                            Shots that each pick their own look like footage from several
@@ -148,7 +148,7 @@ export const NODE_MANUAL = `THE NODES, AND WHAT EACH IS FOR
                           named setup does. Do NOT pair "hero" with visualPreset
                           "smartphonePOV" — that preset rules out studio lighting, so the
                           two instructions contradict each other and the model picks one.
-              - rules: ["cumulative" | "fixedCamera" | "samePerson" | "inHand"]
+              - rules: ["cumulative" | "fixedCamera" | "samePerson" | "inHand" | "phaseComplete" | "satisfyingMoment" | "cutRhythm"]
               - beats: number of story beats across the whole piece, or 0 to derive it
               - timedBeats: true to cut each clip into "[00:00-00:02] ..." segments
               - avoid: "what must not appear"
@@ -324,11 +324,11 @@ A step:
                 "voice": "optional Flow voice, e.g. Kore" } ],
     "world": "Setting description",
     "look": "Lighting & style description",
-    "structure": "hook" | "transform" | "loop" | "ugcAd" | "free",
-    "cameraProgression": "dynamic" | "establishingToClose" | "actionTracking" | "propped" | "fixed",
-    "audioMode": "cinematic" | "ambient" | "dialogue" | "none",
-    "visualPreset": "liveAction" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime" | "none",
-    "rules": ["cumulative" | "fixedCamera" | "samePerson" | "inHand"],
+    "structure": "hook" | "transform" | "buildTimelapse" | "craftTransform" | "loop" | "ugcAd" | "free",
+    "cameraProgression": "dynamic" | "establishingToClose" | "actionTracking" | "macroOrbit" | "propped" | "fixed",
+    "audioMode": "cinematic" | "ambient" | "dialogue" | "asmrCraft" | "none",
+    "visualPreset": "liveAction" | "miniatureMacro" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime" | "none",
+    "rules": ["cumulative" | "fixedCamera" | "samePerson" | "inHand" | "phaseComplete" | "satisfyingMoment" | "cutRhythm"],
     "beats": 0,
     "timedBeats": false,
     "avoid": "optional — what must not appear"

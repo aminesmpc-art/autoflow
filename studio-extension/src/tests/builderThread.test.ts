@@ -25,7 +25,12 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 const ROOT = join(__dirname, '..', '..');
-const read = (...p: string[]) => readFileSync(join(ROOT, 'src', ...p), 'utf8');
+/* Line endings normalised on read. Windows checkouts have core.autocrlf on,
+   so these files are CRLF in the working tree while the regexes below are
+   written with a bare newline escape — so these assertions failed on the
+   developer's machine and passed in CI, which is the worst way round. */
+const read = (...p: string[]) =>
+  readFileSync(join(ROOT, 'src', ...p), 'utf8').replace(/\r\n/g, '\n');
 
 const panel = read('sidepanel', 'index.ts');
 const worker = read('background', 'service-worker.ts');

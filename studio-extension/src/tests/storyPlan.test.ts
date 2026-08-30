@@ -123,8 +123,13 @@ describe('housekeeping', () => {
   });
 
   it('offers a structure for each way these pieces are actually built', () => {
+    /* buildTimelapse and craftTransform are the construction and craft shapes
+       — a build going up phase by phase, and raw stock becoming a finished
+       piece. They arrived after this list was first written; the list is
+       exhaustive on purpose, so adding one has to be a decision made here
+       too. */
     expect(STRUCTURES.map((s) => s.id))
-      .toEqual(['hook', 'transform', 'loop', 'ugcAd', 'free']);
+      .toEqual(['hook', 'transform', 'buildTimelapse', 'craftTransform', 'loop', 'ugcAd', 'free']);
     for (const s of STRUCTURES) expect(s.name.length).toBeGreaterThan(3);
   });
 });
@@ -148,7 +153,13 @@ describe('continuity rules', () => {
     /* A short fixed list rather than a free-text box: a rule that can be
        written any way cannot also be checked, and these are worth checking. */
     expect(RULES.map((r) => r.id))
-      .toEqual(['cumulative', 'fixedCamera', 'samePerson', 'inHand']);
+      .toEqual([
+        'cumulative', 'fixedCamera', 'samePerson', 'inHand',
+        /* The three the build and craft formats hit: a phase left half-done
+           when the clip ends, a clip with no payoff moment in it, and every
+           clip cut to the same monotonous rhythm. */
+        'phaseComplete', 'satisfyingMoment', 'cutRhythm',
+      ]);
     for (const r of RULES) expect(r.line.length).toBeGreaterThan(40);
   });
 });

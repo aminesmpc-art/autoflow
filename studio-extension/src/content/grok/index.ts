@@ -47,7 +47,16 @@ const POLL_MS = 2000;
 const UPLOAD_TIMEOUT_MS = 45 * 1000;
 const MAX_CAPTURE_BYTES = 15 * 1024 * 1024;
 /** Videos are much larger than stills — 50 MB lets a 15 s 1080p clip through. */
-const MAX_VIDEO_CAPTURE_BYTES = 50 * 1024 * 1024;
+/* The clip is inlined as a base64 data URL and travels through
+   chrome.runtime.sendMessage, which caps a message at roughly 64MB. Base64 is
+   4/3 the size of the bytes, so the old 50MB ceiling produced a ~67MB message:
+   over the limit, and send() swallows the rejection, so the node simply never
+   received its result and nothing said why.
+
+   32MB of video is ~43MB on the wire, which fits. A clip above it falls back
+   to the Gemini-hosted URL — that will not play outside the tab, which is
+   visibly wrong rather than silently missing, and is the better failure. */
+const MAX_VIDEO_CAPTURE_BYTES = 32 * 1024 * 1024;
 
 chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
   if (msg?.type === 'PING') { sendResponse({ pong: true }); return true; }
@@ -68,7 +77,14 @@ chrome.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
 });
 
 function send(type: string, payload: Record<string, unknown>): void {
-  try { chrome.runtime.sendMessage({ type, payload }).catch(() => {}); } catch {}
+  /* A rejection here used to vanish. The common cause is a payload over the
+     messaging limit — an inlined clip — and the symptom was a node that never
+     received its result with nothing anywhere saying why. Still non-fatal:
+     the tab must not die because the worker was asleep. */
+  const complain = (e: any) => console.warn(
+    `[AutoFlow] "${type}" did not reach the extension:`, e?.message || e,
+  );
+  try { chrome.runtime.sendMessage({ type, payload }).catch(complain); } catch (e) { complain(e); }
 }
 
 /** A line for the side panel's diagnostics, and for the console. */

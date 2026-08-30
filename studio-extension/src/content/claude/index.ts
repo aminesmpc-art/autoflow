@@ -371,16 +371,69 @@ function isGenerating(): boolean {
   return !!document.querySelector('[data-is-streaming="true"]');
 }
 
+/**
+ * Start a fresh conversation, by whichever route still exists.
+ *
+ * The aria-label is the one read off a live signed-in claude.ai and is tried
+ * first for that reason. Everything after it is a fallback, and fallbacks are
+ * cheap here: a selector that matches nothing costs one failed querySelector,
+ * while the old single-route version degraded to a WARNING and then answered
+ * the NEXT node inside the previous conversation — which reads as the model
+ * ignoring the prompt, with nothing on screen connecting the two.
+ *
+ * Ordered by how specific each signal is, so a rename lower down the list can
+ * never shadow a control that is genuinely there.
+ */
 async function startNewChat(): Promise<void> {
-  const link = Array.from(document.querySelectorAll<HTMLElement>('a[aria-label], button[aria-label]'))
+  const settled = async (): Promise<boolean> => {
+    for (let i = 0; i < 24; i++) {
+      await sleep(250);
+      const composer = findComposer();
+      if (composer && !(composer.innerText || '').trim() && !readLatestReply()) return true;
+    }
+    return false;
+  };
+
+  /* 1. The label. Verified against the live site. */
+  const byLabel = Array.from(document.querySelectorAll<HTMLElement>('a[aria-label], button[aria-label]'))
     .find((el) => /^new chat$/i.test((el.getAttribute('aria-label') || '').trim()) && isVisible(el));
-  if (!link) { logLine('WARNING: no New chat control — this answer may follow the previous one'); return; }
-  link.click();
-  for (let i = 0; i < 24; i++) {
-    await sleep(250);
-    const composer = findComposer();
-    if (composer && !(composer.innerText || '').trim() && !readLatestReply()) return;
+  if (byLabel) { byLabel.click(); if (await settled()) return; }
+
+  /* 2. The control that advertises Claude's own Ctrl/Cmd+Shift+O shortcut.
+        A label can be translated; the shortcut it announces cannot. */
+  const byShortcut = document.querySelector<HTMLElement>(
+    'button[aria-keyshortcuts*="Shift+O"], a[aria-keyshortcuts*="Shift+O"]',
+  );
+  if (byShortcut && isVisible(byShortcut)) { byShortcut.click(); if (await settled()) return; }
+
+  /* 3. A plain link to the route, which survives any amount of restyling. */
+  const byHref = document.querySelector<HTMLElement>('a[href="/new"], a[href="/chat/new"]');
+  if (byHref && isVisible(byHref)) { byHref.click(); if (await settled()) return; }
+
+  /* 4. The words on the button, for a build where nothing above is labelled. */
+  const byText = Array.from(document.querySelectorAll<HTMLElement>('button, a')).find((el) => {
+    const t = (el.textContent || '').trim().toLowerCase();
+    return (t === '+ new' || t === 'new chat') && isVisible(el);
+  });
+  if (byText) { byText.click(); if (await settled()) return; }
+
+  /* 5. Press the shortcut itself. Claude binds it on the document, so this
+        works even when the control is inside something we cannot see. */
+  document.dispatchEvent(new KeyboardEvent('keydown', {
+    key: 'O', code: 'KeyO', ctrlKey: true, shiftKey: true, bubbles: true,
+  }));
+  if (await settled()) return;
+
+  /* 6. Navigate. Last because it throws away anything unsent in the composer,
+        and only from a conversation — on /new already there is nowhere to go
+        and reloading would be a pointless round trip. */
+  if (window.location.pathname.startsWith('/chat/')) {
+    logLine('No New chat control found — navigating to /new');
+    window.location.href = '/new';
+    if (await settled()) return;
   }
+
+  logLine('WARNING: no New chat control — this answer may follow the previous one');
 }
 
 /* ── Execution ── */

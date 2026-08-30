@@ -64,7 +64,16 @@ const TEXT_CEILING_MS = 10 * 60 * 1000;
 const POLL_MS = 2000;
 const UPLOAD_TIMEOUT_MS = 45 * 1000;
 const MAX_CAPTURE_BYTES = 15 * 1024 * 1024;
-const MAX_VIDEO_CAPTURE_BYTES = 50 * 1024 * 1024;
+/* The clip is inlined as a base64 data URL and travels through
+   chrome.runtime.sendMessage, which caps a message at roughly 64MB. Base64 is
+   4/3 the size of the bytes, so the old 50MB ceiling produced a ~67MB message:
+   over the limit, and send() swallows the rejection, so the node simply never
+   received its result and nothing said why.
+
+   32MB of video is ~43MB on the wire, which fits. A clip above it falls back
+   to the Gemini-hosted URL — that will not play outside the tab, which is
+   visibly wrong rather than silently missing, and is the better failure. */
+const MAX_VIDEO_CAPTURE_BYTES = 32 * 1024 * 1024;
 
 if ((window as any).__af_gemini_listener) {
   try {
@@ -95,7 +104,14 @@ const _geminiMessageHandler = (msg: any, _sender: any, sendResponse: (r?: any) =
 chrome.runtime.onMessage.addListener(_geminiMessageHandler);
 
 function send(type: string, payload: Record<string, unknown>): void {
-  try { chrome.runtime.sendMessage({ type, payload }).catch(() => {}); } catch {}
+  /* A rejection here used to vanish. The common cause is a payload over the
+     messaging limit — an inlined clip — and the symptom was a node that never
+     received its result with nothing anywhere saying why. Still non-fatal:
+     the tab must not die because the worker was asleep. */
+  const complain = (e: any) => console.warn(
+    `[AutoFlow] "${type}" did not reach the extension:`, e?.message || e,
+  );
+  try { chrome.runtime.sendMessage({ type, payload }).catch(complain); } catch (e) { complain(e); }
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -1171,8 +1187,16 @@ async function trackVideo(nodeId: string, preexisting: Set<string>): Promise<voi
     if (src === stableSrc) stableCount++;
     else { stableSrc = src; stableCount = 0; }
 
-    /* Two unchanged polls AND the site saying it has stopped generating. */
-    if (stableCount >= 2 && !isGenerating()) {
+    /* Two unchanged polls AND the site saying it has stopped generating.
+
+       Both signals, not one. isGenerating() reads the composer; turnFinished()
+       reads the turn's own footer, and a clip's src can settle while the turn
+       is still running. turnFinished() returns null when it cannot tell — a
+       renamed footer — so `!== false` blocks only on an explicit "still
+       going" and degrades to the old behaviour rather than waiting for a
+       button that is no longer there. The comment above claimed this pair
+       before the code did. */
+    if (stableCount >= 2 && !isGenerating() && turnFinished() !== false) {
       let videoDataUrl = '';
       let referenceUrl = '';
 
