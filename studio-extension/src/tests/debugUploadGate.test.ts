@@ -199,7 +199,9 @@ describe('the switch the user actually sees', () => {
        sendMessage. Nine parts of a long clip can pass what the channel takes,
        and that failure is not a clean error — so it is caught where "use Save
        all instead" is still useful advice. */
-    expect(CUT).toMatch(/MAX_UPLOAD_BYTES/);
+    expect(CUT).toMatch(/MAX_MESSAGE_BYTES/);
+    /* Measured on the ENCODED size. A raw-byte cap of 32MB let a ~43MB message through — the exact size it was meant to refuse. */
+    expect(CUT).toMatch(/encodedSize\(total\) > MAX_MESSAGE_BYTES/);
     expect(CUT).toMatch(/Use Save all and pick them in Flow/);
   });
 

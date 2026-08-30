@@ -247,6 +247,31 @@ export async function cleanupTempFile(downloadId: number): Promise<void> {
   try { await chrome.downloads.erase({ id: downloadId }); } catch {}
 }
 
+/**
+ * Remove anything an earlier upload left behind.
+ *
+ * The delayed cleanup below runs on setTimeout, and a service worker is
+ * terminated when it goes idle — so once the upload returns and the reply is
+ * sent, there is nothing keeping the worker alive for a further sixty seconds
+ * and that timer usually never fires. Every piece of every clip stays in
+ * Downloads/autoflow-omni-temp for ever, which for somebody clipping daily is
+ * a folder that grows without bound and that nobody put there deliberately.
+ *
+ * Sweeping at the START of the next upload needs no timer and no alarm: by
+ * then Flow has long finished reading whatever the last run wrote, so there is
+ * nothing to be careful about.
+ */
+export async function sweepTempFiles(): Promise<number> {
+  try {
+    const stale = await chrome.downloads.search({ filenameRegex: TEMP_DIR });
+    await Promise.all(stale.map((item) => cleanupTempFile(item.id)));
+    return stale.length;
+  } catch {
+    /* Best effort. A sweep that fails must never stop an upload. */
+    return 0;
+  }
+}
+
 /* ──────────────────────────────────────────────────────────────────────── */
 /* Full pipeline                                                           */
 /* ──────────────────────────────────────────────────────────────────────── */
@@ -265,6 +290,10 @@ export async function uploadToFlow(
   files: Array<{ dataUrl: string; filename: string }>,
 ): Promise<DebugUploadResult> {
   const saved: Array<{ path: string; downloadId: number }> = [];
+
+  /* Whatever the last run could not clean up, before this one adds more. */
+  const swept = await sweepTempFiles();
+  if (swept) console.log(`[AutoFlow] swept ${swept} leftover temp file(s)`);
 
   try {
     /* ── Step 1: Have the content script open the upload dialog ── */
@@ -302,7 +331,12 @@ export async function uploadToFlow(
     /* ── Step 2: Save all blobs to disk ── */
     for (const file of files) {
       const result = await saveToDisk(file.dataUrl, file.filename);
-      if ('error' in result) return { ok: false, error: result.error };
+      if ('error' in result) {
+        /* Returning here used to walk away from the files already written.
+           Nothing is uploading yet, so they can go immediately. */
+        for (const s of saved) cleanupTempFile(s.downloadId).catch(() => {});
+        return { ok: false, error: result.error };
+      }
       saved.push(result);
     }
 
@@ -314,7 +348,13 @@ export async function uploadToFlow(
        Flow needs time to READ the file from disk and UPLOAD it to their
        servers. Deleting immediately (in finally) would delete the file
        while Flow is still reading it → "Something went wrong".
-       Clean up after 60 seconds in the background instead. */
+
+       So it waits — and this timer is OPPORTUNISTIC, not the guarantee. A
+       service worker is terminated once it goes idle, and after the reply is
+       sent nothing here keeps it alive for a minute, so more often than not
+       this never runs. sweepTempFiles() at the top of the next upload is what
+       actually stops the folder growing; this only tidies sooner when the
+       worker happens to still be around. */
     if (saved.length > 0) {
       setTimeout(() => {
         for (const s of saved) {

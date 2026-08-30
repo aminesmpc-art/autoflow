@@ -112,8 +112,13 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
   /* Base64 is a third larger than the bytes it carries, and all of it travels
      through one runtime message. Nine parts of a long clip can pass what the
      channel will take, and the failure is not a clean error — so it is
-     checked here, where "use Save all instead" is still useful advice. */
-  const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
+     checked here, where "use Save all instead" is still useful advice.
+
+     The cap is on the ENCODED size, not the raw bytes. Capping the raw bytes
+     at 32MB let a ~43MB message through, which is the size that was supposed
+     to be refused. */
+  const MAX_MESSAGE_BYTES = 24 * 1024 * 1024;
+  const encodedSize = (bytes: number) => Math.ceil(bytes / 3) * 4;
 
   const asDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -137,7 +142,7 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
     }
 
     const total = blobs.reduce((sum, x) => sum + x.blob.size, 0);
-    if (total > MAX_UPLOAD_BYTES) {
+    if (encodedSize(total) > MAX_MESSAGE_BYTES) {
       setUpload({
         state: 'error',
         message: `These pieces total ${(total / 1024 / 1024).toFixed(0)}MB, too much to send in one go. Use Save all and pick them in Flow.`,
