@@ -29,6 +29,19 @@
  * up after upload.
  */
 
+import { FLOW_STRINGS } from '../content/flow/flowStrings';
+
+/**
+ * Words that mean "media" beside the upload verb.
+ *
+ * Only used to PREFER one candidate over another, never to require one, so a
+ * language missing from this list still finds its button by the verb alone.
+ */
+const MEDIA_WORDS = [
+  'media', 'média', 'medios', 'mídia', 'medien', 'multimedia',
+  'multimédia', 'メディア', '미디어', '媒体', 'وسائط',
+];
+
 /** What the caller gets back. */
 export interface DebugUploadResult {
   ok: boolean;
@@ -111,41 +124,103 @@ export async function uploadViaFileChooser(
     });
     attached = true;
 
-    /* ── 2. Enable the Page domain — required for CDP to fire events ── */
+    /* ── 2. Enable the domains this needs ──
+       Page for the fileChooserOpened event, and DOM because
+       DOM.setFileInputFiles resolves the backendNodeId through the DOM agent.
+       Only Page was enabled here, which is the kind of omission that fails at
+       the very last step — after the banner, the click and the intercept all
+       looked like they worked. */
     await sendCDP(target, 'Page.enable', {});
+    await sendCDP(target, 'DOM.enable', {});
 
     /* Small wait for the debug banner to render and layout to settle */
     await new Promise((r) => setTimeout(r, 500));
+
+    /* ── 2b. The direct route: set the files on the input itself ──
+       This whole file was built around intercepting a file chooser, because
+       uploadVideo.ts established that Flow ignores everything a content script
+       can produce. That is true and still is — a content script's change event
+       is isTrusted:false and Flow drops it.
+
+       DOM.setFileInputFiles is not that. It sets the files in the browser, at
+       the same level a real pick does, and the change event it fires IS
+       trusted. It is what Puppeteer's elementHandle.uploadFile() calls, and it
+       needs no chooser, no coordinates and no click — so it cannot be defeated
+       by the debug banner shifting the layout, by the button being renamed in
+       a language we do not know, or by the 15s chooser timeout.
+
+       Tried first, and silently skipped when there is no input to be found:
+       some dialogs only create one when the picker is actually invoked, and
+       for those the click-and-intercept path below is still the answer. */
+    const direct = await trySetFilesDirectly(target, filePaths);
+    if (direct.ok) {
+      try {
+        await sendCDP(target, 'Page.setInterceptFileChooserDialog', { enabled: false });
+      } catch { /* never enabled on this path */ }
+      return { ok: true };
+    }
 
     /* ── 3. Get FRESH button coordinates ──
        The debug banner shifts the page, so coordinates from before
        the debugger attached are now wrong. Query the DOM directly
        via CDP Runtime.evaluate to get the current position. */
+    /* Built from FLOW_STRINGS.upload rather than a hard-coded English word.
+       This looked for /upload\s*medi/i first and fell back to three French
+       words — so on a French, German or Japanese Flow the primary match could
+       not hit, and the failure was "Upload media button not found", which
+       reads as "Flow changed" rather than "we only speak English".
+
+       Substring matching also picks up Material's icon ligature: the glyph
+       renders as the text "upload_file" NEXT TO the translated word, and the
+       ligature name is identical in every language. So the verb list finds
+       the button even in a language nobody added yet. */
+    const UPLOAD_WORDS = FLOW_STRINGS.upload.map((w) => w.toLowerCase());
+
     const coordResult: any = await sendCDP(target, 'Runtime.evaluate', {
-      expression: `
-        (function() {
-          var dialog = document.querySelector('[role="dialog"], mat-dialog-container');
-          if (!dialog) return JSON.stringify({ error: 'no dialog found' });
-          var btns = Array.from(dialog.querySelectorAll('button'));
-          var btn = btns.find(function(b) {
-            return /upload\\s*medi/i.test((b.textContent || '').trim());
-          });
-          if (!btn) {
-            btn = btns.find(function(b) {
-              var t = (b.textContent || '').trim();
-              return /^(upload|télécharger|importer)/i.test(t) && t.length < 30;
-            });
+      expression: `(function () {
+        var UP = ${JSON.stringify(UPLOAD_WORDS)};
+        var MED = ${JSON.stringify(MEDIA_WORDS)};
+        var dialog = document.querySelector('[role="dialog"], mat-dialog-container');
+        if (!dialog) return JSON.stringify({ error: 'no dialog found' });
+
+        var seen = [], cands = [];
+        var btns = Array.prototype.slice.call(dialog.querySelectorAll('button'));
+        for (var i = 0; i < btns.length; i++) {
+          var b = btns[i], r = b.getBoundingClientRect();
+          var t = (b.textContent || '').trim();
+          if (t) seen.push(t.slice(0, 40));
+          /* A hidden duplicate is clickable to CDP and does nothing. */
+          if (!r.width || !r.height) continue;
+          var low = t.toLowerCase(), isUp = false, isMed = false;
+          for (var j = 0; j < UP.length; j++) {
+            if (low.indexOf(UP[j]) !== -1) { isUp = true; break; }
           }
-          if (!btn) return JSON.stringify({ error: 'Upload media button not found' });
-          var r = btn.getBoundingClientRect();
-          return JSON.stringify({
-            x: Math.round(r.left + r.width / 2),
-            y: Math.round(r.top + r.height / 2),
-            w: Math.round(r.width),
-            h: Math.round(r.height)
+          if (!isUp) continue;
+          for (var k = 0; k < MED.length; k++) {
+            if (low.indexOf(MED[k]) !== -1) { isMed = true; break; }
+          }
+          cands.push({
+            label: t, med: isMed, len: t.length,
+            x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
+            w: Math.round(r.width), h: Math.round(r.height)
           });
-        })()
-      `,
+        }
+
+        if (!cands.length) {
+          return JSON.stringify({ error: 'no upload button in the dialog', seen: seen });
+        }
+        /* Prefer one that names media, then the shortest label: "Upload media"
+           beats "Upload media from your computer to use as a reference". */
+        cands.sort(function (a, c) {
+          if (a.med !== c.med) return a.med ? -1 : 1;
+          return a.len - c.len;
+        });
+        var p = cands[0];
+        return JSON.stringify({
+          x: p.x, y: p.y, w: p.w, h: p.h, label: p.label,
+          alternatives: cands.length - 1
+        });
+      })()`,
       returnByValue: true,
     });
 
@@ -156,7 +231,12 @@ export async function uploadViaFileChooser(
       return { ok: false, error: 'failed to parse button coordinates' };
     }
     if (btnCoords.error) {
-      return { ok: false, error: `Button lookup: ${btnCoords.error}` };
+      /* Naming the buttons that WERE there turns "Flow changed" into a fact
+         somebody can act on without opening devtools on the tab. */
+      const seen = Array.isArray(btnCoords.seen) && btnCoords.seen.length
+        ? ` Buttons on the dialog: ${btnCoords.seen.join(' | ')}`
+        : '';
+      return { ok: false, error: `Button lookup: ${btnCoords.error}.${seen}` };
     }
     if (!btnCoords.x || !btnCoords.y) {
       return { ok: false, error: 'button coordinates are zero — button may be off-screen' };
@@ -169,8 +249,16 @@ export async function uploadViaFileChooser(
     const chooserFired = new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         chrome.debugger.onEvent.removeListener(handler);
+        /* Everything known at the moment it gave up. Without the label and
+           the direct-route reason this said only "did not open within 15s",
+           which is true of a missed click, a renamed button and a Flow that
+           never opens a chooser at all — three different problems wearing the
+           same sentence. */
         reject(new Error(
-          `file chooser did not open within 15s (clicked at ${btnCoords.x},${btnCoords.y} btn ${btnCoords.w}x${btnCoords.h})`,
+          `file chooser did not open within 15s. Clicked "${btnCoords.label || '?'}" `
+          + `at ${btnCoords.x},${btnCoords.y} (${btnCoords.w}x${btnCoords.h})`
+          + `${btnCoords.alternatives ? `, ${btnCoords.alternatives} other upload button(s) on the dialog` : ''}`
+          + `. Direct route was skipped: ${direct.why || 'unknown'}`,
         ));
       }, 15_000);
 
@@ -406,6 +494,37 @@ async function waitForContentScript(tabId: number, timeoutMs: number): Promise<v
     await new Promise((r) => setTimeout(r, 400));
   }
   throw new Error('content script did not respond after reload');
+}
+
+/**
+ * Put the files straight onto Flow's file input, with no chooser involved.
+ *
+ * Returns why it could not rather than throwing, because every reason here is
+ * a reason to fall back rather than to fail: the input may not exist until the
+ * picker is opened, and that is normal rather than broken.
+ */
+async function trySetFilesDirectly(
+  target: chrome.debugger.Debuggee,
+  filePaths: string[],
+): Promise<{ ok: boolean; why?: string }> {
+  try {
+    const doc: any = await sendCDP(target, 'DOM.getDocument', { depth: -1, pierce: true });
+    const rootId = doc?.root?.nodeId;
+    if (!rootId) return { ok: false, why: 'no document' };
+
+    /* pierce:true above walks shadow roots, which Flow's dialog uses. */
+    const found: any = await sendCDP(target, 'DOM.querySelector', {
+      nodeId: rootId,
+      selector: 'input[type="file"]',
+    });
+    const nodeId = found?.nodeId;
+    if (!nodeId) return { ok: false, why: 'no file input on the page yet' };
+
+    await sendCDP(target, 'DOM.setFileInputFiles', { nodeId, files: filePaths });
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, why: e?.message || String(e) };
+  }
 }
 
 function sendCDP(target: chrome.debugger.Debuggee, method: string, params?: object): Promise<any> {
