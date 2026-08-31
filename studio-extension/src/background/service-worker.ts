@@ -1334,22 +1334,30 @@ async function debugUploadToFlow(msg: any): Promise<{ ok: boolean; error?: strin
   const files = Array.isArray(msg?.files) ? msg.files : [];
   if (!files.length) return { ok: false, error: 'nothing to upload' };
 
-  const tabId = typeof msg?.tabId === 'number' ? msg.tabId : (await findFlowTab());
-  if (!tabId) return { ok: false, error: 'no Flow tab is open' };
+  /* ensurePlatformTab, not a query of our own: it reuses the tab the user
+     already has, opens Flow at their LAST PROJECT when there is none, and
+     shares the one match pattern the rest of the worker uses. The hand-rolled
+     lookup this replaces reported "no Flow tab is open" while Flow was plainly
+     open on screen — chrome.tabs.query returns nothing for a host the
+     extension cannot access, which is indistinguishable from no such tab. */
+  const tabId = typeof msg?.tabId === 'number' ? msg.tabId : (await ensurePlatformTab('flow'));
+  if (!tabId) {
+    /* Separate the two causes rather than blaming the user's tabs. */
+    const state = await platformState('flow');
+    return {
+      ok: false,
+      error: state === 'blocked'
+        ? 'Chrome is not letting this extension touch labs.google. Open '
+          + 'chrome://extensions, click Details on AutoFlow Studio, and set '
+          + 'Site access to "On all sites".'
+        : 'Could not open a Flow tab.',
+    };
+  }
 
   return uploadToFlow(tabId, files);
 }
 
-/** The Flow tab to drive, when the caller did not name one. */
-async function findFlowTab(): Promise<number | null> {
-  try {
-    const tabs = await chrome.tabs.query({ url: 'https://labs.google/*' });
-    const withProject = tabs.find((t) => /\/project\//.test(t.url || ''));
-    return (withProject || tabs[0])?.id ?? null;
-  } catch {
-    return null;
-  }
-}
+
 
 
 /* ── Making a request on a page's behalf ─────────────────────────────────
