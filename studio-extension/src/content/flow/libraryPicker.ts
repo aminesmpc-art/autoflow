@@ -257,15 +257,72 @@ const hasMediaWord = (text: string): boolean => {
   return MEDIA_WORDS.some((w) => low.includes(w));
 };
 
-/** Every visible button carrying an upload verb — the dialog's own control. */
+/**
+ * Material icon names that mean "put a file in", and only that.
+ *
+ * Matched EXACTLY, which is the whole point. Substring matching on "upload"
+ * picked Flow's sidebar item
+ *
+ *     <button><i class="google-symbols">drive_folder_upload</i>View uploaded media</button>
+ *
+ * a 40x40 nav icon that opens a listing. Its ligature contains "upload" and
+ * its label contains "media", so it beat everything on both tests — the run
+ * clicked it at 40,311, no file chooser opened, and fifteen seconds later the
+ * upload gave up. It also made uploadButtons() true, so openMediaDialog
+ * returned "already open" and never pressed Add Media at all.
+ *
+ * The ligature is the right anchor because it is an icon NAME: it renders as
+ * text, it is identical in every language, and it distinguishes an action from
+ * a view in a way the label cannot.
+ */
+const UPLOAD_ICONS = new Set([
+  'upload', 'file_upload', 'cloud_upload', 'upload_file', 'upload_2',
+]);
+
+/** Icon ligatures inside an element — the untranslated names, not the label. */
+function iconNames(el: Element): string[] {
+  return Array.from(el.querySelectorAll('i, [class*="symbols"], [class*="material-icons"]'))
+    .map((i) => (i.textContent || '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** An element's visible words with the icon ligatures taken out. */
+export function labelWithoutIcons(el: Element): string {
+  const icons = iconNames(el);
+  let text = (el.textContent || '').trim();
+  for (const name of icons) {
+    const at = text.toLowerCase().indexOf(name);
+    if (at !== -1) text = text.slice(0, at) + text.slice(at + name.length);
+  }
+  return text.trim();
+}
+
+/**
+ * Every visible button that actually uploads — the dialog's own control.
+ *
+ * An icon whose name is exactly an upload icon settles it. Failing that, the
+ * LABEL has to carry an upload verb, judged with the ligature removed so a
+ * button named drive_folder_upload cannot qualify on its icon alone.
+ */
 export function uploadButtons(doc: Document = document): HTMLElement[] {
   return Array.from(doc.querySelectorAll<HTMLElement>('button')).filter((b) => {
     const r = b.getBoundingClientRect();
     if (r.width === 0 && r.height === 0) return false;
-    const text = (b.textContent || '').trim();
-    /* The Material ligature renders as the text "upload" beside the label and
-       is the same in every language, so it doubles as the anchor. */
-    return text.toLowerCase().includes('upload') || matchesFlowText(text, 'upload');
+
+    /* When a button carries an icon, the icon DECIDES — the label is not
+       consulted at all. That is the whole lesson of drive_folder_upload:
+       its label is "View uploaded media", and "uploaded" contains "upload",
+       so any label test passes it. Flow labels its controls with ligatures,
+       so an icon that is not an upload icon is a positive answer of "no",
+       not an absence of evidence.
+
+       The label is the fallback only for a button with no icon at all, where
+       there is nothing better to go on. */
+    const icons = iconNames(b);
+    if (icons.length) return icons.some((n) => UPLOAD_ICONS.has(n));
+
+    const label = labelWithoutIcons(b);
+    return !!label && matchesFlowText(label, 'upload');
   });
 }
 

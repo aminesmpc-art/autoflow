@@ -37,6 +37,14 @@ import { FLOW_STRINGS } from '../content/flow/flowStrings';
  * Only used to PREFER one candidate over another, never to require one, so a
  * language missing from this list still finds its button by the verb alone.
  */
+/* Icon names that mean "put a file in", matched exactly. Flow's sidebar has
+   drive_folder_upload / "View uploaded media", a 40x40 nav item whose ligature
+   contains "upload" and whose label contains "media" — it won on both counts,
+   was clicked at 40,311, and no chooser ever opened. An icon NAME is the right
+   anchor: it renders as text, never translates, and separates an action from a
+   view where the label cannot. */
+const UPLOAD_ICONS = ['upload', 'file_upload', 'cloud_upload', 'upload_file', 'upload_2'];
+
 const MEDIA_WORDS = [
   'media', 'média', 'medios', 'mídia', 'medien', 'multimedia',
   'multimédia', 'メディア', '미디어', '媒体', 'وسائط',
@@ -230,6 +238,7 @@ export async function uploadViaFileChooser(
       expression: `(function () {
         var UP = ${JSON.stringify(UPLOAD_WORDS)};
         var MED = ${JSON.stringify(MEDIA_WORDS)};
+        var ICONS = ${JSON.stringify(UPLOAD_ICONS)};
         /* Search the dialog when there IS one, the document when there is
            not. Requiring [role="dialog"] was a guess about markup nobody had
            checked: the Upload button itself is
@@ -256,11 +265,41 @@ export async function uploadViaFileChooser(
           if (t) seen.push(t.slice(0, 40));
           /* A hidden duplicate is clickable to CDP and does nothing. */
           if (!r.width || !r.height) continue;
-          var low = t.toLowerCase(), isUp = false, isMed = false;
-          for (var j = 0; j < UP.length; j++) {
-            if (low.indexOf(UP[j]) !== -1) { isUp = true; break; }
+          /* Icon ligatures, and the label with them removed. Matching the
+             raw textContent let "drive_folder_uploadView uploaded media"
+             qualify on a substring of its icon name. */
+          var icons = [], nodes = b.querySelectorAll(
+            'i, [class*="symbols"], [class*="material-icons"]');
+          for (var n = 0; n < nodes.length; n++) {
+            var nm = (nodes[n].textContent || '').trim().toLowerCase();
+            if (nm) icons.push(nm);
+          }
+          var label = t;
+          for (var m = 0; m < icons.length; m++) {
+            var at = label.toLowerCase().indexOf(icons[m]);
+            if (at !== -1) label = label.slice(0, at) + label.slice(at + icons[m].length);
+          }
+          label = label.trim();
+
+          /* An icon DECIDES. "View uploaded media" contains "upload", so any
+             label test passes the sidebar item — the icon is the only signal
+             that separates the control from the shelf. The label is consulted
+             only when there is no icon at all. */
+          var isUp = false;
+          if (icons.length) {
+            for (var q = 0; q < icons.length; q++) {
+              if (ICONS.indexOf(icons[q]) !== -1) { isUp = true; break; }
+            }
+          } else {
+            var lowLabel = label.toLowerCase();
+            for (var j = 0; j < UP.length; j++) {
+              if (lowLabel.indexOf(UP[j]) !== -1) { isUp = true; break; }
+            }
           }
           if (!isUp) continue;
+
+          var low = label.toLowerCase();
+          var isMed = false;
           for (var k = 0; k < MED.length; k++) {
             if (low.indexOf(MED[k]) !== -1) { isMed = true; break; }
           }
