@@ -1,8 +1,10 @@
 /* ============================================================
    AutoFlow Studio — Dark Theme Stylesheet
    Matches AutoFlow's brand identity: dark background,
-   signal orange (#f97316) accents, clean modern UI.
+   signal orange (var(--accent)) accents, clean modern UI.
    ============================================================ */
+
+@import '../shared/tokens.css';
 
 /* ── Reset & Base ── */
 * { box-sizing: border-box; }
@@ -10,8 +12,8 @@
 .studio-app {
   width: 100vw;
   height: 100vh;
-  background: #0a0a0c;
-  color: #e5e5e7;
+  background: var(--canvas);
+  color: var(--text);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   overflow: hidden;
 }
@@ -25,7 +27,7 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #0a0a0c;
+  background: var(--canvas);
   overflow-y: auto;
 }
 
@@ -34,7 +36,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 20px 32px;
-  border-bottom: 1px solid #1e1e22;
+  border-bottom: 1px solid var(--surface-2);
 }
 
 .studio-gallery__brand {
@@ -44,14 +46,16 @@
 }
 
 .studio-gallery__logo {
-  font-size: 28px;
-  filter: drop-shadow(0 0 8px rgba(249, 115, 22, 0.6));
+  width: 26px;
+  height: 26px;
+  color: var(--accent);
+  filter: drop-shadow(0 0 8px var(--accent-50));
 }
 
 .studio-gallery__title {
-  font-size: 22px;
+  font-size: var(--t-title);
   font-weight: 700;
-  background: linear-gradient(135deg, #f97316, #ef4444);
+  background: linear-gradient(135deg, var(--accent), var(--bad));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -60,17 +64,17 @@
 .studio-gallery__btn-blank {
   padding: 10px 24px;
   background: transparent;
-  border: 1px solid #f97316;
-  color: #f97316;
-  border-radius: 8px;
-  font-size: 14px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: var(--r-ctrl);
+  font-size: var(--t-mid);
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color var(--fast), background var(--fast), border-color var(--fast);
 }
 .studio-gallery__btn-blank:hover {
-  background: rgba(249, 115, 22, 0.1);
-  box-shadow: 0 0 16px rgba(249, 115, 22, 0.2);
+  background: var(--accent-14);
+  box-shadow: 0 0 16px var(--accent-30);
 }
 
 /* Search */
@@ -81,45 +85,68 @@
   width: 100%;
   max-width: 480px;
   padding: 12px 16px;
-  background: #141416;
-  border: 1px solid #2a2a2e;
-  border-radius: 10px;
-  color: #e5e5e7;
-  font-size: 14px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-row);
+  color: var(--text);
+  font-size: var(--t-mid);
   outline: none;
   transition: border-color 0.2s;
 }
 .studio-gallery__search-input:focus {
-  border-color: #f97316;
+  border-color: var(--accent);
 }
 .studio-gallery__search-input::placeholder {
-  color: #666;
+  color: var(--text-3);
 }
 
 /* Tabs */
+/* Scrolls sideways rather than squeezing. With nowrap and visible overflow
+   this strip held 775px of tabs in 765px, so the last category ("My
+   Workflows") wrapped onto two lines and sat under the edge. The panel's
+   category pills already solved this; same solution, so the two surfaces
+   behave the same way when they run out of room. */
 .studio-gallery__tabs {
   display: flex;
   gap: 4px;
   padding: 16px 32px;
+  /* Never let the column above squeeze this row.
+     overflow-x makes the row a scroll container, and for a flex item that
+     turns `min-height: auto` from min-content into 0 — so this was the only
+     child of .studio-gallery the flex algorithm was allowed to crush. With a
+     grid of templates below it wanting 5,000px in a 450px column, it crushed
+     it: the row rendered 32px against a natural 48px, and because the tabs
+     then stretched to a zero-height content box, every label was sliced in
+     half. The horizontal scrolling this overflow exists for is unaffected. */
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  mask-image: linear-gradient(90deg, rgb(0 0 0) calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(90deg, rgb(0 0 0) calc(100% - 24px), transparent);
 }
+.studio-gallery__tabs::-webkit-scrollbar { display: none; }
 .studio-gallery__tab {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  white-space: nowrap;
   padding: 8px 18px;
   background: transparent;
   border: none;
-  color: #888;
-  font-size: 13px;
+  color: var(--text-3);
+  font-size: var(--t-body);
   font-weight: 500;
-  border-radius: 6px;
+  border-radius: var(--r-chip);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color var(--fast), background var(--fast), border-color var(--fast);
 }
 .studio-gallery__tab:hover {
-  color: #e5e5e7;
-  background: #1a1a1e;
+  color: var(--text);
+  background: var(--surface);
 }
 .studio-gallery__tab--active {
-  color: #f97316;
-  background: rgba(249, 115, 22, 0.1);
+  color: var(--accent);
+  background: var(--accent-14);
 }
 
 /* Grid */
@@ -131,33 +158,36 @@
 }
 
 .studio-gallery__card {
-  background: #141416;
-  border: 1px solid #1e1e22;
-  border-radius: 14px;
+  /* Positioning context for the PRO badge, which would otherwise anchor to
+     whatever ancestor happened to be positioned — the viewport, in practice. */
+  position: relative;
+  background: var(--bg);
+  border: 1px solid var(--surface-2);
+  border-radius: var(--r-card);
   overflow: hidden;
   cursor: pointer;
   transition: all 0.25s ease;
 }
 .studio-gallery__card:hover {
-  border-color: #f97316;
+  border-color: var(--accent);
   transform: translateY(-2px);
-  box-shadow: 0 8px 32px rgba(249, 115, 22, 0.15);
+  box-shadow: 0 8px 32px var(--accent-14);
 }
 
 .studio-gallery__card-thumb {
   position: relative;
   height: 128px;
   background:
-    radial-gradient(120% 90% at 50% 0%, rgba(249, 115, 22, 0.09), transparent 62%),
-    linear-gradient(160deg, #17171b, #0d0d10);
-  border-bottom: 1px solid #1e1e22;
+    radial-gradient(120% 90% at 50% 0%, var(--accent-8), transparent 62%),
+    linear-gradient(160deg, var(--surface), var(--sunken));
+  border-bottom: 1px solid var(--surface-2);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
 }
 .studio-gallery__card-emoji {
-  font-size: 34px;
+  font-size: var(--t-hero);
   opacity: 0.9;
   transform: translateY(-10px);
   transition: transform 0.25s;
@@ -199,32 +229,32 @@
 .studio-gallery__card-graph-link {
   width: 20px;
   height: 2px;
-  background: #2e2e36;
-  border-radius: 1px;
+  background: var(--line-2);
+  border-radius: var(--r-chip);
 }
 .studio-gallery__card-dot {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #4a4a52;
+  background: var(--line-2);
   box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35);
 }
-.studio-gallery__card-dot--prompt   { background: #f97316; }
-.studio-gallery__card-dot--image    { background: #3b82f6; }
-.studio-gallery__card-dot--generate { background: #22c55e; }
+.studio-gallery__card-dot--prompt   { background: var(--n-prompt); }
+.studio-gallery__card-dot--image    { background: var(--n-image); }
+.studio-gallery__card-dot--generate { background: var(--n-video); }
 
 .studio-gallery__card-info {
   padding: 16px;
 }
 .studio-gallery__card-name {
-  font-size: 15px;
+  font-size: var(--t-lg);
   font-weight: 600;
   margin: 0 0 6px;
-  color: #e5e5e7;
+  color: var(--text);
 }
 .studio-gallery__card-desc {
-  font-size: 12px;
-  color: #888;
+  font-size: var(--t-small);
+  color: var(--text-3);
   margin: 0 0 8px;
   line-height: 1.4;
 }
@@ -234,10 +264,10 @@
 .studio-gallery__card-use {
   margin: 0 0 12px;
   padding-left: 9px;
-  border-left: 2px solid rgba(249, 115, 22, 0.35);
-  font-size: 11px;
+  border-left: 2px solid var(--accent-30);
+  font-size: var(--t-micro);
   line-height: 1.45;
-  color: #6f6f79;
+  color: var(--text-3);
 }
 
 .studio-gallery__empty {
@@ -247,11 +277,11 @@
   align-items: center;
   gap: 12px;
   padding: 56px 20px;
-  color: #6f6f79;
+  color: var(--text-3);
   text-align: center;
 }
-.studio-gallery__empty-icon { font-size: 30px; opacity: 0.6; }
-.studio-gallery__empty p { margin: 0; font-size: 13px; }
+.studio-gallery__empty-icon { font-size: var(--t-hero); opacity: 0.6; }
+.studio-gallery__empty p { margin: 0; font-size: var(--t-body); }
 
 /* ── Saved workflow rows (My Workflows) ── */
 .studio-gallery__saved {
@@ -260,20 +290,20 @@
   align-items: center;
   gap: 12px;
   padding: 13px 16px;
-  background: #141416;
-  border: 1px solid #1e1e22;
-  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--surface-2);
+  border-radius: var(--r-card);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 .studio-gallery__saved:hover {
-  border-color: #f97316;
-  background: #17171a;
+  border-color: var(--accent);
+  background: var(--surface);
   transform: translateY(-1px);
 }
 .studio-gallery__saved-main { flex: 1; min-width: 0; }
 .studio-gallery__saved-main .studio-gallery__card-name { margin: 0 0 3px; }
-.studio-gallery__saved-meta { font-size: 11px; color: #6b6b73; }
+.studio-gallery__saved-meta { font-size: var(--t-micro); color: var(--text-3); }
 .studio-gallery__saved-del {
   flex: 0 0 auto;
   width: 30px;
@@ -282,59 +312,123 @@
   place-items: center;
   background: transparent;
   border: none;
-  border-radius: 7px;
-  color: #6b6b73;
-  font-size: 14px;
+  border-radius: var(--r-chip);
+  color: var(--text-3);
+  font-size: var(--t-mid);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.studio-gallery__saved-del:hover { background: rgba(239, 68, 68, 0.18); color: #ef4444; }
+.studio-gallery__saved-del:hover { background: var(--bad-12); color: var(--bad); }
 
 .studio-gallery__btn-ghost {
   padding: 10px 18px;
   background: transparent;
-  border: 1px solid #2a2a2e;
-  color: #a1a1ab;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  border-radius: var(--r-ctrl);
   font-family: inherit;
-  font-size: 14px;
+  font-size: var(--t-mid);
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color var(--fast), background var(--fast), border-color var(--fast);
 }
-.studio-gallery__btn-ghost:hover { border-color: #f97316; color: #f97316; }
+.studio-gallery__btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
 
 .studio-gallery__actions { display: flex; align-items: center; gap: 10px; }
 
 .studio-gallery__error {
   margin: 0 32px 8px;
   padding: 10px 14px;
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  border-radius: 9px;
-  color: #f87171;
-  font-size: 12px;
+  background: var(--bad-12);
+  border: 1px solid var(--bad-30);
+  border-radius: var(--r-ctrl);
+  color: var(--bad);
+  font-size: var(--t-small);
+}
+
+/* Same block, the other outcome. An import that writes to storage and says
+   nothing reads as an import that did not happen. */
+.studio-gallery__ok {
+  margin: 0 32px 8px;
+  padding: 10px 14px;
+  background: var(--ok-16);
+  border: 1px solid var(--ok-16);
+  border-radius: var(--r-ctrl);
+  color: var(--ok);
+  font-size: var(--t-small);
+}
+
+/* ── Drag a workflow onto the gallery ── */
+.studio-gallery--dropping {
+  position: relative;
+}
+
+.studio-gallery__dropzone {
+  position: absolute;
+  inset: 12px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 2px dashed var(--ok-16);
+  border-radius: var(--r-card);
+  background: rgba(6, 20, 16, 0.82);
+  backdrop-filter: blur(2px);
+  color: var(--ok);
+  font-size: var(--t-mid);
+  font-weight: 600;
+  /* The overlay must never eat the drop it is advertising. */
+  pointer-events: none;
+}
+
+.studio-gallery__dropzone-icon {
+  font-size: var(--t-hero);
+  line-height: 1;
 }
 
 /* ── Free-tier limits ── */
-.studio-topbar__stat--maxed { color: #f97316; font-weight: 600; }
+.studio-topbar__stat--maxed { color: var(--accent); font-weight: 600; }
 .studio-topbar__pro {
-  color: #22c55e;
+  color: var(--ok);
   font-weight: 700;
   letter-spacing: 0.5px;
 }
 .studio-topbar__upgrade {
   padding: 5px 12px;
-  background: linear-gradient(135deg, #f97316, #ef4444);
-  border-radius: 7px;
-  color: #fff;
-  font-size: 12px;
+  /* A chip, not a beacon. */
+  background: var(--accent-14);
+  border: 1px solid var(--accent-30);
+  border-radius: var(--r-chip);
+  color: var(--accent);
+  font-size: var(--t-small);
   font-weight: 700;
   text-decoration: none;
   white-space: nowrap;
   transition: filter 0.2s, transform 0.2s;
 }
 .studio-topbar__upgrade:hover { filter: brightness(1.1); transform: translateY(-1px); }
+/* It is a <button> now rather than an <a>, because where Pro lives is the
+   server's answer and not a URL written into the markup. */
+.studio-topbar__upgrade {
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Loud only when it is the thing in the way. A chip that looks identical on
+   run 1 and run 50 has stopped being read by the time it matters. */
+.studio-topbar__upgrade--urgent {
+  background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+  border-color: transparent;
+  color: var(--on-accent);
+  box-shadow: 0 2px 10px -2px var(--accent-50);
+}
+
+/* The count, escalating with what is left rather than what is spent. */
+.studio-topbar__stat--low { color: var(--warn); font-weight: 700; }
 
 .studio-limit {
   position: absolute;
@@ -348,20 +442,24 @@
   max-width: 640px;
   padding: 11px 14px;
   background: rgba(24, 18, 12, 0.97);
-  border: 1px solid rgba(249, 115, 22, 0.5);
-  border-radius: 11px;
+  border: 1px solid var(--accent-50);
+  border-radius: var(--r-row);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  color: #e5e5e7;
-  font-size: 12.5px;
+  color: var(--text);
+  font-size: var(--t-small);
   line-height: 1.4;
 }
 .studio-limit__text { flex: 1; }
 .studio-limit__cta {
   flex: 0 0 auto;
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+  cursor: pointer;
   padding: 5px 12px;
-  background: linear-gradient(135deg, #f97316, #ef4444);
-  border-radius: 7px;
-  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--bad));
+  border-radius: var(--r-chip);
+  color: var(--text);
   font-weight: 700;
   text-decoration: none;
 }
@@ -371,31 +469,31 @@
   height: 22px;
   background: transparent;
   border: none;
-  color: #8b8b95;
-  font-size: 17px;
+  color: var(--text-3);
+  font-size: var(--t-lg);
   line-height: 1;
   cursor: pointer;
 }
-.studio-limit__close:hover { color: #fff; }
+.studio-limit__close:hover { color: var(--text); }
 
 /* Save button states */
 .studio-topbar__save:disabled { opacity: 0.45; cursor: default; }
-.studio-topbar__save--ok { border-color: #22c55e !important; color: #22c55e !important; }
-.studio-topbar__save--error { border-color: #ef4444 !important; color: #ef4444 !important; }
+.studio-topbar__save--ok { border-color: var(--ok) !important; color: var(--ok) !important; }
+.studio-topbar__save--error { border-color: var(--bad) !important; color: var(--bad) !important; }
 .studio-topbar__icon {
   width: 32px;
   height: 32px;
   display: grid;
   place-items: center;
-  background: #1a1a1e;
-  border: 1px solid #2a2a2e;
-  border-radius: 8px;
-  color: #a1a1ab;
-  font-size: 15px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  color: var(--text-2);
+  font-size: var(--t-lg);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color var(--fast), background var(--fast), border-color var(--fast);
 }
-.studio-topbar__icon:hover:not(:disabled) { border-color: #f97316; color: #f97316; }
+.studio-topbar__icon:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .studio-topbar__icon:disabled { opacity: 0.4; cursor: default; }
 .studio-gallery__card-meta {
   display: flex;
@@ -405,33 +503,33 @@
 }
 .studio-gallery__card-tag {
   padding: 3px 8px;
-  background: rgba(249, 115, 22, 0.15);
-  color: #f97316;
-  border-radius: 4px;
-  font-size: 11px;
+  background: var(--accent-14);
+  color: var(--accent);
+  border-radius: var(--r-chip);
+  font-size: var(--t-micro);
   font-weight: 500;
 }
 .studio-gallery__card-nodes {
-  font-size: 11px;
-  color: #666;
+  font-size: var(--t-micro);
+  color: var(--text-3);
 }
 .studio-gallery__card-difficulty {
-  font-size: 11px;
+  font-size: var(--t-micro);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--r-chip);
   font-weight: 500;
 }
 .studio-gallery__card-difficulty--easy {
-  color: #22c55e;
-  background: rgba(34, 197, 94, 0.1);
+  color: var(--ok);
+  background: var(--ok-16);
 }
 .studio-gallery__card-difficulty--medium {
-  color: #eab308;
-  background: rgba(234, 179, 8, 0.1);
+  color: var(--warn);
+  background: var(--warn-16);
 }
 .studio-gallery__card-difficulty--advanced {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--bad);
+  background: var(--bad-12);
 }
 
 /* ════════════════════════════════════════════════
@@ -453,7 +551,7 @@
   height: 48px;
   background: rgba(10, 10, 12, 0.95);
   backdrop-filter: blur(12px);
-  border-bottom: 1px solid #1e1e22;
+  border-bottom: 1px solid var(--surface-2);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -468,32 +566,40 @@
 .studio-topbar__back {
   width: 32px;
   height: 32px;
-  background: #1a1a1e;
-  border: 1px solid #2a2a2e;
-  border-radius: 8px;
-  color: #e5e5e7;
-  font-size: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  color: var(--text);
+  font-size: var(--t-lg);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: color var(--fast), background var(--fast), border-color var(--fast);
 }
 .studio-topbar__back:hover {
-  border-color: #f97316;
-  color: #f97316;
+  border-color: var(--accent);
+  color: var(--accent);
 }
+/* Grows with the name instead of cutting it off. "Miniature Car: Carve →
+   Match Cut" rendered as "Miniature Car: Carve → Mat…" with no way to read
+   the rest — and it is the one label that says which workflow you are in. */
 .studio-topbar__name {
   background: transparent;
   border: none;
-  color: #e5e5e7;
-  font-size: 15px;
+  color: var(--text);
+  font-size: var(--t-lg);
   font-weight: 600;
   outline: none;
   min-width: 200px;
+  width: clamp(200px, 34vw, 520px);
+  text-overflow: ellipsis;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s;
 }
+.studio-topbar__name:hover { border-bottom-color: var(--line-2); }
 .studio-topbar__name:focus {
-  border-bottom: 1px solid #f97316;
+  border-bottom: 1px solid var(--accent);
 }
 .studio-topbar__center {
   flex: 1;
@@ -508,19 +614,19 @@
 .studio-topbar__progress-bar {
   width: 160px;
   height: 6px;
-  background: #1e1e22;
-  border-radius: 3px;
+  background: var(--surface-2);
+  border-radius: var(--r-chip);
   overflow: hidden;
 }
 .studio-topbar__progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #f97316, #ef4444);
-  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--bad));
+  border-radius: var(--r-chip);
   transition: width 0.3s ease;
 }
 .studio-topbar__progress-text {
-  font-size: 13px;
-  color: #888;
+  font-size: var(--t-body);
+  color: var(--text-3);
   font-weight: 500;
 }
 .studio-topbar__right {
@@ -529,123 +635,330 @@
   gap: 16px;
 }
 .studio-topbar__stat {
-  font-size: 12px;
-  color: #888;
+  font-size: var(--t-small);
+  color: var(--text-3);
 }
 .studio-topbar__save {
   padding: 6px 20px;
-  background: #1a1a1e;
-  border: 1px solid #2a2a2e;
-  color: #e5e5e7;
-  border-radius: 8px;
-  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: var(--r-ctrl);
+  font-size: var(--t-body);
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color var(--fast), background var(--fast), border-color var(--fast);
 }
 .studio-topbar__save:hover {
-  border-color: #f97316;
-  color: #f97316;
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
-/* Left Toolbar */
+/* ── Left Toolbar (Node Palette) ── */
 .studio-toolbar {
   position: absolute;
-  left: 12px;
-  top: 64px;
+  left: 14px;
+  top: 68px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
+  width: 184px;
   z-index: 10;
-  background: rgba(20, 20, 22, 0.9);
-  backdrop-filter: blur(8px);
-  border: 1px solid #1e1e22;
-  border-radius: 12px;
-  padding: 8px;
+  background: rgba(14, 14, 18, 0.88);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: var(--r-panel);
+  padding: 10px 8px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04), 0 0 30px rgba(139, 92, 246, 0.08);
+  animation: toolbar-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+@keyframes toolbar-enter {
+  from { opacity: 0; transform: translateX(-12px) scale(0.98); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+.studio-toolbar__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .studio-toolbar__btn {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 100%;
+  height: 38px;
+  padding: 0 8px;
   background: transparent;
-  border: none;
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r-row);
   cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-.studio-toolbar__btn:hover {
-  background: #1e1e22;
+  justify-content: flex-start;
+  gap: 10px;
+  text-align: left;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Slide-out label so icon-only buttons are identifiable without guessing */
+.studio-toolbar__btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+  transform: translateX(4px);
+}
+
+.studio-toolbar__btn:active {
+  transform: scale(0.97) translateX(3px);
+}
+
+.studio-toolbar__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  transform: none;
+}
+.studio-toolbar__btn:disabled:hover {
+  background: transparent;
+  border-color: transparent;
+  transform: none;
+}
+
+/* ── Icon Box Badges ── */
+.studio-toolbar__node-icon {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-ctrl);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.studio-toolbar__btn:hover .studio-toolbar__node-icon {
+  transform: scale(1.08);
+}
+
+.studio-toolbar__node-icon--prompt {
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: var(--n-prompt);
+}
+.studio-toolbar__btn:hover .studio-toolbar__node-icon--prompt {
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.2);
+}
+
+.studio-toolbar__node-icon--image {
+  background: rgba(96, 165, 250, 0.12);
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  color: var(--n-image);
+}
+.studio-toolbar__btn:hover .studio-toolbar__node-icon--image {
+  box-shadow: 0 0 14px rgba(96, 165, 250, 0.35);
+  background: rgba(96, 165, 250, 0.2);
+}
+
+.studio-toolbar__node-icon--flow {
+  background: rgba(168, 85, 247, 0.14);
+  border: 1px solid rgba(168, 85, 247, 0.28);
+  color: var(--n-frame);
+}
+.studio-toolbar__btn:hover .studio-toolbar__node-icon--flow {
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.4);
+  background: rgba(168, 85, 247, 0.22);
+}
+
+.studio-toolbar__node-icon--grok {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--on-solid);
+}
+.studio-toolbar__btn:hover .studio-toolbar__node-icon--grok {
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.studio-toolbar__node-icon--ask {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: var(--n-ask);
+}
+.studio-toolbar__btn:hover .studio-toolbar__node-icon--ask {
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.35);
+  background: rgba(56, 189, 248, 0.2);
+}
+
+.studio-toolbar__node-icon--story {
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.25);
+  color: var(--n-story);
+}
+.studio-toolbar__btn:hover .studio-toolbar__node-icon--story {
+  box-shadow: 0 0 14px rgba(244, 63, 94, 0.35);
+  background: rgba(244, 63, 94, 0.2);
+}
+
+.studio-toolbar__node-icon--agent {
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  color: var(--n-agent);
+}
+.studio-toolbar__btn:hover .studio-toolbar__node-icon--agent {
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.35);
+  background: rgba(139, 92, 246, 0.2);
+}
+
+.studio-toolbar__node-icon--frame {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  color: var(--warn);
+}
+.studio-toolbar__btn:hover .studio-toolbar__node-icon--frame {
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.2);
+}
+
+.studio-toolbar__node-icon--extend {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: var(--n-extend);
+}
+.studio-toolbar__btn:hover .studio-toolbar__node-icon--extend {
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.studio-toolbar__btn-icon {
+  width: 16px;
+  height: 16px;
+  color: inherit;
+  transition: transform 0.2s ease;
+}
+
+.studio-toolbar__btn-icon--brand {
+  width: 15px;
+  height: 15px;
+}
+
+.studio-topbar__glyph {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+  flex: none;
+}
+.studio-topbar__glyph--dirty { width: 8px; height: 8px; color: var(--accent); }
+.studio-topbar__back .studio-topbar__glyph { width: 17px; height: 17px; vertical-align: -4px; }
+
 .studio-toolbar__btn-label {
-  position: absolute;
-  left: calc(100% + 10px);
-  top: 50%;
-  transform: translateY(-50%);
-  padding: 5px 10px;
-  background: #1e1e22;
-  border: 1px solid #2a2a2e;
-  border-radius: 6px;
-  color: #e5e5e7;
-  font-size: 11px;
-  font-weight: 600;
+  flex: 1 1 auto;
+  color: var(--text-2);
+  font-size: var(--t-body);
+  font-weight: 500;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s;
-  z-index: 20;
+  transition: color 0.15s ease;
 }
-.studio-toolbar__btn:hover .studio-toolbar__btn-label,
-.studio-toolbar__btn:focus-visible .studio-toolbar__btn-label { opacity: 1; }
-.studio-toolbar__btn--primary {
-  background: rgba(249, 115, 22, 0.15);
-}
-.studio-toolbar__btn--primary:hover {
-  background: rgba(249, 115, 22, 0.3);
-}
+.studio-toolbar__btn:hover .studio-toolbar__btn-label { color: var(--on-solid); font-weight: 600; }
+
+/* ── Run Workflow Button ── */
 .studio-toolbar__btn--run {
-  background: rgba(34, 197, 94, 0.15);
+  background: linear-gradient(135deg, var(--accent-solid), var(--accent-solid-dim));
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--on-solid);
+  box-shadow: 0 4px 16px rgba(147, 51, 234, 0.4);
 }
+.studio-toolbar__btn--run .studio-toolbar__btn-label,
+.studio-toolbar__btn--run .studio-toolbar__btn-icon { color: var(--on-solid); }
 .studio-toolbar__btn--run:hover {
-  background: rgba(34, 197, 94, 0.3);
+  background: linear-gradient(135deg, var(--accent-solid-lit), var(--accent-solid));
+  box-shadow: 0 6px 24px rgba(168, 85, 247, 0.55);
+  transform: translateY(-1px);
 }
 .studio-toolbar__btn--run:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
-.studio-toolbar__btn--pause {
-  background: rgba(234, 179, 8, 0.15);
-}
-.studio-toolbar__btn--pause:hover {
-  background: rgba(234, 179, 8, 0.3);
-}
-.studio-toolbar__btn--stop {
-  background: rgba(239, 68, 68, 0.15);
-}
-.studio-toolbar__btn--stop:hover {
-  background: rgba(239, 68, 68, 0.3);
-}
-/* Retry sits next to Run and only appears when something failed, so it reads
-   as the obvious next action rather than competing with Run. */
+
 .studio-toolbar__btn--retry {
-  background: rgba(234, 179, 8, 0.18);
-  border-color: rgba(234, 179, 8, 0.45);
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: var(--warn);
 }
 .studio-toolbar__btn--retry:hover {
-  background: rgba(234, 179, 8, 0.34);
+  background: rgba(245, 158, 11, 0.26);
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.35);
 }
-.studio-toolbar__btn-icon {
-  font-size: 18px;
-}
+
 .studio-toolbar__divider {
-  width: 24px;
+  width: 100%;
   height: 1px;
-  background: #2a2a2e;
-  margin: 4px auto;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 6px 0;
+}
+
+.studio-toolbar__heading {
+  padding: 4px 8px 3px;
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+}
+
+.studio-toolbar__group + .studio-toolbar__group {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.studio-toolbar__group .studio-toolbar__heading { padding-top: 0; }
+
+/* ── Edge Delete / Disconnect Button (Shown on line hover only) ── */
+.studio-edge__wrap {
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.7);
+  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.studio-edge__wrap.is-visible {
+  opacity: 1;
+  pointer-events: all;
+  transform: translate(-50%, -50%) scale(1);
+}
+.studio-edge__delete-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(18, 18, 24, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1.5px solid rgba(168, 85, 247, 0.6);
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6), 0 0 8px rgba(168, 85, 247, 0.3);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.studio-edge__delete-btn:hover {
+  background: var(--bad-solid);
+  border-color: var(--bad-solid-line);
+  color: var(--on-solid);
+  transform: scale(1.22);
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.8);
+}
+.studio-edge__delete-icon {
+  font-size: var(--t-micro);
+  font-weight: 800;
+  line-height: 1;
 }
 
 
@@ -656,19 +969,21 @@
   margin-top: 120px;
 }
 .studio-empty__icon {
-  font-size: 48px;
-  margin-bottom: 16px;
-  opacity: 0.4;
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 12px;
+  color: var(--accent);
+  opacity: 0.9;
 }
 .studio-empty__title {
-  font-size: 20px;
+  font-size: var(--t-title);
   font-weight: 600;
-  color: #888;
+  color: var(--text-3);
   margin: 0 0 8px;
 }
 .studio-empty__text {
-  font-size: 14px;
-  color: #555;
+  font-size: var(--t-mid);
+  color: var(--text-3);
   margin: 0;
 }
 
@@ -678,9 +993,9 @@
 
 .studio-node {
   position: relative;
-  background: #141416;
-  border: 1px solid #2a2a2e;
-  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
   min-width: 260px;
   max-width: 320px;
   /* visible so port labels can sit outside the node; children clip themselves */
@@ -688,29 +1003,29 @@
   transition: border-color 0.2s, box-shadow 0.3s;
 }
 .studio-node--selected {
-  border-color: #f97316 !important;
-  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.3);
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-30);
 }
 
 /* Running state — neon glow animation */
 .studio-node--running {
-  border-color: #eab308 !important;
-  box-shadow: 0 0 20px rgba(234, 179, 8, 0.4);
+  border-color: var(--warn) !important;
+  box-shadow: 0 0 20px var(--warn-16);
   animation: nodeGlow 2s ease-in-out infinite;
 }
 @keyframes nodeGlow {
-  0%, 100% { box-shadow: 0 0 20px rgba(234, 179, 8, 0.3); }
-  50% { box-shadow: 0 0 40px rgba(234, 179, 8, 0.6); }
+  0%, 100% { box-shadow: 0 0 20px var(--warn-16); }
+  50% { box-shadow: 0 0 40px var(--warn-16); }
 }
 
 /* Done state */
 .studio-node--done {
-  border-color: #22c55e !important;
+  border-color: var(--ok) !important;
 }
 
 /* Error state */
 .studio-node--error {
-  border-color: #ef4444 !important;
+  border-color: var(--bad) !important;
 }
 
 /* Node Header */
@@ -719,28 +1034,28 @@
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  font-size: 13px;
+  font-size: var(--t-body);
   font-weight: 600;
   /* node no longer clips, so the header rounds its own top corners */
-  border-radius: 11px 11px 0 0;
+  border-radius: var(--r-row) var(--r-row) 0 0;
 }
-.studio-node__header--prompt { background: rgba(34, 197, 94, 0.1); border-bottom: 1px solid rgba(34, 197, 94, 0.2); }
-.studio-node__header--image { background: rgba(59, 130, 246, 0.1); border-bottom: 1px solid rgba(59, 130, 246, 0.2); }
-.studio-node__header--generate { background: rgba(249, 115, 22, 0.1); border-bottom: 1px solid rgba(249, 115, 22, 0.2); }
+.studio-node__header--prompt { background: var(--n-prompt-10); border-bottom: 1px solid var(--n-prompt-10); }
+.studio-node__header--image { background: var(--n-image-10); border-bottom: 1px solid var(--n-image-10); }
+.studio-node__header--generate { background: var(--n-video-10); border-bottom: 1px solid var(--n-video-10); }
 
-.studio-node__icon { font-size: 16px; }
-.studio-node__title { flex: 1; color: #e5e5e7; }
+.studio-node__icon { font-size: var(--t-lg); }
+.studio-node__title { flex: 1; color: var(--text); }
 
 .studio-node__status {
-  font-size: 11px;
+  font-size: var(--t-micro);
   font-weight: 500;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--r-chip);
 }
-.studio-node__status--idle { color: #666; }
-.studio-node__status--running { color: #eab308; background: rgba(234, 179, 8, 0.1); }
-.studio-node__status--done { color: #22c55e; background: rgba(34, 197, 94, 0.1); }
-.studio-node__status--error { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
+.studio-node__status--idle { color: var(--text-3); }
+.studio-node__status--running { color: var(--warn); background: var(--warn-16); }
+.studio-node__status--done { color: var(--ok); background: var(--ok-16); }
+.studio-node__status--error { color: var(--bad); background: var(--bad-12); }
 
 /* Node Body */
 .studio-node__body {
@@ -751,11 +1066,11 @@
 .studio-node__textarea {
   width: 100%;
   min-height: 80px;
-  background: #0a0a0c;
-  border: 1px solid #1e1e22;
-  border-radius: 8px;
-  color: #e5e5e7;
-  font-size: 12px;
+  background: var(--canvas);
+  border: 1px solid var(--surface-2);
+  border-radius: var(--r-ctrl);
+  color: var(--text);
+  font-size: var(--t-small);
   font-family: inherit;
   padding: 10px;
   resize: vertical;
@@ -764,45 +1079,45 @@
   line-height: 1.5;
 }
 .studio-node__textarea:focus {
-  border-color: #22c55e;
+  border-color: var(--ok);
 }
-.studio-node__textarea::placeholder { color: #444; }
+.studio-node__textarea::placeholder { color: var(--text-3); }
 .studio-node__meta {
   display: flex;
   justify-content: flex-end;
   margin-top: 6px;
 }
 .studio-node__charcount {
-  font-size: 10px;
-  color: #555;
+  font-size: var(--t-micro);
+  color: var(--text-3);
 }
 
 /* Image Node */
 .studio-node__upload-btn {
   width: 100%;
   height: 80px;
-  background: #0a0a0c;
-  border: 2px dashed #2a2a2e;
-  border-radius: 8px;
-  color: #666;
-  font-size: 13px;
+  background: var(--canvas);
+  border: 2px dashed var(--line);
+  border-radius: var(--r-ctrl);
+  color: var(--text-3);
+  font-size: var(--t-body);
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: all 0.2s;
+  transition: color var(--fast), background var(--fast), border-color var(--fast);
 }
 .studio-node__upload-btn:hover {
-  border-color: #3b82f6;
-  color: #3b82f6;
+  border-color: var(--accent);
+  color: var(--accent);
 }
-.studio-node__upload-icon { font-size: 22px; }
+.studio-node__upload-icon { font-size: var(--t-title); }
 
 .studio-node__image-preview {
   position: relative;
-  border-radius: 8px;
+  border-radius: var(--r-ctrl);
   overflow: hidden;
 }
 .studio-node__image-preview img {
@@ -822,8 +1137,8 @@
   opacity: 0;
   transition: opacity 0.2s;
   cursor: pointer;
-  color: #fff;
-  font-size: 13px;
+  color: var(--text);
+  font-size: var(--t-body);
   font-weight: 600;
 }
 .studio-node__image-preview:hover .studio-node__image-overlay { opacity: 1; }
@@ -832,15 +1147,15 @@
   width: 100%;
   margin-top: 8px;
   padding: 8px 10px;
-  background: #0a0a0c;
-  border: 1px solid #1e1e22;
-  border-radius: 6px;
-  color: #e5e5e7;
-  font-size: 12px;
+  background: var(--canvas);
+  border: 1px solid var(--surface-2);
+  border-radius: var(--r-chip);
+  color: var(--text);
+  font-size: var(--t-small);
   outline: none;
 }
-.studio-node__name-input:focus { border-color: #3b82f6; }
-.studio-node__name-input::placeholder { color: #444; }
+.studio-node__name-input:focus { border-color: var(--accent); }
+.studio-node__name-input::placeholder { color: var(--text-3); }
 
 /* Generate Node */
 .studio-node__settings {
@@ -858,29 +1173,29 @@
 .studio-node__field--wide { grid-column: 1 / -1; order: -1; }
 
 .studio-node__field-label {
-  font-size: 9px;
+  font-size: var(--t-micro);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #6b6b73;
+  color: var(--text-3);
 }
 .studio-node__select {
   width: 100%;
   padding: 7px 8px;
-  background: #0a0a0c;
-  border: 1px solid #26262b;
-  border-radius: 7px;
-  color: #e5e5e7;
-  font-size: 11.5px;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  color: var(--text);
+  font-size: var(--t-micro);
   font-family: inherit;
   outline: none;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
-.studio-node__select:hover { background: #101013; border-color: #34343a; }
+.studio-node__select:hover { background: var(--bg); border-color: var(--line-2); }
 .studio-node__select:focus-visible {
-  border-color: #f97316;
-  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-14);
 }
 
 .studio-node__platform {
@@ -888,13 +1203,13 @@
   align-items: center;
   gap: 6px;
   margin-top: 10px;
-  font-size: 11px;
-  color: #666;
+  font-size: var(--t-micro);
+  color: var(--text-3);
 }
 .studio-node__platform-dot {
   width: 8px;
   height: 8px;
-  background: #22c55e;
+  background: var(--ok);
   border-radius: 50%;
 }
 
@@ -919,72 +1234,116 @@
   gap: 6px;
   margin-bottom: 6px;
   padding-left: 2px;
-  font-size: 11px;
+  font-size: var(--t-micro);
   font-weight: 600;
-  color: #8b8b95;
+  color: var(--text-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.sn-label__icon { font-size: 12px; opacity: 0.85; }
-.sn-wrap--selected .sn-label { color: #e5e5e7; }
+/* The node's kind, as a chip rather than a loose glyph.
+   On a fourteen-node canvas every card was the same dark rectangle and the
+   only way to tell a prompt from a clip was to read it. A tinted square in
+   the title costs nothing and makes the graph legible zoomed out, which is
+   where anyone building one actually works. */
+.sn-label__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-chip);
+  background: var(--line);
+  font-size: var(--t-micro);
+  line-height: 1;
+  opacity: 1;
+}
+.sn-wrap--kind-prompt  .sn-label__icon { background: var(--accent-14); }
+.sn-wrap--kind-image   .sn-label__icon { background: var(--accent-14); }
+.sn-wrap--kind-flow    .sn-label__icon { background: var(--n-frame-10); }
+.sn-wrap--kind-chat    .sn-label__icon { background: var(--n-ask-10); }
+.sn-wrap--kind-grok    .sn-label__icon { background: rgba(228, 228, 231, 0.16); }
+.sn-wrap--kind-frame   .sn-label__icon { background: var(--warn-16); }
+.sn-wrap--kind-extend  .sn-label__icon { background: var(--warn-16); }
+.sn-wrap--selected .sn-label { color: var(--text); }
 
 /* The card */
 .sn {
   position: relative;
   width: 100%;
-  background: #0f0f12;
-  border: 2px solid #2a2a2e;
-  border-radius: 14px;
+  background: var(--sunken);
+  border: 2px solid var(--line);
+  border-radius: var(--r-card);
   overflow: visible;
   transition: border-color 0.2s, box-shadow 0.3s, opacity 0.2s;
 }
 .sn-wrap--selected .sn {
-  border-color: #f97316;
-  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.14);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-14);
 }
 
 /* Status rings — mirror the run state at a glance */
 .sn--running {
-  border-color: #a855f7;
-  box-shadow: 0 0 24px rgba(168, 85, 247, 0.35);
+  border-color: var(--n-frame);
+  box-shadow: 0 0 24px var(--n-frame-10);
   animation: snPulse 2.2s ease-in-out infinite;
 }
 @keyframes snPulse {
-  0%, 100% { box-shadow: 0 0 20px rgba(168, 85, 247, 0.28); }
-  50%      { box-shadow: 0 0 38px rgba(168, 85, 247, 0.55); }
+  0%, 100% { box-shadow: 0 0 20px var(--n-frame-10); }
+  50%      { box-shadow: 0 0 38px var(--n-frame-10); }
 }
-.sn--done  { border-color: #22c55e; box-shadow: 0 0 20px rgba(34, 197, 94, 0.22); }
-.sn--error { border-color: #ef4444; box-shadow: 0 0 20px rgba(239, 68, 68, 0.22); }
+.sn--done  { border-color: var(--ok); box-shadow: 0 0 20px var(--ok-16); }
+.sn--error { border-color: var(--bad); box-shadow: 0 0 20px var(--bad-30); }
 
 /* Disabled nodes are visibly inert */
 .sn--disabled { opacity: 0.45; filter: saturate(0.4); }
 
-/* ── Enable/disable toggle ── */
+/* ── Enable/disable toggle ──
+   Sits in the title row beside the name. It used to be pinned inside the card
+   at top-right, where it covered the result once there was one. */
 .sn-toggle {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 3;
-  width: 34px;
-  height: 19px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 30px;
+  height: 17px;
   padding: 2px;
-  background: #3a3a42;
+  background: var(--line-2);
   border: none;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   cursor: pointer;
   transition: background 0.2s;
 }
-.sn-toggle--on { background: #22c55e; }
+.sn-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-50);
+}
+/* Says why the card is greyed out. Opacity alone reads as "loading". */
+.sn-label__skip {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 5px;
+  background: var(--line);
+  border-radius: var(--r-chip);
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--text-3);
+}
+.sn-label__skip + .sn-toggle { margin-left: 6px; }
+.sn-toggle--on { background: var(--ok); }
 .sn-toggle__knob {
   display: block;
   width: 15px;
   height: 15px;
-  background: #fff;
+  background: var(--text);
   border-radius: 50%;
   transition: transform 0.2s;
 }
-.sn-toggle--on .sn-toggle__knob { transform: translateX(15px); }
+/* The title row sits outside the card, so it keeps full contrast while the
+   card itself greys out — which matters, because it now carries the switch
+   that turns the node back on. */
+.sn-toggle--on .sn-toggle__knob { transform: translateX(13px); }
 
 /* ── Media area — takes the shape of the chosen aspect ratio ── */
 .sn-media {
@@ -994,14 +1353,14 @@
      Children are absolutely positioned so clamping the height here never
      shrinks the box's width — the image crops instead. */
   max-height: 420px;
-  border-radius: 12px 12px 0 0;
+  border-radius: var(--r-card) var(--r-card) 0 0;
   overflow: hidden;
   /* Transparency checker only belongs behind actual images — empty and
      placeholder states get a flat surface (see .sn-media--empty below). */
   background:
     linear-gradient(45deg, rgba(255, 255, 255, 0.02) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.02) 75%) 0 0 / 24px 24px,
     linear-gradient(45deg, rgba(255, 255, 255, 0.02) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.02) 75%) 12px 12px / 24px 24px,
-    #0c0c0e;
+    var(--sunken);
 }
 .sn-media__img {
   position: absolute;
@@ -1029,17 +1388,17 @@
   display: grid;
   place-items: center;
   background: rgba(15, 15, 18, 0.85);
-  border: 1px solid #34343a;
-  border-radius: 7px;
-  color: #e5e5e7;
-  font-size: 13px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-chip);
+  color: var(--text);
+  font-size: var(--t-body);
   line-height: 1;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s, background 0.15s;
 }
 .sn-media:hover .sn-media__expand { opacity: 1; }
-.sn-media__expand:hover { background: #f97316; border-color: #f97316; }
+.sn-media__expand:hover { background: var(--accent); border-color: var(--accent); }
 
 /* Placeholder states fill the media area without sizing it */
 .sn-media__state {
@@ -1052,12 +1411,12 @@
   gap: 8px;
   padding: 20px;
   text-align: center;
-  font-size: 12px;
-  color: #7a7a85;
+  font-size: var(--t-small);
+  color: var(--text-3);
 }
 .sn-media__state small {
-  font-size: 10.5px;
-  color: #55555f;
+  font-size: var(--t-micro);
+  color: var(--text-3);
   max-width: 240px;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -1065,8 +1424,25 @@
   overflow: hidden;
   word-break: break-word;
 }
-.sn-media__state-icon { font-size: 26px; opacity: 0.5; }
-.sn-media__state--running { color: #c084fc; }
+.sn-media__state-icon { font-size: var(--t-hero); opacity: 0.5; }
+
+/* An outline of the shape this node will produce, shown while it is empty.
+   The media box stays compact until there is a result, so the ratio buttons
+   were the only clue to the output shape — and three pills reading 9:16,
+   16:9 and 1:1 all look alike. */
+.sn-media__ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 68px;
+  border: 1.5px dashed var(--line-2);
+  border-radius: var(--r-ctrl);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.022), transparent 62%);
+}
+.sn-media__ghost .sn-media__state-icon { font-size: var(--t-title); opacity: 0.38; }
+.sn-media__state--idle { gap: 9px; }
+.sn--running .sn-media__ghost { border-color: var(--accent-14); }
+.sn-media__state--running { color: var(--n-frame); }
 /* The written prompt a ChatGPT text node produced. Scrolls rather than
    stretching the node — replies run to a few hundred words. */
 .sn-reply {
@@ -1075,39 +1451,81 @@
   overflow-y: auto;
   padding: 12px 14px;
   text-align: left;
-  font-size: 12px;
+  font-size: var(--t-small);
   line-height: 1.5;
-  color: #cbd5e1;
+  color: var(--text-2);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.sn-media__state--error   { color: #f87171; }
-.sn-media__state--error small { color: #b45c5c; }
+/* AI Prompt Synthesizer preview card */
+.sn-craft-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  width: 100%;
+  padding: var(--s-2) var(--s-3);
+  text-align: left;
+}
+.sn-craft-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-1);
+}
+.sn-craft-card__badge {
+  font-size: var(--t-micro);
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.sn-craft-card__token {
+  font-family: monospace;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: var(--r-chip);
+}
+.sn-craft-card__name {
+  font-size: var(--t-small);
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+}
+.sn-craft-card__hint {
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  line-height: 1.3;
+}
+
+.sn-media__state--error   { color: var(--bad); }
+.sn-media__state--error small { color: var(--bad); }
 
 /* Retry, on the failed node itself — the fastest path from "this one broke"
    to "try just this one again". */
 .sn-retry-btn {
   margin-top: 10px;
   padding: 6px 14px;
-  background: rgba(234, 179, 8, 0.18);
-  border: 1px solid rgba(234, 179, 8, 0.5);
-  border-radius: 8px;
-  color: #fbbf24;
-  font-size: 12px;
+  background: var(--warn-16);
+  border: 1px solid var(--warn-16);
+  border-radius: var(--r-ctrl);
+  color: var(--warn);
+  font-size: var(--t-small);
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s ease;
 }
 .sn-retry-btn:hover {
-  background: rgba(234, 179, 8, 0.34);
+  background: var(--warn-16);
 }
 
 .sn-spinner {
   width: 30px;
   height: 30px;
-  border: 3px solid rgba(168, 85, 247, 0.2);
-  border-top-color: #a855f7;
+  border: 3px solid var(--n-frame-10);
+  border-top-color: var(--n-frame);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -1117,13 +1535,13 @@
   width: 70%;
   height: 4px;
   background: rgba(255, 255, 255, 0.08);
-  border-radius: 2px;
+  border-radius: var(--r-chip);
   overflow: hidden;
 }
 .sn-progress__fill {
   height: 100%;
-  background: linear-gradient(90deg, #a855f7, #f97316);
-  border-radius: 2px;
+  background: linear-gradient(90deg, var(--n-frame), var(--accent));
+  border-radius: var(--r-chip);
   transition: width 0.4s ease;
 }
 
@@ -1136,47 +1554,119 @@
   flex-wrap: wrap;
   gap: 5px;
   padding: 7px;
-  background: #141418;
-  border-top: 1px solid #232329;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
   border-radius: 0 0 12px 12px;
 }
 .sn-bar__sel {
   flex: 0 0 auto;
-  /* Never below the width of its own label + chevron */
   min-width: 58px;
   max-width: 100%;
-  padding: 5px 6px;
-  background: #1e1e24;
-  border: 1px solid #2c2c34;
-  border-radius: 6px;
-  color: #d4d4d8;
+  padding: 5px 22px 5px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-ctrl);
+  color: var(--text);
   font-family: inherit;
-  font-size: 10.5px;
+  font-size: var(--t-micro);
   font-weight: 500;
   outline: none;
   cursor: pointer;
   text-overflow: ellipsis;
-  transition: border-color 0.15s, background 0.15s;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%),
+                    linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+  background-position: right 9px center, right 5px center;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  transition: border-color var(--fast), background-color var(--fast), box-shadow var(--fast);
+}
+.sn-bar__sel:hover {
+  border-color: var(--accent-dim);
+  background-color: var(--surface-3);
+}
+.sn-bar__sel:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-30);
+}
+.sn-bar__sel option {
+  background: var(--surface);
+  color: var(--text);
 }
 /* Model names are the long ones ("Veo 3.1 - Lite [Lower Priority]"), so give
    this one a real basis and let it take a full row when it needs to. */
 .sn-bar__sel--grow { flex: 1 1 130px; min-width: 118px; width: 100%; }
 
+/* ── The generate node's settings, on a grid ──
+   Two equal columns, so a control either takes half the width or all of it
+   and nothing ever ends a line alone with dead space beside it. As a wrapping
+   flex row the pairings changed with every option that appeared or vanished.
+
+   Scoped to --grid: ImageNode and PromptNode use the plain .sn-bar row. */
+.sn-bar--grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+  gap: 7px 6px;
+  padding: 9px 8px 10px;
+}
+.sn-bar--grid .sn-field--wide { grid-column: 1 / -1; }
+
+/* Segmented pills. For three-to-five short values a dropdown hides the
+   current one behind a click, and these are the settings you want to read at
+   a glance — the node literally takes the shape of the ratio. */
+.sn-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-chip);
+}
+.sn-seg__btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 2px;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-chip);
+  color: var(--text-3);
+  font-family: inherit;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.sn-seg__btn:hover { background: var(--line); color: var(--text-2); }
+.sn-seg__btn--on {
+  background: var(--line-2);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.sn-seg__btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-30);
+}
+
 /* Labelled control: a bare row of dropdowns gave no clue what each one set */
 .sn-field {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   flex: 0 0 auto;
   min-width: 0;
 }
 .sn-field__label {
   padding-left: 2px;
-  font-size: 8.5px;
+  /* 8.5px at var(--text-3) measured about 3:1 against the card, under the 4.5:1
+     small text needs — and uppercase at that size is the hardest thing on
+     the node to read. Nudged up rather than restyled: the label still has to
+     read as a caption for the control under it, not compete with it. */
+  font-size: var(--t-micro);
   font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
-  color: #55555f;
+  color: var(--text-3);
 }
 /* .sn-field is a COLUMN flex container, so a flex-basis meant for the row
    (--grow) would apply to height and stretch the select to 130px tall.
@@ -1184,10 +1674,10 @@
 .sn-field .sn-bar__sel { width: 100%; flex: 0 0 auto; }
 /* Model takes its own full-width row — long names need the space */
 .sn-field--wide { flex: 1 1 100%; }
-.sn-bar__sel:hover { background: #26262e; border-color: #3a3a44; }
+.sn-bar__sel:hover { background: var(--line); border-color: var(--line-2); }
 .sn-bar__sel:focus-visible {
-  border-color: #f97316;
-  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-30);
 }
 
 /* ── External platform badge ── */
@@ -1197,23 +1687,72 @@
   gap: 6px;
   margin-top: 6px;
   padding-left: 2px;
-  font-size: 11px;
-  color: #6b6b73;
+  font-size: var(--t-micro);
+  color: var(--text-3);
 }
 .sn-platform__dot {
   width: 7px;
   height: 7px;
-  background: #4285f4;
+  background: var(--brand-gemini);
   border-radius: 50%;
 }
-.sn-platform__dot--chatgpt { background: #10a37f; }
+.sn-platform__dot--chatgpt { background: var(--brand-chatgpt); }
+.sn-platform__dot--gemini { background: var(--brand-gemini); }
+.sn-platform__dot--claude { background: var(--brand-claude); }
+.sn-platform__dot--zai { background: var(--brand-zai); }
+
+/* ── Extend ──
+   Compact by design: it has one setting and one number that matters, and a
+   node the size of a generate node would claim an importance it does not
+   have. */
+.sn-ext { padding: 12px 10px 10px; }
+.sn-ext__sum {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.sn-ext__from { font-size: var(--t-lg); color: var(--text-3); }
+.sn-ext__arrow { font-size: var(--t-small); color: var(--text-3); }
+.sn-ext__to { font-size: var(--t-title); font-weight: 700; color: var(--text); }
+/* The cap is the whole constraint, so passing it is not a subtle state. */
+.sn-ext__to--over { color: var(--bad); }
+.sn-ext__cap { margin-left: auto; font-size: var(--t-micro); color: var(--text-3); }
+.sn-ext__warn {
+  margin-bottom: 9px;
+  padding: 6px 8px;
+  border-radius: var(--r-chip);
+  background: rgba(120, 53, 15, 0.28);
+  font-size: var(--t-micro);
+  line-height: 1.4;
+  color: var(--warn);
+}
+.sn-ext__hint {
+  display: block;
+  margin-top: 8px;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+}
+/* A step that would pass the cap stays visible and refuses to be picked —
+   removing it would leave a gap with no explanation for it. */
+.sn-seg__btn:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+}
+.sn-seg__btn:disabled:hover { background: transparent; color: var(--text-3); }
+/* xAI's mark is monochrome; a light dot is what reads on this card. */
+.sn-platform__dot--grok { background: var(--brand-grok); }
 
 /* Hint text in the settings strip (e.g. ChatGPT's prompt-only mode) */
 .sn-bar__hint {
   flex: 1;
   padding: 0 4px;
-  font-size: 10.5px;
-  color: #55555f;
+  font-size: var(--t-micro);
+  /* Same contrast problem as sn-field__label. This one carries the sentence
+     that explains what the preset will do to your text, so it was the least
+     readable part of the node and the part most worth reading. */
+  color: var(--text-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1228,8 +1767,8 @@
   gap: 4px;
   padding: 4px;
   background: rgba(24, 24, 28, 0.96);
-  border: 1px solid #2c2c34;
-  border-radius: 9px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-ctrl);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
   opacity: 0;
   pointer-events: none;
@@ -1250,16 +1789,16 @@
   place-items: center;
   background: transparent;
   border: none;
-  border-radius: 6px;
-  color: #a1a1ab;
-  font-size: 13px;
+  border-radius: var(--r-chip);
+  color: var(--text-2);
+  font-size: var(--t-body);
   line-height: 1;
   text-decoration: none;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.sn-actions__btn:hover { background: #2c2c34; color: #fff; }
-.sn-actions__btn--danger:hover { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+.sn-actions__btn:hover { background: var(--line-2); color: var(--text); }
+.sn-actions__btn--danger:hover { background: var(--bad-30); color: var(--bad); }
 
 /* ── Ports — large, glyph-labelled, straddling the card edge ── */
 .sn-port {
@@ -1267,19 +1806,19 @@
   height: 26px !important;
   display: grid !important;
   place-items: center;
-  border: 2px solid #0f0f12 !important;
+  border: 2px solid var(--sunken) !important;
   border-radius: 50% !important;
-  color: #fff;
-  font-size: 10px;
+  color: var(--text);
+  font-size: var(--t-micro);
   font-weight: 700;
   transition: transform 0.15s, box-shadow 0.15s;
 }
 .sn-port:hover { transform: scale(1.15); }
 .sn-port__glyph { pointer-events: none; line-height: 1; }
 
-.sn-port--text  { background: #f97316 !important; box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.18); }
-.sn-port--image { background: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18); }
-.sn-port--out   { background: #22c55e !important; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18); }
+.sn-port--text  { background: var(--n-prompt) !important; box-shadow: 0 0 0 3px var(--accent-14); }
+.sn-port--image { background: var(--n-image) !important; box-shadow: 0 0 0 3px var(--n-image-10); }
+.sn-port--out   { background: var(--ok) !important; box-shadow: 0 0 0 3px var(--ok-16); }
 
 /* ── Input nodes (Prompt / Image) — same language, narrower card ── */
 .sn-wrap--input {
@@ -1295,23 +1834,23 @@
   padding: 12px 14px;
   background: transparent;
   border: none;
-  border-radius: 12px 12px 0 0;
-  color: #e5e5e7;
+  border-radius: var(--r-card) var(--r-card) 0 0;
+  color: var(--text);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: var(--t-small);
   line-height: 1.55;
   resize: vertical;
   outline: none;
 }
-.sn-text::placeholder { color: #45454d; }
+.sn-text::placeholder { color: var(--line-2); }
 
 .sn-bar--meta { justify-content: flex-end; }
 .sn-count {
-  font-size: 10px;
-  color: #55555f;
+  font-size: var(--t-micro);
+  color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
-.sn-count--warn { color: #eab308; }
+.sn-count--warn { color: var(--warn); }
 
 /* Image node: square media, hover "Change", upload placeholder */
 .sn-media--square { aspect-ratio: 1 / 1; }
@@ -1319,11 +1858,11 @@
 /* No result yet — compact, and flat rather than checkered */
 .sn-media--empty {
   max-height: 230px;
-  background: #0c0c0e;
+  background: var(--sunken);
 }
 
 /* Inline video player fills the media area like an image would */
-video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
+video.sn-media__img { object-fit: contain; background: var(--canvas); cursor: default; }
 
 /* "Video — open in Flow" hint when only a still frame came through */
 .sn-media__badge {
@@ -1332,10 +1871,10 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   bottom: 8px;
   padding: 4px 8px;
   background: rgba(12, 12, 14, 0.85);
-  border: 1px solid #2c2c34;
-  border-radius: 6px;
-  color: #c4c4cc;
-  font-size: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-chip);
+  color: var(--text-2);
+  font-size: var(--t-micro);
   font-weight: 600;
   pointer-events: none;
 }
@@ -1346,10 +1885,10 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   bottom: 8px;
   padding: 5px 10px;
   background: rgba(15, 15, 18, 0.88);
-  border: 1px solid #34343a;
-  border-radius: 6px;
-  color: #e5e5e7;
-  font-size: 10.5px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-chip);
+  color: var(--text);
+  font-size: var(--t-micro);
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
@@ -1357,7 +1896,7 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   transition: opacity 0.15s, background 0.15s;
 }
 .sn-media:hover .sn-media__change { opacity: 1; }
-.sn-media__change:hover { background: #3b82f6; border-color: #3b82f6; }
+.sn-media__change:hover { background: var(--accent); border-color: var(--accent); }
 
 .sn-upload {
   position: absolute;
@@ -1368,39 +1907,39 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   justify-content: center;
   gap: 6px;
   background: transparent;
-  border: 2px dashed #2c2c34;
-  border-radius: 10px;
-  color: #6b6b73;
+  border: 2px dashed var(--line-2);
+  border-radius: var(--r-row);
+  color: var(--text-3);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--t-small);
   font-weight: 600;
   cursor: pointer;
   transition: border-color 0.2s, color 0.2s, background 0.2s;
 }
 .sn-upload:hover {
-  border-color: #3b82f6;
-  color: #3b82f6;
-  background: rgba(59, 130, 246, 0.05);
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-14);
 }
-.sn-upload__icon { font-size: 22px; }
-.sn-upload small { font-size: 10px; font-weight: 400; color: #55555f; }
+.sn-upload__icon { font-size: var(--t-title); }
+.sn-upload small { font-size: var(--t-micro); font-weight: 400; color: var(--text-3); }
 
 /* Name input in the image node's bottom strip */
 .sn-name {
   flex: 1;
   min-width: 0;
   padding: 6px 8px;
-  background: #1e1e24;
-  border: 1px solid #2c2c34;
-  border-radius: 6px;
-  color: #d4d4d8;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-chip);
+  color: var(--text-2);
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--t-micro);
   outline: none;
   transition: border-color 0.15s;
 }
-.sn-name::placeholder { color: #45454d; }
-.sn-name:focus-visible { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18); }
+.sn-name::placeholder { color: var(--line-2); }
+.sn-name:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-14); }
 
 /* Fullscreen preview */
 .studio-lightbox {
@@ -1421,7 +1960,7 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   max-height: 100%;
   /* never upscale past the source, never crop */
   object-fit: contain;
-  border-radius: 12px;
+  border-radius: var(--r-card);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
   cursor: default;
 }
@@ -1434,15 +1973,15 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   display: grid;
   place-items: center;
   background: rgba(20, 20, 22, 0.9);
-  border: 1px solid #34343a;
+  border: 1px solid var(--line-2);
   border-radius: 50%;
-  color: #e5e5e7;
-  font-size: 22px;
+  color: var(--text);
+  font-size: var(--t-title);
   line-height: 1;
   cursor: pointer;
   transition: background 0.15s;
 }
-.studio-lightbox__close:hover { background: #ef4444; border-color: #ef4444; color: #fff; }
+.studio-lightbox__close:hover { background: var(--bad); border-color: var(--bad); color: var(--text); }
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -1455,24 +1994,24 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
 .studio-handle {
   width: 12px !important;
   height: 12px !important;
-  border: 2px solid #2a2a2e !important;
-  background: #141416 !important;
-  transition: all 0.2s;
+  border: 2px solid var(--line) !important;
+  background: var(--bg) !important;
+  transition: color var(--fast), background var(--fast), border-color var(--fast);
 }
 .studio-handle:hover {
   transform: scale(1.3);
 }
 .studio-handle--text {
-  border-color: #f97316 !important;
-  background: #f97316 !important;
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
 }
 .studio-handle--image {
-  border-color: #3b82f6 !important;
-  background: #3b82f6 !important;
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
 }
 .studio-handle--result {
-  border-color: #22c55e !important;
-  background: #22c55e !important;
+  border-color: var(--ok) !important;
+  background: var(--ok) !important;
 }
 
 /* ════════════════════════════════════════════════
@@ -1497,10 +2036,10 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
 
 /* Edges: brighter, thicker, and clearly directional */
 .react-flow__edge-path { stroke-width: 2.5; }
-.react-flow__edge.selected .react-flow__edge-path { stroke: #f97316; stroke-width: 3.5; }
+.react-flow__edge.selected .react-flow__edge-path { stroke: var(--accent); stroke-width: 3.5; }
 .react-flow__edge.animated .react-flow__edge-path { stroke-dasharray: 6 4; }
 /* Connection line while dragging from a port */
-.react-flow__connectionline .react-flow__edge-path { stroke: #f97316; stroke-width: 2.5; stroke-dasharray: 6 4; }
+.react-flow__connectionline .react-flow__edge-path { stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 6 4; }
 
 /* Controls */
 /* Canvas dock — zoom, recenter and minimap toggle in one bottom bar,
@@ -1517,8 +2056,8 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   padding: 5px;
   background: rgba(18, 18, 21, 0.92);
   backdrop-filter: blur(10px);
-  border: 1px solid #2a2a2e;
-  border-radius: 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-row);
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
   z-index: 10;
 }
@@ -1530,31 +2069,31 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   place-items: center;
   background: transparent;
   border: none;
-  border-radius: 7px;
-  color: #9a9aa4;
+  border-radius: var(--r-chip);
+  color: var(--text-3);
   font-family: inherit;
-  font-size: 14px;
+  font-size: var(--t-mid);
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.studio-dock__btn:hover { background: #26262c; color: #fff; }
-.studio-dock__btn--wide { font-size: 12px; padding: 0 12px; }
-.studio-dock__btn--on { background: rgba(249, 115, 22, 0.16); color: #f97316; }
+.studio-dock__btn:hover { background: var(--line); color: var(--text); }
+.studio-dock__btn--wide { font-size: var(--t-small); padding: 0 12px; }
+.studio-dock__btn--on { background: var(--accent-14); color: var(--accent); }
 .studio-dock__zoom {
   min-width: 46px;
   text-align: center;
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   font-weight: 600;
-  color: #6b6b73;
+  color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 .studio-dock__sep {
   width: 1px;
   height: 18px;
   margin: 0 4px;
-  background: #2a2a2e;
+  background: var(--line);
 }
 
 /* MiniMap */
@@ -1564,8 +2103,8 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
   height: 100px !important;
   margin: 0 14px 60px 0 !important;
   background: rgba(14, 14, 17, 0.92) !important;
-  border: 1px solid #26262c !important;
-  border-radius: 9px !important;
+  border: 1px solid var(--line) !important;
+  border-radius: var(--r-ctrl) !important;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   overflow: hidden;
 }
@@ -1580,19 +2119,19 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
    Deliberately smaller than a generate node: it produces nothing and costs
    nothing, it only reveals what the clip above is handing on. */
 .fn-wrap { position: relative; width: 220px; }
-.fn-wrap--selected .fn { border-color: #a855f7; }
+.fn-wrap--selected .fn { border-color: var(--n-frame); }
 
 .fn {
   position: relative;
-  background: #131317;
-  border: 1px solid #26262c;
-  border-radius: 14px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
   overflow: hidden;
   transition: border-color 0.15s;
 }
 
 .fn-media {
-  background: #0a0a0c;
+  background: var(--canvas);
   min-height: 96px;
   display: grid;
   place-items: center;
@@ -1607,15 +2146,1787 @@ video.sn-media__img { object-fit: contain; background: #000; cursor: default; }
 .fn-empty {
   padding: 18px 14px;
   text-align: center;
-  color: #6b7280;
+  color: var(--text-3);
 }
-.fn-empty__icon { display: block; font-size: 18px; margin-bottom: 6px; opacity: 0.7; }
-.fn-empty small { font-size: 11px; line-height: 1.45; }
+.fn-empty__icon { display: block; font-size: var(--t-title); margin-bottom: 6px; opacity: 0.7; }
+.fn-empty small { font-size: var(--t-micro); line-height: 1.45; }
 
 .fn-caption {
   padding: 7px 10px;
-  font-size: 10.5px;
-  color: #7b7b85;
-  border-top: 1px solid #1e1e24;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  border-top: 1px solid var(--surface-2);
   text-align: center;
+}
+
+/* ── Pro templates ──
+   The card stays legible and clickable: it arrives without its node graph, so
+   clicking opens checkout rather than an empty canvas. Dimming it entirely
+   would read as broken. */
+.studio-gallery__card--locked .studio-gallery__card-thumb { opacity: 0.55; }
+.studio-gallery__card--locked:hover .studio-gallery__card-thumb { opacity: 0.8; }
+.studio-gallery__lock {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  padding: 3px 8px;
+  border-radius: var(--r-chip);
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--warn-16);
+  background: linear-gradient(135deg, var(--warn), var(--accent));
+  box-shadow: 0 2px 8px var(--accent-30);
+}
+
+/* ── Run bar ──────────────────────────────────────────────────
+   Sits above the zoom dock, centred, and never moves. The old arrangement
+   put progress in the top centre and Pause/Stop on the left rail, so
+   following a run meant watching two corners at once. */
+.studio-runbar {
+  position: absolute;
+  bottom: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(880px, calc(100vw - 48px));
+  padding: 10px 14px;
+  border-radius: var(--r-card);
+  background: rgba(18, 18, 21, 0.94);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+  font-size: var(--t-body);
+  color: var(--text);
+}
+/* Failures with nothing running: quieter, but still there to click. */
+.studio-runbar--idle { border-color: var(--bad-12); }
+
+/* Says "working" without a number changing — a video node can sit on the
+   same percentage for four minutes and look hung. */
+.studio-runbar__pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 var(--accent-50);
+  animation: studio-runbar-pulse 1.8s ease-out infinite;
+  flex: 0 0 auto;
+}
+.studio-runbar__pulse.is-paused { background: var(--text-2); animation: none; }
+@keyframes studio-runbar-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--accent-50); }
+  70%  { box-shadow: 0 0 0 9px rgba(160, 122, 253, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(160, 122, 253, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-runbar__pulse { animation: none; }
+}
+
+/* The node name is the button — clicking flies the canvas to it. */
+/* Was truncating to "Car Reference …" because the bar let the progress track
+   take the slack. The node name is the thing you are reading; the track is
+   the thing that can be narrow. */
+.studio-runbar__node {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 1px dashed transparent;
+}
+.studio-runbar__node:hover:not(:disabled) { border-bottom-color: var(--text-3); }
+.studio-runbar__node:disabled { cursor: default; color: var(--text-2); }
+
+.studio-runbar__bar {
+  flex: 1 1 90px;
+  min-width: 60px;
+  height: 4px;
+  border-radius: var(--r-chip);
+  background: var(--line);
+  overflow: hidden;
+}
+.studio-runbar__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--warn));
+  transition: width 0.4s ease;
+}
+.studio-runbar__count { color: var(--text-2); font-variant-numeric: tabular-nums; }
+/* Tabular so the bar does not twitch every second as digits change width. */
+.studio-runbar__elapsed {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  min-width: 42px;
+  text-align: right;
+}
+
+.studio-runbar__btn {
+  padding: 6px 12px;
+  border-radius: var(--r-ctrl);
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.studio-runbar__btn:hover { background: var(--line); border-color: var(--line-2); }
+.studio-runbar__btn--stop { border-color: var(--bad-12); color: var(--bad); }
+.studio-runbar__btn--stop:hover { background: var(--bad-12); }
+.studio-runbar__btn--retry { border-color: var(--warn-16); color: var(--warn); }
+
+/* ── Failures ──
+   A failed node used to be a red border somewhere on a canvas wider than the
+   screen. These are buttons: the label is the node, the tooltip is the error,
+   the click takes you there. */
+.studio-runbar__fails {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+  overflow: hidden;
+}
+.studio-runbar__fails-label {
+  color: var(--bad);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.studio-runbar__fail {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 9px;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--bad-12);
+  background: rgba(74, 36, 36, 0.35);
+  color: var(--bad);
+  font: inherit;
+  font-size: var(--t-small);
+  cursor: pointer;
+}
+.studio-runbar__fail:hover { background: rgba(74, 36, 36, 0.6); }
+
+/* ── Hints under a control ──
+   For the Ask AI preset especially: a dropdown of names teaches nothing, and
+   the hint is the part that says what each preset asks the model to do. */
+.sn-field__hint {
+  font-size: var(--t-micro);
+  line-height: 1.35;
+  color: var(--text-3);
+}
+/* On the grid a hint is a row of its own, tucked under the control it
+   explains rather than floating a full gap below it. */
+.sn-bar--grid .sn-field__hint {
+  margin-top: -3px;
+  padding-left: 2px;
+}
+
+/* ── Agent node ──
+   The step log is the node's face, not a detail panel: an agent that spends
+   four generations silently is not debuggable after the fact. */
+/* Widened via the log rather than a class on the card: the card is a plain
+   .sn like every other node, which is what keeps its chrome consistent. */
+.sn-agent__log {
+  min-width: 296px;
+  margin: 8px 12px 0;
+  padding: 8px;
+  max-height: 168px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: var(--r-ctrl);
+  font-size: var(--t-micro);
+  line-height: 1.5;
+}
+
+.sn-agent__empty { color: var(--text-2); text-align: center; padding: 14px 0; }
+
+.sn-agent__step {
+  display: grid;
+  grid-template-columns: 16px 14px 1fr;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 0;
+  color: var(--text-2);
+}
+.sn-agent__step-n { color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; }
+.sn-agent__step-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sn-agent__step--tool .sn-agent__step-icon { color: var(--accent); }
+.sn-agent__step--observation { color: var(--text-2); }
+.sn-agent__step--done .sn-agent__step-icon { color: var(--ok); }
+/* Amber, not green: a repair means the model did not follow the format. */
+.sn-agent__step--repair { color: var(--warn); }
+.sn-agent__step--error { color: var(--bad); }
+
+.sn-agent__error {
+  margin: 8px 12px 0;
+  padding: 8px 10px;
+  background: var(--bad-12);
+  border: 1px solid var(--bad-30);
+  border-radius: var(--r-ctrl);
+  color: var(--bad);
+  font-size: var(--t-micro);
+}
+
+.sn-agent__answer {
+  margin: 8px 12px 0;
+  padding: 8px 10px;
+  max-height: 76px;
+  overflow-y: auto;
+  background: var(--ok-16);
+  border: 1px solid var(--ok-16);
+  border-radius: var(--r-ctrl);
+  color: var(--ok);
+  font-size: var(--t-micro);
+}
+
+.sn-agent__tools { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.sn-agent__tool {
+  padding: 4px 9px;
+  border-radius: var(--r-pill);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--t-micro);
+  font-family: inherit;
+  cursor: pointer;
+}
+.sn-agent__tool--on {
+  border-color: rgba(129, 140, 248, 0.75);
+  background: rgba(129, 140, 248, 0.18);
+  color: var(--text-2);
+}
+
+.sn-agent__system {
+  width: calc(100% - 24px);
+  margin: 8px 12px 0;
+  padding: 7px 9px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: var(--r-ctrl);
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: var(--t-micro);
+  resize: vertical;
+}
+
+.sn-agent__foot {
+  margin: 6px 12px 10px;
+  color: var(--text-3);
+  font-size: var(--t-micro);
+}
+
+/* A combination that will fail, said before it costs a run. */
+.sn-agent__hint {
+  margin: 6px 12px 0;
+  padding: 6px 9px;
+  background: var(--warn-16);
+  border: 1px solid var(--warn-16);
+  border-radius: var(--r-ctrl);
+  color: var(--warn);
+  font-size: var(--t-micro);
+  line-height: 1.4;
+}
+
+/* ── Story node ──────────────────────────────────────────────
+   It is a plan, not a prompt, so it shows the plan: who it writes for, in the
+   order it will write them, and a tick against each one it covered. A node
+   responsible for five other nodes should look like it. */
+.sn--story { min-width: 390px; width: 390px; }
+
+.sn-story__badge {
+  padding: 2px 8px;
+  background: var(--accent-14);
+  border: 1px solid var(--accent-30);
+  border-radius: var(--r-chip);
+  color: var(--accent);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sn-story__targets {
+  margin-top: var(--s-2);
+  padding: var(--s-2);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+}
+.sn-story__empty {
+  font-size: var(--t-micro);
+  color: var(--warn);
+  line-height: 1.45;
+}
+.sn-story__count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: var(--s-1);
+}
+.sn-story__ribbon {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  max-height: 140px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.sn-story__ribbon::-webkit-scrollbar {
+  width: 5px;
+}
+.sn-story__ribbon::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sn-story__ribbon::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: var(--r-pill);
+}
+.sn-story__ribbon::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-30);
+}
+.sn-story__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 4px 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  min-width: 0;
+  transition: background var(--fast), border-color var(--fast);
+}
+.sn-story__item:hover {
+  background: var(--surface-2);
+  border-color: var(--line-2);
+}
+.sn-story__n {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: var(--r-pill);
+  background: var(--accent-14);
+  color: var(--accent);
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.sn-story__chip {
+  flex: none;
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  background: var(--surface-2);
+  padding: 1px 6px;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--line);
+}
+.sn-story__name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--text);
+}
+.sn-story__meta { flex: none; color: var(--text-3); }
+.sn-story__done { flex: none; color: var(--ok); font-weight: 700; }
+/* The tick is a button when there is a prompt behind it to read. Same colour
+   and weight so the row does not change shape when a run finishes — only the
+   cursor says it can be opened. */
+button.sn-story__done {
+  border: 0;
+  background: none;
+  padding: 0 var(--s-1);
+  font: inherit;
+  font-weight: 700;
+  color: var(--ok);
+  cursor: pointer;
+  border-radius: var(--r-chip);
+}
+button.sn-story__done:hover { background: var(--ok-16); }
+button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-canvas); }
+
+/* The prompt this shot actually received.
+   Monospace and wrapped: it is read to compare against the shot beside it,
+   and a proportional font makes two similar prompts look identical. */
+.sn-story__shottext {
+  margin-top: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  max-height: 260px;
+  overflow-y: auto;
+  border-radius: var(--r-ctrl);
+  border-left: 3px solid var(--n-prompt);
+  background: var(--sunken);
+  color: var(--text-2);
+  font-size: var(--t-micro);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+.sn-story__shottext-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  margin-bottom: var(--s-1);
+  color: var(--text);
+  font-weight: 600;
+}
+.sn-story__error {
+  margin-top: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-ctrl);
+  border-left: 3px solid var(--bad);
+  background: var(--bad-12);
+  color: var(--bad);
+  font-size: var(--t-micro);
+  line-height: 1.45;
+}
+.sn-story__error-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  margin-bottom: var(--s-1);
+}
+.sn-story__error-title {
+  font-weight: 700;
+  color: var(--bad);
+}
+.sn-story__retry-btn {
+  padding: 2px 8px;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--bad-30);
+  background: var(--bad-12);
+  color: var(--bad);
+  font: inherit;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--fast), border-color var(--fast);
+}
+.sn-story__retry-btn:hover {
+  background: var(--bad-30);
+}
+.sn-story__error-msg {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.sn-wrap--kind-story { width: 390px; min-width: 390px; }
+.sn-wrap--kind-story .sn { border-color: var(--accent-30); }
+.sn-wrap--kind-story .sn-label__icon { background: var(--accent-14); color: var(--accent); }
+.sn-count--running { color: var(--accent); font-weight: 600; }
+
+/* ── Directorial Segmented Tabs ── */
+.sn-story__tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: var(--s-2);
+  padding: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+}
+.sn-story__tab {
+  flex: 1;
+  padding: 5px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-chip);
+  color: var(--text-3);
+  font: inherit;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
+  transition: background var(--fast), color var(--fast), border-color var(--fast);
+}
+.sn-story__tab:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+.sn-story__tab--active {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--line-2);
+}
+
+.sn-story__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-2);
+}
+
+.sn-story__timing-row {
+  margin-top: var(--s-2);
+  padding: var(--s-1) var(--s-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+}
+.sn-story__timing-label {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  cursor: pointer;
+  width: 100%;
+}
+.sn-story__timing-label:hover {
+  color: var(--text);
+}
+
+.sn-story__hint {
+  margin-top: var(--s-2);
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.4;
+  padding: var(--s-1) var(--s-2);
+  background: var(--surface-2);
+  border-radius: var(--r-chip);
+  border-left: 2px solid var(--accent);
+}
+
+.sn-story__rules-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-1) 0;
+}
+
+.sn-story__beats {
+  color: var(--text-3);
+  font-weight: normal;
+}
+.sn-story__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: var(--s-2);
+  padding: var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--t-micro);
+  cursor: pointer;
+}
+.sn-story__toggle:hover { border-color: var(--accent-30); color: var(--text); }
+.sn-story__toggle-state {
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-size: var(--t-micro);
+}
+.sn-story__panel {
+  margin-top: var(--s-2);
+  padding: var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  background: var(--sunken);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.sn-story__note {
+  font-size: var(--t-micro);
+  line-height: 1.45;
+  color: var(--text-3);
+}
+.sn-story__section { display: flex; flex-direction: column; gap: var(--s-1); }
+.sn-story__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.sn-story__add,
+.sn-story__del {
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--t-micro);
+  padding: 2px var(--s-2);
+  cursor: pointer;
+}
+.sn-story__add:hover { border-color: var(--accent-30); color: var(--accent); }
+.sn-story__del:hover { border-color: var(--bad-30); color: var(--bad); }
+.sn-story__blank { font-size: var(--t-micro); color: var(--text-3); }
+.sn-story__cast {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding: var(--s-2);
+  border-radius: var(--r-chip);
+  background: var(--surface);
+}
+.sn-story__cast-row { display: flex; gap: var(--s-2); }
+.sn-story__input,
+.sn-story__area {
+  width: 100%;
+  padding: var(--s-1) var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--t-micro);
+  line-height: 1.45;
+}
+.sn-story__area { resize: vertical; }
+.sn-story__input:focus,
+.sn-story__area:focus { outline: none; border-color: var(--accent); }
+.sn-story__input--num { width: 64px; flex: none; }
+.sn-story__beatrow { display: flex; align-items: center; gap: var(--s-2); }
+
+/* ── Story node controls ─────────────────────────────────────
+   These classes had no rules at all. I invented the names by assuming they
+   matched the other nodes — the real select class is .sn-bar__sel — so every
+   control fell back to the browser default and rendered as a white box with
+   black text on a dark node. It looked broken because it was: an unstyled
+   form control, not a styling choice.
+
+   Reading the CSS would not have caught it. Rendering it did, in one look. */
+.sn-label__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--s-1) var(--s-2);
+  border: 1px solid transparent;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--t-small);
+  font-weight: 600;
+}
+.sn-label__name:hover { border-color: var(--line); }
+.sn-label__name:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.sn-field__select {
+  width: 100%;
+  padding: var(--s-1) var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--t-micro);
+  /* The native arrow is drawn by the OS in the OS's colours, which on a dark
+     node is a light triangle on a light plate. Ours instead. */
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%),
+                    linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+  background-position: right 12px center, right 7px center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: var(--s-5);
+  cursor: pointer;
+}
+.sn-field__select:hover { border-color: var(--line-2); }
+.sn-field__select:focus { outline: none; border-color: var(--accent); }
+/* The dropdown list itself is drawn by the OS; give it readable colours. */
+.sn-field__select option { background: var(--surface); color: var(--text); }
+
+/* ── Saying what the node is ── */
+.sn-story__what {
+  margin-top: var(--s-1);
+  font-size: var(--t-micro);
+  line-height: 1.45;
+  color: var(--text-3);
+}
+.sn-story__empty {
+  margin-top: var(--s-2);
+  padding: var(--s-2);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-ctrl);
+  font-size: var(--t-micro);
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.sn-story__empty strong { display: block; color: var(--text-2); font-weight: 600; }
+
+/* ── Node family, on the node itself ─────────────────────────
+   .sn--prompt and .sn--image were rendered by their components and styled by
+   nobody: modifier classes that had been added and then never given a job.
+   Found by the test that reads which classes a node renders, not by reading
+   the stylesheet — an absent rule leaves nothing to read.
+
+   The job they should have had is the one the rail already does: hue says
+   what kind of node this is. A thin edge rather than a tint, because a node
+   is mostly content and a coloured panel would fight it. */
+.sn--prompt { border-left: 2px solid var(--n-prompt); }
+.sn--image  { border-left: 2px solid var(--n-image); }
+.sn--story  { border-left: 2px solid var(--accent); }
+
+/* ── Roles and rules ─────────────────────────────────────────
+   The role badge explains the graph back to you: a still wired into a clip is
+   that clip's reference, not a shot in the story, and until it said so the
+   only place that fact existed was in the wire. */
+.sn-story__role {
+  flex: none;
+  padding: 0 var(--s-1);
+  border-radius: var(--r-chip);
+  background: var(--accent-14);
+  color: var(--accent);
+  font-size: var(--t-micro);
+  letter-spacing: 0.2px;
+}
+.sn-story__rule {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  font-size: var(--t-micro);
+  line-height: 1.4;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.sn-story__rule:hover { color: var(--text); }
+/* A plain checkbox row on a generate node, modelled on the story node's
+   timed-beats row so the two read as the same control in two places. */
+.sn-check {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  margin-top: var(--s-1);
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.sn-check:hover { color: var(--text); }
+.sn-check input {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.sn-story__check {
+  flex: none;
+  margin-top: 1px;
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* Section labels stop shouting. They were uppercase and heavy enough to
+   compete with the content they label, which made the node read as a form. */
+.sn--story .sn-field__label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+/* A frame node that ran and captured nothing is not the same as one nobody
+   wired, and they used to render identically. */
+.fn-empty--missed { color: var(--warn); }
+.fn-empty--missed .fn-empty__icon { color: var(--warn); }
+
+/* ════════════════════════════════════════════════
+   NODE INFO TOOLTIP — ⓘ badge and documentation card
+   Every node carries one. Positioned against the sn-label row so it
+   floats above the canvas without being clipped by the card.
+   ════════════════════════════════════════════════ */
+
+.sn-info {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  margin-left: 4px;
+}
+
+.sn-info__badge {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--fast), color var(--fast), border-color var(--fast),
+              transform var(--spring);
+}
+.sn-info__badge:hover {
+  background: var(--accent-14);
+  border-color: var(--accent-30);
+  color: var(--accent);
+  transform: scale(1.12);
+}
+.sn-info__badge--open {
+  background: var(--accent-14);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sn-info__card {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: -40px;
+  z-index: 50;
+  width: 280px;
+  padding: 14px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-card);
+  box-shadow: var(--e-3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  animation: sn-info-enter 200ms ease-out;
+}
+.sn-info__card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-card);
+  background: var(--glass-shine);
+  pointer-events: none;
+}
+
+@keyframes sn-info-enter {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.sn-info__title {
+  font-size: var(--t-mid);
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.sn-info__desc {
+  margin: 0 0 10px;
+  font-size: var(--t-small);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.sn-info__section {
+  margin-bottom: 8px;
+}
+.sn-info__section-head {
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+
+.sn-info__ports {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sn-info__port {
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  padding: 3px 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--r-chip);
+  border-left: 2px solid var(--accent-30);
+}
+
+.sn-info__tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px;
+  margin-top: 4px;
+  background: var(--accent-8);
+  border: 1px solid var(--accent-14);
+  border-radius: var(--r-ctrl);
+  font-size: var(--t-micro);
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.sn-info__tip-icon {
+  flex: 0 0 auto;
+  font-size: var(--t-body);
+  line-height: 1;
+}
+
+
+/* ════════════════════════════════════════════════
+   UI POLISH — Visual upgrades across the Studio
+   ════════════════════════════════════════════════ */
+
+/* ── Node hover elevation ──
+   Lifting the card slightly and adding a soft glow on hover makes
+   the canvas feel interactive and responsive. The transform is kept
+   subtle so node positions stay readable. */
+.sn-wrap:hover .sn {
+  box-shadow: var(--e-node-hover);
+  transform: translateY(-1px);
+}
+.sn-wrap--selected .sn { transform: translateY(-1px); }
+/* Keep status glows when active — don't override them */
+.sn-wrap:hover .sn--running { box-shadow: 0 0 28px var(--n-frame-10); }
+.sn-wrap:hover .sn--done    { box-shadow: 0 0 24px var(--ok-16); }
+.sn-wrap:hover .sn--error   { box-shadow: 0 0 24px var(--bad-30); }
+
+/* ── Subtle gradient on node cards ──
+   Adds depth to the flat sunken background without competing with content. */
+.sn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-card);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.02) 0%,
+    transparent 30%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Port hover glow ring ──
+   Ports already scale on hover; the ring adds a halo that telegraphs
+   what the connection will be before the wire lands. */
+.sn-port:hover {
+  box-shadow: 0 0 12px var(--accent-30) !important;
+}
+.sn-port--text:hover  { box-shadow: 0 0 14px var(--n-prompt-10) !important; }
+.sn-port--image:hover { box-shadow: 0 0 14px var(--n-image-10) !important; }
+.sn-port--out:hover   { box-shadow: 0 0 14px var(--ok-16) !important; }
+
+/* ── Gallery card glassmorphism upgrade ── */
+.studio-gallery__card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-color: var(--glass-border);
+}
+.studio-gallery__card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-card);
+  background: var(--glass-shine);
+  pointer-events: none;
+  z-index: 0;
+}
+.studio-gallery__card:hover {
+  border-color: var(--accent-50);
+  box-shadow: 0 12px 40px var(--accent-14), var(--glow-accent);
+}
+
+/* ── Toolbar button hover glow ── */
+.studio-toolbar__btn:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 1px var(--glass-border);
+}
+.studio-toolbar__btn--run {
+  box-shadow: var(--glow-accent);
+}
+.studio-toolbar__btn--run:hover:not(:disabled) {
+  box-shadow: 0 0 28px rgba(160, 122, 253, 0.32);
+}
+
+/* ── Run bar gradient shimmer ── */
+.studio-runbar__fill {
+  background: linear-gradient(
+    90deg,
+    var(--accent),
+    var(--warn),
+    var(--accent)
+  );
+  background-size: 200% 100%;
+  animation: runbar-shimmer 2.5s ease-in-out infinite;
+}
+@keyframes runbar-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-runbar__fill { animation: none; background-size: 100% 100%; }
+}
+
+/* ── Status badge micro-animations ── */
+.sn--done {
+  animation: sn-done-flash 0.6s ease-out;
+}
+@keyframes sn-done-flash {
+  0%  { box-shadow: 0 0 0 0 var(--ok); }
+  40% { box-shadow: 0 0 30px var(--ok-16); }
+  100% { box-shadow: 0 0 20px var(--ok-16); }
+}
+
+/* ── Selected edge glow ── */
+.react-flow__edge.selected .react-flow__edge-path {
+  filter: drop-shadow(0 0 6px var(--accent-50));
+}
+
+/* ── Connection line feedback ── */
+.react-flow__connectionline .react-flow__edge-path {
+  filter: drop-shadow(0 0 4px var(--accent-30));
+}
+
+/* ── Empty state entrance ── */
+.studio-empty {
+  animation: empty-enter 0.5s ease-out;
+}
+@keyframes empty-enter {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Topbar glass refinement ── */
+.studio-topbar {
+  background: var(--glass-bg);
+  border-bottom-color: var(--glass-border);
+}
+
+/* ── Dock glass refinement ── */
+.studio-dock {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+}
+
+/* ── Toolbar glass background ── */
+.studio-toolbar {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-color: var(--glass-border);
+}
+
+/* ── FrameNode hover polish ── */
+.fn-wrap:hover .fn {
+  box-shadow: var(--e-node-hover);
+  transform: translateY(-1px);
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   Clipping node
+   A long recording in, a postable vertical clip out. Wider than a
+   Director because the stage rail is a permanent fixture: five stages
+   that cost very different amounts, and knowing which one you are
+   waiting on is most of what the node has to tell you.
+   ══════════════════════════════════════════════════════════════════ */
+.sn-wrap--kind-clip { width: 470px; min-width: 470px; }
+.sn-wrap--kind-clip .sn { border-color: var(--n-video); }
+.sn-wrap--kind-clip .sn-label__icon { background: var(--n-video-10); color: var(--n-video); }
+
+.sn--clip { min-width: 470px; width: 470px; border-left: 2px solid var(--n-video); }
+
+/* ── the stage rail ── */
+.sn-clip__stages {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--s-2);
+}
+.sn-clip__stage {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  padding: 3px var(--s-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-row);
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  text-align: left;
+  cursor: default;
+}
+.sn-clip__glyph { width: 1em; flex: none; text-align: center; }
+.sn-clip__stage-name { flex: 1; }
+.sn-clip__took { color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* Status is never colour alone — the glyph carries it too, so the rail
+   still reads for anyone who cannot separate these hues. */
+.sn-clip__stage--pending { color: var(--text-3); }
+.sn-clip__stage--running {
+  background: var(--busy-16);
+  border-color: var(--busy);
+  color: var(--busy);
+}
+.sn-clip__stage--done {
+  background: var(--ok-16);
+  border-color: var(--ok);
+  color: var(--ok);
+  cursor: pointer;
+}
+.sn-clip__stage--done:hover { border-color: var(--accent); }
+.sn-clip__stage--failed {
+  background: var(--bad-12);
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+/* ── tabs ── */
+.sn-clip__tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: var(--s-2);
+  padding: 3px;
+  background: var(--sunken);
+  border-radius: var(--r-ctrl);
+}
+.sn-clip__tab {
+  flex: 1;
+  padding: 3px var(--s-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--r-chip);
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  cursor: pointer;
+}
+.sn-clip__tab:hover { color: var(--text-2); }
+.sn-clip__tab--on { background: var(--surface-3); color: var(--text); }
+
+/* ── panels ── */
+.sn-clip__panel {
+  margin-top: var(--s-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.sn-clip__file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  background: var(--sunken);
+  border-radius: var(--r-row);
+  font-size: var(--t-micro);
+  color: var(--text-2);
+}
+.sn-clip__hint { margin: 0; font-size: var(--t-micro); color: var(--text-3); line-height: 1.45; }
+
+.sn-clip__quote {
+  padding: var(--s-2);
+  background: var(--sunken);
+  border-left: 2px solid var(--n-video);
+  border-radius: var(--r-row);
+  font-size: var(--t-micro);
+  color: var(--text);
+  line-height: 1.45;
+}
+.sn-clip__quote--end { border-left-color: var(--line-2); }
+.sn-clip__why { margin: 0; font-size: var(--t-micro); color: var(--text-3); line-height: 1.45; }
+
+/* ── beat map ── */
+.sn-clip__beats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 160px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.sn-clip__beat {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: var(--s-2);
+  padding: 3px var(--s-2);
+  border-radius: var(--r-row);
+  font-size: var(--t-micro);
+  background: var(--sunken);
+}
+.sn-clip__beat-t { color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sn-clip__beat-kind { font-weight: 600; white-space: nowrap; }
+.sn-clip__beat-caption {
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A-roll is the speaker, B-roll is a generated graphic. The word says which,
+   so the tint is reinforcement rather than the only signal. */
+.sn-clip__beat--a-roll .sn-clip__beat-kind { color: var(--n-video); }
+.sn-clip__beat--b-roll .sn-clip__beat-kind { color: var(--n-image); }
+
+/* ── Clipping: the ranked moments ─────────────────────────────
+   A survey returns ten of these, so the list scrolls inside the node rather
+   than making the node ten times taller. The rank is the whole point of the
+   list — it is what tells a clipper which three to run first — so it gets a
+   fixed gutter and the quote flows beside it. */
+.sn-clip__moments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.sn-clip__moment {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  background: var(--surface-2);
+}
+.sn-clip__moment-head { display: flex; gap: var(--s-2); align-items: center; }
+
+/* The score, with the line it had to clear.
+   A number alone leaves a clipper guessing whether 62 is good; the survey
+   posts above 60, so the bar shows where that sits. Colour is a second
+   channel on the same fact, never the only one — the number is always
+   readable on its own. */
+.sn-clip__score { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.sn-clip__score-bar {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  min-width: 0;
+  border-radius: var(--r-pill);
+  background: var(--line);
+  overflow: hidden;
+}
+.sn-clip__score-fill { display: block; height: 100%; border-radius: var(--r-pill); background: currentColor; }
+.sn-clip__score-num {
+  flex: 0 0 auto;
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+  color: currentColor;
+}
+.sn-clip__score--high { color: var(--ok); }
+.sn-clip__score--ok { color: var(--warn); }
+.sn-clip__score--low { color: var(--bad); }
+
+/* What to write when posting it — computed by the reply that judged the clip
+   and, until now, thrown away before it reached the screen. */
+.sn-clip__caption {
+  font-size: var(--t-micro);
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+/* What the read came back with. The face count is the load-bearing part: a
+   read that tracked nobody frames every clip on a blurred backdrop instead of
+   cropping to the speaker, and that is invisible until you watch the output. */
+.sn-clip__read {
+  margin: 0 var(--s-2) var(--s-2);
+  padding: 5px var(--s-2);
+  border-radius: var(--r-chip);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: var(--t-micro);
+  color: var(--text-3);
+}
+.sn-clip__read--untracked {
+  color: var(--warn);
+  border-color: var(--warn-16);
+  background: var(--warn-16);
+}
+.sn-clip__moment-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.sn-clip__rank {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--n-video-10);
+  color: var(--n-video);
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Clipping: mode and rules ── */
+.sn-clip__modes { display: flex; gap: var(--s-1); align-items: center; }
+.sn-clip__mode {
+  flex: 1;
+  padding: 4px var(--s-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: transparent;
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  cursor: pointer;
+}
+.sn-clip__mode--on {
+  border-color: var(--n-video);
+  background: var(--n-video-10);
+  color: var(--n-video);
+}
+.sn-clip__count { display: flex; align-items: center; gap: 4px; font-size: var(--t-micro); color: var(--text-3); }
+.sn-clip__count input {
+  width: 44px;
+  padding: 4px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  color: var(--text);
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+}
+.sn-clip__rules {
+  width: 100%;
+  min-height: 96px;
+  padding: var(--s-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--t-micro);
+  line-height: 1.45;
+  resize: vertical;
+}
+
+/* ── The Cut node ─────────────────────────────────────────────
+   Narrower than the Clipping node that lays it out, because ten of them sit
+   in a column beside it and a full-width card would make that column a wall. */
+.sn-wrap--kind-cut { width: 300px; min-width: 300px; }
+.sn-wrap--kind-cut .sn { border-color: var(--n-video); }
+.sn-wrap--kind-cut .sn-label__icon { background: var(--n-video-10); color: var(--n-video); }
+
+.sn--cut { min-width: 300px; width: 300px; border-left: 2px solid var(--n-video); }
+.sn-cut__body { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-2); }
+
+/* The two lines define the clip, so they read as a pair: the opening one
+   marked in the accent, the closing one muted, the same way the single-clip
+   node showed a chosen window. */
+.sn-cut__line {
+  padding: var(--s-2);
+  background: var(--sunken);
+  border-left: 2px solid var(--n-video);
+  border-radius: var(--r-row);
+  font-size: var(--t-micro);
+  color: var(--text);
+  line-height: 1.45;
+}
+.sn-cut__line--in { border-left-color: var(--n-video); }
+.sn-cut__line--out { border-left-color: var(--line-2); }
+.sn-cut__why { margin: 0; font-size: var(--t-micro); color: var(--text-3); line-height: 1.45; }
+
+.sn-cut__result { display: flex; flex-direction: column; gap: var(--s-1); }
+/* Capped by height rather than width: the clip is 9:16, and letting a vertical
+   video size itself to a 300px card gives a node over 500px tall. */
+.sn-cut__video {
+  max-height: 260px;
+  max-width: 100%;
+  align-self: center;
+  border-radius: var(--r-row);
+  background: var(--canvas);
+}
+.sn-cut__meta {
+  display: flex;
+  gap: var(--s-2);
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.4;
+}
+.sn-cut__save {
+  flex: 0 0 auto;
+  padding: 3px var(--s-2);
+  border: 1px solid var(--n-video);
+  border-radius: var(--r-row);
+  background: var(--n-video-10);
+  color: var(--n-video);
+  font-size: var(--t-micro);
+  cursor: pointer;
+}
+.sn-cut__pending { font-size: var(--t-micro); color: var(--text-3); line-height: 1.45; }
+.sn-cut__warn {
+  padding: var(--s-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  color: var(--text-2);
+  border-left: 2px solid var(--n-video);
+  font-size: var(--t-micro);
+  line-height: 1.45;
+}
+
+/* ── Clipping: a stage that failed says so ────────────────────
+   The rail used to put the error in a title attribute, so a failed run showed
+   a red cross, a duration, and nothing else — visually identical to the node
+   being broken. The row now opens. */
+.sn-clip__stage-row { display: flex; flex-direction: column; }
+.sn-clip__note {
+  padding: 2px var(--s-2) 4px 26px;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.4;
+}
+.sn-clip__error {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  margin: 2px 0 4px;
+  padding: var(--s-2);
+  border-left: 2px solid var(--bad);
+  border-radius: var(--r-row);
+  background: var(--bad-12);
+}
+.sn-clip__error-text {
+  margin: 0;
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.sn-clip__retry {
+  padding: 3px var(--s-2);
+  border: 1px solid var(--bad);
+  border-radius: var(--r-row);
+  background: transparent;
+  color: var(--bad);
+  font-size: var(--t-micro);
+  cursor: pointer;
+}
+.sn-clip__retry:hover { background: var(--bad); color: var(--canvas); }
+
+/* ── Clipping: the settings tab ───────────────────────────────
+   One row per setting, label left and control right, so the column of
+   controls lines up and the node can be read down rather than across. */
+.sn-clip__settings { display: flex; flex-direction: column; gap: var(--s-2); }
+.sn-set {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  font-size: var(--t-micro);
+  color: var(--text-2);
+}
+.sn-set__label { color: var(--text-3); }
+.sn-set__label--block { display: block; margin-top: var(--s-1); }
+.sn-set__control {
+  flex: 0 0 auto;
+  min-width: 96px;
+  padding: 4px var(--s-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--t-micro);
+}
+.sn-set__control--num {
+  min-width: 0;
+  width: 64px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Clipping: why there are fewer clips than you asked for ───
+   Eight nodes when ten were requested is either the model declining to pad
+   the list or two of its answers being unusable. Those are opposite problems
+   and, unsaid, they look identical. */
+.sn-clip__tally {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.45;
+}
+.sn-clip__tally-drop { color: var(--bad); }
+
+/* ── Clipping: the settings that change a run, on the face ────
+   Chat, job, count and shape were behind a tab, so the four things that
+   decide what a run DOES were discoverable only by knowing to look. They
+   wrap rather than scroll: four controls on one line at 470px is tight in
+   English and impossible once a label is translated. */
+.sn-clip__strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+  padding: 0 var(--s-2) var(--s-2);
+}
+.sn-clip__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px var(--s-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--t-micro);
+  cursor: pointer;
+}
+.sn-clip__pick--num { cursor: default; color: var(--text-3); }
+.sn-clip__pick--num input {
+  width: 34px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--t-micro);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Clipping: one file control, not two ──────────────────────
+   The native input draws its own button and "no file chosen" text in the
+   browser's language, next to a filename the node was already printing — so
+   the video appeared twice and the actual control looked like a caption. */
+.sn-clip__drop {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-3) var(--s-2);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  cursor: pointer;
+  text-align: center;
+}
+.sn-clip__drop:hover { border-color: var(--n-video); }
+.sn-clip__drop input { display: none; }
+.sn-clip__drop--full { border-style: solid; text-align: left; }
+.sn-clip__drop-name {
+  font-size: var(--t-micro);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.sn-clip__drop-meta { font-size: var(--t-micro); color: var(--text-3); }
+
+/* ── Clipping: what to do next ────────────────────────────────
+   It reached 100% and stopped, with nothing to say the work had moved to
+   eight other nodes. */
+.sn-clip__next {
+  margin: 0 var(--s-2) var(--s-2);
+  padding: var(--s-2);
+  border-left: 2px solid var(--n-video);
+  border-radius: var(--r-row);
+  background: var(--n-video-10);
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  line-height: 1.45;
+}
+
+/* ── Clipping: the score a clip has to beat ───────────────────
+   A slider rather than a number box: the useful question is "stricter or
+   looser than now", not "is 68 better than 71". */
+.sn-clip__score { display: flex; align-items: center; gap: var(--s-2); }
+.sn-clip__score input { width: 108px; accent-color: var(--n-video); }
+.sn-clip__score b {
+  min-width: 22px;
+  text-align: right;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Cut: the post text and what the clip scored ──────────────
+   Copyable because it is going into another app, and retyping it by hand is
+   exactly where a hashtag creeps back into a campaign post. */
+.sn-cut__post {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+}
+.sn-cut__post-text { flex: 1; font-size: var(--t-micro); color: var(--text); line-height: 1.45; }
+.sn-cut__copy {
+  flex: 0 0 auto;
+  padding: 2px var(--s-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: transparent;
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  cursor: pointer;
+}
+.sn-cut__copy:hover { border-color: var(--n-video); color: var(--n-video); }
+.sn-cut__score {
+  padding: 1px 6px;
+  border-radius: var(--r-row);
+  background: var(--n-video-10);
+  color: var(--n-video);
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Clipping: why this run took the slow path ────────────────
+   The reason used to be a log line, and the next log line overwrote it — so
+   the single most actionable fact about a run survived about a second. */
+.sn-clip__slow {
+  margin: 0 var(--s-2) var(--s-2);
+  padding: var(--s-2);
+  border-left: 2px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.45;
+}
+
+/* Clipping: the captions toggle.
+   Shaped like the selects beside it so the strip reads as one row of
+   settings rather than a row plus a stray checkbox. */
+.sn-clip__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px var(--s-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-row);
+  background: var(--sunken);
+  color: var(--text-3);
+  font-size: var(--t-micro);
+  cursor: pointer;
+  user-select: none;
+}
+.sn-clip__toggle input { margin: 0; accent-color: var(--n-video); cursor: pointer; }
+.sn-clip__toggle--on { color: var(--text); border-color: var(--n-video); }
+
+/* ── Cut: the edit plan ──
+   A list of timecoded instructions to follow in CapCut. Nothing here is
+   rendered onto the clip, so it reads as a checklist rather than as a preview:
+   the timecode leads, because that is what you scrub to. */
+.sn-cut__sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  background: var(--surface-2);
+}
+.sn-cut__sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.sn-cut__ops {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 168px;
+  overflow-y: auto;
+}
+.sn-cut__op {
+  display: grid;
+  grid-template-columns: 40px 46px 1fr;
+  gap: 6px;
+  align-items: baseline;
+  font-size: var(--t-micro);
+  color: var(--text-2);
+  line-height: 1.4;
+}
+.sn-cut__op-at {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+/* Colour carries the KIND, and the word is there too — a clipper scanning for
+   every cutaway should not have to remember which hue meant which. */
+.sn-cut__op-kind { text-transform: uppercase; letter-spacing: 0.4px; }
+.sn-cut__op--broll .sn-cut__op-kind { color: var(--n-video); }
+.sn-cut__op--punch .sn-cut__op-kind { color: var(--ok); }
+.sn-cut__op--text  .sn-cut__op-kind { color: var(--accent); }
+.sn-cut__op--sfx   .sn-cut__op-kind { color: var(--warn); }
+.sn-cut__op--intro .sn-cut__op-kind,
+.sn-cut__op--outro .sn-cut__op-kind { color: var(--text-3); }
+.sn-cut__op-what { color: var(--text); min-width: 0; }
+
+/* Legal but flat. Amber rather than red: nothing is wrong, something is
+   missing, and those should not look the same. */
+.sn-cut__sheet-gap {
+  margin: 0;
+  font-size: var(--t-micro);
+  color: var(--warn);
+  line-height: 1.4;
+}
+
+/* A note, not a warning: the generated assets are longer than the sheet asks
+   and that is expected, so it reads in the quiet colour rather than amber. */
+.sn-cut__sheet-note {
+  margin: 0;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.4;
+}
+
+/* ── Cut: the pieces Omni will take ──
+   A statement of fact plus one button, because the only action here is getting
+   them onto disk for a single multi-file pick in Flow. */
+.sn-cut__parts {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  background: var(--surface-2);
+}
+.sn-cut__parts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  font-size: var(--t-micro);
+  color: var(--text-2);
+}
+.sn-cut__parts-note {
+  margin: 0;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.4;
 }

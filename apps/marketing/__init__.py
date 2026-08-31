@@ -1,1 +1,0 @@
-"""Automated marketing email sequences."""

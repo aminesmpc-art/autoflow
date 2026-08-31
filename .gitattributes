@@ -1,1 +1,48 @@
+# Line endings.
+#
+# Several test suites read a source file and assert against its text with a
+# bare \n. With core.autocrlf on — which is the Windows default and is set on
+# this machine — those files arrive in the working tree as CRLF while the
+# repository stores LF, so the assertions failed locally and passed in CI. That
+# is the worst way round: the developer sees red for something that is not
+# wrong, and stops trusting the suite.
+#
+# `text=auto eol=lf` settles it. Git still stores LF as it always did; the
+# difference is that it now checks LF out too, whatever autocrlf says locally,
+# so every machine sees the same bytes the tests were written against.
+* text=auto eol=lf
+
+# The two that genuinely need CRLF. A .bat or .cmd with LF endings can fail in
+# ways that are hard to read — cmd.exe mis-parses a trailing label or a
+# multi-line block — so these keep the platform's own.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binaries, marked so Git never inspects or converts them. Without this a file
+# that happens to look textual can be "normalised" and corrupted, and the
+# damage only shows when something tries to open it.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.mp4 binary
+*.webm binary
+*.mov binary
+*.mp3 binary
+*.wav binary
+*.zip binary
+*.gz binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.pdf binary
+*.onnx binary
+
+# Shell scripts were already pinned before this file grew; kept explicit
+# because it is the one case where the wrong ending is not a cosmetic problem
+# but a script that will not run at all.
 *.sh text eol=lf

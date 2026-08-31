@@ -7,6 +7,7 @@
 import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useStudioStore } from '../store';
+import { NodeInfoBadge } from './NodeInfoBadge';
 
 const MAX_CHARS = 20000;
 
@@ -26,7 +27,7 @@ function PromptNodeComponent({ id, data, selected }: NodeProps) {
   const charCount = nodeData.text?.length || 0;
 
   return (
-    <div className={`sn-wrap sn-wrap--input ${selected ? 'sn-wrap--selected' : ''}`}>
+    <div className={`sn-wrap sn-wrap--input sn-wrap--kind-prompt ${selected ? 'sn-wrap--selected' : ''}`}>
       <div className="sn-actions">
         <button className="sn-actions__btn" onClick={() => duplicateNode(id)} title="Duplicate node">⧉</button>
         <button className="sn-actions__btn sn-actions__btn--danger" onClick={() => removeNode(id)} title="Delete node">🗑</button>
@@ -35,6 +36,7 @@ function PromptNodeComponent({ id, data, selected }: NodeProps) {
       <div className="sn-label">
         <span className="sn-label__icon" aria-hidden="true">✏️</span>
         <span className="sn-label__text">{nodeData.label || 'Prompt'}</span>
+        <NodeInfoBadge type="prompt" />
       </div>
 
       <div className="sn sn--prompt">

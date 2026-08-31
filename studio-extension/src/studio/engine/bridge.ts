@@ -6,6 +6,12 @@
 export type BridgeStatus = 'disconnected' | 'connecting' | 'connected';
 
 export interface NodeExecutionConfig {
+  /* A video already in the Flow library, attached to the prompt so a
+     generation matches the look of the clip it belongs beside. A NAME, not
+     bytes: getting a video INTO Flow cannot be automated — see
+     content/flow/uploadVideo.ts — so the clipper puts it there once by hand
+     and this finds it again every time. */
+  styleReference?: string;
   prompt: string;
   model: string;
   /** 'text' asks ChatGPT for a written answer instead of an image — the reply
@@ -13,11 +19,48 @@ export interface NodeExecutionConfig {
   mediaType: 'image' | 'video' | 'text';
   aspectRatio: string;
   duration?: string;
+  /** Grok Imagine only — 480p / 720p / 1080p. Flow has no such control. */
+  resolution?: string;
+  /** Grok Imagine stills only — how many to render: Auto, 2, 4, 8, 12. */
+  imageCount?: string;
+  /** Grok Imagine stills only — 'Speed' or 'Quality'. Its own radio pair. */
+  quality?: string;
+  /* Grok Imagine's Extend: continue an existing clip rather than start one.
+     extendFromVideo is the mp4 URL of the clip being continued, which is how
+     the content script finds it again in Grok's history. */
+  extend?: boolean;
+  extendSeconds?: string;
+  extendFromVideo?: string;
   creationType: 'ingredients' | 'frames';
+  /** Flow's voice picker — which voice the character in this shot speaks in. */
+  voice?: string;
   referenceImageIds?: string[];
   referenceImageData?: string[]; // base64 fallback
   /** Target platform — the service worker routes by this. Default 'flow'. */
-  platform?: 'flow' | 'chatgpt';
+  platform?: 'flow' | 'chatgpt' | 'gemini' | 'grok';
+  /**
+   * Whether this step may reset the chat thread first.
+   *
+   * 'auto' (the default) is what an ordinary node wants: a clean thread, so
+   * its answer is not conditioned on the node that ran before it.
+   *
+   * 'never' is for the agent loop, which is the one case where the opposite
+   * is true — the loop IS a conversation, and resetting between turns would
+   * make the agent forget the tool results it just read. Only the agent's
+   * opening turn leaves this unset.
+   */
+  newChat?: 'auto' | 'never';
+  /**
+   * Return the reply verbatim, skipping the "is this a usable prompt?" check.
+   *
+   * That check exists for Ask AI, where a two-word answer means ChatGPT asked
+   * a question instead of writing a prompt. An agent turn is a protocol
+   * message and is often shorter than its 20-character floor:
+   * `TOOL: read_canvas {}` is exactly 20, which is the only reason the first
+   * live agent run worked. A shorter action name would have been rejected as
+   * "not a usable prompt" and failed the node.
+   */
+  rawReply?: boolean;
 }
 
 export interface NodeResult {

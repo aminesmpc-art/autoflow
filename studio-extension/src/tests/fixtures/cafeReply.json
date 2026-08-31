@@ -1,0 +1,69 @@
+{
+ "cast": [
+  {
+   "name": "Maya",
+   "look": "Woman in her late twenties, dark curly hair tied back loosely, rain-damp red wool coat over a grey jumper, small silver hoop earrings, no other jewellery.",
+   "role": "lead"
+  },
+  {
+   "name": "the barista",
+   "look": "Man in his forties, shaved head, short greying beard, green canvas apron over a black long-sleeve shirt, small swallow tattoo on his forearm.",
+   "role": "second"
+  },
+  {
+   "name": "the dog",
+   "look": "Small wiry brown terrier asleep under the window table, worn leather collar.",
+   "role": "background"
+  }
+ ],
+ "world": "A small neighbourhood cafe on a rainy afternoon. Warm tungsten light, misted windows, dark wood counter, brass espresso machine.",
+ "look": "Vertical 9:16, natural window light, shallow depth of field, muted greens and warm browns, realistic film grain.",
+ "story": "A quiet, rainy afternoon in a neighbourhood cafe unfolds through fleeting moments of solace, shared warmth, and solitary routine.",
+ "anchor": "Small neighbourhood cafe on a rainy afternoon, warm tungsten light, misted windows, dark wood counter, brass espresso machine, vertical 9:16 framing, natural window light, shallow depth of field, muted greens and warm browns, realistic film grain.",
+ "shots": [
+  {
+   "n": 1,
+   "title": "After Closing",
+   "cast": [
+    "the barista"
+   ],
+   "speaker": "the barista",
+   "prompt": "Vertical 9:16 shot in a small neighbourhood cafe on a rainy afternoon with warm tungsten light, misted windows, dark wood counter, and a brass espresso machine. The barista, a man in his forties with a shaved head, short greying beard, wearing a green canvas apron over a black long-sleeve shirt with a small swallow tattoo on his forearm, stands alone behind the counter. The camera slowly pushes in on a medium close-up as he methodically wipes down the gleaming brass espresso machine with a clean rag. Natural window light blends with muted greens and warm browns, captured with shallow depth of field and realistic film grain. Audio: Low hum of the cafe refrigerator and soft rain trickling on glass. The barista quietly speaks: 'Another quiet one down.'"
+  },
+  {
+   "n": 2,
+   "title": "By The Window",
+   "cast": [
+    "Maya",
+    "the dog"
+   ],
+   "speaker": "Maya",
+   "prompt": "Vertical 9:16 medium shot in a small neighbourhood cafe on a rainy afternoon with warm tungsten light, misted windows, dark wood counter, and a brass espresso machine. Maya, a woman in her late twenties with dark curly hair tied back loosely, wearing a rain-damp red wool coat over a grey jumper and small silver hoop earrings, sits alone at a wooden table by the misted window. The camera slowly tracks sideways as she gazes out at the rain-streaked glass. Natural window light, muted greens and warm browns, shallow depth of field, realistic film grain. Audio: Gentle patter of rain against the windowpane. Maya quietly whispers: 'It is nice just to stop for a minute.'"
+  },
+  {
+   "n": 3,
+   "title": "Maya Orders",
+   "cast": [
+    "Maya"
+   ],
+   "speaker": "Maya",
+   "prompt": "Vertical 9:16 wide establishing shot in a small neighbourhood cafe on a rainy afternoon with warm tungsten light, misted windows, dark wood counter, and a brass espresso machine. Maya, a woman in her late twenties with dark curly hair tied back loosely, wearing a rain-damp red wool coat over a grey jumper and small silver hoop earrings, steps up alone to the dark wood counter. The camera smoothly tracks inward as she shakes rain droplets off her sleeves and speaks. Natural window light, muted greens and warm browns, shallow depth of field, realistic film grain. Audio: Steady rainfall outside. Maya speaks clearly: 'Just the usual for me today, please.'"
+  },
+  {
+   "n": 4,
+   "title": "The Exchange",
+   "cast": [
+    "Maya",
+    "the barista"
+   ],
+   "speaker": "the barista",
+   "prompt": "Vertical 9:16 over-the-shoulder medium shot across the dark wood counter in a small neighbourhood cafe on a rainy afternoon with warm tungsten light, misted windows, and a brass espresso machine. Maya, a woman in her late twenties with dark curly hair tied back loosely, wearing a rain-damp red wool coat over a grey jumper and small silver hoop earrings, stands opposite the barista, a man in his forties with a shaved head, short greying beard, green canvas apron over a black long-sleeve shirt with a small swallow tattoo. The camera drifts subtly as he slides a steaming ceramic cup toward her. Shallow depth of field, realistic film grain. Audio: Ambient rain rhythm and faint espresso machine hiss. The barista speaks warmly: 'Hot and ready, just how you like it.'"
+  },
+  {
+   "n": 5,
+   "title": "Empty Room",
+   "cast": [],
+   "prompt": "Vertical 9:16 slow push-in shot focusing on an untouched ceramic cup on a wooden table beside a rain-misted window in an empty small neighbourhood cafe on a rainy afternoon. In the background, the dark wood counter and brass espresso machine sit still under warm tungsten light. Nobody is in frame. Delicate plumes of white steam drift upward as thick raindrops bead and run down the misted windowpane. Natural window light mixing with warm tungsten glow, muted greens and warm earthy browns, shallow depth of field, realistic film grain. Audio: Rhythmic drumming of rain on the glass and peaceful cafe room tone."
+  }
+ ]
+}

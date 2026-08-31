@@ -11,6 +11,28 @@ export const metadata = {
 
 const releases = [
   {
+    version: "5.3",
+    date: "2026-08-25",
+    title: "Clipping, and a One-Click Route from the Extractor",
+    highlights: [
+      "Turn a long recording into short clips — Studio listens to the whole thing, picks the moments worth posting, and cuts each one on the words it actually starts and ends on rather than on a timestamp somebody guessed",
+      "The speaker stays in frame — every clip is framed from a face track measured on the server, frame by frame, instead of asking a chat model where somebody was standing. On a mirror shot the old approach picked the reflection",
+      "Captions that land on the word — burned in from the timings the cut already measured, in five looks including a word-by-word highlight. A short caption no longer sits on top of the one after it",
+      "A director for the edit — each cut now arrives with what to add and when: the b-roll, the punch-in, the text on screen, the sound effect, the intro and outro cards, timed to the second so you can drop them straight into CapCut",
+      "Cutaways generated for you, and split into pieces Omni will take — a clip longer than ten seconds is divided on its own pauses, never mid-word, so every piece is something Flow will actually edit",
+      "Send an extraction straight to Studio — analyse a video on the Extractor, press one button, and the workflow opens on the canvas with characters wired into every still and each still into its own clip. No file to download, no import step",
+    ],
+    improvements: [
+      "Run the clipping once and it stays run. Reopening a workflow no longer re-cuts everything — the cuts, the captions and the edit sheet are written down and come back with it",
+      "The Clipping node shows what it found and what it judged, so a run you can't see is no longer a run you can't trust",
+      "Every model decision now goes through the API instead of a browser tab, so a run no longer depends on which chat happens to be signed in",
+      "A twenty-minute video is read as twenty minutes — it used to come back transcribed for seven",
+      "The workflow builder now catches three more mistakes before you pay for them: a still that gets generated and then used nowhere, clips in mismatched shapes that can't be cut together, and a prompt too thin to be a shot",
+      "The builder keeps the model you picked. It used to quietly substitute the house default",
+      "A 9:16 crop of a chart is a blank rectangle, so a clip with nobody on camera is now framed to keep what's there",
+    ],
+  },
+  {
     version: "5.2",
     date: "2026-08-01",
     title: "Pro Activates Every Time",

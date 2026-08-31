@@ -1,0 +1,228 @@
+/* ============================================================
+   AutoFlow Studio — the design system, for every surface.
+
+   There are two surfaces: the side panel (a 320px strip docked beside the
+   site being driven) and the studio canvas (a full tab). Until now they were
+   two stylesheets with two palettes and no shared vocabulary — 28 tokens on
+   one side, and on the other 2158 lines holding 87 distinct hex colours, 86
+   distinct rgba values, 23 font sizes and 17 border radii.
+
+   Neither looked broken on its own. Together they looked unresolved, which is
+   the usual way this failure shows up: the panel's accent was lime, the
+   canvas's was orange, and the extension's own icon is neither — it is
+   violet. Three answers to a question that should have one.
+
+   So: one file, imported by both. Three layers, and the layers matter,
+   because most of the confusion came from a colour doing two unrelated jobs
+   at once.
+
+     1. BRAND + CHROME — violet. Buttons, focus, selection, active nav.
+        Anything that means "the app is talking to you".
+     2. STATUS — ok / warn / bad / busy. Anything that means "your work is in
+        this state". Never the only signal; each one carries a word too.
+     3. NODE FAMILIES — canvas only. Hue as a label for what a node IS.
+        Never used for chrome, so a focused text field can no longer look
+        like an image node.
+
+   Every contrast ratio quoted below was computed against the surface named,
+   not estimated. Nothing under 4.5:1 is used for text.
+   ============================================================ */
+
+:root {
+  /* ---- Surfaces ----------------------------------------------
+     A neutral obsidian ramp, no blue cast. The two stylesheets had
+     independently converged on nearly this (--line #26262c was already
+     identical in both), so unifying them is close to a visual no-op — which
+     is exactly why it was safe to do first. */
+  --canvas:     #0a0a0c;   /* the dot grid the nodes sit on — deepest */
+  --sunken:     #0d0d0f;   /* wells: code blocks, log output, inset lists */
+  --bg:         #121214;   /* page background */
+  --surface:    #17171a;   /* cards, nodes, panels */
+  --surface-2:  #1d1d21;   /* raised: controls on a card, hover states */
+  --surface-3:  #26262c;   /* pressed / selected fills */
+  --line:       #26262c;   /* hairlines */
+  --line-2:     #33333b;   /* borders that need to be seen */
+
+  /* ---- Text --------------------------------------------------
+     Measured on --bg: --text 17.0:1, --text-2 9.1:1, --text-3 5.5:1.
+     On --canvas each is slightly higher. Nothing dimmer ships; the canvas
+     used to reach down to #444 and #555, which is invisible. */
+  --text:       #f4f4f6;
+  --text-2:     #b4b4be;
+  --text-3:     #8a8a95;
+  --on-accent:  #12002b;   /* dark violet-black, for text ON a filled accent */
+
+  /* ---- 1. Brand + chrome -------------------------------------
+     Violet, sampled from icon128.png — the mark is a gradient running
+     hue 236..273, median 248. It is the one asset that appears in the Chrome
+     toolbar and the store listing, so it is the fixed point the UI should
+     agree with rather than argue with.
+
+     --accent on --bg is 5.97:1, so it is safe as text and as an icon.
+     Filled buttons take --on-accent, not white: white on this violet is
+     3.14:1 and fails. That is the same "bright fill, dark label" pattern the
+     panel already used for lime, so no button style has to change shape. */
+  --accent:      #a07afd;
+  --accent-dim:  #7c5cf5;  /* hover, pressed, and thin borders */
+  --accent-deep: #4c3b9d;  /* gradient far end, from the icon's dark lobe */
+  --accent-8:    rgba(160, 122, 253, 0.08);
+  --accent-14:   rgba(160, 122, 253, 0.14);
+  --accent-30:   rgba(160, 122, 253, 0.30);
+
+  /* ---- Solid fills that carry a white label ------------------
+     --accent itself cannot: white on it is 3.14:1, as the note above says.
+     These are deep enough that white clears AA — 5.4:1 and 5.7:1 — which is
+     why the primary Run button is this violet and not the brand one. Keep
+     them for filled buttons; --accent stays the colour of text and icons. */
+  --accent-solid:     #9333ea;
+  --accent-solid-dim: #7c3aed;
+  --accent-solid-lit: #a855f7;   /* hover, the light end of the gradient */
+  --bad-solid:      #dc2626;     /* a destructive filled button */
+  --bad-solid-line: #ef4444;
+  --on-solid:       #ffffff;     /* label on any of the above */
+  --accent-50:   rgba(160, 122, 253, 0.50);
+
+  /* ---- 2. Status ---------------------------------------------
+     On --surface: ok 10.3:1, warn 10.7:1, bad 6.5:1, busy 10.7:1. */
+  --ok:       #4ade80;
+  --ok-16:    rgba(74, 222, 128, 0.16);
+  --warn:     #fbbf24;
+  --warn-16:  rgba(251, 191, 36, 0.16);
+  --bad:      #f87171;
+  --bad-12:   rgba(248, 113, 113, 0.12);
+  --bad-30:   rgba(248, 113, 113, 0.30);
+  --busy:     #fbbf24;   /* running. Same hue as warn on purpose: both mean
+                            "not finished", and inventing a third yellow was
+                            how the canvas ended up with #eab308 too. */
+  --busy-16:  rgba(251, 191, 36, 0.16);
+
+  /* ---- 3. Node families (canvas) -----------------------------
+     Hue answers one question only: what kind of node is this. The gallery
+     and the canvas disagreed about this — a prompt dot was orange in the
+     gallery and green on the node — so the same workflow changed colour
+     depending on which screen you opened it from. One definition now.
+
+     Agent moved off #a855f7: at 4.52:1 it was both too dim and too close to
+     the brand violet to read as a different thing. */
+  --n-prompt:   #22c55e;   /* text you write        7.9:1 */
+  --n-image:    #60a5fa;   /* a still               7.0:1 — lifted from
+                              #3b82f6, which was also the input focus colour */
+  --n-video:    #f97316;   /* a clip                6.4:1 */
+  --n-ask:      #38bdf8;   /* ask a chat model      8.0:1 */
+  /* NOTE: this sits within a few points of --accent (#a07afd), which the
+     "hue means one thing" rule would rather it did not. It had no consumers
+     at all until the toolbar picked violet for it, so this records what is on
+     screen rather than inventing a third answer. Worth revisiting. */
+  --n-agent:    #a78bfa;   /* an agent run          6.9:1 */
+  --n-frame:    #c084fc;   /* continue from a frame 6.5:1 */
+  --n-story:    #fb7185;   /* a written shot list   6.2:1 */
+  --n-extend:   #34d399;   /* continue a clip       8.7:1 */
+
+  --n-prompt-10: rgba(34, 197, 94, 0.10);
+  --n-image-10:  rgba(96, 165, 250, 0.10);
+  --n-video-10:  rgba(249, 115, 22, 0.10);
+  --n-ask-10:    rgba(56, 189, 248, 0.10);
+  --n-agent-10:  rgba(167, 139, 250, 0.10);
+  --n-frame-10:  rgba(192, 132, 252, 0.10);
+  --n-story-10:  rgba(251, 113, 133, 0.10);
+  --n-extend-10: rgba(52, 211, 153, 0.10);
+
+  /* Third-party marks. Not ours to restyle, and not part of any ramp. */
+  --brand-chatgpt: #10a37f;
+  --brand-gemini:  #4285f4;
+  --brand-claude:  #d97757;
+  --brand-grok:    #e4e4e7;
+  --brand-zai:     #22d3ee;
+  /* Google's sign-in button is a published spec with fixed values. Named so
+     it is obviously not ours to restyle, rather than looking like a stray
+     light-mode colour that wandered into a dark stylesheet. */
+  --google-face:   #ffffff;
+  --google-ink:    #1f1f1f;
+  --google-line:   #dadce0;
+  --google-hover:  #f7f8f8;
+
+  /* ---- Type scale --------------------------------------------
+     Eight steps, replacing twenty-three. The canvas had 8, 9, 9.5, 10, 10.5,
+     11, 11.5, 12, 12.5 … — nine sizes inside five pixels, which is not a
+     scale, it is noise. Nothing below 11px ships as information: the panel
+     learned that already and the canvas had 8px labels. */
+  --t-micro:  11px;   /* eyebrow labels, counts, meta */
+  --t-small:  12px;
+  --t-body:   13px;   /* default */
+  --t-mid:    14px;
+  --t-lg:     16px;
+  --t-title:  20px;
+  --t-hero:   28px;
+  --t-display:40px;
+
+  /* ---- Radius ------------------------------------------------
+     Five steps, replacing seventeen (every integer from 1 to 16 was in use). */
+  --r-chip:  6px;
+  --r-ctrl:  8px;
+  --r-row:  10px;
+  --r-card: 12px;
+  --r-panel: 16px;  /* a floating glass panel, larger than any card on it */
+  --r-pill: 999px;
+
+  /* ---- Spacing -----------------------------------------------
+     A 4px grid. Quoted so new code has somewhere to land instead of
+     inventing 7px. */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+
+  /* ---- Elevation ---------------------------------------------
+     Dark UI: shadow alone is nearly invisible, so each step pairs a shadow
+     with a lighter surface. Use the pair, not the shadow on its own. */
+  --e-1: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --e-2: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --e-3: 0 12px 32px rgba(0, 0, 0, 0.55);
+
+  /* ---- Focus -------------------------------------------------
+     One ring everywhere. Two rings, not one: the inner one in the page
+     colour keeps the outer one legible against a control of any fill. */
+  --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  --focus-on-canvas: 0 0 0 2px var(--canvas), 0 0 0 4px var(--accent);
+
+  /* ---- Motion ------------------------------------------------ */
+  --fast: 120ms cubic-bezier(0.2, 0, 0.2, 1);
+  --base: 200ms cubic-bezier(0.2, 0, 0.2, 1);
+  --spring: 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ---- Glow & Elevation (node hover / interactions) ---------- */
+  --glow-accent: 0 0 24px rgba(160, 122, 253, 0.18);
+  --glow-accent-sm: 0 0 12px rgba(160, 122, 253, 0.22);
+  --glow-ok:     0 0 20px rgba(74, 222, 128, 0.16);
+  --glow-warm:   0 0 18px rgba(251, 191, 36, 0.14);
+  --glow-bad:    0 0 18px rgba(248, 113, 113, 0.18);
+  --e-node-hover: 0 8px 28px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--accent-14);
+  --e-card-hover: 0 6px 20px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--accent-30);
+
+  /* ---- Glass (backdrop-blur cards) --------------------------- */
+  --glass-bg:        rgba(18, 18, 21, 0.78);
+  --glass-bg-heavy:  rgba(13, 13, 15, 0.88);
+  --glass-border:    rgba(255, 255, 255, 0.06);
+  --glass-highlight: rgba(255, 255, 255, 0.08);
+  --glass-shine:  linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    transparent 40%,
+    transparent 60%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+}
+
+/* Respect the OS setting. Several canvas animations loop forever — a spinning
+   badge, a pulsing running node — and a looping animation is the kind most
+   likely to cause harm to someone who asked for less of it. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

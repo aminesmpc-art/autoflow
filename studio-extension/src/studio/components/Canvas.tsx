@@ -18,21 +18,60 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
+import { Icon } from './Icon';
+import { getUpgradeTarget } from '../../shared/api';
+import { StoryNode } from '../nodes/StoryNode';
+import { ClippingNode } from '../nodes/ClippingNode';
+import { CutNode } from '../nodes/CutNode';
+import { canConnect, connectionProblem } from '../canvas/connect';
+import { BrandIcon } from './BrandIcon';
 import { useStudioStore, FREE_LIMITS } from '../store';
 import { consumeStudioRun } from '../../shared/api';
 import { PromptNode } from '../nodes/PromptNode';
 import { ImageNode } from '../nodes/ImageNode';
 import { GenerateNode } from '../nodes/GenerateNode';
 import { FrameNode } from '../nodes/FrameNode';
+import { ExtendNode } from '../nodes/ExtendNode';
+import { AgentNode } from '../nodes/AgentNode';
+import { NodeBoundary } from './NodeBoundary';
+import { DeletableEdge } from '../canvas/DeletableEdge';
 import { runner } from '../engine/WorkflowRunner';
 import { bridge } from '../engine/bridge';
+import { mcpBridge, type McpBridgeStatus } from '../engine/mcpBridge';
+import { isRunnableType } from '../templates/validate';
 
 /* Register custom node types */
+/* Each node type wrapped so a render error is contained to its own card.
+   Without this, one node throwing unmounts the entire canvas: React tears
+   down the tree and Studio goes black, with the workflow still saved and no
+   longer openable. */
+const guarded = (Node: any, label: string) => {
+  const Guarded = (props: any) => (
+    <NodeBoundary label={(props?.data as any)?.label || label}>
+      <Node {...props} />
+    </NodeBoundary>
+  );
+  Guarded.displayName = `Guarded(${label})`;
+  return Guarded;
+};
+
 const nodeTypes = {
-  prompt: PromptNode,
-  image: ImageNode,
-  generate: GenerateNode,
-  frame: FrameNode,
+  prompt: guarded(PromptNode, 'Prompt'),
+  image: guarded(ImageNode, 'Image'),
+  generate: guarded(GenerateNode, 'Generate'),
+  frame: guarded(FrameNode, 'Last Frame'),
+  extend: guarded(ExtendNode, 'Extend'),
+  agent: guarded(AgentNode, 'Agent'),
+  story: guarded(StoryNode, 'Director'),
+  clip: guarded(ClippingNode, 'Clipping'),
+  cut: guarded(CutNode, 'Cut'),
+};
+
+const edgeTypes = {
+  default: DeletableEdge,
+  deletable: DeletableEdge,
+  bezier: DeletableEdge,
+  smoothstep: DeletableEdge,
 };
 
 function CanvasInner() {
@@ -65,37 +104,60 @@ function CanvasInner() {
   } = useStudioStore();
 
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
+  const [mcpStatus, setMcpStatus] = useState<McpBridgeStatus>('disconnected');
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { zoomIn, zoomOut, fitView } = useReactFlow();
+  const { zoomIn, zoomOut, fitView, setCenter } = useReactFlow();
   const zoomPct = Math.round(useStore((s) => s.transform[2]) * 100);
   const [showMinimap, setShowMinimap] = useState(true);
+
+  /* Put a node in the middle of the screen.
+     A run happens across a canvas wider than the screen, so "which node is
+     this" and "where is the one that failed" were both answered by dragging
+     around looking for a coloured border. */
+  const flyTo = useCallback(
+    (nodeId: string) => {
+      const n = nodes.find((x) => x.id === nodeId);
+      if (!n) return;
+      // Offset by half the node so it lands centred rather than top-left.
+      setCenter(n.position.x + 150, n.position.y + 180, { zoom: 0.9, duration: 500 });
+    },
+    [nodes, setCenter]
+  );
 
   const handleRecenter = useCallback(
     () => fitView({ padding: 0.25, maxZoom: 1, duration: 300 }),
     [fitView]
   );
 
-  /* Only Generate nodes actually execute — a canvas of prompts alone can't run */
-  const canRun = nodes.some((n) => (n.data as any)?.type === 'generate');
+  /* Only runnable nodes execute — a canvas of prompts alone can't run.
+     Asking the shared list rather than testing for 'generate': an agent-only
+     canvas is a real workflow, and this check silently disabled Run on one. */
+  const canRun = nodes.some((n) => isRunnableType((n.data as any)?.type));
 
-  /* Connect bridge on mount */
+  /* Connect bridges on mount */
   useEffect(() => {
     bridge.connect();
-    loadEntitlements();
-    return () => bridge.disconnect();
-  }, [loadEntitlements]);
+    const unsubMcp = mcpBridge.onStatusChange(setMcpStatus);
+    useStudioStore.getState().loadEntitlements();
+    return () => {
+      bridge.disconnect();
+      unsubMcp();
+    };
+  }, []);
 
   /* Signing in happens in the side panel, which the canvas cannot see.
      Without this, someone who signs in with the canvas already open keeps
      looking at Free limits until they reopen it. */
   useEffect(() => {
     const onChange = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-      if (area === 'local' && changes.af_cached_profile) loadEntitlements();
+      if (area === 'local' && changes.af_cached_profile) {
+        useStudioStore.getState().loadEntitlements();
+      }
     };
     chrome.storage.onChanged.addListener(onChange);
     return () => chrome.storage.onChanged.removeListener(onChange);
-  }, [loadEntitlements]);
+  }, []);
 
   /* Ctrl/Cmd+S saves, as in every other editor */
   useEffect(() => {
@@ -128,11 +190,17 @@ function CanvasInner() {
   const handleRun = useCallback(async () => {
     if (isRunning || !canRun) return;
 
-    // Only enabled Generate nodes reach Flow — Prompt/Image nodes just carry
-    // data, so charging for them would over-bill the user.
+    /* Only enabled runnable nodes reach a service — Prompt/Image nodes just
+       carry data, so charging for them would over-bill the user.
+
+       An agent counts as one here, which is an UNDER-count: its loop can spend
+       up to maxIterations chat turns, each of them the same cost as an Ask AI
+       node. Counting the cap instead would gate a 10-step agent as ten
+       generations before it has done anything. Left at one deliberately rather
+       than decided quietly — it is a pricing call, not a code call. */
     const generateCount = nodes.filter((n) => {
       const d = n.data as any;
-      return d?.type === 'generate' && d?.enabled !== false;
+      return isRunnableType(d?.type) && d?.enabled !== false;
     }).length;
 
     const gate = await consumeStudioRun(nodes.length, generateCount);
@@ -157,11 +225,56 @@ function CanvasInner() {
     runner.run(nodes, edges);
   }, [nodes, edges, isRunning, canRun, isPro, runBlockedReason, recordRun, setRunsUsed]);
 
+  /* How close the ceiling is, said once.
+     A fifth of the allowance, floored at five, so it behaves whether free is
+     ten runs or fifty. */
+  const runsLeft = Math.max(0, FREE_LIMITS.runsPerMonth - runsUsed);
+  const LOW_RUNS = Math.max(5, Math.round(FREE_LIMITS.runsPerMonth * 0.2));
+
+  /* Where Pro lives, decided by the server rather than written in here twice.
+     The template gallery has always asked; the topbar and the limit notice
+     had the pricing URL hardcoded, so a change to it would have fixed one
+     conversion surface out of three. */
+  const openUpgrade = useCallback(async () => {
+    let url = 'https://auto-flow.studio/pricing';
+    try { url = (await getUpgradeTarget()).url || url; } catch { /* the literal is the fallback */ }
+    window.open(url, '_blank', 'noopener');
+  }, []);
+
   /* Nodes the user can retry — anything a run left in error. */
+  /* What the run bar reads. currentNodeId is set by the runner as each node
+     starts, so the bar names the node rather than saying "running". */
+  const currentNodeId = useStudioStore((st) => st.currentNodeId);
+  const runningLabel = (() => {
+    const n = nodes.find((x) => x.id === currentNodeId);
+    return ((n?.data as any)?.label as string) || 'Starting…';
+  })();
+
+  /* Elapsed, ticking on its own. A run has no total to count down from, so
+     time spent is the honest number — and a bar that only moves once per node
+     looks frozen during a five-minute video. */
+  const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState('0:00');
+  useEffect(() => {
+    if (!isRunning) { setRunStartedAt(null); setElapsed('0:00'); return; }
+    const started = runStartedAt ?? Date.now();
+    if (runStartedAt === null) setRunStartedAt(started);
+    const tick = () => {
+      const total = Math.max(0, Math.floor((Date.now() - started) / 1000));
+      setElapsed(`${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [isRunning, runStartedAt]);
+
   const failedNodeIds = nodes
     .filter((n) => {
       const d = n.data as any;
-      return d?.type === 'generate' && d?.status === 'error';
+      /* Extend nodes fail like generate nodes and must be offered in the same
+         Retry failed set — left out, a failed extend had no way back except
+         re-running the whole workflow and paying for the clips again. */
+      return isRunnableType(d?.type) && d?.status === 'error';
     })
     .map((n) => n.id);
 
@@ -228,11 +341,18 @@ function CanvasInner() {
   }, []);
 
   /* Handle new connections */
+  /* Refuse a wire that cannot work, and say why.
+     Without this any port connected to any port: React Flow drew the edge,
+     nothing complained, and the run failed later pointing at a node that
+     looked correctly connected because there was a line going into it. */
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
+      const problem = connectionProblem(connection as any);
+      if (problem) { setLimitMsg(problem); return; }
+      setLimitMsg(null);
       setEdges(addEdge({
         ...connection,
-        type: 'default',
+        type: 'deletable',
         animated: true,
         style: { stroke: '#8b5cf6', strokeWidth: 2.5 },
       }, edges));
@@ -325,12 +445,162 @@ function CanvasInner() {
   }, [addNode, nodes, guardAdd]);
 
   /**
+   * A generate node preconfigured for Grok Imagine.
+   *
+   * Same node type underneath — one execution path, one set of ports — but
+   * Grok and Flow have almost nothing in common to configure. Flow has a model
+   * list, ingredients and Start/End frames; Imagine has resolution, its own
+   * clip lengths, and Extend. Reaching Grok by adding a Flow node and changing
+   * two dropdowns made one node look like it did both jobs badly, which is the
+   * confusion this splits.
+   */
+  const addGrokNode = useCallback(() => {
+    if (!guardAdd()) return;
+    const id = `grok_${Date.now()}`;
+    addNode({
+      id,
+      type: 'generate',
+      position: { x: 620, y: 320 + nodes.length * 50 },
+      data: {
+        type: 'generate',
+        label: `Grok Clip ${nodes.filter((n) => {
+          const d = n.data as any;
+          return d.type === 'generate' && d.platform === 'grok';
+        }).length + 1}`,
+        platform: 'grok',
+        // Imagine's own defaults, so the node matches the page it drives.
+        mediaType: 'video',
+        model: '',
+        aspectRatio: '9:16',
+        duration: '10s',
+        resolution: '720p',
+        creationType: 'ingredients',
+        enabled: true,
+        status: 'idle',
+        resultUrl: null,
+        previewUrl: '',
+        resultTileId: null,
+        progress: 0,
+        errorMessage: null,
+      },
+    });
+  }, [addNode, nodes, guardAdd]);
+
+  /**
+   * Grok's extend, as its own node.
+   *
+   * It was a toggle on the clip node, and that hid what it is: a second
+   * generation with its own prompt, its own length and its own result. As a
+   * node it can also be chained, which is how a 10s clip reaches 30 — and how
+   * the arithmetic that caps it becomes something you can see rather than
+   * something a run discovers.
+   */
+  /**
+   * An agent: a goal in, a loop, an answer out.
+   *
+   * Starts with read_canvas only. Tested against live ChatGPT, a model asked
+   * to produce an image produced it itself rather than calling the tool - so
+   * the default tool is the one it cannot fake, and generate_image is opt-in.
+   */
+  const addAgentNode = useCallback(() => {
+    if (!guardAdd()) return;
+    const id = `agent_${Date.now()}`;
+    addNode({
+      id,
+      type: 'agent',
+      position: { x: 620, y: 260 + nodes.length * 50 },
+      data: {
+        type: 'agent',
+        label: `Agent ${nodes.filter((n) => (n.data as any).type === 'agent').length + 1}`,
+        platform: 'chatgpt',
+        mediaType: 'text',
+        maxIterations: 4,
+        tools: ['read_canvas'],
+        system: '',
+        agentSteps: [],
+        enabled: true,
+        status: 'idle',
+        progress: 0,
+        errorMessage: null,
+      },
+    });
+  }, [addNode, nodes, guardAdd]);
+
+  const addExtendNode = useCallback(() => {
+    if (!guardAdd()) return;
+    const id = `extend_${Date.now()}`;
+    addNode({
+      id,
+      type: 'extend',
+      position: { x: 900, y: 320 + nodes.length * 50 },
+      data: {
+        type: 'extend',
+        label: `Extend ${nodes.filter((n) => (n.data as any).type === 'extend').length + 1}`,
+        extendSeconds: '+10s',
+        enabled: true,
+        status: 'idle',
+        progress: 0,
+        errorMessage: null,
+      },
+    });
+  }, [addNode, nodes, guardAdd]);
+
+  /**
    * A generate node preconfigured to ask ChatGPT for text.
    *
    * Same node type underneath — it reuses the whole execution path — but
    * reaching it by adding a Generate node and changing two dropdowns meant
    * nobody found it. As its own button it is a thing you can add.
    */
+  /* One director for the whole workflow. Its own node rather than a mode on
+     Ask AI, because a node that writes the whole set has to see the graph, and
+     five wires leaving a box says that better than a checkbox does. */
+  const addStoryNode = useCallback(() => {
+    if (!guardAdd()) return;
+    const id = `story_${Date.now()}`;
+    addNode({
+      id,
+      type: 'story',
+      position: { x: 300, y: 250 + nodes.length * 50 },
+      data: {
+        type: 'story',
+        /* The stored type stays 'story' — every saved workflow, all 26
+           templates and the builder's plan format hold that string, and this
+           rename is the label only. */
+        label: `Director ${nodes.filter((x) => x.type === 'story').length + 1}`,
+        platform: 'gemini',
+        mediaType: 'text',
+        preset: '',
+        structure: 'hook',
+        cameraProgression: 'dynamic',
+        audioMode: 'cinematic',
+        visualPreset: 'none',
+        status: 'idle',
+      },
+    } as any);
+  }, [addNode, nodes, guardAdd]);
+
+  /* The Clipping node. Its own node rather than a mode on the Director:
+     the Director writes prompts from an idea, this one reads a recording and
+     decides what is in it. Same canvas, opposite direction of travel. */
+  const addClipNode = useCallback(() => {
+    if (!guardAdd()) return;
+    const id = `clip_${Date.now()}`;
+    addNode({
+      id,
+      type: 'clip',
+      position: { x: 300, y: 250 + nodes.length * 50 },
+      data: {
+        type: 'clip',
+        label: `Clipping ${nodes.filter((x) => x.type === 'clip').length + 1}`,
+        platform: 'gemini',
+        sourceName: '',
+        sourceKey: '',
+        status: 'idle',
+      },
+    } as any);
+  }, [addNode, nodes, guardAdd]);
+
   const addAskNode = useCallback(() => {
     if (!guardAdd()) return;
     const id = `ask_${Date.now()}`;
@@ -367,7 +637,7 @@ function CanvasInner() {
       <div className="studio-topbar">
         <div className="studio-topbar__left">
           <button className="studio-topbar__back" onClick={() => setView('gallery')} title="Back to Gallery">
-            ←
+            <Icon name="back" className="studio-topbar__glyph" />
           </button>
           <input
             className="studio-topbar__name"
@@ -375,51 +645,79 @@ function CanvasInner() {
             onChange={(e) => setWorkflowName(e.target.value)}
           />
         </div>
-        <div className="studio-topbar__center">
-          {isRunning && (
-            <div className="studio-topbar__progress">
-              <div className="studio-topbar__progress-bar">
-                <div
-                  className="studio-topbar__progress-fill"
-                  style={{ width: `${runProgress.total ? (runProgress.current / runProgress.total) * 100 : 0}%` }}
-                />
-              </div>
-              <span className="studio-topbar__progress-text">
-                {runProgress.current}/{runProgress.total}
-              </span>
-            </div>
-          )}
-        </div>
+        {/* Progress used to live here as well as in the run bar — the same
+            "0/5" in two places, neither of them next to the controls. The run
+            bar owns it now. */}
+        <div className="studio-topbar__center" />
         <div className="studio-topbar__right">
           {isPro ? (
             <span className="studio-topbar__stat">
-              ⚡ Nodes {nodes.length} · <span className="studio-topbar__pro">PRO</span>
+              Nodes {nodes.length} · <span className="studio-topbar__pro">PRO</span>
             </span>
           ) : (
             <>
-              <span className={`studio-topbar__stat ${runsUsed >= FREE_LIMITS.runsPerMonth ? 'studio-topbar__stat--maxed' : ''}`}>
-                Runs {Math.min(runsUsed, FREE_LIMITS.runsPerMonth)}/{FREE_LIMITS.runsPerMonth}
+              {/* What is left, not what is spent.
+                  "Runs 8/50" reads the same at 8 as at 48 — the number that
+                  decides anything is the one going down. */}
+              <span className={`studio-topbar__stat ${
+                runsLeft === 0 ? 'studio-topbar__stat--maxed'
+                  : runsLeft <= LOW_RUNS ? 'studio-topbar__stat--low' : ''
+              }`}>
+                {runsLeft === 0 ? 'No runs left' : `${runsLeft} runs left`}
               </span>
-              <span className={`studio-topbar__stat ${nodes.length >= FREE_LIMITS.nodes ? 'studio-topbar__stat--maxed' : ''}`}>
-                Nodes {nodes.length}/{FREE_LIMITS.nodes}
+              <span className={`studio-topbar__stat ${
+                FREE_LIMITS.nodes && nodes.length >= FREE_LIMITS.nodes ? 'studio-topbar__stat--maxed' : ''
+              }`}>
+                Nodes {nodes.length}{FREE_LIMITS.nodes ? `/${FREE_LIMITS.nodes}` : ''}
               </span>
-              <a
-                className="studio-topbar__upgrade"
-                href="https://auto-flow.studio/pricing"
-                target="_blank"
-                rel="noopener noreferrer"
+              {/* Loud only when it is the thing in the way. A button that
+                  looks the same on run 1 as on run 50 is furniture by the
+                  time it matters. */}
+              <button
+                type="button"
+                className={`studio-topbar__upgrade ${
+                  runsLeft <= LOW_RUNS ? 'studio-topbar__upgrade--urgent' : ''
+                }`}
+                onClick={openUpgrade}
               >
-                ⬆ Upgrade
-              </a>
+                <Icon name="upgrade" className="studio-topbar__glyph" />
+                {runsLeft === 0 ? 'Get more runs' : 'Upgrade'}
+              </button>
             </>
           )}
+          <span 
+            className="studio-topbar__stat"
+            title={mcpStatus === 'connected' ? 'MCP Bridge connected to Claude/Cursor (ws://localhost:8124)' : 'MCP Bridge offline (auto-reconnecting)'}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'help',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              background: mcpStatus === 'connected' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+              border: `1px solid ${mcpStatus === 'connected' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.06)'}`,
+            }}
+          >
+            <span style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              backgroundColor: mcpStatus === 'connected' ? '#10B981' : '#6B7280',
+              boxShadow: mcpStatus === 'connected' ? '0 0 8px #10B981' : 'none',
+              transition: 'all 0.3s ease'
+            }} />
+            <span style={{ fontSize: '0.78rem', color: mcpStatus === 'connected' ? '#10B981' : 'var(--text-muted)' }}>
+              MCP {mcpStatus === 'connected' ? 'Active' : 'Idle'}
+            </span>
+          </span>
           <button
             className="studio-topbar__icon"
             onClick={() => exportWorkflow()}
             disabled={nodes.length === 0}
             title="Export workflow as JSON"
           >
-            ⭳
+            <Icon name="import" className="studio-topbar__glyph" />
           </button>
           <button
             className={`studio-topbar__save ${saveState === 'error' ? 'studio-topbar__save--error' : ''} ${saveState === 'saved' ? 'studio-topbar__save--ok' : ''}`}
@@ -427,10 +725,11 @@ function CanvasInner() {
             disabled={nodes.length === 0 || saveState === 'saving'}
             title={saveError || 'Save workflow (Ctrl+S)'}
           >
-            {saveState === 'saving' ? 'Saving…'
-              : saveState === 'saved' ? '✓ Saved'
-              : saveState === 'error' ? '⚠ Failed'
-              : isDirty ? '● Save' : 'Save'}
+            {saveState === 'saving' ? <>Saving…</>
+              : saveState === 'saved' ? <><Icon name="check" className="studio-topbar__glyph" /> Saved</>
+              : saveState === 'error' ? <><Icon name="alert" className="studio-topbar__glyph" /> Failed</>
+              : isDirty ? <><Icon name="dot" className="studio-topbar__glyph studio-topbar__glyph--dirty" /> Save</>
+              : <>Save</>}
           </button>
         </div>
       </div>
@@ -439,48 +738,90 @@ function CanvasInner() {
       {limitMsg && (
         <div className="studio-limit">
           <span className="studio-limit__text">{limitMsg}</span>
-          <a className="studio-limit__cta" href="https://auto-flow.studio/pricing" target="_blank" rel="noopener noreferrer">
+          <button type="button" className="studio-limit__cta" onClick={openUpgrade}>
             Upgrade
-          </a>
+          </button>
           <button className="studio-limit__close" onClick={() => setLimitMsg(null)} aria-label="Dismiss">×</button>
         </div>
       )}
 
       {/* Node Toolbar (Left sidebar) */}
       <div className="studio-toolbar">
-        <button className="studio-toolbar__btn studio-toolbar__btn--add" onClick={addPromptNode} aria-label="Add Prompt node">
-          <span className="studio-toolbar__btn-icon" aria-hidden="true">✏️</span>
-          <span className="studio-toolbar__btn-label">Add Prompt</span>
-        </button>
-        <button className="studio-toolbar__btn" onClick={addImageNode} aria-label="Add Image node">
-          <span className="studio-toolbar__btn-icon" aria-hidden="true">🖼️</span>
-          <span className="studio-toolbar__btn-label">Add Image</span>
-        </button>
-        <button className="studio-toolbar__btn" onClick={addFrameNode} aria-label="Add Last Frame node">
-          <span className="studio-toolbar__btn-icon" aria-hidden="true">🎞</span>
-          <span className="studio-toolbar__btn-label">Add Last Frame</span>
-        </button>
-        <button className="studio-toolbar__btn" onClick={addAskNode} aria-label="Add Ask AI node">
-          <span className="studio-toolbar__btn-icon" aria-hidden="true">💬</span>
-          <span className="studio-toolbar__btn-label">Add Ask AI</span>
-        </button>
-        <button className="studio-toolbar__btn studio-toolbar__btn--primary" onClick={addGenerateNode} aria-label="Add Generate node">
-          <span className="studio-toolbar__btn-icon" aria-hidden="true">🎬</span>
-          <span className="studio-toolbar__btn-label">Add Generate</span>
-        </button>
+        <div className="studio-toolbar__group">
+          <div className="studio-toolbar__heading">Inputs</div>
+          <button className="studio-toolbar__btn studio-toolbar__btn--prompt" onClick={addPromptNode} aria-label="Add Prompt node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--prompt">
+              <Icon name="prompt" kind="prompt" className="studio-toolbar__btn-icon" />
+            </span>
+            <span className="studio-toolbar__btn-label">Prompt</span>
+          </button>
+          <button className="studio-toolbar__btn studio-toolbar__btn--image" onClick={addImageNode} aria-label="Add Image node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--image">
+              <Icon name="image" kind="image" className="studio-toolbar__btn-icon" />
+            </span>
+            <span className="studio-toolbar__btn-label">Image</span>
+          </button>
+        </div>
+
+        <div className="studio-toolbar__group">
+          <div className="studio-toolbar__heading">Generate</div>
+          <button className="studio-toolbar__btn studio-toolbar__btn--flow" onClick={addGenerateNode} aria-label="Add Flow clip node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--flow">
+              <BrandIcon name="flow" className="studio-toolbar__btn-icon studio-toolbar__btn-icon--brand" />
+            </span>
+            <span className="studio-toolbar__btn-label">Flow clip</span>
+          </button>
+          <button className="studio-toolbar__btn studio-toolbar__btn--grok" onClick={addGrokNode} aria-label="Add Grok clip node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--grok">
+              <BrandIcon name="grok" className="studio-toolbar__btn-icon studio-toolbar__btn-icon--brand" />
+            </span>
+            <span className="studio-toolbar__btn-label">Grok clip</span>
+          </button>
+          <button className="studio-toolbar__btn studio-toolbar__btn--ask" onClick={addAskNode} aria-label="Add Ask AI node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--ask">
+              <Icon name="chat" kind="ask" className="studio-toolbar__btn-icon" />
+            </span>
+            <span className="studio-toolbar__btn-label">Ask AI</span>
+          </button>
+          <button className="studio-toolbar__btn studio-toolbar__btn--story" onClick={addStoryNode} aria-label="Add Director node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--story">
+              <Icon name="story" kind="video" className="studio-toolbar__btn-icon" />
+            </span>
+            <span className="studio-toolbar__btn-label">Director</span>
+          </button>
+          <button className="studio-toolbar__btn studio-toolbar__btn--clip" onClick={addClipNode} aria-label="Add Clipping node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--clip">
+              <Icon name="story" kind="video" className="studio-toolbar__btn-icon" />
+            </span>
+            <span className="studio-toolbar__btn-label">Clipping</span>
+          </button>
+          <button className="studio-toolbar__btn studio-toolbar__btn--agent" onClick={addAgentNode} aria-label="Add Agent node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--agent">
+              <Icon name="agent" kind="agent" className="studio-toolbar__btn-icon" />
+            </span>
+            <span className="studio-toolbar__btn-label">Agent</span>
+          </button>
+        </div>
+
+        <div className="studio-toolbar__group">
+          <div className="studio-toolbar__heading">Continue a clip</div>
+          <button className="studio-toolbar__btn studio-toolbar__btn--frame" onClick={addFrameNode} aria-label="Add Last Frame node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--frame">
+              <Icon name="frame" kind="frame" className="studio-toolbar__btn-icon" />
+            </span>
+            <span className="studio-toolbar__btn-label">Last frame</span>
+          </button>
+          <button className="studio-toolbar__btn studio-toolbar__btn--extend" onClick={addExtendNode} aria-label="Add Extend node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--extend">
+              <Icon name="extend" kind="frame" className="studio-toolbar__btn-icon" />
+            </span>
+            <span className="studio-toolbar__btn-label">Extend</span>
+          </button>
+        </div>
+
+        {/* Run control */}
         <div className="studio-toolbar__divider" />
-        {isRunning ? (
-          <>
-            <button className="studio-toolbar__btn studio-toolbar__btn--pause" onClick={handlePause} aria-label={isPaused ? 'Resume workflow' : 'Pause workflow'}>
-              <span className="studio-toolbar__btn-icon" aria-hidden="true">{isPaused ? '▶' : '⏸'}</span>
-              <span className="studio-toolbar__btn-label">{isPaused ? 'Resume' : 'Pause'}</span>
-            </button>
-            <button className="studio-toolbar__btn studio-toolbar__btn--stop" onClick={handleStop} aria-label="Stop workflow">
-              <span className="studio-toolbar__btn-icon" aria-hidden="true">⏹</span>
-              <span className="studio-toolbar__btn-label">Stop</span>
-            </button>
-          </>
-        ) : (
+        {!isRunning && (
           <>
             <button
               className="studio-toolbar__btn studio-toolbar__btn--run"
@@ -488,13 +829,11 @@ function CanvasInner() {
               disabled={!canRun}
               aria-label="Run workflow"
             >
-              <span className="studio-toolbar__btn-icon" aria-hidden="true">▶</span>
+              <Icon name="play" className="studio-toolbar__btn-icon" />
               <span className="studio-toolbar__btn-label">
-                {canRun ? 'Run workflow' : 'Add a Generate node to run'}
+                {canRun ? 'Run workflow' : 'Add a node to run'}
               </span>
             </button>
-            {/* Recovering from a failure shouldn't mean paying for the clips
-                that already worked. */}
             {failedNodeIds.length > 0 && (
               <button
                 className="studio-toolbar__btn studio-toolbar__btn--retry"
@@ -519,17 +858,19 @@ function CanvasInner() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        isValidConnection={(c) => canConnect(c as any)}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        deleteKeyCode={['Backspace', 'Delete']}
         fitView
-        /* Cap zoom so a 2-node workflow doesn't fill the screen with giant cards */
         fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{
-          type: 'smoothstep',
+          type: 'deletable',
           animated: true,
-          style: { stroke: '#f97316', strokeWidth: 2 },
+          style: { stroke: '#8b5cf6', strokeWidth: 2.5 },
         }}
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#1c1c21" />
@@ -544,10 +885,15 @@ function CanvasInner() {
             nodeBorderRadius={3}
             nodeColor={(n) => {
               const d = n.data as any;
-              if (d?.type === 'prompt') return '#f97316';
-              if (d?.type === 'image') return '#3b82f6';
-              if (d?.type === 'generate') return '#22c55e';
-              return '#4a4a52';
+              /* Mirrors the node-family tokens in shared/tokens.css. Literals
+                 because React Flow writes these to an SVG fill attribute, and
+                 presentation attributes do not resolve var(). These three were
+                 the old swapped mapping — prompt orange, generate green — so
+                 the minimap disagreed with the nodes it was a map of. */
+              if (d?.type === 'prompt') return '#22c55e';   /* --n-prompt */
+              if (d?.type === 'image') return '#60a5fa';    /* --n-image  */
+              if (d?.type === 'generate') return '#f97316'; /* --n-video  */
+              return '#33333b';                             /* --line-2   */
             }}
             maskColor="rgba(8,8,10,0.72)"
           />
@@ -557,7 +903,11 @@ function CanvasInner() {
         {nodes.length === 0 && (
           <Panel position="top-center">
             <div className="studio-empty">
-              <div className="studio-empty__icon">⚡</div>
+              <svg className="studio-empty__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M20.5 12a8.5 8.5 0 1 1-2.9-6.4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+                <path d="M15.2 3.4l3.1 2.1-2.1 3.1" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M10.3 8.9l5.4 3.1-5.4 3.1z" fill="currentColor" />
+              </svg>
               <h3 className="studio-empty__title">Start Building</h3>
               <p className="studio-empty__text">
                 Add nodes from the left toolbar, or go back to pick a template.
@@ -566,6 +916,75 @@ function CanvasInner() {
           </Panel>
         )}
       </ReactFlow>
+
+      {/* ── Run bar ──
+          Everything about the run in one place that does not move: what is
+          running, how far in, how long, and how to stop it. Previously this
+          was a 4px progress bar and "4/5" in the top centre, with Pause and
+          Stop over on the left rail — three places to look, none of them
+          where the eye already was. */}
+      {(isRunning || failedNodeIds.length > 0) && (
+        <div className={`studio-runbar ${isRunning ? '' : 'studio-runbar--idle'}`}>
+          {isRunning && (
+            <>
+              <span className={`studio-runbar__pulse ${isPaused ? 'is-paused' : ''}`} />
+              <button
+                className="studio-runbar__node"
+                onClick={() => currentNodeId && flyTo(currentNodeId)}
+                disabled={!currentNodeId}
+                title="Show this node on the canvas"
+              >
+                {runningLabel}
+              </button>
+              <div className="studio-runbar__bar">
+                <div
+                  className="studio-runbar__fill"
+                  style={{ width: `${runProgress.total ? (runProgress.current / runProgress.total) * 100 : 0}%` }}
+                />
+              </div>
+              <span className="studio-runbar__count">
+                {runProgress.current}/{runProgress.total}
+              </span>
+              <span className="studio-runbar__elapsed">{elapsed}</span>
+              <button className="studio-runbar__btn" onClick={handlePause}>
+                {isPaused ? '▶ Resume' : '⏸ Pause'}
+              </button>
+              <button className="studio-runbar__btn studio-runbar__btn--stop" onClick={handleStop}>
+                ⏹ Stop
+              </button>
+            </>
+          )}
+
+          {/* A failed node used to be a red border somewhere on a canvas wider
+              than the screen. Now it is a button that flies you to it. */}
+          {failedNodeIds.length > 0 && (
+            <div className="studio-runbar__fails">
+              <span className="studio-runbar__fails-label">
+                {failedNodeIds.length} failed
+              </span>
+              {failedNodeIds.slice(0, 4).map((id) => {
+                const n = nodes.find((x) => x.id === id);
+                const d = n?.data as any;
+                return (
+                  <button
+                    key={id}
+                    className="studio-runbar__fail"
+                    onClick={() => flyTo(id)}
+                    title={d?.errorMessage || 'Show this node'}
+                  >
+                    {d?.label || id}
+                  </button>
+                );
+              })}
+              {!isRunning && (
+                <button className="studio-runbar__btn studio-runbar__btn--retry" onClick={() => handleRetry()}>
+                  ↻ Retry failed
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* One dock instead of zoom bottom-left + recenter bottom-centre + minimap */}
       <div className="studio-dock">

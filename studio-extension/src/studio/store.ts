@@ -7,6 +7,7 @@
 import { create } from 'zustand';
 import type { Node, Edge } from '@xyflow/react';
 import { applyNodeChanges, applyEdgeChanges } from '@xyflow/react';
+import { migrateFrameEdges } from './templates/validate';
 
 /* ── Types ── */
 
@@ -42,6 +43,7 @@ interface StudioState {
   edges: Edge[];
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
+  removeEdge: (edgeId: string) => void;
   onNodesChange: (changes: any[]) => void;
   onEdgesChange: (changes: any[]) => void;
 
@@ -57,6 +59,8 @@ interface StudioState {
   currentNodeId: string | null;
   runProgress: { current: number; total: number };
   setRunning: (running: boolean) => void;
+  /** Save because a run finished, even if this canvas was never saved. */
+  persistAfterRun: () => Promise<void>;
   setPaused: (paused: boolean) => void;
   setCurrentNode: (nodeId: string | null) => void;
   setRunProgress: (current: number, total: number) => void;
@@ -92,7 +96,24 @@ interface StudioState {
 }
 
 /** Free-tier ceilings. Pro is unlimited. */
-export const FREE_LIMITS = { nodes: 5, runsPerMonth: 15 } as const;
+/* Free is ten runs, and build whatever you like.
+   `nodes: 0` means no cap. The five-node ceiling punished exactly the
+   workflows this product exists for — every template worth seeing has more
+   than five nodes, so a free user could never watch one work, which is a
+   strange way to sell the thing that makes them work. The server agrees:
+   FREE_STUDIO_MAX_NODES is 0 there too, and it is the authoritative gate. */
+/* Studio WORKFLOW RUNS per month. Not the Flow extension's daily prompt
+   allowance, which is a different product and a different number —
+   FREE_TEXT_DAILY_LIMIT, fifty — and confusing the two is how this briefly
+   became fifty by mistake.
+
+   Must match FREE_STUDIO_MONTHLY_LIMIT in apps/plans/services.py. There are
+   three copies — here, the side panel, and the server — and they have drifted
+   for real: the panel promised fifteen while the server stopped free accounts
+   at ten, so a user was refused five runs before the figure in front of them
+   said they would be. freeLimit.test.ts checks all three against the server,
+   which is the only authority. */
+export const FREE_LIMITS = { nodes: 10, runsPerMonth: 10 } as const;
 
 /** Runs are counted per calendar month, keyed so a new month resets itself */
 const runKey = () => `studio_runs_${new Date().toISOString().slice(0, 7)}`;
@@ -215,9 +236,13 @@ export function normalizeWorkflow(nodes: Node[], edges: Edge[]): { nodes: Node[]
     }
     return { ...node, data: d };
   });
-  const normEdges = edges.map((edge) => ({
+  /* Frames-mode nodes saved before the Start/End ports existed put their
+     stills on image_ref. Opening one now would draw two empty sockets and no
+     wires, and generate from the prompt alone. Both loaders come through
+     here, so the repair belongs here rather than at each call site. */
+  const normEdges = migrateFrameEdges(normNodes, edges).map((edge) => ({
     ...edge,
-    type: 'default',
+    type: 'deletable',
     animated: true,
     style: { stroke: '#8b5cf6', strokeWidth: 2.5 },
   }));
@@ -253,6 +278,10 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   onEdgesChange: (changes) => {
     set((s) => ({ edges: applyEdgeChanges(changes, s.edges) }));
     if (changes.some((c: any) => c.type !== 'select')) touch();
+  },
+  removeEdge: (edgeId) => {
+    set((s) => ({ edges: s.edges.filter((e) => e.id !== edgeId) }));
+    touch();
   },
 
   /* ── Node CRUD ── */
@@ -296,6 +325,26 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   currentNodeId: null,
   runProgress: { current: 0, total: 0 },
   setRunning: (running) => set({ isRunning: running }),
+
+  /**
+   * Write the workflow down because a run just finished.
+   *
+   * Autosave deliberately ignores a canvas that has never been saved by
+   * hand, so scratch workspaces do not pile up in storage. That is right
+   * for a canvas somebody was poking at and wrong for one that has just
+   * spent ten minutes reading a video, ranking it and cutting nine clips.
+   * A finished run is the strongest possible evidence the work is worth
+   * keeping, so this saves regardless of whether the workflow was known.
+   *
+   * Everything a run produces is node data — the stages, the reading, the
+   * boundaries, the caption phrases — so writing the nodes writes the run.
+   * The clips and the source live in the vault beside it.
+   */
+  persistAfterRun: async () => {
+    const s = get();
+    if (!s.nodes.length) return;
+    await s.saveWorkflow();
+  },
   setPaused: (paused) => set({ isPaused: paused }),
   setCurrentNode: (nodeId) => set({ currentNodeId: nodeId }),
   setRunProgress: (current, total) => set({ runProgress: { current, total } }),
@@ -362,7 +411,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   runBlockedReason: () => {
     const { isPro, runsUsed, nodes } = get();
     if (isPro) return null;
-    if (nodes.length > FREE_LIMITS.nodes) {
+    if (FREE_LIMITS.nodes && nodes.length > FREE_LIMITS.nodes) {
       return `This workflow has ${nodes.length} nodes. Free runs up to ${FREE_LIMITS.nodes} — upgrade to Pro for unlimited.`;
     }
     if (runsUsed >= FREE_LIMITS.runsPerMonth) {
@@ -373,7 +422,9 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
   canAddNode: () => {
     const { isPro, nodes } = get();
-    return isPro || nodes.length < FREE_LIMITS.nodes;
+    // 0 means no cap, so a free user builds whatever the story needs.
+    if (isPro || !FREE_LIMITS.nodes) return true;
+    return nodes.length < FREE_LIMITS.nodes;
   },
 
   /* ── Persistence ── */
@@ -544,6 +595,13 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       isDirty: true,
       saveState: 'idle',
     });
+    /* Persist immediately. Autosave deliberately skips workflows it has never
+       seen saved (see scheduleAutosave), and an import is exactly that — so
+       without this the file the user just picked sits on the canvas, unsaved,
+       missing from My Workflows, and gone on the next reload with no warning.
+       Importing something is a clear enough statement that they want to keep
+       it. */
+    await get().saveWorkflow();
   },
 }));
 
@@ -557,7 +615,16 @@ function scheduleAutosave(): void {
   if (autosaveTimer) clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(async () => {
     const s = useStudioStore.getState();
-    if (!s.isDirty || s.isRunning || s.nodes.length === 0) return;
+    if (!s.isDirty || s.nodes.length === 0) return;
+
+    /* A run in progress is a reason to WAIT, not to give up.
+       This used to return here, and returning armed nothing else — so the
+       timer that fired during a run was the LAST one. Every node update
+       afterwards happened inside the run, the run ended without touching
+       anything, and a finished clipping job was never written down. Reopening
+       the workflow then showed nothing and asked for the whole thing again. */
+    if (s.isRunning) { scheduleAutosave(); return; }
+
     const known = s.savedWorkflows.some((w) => w.id === s.workflow.id);
     if (!known) return;
     await s.saveWorkflow();

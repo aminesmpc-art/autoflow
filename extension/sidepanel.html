@@ -33,79 +33,180 @@
 
       <p class="af-first-run-note">Third-party tool — not affiliated with Google. All data stored locally in your browser.</p>
 
-      <button id="btn-dismiss-first-run" class="af-btn af-btn-primary af-btn-full">Let’s Go →</button>
-    </div>
-  </div>
-
-  <!-- ═══════════════════ HEADER ═══════════════════ -->
-  <header class="af-header">
-    <div class="af-logo">
-      <span class="af-logo-icon">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <defs>
-            <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" style="stop-color:#818cf8"/>
-              <stop offset="100%" style="stop-color:#c084fc"/>
-            </linearGradient>
-          </defs>
-          <path d="M5 3l14 9-14 9V3z" fill="url(#logoGrad)"/>
-        </svg>
-      </span>
-      <div class="af-logo-info">
-        <div class="af-logo-title-row">
-          <span class="af-logo-text">AutoFlow</span>
-          <!-- Filled from the manifest at runtime — a hardcoded value drifted
-               to v5.13.0 while the manifest said 4.2 -->
-          <span class="af-version" id="af-version"></span>
-        </div>
-        <span class="af-logo-tagline">AI Video Engine</span>
-      </div>
+      <button id="btn-dismiss-first-run" class="  <!-- ═══════════════════ TOBYFLOW HEADER & SESSION BAR ═══════════════════ -->
+  <header class="tf-top-bar">
+    <div class="tf-brand">
+      <span class="tf-brand-icon">✦</span>
+      <span>AutoFlow</span>
+      <span class="af-version" id="af-version" style="font-size:9px; color:#8b909f; background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px;"></span>
       <span id="af-status-dot" class="af-status-dot" title="Disconnected"></span>
     </div>
-    <div style="display: flex; align-items: center; gap: 8px;">
-      <button id="btn-open-studio" class="af-header-pro-btn" style="background: linear-gradient(135deg, #f97316 0%, #ef4444 100%); display: flex; align-items: center; gap: 4px;" title="Open AutoFlow Studio — Visual Workflow Builder">⚡ Studio</button>
-      <button id="btn-header-ultra-family" class="af-header-pro-btn" style="display:none; background: linear-gradient(135deg, #10b981 0%, #059669 100%);" title="Join Ultra Family">🚀 Ultra Family</button>
-      <button id="btn-header-get-pro-free" class="af-header-pro-btn" style="display:none;" title="Get 1 Month Pro for Free">⭐ Free Pro</button>
-      <div class="af-disclaimer-mini" title="Third-party tool. Not affiliated with Google.">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-      </div>
+    <div class="tf-top-actions">
+      <button id="btn-open-docs" class="tf-action-btn" title="Documentation">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      </button>
+      <button id="btn-open-site" class="tf-action-btn" title="Website">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      </button>
+      <button id="btn-quick-settings" class="tf-action-btn" title="Settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <button id="btn-notifications" class="tf-action-btn" title="Notifications">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="tf-notification-dot"></span>
+      </button>
+      <button id="btn-top-profile" class="tf-avatar-btn" title="Profile / Sign In">
+        <span id="tf-top-avatar-initial">A</span>
+        <span class="tf-avatar-dot"></span>
+      </button>
     </div>
   </header>
 
-  <!-- ═══════════════════ TABS ═══════════════════ -->
-  <nav class="af-tabs" role="tablist">
-    <button class="af-tab" role="tab" data-tab="video" data-requires-auth aria-selected="false">
-      <span class="af-tab-icon">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-      </span>
-      <span class="af-tab-label" data-i18n="tab.create">Create</span>
+  <!-- Session / Date Picker Bar -->
+  <div class="tf-session-bar">
+    <div class="tf-session-picker" id="tf-session-selector">
+      <span>✦</span>
+      <span id="tf-current-session-label">08 août, 22:00</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+    <button class="tf-add-session-btn" id="btn-new-session" title="New Session / Workflow">+</button>
+  </div>
+
+  <!-- ═══════════════════ PRIMARY TABS ═══════════════════ -->
+  <nav class="af-tabs tf-main-nav" role="tablist">
+    <button class="af-tab tf-nav-tab" role="tab" data-tab="video" data-requires-auth aria-selected="false">
+      <span>✨ Gen</span>
     </button>
-    <button class="af-tab" role="tab" data-tab="settings" data-requires-auth aria-selected="false">
-      <span class="af-tab-icon">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      </span>
-      <span class="af-tab-label" data-i18n="tab.settings">Settings</span>
+    <button class="af-tab tf-nav-tab active" role="tab" data-tab="workflows" data-requires-auth aria-selected="true">
+      <span>⚡ Workflow</span>
     </button>
-    <button class="af-tab" role="tab" data-tab="queues" data-requires-auth aria-selected="false">
-      <span class="af-tab-icon">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-      </span>
-      <span class="af-tab-label" data-i18n="tab.queues">Queues</span>
-      <span id="queue-tab-badge" class="af-tab-badge" style="display:none;"></span>
+    <button class="af-tab tf-nav-tab" role="tab" data-tab="queues" data-requires-auth aria-selected="false">
+      <span>📝 Prompts</span>
     </button>
-    <button class="af-tab" role="tab" data-tab="library" data-requires-auth aria-selected="false">
-      <span class="af-tab-icon">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-      </span>
-      <span class="af-tab-label" data-i18n="tab.library">Library</span>
+    <button class="af-tab tf-nav-tab" role="tab" data-tab="library" data-requires-auth aria-selected="false">
+      <span>📋 Tasks</span>
     </button>
-    <button class="af-tab active" role="tab" data-tab="account" aria-selected="true">
-      <span class="af-tab-icon">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    <button class="af-tab tf-nav-tab" role="tab" data-tab="settings" data-requires-auth aria-selected="false">
+      <span>⚙ Settings</span>
+    </button>
+    <button class="af-tab tf-nav-tab" role="tab" data-tab="account" aria-selected="false">
+      <span>👤 Account</span>
+    </button>
+  </nav>none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       </span>
       <span class="af-tab-label" data-i18n="tab.account">Account</span>
     </button>
   </nav>
+
+  <!-- ═══════════════════ TAB: WORKFLOWS (TOBYFLOW TEMPLATES & GALLERY) ═══════════════════ -->
+  <section class="af-panel active" id="panel-workflows" role="tabpanel">
+    <!-- Sub-Navigation Pills -->
+    <div class="tf-sub-nav">
+      <button class="tf-sub-pill active" id="tf-sub-templates">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span>Templates</span>
+      </button>
+      <button class="tf-sub-pill" id="tf-sub-workflows">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 6.9 17 11.1"/><path d="M7 17.1 17 12.9"/></svg>
+        <span>Workflows</span>
+      </button>
+      <button class="tf-sub-pill" id="tf-sub-shared">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+        <span>Shared</span>
+      </button>
+    </div>
+
+    <!-- Search & Filter Bar -->
+    <div class="tf-search-bar">
+      <div class="tf-search-input-wrap">
+        <svg class="tf-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="tf-search-templates" class="tf-search-input" placeholder="Search templates..." />
+      </div>
+      <select id="tf-filter-category" class="tf-category-select">
+        <option value="all">All</option>
+        <option value="video">Video Generation</option>
+        <option value="image">Image Generation</option>
+      </select>
+    </div>
+
+    <!-- 2-Column Template Grid -->
+    <div class="tf-template-grid" id="tf-template-grid">
+      <!-- Card 1 -->
+      <div class="tf-template-card" data-category="video" data-id="elevator-mirror">
+        <div class="tf-card-thumb-wrap">
+          <img class="tf-card-thumb" src="https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=400&q=80" alt="Elevator Mirror Workflow" />
+        </div>
+        <div class="tf-card-body">
+          <h4 class="tf-card-title">Workflow - Elevator Mirror O...</h4>
+          <div class="tf-card-tags">
+            <span class="tf-card-badge">Video Generation</span>
+            <span class="tf-card-nodes-badge">☍ 8 nodes</span>
+          </div>
+          <div class="tf-card-meta">
+            <span class="tf-card-users">👥 660</span>
+            <span class="tf-card-stars">★★★★★ 4.80</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2 -->
+      <div class="tf-template-card" data-category="video" data-id="escalator-fashion">
+        <div class="tf-card-thumb-wrap">
+          <img class="tf-card-thumb" src="https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=400&q=80" alt="Escalator Fashion" />
+        </div>
+        <div class="tf-card-body">
+          <h4 class="tf-card-title">Escalator Fashion Video Wor...</h4>
+          <div class="tf-card-tags">
+            <span class="tf-card-badge">Video Generation</span>
+            <span class="tf-card-nodes-badge">☍ 7 nodes</span>
+          </div>
+          <div class="tf-card-meta">
+            <span class="tf-card-users">👥 122</span>
+            <span class="tf-card-stars">★★★★★ 5.00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3 -->
+      <div class="tf-template-card" data-category="image" data-id="character-pose">
+        <div class="tf-card-thumb-wrap">
+          <img class="tf-card-thumb" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&q=80" alt="Character Pose" />
+        </div>
+        <div class="tf-card-body">
+          <h4 class="tf-card-title">Cinematic Pose &amp; Portrait...</h4>
+          <div class="tf-card-tags">
+            <span class="tf-card-badge">Image Generation</span>
+            <span class="tf-card-nodes-badge">☍ 5 nodes</span>
+          </div>
+          <div class="tf-card-meta">
+            <span class="tf-card-users">👥 430</span>
+            <span class="tf-card-stars">★★★★★ 4.90</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 4 -->
+      <div class="tf-template-card" data-category="video" data-id="motion-tracking">
+        <div class="tf-card-thumb-wrap">
+          <img class="tf-card-thumb" src="https://images.unsplash.com/photo-1509631179647-0177331693ae?w=400&q=80" alt="Motion Tracking" />
+        </div>
+        <div class="tf-card-body">
+          <h4 class="tf-card-title">Dynamic Camera Flythrough...</h4>
+          <div class="tf-card-tags">
+            <span class="tf-card-badge">Video Generation</span>
+            <span class="tf-card-nodes-badge">☍ 9 nodes</span>
+          </div>
+          <div class="tf-card-meta">
+            <span class="tf-card-users">👥 215</span>
+            <span class="tf-card-stars">★★★★★ 4.85</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Load More Button -->
+    <button class="tf-load-more-btn" id="btn-load-more-templates">Load more</button>
+  </section>
 
   <!-- ═══════════════════ TAB A: CREATE ═══════════════════ -->
   <section class="af-panel" id="panel-video" role="tabpanel">
@@ -1235,6 +1336,57 @@ Prompt 3 text here..."></textarea>
       <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
     </svg>
   </button>
+
+  <!-- ═══════════════════ SIGN IN / PROFILE MODAL OVERLAY ═══════════════════ -->
+  <div id="tf-auth-modal" class="tf-modal-overlay" style="display:none;">
+    <div class="tf-modal-card">
+      <button class="tf-modal-close" id="btn-close-auth-modal">✕</button>
+      <div class="tf-modal-header">
+        <div class="tf-modal-logo">✦</div>
+        <h3 class="tf-modal-title" id="tf-modal-title">Sign In to AutoFlow</h3>
+        <p class="tf-modal-subtitle" id="tf-modal-subtitle">Sync your workflows and access premium templates</p>
+      </div>
+
+      <!-- Quick Sign In Form -->
+      <form id="tf-quick-login-form" class="af-auth-form">
+        <div class="af-form-group">
+          <label for="tf-quick-email" class="af-form-label">Email address</label>
+          <input type="email" id="tf-quick-email" class="af-input" placeholder="name@example.com" required />
+        </div>
+        <div class="af-form-group">
+          <label for="tf-quick-password" class="af-form-label">Password</label>
+          <input type="password" id="tf-quick-password" class="af-input" placeholder="••••••••" required />
+        </div>
+        <div id="tf-quick-login-msg" class="af-auth-message" style="display:none;"></div>
+        <button type="submit" id="btn-tf-quick-submit" class="af-btn af-btn-primary af-btn-full" style="background: var(--tf-lime); color: #000; font-weight: 700;">Sign In</button>
+      </form>
+
+      <div class="af-auth-divider"><span>or</span></div>
+
+      <button type="button" id="btn-tf-google-auth" class="af-btn af-btn-google af-btn-full">
+        <svg class="google-icon" viewBox="0 0 24 24" width="18" height="18">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        <span>Continue with Google</span>
+      </button>
+
+      <div class="tf-modal-footer">
+        <p>Don't have an account? <a href="#" id="tf-link-register" style="color:var(--tf-lime); font-weight:600;">Create One</a></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ PERSISTENT FOOTER QUOTA BAR ═══════════════════ -->
+  <footer class="tf-footer-bar">
+    <div class="tf-footer-quota">
+      <span>Daily Quota</span>
+      <span class="tf-quota-val" id="tf-footer-quota-text">20 / 20</span>
+    </div>
+    <div class="tf-footer-badge" id="tf-footer-plan-badge">Free Plan</div>
+  </footer>
 
   <script src="sidepanel.js"></script>
 </body>

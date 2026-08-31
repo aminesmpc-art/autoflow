@@ -1,5 +1,34 @@
 # AutoFlow Backend
 
+> ### Which Django tree is live
+>
+> **`backend/` is the deployed one.** The identical copy at the repository root —
+> `apps/`, `config/`, `manage.py`, `Dockerfile` — is **not** deployed. Edit
+> `backend/`.
+>
+> Railway's `web` service (`api.auto-flow.studio`) builds from
+> `aminesmpc-art/autoflow`, branch `main`, **Root Directory `/backend`**. Read out
+> of the running container on 2026-08-25 rather than inferred:
+>
+> ```
+> RAILWAY_GIT_REPO_NAME = autoflow      RAILWAY_GIT_BRANCH = main
+> RAILWAY_GIT_COMMIT_SHA = 003e24bf...
+> ```
+>
+> and its working directory holds `apps/ config/ manage.py` with **no `backend/`
+> subdirectory** — which only the `backend/` subtree looks like, not the root.
+>
+> The two trees are currently identical in source, so nothing is broken today.
+> They have drifted before. If they drift again, `backend/` is the one that is
+> right by definition, because it is the one that runs.
+>
+> Pushing a feature branch to `origin` deploys nothing; merging to `main` does.
+>
+> **The `railway-backend` remote is dead.** It points at `aminesmpc-art/autoflow-backend`,
+> which the service used to deploy from and no longer does — `railway status` shows one
+> service. Its `main` is 20 commits and 11 days behind `origin/main`. Pushing a fix there
+> now deploys nothing while looking exactly like it worked.
+
 Production-ready Django backend for the AutoFlow Chrome extension.
 Handles user accounts, email-verified auth, free/pro plan logic, daily usage limits,
 reward credits, and future Whop integration.

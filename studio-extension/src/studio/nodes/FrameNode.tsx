@@ -17,6 +17,7 @@ import { memo, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { Lightbox } from '../components/Lightbox';
 import { useStudioStore } from '../store';
+import { NodeInfoBadge } from './NodeInfoBadge';
 
 function FrameNodeComponent({ id, data, selected }: NodeProps) {
   const nodeData = data as any;
@@ -25,9 +26,13 @@ function FrameNodeComponent({ id, data, selected }: NodeProps) {
   const [zoomed, setZoomed] = useState(false);
 
   const frame: string = nodeData.frameUrl || '';
+  /* The runner writes frameUrl on every run, empty string included, so an
+     empty string that EXISTS means the capture was attempted and came back
+     with nothing. Undefined means it has never run. */
+  const ranEmpty = !frame && typeof nodeData.frameUrl === 'string';
 
   return (
-    <div className={`fn-wrap ${selected ? 'fn-wrap--selected' : ''}`}>
+    <div className={`fn-wrap sn-wrap--kind-frame ${selected ? 'fn-wrap--selected' : ''}`}>
       <div className="sn-actions">
         <button className="sn-actions__btn" onClick={() => duplicateNode(id)} title="Duplicate node">⧉</button>
         <button className="sn-actions__btn sn-actions__btn--danger" onClick={() => removeNode(id)} title="Delete node">🗑</button>
@@ -36,6 +41,7 @@ function FrameNodeComponent({ id, data, selected }: NodeProps) {
       <div className="sn-label">
         <span className="sn-label__icon" aria-hidden="true">🎞</span>
         <span className="sn-label__text">{nodeData.label || 'Last Frame'}</span>
+        <NodeInfoBadge type="frame" />
       </div>
 
       <div className="fn">
@@ -49,9 +55,18 @@ function FrameNodeComponent({ id, data, selected }: NodeProps) {
               title="Click to view full size"
             />
           ) : (
-            <div className="fn-empty">
-              <span className="fn-empty__icon">⇥</span>
-              <small>Connect a video node — its last frame appears here after it runs</small>
+            <div className={`fn-empty ${ranEmpty ? 'fn-empty--missed' : ''}`}>
+              <span className="fn-empty__icon">{ranEmpty ? '⚠' : '⇥'}</span>
+              {/* "Nothing here" and "tried, got nothing" looked identical, so a
+                  clip that ran and failed to give up its last frame was
+                  indistinguishable from a node nobody had wired yet — while
+                  every node downstream failed for a reason this box knew. */}
+              <small>
+                {ranEmpty
+                  ? 'The clip above ran but gave up no last frame. Anything chained from '
+                    + 'here has no reference — see Diagnostics in the side panel.'
+                  : 'Connect a video node — its last frame appears here after it runs'}
+              </small>
             </div>
           )}
         </div>

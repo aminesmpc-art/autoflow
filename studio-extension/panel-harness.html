@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Side panel design harness</title>
+  <!-- The REAL stylesheet and the REAL markup. A chrome-extension:// page
+       cannot be opened for inspection, so every previous pass at this panel
+       was designed by reading CSS and hoping — which is how it shipped with
+       every tab rendering at once.
+
+       dist/sidepanel.html is fetched rather than mirrored, so this page cannot
+       drift from what ships: change the panel and the harness changes with it.
+       Rendered at the widths a side panel actually takes — docked (320),
+       wide (400), and undocked in its own window (650). -->
+  <!-- Cache-busted: a rebuilt stylesheet served from the same path is exactly
+       the case a browser cache gets wrong, and a harness showing the previous
+       build is worse than no harness. -->
+  <script>
+    document.write('<link rel="stylesheet" href="dist/sidepanel.css?v=' + Date.now() + '">');
+  </script>
+  <style>
+    body { margin: 0; background: #08080a; font-family: system-ui, sans-serif; }
+    .h { display: flex; gap: 24px; padding: 24px; align-items: flex-start; overflow-x: auto; }
+    .h__col { flex: 0 0 auto; }
+    .h__note {
+      color: #6b6b73; font-size: 11px; margin-bottom: 8px;
+      text-transform: uppercase; letter-spacing: 0.6px; font-family: ui-monospace, monospace;
+    }
+    /* A side panel IS the viewport. Reproduce that: fixed box, its own scroll,
+       nothing inherited from this page. */
+    .frame { height: 720px; border: 1px solid #2a2a30; border-radius: 10px; overflow: hidden; }
+    .frame > .panel {
+      height: 100%; display: flex; flex-direction: column; overflow: hidden;
+      background: #121214;
+    }
+  </style>
+</head>
+<body>
+  <div class="h" id="h">loading…</div>
+
+<script type="module">
+/* Real template data, so the layout is stress-tested by the names it will
+   actually hold — "Product Photos → Storyboard → Commercial" is 40 characters
+   and it is shipping today. */
+/* Cache-busted for the same reason the stylesheet above is: a rebuilt file
+   served from the same path is exactly what a browser cache gets wrong, and a
+   harness showing yesterday's data is worse than no harness. */
+const bust = () => '?v=' + Date.now();
+const RAW = await (await fetch('dist-templates/templates.json' + bust())).json();
+const TEMPLATES = (RAW.templates || RAW);
+const CATS = ['All', ...Array.from(new Set(TEMPLATES.map(t => t.category))).sort()];
+
+const LOG = [
+  ['19:42:01', 'Grok',    'Mode: Image'],
+  ['19:42:02', 'Grok',    'Submitted — waiting for the image...'],
+  ['19:42:40', 'Grok',    'Captured 1 image (1024x1024)'],
+  ['19:42:41', 'Flow',    'Tile 3 of 8 queued'],
+  ['19:43:12', 'ChatGPT', 'New chat started'],
+];
+
+const PRESETS = [
+  ['Cinematic still', 'preset_cinematic', 'Single subject, shallow depth, motivated light. Names the lens so the model stops inventing one.'],
+  ['Product on white', 'preset_product', 'Even light, no cast shadow, nothing cropped. The trap is a reflection that reads as a second object.'],
+  ['Character sheet', 'preset_character', 'Same face across angles. States what must not change before it states the pose.'],
+];
+
+/* The shipped panel, minus the <script> that would try to talk to a
+   service worker that is not there. */
+const shipped = await (await fetch('dist/sidepanel.html' + bust())).text();
+const doc = new DOMParser().parseFromString(shipped, 'text/html');
+doc.querySelectorAll('script').forEach(s => s.remove());
+const BODY = doc.body.innerHTML;
+
+function build(width, view, opts = {}) {
+  const col = document.createElement('div');
+  col.className = 'h__col';
+  const note = document.createElement('div');
+  note.className = 'h__note';
+  note.textContent = `${width}px · ${view}${opts.live ? ' · running' : ''}${opts.low ? ' · limit near' : ''}`;
+  const frame = document.createElement('div');
+  frame.className = 'frame';
+  frame.style.width = width + 'px';
+  const panel = document.createElement('div');
+  panel.className = 'panel';
+  panel.innerHTML = BODY;
+  /* The gate ships visible and the shell hidden. This harness renders the
+     signed-in shell, so flip them. */
+  const gate = panel.querySelector('#gate'); if (gate) gate.hidden = true;
+  const app = panel.querySelector('#app'); if (app) app.hidden = false;
+  frame.append(panel);
+  col.append(note, frame);
+  const q = (s) => panel.querySelector(s);
+
+  panel.querySelectorAll('.sp-view').forEach((v) => { v.hidden = v.id !== `view-${view}`; });
+  panel.querySelectorAll('.sp-nav__tab').forEach((t) => {
+    const on = t.dataset.view === view;
+    t.classList.toggle('sp-nav__tab--on', on);
+    t.setAttribute('aria-selected', String(on));
+  });
+
+  if (opts.live) {
+    q('#run-idle').hidden = true;
+    q('#run-live').hidden = false;
+    q('#head-sub').textContent = 'Running';
+    q('#run-node').textContent = 'Grok · Hero product still on seamless white';
+    q('#run-elapsed').textContent = '1:24';
+    q('#run-bar').style.width = '62%';
+    q('#run-count').textContent = '5 / 8';
+    q('#run-pct').textContent = '62%';
+  }
+
+  // Platforms — three open, one not, plus the summary the code writes.
+  const rows = [...panel.querySelectorAll('#plat-list button')];
+  rows.forEach((r, i) => {
+    const open = i < 3;
+    r.classList.toggle('is-open', open);
+    r.querySelector('.sp-plat__state').textContent = open ? 'open' : 'not open';
+  });
+  q('#plat-count').textContent = `3 of ${rows.length} open`;
+
+  // Diagnostics
+  const log = q('#diag-log');
+  if (!opts.emptyLog) {
+    log.innerHTML = '';
+    for (const [ts, src, msg] of LOG) {
+      const row = document.createElement('div');
+      row.className = 'sp-diag__line';
+      row.innerHTML = '<span class="sp-diag__ts"></span><span class="sp-diag__src"></span><span class="sp-diag__msg"></span>';
+      row.children[0].textContent = ts;
+      row.children[1].textContent = src;
+      row.children[2].textContent = msg;
+      log.append(row);
+    }
+  }
+
+  /* The builder's three states. All drawn by the panel's own script, which
+     this harness removes — so without this the states most worth looking at
+     are the ones it cannot show. */
+  const sel = q('#build-engine');
+  if (sel) {
+    for (const [v, t] of [['claude', 'Claude'], ['chatgpt', 'ChatGPT (not open)'],
+      ['gemini', 'Gemini'], ['grok', 'Grok (not open)'], ['zai', 'Z.AI (not open)']]) {
+      const o = document.createElement('option'); o.value = v; o.textContent = t; sel.append(o);
+    }
+  }
+  if (opts.typed) {
+    q('#build-idea').value = opts.typed;
+    q('#build-go-ai').disabled = false;
+    q('#build-how').hidden = true;
+  }
+  if (opts.plan) q('#build-how').hidden = true;
+  if (opts.building) {
+    q('#build-stages').hidden = false;
+    const order = ['write', 'check', 'ready'];
+    const at = order.indexOf(opts.building);
+    order.forEach((id, i) => {
+      const row = q(`.sp-stages__row[data-stage="${id}"]`);
+      row.classList.toggle('sp-stages__row--done', i < at);
+      row.classList.toggle('sp-stages__row--live', i === at);
+    });
+    q('#build-stage-note').textContent = opts.note || '';
+    q('#build-go-ai').disabled = true;
+    q('#build-go-ai').classList.add('sp-ask__go--busy');
+    q('.sp-ask__go-label').textContent = 'Claude is working…';
+  }
+  if (opts.plan) {
+    const P = opts.plan;
+    q('#build-plan').hidden = false;
+    q('#build-plan-size').textContent = P.size;
+    q('#build-plan-cost').textContent = `${P.runs} generations`;
+    q('#build-plan-sub').textContent = P.sub;
+    const shots = q('#build-plan-shots');
+    for (const [label, meta] of P.shots) {
+      const li = document.createElement('li');
+      li.className = 'sp-plan__shot';
+      li.innerHTML = '<span class="sp-plan__label"></span><span class="sp-plan__meta"></span>';
+      li.children[0].textContent = label;
+      li.children[1].textContent = meta;
+      shots.append(li);
+    }
+    const helpers = q('#build-plan-helpers');
+    helpers.hidden = false;
+    helpers.textContent = P.helpers;
+    const warn = q('#build-plan-warn');
+    if (P.warnings && P.warnings.length) {
+      warn.hidden = false;
+      const t = document.createElement('div');
+      t.className = 'sp-plan__warn-title';
+      t.textContent = P.warnings.length === 1 ? 'One thing to know' : `${P.warnings.length} things to know`;
+      const ul = document.createElement('ul');
+      for (const w of P.warnings) { const li = document.createElement('li'); li.textContent = w; ul.append(li); }
+      warn.append(t, ul);
+    }
+    q('.sp-plan__refine').hidden = !P.refinable;
+  }
+
+  if (view === 'pro') {
+    q('#pro-status').textContent =
+      'You have 2 of 10 free workflow runs left this month. One subscription covers '
+      + 'the workflow builder and Flow automation.';
+    q('#pro-free').textContent =
+      'Free stays free: 10 workflow runs a month, workflows of any size, and the '
+      + 'daily Flow prompt allowance.';
+  }
+
+  // Pills
+  const pills = q('#tpl-pills');
+  for (const c of CATS) {
+    const b = document.createElement('button');
+    b.className = 'sp-pill' + (c === 'All' ? ' sp-pill--on' : '');
+    b.textContent = c;
+    pills.append(b);
+  }
+
+  // Template rows — same construction as renderTemplates()
+  const grid = q('#tpl-grid');
+  for (const t of TEMPLATES) {
+    const card = document.createElement('button');
+    card.className = 'sp-tpl';
+    card.title = t.useCase || '';
+    const thumb = document.createElement('div');
+    thumb.className = 'sp-tpl__thumb';
+    thumb.textContent = t.thumbnail;
+    const body = document.createElement('div');
+    body.className = 'sp-tpl__body';
+    const name = document.createElement('div');
+    name.className = 'sp-tpl__name';
+    name.textContent = t.name;
+    const meta = document.createElement('div');
+    meta.className = 'sp-tpl__meta';
+    const cat = document.createElement('span'); cat.textContent = t.category;
+    const sep = document.createElement('span'); sep.className = 'sp-tpl__sep'; sep.textContent = '·';
+    const n = document.createElement('span'); n.textContent = `${t.nodeCount} ${t.nodeCount === 1 ? 'step' : 'steps'}`;
+    meta.append(cat, sep, n);
+    body.append(name, meta);
+    card.append(thumb, body);
+    grid.append(card);
+  }
+  q('#tpl-count').textContent = `${TEMPLATES.length} templates`;
+
+  // Presets
+  const presets = q('#preset-list');
+  for (const [nm, id, hint] of PRESETS) {
+    const row = document.createElement('div');
+    row.className = 'sp-preset';
+    row.innerHTML = '<div class="sp-preset__head"><span class="sp-preset__name"></span><code class="sp-preset__id"></code></div><p class="sp-preset__hint"></p>';
+    row.querySelector('.sp-preset__name').textContent = nm;
+    row.querySelector('.sp-preset__id').textContent = id;
+    row.querySelector('.sp-preset__hint').textContent = hint;
+    presets.append(row);
+  }
+
+  // Footer
+  q('#foot-runs').textContent = opts.low ? '13/15 runs' : '2/15 runs';
+  q('#foot-runs').classList.toggle('sp-foot__stat--low', !!opts.low);
+  q('#foot-acct').textContent = opts.signedIn ? 'amine.smpc@gmail.com' : 'Sign in';
+  if (opts.signedIn) q('#top-avatar').textContent = 'A';
+
+  return col;
+}
+
+const h = document.getElementById('h');
+h.textContent = '';
+const PLAN = {
+  size: '24 seconds, 3 clips, 1 image',
+  runs: 4,
+  sub: 'A storyboard still, then three clips chained on the last frame.',
+  shots: [
+    ['Storyboard poster', 'image'],
+    ['Beans drop', '8s'],
+    ['Milk swirl', '8s'],
+    ['Hero reveal with logo', '8s'],
+  ],
+  helpers: 'Plus 3 steps that make it work: your idea, a writer for the shots, a frame handoff.',
+  warnings: [
+    'This clip asks for a voice but has no picture of who is speaking, so Flow has nobody to attach the voice to and the clip comes back silent.',
+  ],
+  refinable: true,
+};
+
+h.append(
+  build(320, 'run', { emptyLog: true }),
+  build(320, 'run', { live: true, signedIn: true }),
+  build(320, 'templates', { low: true }),
+  build(400, 'templates'),
+  build(650, 'run', { live: true, signedIn: true }),
+  build(650, 'templates'),
+  build(320, 'pro'),
+  build(320, 'build'),
+  build(320, 'build', { typed: 'A 3-shot vertical ad for cold brew coffee' }),
+  build(320, 'build', { typed: 'A 3-shot vertical ad for cold brew coffee', building: 'write',
+    note: 'Claude is writing them. This usually takes a minute or two.' }),
+  build(320, 'build', { plan: PLAN }),
+  build(400, 'build', { plan: PLAN }),
+);
+</script>
+</body>
+</html>

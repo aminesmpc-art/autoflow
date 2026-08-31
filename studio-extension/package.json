@@ -1,14 +1,17 @@
 {
   "name": "autoflow-studio-extension",
-  "version": "0.1.0",
-  "description": "AutoFlow Studio — node workflows for Veo, ChatGPT and Grok",
+  "version": "0.28.0",
+  "description": "AutoFlow Studio \u2014 Visual node workflows for AI video and image generation",
   "scripts": {
-    "build": "webpack --mode production",
-    "build:publish": "webpack --mode production && del dist\\*.map 2>nul || true",
-    "build:dev": "webpack --mode development --devtool source-map",
+    "build": "webpack --mode production --bail",
+    "build:publish": "webpack --mode production --bail",
+    "package": "npm run build:publish && node scripts/package.js",
+    "build:dev": "webpack --mode development --devtool source-map --bail",
     "dev": "webpack --mode development --watch",
     "test": "jest --config jest.config.js",
-    "check:drift": "node scripts/check-engine-drift.js"
+    "check:drift": "node scripts/check-engine-drift.js",
+    "templates:export": "node scripts/publish-templates.js",
+    "templates:publish": "node scripts/publish-templates.js --publish"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.270",
@@ -17,7 +20,9 @@
     "@types/react-dom": "^19.2.3",
     "copy-webpack-plugin": "^12.0.2",
     "css-loader": "^7.1.2",
+    "fake-indexeddb": "^6.2.5",
     "jest": "^29.7.0",
+    "jest-environment-jsdom": "^30.4.1",
     "mini-css-extract-plugin": "^2.9.0",
     "style-loader": "^4.0.0",
     "ts-jest": "^29.1.2",
@@ -28,6 +33,7 @@
   },
   "dependencies": {
     "@xyflow/react": "^12.11.1",
+    "mediabunny": "^1.55.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "zustand": "^5.0.14"

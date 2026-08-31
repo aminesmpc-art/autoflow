@@ -6,6 +6,32 @@
 import { AuthTokens, UserProfile, DailyUsageResponse } from '../types';
 
 const API_BASE = 'https://api.auto-flow.studio';
+
+/* The video-reading service.
+   A separate host because it does a different job: the Django API holds
+   accounts, plans and quotas, while this one holds a Gemini key and feeds it
+   whole videos. Overridable from storage so it can be pointed at a local
+   FastAPI while working on it, without rebuilding the extension. */
+const EXTRACTOR_BASE_DEFAULT = 'https://autoflow-extractor-production.up.railway.app';
+const EXTRACTOR_BASE_KEY = 'autoflow_extractor_base';
+
+export async function getExtractorBase(): Promise<string> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(EXTRACTOR_BASE_KEY, (result) => {
+      const stored = result?.[EXTRACTOR_BASE_KEY];
+      resolve(typeof stored === 'string' && stored ? stored.replace(/\/+$/, '') : EXTRACTOR_BASE_DEFAULT);
+    });
+  });
+}
+
+/* The bearer the extractor needs.
+   It verifies the same JWT the Django API issues, so there is one login and
+   one token — the extension never holds a Gemini key, which is the entire
+   reason that service exists. */
+export async function getAccessToken(): Promise<string | null> {
+  const tokens = await getStoredTokens();
+  return tokens?.access || null;
+}
 // Our own page, which embeds Whop's checkout widget with the email locked.
 // See getUpgradeTarget() for why we don't link straight to whop.com.
 const CHECKOUT_PAGE_URL = 'https://www.auto-flow.studio/checkout';
@@ -34,9 +60,69 @@ async function clearTokens(): Promise<void> {
   });
 }
 
+// ── Request Timeout ──
+
+/* Every call below used a bare fetch(), which has no deadline of its own. A
+   stalled socket therefore never settled the promise, and the sign-in button
+   sat disabled on "Signing in…" forever — no error, no way to retry. The auth
+   endpoints answer in well under a second, so this ceiling only ever trips on
+   a connection that has already gone wrong. */
+const REQUEST_TIMEOUT_MS = 15000;
+
+/** A timeout we caused, as opposed to the network being absent entirely.
+    Worth telling apart: the advice for each is different. */
+class TimeoutError extends Error {
+  constructor() {
+    super('Request timed out');
+    this.name = 'TimeoutError';
+  }
+}
+
+async function timedFetch(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    // An abort arrives as a generic AbortError; relabel ours so callers can
+    // say something more useful than "check your connection".
+    if (timedOut) throw new TimeoutError();
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** What to show the user when a request in this module throws. */
+function networkErrorMessage(err: unknown): string {
+  return err instanceof TimeoutError
+    ? 'The server took too long to respond. Please try again.'
+    : 'Could not reach the server. Check your internet connection.';
+}
+
 // ── Core Fetch Wrapper ──
 
-const EXTENSION_VERSION = '5.1';
+/* Read off the manifest instead of being restated here — this said 5.1, which
+   is not even this extension's numbering. Nothing on the server reads the
+   header today, so it is informational, but informational and wrong is worse
+   than absent. The guard is for the non-extension contexts this module also
+   runs in. */
+const EXTENSION_VERSION = (() => {
+  try {
+    return chrome.runtime.getManifest().version;
+  } catch {
+    return 'unknown';
+  }
+})();
 
 async function apiFetch(
   path: string,
@@ -62,7 +148,7 @@ async function apiFetch(
     headers.set('Authorization', `Bearer ${tokens.access}`);
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await timedFetch(`${API_BASE}${path}`, {
     ...options,
     headers,
   });
@@ -80,7 +166,7 @@ async function apiFetch(
 
 async function refreshAccessToken(refreshToken: string): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+    const res = await timedFetch(`${API_BASE}/api/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh: refreshToken }),
@@ -130,7 +216,7 @@ export async function ensureSession(): Promise<'valid' | 'refreshed' | 'expired'
 
   // Try a lightweight API call to check if the access token still works
   try {
-    const res = await fetch(`${API_BASE}/api/auth/me`, {
+    const res = await timedFetch(`${API_BASE}/api/auth/me`, {
       headers: {
         'Authorization': `Bearer ${tokens.access}`,
         'Content-Type': 'application/json',
@@ -177,7 +263,7 @@ function extractError(data: any, fallback: string): string {
 
 export async function register(email: string, password: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/register`, {
+    const res = await timedFetch(`${API_BASE}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -191,13 +277,13 @@ export async function register(email: string, password: string): Promise<{ ok: b
 
     return { ok: true, message: data.message || 'Account created! You can log in now.' };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: networkErrorMessage(err) };
   }
 }
 
 export async function login(email: string, password: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/login`, {
+    const res = await timedFetch(`${API_BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -213,13 +299,13 @@ export async function login(email: string, password: string): Promise<{ ok: bool
     await clearSessionExpired();
     return { ok: true, message: 'Logged in!' };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: networkErrorMessage(err) };
   }
 }
 
 export async function loginWithGoogle(idToken: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/google`, {
+    const res = await timedFetch(`${API_BASE}/api/auth/google`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id_token: idToken }),
@@ -235,18 +321,24 @@ export async function loginWithGoogle(idToken: string): Promise<{ ok: boolean; m
     await clearSessionExpired();
     return { ok: true, message: 'Logged in with Google!' };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: networkErrorMessage(err) };
   }
 }
 
-export async function getGoogleConfig(): Promise<{ client_id: string } | null> {
+export const DEFAULT_GOOGLE_CLIENT_ID =
+  '202771542299-9de70n12u6bci4tnolh94itjm8vrseej.apps.googleusercontent.com';
+
+export async function getGoogleConfig(): Promise<{ client_id: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/google/config`);
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
+    const res = await timedFetch(`${API_BASE}/api/auth/google/config`, {}, 8000);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.client_id) return data;
+    }
+  } catch (err) {
+    console.warn('[AutoFlow] Backend config fetch timed out or failed, using fallback Google client ID:', err);
   }
+  return { client_id: DEFAULT_GOOGLE_CLIENT_ID };
 }
 
 export async function logout(): Promise<void> {
@@ -270,7 +362,7 @@ export async function getProfile(): Promise<UserProfile | null> {
       email: data.user?.email ?? '',
       plan_type: data.profile?.plan_type ?? 'free',
       is_pro_active: data.profile?.is_pro_active ?? false,
-      daily_limit: data.profile?.daily_limit ?? 30,
+      daily_limit: data.profile?.daily_limit ?? 50,
     };
   } catch {
     return null;
@@ -322,8 +414,8 @@ export async function getDailyUsage(): Promise<DailyUsageResponse | null> {
     const data = await res.json();
     return {
       text_used: data.text_used_today ?? 0,
-      text_limit: data.is_pro_active ? 999 : (data.text_daily_limit ?? 100),
-      text_remaining: data.is_pro_active ? 999 : (data.text_remaining_today ?? 100),
+      text_limit: data.is_pro_active ? 999 : (data.text_daily_limit ?? 50),
+      text_remaining: data.is_pro_active ? 999 : (data.text_remaining_today ?? 50),
       full_used: data.full_used_today ?? 0,
       full_limit: data.is_pro_active ? 999 : (data.full_daily_limit ?? 20),
       full_remaining: data.is_pro_active ? 999 : (data.full_remaining_today ?? 20),
@@ -577,7 +669,7 @@ export async function getReviewRewardStatus(): Promise<ReviewRewardResult> {
 /** Request a password reset. Sends a 6-digit code via email. */
 export async function requestPasswordReset(email: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/password/reset-request`, {
+    const res = await timedFetch(`${API_BASE}/api/auth/password/reset-request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
@@ -588,14 +680,14 @@ export async function requestPasswordReset(email: string): Promise<{ ok: boolean
     }
     return { ok: false, message: extractError(data, 'Failed to request password reset.') };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: networkErrorMessage(err) };
   }
 }
 
 /** Confirm password reset by providing email, code, and new password. */
 export async function confirmPasswordReset(email: string, code: string, newPassword: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/password/reset-confirm`, {
+    const res = await timedFetch(`${API_BASE}/api/auth/password/reset-confirm`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, code, new_password: newPassword }),
@@ -606,7 +698,90 @@ export async function confirmPasswordReset(email: string, code: string, newPassw
     }
     return { ok: false, message: extractError(data, 'Failed to reset password.') };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: networkErrorMessage(err) };
   }
 }
 
+
+/* ── Community templates ──
+   Workflows other people published. A separate endpoint from the official
+   bundle, and a separate failure: if this 500s the gallery still has every
+   curated template, which is why the two are never merged server-side. */
+
+export interface CommunityCard {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  thumbnail: string;
+  nodeCount: number;
+  author: string;
+  likes: number;
+  installs: number;
+  liked: boolean;
+  community: true;
+  /** Only on the detail call — the list deliberately omits it. */
+  payload?: any;
+}
+
+/** The published community gallery. Never throws; an empty list is the floor. */
+export async function listCommunityTemplates(
+  sort: 'top' | 'new' | 'installs' = 'top',
+): Promise<CommunityCard[]> {
+  try {
+    const res = await apiFetch(`/api/templates/community?sort=${sort}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.templates) ? data.templates : [];
+  } catch {
+    return [];
+  }
+}
+
+/** One template, with its graph. Opening it is what counts as an install. */
+export async function getCommunityTemplate(id: string): Promise<CommunityCard | null> {
+  const numeric = String(id).replace(/^community_/, '');
+  try {
+    const res = await apiFetch(`/api/templates/community/${numeric}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Toggle a like. Returns the server's count, which is the authority. */
+export async function likeCommunityTemplate(
+  id: string,
+): Promise<{ ok: boolean; liked?: boolean; likes?: number; message?: string }> {
+  const numeric = String(id).replace(/^community_/, '');
+  try {
+    const res = await apiFetch(`/api/templates/community/${numeric}/like`, { method: 'POST' });
+    if (res.status === 401) return { ok: false, message: 'Sign in to like a template.' };
+    if (!res.ok) return { ok: false, message: 'Could not reach AutoFlow.' };
+    const data = await res.json();
+    return { ok: true, liked: !!data.liked, likes: Number(data.likes) || 0 };
+  } catch {
+    return { ok: false, message: 'Could not reach AutoFlow.' };
+  }
+}
+
+/** Share a workflow. It lands pending, never live — see apps/workflows. */
+export async function submitCommunityTemplate(
+  template: any,
+  authorName: string,
+): Promise<{ ok: boolean; message: string }> {
+  try {
+    const res = await apiFetch('/api/templates/community/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ template, author_name: authorName, name: template?.name }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) return { ok: false, message: 'Sign in to share a template.' };
+    if (!res.ok) return { ok: false, message: extractError(data, 'Could not share that template.') };
+    return { ok: true, message: data.detail || 'Shared — it appears once a moderator approves it.' };
+  } catch {
+    return { ok: false, message: 'Could not reach AutoFlow. Check your connection.' };
+  }
+}

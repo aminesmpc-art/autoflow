@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Clipping UI harness</title>
+<!-- Loads the REAL studio bundle with a chrome.* shim, because a
+     chrome-extension:// page cannot be opened for inspection and the
+     component harness next door only covers the rail and one node.
+     Everything here is the shipped code; only the browser APIs are faked. -->
+<script>document.write('<link rel="stylesheet" href="dist/studio.css?v=' + Date.now() + '">')</script>
+<style>html,body{margin:0;height:100%;background:#0a0a0c}#root{height:100vh}</style>
+</head>
+<body>
+<script>
+// Minimal chrome surface the studio touches. Storage returns a seeded
+// workflow so the canvas has something real to lay out.
+const SEED = {
+  af_pending_workflow: {"name": "Clipping UI", "nodes": [{"id": "clip1", "type": "clip", "position": {"x": 60, "y": 40}, "data": {"type": "clip", "label": "Clipping", "sourceName": "Escape 100 Cops, Win $500,000.mp4", "sourceSize": 357000000, "sourceKey": "k", "status": "idle", "clipMode": "campaign", "wantedClips": 10, "surveyCandidates": 14, "longestSeconds": 200, "platform": "chatgpt", "aspect": "9:16", "campaignRules": "Do not use any logos, hashtags, watermarks, or content that is not affiliated with this campaign.", "clipRun": {"sourceKey": "k", "stages": {"ingest": {"status": "done", "tookMs": 60}, "transcribe": {"status": "done", "tookMs": 145700}, "survey": {"status": "done", "tookMs": 24200, "result": {"wanted": 10, "dropped": [], "candidates": [], "moments": [{"rank": 1, "moment": 3, "hookLine": "Look at these straw bales right here.", "closingLine": "Darius has already been arrested.", "why": "Immediate cat-and-mouse tension that pays off instantly."}, {"rank": 2, "moment": 7, "hookLine": "I have over 50 doppelgangers in the city.", "closingLine": "They're in here!", "why": "High-concept, self-contained decoy stunt."}]}}, "layout": {"status": "done", "tookMs": 10, "result": {"count": 8}}}}}}], "edges": []},
+  af_workflows: [],
+  af_settings: {},
+};
+const noop = () => {};
+window.chrome = {
+  runtime: {
+    id: 'harness',
+    sendMessage: () => Promise.resolve({}),
+    onMessage: { addListener: noop, removeListener: noop },
+    getURL: (p) => p,
+    lastError: null,
+  },
+  storage: {
+    local: {
+      get: (k) => Promise.resolve(typeof k === 'string' ? {[k]: SEED[k]} : SEED),
+      set: () => Promise.resolve(),
+      remove: () => Promise.resolve(),
+      onChanged: { addListener: noop },
+    },
+    onChanged: { addListener: noop },
+  },
+  tabs: { query: () => Promise.resolve([]), create: () => Promise.resolve({}), sendMessage: () => Promise.resolve({}) },
+  windows: { getCurrent: () => Promise.resolve({}) },
+  sidePanel: { open: () => Promise.resolve() },
+  identity: { launchWebAuthFlow: () => Promise.resolve('') },
+};
+</script>
+<div id="root"></div>
+<script>document.write('<scr' + 'ipt src="dist/studio.js?v=' + Date.now() + '"></scr' + 'ipt>')</script>
+</body>
+</html>

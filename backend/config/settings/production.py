@@ -26,14 +26,30 @@ CSRF_TRUSTED_ORIGINS = [
     "https://api.auto-flow.studio",
 ]
 
-# Allow specific Chrome extension origin + known domains
+# Allow specific Chrome extension origins + known domains
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGIN_REGEXES = []
 CORS_ALLOWED_ORIGINS = [  # noqa: F405
+    # AutoFlow Queue Manager.
     "chrome-extension://egplmjhmcicjkojopeoaohofckgeoipc",
+    # AutoFlow Studio. Missing since CORS was locked down, which is why Studio
+    # could not sign in: the browser dropped the login response for want of an
+    # Access-Control-Allow-Origin header, and the extension could only report
+    # it as "Could not reach the server". Existing sessions kept working, so it
+    # surfaced only when somebody's token ran out.
+    "chrome-extension://knodokbipcajhdpafplmlljbaamgfkao",
     "https://auto-flow.studio",
     "https://www.auto-flow.studio",
     "https://api.auto-flow.studio",
+]
+
+# An UNPACKED extension gets a different id from the published one, so a local
+# build is a different origin and none of the ids above match it. Rather than
+# widen the list with a regex — which would let any extension through and undo
+# the lockdown this list exists for — extra origins can be named explicitly in
+# the environment, one per line or comma separated. Empty by default.
+CORS_ALLOWED_ORIGINS += [
+    o for o in config("EXTRA_CORS_ORIGINS", default="", cast=Csv()) if o  # noqa: F405
 ]
 
 # ── Static files with WhiteNoise ──

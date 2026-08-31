@@ -7,95 +7,517 @@
   <link rel="stylesheet" href="sidepanel.css" />
 </head>
 <body>
-  <header class="sp-head">
-    <span class="sp-mark">▶</span>
-    <div class="sp-head__text">
-      <div class="sp-head__name">AutoFlow Studio</div>
-      <div class="sp-head__sub" id="head-sub">Node workflows</div>
-    </div>
-    <span id="plan-badge" class="sp-badge" hidden>Free</span>
-  </header>
-
-  <!-- ── Run ──
-       The reason the panel exists: during a run the canvas is behind the
-       platform tab, so this is the only view of what is happening. It leads,
-       and grows into the live state rather than sitting in a uniform card. -->
-  <section class="sp-run" id="run-card">
-    <div id="run-idle" class="sp-run__idle">
-      <div class="sp-run__idle-icon">◇</div>
-      <div class="sp-run__idle-text">Nothing running</div>
-      <div class="sp-run__idle-hint" id="run-idle-hint">Open the canvas to build or run a workflow.</div>
-    </div>
-
-    <div id="run-live" hidden>
-      <div class="sp-run__top">
-        <span class="sp-run__pulse"></span>
-        <span class="sp-run__node" id="run-node">—</span>
-        <span class="sp-run__elapsed" id="run-elapsed">0:00</span>
+  <!-- ══ SIGN IN GATE ══════════════════════════════════════════════ -->
+  <div class="sp-gate" id="gate">
+    <div class="sp-gate__inner">
+      <div class="sp-gate__glow" aria-hidden="true"></div>
+      <div class="sp-gate__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M20.5 12a8.5 8.5 0 1 1-2.9-6.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M15.2 3.4l3.1 2.1-2.1 3.1" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M10.3 8.9l5.4 3.1-5.4 3.1z" fill="currentColor"/>
+        </svg>
       </div>
-      <div class="sp-bar"><div class="sp-bar__fill" id="run-bar"></div></div>
-      <div class="sp-run__meta">
-        <span id="run-count">0 / 0</span>
-        <span id="run-pct">0%</span>
+      <h1 class="sp-gate__title">AutoFlow Studio</h1>
+      <p class="sp-gate__sub">Visual AI video workflow composer. Sign in to automate and generate.</p>
+
+      <button id="gate-google" class="sp-gbtn" type="button">
+        <svg viewBox="0 0 18 18" aria-hidden="true" class="sp-gbtn__g">
+          <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.49h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.63z"/>
+          <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.17l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/>
+          <path fill="#FBBC05" d="M3.97 10.73a5.4 5.4 0 0 1 0-3.46V4.94H.96a9 9 0 0 0 0 8.12l3.01-2.33z"/>
+          <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.9 11.43 0 9 0A9 9 0 0 0 .96 4.94l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/>
+        </svg>
+        Continue with Google
+      </button>
+
+      <div class="sp-gate__or"><span>or with email</span></div>
+
+      <div class="sp-gate__fields">
+        <input id="email" class="sp-input" type="email" placeholder="name@domain.com" autocomplete="username" />
+        <input id="password" class="sp-input" type="password" placeholder="Password" autocomplete="current-password" />
+        <button id="btn-login" class="sp-btn sp-btn--primary sp-btn--wide" type="button">Sign In</button>
       </div>
-      <div class="sp-row">
-        <button id="btn-pause" class="sp-btn sp-btn--ghost">Pause</button>
-        <button id="btn-stop" class="sp-btn sp-btn--danger">Stop</button>
-      </div>
-    </div>
 
-    <div id="run-error" class="sp-error" hidden></div>
-  </section>
-
-  <button id="open-studio" class="sp-btn sp-btn--primary sp-btn--wide">
-    Open Studio canvas
-  </button>
-
-  <!-- Whether the sites a run needs are open, checked before a node finds out
-       three minutes in. Rows are clickable so it is also the fix, not just the
-       diagnosis. -->
-  <section class="sp-card">
-    <div class="sp-card__title">Platforms</div>
-    <ul class="sp-plat" id="plat-list">
-      <li data-plat="flow" tabindex="0" role="button">
-        <span class="sp-dot"></span>
-        <span class="sp-plat__name">Google Flow</span>
-        <span class="sp-plat__state">—</span>
-      </li>
-      <li data-plat="chatgpt" tabindex="0" role="button">
-        <span class="sp-dot"></span>
-        <span class="sp-plat__name">ChatGPT</span>
-        <span class="sp-plat__state">—</span>
-      </li>
-    </ul>
-  </section>
-
-  <section class="sp-card">
-    <div class="sp-card__title">Account</div>
-
-    <div id="acct-out">
-      <input id="email" class="sp-input" type="email" placeholder="you@example.com" autocomplete="username" />
-      <input id="password" class="sp-input" type="password" placeholder="Password" autocomplete="current-password" />
-      <button id="btn-login" class="sp-btn sp-btn--primary sp-btn--wide">Sign in</button>
-      <p class="sp-note">Your AutoFlow account — runs and limits are shared.</p>
       <p id="auth-error" class="sp-error" hidden></p>
+      
+      <p class="sp-gate__foot">
+        Need an account? <a href="https://auto-flow.studio" target="_blank" rel="noopener noreferrer">Create one free</a>
+      </p>
     </div>
+  </div>
 
-    <div id="acct-in" hidden>
-      <div class="sp-acct">
-        <span class="sp-avatar" id="acct-initial">·</span>
-        <span class="sp-acct__email" id="acct-email">—</span>
+  <!-- ══ MAIN APP SHELL ══════════════════════════════════════════ -->
+  <div id="app" class="sp-app" hidden>
+    
+    <!-- ── Header ── -->
+    <header class="sp-top">
+      <div class="sp-top__brand">
+        <svg class="sp-top__logo" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M20.5 12a8.5 8.5 0 1 1-2.9-6.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M15.2 3.4l3.1 2.1-2.1 3.1" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M10.3 8.9l5.4 3.1-5.4 3.1z" fill="currentColor"/>
+        </svg>
+        <span class="sp-top__name">AutoFlow<span class="sp-top__name-studio">Studio</span></span>
+        <span id="plan-badge" class="sp-badge" hidden>Free</span>
       </div>
-      <div class="sp-usage" id="usage-block">
-        <div class="sp-usage__row">
-          <span id="usage-label">Studio runs</span>
-          <span id="usage-count">—</span>
+
+      <div class="sp-top__actions">
+        <button id="open-studio" class="sp-top__open" type="button" title="Launch Workflow Canvas Tab">
+          <span>Open Canvas</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
+        </button>
+        <button class="sp-top__icon" id="btn-account" type="button" title="Account Settings" aria-label="Account Settings">
+          <span id="top-avatar" class="sp-top__avatar">
+            <svg class="sp-glyph" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="8.4" r="3.7"/>
+              <path d="M4.6 20.2a7.4 7.4 0 0 1 14.8 0"/>
+            </svg>
+          </span>
+        </button>
+      </div>
+    </header>
+
+    <!-- ── Primary Navigation ── -->
+    <nav class="sp-nav" id="sp-nav" role="tablist" aria-label="Panel sections">
+      <button class="sp-nav__tab sp-nav__tab--on" data-view="build"
+              role="tab" aria-selected="true" aria-controls="view-build">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3v3M12 18v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M3 12h3M18 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>
+          <circle cx="12" cy="12" r="3.2"/>
+        </svg>
+        <span>Build</span>
+      </button>
+      <button class="sp-nav__tab" data-view="templates"
+              role="tab" aria-selected="false" aria-controls="view-templates">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>
+        </svg>
+        <span>Library</span>
+      </button>
+      <button class="sp-nav__tab" data-view="run"
+              role="tab" aria-selected="false" aria-controls="view-run">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8 5.5v13l11-6.5z"/>
+        </svg>
+        <span>Activity</span>
+        <span class="sp-nav__live-dot" id="nav-live-dot" hidden aria-hidden="true"></span>
+      </button>
+    </nav>
+
+    <!-- ── Main Content Area ── -->
+    <main class="sp-main">
+      
+      <!-- ══ 0. PRO ═══════════════════════════════════════════════
+           A page rather than a fourth tab. The panel has three tabs that each
+           do something; spending one permanently on selling makes it the tab
+           nobody reads. This is reached from the CTAs that already exist and
+           left with Back.
+
+           It explains and hands off. Payment happens on the checkout page,
+           which is where the embedded provider and the account email
+           belong — an extension panel is the wrong place to be typing card
+           details into, whatever it looks like. -->
+      <div class="sp-view" id="view-pro" role="tabpanel" hidden>
+        <button type="button" class="sp-pro__back" id="pro-back">← Back</button>
+
+        <div class="sp-pro__head">
+          <span class="sp-pro__eyebrow">AutoFlow Pro</span>
+          <h2 class="sp-pro__title">Stop counting runs</h2>
+          <p class="sp-pro__sub" id="pro-status">One subscription covers the workflow builder and Flow automation.</p>
         </div>
-        <div class="sp-bar sp-bar--thin"><div class="sp-bar__fill" id="usage-bar"></div></div>
+
+        <div class="sp-pro__card">
+          <div class="sp-pro__price"><strong>$9.99</strong><span>/ month</span></div>
+
+          <ul class="sp-pro__list">
+            <li class="sp-pro__group">Studio — workflow builder</li>
+            <li>Unlimited workflow runs</li>
+            <li>Every template, including Pro-only</li>
+            <li>Voice casting across chained clips</li>
+            <li class="sp-pro__group">AutoFlow — Google Flow</li>
+            <li>Unlimited text and full-feature prompts</li>
+            <li>Priority generation queue</li>
+            <li>Bulk upscale &amp; download</li>
+            <li>Frame chain mode</li>
+          </ul>
+
+          <button type="button" class="sp-pro__go" id="pro-go">Upgrade — $9.99/mo</button>
+          <p class="sp-pro__note">Opens the secure checkout in a new tab. Cancel any time.</p>
+        </div>
+
+        <p class="sp-pro__free" id="pro-free"></p>
       </div>
-      <button id="btn-logout" class="sp-btn sp-btn--ghost sp-btn--wide">Sign out</button>
+
+      <!-- ══ 1. BUILD TAB ═════════════════════════════════════════ -->
+      <div class="sp-view" id="view-build" role="tabpanel">
+        
+        <!-- What you want, in your words. One question, one answer, one
+             button. The five brand buttons this replaces were five decisions
+             before anything could happen, and none of them said which engines
+             were even signed in. -->
+        <div class="sp-ask">
+          <h2 class="sp-ask__q">What do you want to make?</h2>
+
+          <!-- One object, not three. The box, the button and the engine line
+               were separate elements floating on the page background, which is
+               what made a finished layout read as an unstyled form. -->
+          <div class="sp-composer" id="build-composer">
+            <textarea id="build-idea" class="sp-ask__box" rows="3"
+                      placeholder="A 3-shot vertical ad for cold brew coffee"></textarea>
+            <button type="button" class="sp-prompt-clear" id="build-idea-clear"
+                    title="Clear" hidden>&#10005;</button>
+
+            <!-- Pictures of what you mean. A sentence about "my product" is
+                 a great deal less use to a model than the product. -->
+            <div class="sp-shots" id="build-refs" hidden></div>
+
+            <div class="sp-composer__foot">
+              <button type="button" class="sp-ask__clip" id="build-add-image"
+                      title="Show the AI a picture" aria-label="Show the AI a picture">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 16.5 9 11l4 4 2.5-2.5L20 17"/>
+                  <rect x="3.2" y="4.2" width="17.6" height="15.6" rx="2.4"/>
+                  <circle cx="8.6" cy="8.6" r="1.4"/>
+                </svg>
+              </button>
+              <input type="file" id="build-image-input" accept="image/*" multiple hidden />
+              <div class="sp-ask__who">
+                <span class="sp-ask__who-text">using</span>
+                <select id="build-engine" class="sp-ask__engine"
+                        aria-label="Which AI writes it"></select>
+                <span class="sp-ask__who-hint" id="build-engine-hint"></span>
+              </div>
+              <button type="button" class="sp-ask__go" id="build-go-ai" disabled>
+                <span class="sp-ask__go-label">Make it</span>
+                <kbd class="sp-key sp-key--on" id="build-go-key">&#8984;&#9166;</kbd>
+              </button>
+            </div>
+          </div>
+
+          <!-- What you have made before. Kept because a workflow is rarely
+               right first time, and everything needed to ask for a change was
+               being thrown away the moment it reached the canvas. -->
+          <div class="sp-past" id="build-past" hidden>
+            <div class="sp-past__head">
+              <span>Earlier builds</span>
+              <button type="button" class="sp-past__clear" id="build-past-clear">Clear</button>
+            </div>
+            <div class="sp-past__list" id="build-past-list"></div>
+          </div>
+
+          <!-- What happens after you press it. Three short lines, and they go
+               away the moment you type - the space they fill is the space that
+               read as unfinished, and by then you no longer need telling. -->
+          <ol class="sp-how" id="build-how">
+            <li><span class="sp-how__n">1</span> You describe the video</li>
+            <li><span class="sp-how__n">2</span> The AI writes every shot</li>
+            <li><span class="sp-how__n">3</span> You check it, then make it</li>
+          </ol>
+        </div>
+
+        <!-- What is happening, in what it means rather than what it does.
+             Three stages, because each one has to tell you something new —
+             a label that only names a phase resets nobody's patience. -->
+        <div id="build-stages" class="sp-stages" hidden>
+          <div class="sp-stages__row" data-stage="write">
+            <span class="sp-stages__dot"></span>
+            <span class="sp-stages__name">Writing your shots</span>
+          </div>
+          <div class="sp-stages__row" data-stage="check">
+            <span class="sp-stages__dot"></span>
+            <span class="sp-stages__name">Checking they will render</span>
+          </div>
+          <div class="sp-stages__row" data-stage="ready">
+            <span class="sp-stages__dot"></span>
+            <span class="sp-stages__name">Ready</span>
+          </div>
+          <div class="sp-stages__note" id="build-stage-note"></div>
+          <button type="button" class="sp-stages__cancel" id="build-cancel">Cancel</button>
+        </div>
+
+        <!-- What you are about to get, described as the video and not as the
+             machinery that makes it. The nodes are still there; they are just
+             not what somebody deciding whether to spend four generations
+             needs to read. -->
+        <div id="build-plan" class="sp-plan" hidden>
+          <div class="sp-plan__what">
+            <span class="sp-plan__size" id="build-plan-size"></span>
+            <span class="sp-plan__cost" id="build-plan-cost"></span>
+          </div>
+          <p class="sp-plan__sub" id="build-plan-sub"></p>
+
+          <ol class="sp-plan__shots" id="build-plan-shots"></ol>
+          <p class="sp-plan__helpers" id="build-plan-helpers" hidden></p>
+
+          <div class="sp-plan__warn" id="build-plan-warn" hidden></div>
+
+          <div class="sp-plan__acts">
+            <button type="button" class="sp-btn sp-btn--primary" id="build-plan-go">Open on canvas</button>
+            <button type="button" class="sp-btn sp-btn--ghost" id="build-plan-drop">Start over</button>
+          </div>
+          <!-- A picture helps a change as much as it helps the first ask —
+               "make the room look like this" is not a sentence. -->
+          <div class="sp-shots sp-shots--refine" id="build-refine-refs" hidden></div>
+          <div class="sp-plan__refine">
+            <button type="button" class="sp-ask__clip" id="build-refine-image"
+                    title="Show the AI what to change" aria-label="Show the AI what to change">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 16.5 9 11l4 4 2.5-2.5L20 17"/>
+                <rect x="3.2" y="4.2" width="17.6" height="15.6" rx="2.4"/>
+                <circle cx="8.6" cy="8.6" r="1.4"/>
+              </svg>
+            </button>
+            <input type="file" id="build-refine-image-input" accept="image/*" multiple hidden />
+            <input type="text" class="sp-plan__ask" id="build-refine"
+                   placeholder="Change it — or attach a picture of what to change" />
+            <button type="button" class="sp-btn sp-btn--ghost" id="build-refine-go">Ask <kbd class="sp-key">&#9166;</kbd></button>
+          </div>
+        </div>
+
+        <!-- The examples used to be six cards taking most of the tab. They
+             are the Library's job, and the Library holds twenty-six of them. -->
+        <a class="sp-ask__more" id="build-open-library" role="button" tabindex="0">
+          <span>Or start from a ready-made workflow</span>
+          <span class="sp-ask__more-go">→</span>
+        </a>
+
+        <!-- Build Status Box -->
+        <div id="build-out" class="sp-buildout" hidden></div>
+
+        <!-- Quick Start Blueprints -->
+        <!-- Manual Copy/Paste Accordion -->
+        <details class="sp-manual" id="build-manual">
+          <summary>Use a chat I cannot drive</summary>
+          <div class="sp-manual__content">
+            <p class="sp-note">
+              For a chat this extension cannot open for you — DeepSeek, or Claude in a window it does not control. Copy the brief, paste it there, then paste the whole reply back here.
+            </p>
+            <div class="sp-row">
+              <button id="build-copy" class="sp-btn sp-btn--ghost" type="button">
+                <svg class="sp-glyph" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                <span>Copy Specification Brief</span>
+              </button>
+            </div>
+            <div class="sp-ai" id="build-ai-manual"></div>
+            <label class="sp-step__label" for="build-reply">Paste AI Response JSON/Plan:</label>
+            <textarea id="build-reply" class="sp-area sp-area--mono" rows="4"
+                      placeholder="Paste the AI's reply here — Markdown code blocks and descriptions are safely parsed..."></textarea>
+            <div class="sp-row">
+              <button id="build-go" class="sp-btn sp-btn--primary sp-btn--wide" type="button">
+                <span>⚡ Build Nodes from Pasted Reply</span>
+              </button>
+            </div>
+          </div>
+        </details>
+
+      </div>
+
+      <!-- ══ 2. LIBRARY TAB ════════════════════════════════════════ -->
+      <div class="sp-view" id="view-templates" role="tabpanel" hidden>
+        
+        <!-- Pinned Search & Filter Toolbar -->
+        <div class="sp-tplbar">
+          <div class="sp-seg2" role="tablist" aria-label="Template source">
+            <button id="src-official" class="sp-seg2__btn sp-seg2__btn--on" role="tab" aria-selected="true" type="button">Official Curated</button>
+            <button id="src-community" class="sp-seg2__btn" role="tab" aria-selected="false" type="button">Community Hub</button>
+          </div>
+          <div class="sp-search">
+            <svg class="sp-search__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="tpl-search" class="sp-search__input" type="search"
+                   placeholder="Search workflows, categories, techniques…" aria-label="Search templates" />
+          </div>
+          <div class="sp-pills" id="tpl-pills" role="group" aria-label="Filter by category"></div>
+        </div>
+
+        <div class="sp-count" id="tpl-count"></div>
+        <div class="sp-grid" id="tpl-grid"></div>
+
+        <!-- Prompt Presets Drawer -->
+        <details class="sp-manual" id="preset-fold">
+          <summary>Production Prompt Presets & Style Guides</summary>
+          <div class="sp-manual__content">
+            <p class="sp-note sp-note--intro">
+              Expert prompt structures optimized for NanoBanana2 & Flow Omni. Attach these directly to Ask AI nodes in the canvas.
+            </p>
+            <div id="preset-list"></div>
+          </div>
+        </details>
+
+      </div>
+
+      <!-- ══ 3. ACTIVITY TAB ═══════════════════════════════════════ -->
+      <div class="sp-view" id="view-run" role="tabpanel" hidden>
+        
+        <!-- Live Execution Card -->
+        <section class="sp-run" id="run-card">
+          <div id="run-idle" class="sp-run__idle">
+            <div class="sp-run__idle-graphic">
+              <svg class="sp-run__idle-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M10 8.5 16 12l-6 3.5z" fill="currentColor"/>
+              </svg>
+            </div>
+            <div class="sp-run__idle-content">
+              <span class="sp-run__idle-text">Pipeline Idle</span>
+              <span class="sp-run__idle-hint" id="run-idle-hint">Open the canvas to construct or start a workflow run.</span>
+            </div>
+          </div>
+
+          <div id="run-live" hidden>
+            <div class="sp-run__top">
+              <div class="sp-run__badge">
+                <span class="sp-run__pulse" aria-hidden="true"></span>
+                <span class="sp-run__state" id="head-sub">RUNNING</span>
+              </div>
+              <div class="sp-run__timer">
+                <svg class="sp-glyph" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                <span id="run-elapsed">0:00</span>
+              </div>
+            </div>
+
+            <div class="sp-run__node-wrapper">
+              <div class="sp-run__node-label">Active Node</div>
+              <div class="sp-run__node" id="run-node">—</div>
+            </div>
+
+            <div class="sp-bar">
+              <div class="sp-bar__fill" id="run-bar"></div>
+            </div>
+
+            <div class="sp-run__meta">
+              <span class="sp-run__count-label"><strong id="run-count">0 / 0</strong> nodes completed</span>
+              <span class="sp-run__pct-badge" id="run-pct">0%</span>
+            </div>
+
+            <div class="sp-row sp-run__controls">
+              <button id="btn-pause" class="sp-btn sp-btn--ghost" type="button">
+                <svg class="sp-glyph" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+                <span>Pause</span>
+              </button>
+              <button id="btn-stop" class="sp-btn sp-btn--danger" type="button">
+                <svg class="sp-glyph" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                <span>Stop Run</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="run-error" class="sp-error" hidden></div>
+        </section>
+
+        <!-- Platform Status Health Matrix -->
+        <section class="sp-card">
+          <div class="sp-card__head">
+            <div class="sp-card__title-group">
+              <svg class="sp-glyph" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              <h2 class="sp-card__title">Platform Connections</h2>
+            </div>
+            <span class="sp-card__count" id="plat-count">—</span>
+          </div>
+          
+          <ul class="sp-plat" id="plat-list">
+            <li><button type="button" data-plat="flow">
+              <span class="sp-dot" aria-hidden="true"></span>
+              <span class="sp-plat__name">Google Flow</span>
+              <span class="sp-plat__state">—</span>
+            </button></li>
+            <li><button type="button" data-plat="chatgpt">
+              <span class="sp-dot" aria-hidden="true"></span>
+              <span class="sp-plat__name">ChatGPT</span>
+              <span class="sp-plat__state">—</span>
+            </button></li>
+            <li><button type="button" data-plat="gemini">
+              <span class="sp-dot" aria-hidden="true"></span>
+              <span class="sp-plat__name">Google Gemini</span>
+              <span class="sp-plat__state">—</span>
+            </button></li>
+            <li><button type="button" data-plat="grok">
+              <span class="sp-dot" aria-hidden="true"></span>
+              <span class="sp-plat__name">xAI Grok</span>
+              <span class="sp-plat__state">—</span>
+            </button></li>
+          </ul>
+        </section>
+
+        <!-- Live Diagnostics Log Terminal -->
+        <section class="sp-card">
+          <div class="sp-card__head">
+            <div class="sp-card__title-group">
+              <svg class="sp-glyph" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              <h2 class="sp-card__title">Execution Diagnostics</h2>
+            </div>
+            <span class="sp-diag__badge">Live Feed</span>
+          </div>
+          <div id="diag-log" class="sp-diag__log">
+            <div class="sp-diag__empty">No log entries yet. Output will stream here during runs.</div>
+          </div>
+        </section>
+
+      </div>
+
+    </main>
+
+    <!-- ── Sticky Footer ── -->
+    <footer class="sp-foot">
+      <span class="sp-foot__plan" id="foot-plan">FREE</span>
+      <button class="sp-foot__acct" id="foot-acct" type="button">Sign in</button>
+      <span class="sp-foot__stat" id="foot-runs">—</span>
+      <!-- Shown only while a free account is close to its ceiling. An upgrade
+           button that is always there is furniture; one that appears when the
+           limit is about to matter is an answer to a question being asked. -->
+      <button class="sp-foot__up" id="foot-upgrade" type="button" hidden>Go Pro</button>
+    </footer>
+
+  </div><!-- /#app -->
+
+  <!-- ── Account Modal ── -->
+  <div class="sp-modal" id="acct-modal" hidden>
+    <div class="sp-modal__card" role="dialog" aria-modal="true" aria-label="Account Settings">
+      <button class="sp-modal__x" id="acct-close" aria-label="Close" type="button">
+        <svg class="sp-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 6.4l11.2 11.2M17.6 6.4L6.4 17.6"/></svg>
+      </button>
+
+      <div class="sp-modal__header">
+        <h3 class="sp-modal__title">Account & Quota</h3>
+      </div>
+
+      <div id="acct-out" hidden>
+        <p class="sp-note">You are currently signed out.</p>
+      </div>
+
+      <div id="acct-in" hidden>
+        <div class="sp-acct">
+          <div class="sp-avatar-wrap">
+            <span class="sp-avatar" id="acct-initial">·</span>
+          </div>
+          <div class="sp-acct__info">
+            <span class="sp-acct__email" id="acct-email">—</span>
+            <span class="sp-acct__status">Active Session</span>
+          </div>
+        </div>
+
+        <div class="sp-usage" id="usage-block">
+          <div class="sp-usage__row">
+            <span id="usage-label">Monthly Studio Runs</span>
+            <span id="usage-count" class="sp-usage__val">—</span>
+          </div>
+          <div class="sp-bar sp-bar--thin">
+            <div class="sp-bar__fill" id="usage-bar"></div>
+          </div>
+        </div>
+
+        <button id="btn-logout" class="sp-btn sp-btn--ghost sp-btn--wide" type="button">
+          <svg class="sp-glyph" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          <span>Sign Out</span>
+        </button>
+      </div>
+
+      <div class="sp-modal__links">
+        <a id="lnk-docs" href="https://auto-flow.studio/docs" target="_blank" rel="noopener noreferrer">Docs & Guides ↗</a>
+        <a href="https://auto-flow.studio" target="_blank" rel="noopener noreferrer">auto-flow.studio ↗</a>
+      </div>
     </div>
-  </section>
+  </div>
 
   <script src="sidepanel.js"></script>
 </body>

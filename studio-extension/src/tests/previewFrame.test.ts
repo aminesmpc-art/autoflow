@@ -1,0 +1,230 @@
+/**
+ * "Generated on Flow — Preview unavailable", on a clip Flow rendered fine.
+ *
+ * Reported with two screenshots: the node green and blank, and the same clip
+ * sitting in Flow at 10s and 720p. Diagnostics said nothing about scrolling
+ * the tile back, which rules out the virtualised-grid cause — those lines
+ * only print when scrolling CHANGED something, so silence means the tile had
+ * its player all along.
+ *
+ * Which leaves the thing that is wrong on every clip, not sometimes.
+ *
+ *   captureVideoFrame:  if (video.readyState < 2 || !video.videoWidth) return '';
+ *
+ * Flow renders its tiles with preload="none". At the moment sendStudioResult
+ * asks for a preview, readyState is 0 and videoWidth is 0, so that guard
+ * returns '' — every single time, for every clip.
+ *
+ * The end-frame path already knew this. captureVideoEndFrame calls
+ * ensureVideoLoaded first, and its whole doc comment is about preload="none"
+ * holding no bytes. That fix was applied to one of the two callers and never
+ * the other, which is exactly the shape of the reported bug: the last frame
+ * arrives, the chain continues, and the node has no thumbnail.
+ */
+
+/// <reference types="node" />
+
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+const SRC = readFileSync(
+  join(__dirname, '..', 'content', 'flow', 'index.ts'), 'utf8');
+const FRAMES = readFileSync(
+  join(__dirname, '..', 'content', 'flow', 'videoFrames.ts'), 'utf8');
+
+const sendResult = (): string => {
+  const at = SRC.indexOf('async function sendStudioResult');
+  return SRC.slice(at, SRC.indexOf('\n}\n', at));
+};
+
+describe('why the first attempt cannot work', () => {
+  it('captureVideoFrame refuses an element with nothing loaded', () => {
+    /* Not a bug in it — drawing an unloaded video produces an empty canvas,
+       so returning '' is right. The caller has to load first. */
+    expect(FRAMES).toMatch(/if \(video\.readyState < 2 \|\| !video\.videoWidth\) return '';/);
+  });
+
+  it('and Flow gives it exactly that', () => {
+    /* The end-frame path documents this at length; the preview path never
+       mentioned it. */
+    expect(FRAMES).toMatch(/preload="none"/);
+  });
+});
+
+describe('the preview is drawn once there is something to draw', () => {
+  it('tries again after the end frame has loaded the element', () => {
+    const fn = sendResult();
+    const first = fn.indexOf('previewUrl = captureVideoFrame(videoEl);');
+    const again = fn.indexOf('previewUrl = captureVideoFrame(videoEl) || referenceUrl;');
+    expect(first).toBeGreaterThan(-1);
+    expect(again).toBeGreaterThan(first);
+    /* After the end-frame capture, which is what does the loading. */
+    expect(fn.indexOf('captureVideoEndFrame')).toBeLessThan(again);
+  });
+
+  it('falls back to the end frame rather than to nothing', () => {
+    /* The wrong end of the clip, and a picture of the right clip. A node with
+       a thumbnail of its own last frame is better than one that reads as
+       having failed. */
+    expect(sendResult()).toMatch(/captureVideoFrame\(videoEl\) \|\| referenceUrl/);
+  });
+
+  it('says in Diagnostics which way it went', () => {
+    const fn = sendResult();
+    expect(fn).toMatch(/logLine\(`Preview captured \(/);
+    /* The "would not give up a frame" line is gone: coming back with nothing
+       is no longer a thing to mention in passing, it fails the node. */
+    expect(fn).toMatch(/could read nothing from it, even after/);
+  });
+
+  it('leaves the last-frame capture alone', () => {
+    /* That path was already right, and it is the one the chained node depends
+       on. This adds a second reader of an element it has already loaded. */
+    expect(FRAMES).toMatch(/if \(!\(await ensureVideoLoaded\(video\)\)\) \{/);
+    expect(sendResult()).toMatch(/await captureVideoEndFrame\(videoEl, logLine\)/);
+  });
+});
+
+describe('a node does not report done with nothing in it', () => {
+  /* Reported three times, and each time I fixed something adjacent. The DOM
+     of a real finished tile settled it:
+
+       <video src="/fx/api/trpc/media.getMediaUrlRedirect?name=…"
+              playsinline crossorigin="anonymous" preload="auto">
+
+     preload="auto", not "none" — so the premise of the previous fix was
+     wrong. And no poster attribute at all, so extractTilePreviewSrc fell
+     through to findLargestImgSrc, whose only candidates in a finished clip
+     tile are the INGREDIENT thumbnails: the pictures the user supplied.
+
+     The node then went green carrying either the wrong image or none, with no
+     last frame, and everything chained below it failed while the clip sat in
+     Flow rendered perfectly. Reporting that as success is what makes it look
+     like the node skipped itself. */
+
+  const TILE = readFileSync(
+    join(__dirname, '..', 'content', 'flow', 'tileState.ts'), 'utf8');
+
+  it('never mistakes an ingredient thumbnail for the result', () => {
+    /* Matched on the alt text Flow writes for a screen reader, which says
+       exactly what they are, rather than on a styled-components class. */
+    expect(TILE).toMatch(/const INGREDIENT_ALT = /);
+    expect(TILE).toMatch(/generated or uploaded by you/);
+    const fn = TILE.slice(TILE.indexOf('export function findLargestImgSrc'));
+    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/INGREDIENT_ALT\.test\(img\.getAttribute\('alt'\)/);
+  });
+
+  it('scrolls the output back to the top before giving up', () => {
+    /* Where a clip that has just finished actually is. */
+    const fn = sendResult();
+    expect(fn).toMatch(/await scrollOutputToTop\(\);/);
+    expect(fn).toMatch(/bringTileIntoView\(retryTile\)/);
+  });
+
+  it('re-finds the tile by id rather than trusting the old element', () => {
+    /* The element captured minutes ago may have been recycled out of the
+       document by the virtual list. */
+    expect(sendResult()).toMatch(/document\.querySelector\(`\[data-tile-id="\$\{CSS\.escape\(tileId\)\}"\]`\)/);
+  });
+
+  it('reads everything again from whatever is there now', () => {
+    const fn = sendResult();
+    const at = fn.indexOf('const v2 =');
+    expect(fn.slice(at, at + 400)).toMatch(/captureVideoEndFrame\(v2, logLine\)/);
+    expect(fn.slice(at, at + 400)).toMatch(/captureVideoFrame\(v2\)/);
+  });
+
+  it('fails the node rather than reporting a result with no data', () => {
+    /* The whole point. A green node with nothing in it is worse than a red
+       one, because the run continues and the failure surfaces two nodes
+       later as "nothing to continue from". */
+    const fn = sendResult();
+    const at = fn.indexOf('if (!previewUrl && !referenceUrl) {');
+    expect(at).toBeGreaterThan(-1);
+    expect(fn.slice(at, at + 700)).toMatch(/STUDIO_NODE_ERROR/);
+    expect(fn.slice(at, at + 700)).toMatch(/return;/);
+  });
+
+  it('only does any of that for a clip', () => {
+    /* A still has no video to re-read, and its poster path is unaffected. */
+    expect(sendResult()).toMatch(/if \(videoEl && !previewUrl && !referenceUrl\)/);
+  });
+});
+
+describe('using the file Flow already gave us', () => {
+  /* The question that produced this: "in Flow it's easy with API download and
+     getting data if it's there — why don't you use it?"
+
+     It was already downloading it. buildStudioStills fetched the media URL
+     off the tile — /fx/api/trpc/media.getMediaUrlRedirect?name=<uuid>, same
+     origin, cookies included — and then threw the bytes away on
+     `if (blob.type.startsWith('video/')) return none`, on the assumption that
+     a clip's tile carries a poster to fall back to. The DOM of a finished
+     tile has no poster attribute at all.
+
+     So every failure since has been the DOM route: is the tile in view, has
+     the virtual list recycled it, what does its preload say, where is the
+     playhead. None of that applies to a blob we hold. */
+
+  const FRAMES = readFileSync(
+    join(__dirname, '..', 'content', 'flow', 'videoFrames.ts'), 'utf8');
+  const STILLS = readFileSync(
+    join(__dirname, '..', 'content', 'flow', 'studioFrames.ts'), 'utf8');
+
+  it('decodes the clip instead of discarding it', () => {
+    expect(SRC).not.toMatch(/return none; \/\/ videos use their poster instead/);
+    expect(SRC).toMatch(/framesFromVideoBlob\(blob, logLine\)/);
+    expect(SRC).toMatch(/return \{ preview: first, reference: last \}/);
+  });
+
+  it('takes both ends out of the one download', () => {
+    /* The opening frame is the thumbnail, the closing frame is what a chained
+       clip continues from. One fetch, both answers. */
+    const fn = FRAMES.slice(FRAMES.indexOf('export async function framesFromVideoBlob'));
+    const body = fn.slice(0, fn.lastIndexOf('\n}'));
+    expect(body).toMatch(/const first = await drawWhenDecodable\(video\)/);
+    expect(body).toMatch(/duration - 0\.05, duration - 0\.3, duration - 1/);
+  });
+
+  it('uses its own element, not the page’s', () => {
+    /* Which is the whole point: nothing here depends on where the tile is,
+       what its preload says, or whether it still exists. */
+    const fn = FRAMES.slice(FRAMES.indexOf('export async function framesFromVideoBlob'));
+    const body = fn.slice(0, fn.lastIndexOf('\n}'));
+    expect(body).toMatch(/document\.createElement\('video'\)/);
+    expect(body).toMatch(/video\.preload = 'auto'/);
+    expect(body).toMatch(/URL\.createObjectURL\(blob\)/);
+  });
+
+  it('attaches it, because a detached element may not decode', () => {
+    const fn = FRAMES.slice(FRAMES.indexOf('export async function framesFromVideoBlob'));
+    expect(fn.slice(0, fn.lastIndexOf('\n}'))).toMatch(/document\.body\.appendChild\(video\)/);
+  });
+
+  it('cleans up whatever happened', () => {
+    /* A blob URL held open is a whole clip pinned in memory, once per node. */
+    const fn = FRAMES.slice(FRAMES.indexOf('export async function framesFromVideoBlob'));
+    const body = fn.slice(0, fn.lastIndexOf('\n}'));
+    expect(body).toMatch(/finally \{[\s\S]{0,240}URL\.revokeObjectURL\(url\)/);
+    expect(body).toMatch(/video\.remove\(\)/);
+  });
+
+  it('lets a frame from the file stand as the reference', () => {
+    /* The rule it passes is there to stop a POSTER — the opening frame —
+       standing in for the ending and silently restarting a chained shot. A
+       last frame read out of the file is the thing that rule protects. */
+    const fn = STILLS.slice(STILLS.indexOf('export function pickReferenceStill'));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+    expect(body).toMatch(/if \(fromFile\) return fromFile;/);
+    expect(body.indexOf('if (fromFile)')).toBeLessThan(body.indexOf("if (isVideo) return '';"));
+  });
+
+  it('keeps the page capture as the fallback, not the first resort', () => {
+    expect(SRC).toMatch(/endFrame: \(videoEl && !fromFile\) \? await captureVideoEndFrame/);
+  });
+
+  it('says which route the frame came from', () => {
+    expect(SRC).toMatch(/from the downloaded clip/);
+    expect(SRC).toMatch(/off the page/);
+  });
+});

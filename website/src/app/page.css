@@ -1077,3 +1077,25 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* A heading inside the feature list.
+   The list gives every <li> a green tick, which is right for a feature and
+   wrong for a label — a ticked "Studio" reads as a feature called Studio. So
+   the group rows drop the tick and take the indent it was occupying, which
+   also lines the two products up against each other rather than running them
+   together as one undifferentiated list. */
+.pricing-features li.pricing-group {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.pricing-features li.pricing-group:first-child { margin-top: 0; }
+.pricing-features li.pricing-group::before {
+  content: '';
+  background: none;
+  width: 24px;
+  height: auto;
+}

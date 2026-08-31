@@ -5,7 +5,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStudioStore, normalizeWorkflow, resolveAssets } from '../store';
-import { TEMPLATES, CATEGORIES, type Template } from '../templates';
+import { CATEGORIES, type Template } from '../templates';
+import { loadTemplates, refreshTemplates, type TemplateSource } from '../templates/loader';
+import { getUpgradeTarget } from '../../shared/api';
 
 /** Node-chain preview gets noisy past this many dots */
 const MAX_PREVIEW_DOTS = 8;
@@ -25,23 +27,32 @@ export default function TemplateGallery() {
   const {
     setView, setNodes, setEdges, setWorkflowName,
     savedWorkflows, listWorkflows, loadWorkflow, deleteWorkflow,
-    newWorkflow, importWorkflow,
+    newWorkflow, importWorkflow, saveWorkflow,
   } = useStudioStore();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string>('All');
   const [importError, setImportError] = useState<string | null>(null);
+  const [importOk, setImportOk] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { listWorkflows(); }, [listWorkflows]);
 
-  const handleImport = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      e.target.value = ''; // allow re-picking the same file
+  /* One path for both the button and the drop zone. Reports success as well as
+     failure: importing now writes to storage, and a silent success is what made
+     the old flow feel like nothing had happened. */
+  const takeFile = useCallback(
+    async (file: File | undefined | null) => {
       if (!file) return;
+      setImportError(null);
+      setImportOk(null);
+      if (!/\.json$/i.test(file.name) && file.type !== 'application/json') {
+        setImportError(`"${file.name}" is not a .json workflow file`);
+        return;
+      }
       try {
-        setImportError(null);
         await importWorkflow(file);
+        setImportOk(`Imported "${file.name}" — saved to My Workflows`);
       } catch (err: any) {
         setImportError(err?.message || 'Could not import that file');
       }
@@ -49,14 +60,59 @@ export default function TemplateGallery() {
     [importWorkflow]
   );
 
+  const handleImport = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = ''; // allow re-picking the same file
+      await takeFile(file);
+    },
+    [takeFile]
+  );
+
+  /* Drag and drop straight onto the gallery. dragOver must be cancelled or the
+     browser navigates to the file instead, which loses the whole panel. */
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(true);
+  }, []);
+  const onDragLeave = useCallback((e: React.DragEvent) => {
+    // Ignore the flicker from crossing child elements.
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setDragging(false);
+  }, []);
+  const onDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragging(false);
+      await takeFile(e.dataTransfer?.files?.[0]);
+    },
+    [takeFile]
+  );
+
   const loadTemplate = useCallback(
     async (template: Template) => {
+      /* A Pro template reaches a free account as metadata only — the server
+         strips nodes and edges rather than sending the graph and trusting the
+         UI to hide it. So there is nothing to open here; send them to the
+         upgrade page instead. The card is a conversion surface, not a
+         disabled button. */
+      if (template.locked) {
+        const { url } = await getUpgradeTarget();
+        window.open(url, '_blank', 'noopener');
+        return;
+      }
+
       // Deep clone nodes/edges so each instance is independent,
       // then normalize (edge style, model names, missing fields)
       const { nodes: clonedNodes, edges: clonedEdges } = normalizeWorkflow(
         JSON.parse(JSON.stringify(template.nodes)),
         JSON.parse(JSON.stringify(template.edges))
       );
+      /* Mint a fresh id BEFORE the nodes land. Opening a template used to keep
+         whatever id was already in the store, so autosave would write the
+         template over the saved workflow the user had open a moment earlier.
+         Same reasoning as startBlank. */
+      newWorkflow();
       // Open the canvas immediately; bundled reference images fill in a moment
       // later so a slow asset read never delays the click.
       setNodes(clonedNodes);
@@ -66,8 +122,13 @@ export default function TemplateGallery() {
 
       const withAssets = await resolveAssets(clonedNodes);
       if (withAssets !== clonedNodes) setNodes(withAssets);
+      /* Save once the reference images are in, so the stored copy is the whole
+         workflow. Until this runs the template is invisible to autosave, which
+         only touches workflows it has already seen saved — which is how an
+         opened template could vanish on reload. */
+      await saveWorkflow();
     },
-    [setView, setNodes, setEdges, setWorkflowName]
+    [setView, setNodes, setEdges, setWorkflowName, newWorkflow, saveWorkflow]
   );
 
   const startBlank = useCallback(() => {
@@ -77,11 +138,62 @@ export default function TemplateGallery() {
     setView('canvas');
   }, [newWorkflow, setView]);
 
+  /* Templates come from the cache, the bundle, or the backend — see
+     templates/loader.ts. The gallery renders whatever is available first and
+     swaps in a newer set if one arrives; it never waits on the network, so a
+     slow or missing API looks like a slightly older gallery rather than a
+     spinner or an error. */
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [source, setSource] = useState<TemplateSource>('bundle');
+
+  useEffect(() => {
+    let live = true;
+    loadTemplates().then(({ templates: t, source: s }) => {
+      if (!live) return;
+      setTemplates(t);
+      setSource(s);
+      console.log(`[Templates] Showing ${t.length} from ${s}`);
+      /* A template chosen in the side panel. The panel cannot mount this tree,
+         so it parks an id in storage and asks for the canvas to open; this is
+         where that choice is collected. Cleared immediately, or every later
+         visit to the gallery would reopen the same template. */
+      chrome.storage.local.get(['af_pending_template', 'af_pending_workflow'])
+        .then(({ af_pending_template: pending, af_pending_workflow: built }) => {
+          if (!live) return undefined;
+          /* A workflow built from a description in the panel's Build tab. It
+             is parked whole rather than by id, because it exists nowhere but
+             in that panel — there is no published list to look it up in. */
+          if (built) {
+            return chrome.storage.local.remove('af_pending_workflow').then(() => {
+              loadTemplate(built as Template);
+            });
+          }
+          if (!pending) return undefined;
+          return chrome.storage.local.remove('af_pending_template').then(() => {
+            const wanted = t.find((x) => x.id === pending);
+            if (wanted) loadTemplate(wanted);
+          });
+        })
+        .catch(() => { /* nothing parked, or storage unavailable */ });
+
+      // Then see if the backend has anything newer, without blocking the above.
+      refreshTemplates().then((fresher) => {
+        if (!live || !fresher) return;
+        setTemplates(fresher.templates);
+        setSource(fresher.source);
+        console.log(`[Templates] Refreshed to ${fresher.templates.length} from network`);
+      });
+    });
+    return () => { live = false; };
+    // loadTemplate is stable via useCallback; listed so the pickup above
+    // cannot call a stale copy of it.
+  }, [loadTemplate]);
+
   /* Search covers the use-case line too — people look for "ad" or
      "consistency", not the template's proper name. */
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return TEMPLATES.filter((t) => {
+    return templates.filter((t) => {
       if (category !== 'All' && t.category !== category) return false;
       if (!q) return true;
       return (
@@ -91,14 +203,29 @@ export default function TemplateGallery() {
         t.category.toLowerCase().includes(q)
       );
     });
-  }, [query, category]);
+  }, [query, category, templates]);
 
   return (
-    <div className="studio-gallery">
+    <div
+      className={`studio-gallery ${dragging ? 'studio-gallery--dropping' : ''}`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {dragging && (
+        <div className="studio-gallery__dropzone">
+          <span className="studio-gallery__dropzone-icon">⭱</span>
+          <p>Drop a workflow .json to import it</p>
+        </div>
+      )}
       {/* Header */}
       <div className="studio-gallery__header">
         <div className="studio-gallery__brand">
-          <span className="studio-gallery__logo">⚡</span>
+          <svg className="studio-gallery__logo" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M20.5 12a8.5 8.5 0 1 1-2.9-6.4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+            <path d="M15.2 3.4l3.1 2.1-2.1 3.1" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M10.3 8.9l5.4 3.1-5.4 3.1z" fill="currentColor" />
+          </svg>
           <span className="studio-gallery__title">AutoFlow Studio</span>
         </div>
         <div className="studio-gallery__actions">
@@ -131,6 +258,10 @@ export default function TemplateGallery() {
 
       {importError && (
         <div className="studio-gallery__error">⚠ {importError}</div>
+      )}
+
+      {importOk && (
+        <div className="studio-gallery__ok">✓ {importOk}</div>
       )}
 
       {/* Category Tabs */}
@@ -191,10 +322,13 @@ export default function TemplateGallery() {
         {visible.map((tpl) => (
           <div
             key={tpl.id}
-            className="studio-gallery__card"
+            className={`studio-gallery__card ${tpl.locked ? 'studio-gallery__card--locked' : ''}`}
             onClick={() => loadTemplate(tpl)}
-            title={tpl.useCase}
+            title={tpl.locked ? `${tpl.useCase}
+
+Pro template — click to upgrade.` : tpl.useCase}
           >
+            {tpl.locked && <span className="studio-gallery__lock">PRO</span>}
             {/* Thumbnail previews the template's real node chain rather than
                 sitting empty around a single oversized emoji */}
             <div className="studio-gallery__card-thumb">

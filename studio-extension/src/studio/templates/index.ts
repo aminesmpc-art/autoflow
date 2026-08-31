@@ -33,6 +33,24 @@ export interface Template {
   useCase: string;
   nodes: Node[];
   edges: Edge[];
+
+  /* ── Cloud delivery ──
+     Absent on bundled templates, where the build itself is the guarantee.
+     Set by the publish script, and read by the loader to decide whether this
+     build can draw a template it was not compiled with. */
+
+  /** Node types this template needs, e.g. ['frame']. */
+  requiresNodeTypes?: string[];
+  /** Platforms it needs an adapter for, e.g. ['chatgpt']. */
+  requiresPlatforms?: string[];
+  /** Version floor for anything not expressible as a node type. */
+  minExtensionVersion?: string;
+  /** 'pro' templates arrive with empty nodes/edges unless the account is Pro. */
+  tier?: 'free' | 'pro';
+  /** True when the server sent metadata only — the card prompts to upgrade. */
+  locked?: boolean;
+  /** Hides a template everywhere on the next fetch, without a republish. */
+  disabled?: boolean;
 }
 
 /* ── Helpers keep the definitions readable ── */
@@ -70,6 +88,12 @@ interface GenOpts {
   aspectRatio?: string;
   duration?: string;
   platform?: 'flow' | 'chatgpt';
+  /** 'frames' swaps the ingredient tray for Flow's Start and End slots. */
+  creationType?: 'ingredients' | 'frames';
+  /* Marks a still as the storyboard board: one picture holding every shot as
+     a numbered panel. A story director wired to it asks it for a board rather
+     than for a scene, and it is checked against the opposite rules to a clip. */
+  storyboardSheet?: boolean;
 }
 
 const genNode = (id: string, o: GenOpts, x: number, y: number): Node => ({
@@ -86,7 +110,7 @@ const genNode = (id: string, o: GenOpts, x: number, y: number): Node => ({
       : o.model || (o.mediaType === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),
     aspectRatio: o.aspectRatio || '9:16',
     duration: o.duration || '6s',
-    creationType: 'ingredients',
+    creationType: o.creationType || 'ingredients',
     enabled: true,
     status: 'idle',
     resultUrl: null,
@@ -94,12 +118,48 @@ const genNode = (id: string, o: GenOpts, x: number, y: number): Node => ({
     resultTileId: null,
     progress: 0,
     errorMessage: null,
+    /* Carried explicitly, because this builds `data` field by field rather
+       than spreading. Adding storyboardSheet to GenOpts made it typecheck and
+       changed nothing — the template said board, the node data did not, and
+       orderShotTargets read the node. Image only: a clip carrying the flag
+       would be handed the permissive rulebook and be free to describe panels,
+       which is the render the rule exists to stop. */
+    ...(o.storyboardSheet && o.mediaType !== 'video' ? { storyboardSheet: true } : {}),
   },
 });
 
+/** A Last Frame node — surfaces the still one clip hands to the next. */
+const frameNode = (id: string, label: string, x: number, y: number): Node => ({
+  id,
+  type: 'frame',
+  position: { x, y },
+  data: { type: 'frame', label, frameUrl: '' },
+});
+
 /** An Ask AI node — ChatGPT writing text, so no model or ratio applies. */
-const askNode = (id: string, label: string, x: number, y: number): Node =>
-  genNode(id, { label, mediaType: 'text', platform: 'chatgpt' }, x, y);
+const askNode = (id: string, label: string, x: number, y: number, preset?: string): Node => {
+  const node = genNode(id, { label, mediaType: 'text', platform: 'chatgpt' }, x, y);
+  // A preset wraps whatever the user types in a brief — see studio/presets.
+  if (preset) (node.data as any).preset = preset;
+  return node;
+};
+
+/** A Story node: one chat writes the prompts for every node it feeds. */
+const storyNode = (
+  id: string, label: string, x: number, y: number,
+  extra: Record<string, unknown> = {},
+): Node => ({
+  id,
+  type: 'story',
+  position: { x, y },
+  data: {
+    type: 'story',
+    label,
+    platform: 'chatgpt',
+    mediaType: 'text',
+    ...extra,
+  },
+} as unknown as Node);
 
 /** text edge (orange) */
 const tEdge = (source: string, target: string): Edge => ({
@@ -119,11 +179,42 @@ const iEdge = (source: string, target: string, from: 'image' | 'result' = 'resul
   style: { stroke: '#3b82f6', strokeWidth: 2.5 },
 });
 
+/* A first-frame wire. Flow's Frames mode begins the clip INSIDE this picture
+   rather than treating it as a look reference, which is the difference between
+   a sentence asking for an empty room and a clip that starts in one. */
+const fEdge = (source: string, target: string): Edge => ({
+  id: `e_${source}_${target}_f`,
+  source, target,
+  sourceHandle: 'result', targetHandle: 'frame_start',
+  type: 'default', animated: true,
+  style: { stroke: '#a855f7', strokeWidth: 2.5 },
+});
+
 /* Continuity boilerplate — the single biggest lever on multi-shot
    consistency. Repeated verbatim in every downstream shot on purpose. */
 const CONTINUITY =
   'Same character as the reference: identical face, hairstyle, outfit, ' +
   'body proportions, colour palette and art style. Do not restyle or reset the character.';
+
+/* ── Fantasy room transformation ──
+   Repeated verbatim in both clips. Every line is a failure this format hits
+   without it: the camera drifting, the girl changing, materials installing
+   themselves, finished work vanishing between halves. */
+const MOTION_RULES =
+  'Vertical 9:16. Ultra-realistic. The ENTIRE clip is extreme fast hyperlapse — no '
+  + 'normal-speed action, no slow walking, no waiting, no cinematic pacing, no cuts.\n\n'
+  + 'ONE fixed medium-wide camera INSIDE a large, wide, spacious room. No zoom, no rotation, '
+  + 'no dolly, no orbit, no push-in, no angle change. The frame shows floor, main wall, '
+  + 'ceiling, the girl working and the hero furniture area, and stays visually full.\n\n'
+  + 'The same young female designer throughout: bright red sporty tracksuit, white sneakers, '
+  + 'blonde ponytail.\n\n'
+  + 'Every tool or material enters the frame IN HER HANDS before it changes anything. She '
+  + 'physically places, sprays, pours, mounts, connects, spreads or styles it. Nothing appears, '
+  + 'builds, floats or installs itself.\n\n'
+  + 'Everything completed stays visible and active — installed lights keep glowing, layers stay '
+  + 'in place, nothing is removed, reset, hidden, turned off or replaced.\n\n'
+  + 'No clutter: only the tool being used right now is on the floor. Every second shows a large '
+  + 'visible change, not a small detail.';
 
 /* ── ASMR styrofoam carving ──
    Repeated in every clip so the workshop, the hands and the audio character
@@ -208,7 +299,672 @@ const POOL_FAILS_BRIEF =
   'Describe the ten seconds in order — the approach, two or three obstacles, then ' +
   'the fall. Keep it under 150 words.';
 
-export const TEMPLATES: Template[] = [
+/* ── Kids animation ──
+   Deliberately, explicitly stylised. Two reasons, and they point the same way.
+
+   The channels that work in this niche are animated — a mascot children
+   recognise and come back for. Photoreal footage of children is the version
+   that gets demonetised, age-restricted or pulled outright under the rules
+   YouTube and TikTok enforce hardest around synthetic minors, and it is not
+   something this template will help anyone make. Every prompt below names the
+   render style as cartoon and keeps real children out of frame.
+
+   Repeated verbatim in every scene, exactly like CONTINUITY above — it is what
+   stops the mascot drifting between scene 1 and scene 4. */
+const KIDS_STYLE =
+  'Render style: bright 3D cartoon animation, the look of a modern preschool ' +
+  'series. Soft rounded shapes, thick clean outlines, saturated primary colours, ' +
+  'gentle even lighting, no harsh shadows. Toy-like and clearly illustrated — ' +
+  'never photorealistic, never live action, and no real children in frame.\n' +
+  'Same character as the reference: identical face, body proportions, colour ' +
+  'palette and outfit. Do not restyle or redesign the character.\n' +
+  'Friendly and calm. No peril, no scares, no chase, no loud sudden motion.';
+
+const KIDS_CHARACTER =
+  'Character design sheet for a preschool cartoon mascot, on a plain pale ' +
+  'background.\n\n' +
+  'A cheerful young fox cub standing upright, wearing a small yellow explorer ' +
+  'backpack and a red scarf. Big friendly eyes, round soft body, short limbs, ' +
+  'warm orange fur with a cream chest and tail tip. Waving with one paw.\n\n' +
+  'Bright 3D cartoon animation style — soft rounded shapes, thick clean ' +
+  'outlines, saturated colours, even lighting. Toy-like, clearly illustrated, ' +
+  'never photorealistic.\n\n' +
+  'Full body, head to toe, centred, facing the camera.';
+
+/* ── Emotional short film, 10 beats ──
+   Tension → escalation → an unexpected kindness → relief, with the last shot
+   echoing the first so the video loops.
+
+   Every scene references the character sheet, never the scene before it. This
+   is a narrative, not a continuous build: the scenes are different moments in
+   different places, and chaining them would carry a drifted face into all ten.
+   Fanning out from one design means a bad scene is one bad scene.
+
+   The colour arc is the part most people skip and it is doing real work —
+   desaturated blue-grey through the tense half, warming to gold at the turn.
+   It lives per scene rather than in the shared block precisely because it is
+   the one thing that must change. */
+const FILM_STYLE =
+  'Ultra-realistic 3D animation, cinematic lighting, shallow depth of field, ' +
+  '35mm feel. Rendered like a modern animated feature, not a game engine.\n' +
+  'Same character as the reference: identical face, hair, build, clothing and ' +
+  'colour palette. Do not restyle, age or redesign them.\n' +
+  'Expression carries the scene — the story is told in faces and body language, ' +
+  'not dialogue. No spoken lines, no on-screen text, no subtitles.\n' +
+  'One continuous shot, no cuts inside the clip. Slow deliberate camera.\n' +
+  'Vertical 9:16.';
+
+/* The boy, as the director's cast entry rather than as a prompt.
+ *
+ * This used to be a full image prompt on its own node - the three-quarter
+ * views, the backdrop, the lighting - which is the character SHEET, not the
+ * character. The sheet is a thing the director can be asked to write; who he
+ * is has to be stated once and carried into all ten shots, which is what a
+ * cast entry is for. */
+const FILM_BOY =
+  'A boy of about ten, thin, with dark tousled hair and large expressive brown ' +
+  'eyes. A faded oversized green jacket with frayed cuffs, a grey shirt and worn ' +
+  'trainers, and a canvas satchel across one shoulder. An original fictional ' +
+  'character, not any real person.';
+
+const FILM_WORLD =
+  'A rain-soaked city at dusk and into the night: narrow streets of shuttered ' +
+  'shops, wet pavement holding the light, one weak streetlamp to a block, a lit ' +
+  'bakery window part-way along. Rain throughout, from streaks to downpour.';
+
+/** [key, label, the eight seconds] — the arc, in order. */
+/* ── 3D animal slapstick ──
+   The Oscar's Oasis / Larva format: two desert animals, one thing they both
+   want, and physical comedy escalating to an ironic twist. Five 6s scenes cut
+   to about thirty seconds.
+
+   No dialogue anywhere. The format travels because it needs no translation,
+   and a model given the chance will happily add mouth movement and a voice —
+   so every scene rules it out rather than staying silent about it. */
+const SLAPSTICK_STYLE =
+  'Bright 3D cartoon animation, the look of Oscar\'s Oasis or Larva. Rounded ' +
+  'exaggerated caricature, thick clean forms, saturated desert palette — ' +
+  'orange sand, hard blue sky, sharp midday sun.\n' +
+  'Squash-and-stretch physics: bodies compress on impact and stretch through ' +
+  'motion, eyes pop wide, limbs windmill. Comedy is in the timing and the ' +
+  'overshoot, not in detail.\n' +
+  'Same characters as the reference: identical design, proportions and colour. ' +
+  'Do not restyle or redesign them.\n' +
+  'No dialogue, no speech, no mouth-sync, no on-screen text. Sound is thumps, ' +
+  'sand, and cartoon whooshes.\n' +
+  'One continuous shot per clip, camera locked or a single simple move. ' +
+  'Vertical 9:16.';
+
+/** [key, label, the six seconds] — hook, escalate, peak, twist, loop. */
+const SLAPSTICK_SCENES = [
+  ['hook', '1. Hook — Something Worth Wanting',
+   'A single drop of water hangs from a dry cactus spine, catching the light. ' +
+   'The fennec fox freezes mid-step, ears snapping forward, eyes enormous. He ' +
+   'tiptoes toward it in exaggerated slow motion.\n' +
+   'Open ON the drop — the first two seconds decide whether anyone stays.'],
+  ['rival', '2. The Rival',
+   'The meerkat erupts from the sand directly under the fox, launching him ' +
+   'into a spin. Both land, spot each other, and freeze nose to nose. A long ' +
+   'silent beat, eyes narrowing.\n' +
+   'Hold the stare one moment past comfortable — the pause is the joke.'],
+  ['escalate', '3. Escalation',
+   'A full scramble: they tug, shove and vault over each other, the fox ' +
+   'flattened into the sand and springing back, the meerkat cartwheeling ' +
+   'off a rock. Sand sprays everywhere. The drop still hangs, untouched.\n' +
+   'Fast, physical, and always readable — never a blur.'],
+  ['peak', '4. Peak Chaos',
+   'The cactus bends back like a loaded spring under their weight, then ' +
+   'releases — both animals fire into the sky, tumbling, limbs flailing, ' +
+   'shrinking to dots. A beat of silence at the top of the arc.\n' +
+   'Hold the silence. It makes the landing land.'],
+  ['twist', '5. Twist — Neither of Them',
+   'They crater into the sand side by side. As they lift their heads, a ' +
+   'passing tortoise ambles up, licks the drop off the spine without breaking ' +
+   'stride, and walks on. Both stare after it, then at each other.\n' +
+   'END ON the cactus spine, now bare — the same framing the video opened on, ' +
+   'so it loops straight back to the drop.'],
+] as const;
+
+/* What the director is given.
+ *
+ * The beats stay authored - they are the reason this template is worth
+ * shipping - but they are now a BRIEF rather than ten finished prompts. The
+ * director expands each into the shot its node actually needs, having seen
+ * the other nine, which is the thing ten separate prompt nodes could never
+ * do: nothing in the old shape knew that beat 4 had already turned the light
+ * off in the bakery. */
+const filmBrief = () => [
+  'A ten-beat wordless short. One boy, one night, told in faces and body '
+  + 'language. It opens on trouble, escalates to the lowest point, turns on an '
+  + 'unexpected kindness, and resolves warm — and the last shot echoes the '
+  + 'framing of the first so the piece loops.',
+  'The colour arc does real work and is not decoration: desaturated blue-grey '
+  + 'through the tense half, coldest at the lowest point, warming to gold from '
+  + 'the turn onward.',
+  'THE BEATS, in order:',
+  ...FILM_SCENES.map(([, label, body]) => `${label}\n${body}`),
+].join('\n\n');
+
+const FILM_SCENES = [
+  ['hook', '1. Hook — Something Is Wrong',
+   'The boy stands alone at the mouth of a rain-soaked alley at dusk, clutching ' +
+   'his satchel to his chest, looking back over his shoulder at something out of ' +
+   'frame. Rain streaks the air. He is breathing fast.\n' +
+   'COLOUR: desaturated blue-grey, cold, heavy shadows. Open on his face.'],
+  ['loss', '2. What He Has Lost',
+   'He kneels on wet pavement and empties the satchel — a few coins, a folded ' +
+   'photograph, nothing else. His hands are shaking. He presses the photograph ' +
+   'flat and stares at it.\n' +
+   'COLOUR: same cold blue-grey. One weak streetlamp above him.'],
+  ['closing', '3. The Walls Close In',
+   'He walks quickly along a narrow street of shuttered shops, glancing behind ' +
+   'him. The buildings lean in, the passageway narrows ahead, and the rain gets ' +
+   'heavier.\n' +
+   'COLOUR: colder still, almost monochrome. Deep shadow either side.'],
+  ['refused', '4. Turned Away',
+   'He stops at a lit bakery window, hesitates, and pushes the door. A hand ' +
+   'inside turns the sign to CLOSED and the light goes out. He steps back into ' +
+   'the rain, face falling.\n' +
+   'COLOUR: brief warm light from inside, snatched away, back to cold.'],
+  ['storm', '5. Escalation',
+   'The rain becomes a downpour. He shelters under a broken awning, soaked ' +
+   'through and shivering, arms wrapped around his knees. Traffic passes and ' +
+   'nobody stops. Water sheets off the edge of the awning.\n' +
+   'COLOUR: the coldest point of the film. Blue-black, harsh reflections.'],
+  ['bottom', '6. The Lowest Point',
+   'Close on his face as he gives up looking — eyes down, jaw tight, the fight ' +
+   'going out of him. He does not cry. He simply stops.\n' +
+   'COLOUR: cold and desaturated, but hold the last beat one moment too long.'],
+  ['turn', '7. The Turn — Unexpected Kindness',
+   'A pair of worn boots stops in front of him. A weathered hand enters frame ' +
+   'holding out a paper cup of something steaming and a folded dry coat. The boy ' +
+   'looks up, uncomprehending. The stranger\'s face stays out of frame.\n' +
+   'COLOUR: the first warmth of the film — amber light spilling in from the left.'],
+  ['warmth', '8. Relief',
+   'He sits wrapped in the oversized coat with both hands around the cup, steam ' +
+   'rising past his face. His shoulders drop for the first time. A small ' +
+   'disbelieving breath of a laugh.\n' +
+   'COLOUR: warming quickly — amber and gold, the blue draining away.'],
+  ['gift', '9. Passing It On',
+   'Morning. Dry, bright street. The boy crouches to hand the folded coat to ' +
+   'another child sitting where he had been, then presses the photograph into ' +
+   'his own pocket and stands.\n' +
+   'COLOUR: warm gold, soft, fully saturated. Long low sunlight.'],
+  ['loop', '10. Resolution — Echo the Opening',
+   'The same alley mouth as the first shot, now in clear morning light. The boy ' +
+   'stands in exactly the same position, satchel over his shoulder, and this ' +
+   'time he looks forward instead of back, and walks out of frame.\n' +
+   'COLOUR: the composition of scene 1 rendered warm. Frame it to match, so the ' +
+   'video can loop straight back to the beginning.'],
+] as const;
+
+/* ── Miniature car build ──
+   Same chain shape as the styrofoam carve, with one difference that changes
+   the whole format: the last clip is a match cut. Three clips build a wooden
+   miniature, the fourth holds the finished model in frame and becomes the real
+   car in the same camera move. The payoff only lands if the miniature the
+   fourth clip inherits is the exact one the third clip finished — which is
+   what the Last Frame nodes make visible instead of hoped-for. */
+const CAR_STYLE =
+  '# LOOK — identical in every clip\n' +
+  'Ultra photorealistic, 8K HDR, ray-traced reflections, shallow depth of field.\n' +
+  'Macro cinematography at bench level, slow deliberate camera moves on a slider. ' +
+  'No handheld, no shake, no whip pans.\n' +
+  'Same dark walnut workbench, same warm key light raking from the left, same ' +
+  'cool rim light picking out the edges. Background falls off to near black.\n' +
+  'Hands and forearms only — sleeves rolled, never a face.\n' +
+  'Audio led by the material: blade on grain, brush bristles, the tick of small ' +
+  'parts set down. No music, no narration.\n' +
+  'Same vehicle as the reference throughout: identical model, proportions, ' +
+  'body lines and colour. Do not restyle or substitute a different car.\n' +
+  'Vertical 9:16.';
+
+/* The car the user wants, and nothing else.
+
+   This used to be CAR_BRIEF — 150 words of sheet instructions wrapped around
+   one editable line. That brief now lives in studio/presets as `car_sheet`,
+   where every template can reach it and a bad wording can be fixed without a
+   store review. What is left here is the only part that was ever the user's:
+   the car. */
+const CAR_SUBJECT = 'BMW M3 E46, 2003, Laguna Seca Blue';
+
+/* ── Product commercial ──
+   The brief the Ask node sends with the photos attached. It asks for a prompt,
+   not an image: the node downstream is what renders. The "EXACTLY as
+   photographed" clause is load-bearing — without it every model quietly
+   improves the product, and an ad for a product that does not exist is worse
+   than no ad. */
+const PRODUCT_FIDELITY =
+  'Keep the product EXACTLY as photographed — same colourway, same materials, ' +
+  'same proportions, same branding and placement. Do not restyle, redesign, ' +
+  'recolour or "improve" it. If a detail is not visible in the photos, leave ' +
+  'it out rather than inventing it.';
+
+const PRODUCT_CLEAN =
+  'No text on screen, no added logos, no watermarks, no faces.\n\n' +
+  'Output only the prompt itself — no title, no preamble, no explanation.';
+
+/** [key, label, the sheet brief for that lane] */
+const PRODUCT_LANES = [
+  ['day', 'Daylight Studio',
+   'The attached photos are the product. Write ONE image-generation prompt for ' +
+   'a 2x2 storyboard sheet for a premium cinematic commercial, with these four ' +
+   'beats in this order: the box or packaging opening, the hero product shot, ' +
+   'a macro detail of its texture and construction, and a lifestyle beat in ' +
+   'use.\n\n' +
+   PRODUCT_FIDELITY + '\n\n' +
+   'Studio lighting, shallow depth of field, clean neutral backdrop.\n\n' +
+   PRODUCT_CLEAN],
+  ['night', 'Wet Street Night',
+   'The attached photos are the product. Write ONE image-generation prompt for ' +
+   'a 2x2 storyboard sheet for the same commercial, this time at night on a ' +
+   'wet city street: reflected neon on the pavement, a low tracking beat, a ' +
+   'splash detail, and a final hero beat under a streetlight.\n\n' +
+   PRODUCT_FIDELITY + '\n\n' +
+   'Cinematic contrast, practical light sources, deep blacks.\n\n' +
+   PRODUCT_CLEAN],
+] as const;
+
+/* The goal for the agent smoke test.
+   Deliberately unanswerable without the tool: the model has never seen this
+   canvas, so a confident guess is wrong in a way that is obvious on screen. */
+const AGENT_SMOKE_GOAL =
+  'Tell me exactly what is on this Studio canvas right now: how many nodes ' +
+  'there are, and the id and type of each one. You have never seen this ' +
+  'canvas, so read it before answering. Then give a one-line summary of what ' +
+  'this workflow appears to do.';
+
+/* ── Dental macro restoration ──
+   A structured-JSON prompt package rather than prose. Macro medical work is
+   the case where that pays: the camera block, the lighting and the framing
+   have to come back byte-identical across three clips or the cut reads as
+   three different mouths. Prose drifts between generations; a fixed JSON
+   block with one field swapped does not. */
+
+/** Step 1 of the brief — brainstorming, deliberately not wired downstream. */
+const DENTAL_IDEAS =
+  'Suggest 5 different cleaning methods for removing debris and decay from a ' +
+  'severely damaged molar.\n\n' +
+  'Rules:\n' +
+  '- Focus ONLY on cleaning the cavity, not the filling or restoration stage.\n' +
+  '- Each idea must describe the visual appearance of the decay and debris ' +
+  'inside the tooth.\n' +
+  '- The cavity should contain organic debris, food fibers, dark decay or ' +
+  'trapped particles, like a heavily damaged tooth.\n' +
+  '- Each idea must use a different dental cleaning technique.\n' +
+  '- Clinical, realistic, documentary style — not cinematic.\n' +
+  '- One molar in the centre with two neighbouring molars visible.\n\n' +
+  'For each idea give: the cleaning tool used, the appearance of the decay, ' +
+  'and the type of debris or residue inside the cavity.\n\n' +
+  'Format each as:\n' +
+  '1. <Tool name> — <one line describing the cavity, the decay colour and ' +
+  'texture, and what the tool does to it>\n\n' +
+  'Output only the numbered list.';
+
+/* The one line the whole workflow keys off. Swapping the tool here and in the
+   two cleaning prompts is the entire per-video edit. */
+const DENTAL_METHOD =
+  'CLEANING METHOD: High-pressure dental water jet cleaning — deep dark ' +
+  'cavity filled with tangled green food fibers and soft brown decay. A ' +
+  'high-pressure dental water jet flushes the organic debris and loose ' +
+  'particles out of the cavity.\n\n' +
+  'Rewrite the "center_tooth" and "tools" fields below so they match the ' +
+  'method above, and return the completed JSON. Change nothing else — every ' +
+  'other field is fixed across the whole series. The two fields are already ' +
+  'filled in for the method above, so if you are not changing the method, ' +
+  'return the JSON unchanged.\n\n' +
+  `{
+  "model": "image_generation",
+  "format": {
+    "aspect_ratio": "9:16",
+    "resolution": "1080x1920",
+    "style": "Medical Documentary / Extreme Macro Dentistry"
+  },
+  "camera": {
+    "POV": "Top-down macro inside mouth",
+    "lens_mm": "100mm macro lens",
+    "focus": "Three lower molars in frame",
+    "stability": "Tripod-stable macro shot",
+    "depth_of_field": "Shallow macro depth with center tooth sharp"
+  },
+  "setting": {
+    "location": "Dental clinic treatment environment",
+    "lighting": "Bright cool surgical dental lighting",
+    "environment": "Inside an open human mouth with saliva reflections and moist gums"
+  },
+  "subjects": {
+    "teeth_layout": "Three adjacent lower molars visible side-by-side",
+    "center_tooth": "Severely decayed molar with a deep dark cavity packed with tangled green food fibers and soft brown decay",
+    "side_teeth": "Two healthy molars visible on both sides",
+    "tools": "High-pressure dental water jet entering frame, preparing to flush debris from the center tooth"
+  },
+  "visual_details": {
+    "textures": "Realistic enamel translucency, porous dentin decay, wet gums",
+    "materials": "Subsurface scattering in gums, glossy enamel reflections",
+    "style": "Clinical dental macro realism"
+  },
+  "composition": {
+    "framing": "Decayed tooth centered with two neighboring molars visible",
+    "focus_priority": "Sharp focus on the damaged tooth"
+  },
+  "negative_prompt": "cartoon, CGI, illustration, unrealistic teeth, blood, gore, blur, watermark, text, logo"
+}` +
+  '\n\nOutput only the JSON — no preamble, no explanation, no markdown fence.';
+
+/** Parts 1 and 2 differ only in the tool line and the two timeline actions. */
+const dentalClip = (
+  targetTooth: string, tool: string, stability: string, movements: string,
+  environment: string, a0: string, a4: string, materials: string, lighting: string
+): string => `{
+  "model": "video_generation",
+  "format": {
+    "aspect_ratio": "9:16",
+    "duration": "8 seconds",
+    "fps": 30,
+    "resolution": "1080p",
+    "style": "Medical Documentary / Macro Dentistry"
+  },
+  "camera": {
+    "POV": "Top-down extreme macro",
+    "lens_mm": "100mm macro",
+    "stability": "${stability}",
+    "movements": "${movements}",
+    "forbidden": "No pans, no tilts, no zoom"
+  },
+  "setting": {
+    "location": "Dental surgery environment",
+    "lighting": "Bright surgical dental lighting",
+    "environment": "${environment}"
+  },
+  "subjects": {
+    "target_tooth": "${targetTooth}",
+    "side_teeth": "Two healthy neighboring molars",
+    "tool": "${tool}"
+  },
+  "action_timeline": [
+    { "time": "00:00 - 00:04", "action": "${a0}" },
+    { "time": "00:04 - 00:08", "action": "${a4}" }
+  ],
+  "physics_and_realism": {
+    "materials": "${materials}",
+    "lighting": "${lighting}"
+  },
+  "negative_prompt": "cartoon, CGI, blur, text, watermark"
+}`;
+
+const DENTAL_PART1 = dentalClip(
+  'Center molar with large cavity filled with debris and decay',
+  'High-pressure dental water jet',
+  'Fixed tripod with micro vibrations',
+  'Static framing on three molars',
+  'Inside human mouth with wet enamel and saliva reflections',
+  'Cleaning tool begins removing loose debris from the cavity',
+  'Tool continues deeper cleaning revealing darker decay layers',
+  'Real enamel reflections and gum translucency',
+  'Sharp surgical shadows inside cavity',
+);
+
+const DENTAL_PART2 = dentalClip(
+  'Center molar partially cleaned',
+  'Same cleaning tool continuing the process',
+  'Fixed tripod continuation shot',
+  'Static framing identical to part one',
+  'Inside human mouth with wet enamel',
+  'Remaining decay and debris are removed from the cavity',
+  'The cavity appears fully cleaned and ready for restoration',
+  'Realistic enamel reflections and gum textures',
+  'Dental surgical light reflections',
+);
+
+/* Part 3 is fixed by the brief and must never change — it is the payoff every
+   video in the series ends on, so it is written out in full rather than
+   generated, and deliberately does not go through the helper above. */
+const DENTAL_PART3 = `{
+  "model": "video_generation",
+  "format": {
+    "aspect_ratio": "9:16",
+    "duration": "8 seconds",
+    "fps": 30,
+    "resolution": "1080p",
+    "style": "Medical Documentary / Macro Photography"
+  },
+  "camera": {
+    "POV": "Top-down extreme macro",
+    "lens_mm": "100mm macro",
+    "stability": "Fixed tripod with micro-vibrations for realism",
+    "movements": "Static framing on the three molars",
+    "forbidden": "No pans, no tilts, no zoom jumps"
+  },
+  "setting": {
+    "location": "Dental surgery environment",
+    "environment": "Inside a human mouth, wet mucous membranes, pink gum tissue, saliva presence"
+  },
+  "subjects": {
+    "target_tooth": "Center lower molar with cleaned cavity ready for filling",
+    "side_teeth": "Two healthy neighboring molars",
+    "tools": "Composite application tool and blue UV curing dental light",
+    "materials": "Thick bright white composite resin"
+  },
+  "action_timeline": [
+    { "time": "00:00 - 00:03", "action": "Composite applicator slowly injects thick bright white composite resin into the cavity." },
+    { "time": "00:03 - 00:06", "action": "Dental sculpting tool shapes the resin to match natural molar anatomy." },
+    { "time": "00:06 - 00:07", "action": "Blue UV curing light hardens the composite filling." },
+    { "time": "00:07 - 00:08", "action": "Final macro shot of the restored healthy molar." }
+  ],
+  "negative_prompt": "cartoon, CGI, blur, text, watermark, blood, gore"
+}`;
+
+/** Same clip brief both lanes — the sheet wired into it is what differs. */
+const CLIP_BRIEF =
+  'The attached image is a four-beat storyboard sheet. Write ONE prompt for a ' +
+  '10-second commercial that plays those beats in the order they appear.\n\n' +
+  'For each beat give the camera move (push in, orbit, tilt, tracking) and how ' +
+  'it cuts to the next. Keep the product identical to the sheet. Real-world ' +
+  'physics, no morphing, no impossible transformations.\n\n' +
+  PRODUCT_CLEAN;
+
+/** [key, label, the ten seconds — ending on the state the next clip inherits] */
+const CAR_STAGES = [
+  ['block', '1. Rough Carving',
+   'A solid block of walnut is clamped on the bench. A chisel and mallet drive ' +
+   'away the waste in confident strokes, shavings curling off and settling on ' +
+   'the wood. The silhouette of the car emerges — roofline, bonnet, wheel ' +
+   'arches — while every surface stays faceted and raw.\n' +
+   'END ON: the rough car form, unmistakably the right vehicle, tool marks ' +
+   'everywhere, shavings banked around it.'],
+  ['detail', '2. Precision Detailing',
+   'Fine rasps, needle files and a scalpel cut the details in: door shut lines, ' +
+   'grille slats, mirror stems, the lip of each wheel arch. Fine-grit paper ' +
+   'follows and the surface goes from faceted to glass-smooth. A soft brush ' +
+   'clears the dust between passes.\n' +
+   'END ON: the bare wooden model, perfectly smooth and fully detailed, ' +
+   'unpainted, bench swept clean.'],
+  ['finish', '3. Paint & Assembly',
+   'Thin coats of automotive lacquer go on and flash off to a deep mirror ' +
+   'finish. Then the small parts: chrome trim pressed into the shut lines, ' +
+   'badges set with tweezers, clear lenses seated into the headlights, rubber ' +
+   'tyres pushed onto machined rims.\n' +
+   'END ON: the finished miniature, glossy and complete, reflecting the bench ' +
+   'light — a perfect scale model of the reference car.'],
+  ['reveal', '4. Match Cut to Real',
+   'The camera pushes slowly along the finished miniature toward its headlight. ' +
+   'As the frame fills with the reflection, the scale changes without a cut — ' +
+   'the same headlight, the same body line, the same paint, now full size. The ' +
+   'camera keeps pulling back to reveal the real car on wet asphalt at blue ' +
+   'hour, workshop lights streaking across the panels.\n' +
+   'One continuous move. The transition happens mid-shot, never on a cut, and ' +
+   'the car must be identical either side of it.\n' +
+   'END ON: the full-size car, static and centred, held for the last beat.'],
+] as const;
+
+/* ── AI toddler, photoreal ──
+   The 100M-view format: a small child meeting something for the first time,
+   shot like a parent's phone video. It lives or dies on the child being the
+   SAME child every clip, which is why this one starts by generating a design
+   sheet instead of taking an upload.
+
+   That is a deliberate choice, not a limitation. Generating the character
+   means it is fictional and yours — consistent across a whole channel, and
+   nobody's actual kid. Feeding a real child's photo into this would produce
+   synthetic video of an identifiable minor, which is a different thing
+   entirely and not what the template is for. */
+const BABY_STYLE =
+  'Shot on a modern phone by a parent standing close. Handheld with slight ' +
+  'natural micro-shake, one continuous take, no cuts. Natural available light.\n' +
+  'Same child as the reference: identical face, hair, skin tone and outfit. ' +
+  'Do not restyle, age up or redesign the child.\n' +
+  'An adult\'s hands support the child and stay in frame; the adult\'s face is ' +
+  'never shown.\n' +
+  'Natural sound only — the child, ambience, a parent laughing off-camera. ' +
+  'No music, no narration, no captions.\n' +
+  'Warm and safe throughout. The child is happy and secure the whole time: no ' +
+  'distress, no crying, no danger, nothing that could read as harm.\n' +
+  'Vertical 9:16.';
+
+const BABY_CHARACTER =
+  'Character reference sheet: one photorealistic toddler, about 18 months old, ' +
+  'standing against a plain light grey backdrop.\n\n' +
+  'Round cheeks, dark curly hair, big brown eyes, a wide open smile. Wearing a ' +
+  'plain white t-shirt and soft grey shorts, barefoot.\n\n' +
+  'Neutral even studio lighting, sharp focus, full body head to toe, facing the ' +
+  'camera. Natural skin texture. No props, no background detail.\n\n' +
+  'This is an original fictional character, not any real person.';
+
+/** [key, label, the eight seconds] — each is a first encounter, which is the
+    beat the format is actually built on. */
+const BABY_CLIPS = [
+  ['fish', '1. Fish Spa',
+   'The child sits on the rim of a shallow fish-spa tank in a bright shopping ' +
+   'mall, held under the arms by an adult, and lowers both feet into the water. ' +
+   'Small fish swarm toward the toes. The child jolts, then bursts out laughing ' +
+   'and kicks once, splashing.\n' +
+   'Camera at the child\'s level, close enough to hold the face and the water in ' +
+   'the same frame.'],
+  ['sand', '2. First Sand',
+   'The child stands at the edge of dry beach sand at golden hour, supported by ' +
+   'an adult\'s hands, and lifts one foot away the instant it touches. Tries ' +
+   'again, then plants both feet and grins down at them, curling the toes.\n' +
+   'Low camera, warm backlight, sea blurred behind.'],
+  ['ice', '3. First Ice Cream',
+   'The child, in a high chair at an outdoor cafe, takes a first lick of vanilla ' +
+   'ice cream from a cone held by an adult. Freezes at the cold, blinks, then ' +
+   'leans straight back in for more, ice cream on the nose.\n' +
+   'Close framing on the face, dappled shade, street sounds behind.'],
+] as const;
+
+/** [key, label, what happens in the 8 seconds] — one idea per scene. */
+const KIDS_SCENES = [
+  ['hello', '1. Hello',
+   'The character walks into a sunny meadow, stops in the centre, waves at the ' +
+   'camera and hops once on the spot with both arms up. Wide friendly framing, ' +
+   'the whole body in shot, camera still at the character\'s eye level.\n' +
+   'Cheerful ukulele and light percussion, birdsong underneath.'],
+  ['count', '2. Counting',
+   'The character points one paw at three big floating numbered balloons — 1, 2, ' +
+   '3 — touching each in turn, and each one bobs and glows as it is touched. ' +
+   'The character looks back at the camera and claps.\n' +
+   'Same meadow, same music. Slow clear beats so a child can follow along.'],
+  ['colour', '3. Colours',
+   'Three oversized shapes sit in the grass — a red ball, a blue cube, a yellow ' +
+   'star. The character walks to each one, pats it, and holds it up to the ' +
+   'camera before setting it down.\n' +
+   'Same meadow, same music. Unhurried, one object at a time.'],
+  ['wave', '4. Goodbye',
+   'The character waves goodbye with both paws, turns and walks away down a ' +
+   'winding path toward a low hill, then turns back for one last wave before ' +
+   'the camera settles.\n' +
+   'Music resolves and softens. Warm late-afternoon light.'],
+] as const;
+
+/**
+ * The templates compiled into this build.
+ *
+ * Still the source of truth: authored here in TypeScript, validated by
+ * templates.test.ts, then exported to JSON by scripts/publish-templates.js.
+ * At runtime these are the floor the loader falls back to — a fresh install,
+ * or the API being down, must still open a gallery with workflows in it.
+ */
+/* ── Real animal comedy ──
+   From a 28-section master prompt for photorealistic animal comedy. It lives
+   here, in the template, rather than anywhere in the Story node's own code:
+   this is one format, and a format belongs in a workflow you can edit or
+   delete, not in the machinery every workflow runs through.
+
+   Three things had to be adapted rather than copied:
+
+     - it is written for Seedance 2.0 at fifteen seconds, and Flow generates
+       4, 6, 8 or 10. Its six segments — hook, anticipation, payoff, reaction,
+       micro-gag, aftermath — are spread across two 8s clips joined on a last
+       frame. Its own pacing puts the payoff at 5–8.5s, so compressing into a
+       single clip would throw away the reaction and the final gag, which is
+       where the comedy is.
+     - its output format is prose under bold headings; the Story node answers
+       in a JSON envelope, so the shape is dropped and the content kept.
+     - its cast, world, look and continuity sections already exist as fields
+       on the node, so they are set as fields instead of repeated as prose. */
+
+/** §10 — an ordinary real place, not a set. */
+const ANIMAL_COMEDY_WORLD =
+  'An ordinary real place filmed as it is — a small corner shop, a home kitchen, a '
+  + 'launderette, a parked car, a stairwell. Real clutter, real wear, nothing arranged for '
+  + 'the camera. Ordinary available light through a window or a plain ceiling fitting.';
+
+/** §8 + §11 — how it was supposedly filmed. */
+const ANIMAL_COMEDY_LOOK =
+  'Raw modern phone footage shot by an unseen person who is not part of the scene: vertical '
+  + '9:16, natural handheld micro-shake, real autofocus hunting, ordinary available light, '
+  + 'slight sensor noise. Never a phone in shot, never a tripod, never film lighting.';
+
+/** §21 — the AI-realism negative lock, as one line for the Avoid field. */
+const ANIMAL_COMEDY_AVOID =
+  'cartoon, animation, anime, Pixar or Disney styling, CGI look, 3D mascot, furry humanoid, '
+  + 'plush toy, rubber fur, plastic skin, a human body with an animal head, human hands or '
+  + 'five human fingers, extra or missing paws, duplicated or fused animals, warped paws, a '
+  + 'breed or fur pattern or eye colour that changes between shots, melting or morphing '
+  + 'faces, floating objects, sliding feet, paws clipping through objects, on-screen text or '
+  + 'subtitles, a visible phone or camera rig';
+
+/**
+ * §1–7 and §14–20 — the laws that make it this format and not another.
+ *
+ * In the idea prompt rather than in the node's settings, because the Story
+ * node has no field for "what kind of thing is this" and inventing one would
+ * be changing the node to suit one template. The user's own idea goes
+ * underneath; everything above it is the format.
+ */
+const ANIMAL_COMEDY_BRIEF =
+  'THE FORM — a real animal, an ordinary real place, one simple human-like activity, played '
+  + 'completely straight. One absurd situation, one physical payoff, one reaction, and '
+  + 'optionally one small final gag. It must look like a strange real event somebody happened '
+  + 'to catch on a phone — never animation, an advert, or a polished AI clip.\n\n'
+  + 'THE ANIMAL IS A REAL ANIMAL. Name a recognisable one — a real orange tabby, a real '
+  + 'French Bulldog, a real raccoon — and keep its anatomy honest: real muzzle proportions, '
+  + 'accurate whisker placement, authentic paw anatomy, natural fur direction, believable '
+  + 'body weight, real blinking and breathing, contact shadows where it touches anything. '
+  + 'Never a furry humanoid, a mascot, a plush toy or a Pixar character.\n\n'
+  + 'HOW FAR THE BEHAVIOUR GOES — roughly 80% ordinary animal physicality, 15% simple '
+  + 'human-like behaviour, 5% absurdity. It may sit upright, hold a paw to something, press a '
+  + 'button, push, steer lightly, wait its turn, look at another animal meaningfully. It may '
+  + 'NOT do anything needing fingers: typing, tying laces, using cutlery, playing an '
+  + 'instrument. The comedy lives in posture, timing, gaze and ONE object.\n\n'
+  + 'DEAD SERIOUS — everyone in the scene treats the absurd thing as completely normal. '
+  + 'Nobody mugs at the camera and nobody reacts as though it is funny. That is the joke.\n\n'
+  + 'OPEN IN THE MIDDLE OF IT — never spend the opening arriving somewhere. The strange thing '
+  + 'is already happening in the first frame, and a viewer understands the premise in about a '
+  + 'second.\n\n'
+  + 'ONE JOKE — one scenario, one gag, one payoff, one reaction. A second idea arriving '
+  + 'halfway is not a bigger video, it is two smaller ones.\n\n'
+  + 'THE TWO SHOTS — shot one opens mid-situation, builds, and lands the physical payoff. '
+  + 'Shot two continues from its last frame and plays the reaction, then one small final gag '
+  + 'or a beat of aftermath. Same animal, same room, same light in both.\n\n'
+  + 'HARMLESS — funny, cute, family-safe. No injury, no distress, no cruelty, nothing '
+  + 'graphic. Any slapstick contact is obviously light and nobody is hurt.\n\n'
+  + '─────────────\n'
+  + 'THE IDEA — replace this with your own:\n\n'
+  + 'A real orange tabby cat running a tiny neighbourhood corner shop, taking the job '
+  + 'completely seriously, while a queue of unbothered cats waits its turn.';
+
+export const BUILTIN_TEMPLATES: Template[] = [
   /* ─────────────── Starters ─────────────── */
   {
     id: 'tpl_simple_image',
@@ -567,6 +1323,172 @@ export const TEMPLATES: Template[] = [
     ],
   },
   {
+    id: 'tpl_product_commercial',
+    name: 'Product Photos → Storyboard → Commercial',
+    description: 'Drop in photos of a real product. Two lanes storyboard it, then film it — daylight and night.',
+    useCase:
+      'The workflow for a product you actually own. Photograph it from four angles, wire the shots in, and ChatGPT reads them before writing anything — so the sheet prompt describes your product rather than a generic one of its category. The storyboard sheet is the cheap checkpoint: four beats on one image, approved before a single second of video is spent. Then the same sheet drives the clip, so the commercial plays the beats you already signed off on. Two lanes because the second look is nearly free once the photos are wired — daylight studio and wet-street night, from the same references. Keep the "EXACTLY as photographed" lines: without them the model quietly restyles the product, which is the one thing a product ad cannot do.',
+    category: 'Marketing',
+    difficulty: 'Advanced',
+    nodeCount: 16,
+    thumbnail: '👟',
+    nodes: [
+      /* Four angles, shared by both lanes. Empty on purpose — this template is
+         only worth running against a real product. The hints say which angle
+         goes where, because they are not interchangeable: the detail shot is
+         what stops the macro beat inventing stitching. */
+      imageNode('i1', 'Product — 3/4 view', 40, 40, 'three-quarter hero angle'),
+      imageNode('i2', 'Product — side', 40, 300, 'straight side profile'),
+      imageNode('i3', 'Product — detail', 40, 560, 'close macro: texture, seams, sole'),
+      imageNode('i4', 'Product — back', 40, 820, 'rear or underside'),
+
+      ...PRODUCT_LANES.flatMap(([key, label, sheetBrief], i) => {
+        const y = i * 860;
+        return [
+          promptNode(`p_sheet_${key}`, `Sheet Brief — ${label}`, sheetBrief, 520, y + 40),
+          // No preset: the brief above is already product-specific, and the
+          // photos ride in on image_ref so ChatGPT describes THIS product.
+          askNode(`ask_sheet_${key}`, 'Write the Sheet Prompt', 940, y + 60),
+          genNode(`g_sheet_${key}`, {
+            label: `Storyboard Sheet — ${label}`,
+            mediaType: 'image',
+            aspectRatio: '16:9',
+            model: 'Nano Banana Pro',
+          }, 1360, y + 60),
+          promptNode(`p_clip_${key}`, `Clip Brief — ${label}`, CLIP_BRIEF, 1780, y + 40),
+          askNode(`ask_clip_${key}`, 'Write the Clip Prompt', 2200, y + 60),
+          genNode(`g_clip_${key}`, {
+            label: `Commercial — ${label}`,
+            mediaType: 'video',
+            aspectRatio: '16:9',
+            duration: '10s',
+            model: 'Omni Flash',
+          }, 2620, y + 60),
+        ];
+      }),
+    ],
+    edges: PRODUCT_LANES.flatMap(([key]) => [
+      tEdge(`p_sheet_${key}`, `ask_sheet_${key}`),
+      /* Every photo reaches BOTH the writer and the renderer. The writer needs
+         them to describe the product; the renderer needs them to draw it. */
+      ...['i1', 'i2', 'i3', 'i4'].flatMap((img) => [
+        iEdge(img, `ask_sheet_${key}`, 'image'),
+        iEdge(img, `g_sheet_${key}`, 'image'),
+      ]),
+      tEdge(`ask_sheet_${key}`, `g_sheet_${key}`),
+      tEdge(`p_clip_${key}`, `ask_clip_${key}`),
+      // The approved sheet is the only thing the clip inherits, so the beats
+      // in the video are the beats that were signed off.
+      iEdge(`g_sheet_${key}`, `ask_clip_${key}`),
+      tEdge(`ask_clip_${key}`, `g_clip_${key}`),
+      iEdge(`g_sheet_${key}`, `g_clip_${key}`),
+    ]),
+  },
+  {
+    id: 'tpl_agent_smoke_test',
+    name: 'Agent: Does It Actually Call Tools?',
+    description: 'A one-node test of the agent loop, using the one tool a model cannot fake.',
+    useCase:
+      'Run this before trusting an agent with anything real. It asks the agent a question it cannot possibly answer from its own knowledge — what is on your canvas — so the only way to a correct reply is an actual tool call. That matters because a chat model asked to do something it can already do will do it itself: told to produce an image, live ChatGPT produced the image rather than calling the tool, four times, and more insistently the harder it was told not to. A pass here means the loop works on your account and your platform. A fail is worth knowing in ten seconds rather than halfway through a real workflow. Read the step log on the node: ⚙ is a tool call, ← is its result, ↻ means the model broke the format and was asked again. If it finishes without a single ⚙, the node fails on purpose rather than passing you an answer it invented.',
+    category: 'Utility',
+    difficulty: 'Easy',
+    nodeCount: 2,
+    thumbnail: '🧠',
+    nodes: [
+      promptNode('p_goal', 'Goal', AGENT_SMOKE_GOAL, 40, 200),
+      {
+        id: 'agent',
+        type: 'agent',
+        position: { x: 520, y: 160 },
+        data: {
+          type: 'agent',
+          label: 'Canvas Agent',
+          platform: 'chatgpt',
+          mediaType: 'text',
+          maxIterations: 4,
+          /* read_canvas only. generate_image is deliberately left off: it is
+             the tool the model bypasses, and including it here would turn a
+             clean test of the loop into a test of whether ChatGPT feels like
+             cooperating. */
+          tools: ['read_canvas'],
+          system: '',
+          agentSteps: [],
+          enabled: true,
+          status: 'idle',
+          progress: 0,
+          errorMessage: null,
+        },
+      },
+    ],
+    edges: [tEdge('p_goal', 'agent')],
+  },
+  {
+    id: 'tpl_dental_macro',
+    name: 'Dental Macro: Clean → Restore (24s)',
+    description: 'Medical-macro dental series. One still, then three 8-second clips chained by last frame.',
+    useCase:
+      'The satisfying-restoration format, built the way it has to be built to survive the cut. Three clips of the same mouth only read as one procedure if the camera block never moves, so the prompts are structured JSON rather than prose — the lens, the framing and the lighting come back byte-identical every generation, and one field changes. Clip 2 starts from clip 1\'s closing frame and clip 3 from clip 2\'s, so the cavity that gets filled is the cavity that was cleaned, not a fresh interpretation of one. Per video you edit exactly one thing: the cleaning method line, in the still prompt and in the two cleaning clips. The restoration clip is fixed on purpose — it is the payoff the whole series ends on, and it stays identical so the ending is recognisable across every upload. The Brainstorm node up top is off to one side, wired to nothing: run it alone, read the five methods it returns, then paste the one you want into Cleaning Method.',
+    category: 'Content',
+    difficulty: 'Advanced',
+    nodeCount: 13,
+    thumbnail: '🦷',
+    nodes: [
+      /* Off to the side and connected to nothing downstream: it returns five
+         options for a human to choose between, and a graph cannot make that
+         choice. Running it alone costs one text generation. */
+      promptNode('p_ideas', '1. Brainstorm Methods', DENTAL_IDEAS, 40, 40),
+      askNode('ask_ideas', 'Five Cleaning Methods', 520, 60),
+
+      // The one line that changes per video, plus the fixed image block.
+      promptNode('p_method', '2. Cleaning Method', DENTAL_METHOD, 40, 460),
+      askNode('ask_image', 'Write the Still Prompt', 520, 520),
+      genNode('g_still', {
+        label: 'Establishing Macro Still',
+        mediaType: 'image',
+        aspectRatio: '9:16',
+        model: 'Nano Banana Pro',
+      }, 1000, 520),
+
+      promptNode('p_part1', 'Part 1 — Cleaning', DENTAL_PART1, 1000, 980),
+      genNode('g_part1', {
+        label: 'Clip 1 — Cleaning',
+        mediaType: 'video', aspectRatio: '9:16', duration: '8s', model: 'Omni Flash',
+      }, 1480, 520),
+      frameNode('f_part1', 'Ends on →', 1900, 560),
+
+      promptNode('p_part2', 'Part 2 — Deeper Clean', DENTAL_PART2, 1900, 980),
+      genNode('g_part2', {
+        label: 'Clip 2 — Cavity Cleared',
+        mediaType: 'video', aspectRatio: '9:16', duration: '8s', model: 'Omni Flash',
+      }, 2320, 520),
+      frameNode('f_part2', 'Ends on →', 2740, 560),
+
+      // Never edited. Same ending on every video in the series.
+      promptNode('p_part3', 'Part 3 — Restoration (fixed)', DENTAL_PART3, 2740, 980),
+      genNode('g_part3', {
+        label: 'Clip 3 — Filling & Cure',
+        mediaType: 'video', aspectRatio: '9:16', duration: '8s', model: 'Omni Flash',
+      }, 3160, 520),
+    ],
+    edges: [
+      tEdge('p_ideas', 'ask_ideas'),
+
+      tEdge('p_method', 'ask_image'),
+      tEdge('ask_image', 'g_still'),
+
+      // Clip 1 opens on the approved still.
+      tEdge('p_part1', 'g_part1'), iEdge('g_still', 'g_part1'),
+      /* Each clip after the first starts from the previous clip's closing
+         frame. This is what makes it one procedure instead of three takes —
+         and it is visible on the canvas, so a bad handoff is caught before
+         the next generation is spent. */
+      iEdge('g_part1', 'f_part1'),
+      tEdge('p_part2', 'g_part2'), iEdge('f_part1', 'g_part2', 'image'),
+      iEdge('g_part2', 'f_part2'),
+      tEdge('p_part3', 'g_part3'), iEdge('f_part2', 'g_part3', 'image'),
+    ],
+  },
+  {
     id: 'tpl_exercise_series',
     name: 'Exercise Series: 1 Mascot → 4 Clips',
     description: 'One character reference becomes four storyboards, then four 10-second vertical clips.',
@@ -647,22 +1569,22 @@ export const TEMPLATES: Template[] = [
   {
     id: 'tpl_styrofoam_asmr',
     name: 'ASMR Styrofoam Carving: 6-Clip Chain',
-    description: 'One reference photo becomes a six-clip carving sequence, each clip continuing where the last one ended.',
+    description: 'One reference photo becomes a six-clip carving sequence, with every handoff frame shown on the canvas.',
     useCase:
       'ASMR and satisfying-craft channels. This is the format people usually build by hand — generate a clip, screenshot its last frame, upload it as the next clip\'s first frame, repeat five times. Studio passes each clip\'s closing frame to the next node automatically, so the block genuinely progresses from raw foam to finished sculpture in one run.',
     category: 'Content',
     difficulty: 'Advanced',
-    nodeCount: 13,
+    nodeCount: 18,
     thumbnail: '🔨',
     nodes: [
       imageNode('i1', 'Subject Reference', 40, 300, 'what to carve'),
 
       ...(STYROFOAM_STAGES).flatMap(([key, label, body], i) => {
-        const x = 520 + i * 480;
-        return [
+        const x = 560 + i * 620;
+        const out: Node[] = [
           promptNode(`p_${key}`, `${i + 1}. ${label}`,
             body + '\n\n' + STYROFOAM_STYLE,
-            i === 0 ? 40 : x - 480, 700),
+            x - 260, 780),
           genNode(`g_${key}`, {
             label: `${i + 1}. ${label}`,
             mediaType: 'video',
@@ -673,19 +1595,317 @@ export const TEMPLATES: Template[] = [
             model: 'Omni Flash',
           }, x, 200),
         ];
+        // A Last Frame between each pair, so the handoff this format depends
+        // on is something you can look at rather than infer from the result.
+        if (i < STYROFOAM_STAGES.length - 1) {
+          out.push(frameNode(`f_${key}`, 'Ends on →', x + 340, 250));
+        }
+        return out;
       }),
     ],
     edges: STYROFOAM_STAGES.flatMap(([key], i) => {
       const prev = STYROFOAM_STAGES[i - 1];
-      return [
+      const out = [
         tEdge(`p_${key}`, `g_${key}`),
-        // Clip 1 starts from the user's photo; every later clip starts from the
-        // frame the previous clip ended on.
+        // Clip 1 starts from the user's photo; every later clip starts from
+        // the Last Frame node showing where the previous clip ended.
         i === 0
           ? iEdge('i1', `g_${key}`, 'image')
-          : iEdge(`g_${prev[0]}`, `g_${key}`),
+          : iEdge(`f_${prev[0]}`, `g_${key}`, 'image'),
       ];
+      // Each clip feeds its own Last Frame, except the reveal, which ends it.
+      if (i < STYROFOAM_STAGES.length - 1) {
+        out.push(iEdge(`g_${key}`, `f_${key}`));
+      }
+      return out;
     }),
+  },
+  {
+    id: 'tpl_animal_slapstick',
+    name: '3D Animal Slapstick: 5 Beats',
+    description: 'Two desert animals, one thing they both want, and a twist that gives it to neither.',
+    useCase:
+      'The Oscar\'s Oasis format: hook in the first two seconds, escalate, peak, then an ironic twist, cut to about thirty seconds. Describe the pair in a line and the character_sheet preset writes the design brief — the animals have to be identical across all five scenes or the escalation reads as five unrelated clips. No dialogue anywhere, which is why the format travels: nothing to translate, and a model left to itself will add mouth-sync and a voice. The last shot is framed to match the first so it loops. Needs a signed-in ChatGPT tab for the design step.',
+    category: 'Content',
+    difficulty: 'Medium',
+    nodeCount: 13,
+    thumbnail: '🦊',
+    nodes: [
+      promptNode('p_cast', 'The Cast',
+        'A fennec fox and a meerkat as a desert cartoon duo, bright 3D animation, ' +
+        'rounded exaggerated caricature, Oscar\'s Oasis look',
+        40, 300),
+      // The preset turns that line into a full design brief — see studio/presets.
+      askNode('ask_cast', 'Write the Design Brief', 480, 260, 'character_sheet'),
+      genNode('g_cast', {
+        label: 'Character Sheet',
+        mediaType: 'image',
+        aspectRatio: '16:9',
+        model: 'Nano Banana Pro',
+      }, 920, 220),
+
+      ...SLAPSTICK_SCENES.flatMap(([key, label, body], i) => {
+        const y = i * 460;
+        return [
+          promptNode(`p_${key}`, label, body + '\n\n' + SLAPSTICK_STYLE, 1420, y + 40),
+          genNode(`g_${key}`, {
+            label,
+            mediaType: 'video',
+            aspectRatio: '9:16',
+            duration: '6s',
+            model: 'Omni Flash',
+          }, 1940, y),
+        ];
+      }),
+    ],
+    edges: [
+      tEdge('p_cast', 'ask_cast'),
+      tEdge('ask_cast', 'g_cast'),
+    ].concat(SLAPSTICK_SCENES.flatMap(([key]) => [
+      tEdge(`p_${key}`, `g_${key}`),
+      /* Every scene references the design sheet, never the scene before it.
+         These are five separate gags in one place; chaining would carry a
+         drifted animal into all of them, and the whole format rests on the
+         same two creatures being recognisable from hook to twist. */
+      iEdge('g_cast', `g_${key}`),
+    ])),
+  },
+  {
+    id: 'tpl_emotional_short',
+    name: 'Emotional Short: 1 Character → 10 Beats',
+    description: 'Tension, escalation, an unexpected kindness, relief — ten scenes holding one character.',
+    useCase:
+      'The retention format: cold open on trouble, escalate, turn on an act of kindness, resolve warm — and frame the last shot to match the first so it loops. Every scene references the character sheet rather than the scene before it, because these are ten different moments and a face that drifts in scene 3 would otherwise poison the seven after it. The colour arc is the part most people skip and it does real work: desaturated blue-grey through the tense half, warming to gold at the turn. Ten 8s clips give you the spine, not the finished film — the 2-4 second cutting the format lives on happens in the edit, where you cover each beat from more than one angle.',
+    category: 'Content',
+    difficulty: 'Advanced',
+    nodeCount: 14,
+    thumbnail: '🎬',
+    nodes: [
+      promptNode('p_idea', 'The Film', filmBrief(), 40, 340),
+
+      /* One writer for all ten shots.
+       *
+       * This was ten hand-written prompt nodes, one per beat, each blind to
+       * the other nine — so nothing knew that beat 4 had already turned the
+       * bakery light off, and the only thing holding the boy together across
+       * the arc was the same paragraph pasted ten times. A director sees the
+       * whole set while it writes each one, and the cast, world and look below
+       * are stated once instead of ten times.
+       *
+       * colorTemp stays 'none' ON PURPOSE. Every other multi-shot piece wants
+       * one white balance for the whole film; this one is built on a colour
+       * ARC — cold blue-grey through the tense half, warming to gold from the
+       * turn — and pinning a single Kelvin value would flatten the thing the
+       * format lives on. The arc is carried in the brief, where it can change. */
+      storyNode('director', 'Story Director', 520, 340, {
+        platform: 'gemini',
+        beats: 10,
+        structure: 'free',
+        cameraProgression: 'dynamic',
+        audioMode: 'ambient',
+        visualPreset: 'cgi3d',
+        colorTemp: 'none',
+        lighting: 'intimate',
+        rules: ['samePerson'],
+        cast: [{ name: 'The boy', role: 'in every shot', look: FILM_BOY }],
+        world: FILM_WORLD,
+        look: FILM_STYLE,
+      }),
+
+      genNode('g_char', {
+        label: 'Character Sheet',
+        mediaType: 'image',
+        aspectRatio: '16:9',
+        model: 'Nano Banana Pro',
+      }, 1020, 40),
+
+      /* The plan for all ten beats as one picture. The panels share a canvas,
+         so the boy, the palette and the rain are composed together rather than
+         ten times over — which is the mechanism that holds a face across an
+         arc this long, and the reason it is worth one extra generation. */
+      genNode('g_board', {
+        label: 'Storyboard board',
+        mediaType: 'image',
+        aspectRatio: '16:9',
+        model: 'Nano Banana 2',
+        storyboardSheet: true,
+      }, 1020, 360),
+
+      ...FILM_SCENES.map(([key, label], i) => genNode(`g_${key}`, {
+        label,
+        mediaType: 'video',
+        aspectRatio: '9:16',
+        duration: '8s',
+        model: 'Omni Flash',
+      }, 1560, i * 300)),
+    ],
+    edges: [
+      tEdge('p_idea', 'director'),
+      tEdge('director', 'g_char'),
+      tEdge('director', 'g_board'),
+    ].concat(FILM_SCENES.map(([key]) => tEdge('director', `g_${key}`)))
+      .concat(FILM_SCENES.flatMap(([key]) => [
+        /* One design, ten scenes. Recognising the same face across the arc is
+           what makes the ending land — and a drifted face partway through
+           would otherwise be inherited by everything after it. */
+        iEdge('g_char', `g_${key}`),
+        iEdge('g_board', `g_${key}`),
+      ])),
+  },
+  {
+    id: 'tpl_miniature_car',
+    name: 'Miniature Car: Carve → Match Cut',
+    description: 'Name a car. A preset writes the sheet prompt, then four clips carve it and match-cut to the real one.',
+    useCase:
+      'The build-up-and-reveal format, where the whole video is a setup for the last two seconds. Change the first line of the first node to any car — "BMW M3 E46, 2003, Laguna Seca Blue" — and it renders a three-view reference sheet, then carves it, details it, paints it and reveals it full size. No photo to source, and the sheet comes out at the angles and lighting the carve clips need rather than whatever a stock shot happened to be. The Last Frame nodes matter more here than anywhere: the match cut only lands if the miniature the reveal inherits is exactly the one the previous clip finished, so the handoff sits on the canvas where you can check it before spending a generation. Editing note from the format — post the reveal first as the hook, then the build.',
+    category: 'Content',
+    difficulty: 'Advanced',
+    nodeCount: 14,
+    thumbnail: '🚗',
+    thumbnailImage: 'assets/templates/miniature-car.svg',
+    nodes: [
+      // The label carries the editing hint; the prompt text cannot, because
+      // everything in it is read by a model as an instruction to itself.
+      promptNode('p_car', 'Which Car', CAR_SUBJECT, 40, 300),
+      // The car_sheet preset turns those few words into the full brief — the
+      // angles, the lighting, and the instruction to name this generation's
+      // details rather than any car of the class.
+      askNode('ask_sheet', 'Write the Sheet Prompt', 480, 260, 'car_sheet'),
+      genNode('g_sheet', {
+        label: 'Car Reference Sheet',
+        mediaType: 'image',
+        aspectRatio: '16:9',
+        model: 'Nano Banana Pro',
+      }, 560, 220),
+
+      ...CAR_STAGES.flatMap(([key, label, body], i) => {
+        const x = 1100 + i * 620;
+        const out: Node[] = [
+          promptNode(`p_${key}`, label, body + '\n\n' + CAR_STYLE, x - 260, 780),
+          genNode(`g_${key}`, {
+            label,
+            mediaType: 'video',
+            aspectRatio: '9:16',
+            duration: '10s',
+            model: 'Omni Flash',
+          }, x, 200),
+        ];
+        if (i < CAR_STAGES.length - 1) {
+          out.push(frameNode(`f_${key}`, 'Ends on →', x + 340, 250));
+        }
+        return out;
+      }),
+    ],
+    edges: [
+      // Car name → preset writes the brief → Flow renders the sheet.
+      tEdge('p_car', 'ask_sheet'),
+      tEdge('ask_sheet', 'g_sheet'),
+    ].concat(CAR_STAGES.flatMap(([key], i) => {
+      const prev = CAR_STAGES[i - 1];
+      const out = [
+        tEdge(`p_${key}`, `g_${key}`),
+        /* Clip 1 works from the generated reference sheet. Every clip after it
+           starts from the previous clip's closing frame, which is what keeps
+           one continuous object across four generations — and is the entire
+           reason the match cut at the end reads as the same car. */
+        i === 0
+          ? iEdge('g_sheet', `g_${key}`)
+          : iEdge(`f_${prev[0]}`, `g_${key}`, 'image'),
+      ];
+      if (i < CAR_STAGES.length - 1) {
+        out.push(iEdge(`g_${key}`, `f_${key}`));
+      }
+      return out;
+    })),
+  },
+  {
+    id: 'tpl_ai_baby_firsts',
+    name: 'AI Toddler: 1 Character → 3 Firsts',
+    description: 'Generate one toddler, then film three first-time reactions with the same child.',
+    useCase:
+      'The reaction-video format that runs on Shorts, Reels and TikTok. The whole thing rests on it being the same child every clip — a face that changes between videos reads as three unrelated accounts, and matching one by hand across a posting schedule is the work. Node one generates the character, every clip references that sheet, so the child stays fixed and is fictional rather than anyone\'s actual kid. Clips are 8s at 9:16.',
+    category: 'Content',
+    difficulty: 'Medium',
+    nodeCount: 8,
+    thumbnail: '👶',
+    thumbnailImage: 'assets/templates/ai-baby.svg',
+    nodes: [
+      promptNode('p_kid', 'Character Design', BABY_CHARACTER, 40, 300),
+      genNode('g_kid', {
+        label: 'Character Sheet',
+        mediaType: 'image',
+        aspectRatio: '1:1',
+        model: 'Nano Banana Pro',
+      }, 560, 260),
+
+      ...BABY_CLIPS.flatMap(([key, label, body], i) => {
+        const y = i * 460;
+        return [
+          promptNode(`p_${key}`, label, body + '\n\n' + BABY_STYLE, 1060, y + 40),
+          genNode(`g_${key}`, {
+            label,
+            mediaType: 'video',
+            aspectRatio: '9:16',
+            duration: '8s',
+            model: 'Omni Flash',
+          }, 1580, y),
+        ];
+      }),
+    ],
+    edges: [
+      tEdge('p_kid', 'g_kid'),
+    ].concat(BABY_CLIPS.flatMap(([key]) => [
+      tEdge(`p_${key}`, `g_${key}`),
+      /* Every clip references the character sheet, never the clip before it.
+         Chaining would carry a drifted face into everything downstream, and on
+         this format a face that drifts is the format failing. */
+      iEdge('g_kid', `g_${key}`),
+    ])),
+  },
+  {
+    id: 'tpl_kids_episode',
+    name: 'Kids Cartoon: 1 Mascot → 4 Scenes',
+    description: 'Design a cartoon mascot once, then hold it across a four-scene episode.',
+    useCase:
+      'Preschool and educational channels, where the format rests on children recognising the same character every episode — and where holding one design across four scenes by hand is the part that actually takes the time. The first node draws the mascot; every scene after it references that single design rather than the scene before, so a wobble in one clip cannot propagate. Deliberately animated: photoreal footage of children is what gets a kids channel age-restricted or pulled.',
+    category: 'Content',
+    difficulty: 'Medium',
+    nodeCount: 10,
+    thumbnail: '🦊',
+    nodes: [
+      promptNode('p_char', 'Mascot Design', KIDS_CHARACTER, 40, 300),
+      genNode('g_char', {
+        label: 'Mascot Design Sheet',
+        mediaType: 'image',
+        aspectRatio: '1:1',
+        model: 'Nano Banana Pro',
+      }, 560, 260),
+
+      ...KIDS_SCENES.flatMap(([key, label, body], i) => {
+        const y = i * 460;
+        return [
+          promptNode(`p_${key}`, label, body + '\n\n' + KIDS_STYLE, 1060, y + 40),
+          genNode(`g_${key}`, {
+            label,
+            mediaType: 'video',
+            aspectRatio: '16:9',
+            // 8s reads as a scene rather than a clip, and four of them cut
+            // together into roughly half a minute of episode.
+            duration: '8s',
+            model: 'Omni Flash',
+          }, 1580, y),
+        ];
+      }),
+    ],
+    edges: [
+      tEdge('p_char', 'g_char'),
+    ].concat(KIDS_SCENES.flatMap(([key]) => [
+      tEdge(`p_${key}`, `g_${key}`),
+      /* Every scene references the design sheet, not the scene before it.
+         Chaining would carry a drifted face forward into everything after it;
+         this way one bad scene stays one bad scene, and retries on its own. */
+      iEdge('g_char', `g_${key}`),
+    ])),
   },
   {
     id: 'tpl_pool_fails',
@@ -722,6 +1942,271 @@ export const TEMPLATES: Template[] = [
       tEdge(`ask${n}`, `clip${n}`),
     ]),
   },
+  /* ── Fantasy room transformation ──
+     The director brief as a canvas.
+
+     The brief is a conversation — ideas, then a storyboard, then motion — and
+     a canvas is not. Each node is one round trip, so the session collapses to
+     the three things it actually produces: the storyboard poster, Part 1, and
+     Part 2.
+
+     The two-reference contract maps exactly onto nodes, which is why this is
+     worth being a template rather than a preset. Reference 1 is the storyboard
+     still, wired into both clips. Reference 2 is the Last Frame of Part 1,
+     wired into Part 2 — so Part 2 literally begins on the frame Part 1 ended
+     on, instead of being asked in words not to restart.
+
+     The Ask AI node carries the director preset, so the user types a room idea
+     and gets back a storyboard prompt with all the rules already applied. */
+  {
+    id: 'tpl_room_transform',
+    name: 'Fantasy Room Transformation (20s)',
+    description:
+      'A room idea becomes a storyboard poster, then two continuous 10s hyperlapse clips.',
+    useCase:
+      'Viral TikTok/Reels room transformations. The storyboard holds the design and the '
+      + 'Last Frame node holds the continuity, which is what stops Part 2 rebuilding the room.',
+    category: 'Content',
+    difficulty: 'Medium',
+    nodeCount: 7,
+    thumbnail: '🏠',
+    nodes: [
+      promptNode(
+        'idea',
+        'Room idea',
+        'A candy-themed lounge: wide rectangular room, tall ceiling, large window wall on the '
+        + 'left, glossy pink and mint palette, hero furniture is an oversized cloud-shaped '
+        + 'couch, wall feature is a giant lollipop arch, ceiling is floating cotton-candy clouds.',
+        40, 240,
+      ),
+      /* One director for all three. The poster is not a separate conversation
+         any more: it feeds both clips, so the Story node reads it as their
+         reference and briefs it as one — a design to match rather than a
+         moment in the story. The two writers this replaces could not agree
+         about the room because neither could see the other's answer. */
+      storyNode('story', 'Story — poster and both clips', 520, 240, {
+        preset: 'room_motion_director',
+        // A transformation, not a hook: before, the work, the reveal.
+        structure: 'transform',
+        /* The four rules this format fails without, which this template used
+           to carry as prose inside a preset. As settings they also become
+           visible and switchable. */
+        rules: ['cumulative', 'fixedCamera', 'samePerson', 'inHand'],
+      }),
+      genNode(
+        'board',
+        { label: 'Storyboard poster', mediaType: 'image', platform: 'chatgpt', aspectRatio: '9:16' },
+        1000, 40,
+      ),
+      /* The still this template was missing, and the reason it opened on a
+         half-finished room. Part 1 was handed the poster — a picture of the
+         FINISHED design — as its look reference, while the words asked for an
+         empty room. A picture beats a sentence, so it rendered the picture.
+         This one is the same room with nothing in it yet, drawn from the same
+         poster so the geometry and palette match, and it is wired into Part
+         1's first frame rather than its ingredients: the clip begins inside
+         it instead of being influenced by it. */
+      genNode(
+        'before',
+        { label: 'Empty room — first frame', mediaType: 'image', platform: 'chatgpt', aspectRatio: '9:16' },
+        1480, 40,
+      ),
+      genNode(
+        'part1',
+        {
+          label: 'Part 1 — 10s',
+          mediaType: 'video',
+          platform: 'flow',
+          aspectRatio: '9:16',
+          duration: '10s',
+          // Frames mode: the empty room IS frame one, not a hint about it.
+          creationType: 'frames',
+        },
+        1960, 300,
+      ),
+      frameNode('handoff', 'Ends on → Reference 2', 2440, 300),
+      genNode(
+        'part2',
+        { label: 'Part 2 — 10s', mediaType: 'video', platform: 'flow', aspectRatio: '9:16', duration: '10s' },
+        2920, 300,
+      ),
+    ],
+    edges: [
+      tEdge('idea', 'story'),
+      /* One writer, three prompts. The poster feeds both clips, so the Story
+         node sees it as their reference and writes it as a design sheet; Part
+         2's first frame comes from Part 1 through the Last Frame node, so it
+         is written as a continuation. Neither fact is configured anywhere —
+         both are read off these wires. */
+      tEdge('story', 'board'),
+      tEdge('story', 'before'),
+      tEdge('story', 'part1'),
+      tEdge('story', 'part2'),
+      // Reference 1: the poster holds the design. The empty room is drawn from
+      // it, so the two agree about geometry and palette before anything moves.
+      iEdge('board', 'before'),
+      iEdge('board', 'part2'),
+      /* Reference 2: the empty room, as Part 1's actual first frame. Not an
+         ingredient — Frames mode starts the clip inside this picture, which is
+         the only thing that makes "it must open empty" true rather than
+         requested. */
+      fEdge('before', 'part1'),
+      // Reference 3: the frame Part 1 ended on, so Part 2 cannot restart.
+      iEdge('part1', 'handoff'),
+      iEdge('handoff', 'part2', 'image'),
+    ],
+    requiresNodeTypes: ['prompt', 'generate', 'frame', 'story'],
+    requiresPlatforms: ['chatgpt', 'flow'],
+    tier: 'free',
+  },
+  {
+    id: 'baby-dragon-viral',
+    name: 'Viral Baby Dragon: AI Director Series Engine',
+    description: 'Dynamic episodic generator: type any 1-line idea and the AI Director generates character-locked smartphone POV clips with layered sound design (ambience + foley + vocalizations) and frame handoffs.',
+    useCase: 'Viral TikTok / Reels creature comedy: generate unlimited consistent episodes from 1-line ideas',
+    category: 'Content',
+    difficulty: 'Easy',
+    nodeCount: 6,
+    thumbnail: '🐲',
+    nodes: [
+      promptNode(
+        'idea',
+        'Episode Brief / Idea',
+        'The baby dragon sneaks across the kitchen counter to steal peanut butter from an open jar, gets its tongue hilariously stuck to the roof of its mouth, and accidentally sneezes a tiny burst of flame that perfectly roasts a marshmallow on a nearby plate.',
+        40, 200,
+      ),
+      storyNode(
+        'story_director',
+        'Baby Dragon Director',
+        520, 200,
+        {
+          structure: 'hook',
+          cameraProgression: 'dynamic',
+          audioMode: 'cinematic',
+          visualPreset: 'smartphonePOV',
+          cast: [
+            {
+              name: 'Baby Dragon',
+              look: 'Tiny cat-sized eastern baby dragon with shimmering iridescent silver-white scales, large expressive emerald-green eyes, tiny translucent horns, and long delicate whiskers. Playful, curious, ultra-realistic CGI creature blending seamlessly into real-world video.',
+              role: 'Lead mischievous creature',
+            },
+          ],
+          world: 'Modern sunlit kitchen with bright white marble countertops, stainless steel appliances, and large windows with morning sunlight.',
+          look: 'Authentic vertical 9:16 slightly shaky handheld smartphone POV, natural morning daylight, sharp realistic creature textures, TikTok/Reels comedy realism.',
+          rules: ['samePerson', 'cumulative', 'inHand'],
+          beats: 2,
+        },
+      ),
+      genNode(
+        'ref_still',
+        { label: 'Dragon Anchor Still', mediaType: 'image', platform: 'flow', aspectRatio: '9:16' },
+        1000, 40,
+      ),
+      genNode(
+        'shot1',
+        { label: 'Shot 1 — The Sneak (6s)', mediaType: 'video', platform: 'flow', aspectRatio: '9:16', duration: '6s' },
+        1480, 200,
+      ),
+      frameNode('handoff', 'Shot 1 Last Frame', 1960, 200),
+      genNode(
+        'shot2',
+        { label: 'Shot 2 — Sneeze & Twist (6s)', mediaType: 'video', platform: 'flow', aspectRatio: '9:16', duration: '6s' },
+        2440, 200,
+      ),
+    ],
+    edges: [
+      tEdge('idea', 'story_director'),
+      tEdge('story_director', 'ref_still'),
+      tEdge('story_director', 'shot1'),
+      tEdge('story_director', 'shot2'),
+      iEdge('ref_still', 'shot1'),
+      iEdge('shot1', 'handoff'),
+      iEdge('handoff', 'shot2', 'image'),
+    ],
+    requiresNodeTypes: ['prompt', 'story', 'generate', 'frame'],
+    requiresPlatforms: ['chatgpt', 'flow'],
+    tier: 'free',
+  },
+
+  /* ── Real animal comedy ──
+     Built from a 28-section master prompt for photorealistic animal comedy.
+     Its rules live in the animalComedy genre rather than in this template, so
+     they apply to any Story node — this is the canvas that runs them.
+
+     Fifteen seconds does not exist in Flow, and that shaped the whole thing.
+     The source paces one video across six segments: WTF hook, anticipation,
+     payoff, reaction, micro-gag, aftermath. Two 8s clips joined on a last
+     frame carry all six and keep the animal and the room across the cut,
+     which a single compressed 10s clip cannot — its own pacing puts the
+     payoff at 5–8.5s, so compressing throws away the reaction and the gag,
+     which is where the comedy actually is. */
+  {
+    id: 'tpl_animal_comedy',
+    name: 'Real Animal Comedy: 15s Viral',
+    description:
+      'A real animal doing an ordinary human thing, completely straight, caught by accident '
+      + 'on a phone. Two chained clips carry the full six-beat pacing.',
+    useCase:
+      'The format behind cat-runs-a-shop and dog-attends-dinner reels. The Story node carries '
+      + 'the genre rules — real animal anatomy, 80/15/5 behaviour, dead-serious playing, one '
+      + 'joke, phone footage, room sound only — so you write the idea and it writes both '
+      + 'shots. Shot one opens mid-situation and lands the payoff; shot two takes the last '
+      + 'frame and plays the reaction and a final small gag. Needs a signed-in ChatGPT tab '
+      + 'for the writing and Flow for the clips.',
+    category: 'Content',
+    difficulty: 'Medium',
+    nodeCount: 6,
+    thumbnail: '🐈',
+    nodes: [
+      promptNode('idea', 'The Format & The Idea', ANIMAL_COMEDY_BRIEF, 40, 300),
+      /* Every rule from the source document lives on THIS node, in the fields
+         the Story node already has. Nothing in the node's own code knows this
+         format exists — the template carries it, so it can be edited, copied
+         or thrown away like any other workflow. */
+      storyNode('director', 'Comedy Director', 470, 260, {
+        beats: 6,
+        structure: 'hook',
+        cameraProgression: 'fixed',   // §9: one locked phone, no pans or zooms
+        audioMode: 'ambient',         // §15–16: room sound only, no dialogue
+        visualPreset: 'smartphonePOV',// §8: raw phone footage, not cinema
+        timedBeats: true,             // §6: the six-segment pacing
+        rules: ['samePerson'],        // §13: the animal never changes breed
+        world: ANIMAL_COMEDY_WORLD,
+        look: ANIMAL_COMEDY_LOOK,
+        avoid: ANIMAL_COMEDY_AVOID,   // §21: the AI-realism negative lock
+      }),
+      genNode('ref_still', {
+        label: 'The Animal', mediaType: 'image', model: 'Nano Banana Pro', aspectRatio: '9:16',
+      }, 900, 40),
+      genNode('shot1', {
+        label: 'Hook & Payoff', mediaType: 'video', model: 'Veo 3.1 - Fast',
+        aspectRatio: '9:16', duration: '8s',
+      }, 900, 420),
+      frameNode('handoff', 'Ends on Shot 1', 1330, 480),
+      genNode('shot2', {
+        label: 'Reaction & Gag', mediaType: 'video', model: 'Veo 3.1 - Fast',
+        aspectRatio: '9:16', duration: '8s',
+      }, 1700, 420),
+    ],
+    edges: [
+      tEdge('idea', 'director'),
+      tEdge('director', 'ref_still'),
+      tEdge('director', 'shot1'),
+      tEdge('director', 'shot2'),
+      /* The still is the animal's identity, wired into BOTH clips — the
+         second one gets it as well as the handoff frame, because a last frame
+         carries the pose and the reference carries the breed. */
+      iEdge('ref_still', 'shot1'),
+      iEdge('shot1', 'handoff'),
+      iEdge('handoff', 'shot2', 'image'),
+    ],
+    requiresNodeTypes: ['prompt', 'story', 'generate', 'frame'],
+    requiresPlatforms: ['chatgpt', 'flow'],
+    tier: 'free',
+  },
 ];
 
 export const CATEGORIES = ['All', 'Starter', 'Marketing', 'Character', 'Fashion', 'Content', 'Image', 'Utility'] as const;
+
+/** @deprecated Use the loader; this is the bundled floor, not the whole set. */
+export const TEMPLATES = BUILTIN_TEMPLATES;

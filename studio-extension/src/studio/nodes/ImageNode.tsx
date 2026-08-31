@@ -8,6 +8,7 @@ import { memo, useCallback, useRef, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useStudioStore } from '../store';
 import { Lightbox } from '../components/Lightbox';
+import { NodeInfoBadge } from './NodeInfoBadge';
 
 function ImageNodeComponent({ id, data, selected }: NodeProps) {
   const nodeData = data as any;
@@ -49,7 +50,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps) {
   );
 
   return (
-    <div className={`sn-wrap sn-wrap--input ${selected ? 'sn-wrap--selected' : ''}`}>
+    <div className={`sn-wrap sn-wrap--input sn-wrap--kind-image ${selected ? 'sn-wrap--selected' : ''}`}>
       <div className="sn-actions">
         <button className="sn-actions__btn" onClick={() => duplicateNode(id)} title="Duplicate node">⧉</button>
         <button className="sn-actions__btn sn-actions__btn--danger" onClick={() => removeNode(id)} title="Delete node">🗑</button>
@@ -58,6 +59,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps) {
       <div className="sn-label">
         <span className="sn-label__icon" aria-hidden="true">🖼</span>
         <span className="sn-label__text">{nodeData.label || 'Reference Image'}</span>
+        <NodeInfoBadge type="image" />
       </div>
 
       <div className="sn sn--image">

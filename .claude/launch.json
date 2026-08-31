@@ -1,0 +1,41 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "studio-harness",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8899",
+        "--directory",
+        "studio-extension"
+      ],
+      "port": 8899
+    },
+    {
+      "name": "studio-harness-rw",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "studio-extension/_harness/serve.js"
+      ],
+      "port": 8899
+    },
+    {
+      "name": "website",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "website",
+        "exec",
+        "--",
+        "next",
+        "start",
+        "website",
+        "-p",
+        "3100"
+      ],
+      "port": 3100
+    }
+  ]
+}

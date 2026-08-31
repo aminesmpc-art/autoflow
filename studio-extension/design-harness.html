@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Studio design harness</title>
+  <!-- The REAL stylesheet. The point of this page is to see what the canvas
+       will look like without needing to load an unpacked extension, because
+       chrome-extension:// pages cannot be opened for inspection. Serve this
+       folder and open it; every rule below is the one that ships. -->
+  <link rel="stylesheet" href="dist/studio.css" />
+  <style>
+    body { margin: 0; background: #0a0a0c; font-family: system-ui, sans-serif; }
+    .harness { display: flex; gap: 48px; padding: 32px; align-items: flex-start; }
+    .harness__col { position: relative; }
+    .harness__note {
+      color: #6b6b73; font-size: 11px; margin-bottom: 10px;
+      text-transform: uppercase; letter-spacing: 0.6px;
+    }
+    /* The rail is position:fixed on the canvas; unpin it so it sits in flow. */
+    .harness .studio-toolbar { position: static !important; }
+    /* Nodes are absolutely placed by React Flow; give them a normal box. */
+    .harness .sn-wrap { position: relative; width: 320px; }
+  </style>
+</head>
+<body>
+  <div class="harness">
+    <div class="harness__col">
+      <div class="harness__note">Rail</div>
+      <div class="studio-toolbar" id="rail"></div>
+    </div>
+
+    <div class="harness__col">
+      <div class="harness__note">Ask AI node</div>
+      <div id="node"></div>
+    </div>
+  </div>
+
+  <script>
+    /* Markup mirrored from Canvas.tsx and GenerateNode.tsx. Kept as data so a
+       change here is a change to one list, not to nine copies of a button. */
+    const GROUPS = [
+      ['Inputs', [['✏️', 'Prompt', 'studio-toolbar__btn--add'], ['🖼️', 'Image', '']]],
+      ['Generate', [
+        ['🎬', 'Flow clip', 'studio-toolbar__btn--primary'],
+        ['⚡', 'Grok clip', ''],
+        ['💬', 'Ask AI', ''],
+        ['🧠', 'Agent', ''],
+      ]],
+      ['Continue a clip', [['🎞', 'Last frame', ''], ['⏱', 'Extend', '']]],
+    ];
+
+    const rail = document.getElementById('rail');
+    for (const [heading, items] of GROUPS) {
+      const g = document.createElement('div');
+      g.className = 'studio-toolbar__group';
+      g.innerHTML = `<div class="studio-toolbar__heading">${heading}</div>`
+        + items.map(([icon, label, mod]) => `
+          <button class="studio-toolbar__btn ${mod}">
+            <span class="studio-toolbar__btn-icon">${icon}</span>
+            <span class="studio-toolbar__btn-label">${label}</span>
+          </button>`).join('');
+      rail.append(g);
+    }
+    rail.insertAdjacentHTML('beforeend', `
+      <div class="studio-toolbar__divider"></div>
+      <button class="studio-toolbar__btn studio-toolbar__btn--run">
+        <span class="studio-toolbar__btn-icon">▶</span>
+        <span class="studio-toolbar__btn-label">Run workflow</span>
+      </button>`);
+
+    document.getElementById('node').innerHTML = `
+      <div class="sn-wrap sn-wrap--kind-chat">
+        <div class="sn-actions">
+          <button class="sn-actions__btn">⧉</button>
+          <button class="sn-actions__btn sn-actions__btn--danger">🗑</button>
+        </div>
+        <div class="sn-label">
+          <span class="sn-label__icon">💬</span>
+          <span class="sn-label__text">Prompt Assistant A</span>
+          <button class="sn-toggle sn-toggle--on"><span class="sn-toggle__knob"></span></button>
+        </div>
+        <div class="sn">
+          <div class="sn-media sn-media--empty">
+            <div class="sn-media__state sn-media__state--idle">
+              <span class="sn-media__state-icon">💬</span>
+              <small>Ready — press Run</small>
+            </div>
+          </div>
+          <div class="sn-bar sn-bar--grid">
+            <label class="sn-field">
+              <span class="sn-field__label">Platform</span>
+              <select class="sn-bar__sel"><option>ChatGPT</option></select>
+            </label>
+            <label class="sn-field">
+              <span class="sn-field__label">Output</span>
+              <select class="sn-bar__sel"><option>Text</option></select>
+            </label>
+          </div>
+          <div class="sn-bar">
+            <label class="sn-field sn-field--wide">
+              <span class="sn-field__label">Preset</span>
+              <select class="sn-bar__sel"><option>None — send as written</option></select>
+            </label>
+          </div>
+          <div class="sn-port sn-port--text" style="position:absolute;left:-9px;top:50%">
+            <span class="sn-port__glyph">T</span>
+          </div>
+          <div class="sn-port sn-port--text" style="position:absolute;right:-9px;top:50%">
+            <span class="sn-port__glyph">T</span>
+          </div>
+        </div>
+      </div>`;
+  </script>
+</body>
+</html>
