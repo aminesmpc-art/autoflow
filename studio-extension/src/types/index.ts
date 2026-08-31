@@ -81,6 +81,17 @@ export type VideoResolution = 'Original (720p)' | '1080p Upscaled' | '4K';
 export type ImageResolution = '1K' | '2K' | '4K';
 export type VideoDuration = '4s' | '6s' | '8s' | '10s';
 
+/**
+ * The resolution Flow RENDERS at — not the one it downloads at.
+ *
+ * Deliberately a separate type from VideoResolution above, which is the
+ * download/upscale menu ('Original (720p)', '1080p Upscaled', '4K'). They read
+ * alike and mean opposite ends of the pipeline: this one is chosen before
+ * generating and changes what the model produces and what it costs, the other
+ * is chosen after and only changes the file that lands on disk.
+ */
+export type RenderResolution = '360p' | '720p';
+
 // ── Image generation model & ratio ──
 export type ImageModel = 'Nano Banana Pro' | 'Nano Banana 2' | 'Nano Banana 2 Lite';
 export type ImageRatio = '16:9' | '4:3' | '1:1' | '3:4' | '9:16';
@@ -93,6 +104,7 @@ export interface QueueSettings {
   orientation: Orientation;          // 'landscape' or 'portrait'
   generations: 1 | 2 | 3 | 4;
   duration?: VideoDuration;
+  renderResolution?: RenderResolution;  // Flow render resolution (360p/720p), Omni only
   voiceIngredient?: string;          // Voice character name (e.g., 'Achernar'), or 'none'
   stopOnError: boolean;
   automationMode: AutomationMode;   // 'full' | 'flow' | 'lite'
@@ -402,7 +414,7 @@ export const DEFAULT_SETTINGS: QueueSettings = {
 };
 
 export const AVAILABLE_MODELS = [
-  'Omni Flash',
+  'Omni 1.1 Flash',
   'Veo 3.1 - Lite',
   'Veo 3.1 - Fast',
   'Veo 3.1 - Quality',
@@ -418,7 +430,35 @@ export const AVAILABLE_MODELS = [
  * exist, and the miss was logged as a warning, which reads as "the click
  * failed" rather than "this model has no such setting".
  */
-export const MODELS_WITH_DURATION = ['Omni Flash'];
+/**
+ * Names Flow has rendered in the past, still sitting in saved workflows.
+ *
+ * Flow renamed "Omni Flash" to "Omni 1.1 Flash". Two things had to survive
+ * that: a saved workflow naming the old one must still run, and the composer
+ * chip must still be recognised whichever name it shows. So the old names stay
+ * known — they are matched, offered nowhere, and normalised on load.
+ */
+export const LEGACY_MODEL_NAMES: readonly string[] = ['Omni Flash'];
+
+/** What a legacy name should become. Applied by normalizeWorkflow on load. */
+export const MODEL_RENAMES: Record<string, string> = {
+  'Omni Flash': 'Omni 1.1 Flash',
+  'omni-flash': 'Omni 1.1 Flash',
+  'nano-banana-2': 'Nano Banana Pro',
+};
+
+export const MODELS_WITH_DURATION = ['Omni 1.1 Flash', 'Omni Flash'];
+
+/**
+ * Models whose panel offers a render resolution.
+ *
+ * Only Omni, same as duration — the Veo panels have no 360p/720p row, and
+ * offering the control there would promise a setting that cannot be applied.
+ */
+export const MODELS_WITH_RESOLUTION = ['Omni 1.1 Flash', 'Omni Flash'];
+
+export const modelHasResolution = (model: string): boolean =>
+  MODELS_WITH_RESOLUTION.some((m) => (model || '').trim().toLowerCase().startsWith(m.toLowerCase()));
 
 export const modelHasDuration = (model: string): boolean =>
   MODELS_WITH_DURATION.some((m) => (model || '').trim().toLowerCase().startsWith(m.toLowerCase()));

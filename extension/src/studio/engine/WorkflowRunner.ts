@@ -385,7 +385,7 @@ export class WorkflowRunner {
     const config: NodeExecutionConfig = {
       prompt,
       platform: nodeData.platform === 'chatgpt' ? 'chatgpt' : 'flow',
-      model: nodeData.model || (nodeData.mediaType === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),
+      model: nodeData.model || (nodeData.mediaType === 'video' ? 'Omni 1.1 Flash' : 'Nano Banana Pro'),
       mediaType: nodeData.mediaType || 'image',
       aspectRatio: nodeData.aspectRatio || '9:16',
       duration: nodeData.duration || '6s',

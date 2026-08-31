@@ -340,7 +340,7 @@ class StudioMcpBridge {
                 prompt: `Shot ${i + 1} cinematic visual sequence.`,
                 mediaType: 'video',
                 platform: 'flow',
-                model: 'Omni Flash',
+                model: 'Omni 1.1 Flash',
                 aspectRatio,
                 duration,
                 status: 'idle',

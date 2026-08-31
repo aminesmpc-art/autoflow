@@ -1096,7 +1096,7 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
     settings: {
       mediaType,
       creationType: 'ingredients',
-      model: isImage ? 'Omni Flash' : (config.model || 'Omni Flash'),
+      model: isImage ? 'Omni 1.1 Flash' : (config.model || 'Omni 1.1 Flash'),
       orientation: (config.aspectRatio === '9:16' || config.aspectRatio === '3:4') ? 'portrait' : 'landscape',
       generations: 1,
       // Honour the node's duration — this was pinned to '8s', so every

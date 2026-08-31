@@ -401,8 +401,24 @@ export const DEFAULT_SETTINGS: QueueSettings = {
   llmModel: 'gemini-1.5-flash',
 };
 
+/**
+ * Names Flow has rendered in the past, still sitting in saved settings.
+ *
+ * Flow renamed "Omni Flash" to "Omni 1.1 Flash". A queue saved before that
+ * must still run, and the sidepanel dropdown must still show the right row
+ * selected — so the old name stays understood, offered nowhere.
+ */
+export const MODEL_RENAMES: Record<string, string> = {
+  'Omni Flash': 'Omni 1.1 Flash',
+  'omni-flash': 'Omni 1.1 Flash',
+};
+
+/** The current name for a model, whatever name it was saved under. */
+export const canonicalModel = (m: string | undefined): string =>
+  (m && MODEL_RENAMES[m]) || m || '';
+
 export const AVAILABLE_MODELS = [
-  'Omni Flash',
+  'Omni 1.1 Flash',
   'Veo 3.1 - Lite',
   'Veo 3.1 - Fast',
   'Veo 3.1 - Quality',

@@ -8,6 +8,7 @@ import { create } from 'zustand';
 import type { Node, Edge } from '@xyflow/react';
 import { applyNodeChanges, applyEdgeChanges } from '@xyflow/react';
 import { migrateFrameEdges } from './templates/validate';
+import { MODEL_RENAMES } from '../types';
 
 /* ── Types ── */
 
@@ -177,11 +178,11 @@ function generateId(): string {
    names that never match Flow's rendered labels, smoothstep edges from
    the previous design, and generate nodes missing enabled/previewUrl.
    Every load path runs through here so old data can't resurrect old bugs. */
-const MODEL_SLUGS: Record<string, string> = {
-  'nano-banana-2': 'Nano Banana Pro',
-  'omni-flash': 'Omni Flash',
-  'Omni 1.1 Flash': 'Omni Flash',
-};
+/* One source of truth, in types/index.ts, because the adapter needs the same
+   answer this does. The entry here used to point the other way — 'Omni 1.1
+   Flash' was rewritten BACK to 'Omni Flash' on every load, which quietly
+   undid the rename for anyone who had already saved the new name. */
+const MODEL_SLUGS: Record<string, string> = MODEL_RENAMES;
 
 /**
  * Turn bundled asset paths into data URLs.

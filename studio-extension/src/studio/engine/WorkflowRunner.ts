@@ -893,10 +893,14 @@ export class WorkflowRunner {
       platform: isExtendNode ? 'grok'
         : CHAT_PLATFORMS.includes(nodeData.platform) ? nodeData.platform
         : 'flow',
-      model: nodeData.model || (nodeData.mediaType === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),
+      model: nodeData.model || (nodeData.mediaType === 'video' ? 'Omni 1.1 Flash' : 'Nano Banana Pro'),
       mediaType: isExtendNode ? 'video' : (nodeData.mediaType || 'image'),
       aspectRatio: nodeData.aspectRatio || '9:16',
       duration: nodeData.duration || '6s',
+      /* Flow's own render resolution. Separate from `resolution` below, which
+         is Grok's — a node switched between the two platforms must not carry
+         one's value into the other, where it is not a valid choice. */
+      renderResolution: nodeData.renderResolution || '720p',
       // Grok reads these; Flow ignores them.
       resolution: isExtendNode ? undefined : (nodeData.resolution || undefined),
       /* Imagine's still controls. Undefined means "leave the toolbar alone",
@@ -1733,7 +1737,7 @@ export class WorkflowRunner {
            Flow model that takes a duration at all, and the only one that edits
            from a reference — so a cutaway that quietly fell back to Veo would
            ignore both the length asked for and the style reference. */
-        model: 'Omni Flash',
+        model: 'Omni 1.1 Flash',
         creationType: 'ingredients',
         /* Inherited from the cut that laid this out, so every cutaway for a
            clip matches the same footage. The upload itself cannot be

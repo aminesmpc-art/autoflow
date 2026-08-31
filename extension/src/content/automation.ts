@@ -118,6 +118,29 @@ function normalizeForModelMatch(text: string): string {
     .trim();
 }
 
+/**
+ * The same name with version numbers taken out: "omni 1.1 flash" -> "omni flash".
+ *
+ * Flow renamed "Omni Flash" to "Omni 1.1 Flash". The version lands in the
+ * MIDDLE of the name, so neither test below could see it: "omni 1.1 flash"
+ * does not equal "omni flash" and does not contain it either. Both tiers
+ * returned nothing, `loose.length` was 0 so even the ambiguity warning stayed
+ * quiet, and the model was simply never selected — the queue ran on whatever
+ * Flow had last, which surfaced as a failed generation with nothing in the log
+ * pointing at the model.
+ *
+ * Used only as a last tier, after exact and substring have both failed, and
+ * only when it identifies exactly one model. That ordering is what keeps it
+ * safe: stripping versions makes "Nano Banana 2" into "nano banana", which is
+ * a prefix of another image model — but an exact match exists for those, so
+ * this tier is never consulted for them.
+ */
+function stripModelVersion(norm: string): string {
+  return norm.replace(RE_VERSION, ' ').replace(/\s+/g, ' ').trim();
+}
+const RE_VERSION = new RegExp(String.raw`\b\d+(\.\d+)*\b`, 'g');
+
+
 let globalRunLock = false;
 
 export function isRunLocked(): boolean {
@@ -2197,7 +2220,21 @@ export class AutomationEngine {
 
       const exact = candidates.filter((c) => c.norm === targetNorm);
       const loose = candidates.filter((c) => c.norm.includes(targetNorm));
-      const chosen = exact[0] || (loose.length === 1 ? loose[0] : null);
+      /* Last tier: same model, new version number. Equality on the stripped
+         form rather than substring, so "nano banana" cannot claim "nano
+         banana pro". See stripModelVersion. */
+      const targetBare = stripModelVersion(targetNorm);
+      const bare = targetBare
+        ? candidates.filter((c) => stripModelVersion(c.norm) === targetBare)
+        : [];
+      const chosen = exact[0]
+        || (loose.length === 1 ? loose[0] : null)
+        || (bare.length === 1 ? bare[0] : null);
+
+      if (chosen && !exact.length && !loose.length) {
+        this.log('info',
+          `"${modelName}" resolved to "${chosen.text.trim()}" — same model, new version number.`);
+      }
 
       if (!chosen && loose.length > 1) {
         // Refusing beats guessing: the cost of guessing is a whole queue at

@@ -107,7 +107,7 @@ const genNode = (id: string, o: GenOpts, x: number, y: number): Node => ({
     mediaType: o.mediaType || 'image',
     model: o.mediaType === 'text'
       ? ''
-      : o.model || (o.mediaType === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),
+      : o.model || (o.mediaType === 'video' ? 'Omni 1.1 Flash' : 'Nano Banana Pro'),
     aspectRatio: o.aspectRatio || '9:16',
     duration: o.duration || '6s',
     creationType: o.creationType || 'ingredients',
@@ -1362,7 +1362,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
             mediaType: 'video',
             aspectRatio: '16:9',
             duration: '10s',
-            model: 'Omni Flash',
+            model: 'Omni 1.1 Flash',
           }, 2620, y + 60),
         ];
       }),
@@ -1452,14 +1452,14 @@ export const BUILTIN_TEMPLATES: Template[] = [
       promptNode('p_part1', 'Part 1 — Cleaning', DENTAL_PART1, 1000, 980),
       genNode('g_part1', {
         label: 'Clip 1 — Cleaning',
-        mediaType: 'video', aspectRatio: '9:16', duration: '8s', model: 'Omni Flash',
+        mediaType: 'video', aspectRatio: '9:16', duration: '8s', model: 'Omni 1.1 Flash',
       }, 1480, 520),
       frameNode('f_part1', 'Ends on →', 1900, 560),
 
       promptNode('p_part2', 'Part 2 — Deeper Clean', DENTAL_PART2, 1900, 980),
       genNode('g_part2', {
         label: 'Clip 2 — Cavity Cleared',
-        mediaType: 'video', aspectRatio: '9:16', duration: '8s', model: 'Omni Flash',
+        mediaType: 'video', aspectRatio: '9:16', duration: '8s', model: 'Omni 1.1 Flash',
       }, 2320, 520),
       frameNode('f_part2', 'Ends on →', 2740, 560),
 
@@ -1467,7 +1467,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
       promptNode('p_part3', 'Part 3 — Restoration (fixed)', DENTAL_PART3, 2740, 980),
       genNode('g_part3', {
         label: 'Clip 3 — Filling & Cure',
-        mediaType: 'video', aspectRatio: '9:16', duration: '8s', model: 'Omni Flash',
+        mediaType: 'video', aspectRatio: '9:16', duration: '8s', model: 'Omni 1.1 Flash',
       }, 3160, 520),
     ],
     edges: [
@@ -1552,7 +1552,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
           genNode(`gv_${k}`, {
             label: `${name} Clip`, mediaType: 'video', aspectRatio: '9:16',
             // 10s clips are an Omni Flash capability
-            duration: '10s', model: 'Omni Flash',
+            duration: '10s', model: 'Omni 1.1 Flash',
           }, 1480, 40 + y),
         ];
       }),
@@ -1592,7 +1592,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
             // Long takes are what makes this format satisfying, and 10s is an
             // Omni Flash capability.
             duration: '10s',
-            model: 'Omni Flash',
+            model: 'Omni 1.1 Flash',
           }, x, 200),
         ];
         // A Last Frame between each pair, so the handoff this format depends
@@ -1653,7 +1653,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
             mediaType: 'video',
             aspectRatio: '9:16',
             duration: '6s',
-            model: 'Omni Flash',
+            model: 'Omni 1.1 Flash',
           }, 1940, y),
         ];
       }),
@@ -1736,7 +1736,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
         mediaType: 'video',
         aspectRatio: '9:16',
         duration: '8s',
-        model: 'Omni Flash',
+        model: 'Omni 1.1 Flash',
       }, 1560, i * 300)),
     ],
     edges: [
@@ -1787,7 +1787,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
             mediaType: 'video',
             aspectRatio: '9:16',
             duration: '10s',
-            model: 'Omni Flash',
+            model: 'Omni 1.1 Flash',
           }, x, 200),
         ];
         if (i < CAR_STAGES.length - 1) {
@@ -1847,7 +1847,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
             mediaType: 'video',
             aspectRatio: '9:16',
             duration: '8s',
-            model: 'Omni Flash',
+            model: 'Omni 1.1 Flash',
           }, 1580, y),
         ];
       }),
@@ -1892,7 +1892,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
             // 8s reads as a scene rather than a clip, and four of them cut
             // together into roughly half a minute of episode.
             duration: '8s',
-            model: 'Omni Flash',
+            model: 'Omni 1.1 Flash',
           }, 1580, y),
         ];
       }),
@@ -1930,7 +1930,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
             mediaType: 'video',
             aspectRatio: '9:16',
             duration: '10s',
-            model: 'Omni Flash',
+            model: 'Omni 1.1 Flash',
           }, 1040, y),
         ];
       }),

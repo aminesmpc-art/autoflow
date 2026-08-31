@@ -19,8 +19,14 @@ export interface NodeExecutionConfig {
   mediaType: 'image' | 'video' | 'text';
   aspectRatio: string;
   duration?: string;
-  /** Grok Imagine only — 480p / 720p / 1080p. Flow has no such control. */
+  /** Grok Imagine only — 480p / 720p / 1080p. */
   resolution?: string;
+  /* Flow's render resolution — 360p / 720p, Omni only.
+     Its own field rather than sharing `resolution` above: the two platforms
+     offer different values, and a node moved between them would otherwise
+     carry a resolution the other cannot select. Also not the download
+     resolution in Settings, which is chosen after generating. */
+  renderResolution?: string;
   /** Grok Imagine stills only — how many to render: Auto, 2, 4, 8, 12. */
   imageCount?: string;
   /** Grok Imagine stills only — 'Speed' or 'Quality'. Its own radio pair. */

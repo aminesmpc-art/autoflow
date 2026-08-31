@@ -158,7 +158,7 @@ function generateId(): string {
    Every load path runs through here so old data can't resurrect old bugs. */
 const MODEL_SLUGS: Record<string, string> = {
   'nano-banana-2': 'Nano Banana Pro',
-  'omni-flash': 'Omni Flash',
+  'omni-flash': 'Omni 1.1 Flash',
 };
 
 /**

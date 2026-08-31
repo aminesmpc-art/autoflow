@@ -478,7 +478,7 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
         mediaType: media,
         ...(step.storyboardSheet && media !== 'video' ? { storyboardSheet: true } : {}),
         ...(step.preset && media === 'text' ? { preset: step.preset } : {}),
-        model: step.model || (media === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),
+        model: step.model || (media === 'video' ? 'Omni 1.1 Flash' : 'Nano Banana Pro'),
         aspectRatio: step.aspectRatio || (media === 'video' ? '9:16' : '1:1'),
         duration: step.duration || '6s',
         creationType: step.startFrame && step.endFrame ? 'frames' : 'ingredients',

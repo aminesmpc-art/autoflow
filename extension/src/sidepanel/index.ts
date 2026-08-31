@@ -15,6 +15,7 @@ import {
   Message,
   DEFAULT_SETTINGS,
   AVAILABLE_MODELS,
+  canonicalModel,
   InputMethod,
   MediaType,
   CreationType,
@@ -2131,7 +2132,7 @@ async function refreshQueuesList() {
               <span class="af-q-setting-key">Model</span>
               <select class="af-q-select af-q-setting-val" data-action="update-setting" data-key="${isVideo ? 'model' : 'imageModel'}">
                 ${isVideo ? `
-                  <option value="Omni Flash" ${s.model === 'Omni Flash' ? 'selected' : ''}>Omni Flash</option>
+                  <option value="Omni 1.1 Flash" ${canonicalModel(s.model) === 'Omni 1.1 Flash' ? 'selected' : ''}>Omni 1.1 Flash</option>
                   <option value="Veo 3.1 - Lite" ${s.model === 'Veo 3.1 - Lite' ? 'selected' : ''}>Veo 3.1 - Lite</option>
                   <option value="Veo 3.1 - Fast" ${s.model === 'Veo 3.1 - Fast' ? 'selected' : ''}>Veo 3.1 - Fast</option>
                   <option value="Veo 3.1 - Quality" ${s.model === 'Veo 3.1 - Quality' ? 'selected' : ''}>Veo 3.1 - Quality</option>
@@ -2174,7 +2175,7 @@ async function refreshQueuesList() {
                 <option value="4s" ${(s.duration ?? '8s') === '4s' ? 'selected' : ''}>4s</option>
                 <option value="6s" ${(s.duration ?? '8s') === '6s' ? 'selected' : ''}>6s</option>
                 <option value="8s" ${(s.duration ?? '8s') === '8s' ? 'selected' : ''}>8s</option>
-                ${s.model === 'Omni Flash' ? `<option value="10s" ${(s.duration ?? '8s') === '10s' ? 'selected' : ''}>10s</option>` : ''}
+                ${canonicalModel(s.model) === 'Omni 1.1 Flash' ? `<option value="10s" ${(s.duration ?? '8s') === '10s' ? 'selected' : ''}>10s</option>` : ''}
               </select>
             </div>` : ''}
             ${isVideo ? `

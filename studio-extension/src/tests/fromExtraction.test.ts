@@ -255,7 +255,7 @@ describe('the settings a person chose', () => {
   it('still defaults the model when nobody picked one', () => {
     const { plan } = extractionToPlan(extraction());
     const { template } = compilePlan(plan!);
-    expect(nodeById(template!, 'shot1_clip').data.model).toBe('Omni Flash');
+    expect(nodeById(template!, 'shot1_clip').data.model).toBe('Omni 1.1 Flash');
     expect(nodeById(template!, 'shot1_still').data.model).toBe('Nano Banana Pro');
   });
 

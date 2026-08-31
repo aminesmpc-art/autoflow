@@ -135,12 +135,12 @@ describe('the duration Flow will actually give back', () => {
 });
 
 describe('which model a cutaway asks for', () => {
-  it('names Omni Flash rather than relying on a default', () => {
+  it('names the video model rather than relying on a default', () => {
     /* Omni is the only Flow model that takes a duration at all, and the only
        one that edits from a reference. A cutaway that quietly fell back to Veo
        would ignore both the length asked for and the style reference — and
        would do it silently, since the generation still succeeds. */
-    expect(layOut).toMatch(/model: 'Omni Flash'/);
+    expect(layOut).toMatch(/model: 'Omni 1\.1 Flash'/);
   });
 
   it('sends it to Flow, not to a chat', () => {

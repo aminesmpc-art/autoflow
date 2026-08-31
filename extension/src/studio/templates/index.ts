@@ -83,7 +83,7 @@ const genNode = (id: string, o: GenOpts, x: number, y: number): Node => ({
     mediaType: o.mediaType || 'image',
     model: o.mediaType === 'text'
       ? ''
-      : o.model || (o.mediaType === 'video' ? 'Omni Flash' : 'Nano Banana Pro'),
+      : o.model || (o.mediaType === 'video' ? 'Omni 1.1 Flash' : 'Nano Banana Pro'),
     aspectRatio: o.aspectRatio || '9:16',
     duration: o.duration || '6s',
     creationType: 'ingredients',
@@ -630,7 +630,7 @@ export const TEMPLATES: Template[] = [
           genNode(`gv_${k}`, {
             label: `${name} Clip`, mediaType: 'video', aspectRatio: '9:16',
             // 10s clips are an Omni Flash capability
-            duration: '10s', model: 'Omni Flash',
+            duration: '10s', model: 'Omni 1.1 Flash',
           }, 1480, 40 + y),
         ];
       }),
@@ -670,7 +670,7 @@ export const TEMPLATES: Template[] = [
             // Long takes are what makes this format satisfying, and 10s is an
             // Omni Flash capability.
             duration: '10s',
-            model: 'Omni Flash',
+            model: 'Omni 1.1 Flash',
           }, x, 200),
         ];
       }),
@@ -710,7 +710,7 @@ export const TEMPLATES: Template[] = [
             mediaType: 'video',
             aspectRatio: '9:16',
             duration: '10s',
-            model: 'Omni Flash',
+            model: 'Omni 1.1 Flash',
           }, 1040, y),
         ];
       }),

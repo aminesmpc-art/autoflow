@@ -17,7 +17,10 @@ import {
 } from '../../types';
 import { savePromptHistory, saveRunningQueue, clearRunningQueue } from '../../shared/storage';
 import { getStudioImageFiles } from './studioImages';
-import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS, modelHasDuration } from '../../types';
+import {
+  AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS, LEGACY_MODEL_NAMES,
+  modelHasDuration, modelHasResolution,
+} from '../../types';
 
 import {
   MAX_RETRIES,
@@ -133,7 +136,9 @@ import {
  */
 /* Every model name Flow might be showing, so readSelectedModel knows a model
    label when it sees one in the composer bar. */
-const ALL_KNOWN_MODELS: readonly string[] = [...AVAILABLE_MODELS, ...AVAILABLE_IMAGE_MODELS];
+const ALL_KNOWN_MODELS: readonly string[] = [
+  ...AVAILABLE_MODELS, ...AVAILABLE_IMAGE_MODELS, ...LEGACY_MODEL_NAMES,
+];
 // Lets the selectors tell the model button from the settings chip.
 setKnownModelNames(ALL_KNOWN_MODELS);
 
@@ -144,6 +149,28 @@ function normalizeForModelMatch(text: string): string {
     .replace(/[^a-z0-9.\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * The same name with version numbers taken out: "omni 1.1 flash" -> "omni flash".
+ *
+ * Flow renamed "Omni Flash" to "Omni 1.1 Flash" and every saved workflow,
+ * template and default in this codebase still said the old one. The version
+ * lands in the MIDDLE of the name, so neither test in setModel could see it:
+ * "omni 1.1 flash" does not equal "omni flash" and does not contain it either.
+ * Both tiers returned nothing, `loose.length` was 0 so even the ambiguity
+ * warning stayed quiet, and the model was simply never selected — the run went
+ * ahead on whatever Flow had last, which is what "Generation failed" was.
+ *
+ * Used only as a last tier, after exact and substring have both failed, and
+ * only when it identifies exactly one model. That ordering is what keeps it
+ * safe: stripping versions makes "Nano Banana 2" into "nano banana", which is
+ * a prefix of two other image models — but an exact match for those exists, so
+ * this tier is never consulted for them. It runs for one situation only, the
+ * one that just happened: Flow bumped a version and nothing else changed.
+ */
+function stripModelVersion(norm: string): string {
+  return norm.replace(/\b\d+(\.\d+)*\b/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 let globalRunLock = false;
@@ -1790,6 +1817,25 @@ export class AutomationEngine {
       if (this.stopped) return false;
     }
 
+    /* 4c. Render resolution (360p/720p), which Flow added to the composer
+       beside the length. Gated the same way as duration and for the same
+       reason: the Veo panels have no such row, so asking there searches for a
+       control that cannot exist and logs the miss as a warning — which reads
+       as a failed click rather than "this model does not offer it".
+
+       The labels are numeric and identical in every language, so unlike the
+       tabs around them they need no entry in flowStrings. */
+    if (settings.mediaType !== 'image' && settings.renderResolution) {
+      if (modelHasResolution(settings.model)) {
+        await applyMenuItem(
+          settings.renderResolution, `Resolution: ${settings.renderResolution}`);
+      } else {
+        this.log('info',
+          `${settings.model} has no resolution setting — Flow picks it`);
+      }
+      if (this.stopped) return false;
+    }
+
     // 6. Ensure critical toggles are ON
     await this.ensureToggles();
 
@@ -2474,7 +2520,21 @@ export class AutomationEngine {
 
       const exact = candidates.filter((c) => c.norm === targetNorm);
       const loose = candidates.filter((c) => c.norm.includes(targetNorm));
-      const chosen = exact[0] || (loose.length === 1 ? loose[0] : null);
+      /* Last tier: same name, different version number. Equality on the
+         stripped form rather than substring, so "nano banana" cannot claim
+         "nano banana pro". See stripModelVersion. */
+      const targetBare = stripModelVersion(targetNorm);
+      const bare = targetBare
+        ? candidates.filter((c) => stripModelVersion(c.norm) === targetBare)
+        : [];
+      const chosen = exact[0]
+        || (loose.length === 1 ? loose[0] : null)
+        || (bare.length === 1 ? bare[0] : null);
+
+      if (chosen && !exact.length && !loose.length) {
+        this.log('info',
+          `"${modelName}" resolved to "${chosen.text.trim()}" — same model, new version number.`);
+      }
 
       if (!chosen && loose.length > 1) {
         // Refusing beats guessing: picking the wrong one here produces a whole

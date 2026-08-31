@@ -9,7 +9,9 @@ import { memo, useCallback, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { Lightbox } from '../components/Lightbox';
 import { useStudioStore } from '../store';
-import { AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS, modelHasDuration } from '../../types';
+import {
+  AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS, modelHasDuration, modelHasResolution,
+} from '../../types';
 import { getAskPresets, DEFAULT_PRESET_ID, findPreset } from '../presets';
 import { portsFor, retargetImagePorts } from '../templates/validate';
 import { CHAT_PLATFORMS } from '../engine/WorkflowRunner';
@@ -57,6 +59,11 @@ const GEMINI_VIDEO_RATIOS = ['9:16', '16:9'];
 /* Flow offers 10s as well — omitting it meant the longest clip length was
    simply unreachable from Studio. */
 const DURATIONS = ['4s', '6s', '8s', '10s'];
+
+/* Flow's composer offers these two and nothing else. 720p is its own default
+   and the one that matches what the rest of the pipeline expects, so it is the
+   default here too — 360p is a deliberate choice to spend fewer credits. */
+const RESOLUTIONS = ['360p', '720p'];
 
 /** CSS aspect-ratio for the media area, so the node takes the shape of its output */
 function ratioToCss(ratio: string): string {
@@ -148,6 +155,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
      same question as "is this Flow". Everything Flow-specific below — the
      model list, Frames mode — still checks the platform rather than this. */
   const isGrok = platform === 'grok';
+  const isFlow = platform === 'flow';
   /* Gemini's /videos route generates clips, so "is this a clip" is no longer
      the same question as "is this Flow or Imagine". */
   const isGemini = platform === 'gemini';
@@ -492,6 +500,41 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                         onClick={() => set('duration', d)}
                       >
                         {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Render resolution, which Flow added to the composer beside
+                  the length. Three things it is deliberately NOT:
+
+                  - not the download resolution in Settings (VideoResolution:
+                    'Original (720p)', '1080p Upscaled', '4K'). That one is
+                    picked after generating and only changes the file on disk;
+                    this one is picked before, changes what the model produces,
+                    and costs different credits.
+                  - not Grok's `resolution`, which is 480p/720p/1080p and has
+                    its own radio group in GrokSettings. Sharing that field
+                    would mean a node configured for Grok at 1080p carries an
+                    impossible value into Flow, so this has its own.
+                  - not offered on the Veo panels, which have no such row —
+                    same rule as Length, and for the same reason.
+
+                  Flow only, because the enclosing block is merely !isChatGPT
+                  and so also covers Grok and Gemini. */}
+              {isFlow && isVideo && modelHasResolution(nodeData.model || models[0]) && (
+                <div className="sn-field sn-field--wide" title="Resolution Flow renders at — 360p costs fewer credits">
+                  <span className="sn-field__label">Resolution</span>
+                  <div className="sn-seg nodrag">
+                    {RESOLUTIONS.map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        className={`sn-seg__btn ${(nodeData.renderResolution || '720p') === r ? 'sn-seg__btn--on' : ''}`}
+                        onClick={() => set('renderResolution', r)}
+                      >
+                        {r}
                       </button>
                     ))}
                   </div>

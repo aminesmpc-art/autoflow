@@ -39,7 +39,7 @@ const PLATFORM_NOTES = [
   '- "flow"    Google Flow (Veo / Omni). The premier platform for video generation.',
   '            Best physical motion, realistic dynamics, and the only platform that',
   '            can interpolate between two stills (startFrame & endFrame match cuts).',
-  '            Models: Omni Flash (supports 10s clips), Veo 3.1 (Lite, Fast, Quality).',
+  '            Models: Omni 1.1 Flash (supports 10s clips), Veo 3.1 (Lite, Fast, Quality).',
   '            Default choice for all standard AI video generations.',
   '- "grok"    Grok Imagine. Ultra-fast stills and short video clips (6s, 10s, 15s).',
   '            Exclusive capability: "extend" nodes can lengthen existing clips up to',

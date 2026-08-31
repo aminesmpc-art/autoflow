@@ -1137,12 +1137,14 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
          attachFrameImages exists — but Studio pinned this to 'ingredients',
          so the whole mode was unreachable from a node. */
       creationType: config.creationType === 'frames' ? 'frames' : 'ingredients',
-      model: isImage ? 'Omni Flash' : (config.model || 'Omni Flash'),
+      model: isImage ? 'Omni 1.1 Flash' : (config.model || 'Omni 1.1 Flash'),
       orientation: (config.aspectRatio === '9:16' || config.aspectRatio === '3:4') ? 'portrait' : 'landscape',
       generations: 1,
       // Honour the node's duration — this was pinned to '8s', so every
       // Studio video ran 8s no matter what the node's dropdown said.
       duration: (config.duration || '6s'),
+      // 720p is Flow's own default; 360p is a deliberate cheaper choice.
+      renderResolution: (config.renderResolution || '720p'),
       /* The node's voice, if the shot has a character to give it to.
          Pinned to 'none' since Studio was written, so the whole feature —
          built, working, and shipping in the original extension — was

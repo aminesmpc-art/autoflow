@@ -209,6 +209,9 @@ describe('opening an older frames workflow', () => {
    logged the missing menu item as a warning that read like a failed click. */
 describe('which models have a duration', () => {
   it('knows Omni does', () => {
+    expect(modelHasDuration('Omni 1.1 Flash')).toBe(true);
+    /* The name Flow used before the rename. Saved workflows still carry
+       it, so it has to keep answering. */
     expect(modelHasDuration('Omni Flash')).toBe(true);
   });
 
@@ -231,7 +234,7 @@ describe('which models have a duration', () => {
     for (const m of AVAILABLE_MODELS) {
       expect(typeof modelHasDuration(m)).toBe('boolean');
     }
-    expect(AVAILABLE_MODELS.filter(modelHasDuration)).toEqual(['Omni Flash']);
+    expect(AVAILABLE_MODELS.filter(modelHasDuration)).toEqual(['Omni 1.1 Flash']);
   });
 });
 

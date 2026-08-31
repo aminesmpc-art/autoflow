@@ -179,7 +179,7 @@ describe('ASMR styrofoam carving chain', () => {
     for (const g of tpl.nodes.filter((n) => (n.data as any).type === 'generate')) {
       expect((g.data as any).duration).toBe('10s');
       expect((g.data as any).aspectRatio).toBe('9:16');
-      expect((g.data as any).model).toBe('Omni Flash');
+      expect((g.data as any).model).toBe('Omni 1.1 Flash');
     }
   });
 
