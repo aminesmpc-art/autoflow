@@ -44,10 +44,8 @@ describe('the CDP domains it enables', () => {
   it('enables DOM before anything asks the DOM agent for a node', () => {
     const enable = SRC.indexOf("'DOM.enable'");
     const setFiles = SRC.indexOf("'DOM.setFileInputFiles'");
-    const query = SRC.indexOf("'DOM.querySelector'");
     expect(enable).toBeGreaterThan(-1);
     expect(setFiles).toBeGreaterThan(enable);
-    expect(query).toBeGreaterThan(enable);
   });
 });
 
@@ -62,8 +60,13 @@ describe('the direct route', () => {
   it('pierces shadow roots, which Flow\'s dialog uses', () => {
     const fn = /async function trySetFilesDirectly\([\s\S]*?\n\}/.exec(SRC) as RegExpExecArray;
     expect(fn).not.toBeNull();
-    expect(fn[0]).toMatch(/pierce: true/);
-    expect(fn[0]).toMatch(/selector: 'input\[type="file"\]'/);
+    /* This used DOM.querySelector with pierce:true. Moving to Runtime.evaluate
+       for the accept check dropped that silently, so the walker earns it back
+       explicitly — and both steps call the SAME collector, so the input that
+       was surveyed is the input that receives the files. */
+    expect(fn[0]).toMatch(/el\.shadowRoot/);
+    expect(fn[0]).toMatch(/window\.__afFileInputs = function/);
+    expect((fn[0].match(/window\.__afFileInputs\(\)/g) || []).length).toBe(2);
   });
 
   it('falls back rather than failing when there is no input yet', () => {

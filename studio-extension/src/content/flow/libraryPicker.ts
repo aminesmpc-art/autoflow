@@ -134,11 +134,52 @@ export async function openMediaDialog(deps: Deps = {}): Promise<{ ok: true } | {
   });
   if (plus) { press(plus); await sleep(step); }
 
-  const videos = Array.from(doc.querySelectorAll<HTMLElement>('button,[role="menuitem"],div,span'))
-    .find((e) => {
-      const text = (e.textContent || '').trim();
-      return text.includes('videocam') && matchesFlowText(text, 'video');
-    });
+  /* Every element whose text carries the videocam ligature AND a word for
+     video — then the most specific one, not the first in document order.
+
+     This used to take the first match, and the search includes div and span,
+     so an ANCESTOR always won: a wrapper whose textContent happens to contain
+     "videocam" and "Videos" appears before the tab it contains. Pressing a
+     layout div does nothing, the Images tab stayed selected, and the upload
+     went on to deliver mp4s into the image picker — which answered
+     "Unsupported image format. Please upload a: .heif, .heic, .png, .jpg,
+     .webp, .gif", once per part, blaming the file rather than the tab.
+
+     Interactive elements first, then the shortest text, which is the tab
+     itself rather than anything wrapping it. */
+  const videoTabs = Array.from(doc.querySelectorAll<HTMLElement>(
+    'button,[role="tab"],[role="menuitem"],[role="option"],div,span',
+  )).filter((e) => {
+    const text = (e.textContent || '').trim();
+    return text.includes('videocam') && matchesFlowText(text, 'video');
+  });
+
+  /* Ranked, never filtered.
+
+     Visibility was a hard filter for one revision, and that is wrong twice
+     over: a zero rect means "hidden" in a browser but "no layout engine"
+     everywhere else, so it threw away the right answer whenever rects were
+     unavailable. Preferring beats excluding — the visible interactive tab
+     still wins when there is one, and when nothing reports a size the best
+     remaining match is still pressed rather than nothing at all. */
+  const visible = (e: HTMLElement): number => {
+    const r = e.getBoundingClientRect();
+    return (r.width > 0 && r.height > 0) ? 0 : 1;
+  };
+  const interactive = (e: HTMLElement): number => {
+    const role = e.getAttribute('role') || '';
+    return (e.tagName.toLowerCase() === 'button'
+      || ['tab', 'menuitem', 'option'].includes(role)) ? 0 : 1;
+  };
+  const anyVisible = videoTabs.some((e) => visible(e) === 0);
+
+  videoTabs.sort((a, b) => (
+    (anyVisible ? visible(a) - visible(b) : 0)
+    || interactive(a) - interactive(b)
+    || (a.textContent || '').trim().length - (b.textContent || '').trim().length
+  ));
+
+  const videos = videoTabs[0];
   if (!videos) return { ok: false, reason: 'the Videos tab is not where it was — Flow has changed' };
   press(videos);
   await sleep(step);

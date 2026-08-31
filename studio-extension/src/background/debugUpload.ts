@@ -517,28 +517,120 @@ async function waitForContentScript(tabId: number, timeoutMs: number): Promise<v
 /**
  * Put the files straight onto Flow's file input, with no chooser involved.
  *
- * Returns why it could not rather than throwing, because every reason here is
- * a reason to fall back rather than to fail: the input may not exist until the
- * picker is opened, and that is normal rather than broken.
+ * ── The input has to be the RIGHT one ─────────────────────────────────────
+ *
+ * The first version of this took document.querySelector('input[type=file]'),
+ * which is the FIRST file input on the page. Flow has more than one, and the
+ * first is the image picker — so three mp4 parts went into it and Flow
+ * answered, three times:
+ *
+ *   "Unsupported image format. Please upload a: .heif, .heic, .png, .jpg,
+ *    .webp, .gif"
+ *
+ * which is that input's own accept list read back. Everything else had worked:
+ * the banner, the button, the delivery. The files simply went to the wrong
+ * place, and it looked like a Flow problem rather than ours.
+ *
+ * The chooser path below does not have this failure by construction, because
+ * Page.fileChooserOpened names the input that actually opened. So this route
+ * now has to earn its shortcut: it runs only when exactly one input admits
+ * video, and hands back to the chooser whenever that is ambiguous.
+ *
+ * Returns why it could not rather than throwing — every reason here is a
+ * reason to fall back, not to fail.
  */
 async function trySetFilesDirectly(
   target: chrome.debugger.Debuggee,
   filePaths: string[],
 ): Promise<{ ok: boolean; why?: string }> {
   try {
-    const doc: any = await sendCDP(target, 'DOM.getDocument', { depth: -1, pierce: true });
-    const rootId = doc?.root?.nodeId;
-    if (!rootId) return { ok: false, why: 'no document' };
+    /* Collect file inputs across shadow roots, once, into a function both
+       steps below call.
 
-    /* pierce:true above walks shadow roots, which Flow's dialog uses. */
-    const found: any = await sendCDP(target, 'DOM.querySelector', {
-      nodeId: rootId,
-      selector: 'input[type="file"]',
+       querySelectorAll does not cross a shadow boundary. The first version of
+       this used DOM.querySelector with pierce:true, which does — moving to
+       Runtime.evaluate for the accept check quietly dropped that, and an input
+       inside a shadow root would simply have gone unseen. Losing it is safe
+       (nothing is found, so the chooser path runs) but it is a capability, and
+       silently giving one up is how a route stops working for a reason nobody
+       can see. */
+    await sendCDP(target, 'Runtime.evaluate', {
+      expression: `window.__afFileInputs = function () {
+        var out = [], seen = new Set();
+        (function walk(root) {
+          if (!root || seen.has(root)) return;
+          seen.add(root);
+          var all = root.querySelectorAll('*');
+          for (var i = 0; i < all.length; i++) {
+            var el = all[i];
+            if (el.tagName === 'INPUT' && el.type === 'file') out.push(el);
+            if (el.shadowRoot) walk(el.shadowRoot);
+          }
+        })(document);
+        return out;
+      };`,
     });
-    const nodeId = found?.nodeId;
-    if (!nodeId) return { ok: false, why: 'no file input on the page yet' };
 
-    await sendCDP(target, 'DOM.setFileInputFiles', { nodeId, files: filePaths });
+    /* What file inputs exist, and what each will accept. Reported before
+       anything is set, so a wrong-tab dialog names itself. */
+    const survey: any = await sendCDP(target, 'Runtime.evaluate', {
+      expression: `(function () {
+        var ins = window.__afFileInputs();
+        var out = ins.map(function (i) {
+          var a = (i.getAttribute('accept') || '').toLowerCase();
+          return {
+            accept: a,
+            /* No accept at all takes anything. */
+            video: !a || a === '*/*' || a.indexOf('video') !== -1 || a.indexOf('mp4') !== -1
+          };
+        });
+        return JSON.stringify({
+          total: out.length,
+          video: out.filter(function (o) { return o.video; }).length,
+          accepts: out.map(function (o) { return o.accept || '(any)'; })
+        });
+      })()`,
+      returnByValue: true,
+    });
+
+    let seen: any = {};
+    try { seen = JSON.parse(survey?.result?.value || '{}'); } catch { /* below */ }
+
+    if (!seen.total) return { ok: false, why: 'no file input on the page yet' };
+
+    if (seen.video !== 1) {
+      /* Zero means every input on screen is image-only, which is what an
+         Images-tab dialog looks like — worth saying, because the chooser path
+         would deliver into the same wrong input and get the same three
+         rejections. More than one is simply ambiguous, and guessing which is
+         exactly the mistake this comment exists about. */
+      const why = seen.video === 0
+        ? `no input here accepts video (found ${seen.total} image-only: `
+          + `${(seen.accepts || []).join(' ; ')}) — the dialog may be on the Images tab`
+        : `${seen.video} inputs accept video, too ambiguous to pick`;
+      return { ok: false, why };
+    }
+
+    /* The one video-capable input, by objectId so no node lookup can drift
+       between the survey and the set. */
+    const handle: any = await sendCDP(target, 'Runtime.evaluate', {
+      expression: `(function () {
+        var ins = window.__afFileInputs();
+        for (var i = 0; i < ins.length; i++) {
+          var a = (ins[i].getAttribute('accept') || '').toLowerCase();
+          if (!a || a === '*/*' || a.indexOf('video') !== -1 || a.indexOf('mp4') !== -1) {
+            return ins[i];
+          }
+        }
+        return null;
+      })()`,
+      returnByValue: false,
+    });
+
+    const objectId = handle?.result?.objectId;
+    if (!objectId) return { ok: false, why: 'could not take a handle on the video input' };
+
+    await sendCDP(target, 'DOM.setFileInputFiles', { objectId, files: filePaths });
     return { ok: true };
   } catch (e: any) {
     return { ok: false, why: e?.message || String(e) };
