@@ -42,8 +42,11 @@ export const OMNI_MAX_SEC = 10;
    split slightly less even. */
 const RUNT_SEC = 2;
 
-/* How far a boundary may move to find a pause. Beyond this it is no longer
-   the boundary that was planned, and evenness matters more than the join. */
+/* The FLOOR on how far a boundary may move to find a pause; the real window is
+   half the even spacing, computed per split. A flat value was the whole
+   allowance once, and on a clip with room to spare it refused a pause 1.44s
+   away and put the join inside a word instead. Evenness is worth less than a
+   join a listener does not hear. */
 const SNAP_WINDOW_SEC = 1.2;
 
 export interface OmniChunk {
@@ -112,12 +115,60 @@ export function planOmniChunks(
     }];
   }
 
-  /* The fewest pieces that fit, then spread evenly across them. Evenness is
-     the goal, not filling each piece to the cap — see the header. */
-  const count = Math.ceil(runtime / cap);
+  const candidates = pauses(phrases);
+
+  /* ── How many pieces ──────────────────────────────────────────────────
+     The fewest that fit is the cheapest answer and sometimes an impossible
+     one. A 39.57s cut needs four pieces of at most 10s, so the four lengths
+     share 40 − 39.57 = 0.43s of give BETWEEN THEM. Every boundary is pinned to
+     within a fraction of a second of the even split, a pause has to fall
+     inside that sliver to be usable, and when none does the result is an even
+     split with every join inside a word:
+
+         4 pieces: 9.9 + 9.9 + 9.9 + 9.9s — 3 joins land mid-sentence
+
+     which is what the splitter exists to prevent. One more piece turns 0.43s
+     of slack into 10.43s — the difference between hunting for a pause and
+     having a choice of them.
+
+     So: try the fewest, and only buy another piece if it actually pays for
+     clean joins. Fewest still wins when it already joins cleanly, and one
+     extra is the whole budget — a clean join is worth an extra upload, not
+     six. */
+  const fewest = Math.ceil(runtime / cap);
+  let edges = edgesFor(fewest);
+  if (countCutting(edges) > 0) {
+    const roomier = edgesFor(fewest + 1);
+    if (countCutting(roomier) < countCutting(edges)) edges = roomier;
+  }
+
+  /** How many joins of a set of edges fall inside somebody speaking. */
+  function countCutting(within: number[]): number {
+    let n = 0;
+    for (let i = 1; i < within.length - 1; i++) {
+      if (insideSpeech(within[i], phrases)) n++;
+    }
+    return n;
+  }
+
+  /** The boundaries for a given number of pieces, cap enforced. */
+  function edgesFor(count: number): number[] {
   const even = runtime / count;
 
-  const candidates = pauses(phrases);
+  /* How far a join may move to find a pause.
+   *
+   * A flat 1.2s was too mean once there was room to spend. On the reported
+   * clip the fourth join wanted a pause 1.44s away, with every piece still
+   * comfortably under the cap — the search refused to look, and the join
+   * landed inside a word for the sake of a tidier arithmetic.
+   *
+   * Half the even spacing instead, never narrower than the old constant.
+   * Drifting cannot produce an illegal split: the cap guards below reject any
+   * position that would, so the only thing given up is evenness — and Flow
+   * does not care how even the pieces are, while a listener hears every join
+   * that lands mid-word. */
+  const snap = Math.max(SNAP_WINDOW_SEC, even / 2);
+
   const boundaries: number[] = [];
 
   for (let i = 1; i < count; i++) {
@@ -136,7 +187,7 @@ export function planOmniChunks(
     let bestGap = Infinity;
     for (const pause of candidates) {
       const drift = Math.abs(pause - want);
-      if (drift > SNAP_WINDOW_SEC || drift >= bestGap) continue;
+      if (drift > snap || drift >= bestGap) continue;
       if (pause - previous > cap) continue;            // the piece before it
       if (runtime - pause > cap * remaining) continue; // everything after it
       if (pause <= previous + RUNT_SEC) continue;
@@ -176,6 +227,9 @@ export function planOmniChunks(
     }
   }
 
+  return edges;
+  }
+
   const of = edges.length - 1;
   const chunks: OmniChunk[] = [];
   for (let i = 0; i < of; i++) {
@@ -203,7 +257,9 @@ export function describeChunks(chunks: OmniChunk[]): string {
   const lengths = chunks.map((c) => c.seconds.toFixed(1)).join(' + ');
   const rough = chunks.filter((c) => c.cutsSpeech).length;
   return `${chunks.length} pieces: ${lengths}s`
-    + (rough ? ` — ${rough} join${rough === 1 ? '' : 's'} lands mid-sentence` : ' — every join is in a pause');
+    + (rough
+      ? ` — ${rough} join${rough === 1 ? '' : 's'} ${rough === 1 ? 'lands' : 'land'} mid-sentence`
+      : ' — every join is in a pause');
 }
 
 /* ────────────────────────────────────────────────────────────────────────
