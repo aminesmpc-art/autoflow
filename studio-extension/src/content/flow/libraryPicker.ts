@@ -116,6 +116,35 @@ export async function openMediaDialog(deps: Deps = {}): Promise<{ ok: true } | {
   const doc = deps.doc || document;
   const step = deps.step ?? 700;
 
+  /* ── Already there? ──
+     Calling this twice must not close what the first call opened. */
+  if (uploadButtons(doc).length) return { ok: true };
+
+  /* ── The library page's own entry: "Add Media" ──
+     The composer route below (Create -> + -> Videos) is the one that was
+     written, and it is right when the composer is on screen. On the project
+     media page there is no composer row and no bare "+", only
+
+         <button><i class="google-symbols">add</i>Add Media</button>
+
+     and the run reported the whole toolbar with no upload button in it:
+
+         arrow_backGo Back | searchSearch | addAdd Media | add_2Create | …
+
+     The `plus` lookup below deliberately EXCLUDES this button, by size and
+     position, because in the composer "add" alone would match it by mistake.
+     That exclusion is right there and wrong here, so this is tried first and
+     only kept if it actually produced an upload control. */
+  const addMedia = Array.from(doc.querySelectorAll<HTMLElement>('button')).find((b) => {
+    const text = (b.textContent || '').trim();
+    return text.toLowerCase().includes('add') && hasMediaWord(text);
+  });
+  if (addMedia) {
+    press(addMedia);
+    await sleep(step);
+    if (uploadButtons(doc).length) return { ok: true };
+  }
+
   const composer = Array.from(doc.querySelectorAll<HTMLElement>('button'))
     .find((b) => {
       const text = (b.textContent || '').trim();
@@ -180,48 +209,87 @@ export async function openMediaDialog(deps: Deps = {}): Promise<{ ok: true } | {
   ));
 
   const videos = videoTabs[0];
-  if (!videos) return { ok: false, reason: 'the Videos tab is not where it was — Flow has changed' };
+  if (!videos) {
+    return {
+      ok: false,
+      reason: 'the Videos tab is not where it was — Flow has changed'
+        + buttonsOnPage(doc),
+    };
+  }
   press(videos);
   await sleep(step);
 
-  if (!mediaDialogOpen(doc)) return { ok: false, reason: 'the media dialog did not open' };
+  if (!mediaDialogOpen(doc)) {
+    return {
+      ok: false,
+      reason: `the media dialog did not open${buttonsOnPage(doc)}`,
+    };
+  }
   return { ok: true };
+}
+
+/**
+ * What was on screen when it gave up.
+ *
+ * Every failure out of openMediaDialog carries this. The first run without it
+ * cost a whole round trip to establish that the dialog had simply never
+ * opened — the labels say that at a glance, and they said it: the reply was
+ * the project toolbar, "addAdd Media" and "add_2Create" among them, with no
+ * upload control anywhere.
+ */
+function buttonsOnPage(doc: Document): string {
+  const labels = Array.from(doc.querySelectorAll<HTMLElement>('button'))
+    .map((b) => (b.textContent || '').trim())
+    .filter(Boolean)
+    .slice(0, 24)
+    .join(' | ');
+  return labels ? `. Buttons on the page: ${labels}` : '';
+}
+
+/** Words for "media", for the Add Media entry point and the Upload button. */
+const MEDIA_WORDS = [
+  'media', 'média', 'medios', 'mídia', 'medien', 'multimedia', 'multimédia',
+  'メディア', '미디어', '媒体', 'وسائط',
+];
+
+const hasMediaWord = (text: string): boolean => {
+  const low = text.toLowerCase();
+  return MEDIA_WORDS.some((w) => low.includes(w));
+};
+
+/** Every visible button carrying an upload verb — the dialog's own control. */
+export function uploadButtons(doc: Document = document): HTMLElement[] {
+  return Array.from(doc.querySelectorAll<HTMLElement>('button')).filter((b) => {
+    const r = b.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return false;
+    const text = (b.textContent || '').trim();
+    /* The Material ligature renders as the text "upload" beside the label and
+       is the same in every language, so it doubles as the anchor. */
+    return text.toLowerCase().includes('upload') || matchesFlowText(text, 'upload');
+  });
 }
 
 /**
  * Is Flow's media dialog on screen?
  *
- * Not "is there a [role=\"dialog\"]". Flow's picker is styled-components all
- * the way down and carries no roles or test ids — its Upload button is
+ * Two signals, and deliberately not a third. A [role="dialog"] is the best
+ * answer when it is there, and an Upload button is the thing this is looking
+ * for anyway.
  *
- *   <button class="sc-16c4830a-1 dnFqQq …">
- *     <i class="google-symbols">upload</i>Upload media
- *     <div data-type="button-overlay"></div>
- *   </button>
+ * What is NOT a signal is a search box. That was tried, and it matched Flow's
+ * own library search on the main page — so this reported an open dialog for a
+ * page that had none, the upload went ahead, and the CDP lookup then reported
+ * "no upload button on the page" while listing the whole project toolbar:
  *
- * so a role check is a guess about markup that was never verified. When it is
- * wrong this reported "the media dialog did not open" for a dialog that was
- * open on screen, and the debugger upload gave up before it ever attached.
+ *   arrow_backGo Back | searchSearch | addAdd Media | add_2Create | …
  *
- * The role is still the first and best signal when it is there. What follows
- * are the things the dialog demonstrably contains: its asset search box, and
- * its Upload button, matched by the translated verb and by the Material
- * ligature "upload", which renders as text and is the same in every language.
+ * A false positive here is worse than a false negative: "the dialog did not
+ * open" is true and actionable, while proceeding wastes the debugger attach
+ * and blames the step after the one that actually failed.
  */
 export function mediaDialogOpen(doc: Document = document): boolean {
   if (doc.querySelector('[role="dialog"], mat-dialog-container')) return true;
-
-  const search = doc.querySelector<HTMLElement>(placeholderSelector('search'));
-  if (search && search.getBoundingClientRect().width > 0) return true;
-
-  return Array.from(doc.querySelectorAll<HTMLElement>('button')).some((b) => {
-    const r = b.getBoundingClientRect();
-    if (!r.width || !r.height) return false;
-    const text = (b.textContent || '').trim();
-    /* The ligature makes this "uploadUpload media" — one word of which is
-       language-independent. */
-    return text.toLowerCase().includes('upload') || matchesFlowText(text, 'upload');
-  });
+  return uploadButtons(doc).length > 0;
 }
 
 /**

@@ -114,6 +114,10 @@ describe('choosing the input to upload into', () => {
 describe('selecting the Videos tab', () => {
   /* Flow's tab, with the Material ligature rendering as text beside the word,
      wrapped in the kind of layout div that used to win. */
+  /* No Upload button in the starting DOM on purpose: openMediaDialog returns
+     immediately when one is already visible — correctly, since a second call
+     must not close what the first opened — and the tab would never be
+     reached. Pressing Videos is what reveals it, as on the real page. */
   const DIALOG = `
     <div id="wrap">
       <div id="tabs">
@@ -121,12 +125,22 @@ describe('selecting the Videos tab', () => {
         <button id="videos"><i class="google-symbols">videocam</i>Videos</button>
       </div>
       <input type="file" accept="video/mp4">
-      <button id="up"><i class="google-symbols">upload</i>Upload media</button>
+      <div id="revealed"></div>
     </div>`;
+
+  /** What pressing the Videos tab does on the real page. */
+  function revealUploadOnClick(id: string): void {
+    document.getElementById(id)?.addEventListener('click', () => {
+      const slot = document.getElementById('revealed') as HTMLElement;
+      slot.innerHTML = '<button id="up"><i class="google-symbols">upload</i>Upload media</button>';
+      box(slot.firstElementChild as HTMLElement);
+    });
+  }
 
   beforeEach(() => {
     document.body.innerHTML = DIALOG;
     boxAll('button, input, div');
+    revealUploadOnClick('videos');
   });
 
   it('presses the tab, not the div that contains it', async () => {
@@ -171,9 +185,10 @@ describe('selecting the Videos tab', () => {
           <div id="tab" role="tab"><i class="google-symbols">videocam</i>Videos</div>
         </div>
         <input type="file" accept="video/mp4">
-        <button id="up"><i class="google-symbols">upload</i>Upload media</button>
+        <div id="revealed"></div>
       </div>`;
     boxAll('button, input, div');
+    revealUploadOnClick('tab');
 
     const targets: string[] = [];
     document.addEventListener('click', (e) => {
@@ -220,5 +235,84 @@ describe('the shipped code matches the rules above', () => {
     const filter = /\)\)\.filter\(\(e\) => \{[\s\S]*?\}\);/.exec(PICKER) as RegExpExecArray;
     expect(filter).not.toBeNull();
     expect(filter[0]).not.toMatch(/getBoundingClientRect/);
+  });
+});
+
+describe('the project media page, as it was reported', () => {
+  /* The toolbar the run listed when it could not find an upload button. There
+     is no composer row and no bare "+" — the only way in is "Add Media". */
+  const TOOLBAR = [
+    'arrow_backGo Back', 'more_vertMore options', 'searchSearch',
+    'filter_listSort & Filter', 'addAdd Media', 'helpProduct Help',
+    'settings_2View Settings', 'dashboardAll Media',
+    'accessibility_newCharacters', 'movieView scenes', 'apps_spark_2Tools',
+    'deleteView Trash', 'left_panel_openExpand', 'add_2Create',
+  ];
+
+  function buildPage(): void {
+    document.body.innerHTML = `
+      <input placeholder="Search assets" />
+      <div id="bar">${TOOLBAR.map((t, i) => `<button id="b${i}">${t}</button>`).join('')}</div>
+      <div id="revealed"></div>`;
+    boxAll('button, input, div');
+  }
+
+  it('does not call the page a dialog just because it has a search box', async () => {
+    /* The regression that turned a true "the dialog did not open" into a run
+       that attached the debugger and failed one step later. */
+    buildPage();
+    const opened = await openMediaDialog({ doc: document, step: 0 });
+    expect(opened.ok).toBe(false);
+  });
+
+  it('names the toolbar when it gives up, instead of just saying no', async () => {
+    buildPage();
+    const opened = await openMediaDialog({ doc: document, step: 0 });
+    expect(opened.ok === false && /Buttons on the page/.test(opened.reason)).toBe(true);
+    expect(opened.ok === false && /addAdd Media/.test(opened.reason)).toBe(true);
+  });
+
+  it('presses Add Media, which is the only way in on this page', async () => {
+    buildPage();
+    const addMedia = TOOLBAR.indexOf('addAdd Media');
+    document.getElementById(`b${addMedia}`)?.addEventListener('click', () => {
+      const slot = document.getElementById('revealed') as HTMLElement;
+      slot.innerHTML =
+        '<button id="up"><i class="google-symbols">upload</i>Upload media</button>';
+      box(slot.firstElementChild as HTMLElement);
+    });
+
+    const opened = await openMediaDialog({ doc: document, step: 0 });
+    expect(opened.ok).toBe(true);
+    expect(document.getElementById('up')).not.toBeNull();
+  });
+
+  it('is not fooled by "All Media", which opens nothing', async () => {
+    /* dashboardAll Media carries a media word but no add. Pressing it filters
+       the library and leaves the page exactly as it was. */
+    buildPage();
+    const pressed: string[] = [];
+    document.addEventListener('click', (e) => {
+      pressed.push(((e.target as HTMLElement).textContent || '').trim());
+    }, true);
+
+    await openMediaDialog({ doc: document, step: 0 });
+    expect(pressed).not.toContain('dashboardAll Media');
+  });
+
+  it('finds Add Media in French, where the label is not English', async () => {
+    document.body.innerHTML = `
+      <button id="fr"><i class="google-symbols">add</i>Ajouter un média</button>
+      <div id="revealed"></div>`;
+    boxAll('button, div');
+    document.getElementById('fr')?.addEventListener('click', () => {
+      const slot = document.getElementById('revealed') as HTMLElement;
+      slot.innerHTML =
+        '<button id="up"><i class="google-symbols">upload</i>Importer un média</button>';
+      box(slot.firstElementChild as HTMLElement);
+    });
+
+    const opened = await openMediaDialog({ doc: document, step: 0 });
+    expect(opened.ok).toBe(true);
   });
 });
