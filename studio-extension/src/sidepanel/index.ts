@@ -14,7 +14,7 @@ import './sidepanel.css';
 import {
   login, logout, isLoggedIn, getProfile,
   listCommunityTemplates, getCommunityTemplate, likeCommunityTemplate,
-  submitCommunityTemplate, getUpgradeUrl, type CommunityCard,
+  submitCommunityTemplate, getUpgradeUrl, resolveApiBase, type CommunityCard,
 } from '../shared/api';
 import { loadTemplates, refreshTemplates } from '../studio/templates/loader';
 import { BRAND_MARKS } from '../studio/components/brandMarks';
@@ -2136,6 +2136,12 @@ function wireShell(): void {
     })
     .catch(() => { /* the bundle is the floor; a failed refresh changes nothing */ });
 }
+
+/* Read the API base override before anything asks for it. A profile that
+   cannot reach the default host — see getApiBase — can be pointed elsewhere
+   from storage, and that has to be known before the first request, not after
+   it has already failed. */
+resolveApiBase().catch(() => { /* the default stands */ });
 
 boot();
 wireShell();

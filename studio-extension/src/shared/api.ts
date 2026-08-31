@@ -5,7 +5,61 @@
 
 import { AuthTokens, UserProfile, DailyUsageResponse } from '../types';
 
-const API_BASE = 'https://api.auto-flow.studio';
+const API_BASE_DEFAULT = 'https://api.auto-flow.studio';
+const API_BASE_KEY = 'autoflow_api_base';
+
+/**
+ * Where the API lives, overridable without a rebuild.
+ *
+ * The extractor base has worked this way for a long time; the Django API was
+ * the one host nailed into the bundle, and that turned out to matter.
+ *
+ * A MultiLogin profile running through a proxy could not complete a TLS
+ * handshake with api.auto-flow.studio — ERR_SSL_PROTOCOL_ERROR — while the
+ * same URL in an ordinary profile on the same machine returned a clean 405.
+ * The server was healthy from every angle: valid chain, TLS 1.2 and 1.3,
+ * correct CORS. What it could not survive was the fingerprint that profile
+ * presents, because Railway's edge sits directly in front of it with no CDN in
+ * between. Every other site in that profile worked, because every other site
+ * is behind one.
+ *
+ * The real repair is to put a CDN in front of the API. This exists so that the
+ * moment such a hostname exists — a Cloudflare-proxied record, a staging
+ * endpoint, anything — it can be pointed at from the console rather than
+ * waiting on a release:
+ *
+ *   chrome.storage.local.set({ autoflow_api_base: 'https://api2.example.com' })
+ *
+ * Cached after the first read: this is asked on every request, and a storage
+ * round trip per call would be a needless tax on the normal case.
+ */
+let apiBaseCache = '';
+
+export async function getApiBase(): Promise<string> {
+  if (apiBaseCache) return apiBaseCache;
+  try {
+    const got = await chrome.storage.local.get(API_BASE_KEY);
+    const stored = got?.[API_BASE_KEY];
+    apiBaseCache = typeof stored === 'string' && stored
+      ? stored.replace(/\/+$/, '')
+      : API_BASE_DEFAULT;
+  } catch {
+    /* No storage — a test, or a context without the extension APIs. */
+    apiBaseCache = API_BASE_DEFAULT;
+  }
+  return apiBaseCache;
+}
+
+/* Kept so the many call sites that build `${API_BASE}${path}` keep working.
+   It is the default until getApiBase() has resolved an override, and
+   resolveApiBase() below is what replaces it at start-up. */
+let API_BASE = API_BASE_DEFAULT;
+
+/** Read the override once, early, so every later call uses it. */
+export async function resolveApiBase(): Promise<string> {
+  API_BASE = await getApiBase();
+  return API_BASE;
+}
 
 /* The video-reading service.
    A separate host because it does a different job: the Django API holds
