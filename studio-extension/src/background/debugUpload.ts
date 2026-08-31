@@ -180,11 +180,26 @@ export async function uploadViaFileChooser(
       expression: `(function () {
         var UP = ${JSON.stringify(UPLOAD_WORDS)};
         var MED = ${JSON.stringify(MEDIA_WORDS)};
+        /* Search the dialog when there IS one, the document when there is
+           not. Requiring [role="dialog"] was a guess about markup nobody had
+           checked: the Upload button itself is
+
+             <button class="sc-16c4830a-1 dnFqQq …">
+               <i class="google-symbols">upload</i>Upload media
+               <div data-type="button-overlay"></div>
+             </button>
+
+           — styled-components hashes, no role, no data-test-id, on the button
+           and on everything around it. So "no dialog found" was returned for a
+           dialog that was open on screen, and the message blamed the dialog
+           rather than the assumption. Scoping to the dialog is still preferred
+           when one exists, because it keeps the page's other upload buttons
+           out of the running. */
         var dialog = document.querySelector('[role="dialog"], mat-dialog-container');
-        if (!dialog) return JSON.stringify({ error: 'no dialog found' });
+        var scope = dialog || document;
 
         var seen = [], cands = [];
-        var btns = Array.prototype.slice.call(dialog.querySelectorAll('button'));
+        var btns = Array.prototype.slice.call(scope.querySelectorAll('button'));
         for (var i = 0; i < btns.length; i++) {
           var b = btns[i], r = b.getBoundingClientRect();
           var t = (b.textContent || '').trim();
@@ -207,7 +222,10 @@ export async function uploadViaFileChooser(
         }
 
         if (!cands.length) {
-          return JSON.stringify({ error: 'no upload button in the dialog', seen: seen });
+          return JSON.stringify({
+            error: dialog ? 'no upload button in the dialog' : 'no upload button on the page',
+            dialog: !!dialog, seen: seen
+          });
         }
         /* Prefer one that names media, then the shortest label: "Upload media"
            beats "Upload media from your computer to use as a reference". */
@@ -218,7 +236,7 @@ export async function uploadViaFileChooser(
         var p = cands[0];
         return JSON.stringify({
           x: p.x, y: p.y, w: p.w, h: p.h, label: p.label,
-          alternatives: cands.length - 1
+          alternatives: cands.length - 1, dialog: !!dialog
         });
       })()`,
       returnByValue: true,

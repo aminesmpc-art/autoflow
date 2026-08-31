@@ -143,9 +143,44 @@ export async function openMediaDialog(deps: Deps = {}): Promise<{ ok: true } | {
   press(videos);
   await sleep(step);
 
-  const dialog = doc.querySelector('[role="dialog"], mat-dialog-container');
-  if (!dialog) return { ok: false, reason: 'the media dialog did not open' };
+  if (!mediaDialogOpen(doc)) return { ok: false, reason: 'the media dialog did not open' };
   return { ok: true };
+}
+
+/**
+ * Is Flow's media dialog on screen?
+ *
+ * Not "is there a [role=\"dialog\"]". Flow's picker is styled-components all
+ * the way down and carries no roles or test ids — its Upload button is
+ *
+ *   <button class="sc-16c4830a-1 dnFqQq …">
+ *     <i class="google-symbols">upload</i>Upload media
+ *     <div data-type="button-overlay"></div>
+ *   </button>
+ *
+ * so a role check is a guess about markup that was never verified. When it is
+ * wrong this reported "the media dialog did not open" for a dialog that was
+ * open on screen, and the debugger upload gave up before it ever attached.
+ *
+ * The role is still the first and best signal when it is there. What follows
+ * are the things the dialog demonstrably contains: its asset search box, and
+ * its Upload button, matched by the translated verb and by the Material
+ * ligature "upload", which renders as text and is the same in every language.
+ */
+export function mediaDialogOpen(doc: Document = document): boolean {
+  if (doc.querySelector('[role="dialog"], mat-dialog-container')) return true;
+
+  const search = doc.querySelector<HTMLElement>(placeholderSelector('search'));
+  if (search && search.getBoundingClientRect().width > 0) return true;
+
+  return Array.from(doc.querySelectorAll<HTMLElement>('button')).some((b) => {
+    const r = b.getBoundingClientRect();
+    if (!r.width || !r.height) return false;
+    const text = (b.textContent || '').trim();
+    /* The ligature makes this "uploadUpload media" — one word of which is
+       language-independent. */
+    return text.toLowerCase().includes('upload') || matchesFlowText(text, 'upload');
+  });
 }
 
 /**
