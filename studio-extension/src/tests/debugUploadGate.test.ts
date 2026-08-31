@@ -214,7 +214,11 @@ describe('the switch the user actually sees', () => {
 
   it('sends files in the shape the module reads', () => {
     expect(CUT).toMatch(/dataUrl: await asDataUrl\(blob\)/);
-    expect(CUT).toMatch(/filename: `\$\{base\}-part/);
+    /* The name comes from partFileName now rather than a local template. Flow
+       shows an asset under its file name and drops non-ASCII instead of
+       folding it, so the pieces arrived as tlchargement_7/_8/_9 — see
+       clipPartNames.test.ts. */
+    expect(CUT).toMatch(/filename: partFileName\(/);
     expect(MODULE).toMatch(/files: Array<\{ dataUrl: string; filename: string \}>/);
   });
 });

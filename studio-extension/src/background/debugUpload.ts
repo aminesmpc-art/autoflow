@@ -50,6 +50,37 @@ export interface DebugUploadResult {
 
 const TEMP_DIR = 'autoflow-omni-temp';
 
+/* ── Making the name stick ────────────────────────────────────────────────
+ *
+ * Flow shows an uploaded asset under its FILE name, so the name written to
+ * disk is the name the user reads in their library. Four cuts arrived as
+ * tlchargement_7, _8, _9 — Chrome's localised default "telechargement (7)"
+ * with the accents stripped by Flow — because the `filename` passed to
+ * downloads.download had not been applied.
+ *
+ * onDeterminingFilename is the documented way to settle that: it fires while
+ * Chrome is choosing, and whatever is suggested wins.
+ *
+ * Two things keep it from touching anything else. It ignores every download
+ * this extension did not start, so the user's own downloads are never
+ * renamed — and it only answers while a queue is non-empty, so nothing is
+ * claimed outside an upload. The queue is FIFO and saveToDisk awaits each
+ * download before starting the next, so the name at the head is always the
+ * one being asked about.
+ */
+const wantedNames: string[] = [];
+
+if (typeof chrome !== 'undefined' && chrome.downloads?.onDeterminingFilename) {
+  chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+    if (item.byExtensionId !== chrome.runtime.id || !wantedNames.length) {
+      suggest();               // not ours, or not during an upload
+      return;
+    }
+    const want = wantedNames.shift() as string;
+    suggest({ filename: want, conflictAction: 'overwrite' });
+  });
+}
+
 /* ──────────────────────────────────────────────────────────────────────── */
 /* Saving blobs to disk                                                    */
 /* ──────────────────────────────────────────────────────────────────────── */
@@ -59,6 +90,8 @@ export async function saveToDisk(
   filename: string,
 ): Promise<{ path: string; downloadId: number } | { error: string }> {
   try {
+    /* Queued immediately before the download that will consume it. */
+    wantedNames.push(`${TEMP_DIR}/${filename}`);
     const downloadId: number = await new Promise((resolve, reject) => {
       chrome.downloads.download(
         {
@@ -68,6 +101,12 @@ export async function saveToDisk(
           saveAs: false,
         },
         (id) => {
+          if (chrome.runtime.lastError || id == null) {
+            /* No download means the queued name is never consumed, and a
+               stale head would rename the NEXT one. */
+            const at = wantedNames.indexOf(`${TEMP_DIR}/${filename}`);
+            if (at !== -1) wantedNames.splice(at, 1);
+          }
           if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
           else if (id == null) reject(new Error('download returned no id'));
           else resolve(id);
@@ -75,6 +114,17 @@ export async function saveToDisk(
       );
     });
     const path = await waitForDownload(downloadId, 15_000);
+
+    /* Read back what Chrome actually used. The whole reason this function
+       grew a listener is that the requested name was silently not applied,
+       and a silent mismatch here is the same bug wearing a different hat. */
+    const got = path.split(/[\/]/).pop() || '';
+    if (got && got !== filename) {
+      console.warn(
+        `[AutoFlow] asked for "${filename}" on disk, Chrome wrote "${got}" — `
+        + 'Flow will show the name it was written under.',
+      );
+    }
     return { path, downloadId };
   } catch (e: any) {
     return { error: `save to disk failed: ${e?.message || e}` };

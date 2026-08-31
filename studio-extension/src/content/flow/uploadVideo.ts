@@ -85,6 +85,42 @@ export function libraryName(label: string): string {
   return `${clean || 'clip'}.mp4`;
 }
 
+/**
+ * The name one piece of a split clip is written under.
+ *
+ * Flow shows an asset under its FILE name and sanitises it hard — spaces and
+ * brackets become underscores and anything non-ASCII is dropped outright. A
+ * French "telechargement (7).mp4" arrives in the library as "tlchargement_7",
+ * which is what four uploaded cuts looked like: unreadable, unsortable, and
+ * indistinguishable from each other.
+ *
+ * So the folding happens HERE, where it can be done properly, rather than
+ * being left to Flow to do badly:
+ *
+ *   - accents are folded to their base letter (NFD, then drop the combining
+ *     marks) so "Téléchargement" becomes "Telechargement" and not "Tlchargement"
+ *   - what remains is reduced to word characters and hyphens
+ *   - the part number is spelled out, because "part 2 of 4" is the one thing
+ *     the reader needs and "(2)" is what gets mangled
+ *
+ * A single piece keeps the plain name: there is no part to number.
+ */
+export function partFileName(label: string, index: number, of: number): string {
+  const clean = (label || 'clip')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s-]+/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 40)
+    .replace(/^-|-$/g, '');
+  const base = clean || 'clip';
+  return (of > 1)
+    ? `${base}-part${index}-of-${of}.mp4`
+    : `${base}.mp4`;
+}
+
 interface UploadDeps {
   fetch?: typeof fetch;
   projectId?: string;

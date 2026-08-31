@@ -22,6 +22,7 @@ import { useStudioStore } from '../store';
 import { NodeInfoBadge } from './NodeInfoBadge';
 import { getMedia, hasSource } from '../clip/sourceStore';
 import { sheetAsText, type EditOp } from '../clip/editSheet';
+import { partFileName } from '../../content/flow/uploadVideo';
 
 /** A timecode a person can find in CapCut's timeline. */
 function stamp(sec: number): string {
@@ -54,7 +55,10 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
     if (!url) return;
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${String(d.label || 'clip').replace(/[^\w.-]+/g, '_')}.mp4`;
+    /* The whole cut is one piece, so it takes the plain name — same helper
+       as the split pieces, so a clip saved whole and a clip saved in parts
+       are recognisably the same thing in Flow. */
+    a.download = partFileName(String(d.label || 'clip'), 1, 1);
     a.click();
   }, [url, d.label]);
 
@@ -131,7 +135,6 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
     setAsking(false);
     setUpload({ state: 'working', message: 'Preparing…' });
 
-    const base = String(d.label || 'clip').replace(/[^\w.-]+/g, '_');
     const blobs = parts
       .map((part) => ({ part, blob: getMedia(part.mediaKey) }))
       .filter((x) => x.blob) as Array<{ part: any; blob: Blob }>;
@@ -151,9 +154,14 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
     }
 
     try {
+      /* partFileName rather than a local sanitiser: Flow shows the asset under
+         its file name, and folds accents away instead of translating them —
+         "telechargement (7).mp4" became "tlchargement_7" in the library. One
+         helper does that folding properly, and both this and Save all use it
+         so a piece has the same name whichever way it reaches Flow. */
       const files = await Promise.all(blobs.map(async ({ part, blob }) => ({
         dataUrl: await asDataUrl(blob),
-        filename: `${base}-part${part.index}of${part.of}.mp4`,
+        filename: partFileName(String(d.label || 'clip'), part.index, part.of),
       })));
 
       setUpload({ state: 'working', message: 'Uploading — Chrome will show a debugging banner.' });
@@ -189,7 +197,6 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
   }, []);
 
   const saveParts = useCallback(() => {
-    const base = String(d.label || 'clip').replace(/[^\w.-]+/g, '_');
     parts.forEach((part, i) => {
       const blob = getMedia(part.mediaKey);
       if (!blob) return;
@@ -200,7 +207,7 @@ function CutNodeInner({ id, data, selected }: NodeProps) {
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = href;
-        a.download = `${base}-part${part.index}of${part.of}.mp4`;
+        a.download = partFileName(String(d.label || 'clip'), part.index, part.of);
         a.click();
         setTimeout(() => URL.revokeObjectURL(href), 10000);
       }, i * 400);
