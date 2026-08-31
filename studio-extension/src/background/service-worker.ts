@@ -1119,6 +1119,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
 
+  /* Make a request an extension page was refused.
+     See API_ORIGINS below for why this cannot be asked to fetch anything. */
+  if (msg?.type === 'API_FETCH') {
+    proxyApiFetch(msg)
+      .then(sendResponse)
+      .catch((e: any) => sendResponse({ ok: false, error: e?.message || String(e) }));
+    return true;
+  }
+
   /* Upload clips to Flow by driving a real file chooser.
      OFF unless the user turned it on — see DEBUG_UPLOAD_KEY below. */
   if (msg?.type === 'DEBUG_UPLOAD_TO_FLOW') {
@@ -1339,5 +1348,57 @@ async function findFlowTab(): Promise<number | null> {
     return (withProject || tabs[0])?.id ?? null;
   } catch {
     return null;
+  }
+}
+
+
+/* ── Making a request on a page's behalf ─────────────────────────────────
+   A fetch from an extension page is preflighted and can be refused by the
+   browser for reasons it will not disclose to the page. A fetch from here is
+   covered by host permissions, is not preflighted, and cannot be refused that
+   way. api.ts falls back to this when its own attempt is refused.
+
+   THE ALLOWLIST IS THE WHOLE POINT. Any content script this extension injects
+   can send a message, and every site it runs on is a site somebody else
+   controls. Without the check below, "fetch this for me" from a page would
+   make the worker a proxy that borrows the extension's host permissions and
+   its cookies — a far worse hole than the one this is here to route around.
+   So it will fetch our own two services and nothing else, ever. */
+const API_ORIGINS = [
+  'https://api.auto-flow.studio',
+  'https://autoflow-extractor-production.up.railway.app',
+];
+
+/* Sent verbatim from a page, so treated as a claim rather than a fact. */
+const SAFE_HEADERS = new Set([
+  'accept', 'authorization', 'content-type', 'x-autoflow-version',
+  'cache-control', 'pragma', 'expires',
+]);
+
+async function proxyApiFetch(msg: any): Promise<any> {
+  const url = String(msg?.url || '');
+  if (!API_ORIGINS.some((o) => url.startsWith(o + '/'))) {
+    return { ok: false, error: 'refused: not one of this extension’s own services' };
+  }
+
+  const headers: Record<string, string> = {};
+  for (const [k, v] of Object.entries(msg?.headers || {})) {
+    if (SAFE_HEADERS.has(k.toLowerCase())) headers[k] = String(v);
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: String(msg?.method || 'GET'),
+      headers,
+      body: typeof msg?.body === 'string' ? msg.body : undefined,
+    });
+    const body = await res.text();
+    const out: Record<string, string> = {};
+    res.headers.forEach((v, k) => { out[k] = v; });
+    return { ok: true, status: res.status, statusText: res.statusText, headers: out, body };
+  } catch (e: any) {
+    /* The worker could not reach it either, which is worth knowing: it means
+       the problem is the network rather than the page's context. */
+    return { ok: false, error: e?.message || String(e) };
   }
 }

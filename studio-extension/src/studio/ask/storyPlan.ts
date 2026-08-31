@@ -37,7 +37,7 @@ export interface CastMember {
 }
 
 export type CameraProgressionId =
-  'dynamic' | 'establishingToClose' | 'actionTracking' | 'fixed' | 'propped';
+  'dynamic' | 'establishingToClose' | 'actionTracking' | 'macroOrbit' | 'fixed' | 'propped';
 
 export interface CameraProgressionOption {
   id: CameraProgressionId;
@@ -76,6 +76,22 @@ export const CAMERA_PROGRESSIONS: CameraProgressionOption[] = [
     ],
   },
   {
+    id: 'macroOrbit',
+    name: 'Macro Construction Coverage',
+    hint: 'Tight macro shots tracking hand work, pulling out for cinematic reveals.',
+    rules: [
+      'MACRO CONSTRUCTION CAMERA: Every shot is within arm\u2019s reach of the work.',
+      '  \u00B7 Work shots: Extreme macro tracking hands and tools, slowly panning along edges,',
+      '    arcing around the construction progress. The tool tip and the material it touches',
+      '    fill the frame.',
+      '  \u00B7 Progress shots: Slight pull-back to show the completed phase in full context',
+      '    on the workbench, confirming cumulative build-up.',
+      '  \u00B7 Reveal shot: Expansive cinematic crane or orbit pull-back showing the finished',
+      '    piece in its environment \u2014 the widest frame in the whole sequence.',
+      '  \u00B7 Within each clip vary between tight on the tool tip and arcing along the result.',
+    ],
+  },
+  {
     /* The one that makes a talking piece look real rather than shot.
        A dolly move reads as stock footage; a phone leaning on a counter reads
        as somebody's actual video, which is the entire point of UGC. It is
@@ -105,7 +121,7 @@ export const CAMERA_PROGRESSIONS: CameraProgressionOption[] = [
   },
 ];
 
-export type AudioModeId = 'cinematic' | 'ambient' | 'dialogue' | 'none';
+export type AudioModeId = 'cinematic' | 'ambient' | 'dialogue' | 'asmrCraft' | 'none';
 
 export interface AudioModeOption {
   id: AudioModeId;
@@ -166,6 +182,21 @@ export const AUDIO_MODES: AudioModeOption[] = [
     ],
   },
   {
+    id: 'asmrCraft',
+    name: 'ASMR Craftsmanship',
+    hint: 'Tactile tool sounds, material textures, and satisfying construction audio.',
+    guide: [
+      'SOUND: end each video prompt with immersive ASMR-style audio cues:',
+      '  1. "Ambient noise: ..." \u2014 quiet workshop atmosphere, subtle room tone, micro-dust settling',
+      '  2. "SFX: ..." \u2014 the exact tactile sounds of the action: trowel scraping wet cement,',
+      '     brick clicking into mortar, wood shavings curling off a chisel, sandpaper on grain,',
+      '     airbrush hiss, tile snapping into place, brush bristles sweeping a surface, a spirit',
+      '     level clicking true, a clamp tightening.',
+      '  Prioritize CRISP CLOSE-MIC textures. Every material interaction should be audible.',
+      '  No music, no voice-over, no narration \u2014 pure craftsmanship ASMR.',
+    ],
+  },
+  {
     id: 'none',
     name: 'Visual Only',
     hint: 'Focus prompt strictly on visuals and motion.',
@@ -173,7 +204,7 @@ export const AUDIO_MODES: AudioModeOption[] = [
   },
 ];
 
-export type VisualPresetId = 'liveAction' | 'smartphonePOV' | 'cinema35mm' | 'cgi3d' | 'anime' | 'none';
+export type VisualPresetId = 'liveAction' | 'miniatureMacro' | 'smartphonePOV' | 'cinema35mm' | 'cgi3d' | 'anime' | 'none';
 
 export interface VisualPresetOption {
   id: VisualPresetId;
@@ -204,6 +235,16 @@ export const VISUAL_PRESETS: VisualPresetOption[] = [
     name: 'Live-Action 8K',
     stylePrompt: 'Photorealistic 8K live-action cinematography, natural cinematic lighting, rich depth of field, authentic textures.',
     negativePrompt: 'No 3D render look, no cartoon styling, no distorted anatomy, no plastic skin.',
+  },
+  {
+    id: 'miniatureMacro',
+    name: 'Miniature Macro 8K',
+    stylePrompt: 'Cinematic macro photography, 8K hyper-detail, shallow depth of field, '
+      + '100mm macro lens aesthetics, warm studio key lighting with sharp rim highlights, '
+      + 'tactile material textures, visible atmospheric micro-dust in light beams, '
+      + 'scale-defining human hand proportions against miniature materials.',
+    negativePrompt: 'No CGI cartoon look, no distorted extra fingers, no morphing architectural '
+      + 'dimensions, no floating tools, no jumping scale, no blurry textures.',
   },
   {
     id: 'smartphonePOV',
@@ -360,7 +401,8 @@ export interface StorySettings {
   avoid?: string;
 }
 
-export type RuleId = 'cumulative' | 'fixedCamera' | 'samePerson' | 'inHand';
+export type RuleId = 'cumulative' | 'fixedCamera' | 'samePerson' | 'inHand'
+  | 'phaseComplete' | 'satisfyingMoment' | 'cutRhythm';
 
 /**
  * The rules the room template used to hardcode, as switches.
@@ -390,6 +432,28 @@ export const RULES: Array<{ id: RuleId; name: string; line: string }> = [
     name: 'Things arrive in someone’s hands',
     line: 'Every tool or material enters the frame in a person’s hands before it changes '
       + 'anything. Nothing appears, builds, floats or installs itself.',
+  },
+  {
+    id: 'phaseComplete',
+    name: 'Each phase fully completes before clip ends',
+    line: 'Every construction or crafting phase shown in a clip is fully completed before '
+      + 'the clip ends — no half-laid bricks, no wet unset cement, no partial sanding, '
+      + 'no unpainted surfaces. The end frame is a clean, finished state ready for the next phase.',
+  },
+  {
+    id: 'satisfyingMoment',
+    name: 'One satisfying micro-moment per clip',
+    line: 'Each clip includes one specific satisfying micro-moment — a brick snapping '
+      + 'perfectly into place, cement smoothed in one clean stroke, a tile clicking into '
+      + 'position, a wood shaving curling cleanly off a chisel, a paint line laid perfectly. '
+      + 'This is the dopamine beat viewers rewatch for.',
+  },
+  {
+    id: 'cutRhythm',
+    name: 'Varied cut rhythm within clips',
+    line: 'Vary the cut rhythm within each clip: 2–3 quick action cuts followed by one '
+      + 'longer, more deliberate close-up shot. This prevents monotonous pacing and '
+      + 'heightens the satisfying feel of the craftsmanship.',
   },
 ];
 
@@ -486,7 +550,7 @@ export const isUgc = (s: StorySettings): boolean =>
   || s.visualPreset === 'smartphonePOV'
   || s.structure === 'ugcAd';
 
-export type StructureId = 'hook' | 'transform' | 'loop' | 'free' | 'ugcAd';
+export type StructureId = 'hook' | 'transform' | 'buildTimelapse' | 'craftTransform' | 'loop' | 'free' | 'ugcAd';
 
 export const STRUCTURES: Array<{ id: StructureId; name: string; hint: string; shape: string[] }> = [
   {
@@ -510,6 +574,43 @@ export const STRUCTURES: Array<{ id: StructureId; name: string; hint: string; sh
       'PROCESS — the work itself, in order, each stage building on the last and',
       '  everything completed staying visible for the rest of the piece.',
       'REVEAL — the finished state, framed so the change is unmistakable.',
+    ],
+  },
+  {
+    id: 'buildTimelapse',
+    name: 'Construction Timelapse Build',
+    hint: 'Progressive construction from bare ground to finished masterpiece with timelapse pacing.',
+    shape: [
+      'FOUNDATION — bare ground or cleared surface, materials staged, first structural',
+      '  work laid. Establish the empty starting state unmistakably.',
+      'CONSTRUCTION — progressive building phases at ultra-fast timelapse speed.',
+      '  Human hands continuously construct and move rapidly. Multiple rapid cuts show',
+      '  each phase: measuring, applying cement, laying bricks, stacking, aligning.',
+      '  Each phase ends FULLY COMPLETED before the next begins — no half-laid bricks,',
+      '  no wet unset cement, no partial installations.',
+      'DETAILING — precision finishing work: plaster, paint, trim, accessories, and',
+      '  decorative elements installed. Vary cut rhythm: 2\u20133 quick action cuts followed',
+      '  by one longer, deliberate close-up of a satisfying micro-moment.',
+      'REVEAL — hands leave frame. Timelapse gradually transitions to normal cinematic',
+      '  speed. Smooth camera pull-back, slow orbit, cinematic final reveal of the',
+      '  completed masterpiece in its finished environment.',
+    ],
+  },
+  {
+    id: 'craftTransform',
+    name: 'Material → Masterpiece (Craft)',
+    hint: 'Raw material carved, shaped, and finished into a detailed miniature.',
+    shape: [
+      'RAW MATERIAL — the untouched block, blank surface, or raw stock. Establish the',
+      '  starting material and its texture: wood grain, clay mass, metal sheet.',
+      'SHAPING — carving, cutting, sculpting the primary form. Tools reveal the',
+      '  silhouette. Curls, shavings, or dust peel away with every cut.',
+      'DETAILING — precision refinement: filing, engraving, sanding. Intricate features',
+      '  emerge: panel gaps, textures, surface details sculpted with accuracy.',
+      'FINISHING — paint, polish, clear coat, chrome accents. Each layer transforms the',
+      '  surface. Assembly of final components: wheels, badges, accessories.',
+      'REVEAL — the completed miniature showcased under dramatic studio lighting.',
+      '  Slow cinematic orbit, reflections catching light, the craft celebrated.',
     ],
   },
   {

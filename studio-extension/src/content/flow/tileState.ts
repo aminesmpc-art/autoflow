@@ -65,8 +65,7 @@ export function getStudioTileState(
 
   // Generating text cues
   const text = tile.textContent?.toLowerCase() || '';
-  if (text.includes('queued') || text.includes('preparing') || text.includes('creating video') ||
-      text.includes('almost finished') || text.includes('is preparing')) {
+  if (matchesFlowText(text, 'queued') || matchesFlowText(text, 'preparing')) {
     return 'generating';
   }
 
@@ -125,9 +124,11 @@ export function getStudioTileState(
   }
 
   // Play button icons (completed video)
-  for (const icon of icons) {
-    const txt = icon.textContent?.trim() || '';
-    if (txt === 'play_arrow' || txt === 'play_circle') return 'completed';
+  if (!expectVideo || !videoWithoutClip) {
+    for (const icon of icons) {
+      const txt = icon.textContent?.trim() || '';
+      if (txt === 'play_arrow' || txt === 'play_circle') return 'completed';
+    }
   }
 
   // ── 3. FAILED: explicit failure text (NOT icons) ──
@@ -139,10 +140,9 @@ export function getStudioTileState(
   if (
     matchesFlowText(text, 'generationFailed') ||
     matchesFlowText(text, 'tryAgain') ||
-    text.includes('something went wrong') || text.includes('oops') ||
-    text.includes('unable to generate') || text.includes('unavailable') ||
+    matchesFlowText(text, 'unableToGenerate') || text.includes('unavailable') ||
     text.includes('capacity') ||
-    text.includes('violat') || text.includes('blocked') || text.includes('rejected') ||
+    matchesFlowText(text, 'violate') || matchesFlowText(text, 'blocked') || text.includes('rejected') ||
     // Bare "failed" last: it is the broadest, and the generating/completed
     // checks above have already claimed any tile still in flight.
     /\bfailed\b/.test(text)

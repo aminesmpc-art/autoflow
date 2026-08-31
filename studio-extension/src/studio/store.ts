@@ -180,6 +180,7 @@ function generateId(): string {
 const MODEL_SLUGS: Record<string, string> = {
   'nano-banana-2': 'Nano Banana Pro',
   'omni-flash': 'Omni Flash',
+  'Omni 1.1 Flash': 'Omni Flash',
 };
 
 /**

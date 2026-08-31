@@ -78,6 +78,94 @@ class TimeoutError extends Error {
   }
 }
 
+/**
+ * Ask the service worker to make a request this context could not.
+ *
+ * A fetch from an extension PAGE — the side panel, the Studio window — is an
+ * ordinary cross-origin request: it is preflighted, and anything the browser
+ * dislikes about it surfaces as a bare "Failed to fetch" with the reason
+ * deliberately withheld from the page. A fetch from the SERVICE WORKER is not.
+ * Host permissions cover it, CORS does not apply, and there is no preflight to
+ * fail.
+ *
+ * That difference is why this exists. Sign-in failed on a machine where the
+ * server was demonstrably correct — the right status, the right
+ * Access-Control-Allow-Origin on both the preflight and the response, verified
+ * from the same machine with curl — and the panel still could not read it.
+ * Rather than keep guessing at which layer of the browser objected, the
+ * request goes somewhere the objection cannot arise.
+ *
+ * Only reached when the direct attempt has already failed, so the ordinary
+ * path is unchanged and this costs nothing when nothing is wrong.
+ */
+let lastWorkerFailure = '';
+
+/**
+ * Whether Chrome is currently letting this extension talk to the API.
+ *
+ * host_permissions in the manifest are a REQUEST, not a grant. Chrome can hold
+ * them back — the "Site access" setting on the extension's details page — and
+ * it re-evaluates when a manifest adds permissions, which an update can do
+ * without anybody choosing it. While a host is withheld, every fetch to it
+ * fails from the page AND from the service worker, with the same bare "Failed
+ * to fetch" a network outage gives.
+ *
+ * That is a cruel failure to debug: the server is fine, the browser reaches it
+ * in a normal tab, curl reaches it, and only the extension cannot. Told to
+ * check their internet connection, a user will check the one thing that is
+ * definitely working.
+ *
+ * Returns null when the question cannot be asked, so a genuine network problem
+ * is never reported as a permission one.
+ */
+async function apiHostAllowed(): Promise<boolean | null> {
+  try {
+    if (typeof chrome === 'undefined' || !chrome.permissions?.contains) return null;
+    return await chrome.permissions.contains({ origins: [`${API_BASE}/*`] });
+  } catch {
+    return null;
+  }
+}
+
+/** Filled in when a request fails, so the message can name the real cause. */
+let lastHostWithheld = false;
+
+async function fetchViaWorker(url: string, options: RequestInit): Promise<Response | null> {
+  lastWorkerFailure = '';
+  try {
+    if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return null;
+
+    const headers: Record<string, string> = {};
+    new Headers(options.headers || {}).forEach((v, k) => { headers[k] = v; });
+
+    const reply: any = await chrome.runtime.sendMessage({
+      type: 'API_FETCH',
+      url,
+      method: options.method || 'GET',
+      headers,
+      body: typeof options.body === 'string' ? options.body : undefined,
+    });
+
+    if (!reply?.ok) {
+      /* The worker tried and could not either. That is the single most useful
+         fact available — it means the request never leaves the machine, so the
+         problem is the network or something intercepting it, not this page's
+         cross-origin context. Carried out so the message can say so. */
+      lastWorkerFailure = String(reply?.error || 'no reply');
+      return null;
+    }
+    return new Response(reply.body ?? '', {
+      status: reply.status,
+      statusText: reply.statusText || '',
+      headers: reply.headers || {},
+    });
+  } catch (e: any) {
+    /* The worker is asleep, or this is not an extension context at all. */
+    lastWorkerFailure = `worker unreachable: ${e?.message || e}`;
+    return null;
+  }
+}
+
 async function timedFetch(
   url: string,
   options: RequestInit = {},
@@ -96,17 +184,59 @@ async function timedFetch(
     // An abort arrives as a generic AbortError; relabel ours so callers can
     // say something more useful than "check your connection".
     if (timedOut) throw new TimeoutError();
+
+    /* Refused rather than timed out. The worker can often make the same
+       request successfully — see fetchViaWorker for why. */
+    const viaWorker = await fetchViaWorker(url, options);
+    if (viaWorker) return viaWorker;
+
+    /* Both refused. Before blaming the network, ask whether Chrome is even
+       letting us reach this host — a withheld permission looks exactly like
+       an outage from in here. */
+    lastHostWithheld = (await apiHostAllowed()) === false;
+
     throw err;
   } finally {
     clearTimeout(timer);
   }
 }
 
-/** What to show the user when a request in this module throws. */
+/**
+ * What to show the user when a request in this module throws.
+ *
+ * It used to say only "Could not reach the server. Check your internet
+ * connection." for every non-timeout failure, which is four very different
+ * problems wearing the same sentence: no network, DNS gone, the response
+ * blocked by CORS, or the request blocked by the extension's own CSP. The last
+ * two are not the user's internet and no amount of checking it will help.
+ *
+ * That cost hours once. The server was answering 401 correctly to curl from
+ * the same machine while the panel insisted the server was unreachable, and
+ * nothing on screen could tell the two apart — the browser deliberately hides
+ * the reason from the page, so the only place it exists is the console, which
+ * a normal user will never open.
+ *
+ * So the underlying text is appended when there is any. It is short, it is in
+ * parentheses, and it is the difference between a bug report that says "does
+ * not work" and one that says which of the four it was.
+ */
 function networkErrorMessage(err: unknown): string {
-  return err instanceof TimeoutError
-    ? 'The server took too long to respond. Please try again.'
-    : 'Could not reach the server. Check your internet connection.';
+  if (err instanceof TimeoutError) {
+    return 'The server took too long to respond. Please try again.';
+  }
+  if (lastHostWithheld) {
+    return 'Chrome is blocking this extension from reaching the server. '
+      + 'Open chrome://extensions, click Details on AutoFlow Studio, and set '
+      + 'Site access to "On all sites".';
+  }
+  const detail = err instanceof Error && err.message ? ` (${err.message})` : '';
+  /* What the SERVICE WORKER got, when the page's own attempt was refused and
+     the worker was asked to try. Worth showing because the two answers mean
+     opposite things: the worker succeeding means the page's context was the
+     problem, and the worker failing the same way means the request is not
+     reaching the network at all. */
+  const viaWorker = lastWorkerFailure ? ` [worker: ${lastWorkerFailure}]` : '';
+  return `Could not reach the server. Check your internet connection.${detail}${viaWorker}`;
 }
 
 // ── Core Fetch Wrapper ──

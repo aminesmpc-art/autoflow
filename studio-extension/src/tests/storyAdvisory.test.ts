@@ -53,11 +53,17 @@ describe('which problems are worth stopping for', () => {
     for (const code of ['count', 'empty', 'thin']) expect(BLOCKING.has(code)).toBe(true);
   });
 
+  it('blocks a build opening that never says the scene is empty', () => {
+    /* A build sequence that starts with furniture already in the room produces
+       the finished state, not the starting state. Worth a reprompt. */
+    expect(BLOCKING.has('openNotFromNothing')).toBe(true);
+  });
+
   it('lets the judgements through', () => {
     /* Every one of these renders. They are reasons to look at the result, not
        reasons to refuse to make it. */
     for (const code of ['dialogueLong', 'dialogueTooWide', 'twoSpeakers',
-      'ugcProduced', 'openNotFromNothing', 'static', 'continuity', 'identity']) {
+      'ugcProduced', 'static', 'continuity', 'identity']) {
       expect(BLOCKING.has(code)).toBe(false);
     }
   });

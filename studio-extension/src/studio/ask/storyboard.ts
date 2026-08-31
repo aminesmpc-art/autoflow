@@ -387,11 +387,16 @@ const EMPTY_START = new RegExp(
   '\\b(?:'
   + 'empty|emptied|bare|barren|unfurnished|undecorated|unpainted|unfinished|'
   + 'stripped|gutted|untouched|vacant|blank|derelict|raw concrete|bare boards|'
-  + 'before (?:any|anything|the work|she|he|they)|not yet '
+  + 'cleared|leveled|flattened|excavated|'
+  + 'raw (?:block|wood|clay|metal|material|stock|hardwood|timber)|'
+  + 'solid block|uncarved|unsculpted|unshaped|'
+  + 'before (?:any|anything|the work|she|he|they|construction|building)|not yet '
   + ')\\b'
   + '|\\bno (?:furniture|decoration|decor|lighting|lights|fittings|fixtures|'
-  + 'rugs?|panels?|shelves|paint|colour|color)\\b'
-  + '|\\bwith no \\w+',
+  + 'rugs?|panels?|shelves|paint|colour|color|walls?|structure|bricks?|'
+  + 'stone blocks?|poured cement|construction|carvings?|details?)\\b'
+  + '|\\bwith(?:out| no) \\w+'
+  + '|\\bbare (?:ground|soil|earth|surface|foundation|workbench|bench)',
   'i',
 );
 
@@ -1296,6 +1301,7 @@ export const BLOCKING: ReadonlySet<string> = new Set([
   'count', 'empty', 'thin',
   'fence', 'numbered', 'meta', 'storyboard', 'markdown', 'placeholder',
   'stageLabels', 'audioLabels', 'fileName', 'editingJargon', 'sheetShape', 'contRestart',
+  'openNotFromNothing',
 ]);
 
 /** The problems worth refusing to spend a generation on. */

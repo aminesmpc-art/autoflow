@@ -17,6 +17,9 @@
     "downloads",
     "debugger"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.auto-flow.studio https://* ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*;"
+  },
   "host_permissions": [
     "https://labs.google/*",
     "https://api.auto-flow.studio/*",

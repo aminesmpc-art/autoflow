@@ -104,7 +104,32 @@ describe('auth calls have a deadline', () => {
 
     const result = await login('user@example.com', 'hunter2');
     expect(result.ok).toBe(false);
-    expect(result.message).toBe('Could not reach the server. Check your internet connection.');
+    expect(result.message).toContain('Could not reach the server. Check your internet connection.');
+  });
+
+  it('and says WHICH failure it was, because four of them share that sentence', () => {
+    /* No network, DNS gone, a response blocked by CORS, a request blocked by
+       the extension's own CSP. The last two are not the user's connection and
+       checking it will never help.
+
+       This is not decoration. The server was answering 401 correctly to curl
+       from the same machine while the panel insisted it was unreachable, and
+       nothing on screen could separate the two — the browser hides the reason
+       from the page, so it exists only in a console a user will not open. */
+    // @ts-ignore
+    global.fetch = jest.fn(() => Promise.reject(new TypeError('Failed to fetch')));
+
+    return login('user@example.com', 'hunter2').then((result) => {
+      expect(result.message).toContain('(Failed to fetch)');
+    });
+  });
+
+  it('adds nothing when the failure carries no message', async () => {
+    /* An empty pair of brackets is worse than none. */
+    // @ts-ignore
+    global.fetch = jest.fn(() => Promise.reject(new TypeError('')));
+    const result = await login('user@example.com', 'hunter2');
+    expect(result.message).not.toContain('()');
   });
 });
 
