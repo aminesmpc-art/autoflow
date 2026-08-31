@@ -2218,7 +2218,21 @@ export class AutomationEngine {
     const allBtns = document.querySelectorAll('button[role="tab"], button[data-state]');
     for (const btn of allBtns) {
       const label = (btn.getAttribute('aria-label') || btn.textContent || '').trim().toLowerCase();
-      const isOnButton = matchesFlowText(label, 'toggleOn') || label === 'on' || label === 'activé' || label === 'activée';
+      /* Check OFF first, and only then ON.
+         matchesFlowText is substring, and the negation prefix hides inside the
+         positive word in half the languages we ship: "désactivé" contains
+         "activé", "desactivado" contains "activado", "desativado" contains
+         "ativado", "disattivato" contains "attivato", "사용 안함" contains "사용".
+         So on a French Flow the OFF button answered to this test, and since
+         Radix renders OFF first it was the one we found: already-off toggles
+         were logged as "already ON", and already-on ones were clicked OFF.
+         Both toggles then stayed off for the whole run, and the one that
+         matters is clearPromptOnSubmit — without it Flow keeps the last
+         prompt in the box and every later prompt lands on top of it.
+         The exclusion is safe in the other direction: no ON label in any
+         shipped language contains an OFF one. */
+      const isOnButton = !matchesFlowText(label, 'toggleOff')
+        && matchesFlowText(label, 'toggleOn');
       if (!isOnButton) continue;
 
       // Walk up level by level to find the row ancestor containing our toggle text
