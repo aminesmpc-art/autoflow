@@ -93,6 +93,8 @@ export interface PlanStep {
   captionPhrases?: Array<{ start: number; end: number; text: string }>;
   captionPreset?: string;
   planEdit?: boolean;
+  /** The brief allows generated footage on this campaign cut. */
+  allowGenerated?: boolean;
   omniParts?: boolean;
   mode?: string;
   /** Cap on the finished clip, in seconds. */

@@ -78,6 +78,9 @@ const STAGE_FOR_SETTING: Record<string, StageId> = {
   captionPreset: 'layout',
   planEdit: 'layout',
   omniParts: 'layout',
+  /* Changes which kinds the sheet may plan AND whether the cutaways get
+     built, both of which the layout decides. */
+  allowGenerated: 'layout',
   aspect: 'layout',
   longestSeconds: 'layout',
 };
@@ -225,6 +228,10 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
   const shortlist: number = typeof d.surveyCandidates === 'number' ? d.surveyCandidates : DEFAULT_SHORTLIST;
   const longest: number = typeof d.longestSeconds === 'number' ? d.longestSeconds : DEFAULT_LONGEST;
   const minScore: number = typeof d.minClipScore === 'number' ? d.minClipScore : DEFAULT_MIN_SCORE;
+  /* Campaign is the default, so this is the common case rather than the edge. */
+  const isCampaign: boolean = d.clipMode !== 'explainer';
+  /* Off unless someone read the brief and said otherwise. */
+  const allowGenerated: boolean = d.allowGenerated === true;
   /* Defaults shown as the value rather than as a blank: a control whose box is
      empty reads as "not set", and the runner is using a default regardless. */
   const chat: string = CHATS.some((c) => c.id === d.platform) ? d.platform : 'chatgpt';
@@ -512,6 +519,26 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
             />
             <span>Omni parts</span>
           </label>
+          {/* Only on campaign work, because that is the only place it does
+              anything: explainer mode already allows generated footage.
+              Shown as a claim about the BRIEF rather than a feature switch —
+              the question is not "do you want cutaways", it is "does this
+              brief permit them", and the wrong answer costs an account
+              rather than a re-render. */}
+          {isCampaign && (
+            <label
+              className={`sn-clip__toggle nodrag ${allowGenerated ? 'sn-clip__toggle--on' : ''}`}
+              title="Only if the brief allows it — most forbid footage that is not the creator's own"
+            >
+              <input
+                type="checkbox"
+                className="nodrag"
+                checked={allowGenerated}
+                onChange={(e) => changeSetting({ allowGenerated: e.target.checked })}
+              />
+              <span>Brief allows generated</span>
+            </label>
+          )}
         </div>
 
         <div className="sn-clip__tabs">

@@ -54,6 +54,10 @@ const EXPECTED: Record<string, StageId> = {
   captionPreset: 'layout',
   planEdit: 'layout',
   omniParts: 'layout',
+  /* Decides which kinds the sheet may plan AND whether the cutaways are
+     built — both of which the layout settles, so a finished run stops
+     matching its own controls the moment it changes. */
+  allowGenerated: 'layout',
   aspect: 'layout',
   longestSeconds: 'layout',
 };

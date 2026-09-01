@@ -177,6 +177,19 @@ export interface SheetContext {
   phrases: Array<{ startSec: number; endSec: number; text: string }>;
   /** Campaign work forbids footage that is not the creator's own. */
   mode?: 'campaign' | 'explainer';
+  /**
+   * Let campaign work carry generated footage after all.
+   *
+   * Off by default and deliberately not the easy path, because the default is
+   * the one that protects the account: briefs routinely forbid "content not
+   * affiliated with this campaign", and a generated cutaway is exactly that —
+   * a rejected post, or a rejected creator.
+   *
+   * But it is the BRIEF that decides, not the mode, and some briefs allow it.
+   * A blanket ban made those jobs impossible; a per-node opt-in makes them a
+   * decision somebody took on purpose, for one clip, having read the brief.
+   */
+  allowGenerated?: boolean;
   /* Where this clip was cut into pieces for Omni. A join is a real cut in
      the finished edit, and a cut is exactly what a whoosh exists to hide. */
   seams?: number[];
@@ -201,7 +214,10 @@ const stamp = (sec: number): string => {
  * exist is indistinguishable from one that does until somebody opens CapCut.
  */
 export function editSheetAsk(context: SheetContext): string {
-  const campaign = context.mode === 'campaign';
+  /* Campaign bans generated footage unless this node was told the brief
+     allows it. Both the prompt and the reader below compute it the same
+     way, so they cannot disagree about what was asked for. */
+  const campaign = context.mode === 'campaign' && context.allowGenerated !== true;
   const budget = opsAllowed(context.clipSeconds);
 
   const lines: string[] = [
@@ -370,7 +386,10 @@ export function readEditSheet(reply: unknown, context: SheetContext): SheetResul
   const ops: EditOp[] = [];
 
   const runtime = context.clipSeconds;
-  const campaign = context.mode === 'campaign';
+  /* Campaign bans generated footage unless this node was told the brief
+     allows it. Both the prompt and the reader below compute it the same
+     way, so they cannot disagree about what was asked for. */
+  const campaign = context.mode === 'campaign' && context.allowGenerated !== true;
   const budget = opsAllowed(runtime);
 
   const said = String(root?.tone ?? '').trim().toLowerCase();

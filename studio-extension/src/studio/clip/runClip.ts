@@ -117,6 +117,11 @@ export interface ClipConfig {
   /* Plan what to add to each finished clip, for finishing in CapCut.
      Off by default: it costs one ask per cut. */
   planEdit?: boolean;
+  /* Campaign work carries generated footage only when the brief allows it.
+     The ban is the safe default — briefs forbid "content not affiliated with
+     this campaign" and a generated cutaway is exactly that. This is the
+     per-node decision that lifts it for one job, taken having read the brief. */
+  allowGenerated?: boolean;
   /* Also encode every cut in pieces Omni will take. Flow refuses
      anything over ten seconds. */
   omniParts?: boolean;
@@ -564,6 +569,7 @@ export function layoutStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
     const plan = emitPlan(survey.moments, survey.candidates, {
       sourceKey: cfg.sourceKey,
       mode: cfg.mode === 'explainer' ? 'explainer' : 'campaign',
+      allowGenerated: cfg.allowGenerated === true,
       sourceName: cfg.sourceName,
       maxSeconds: cfg.longestSeconds,
       platform: cfg.platform as any,
@@ -692,6 +698,11 @@ export interface OneCutConfig {
   /* Plan what to add to the finished clip. Off by default: it costs an
      ask, and a clipper who only wants the cut should not pay for one. */
   planEdit?: boolean;
+  /* Campaign work carries generated footage only when the brief allows it.
+     The ban is the safe default — briefs forbid "content not affiliated with
+     this campaign" and a generated cutaway is exactly that. This is the
+     per-node decision that lifts it for one job, taken having read the brief. */
+  allowGenerated?: boolean;
   /* Also encode the clip in pieces Omni will accept. Flow refuses
      anything over ten seconds, so a longer cut has to go in parts or not
      at all. Off by default: it is N more encodes for a clip most people
@@ -976,6 +987,7 @@ async function planTheEdit(
       title: cfg.title,
       why: cfg.why,
       mode: cfg.mode,
+      allowGenerated: cfg.allowGenerated === true,
       phrases: captions.map((c) => ({ startSec: c.startSec, endSec: c.endSec, text: c.text })),
       seams,
     };

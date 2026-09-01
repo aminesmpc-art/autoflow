@@ -52,11 +52,23 @@ describe('what ends up on the asset', () => {
 });
 
 describe('what it refuses', () => {
-  it('lays out nothing on campaign work', () => {
+  it('lays out nothing on campaign work unless the brief was said to allow it', () => {
     /* The sheet already refuses a cutaway under a campaign brief. This refuses
        it again, because a node sitting on the canvas is an invitation to use
-       it, and the account doing the earning is worth more than a cutaway. */
-    expect(layOut).toMatch(/if \(mode !== 'explainer'\) return 0;/);
+       it, and the account doing the earning is worth more than a cutaway.
+
+       The blanket ban is now a default rather than a law: it is the BRIEF that
+       decides, and some allow it. What must not happen is a partial lift —
+       the sheet planning a cutaway that this then silently declines to build,
+       which would show the user an edit that was never made. So the flag is
+       honoured here too, and only here does it become footage. */
+    expect(layOut).toMatch(/if \(mode !== 'explainer' && !allowGenerated\) return 0;/);
+  });
+
+  it('still refuses campaign work when nobody said the brief allows it', () => {
+    /* The default is the whole safety argument: absent an explicit yes, this
+       behaves exactly as it did before the flag existed. */
+    expect(layOut).toMatch(/allowGenerated = false,/);
   });
 
   it('ignores an op that is not a cutaway, or has nothing to generate', () => {
