@@ -106,6 +106,28 @@ const HOLD: Record<EditKind, { min: number; max: number }> = {
 export const EMPHASIS_FROM_SEC = 2.0;
 export const EMPHASIS_TO_SEC = 4.0;
 
+/**
+ * The opening, where the viewer decides whether to stay.
+ *
+ * One to three seconds is the window the 2026 write-ups agree on: long enough
+ * to set an expectation, short enough that nothing may be spent establishing
+ * anything. The planner was told where a RAMP belongs and nothing about the
+ * opening at all, so it treated second 0 like any other second.
+ */
+export const HOOK_UNTIL_SEC = 3.0;
+
+/**
+ * Where the middle of a clip starts and ends, as fractions of its runtime.
+ *
+ * A 2025 analysis across TikTok and Reels found a shaped arc — fast open,
+ * slower through the explanation, accelerating again before the end — beat
+ * uniformly high-energy edits by 18-25% on completion. The planner had a
+ * budget and no shape, so it spread its instructions evenly, which is the
+ * "purely high-energy" edit that measured worse.
+ */
+export const ARC_MIDDLE_FROM = 0.3;
+export const ARC_MIDDLE_TO = 0.7;
+
 /* The window in which the first visual beat has to land. Retention at three
    seconds is what decides whether a short travels. */
 export const FIRST_BEAT_BY_SEC = 3.0;
@@ -246,6 +268,23 @@ export function editSheetAsk(context: SheetContext): string {
 
   lines.push(
     '',
+    'WHERE THINGS GO',
+    '',
+    `The first ${HOOK_UNTIL_SEC}s decide whether anyone stays. Something belongs`,
+    'here — a text carrying the claim, or a punch on the first strong word.',
+    'Nothing may be spent establishing anything.',
+    '',
+    'Then shape it. A clip is not a flat stretch of energy:',
+    '',
+    `  0 - ${HOOK_UNTIL_SEC}s        open fast, land the claim`,
+    `  ${(context.clipSeconds * ARC_MIDDLE_FROM).toFixed(1)} - ${(context.clipSeconds * ARC_MIDDLE_TO).toFixed(1)}s`
+      + '     the explanation. Let it breathe — this is where a cutaway',
+    '                gives room, and where stacking effects hurts.',
+    `  ${(context.clipSeconds * ARC_MIDDLE_TO).toFixed(1)}s - end     pick it up again before it ends.`,
+    '',
+    'An even spread of instructions is the edit that measures WORST. Front and',
+    'back carry more than the middle.',
+    '',
     'THE TEST FOR A SOUND',
     '',
     'Take it away. If the moment gets less CLEAR without it, it is doing real',
@@ -264,6 +303,7 @@ export function editSheetAsk(context: SheetContext): string {
     `· Every "at" is between 0 and ${context.clipSeconds.toFixed(1)}.`,
     '· Two things cannot be on screen at once. Do not overlap broll with broll.',
     '· If a moment does not need anything, leave it alone.',
+    `· At least one instruction lands before ${HOOK_UNTIL_SEC}s.`,
     '',
     'FIRST, SAY HOW IT FEELS',
     '',
