@@ -1572,6 +1572,14 @@ export class WorkflowRunner {
       /* The chat the user picked on this node, so the cuts it lays out use it
          too rather than each falling back to the default on its own. */
       platform,
+      /* "Worth posting, above". The slider wrote this to the node and the
+         survey read cfg.minClipScore, but nothing carried it between the two,
+         so the score was always the built-in 60 no matter where the handle
+         sat. It hid because the node's default is 60 as well: at rest the
+         control agreed with the pipeline, and only moving it did nothing. */
+      minClipScore: typeof nodeData.minClipScore === 'number'
+        ? nodeData.minClipScore
+        : undefined,
       /* One server call instead of six chat transcriptions. Defaults on: it
          is faster, it brings the timings that let every cut skip its own
          locating, and it degrades to the chat path when signed out. */
