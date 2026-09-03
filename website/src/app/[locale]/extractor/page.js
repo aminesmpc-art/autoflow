@@ -10,11 +10,11 @@ import {
   downloadStudioWorkflow,
 } from "./studioWorkflow";
 import { studioInstalled, sendToStudio, toBuildOptions } from "./studioBridge";
+import StoreLink, { STORE_URLS } from "../../StoreLink";
 
-/* Where "Install AutoFlow Studio" sends people. One constant, so the listing
-   moving is a one-line change. */
-const STUDIO_STORE_URL =
-  "https://chromewebstore.google.com/detail/autoflow-studio-%E2%80%94-node-wo/knodokbipcajhdpafplmlljbaamgfkao";
+/* The one place the Studio listing is named, shared with every other install
+   button on the site. */
+const STUDIO_STORE_URL = STORE_URLS.studio;
 
 /* Extraction options. Mirrors ExtractionOptions in
    extractor-backend/app/api/videos.py — the engine validates and falls back on
@@ -1146,15 +1146,13 @@ export default function ExtractorPage() {
                       {/* Not installed: installing is the offer, because it is
                           the one that ends in a canvas rather than a file. */}
                       {hasStudio === false && (
-                        <a
+                        <StoreLink
+                          product="studio"
                           className="cyber-btn"
-                          href={STUDIO_STORE_URL}
-                          target="_blank"
-                          rel="noopener noreferrer"
                           style={{ padding: "16px 32px", background: "var(--primary)", color: "#000", fontWeight: 700, textDecoration: "none", display: "inline-block" }}
                         >
                           ⚡ Install AutoFlow Studio
-                        </a>
+                        </StoreLink>
                       )}
 
                       <span className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--text-secondary)", textShadow: "none" }}>
@@ -1220,9 +1218,37 @@ export default function ExtractorPage() {
                     )}
 
                     {studioSent && (
-                      <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--primary)", marginTop: "20px", marginBottom: 0, textShadow: "none" }}>
-                        ✓ Saved. In the extension open <strong>Studio → Import</strong> and pick the file.
-                      </p>
+                      <div style={{ marginTop: "20px", padding: "20px 24px", background: "rgba(255, 92, 0, 0.06)", border: "1px solid var(--primary)" }}>
+                        <p className="terminal-text" style={{ fontSize: "0.95rem", color: "var(--primary)", margin: "0 0 14px 0", textShadow: "none", fontWeight: 700 }}>
+                          ✓ Workflow saved to your downloads
+                        </p>
+                        <ol className="terminal-text" style={{ margin: 0, paddingLeft: "20px", fontSize: "0.9rem", color: "rgba(255,255,255,0.85)", lineHeight: 1.9, textShadow: "none" }}>
+                          <li>
+                            Open <strong>AutoFlow Studio</strong>
+                            {hasStudio === false && (
+                              <>
+                                {" — "}
+                                <a
+                                  href={STUDIO_STORE_URL}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{ color: "var(--primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}
+                                >
+                                  install it first
+                                </a>
+                                , the file needs it
+                              </>
+                            )}
+                          </li>
+                          <li>
+                            On the gallery screen press <strong>⭱ Import</strong> — or drag the
+                            .json straight onto it
+                          </li>
+                          <li>
+                            It lands in <strong>My Workflows</strong>, wired and ready to run
+                          </li>
+                        </ol>
+                      </div>
                     )}
                   </div>
 

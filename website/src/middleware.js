@@ -28,7 +28,8 @@ const publicPaths = [
 const unlocalizedPaths = [
   '/studio',
   /* Lives at app/clipping, outside [locale], so without this an English
-     visitor is rewritten to /en/clipping — a route that does not exist. */
+     visitor is rewritten to /en/clipping — a route that does not exist. It is
+     linked from the nav and the sitemap now, so it has to resolve. */
   '/clipping',
   '/blog',
   '/faq',

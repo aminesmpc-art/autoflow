@@ -279,6 +279,7 @@ function Header() {
               <span className="nav-dot nav-dot-green" /> Extractor
             </a>
           </li>
+          <li><a href="/clipping">Clipping</a></li>
           <li><a href="/#features">Batch Queue</a></li>
           <li><a href="/#how-it-works">How It Works</a></li>
           <li><a href="/pricing">Pricing</a></li>
@@ -317,6 +318,7 @@ function Footer() {
           <ul>
             <li><a href="/studio">AutoFlow Studio (Canvas)</a></li>
             <li><a href="/extractor">AI Video Prompt Extractor</a></li>
+            <li><a href="/clipping">Clipping — long video into short clips</a></li>
             <li><a href="/#features">AutoFlow Queue Manager</a></li>
             <li><a href="/pricing">Pricing (Pro $9.99)</a></li>
             <li><a href="/changelog">Changelog</a></li>

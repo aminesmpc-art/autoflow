@@ -33,6 +33,7 @@ export default function MobileMenu() {
             <ul>
               <li><a href={`${prefix}/studio`} onClick={() => setOpen(false)} style={{ color: "var(--primary-light)", fontWeight: "600" }}>✨ AutoFlow Studio (NEW)</a></li>
               <li><a href={`${prefix}/extractor`} onClick={() => setOpen(false)} style={{ color: "var(--primary)", fontWeight: "600" }}>🔍 Video Extractor (FREE)</a></li>
+              <li><a href={`${prefix}/clipping`} onClick={() => setOpen(false)}>✂️ Clipping</a></li>
               <li><a href={`${prefix}/#features`} onClick={() => setOpen(false)}>Batch Queue</a></li>
               <li><a href={`${prefix}/#how-it-works`} onClick={() => setOpen(false)}>How It Works</a></li>
               <li><a href={`${prefix}/pricing`} onClick={() => setOpen(false)}>Pricing</a></li>

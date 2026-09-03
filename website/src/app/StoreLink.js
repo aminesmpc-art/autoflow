@@ -1,6 +1,8 @@
 'use client';
 
-const STORE_URLS = {
+/* Exported: the extractor needs the bare URL for an inline text link, and a
+   second copy of it living there is how the two fall out of step. */
+export const STORE_URLS = {
   queue: "https://chromewebstore.google.com/detail/autoflow-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc",
   studio: "https://chromewebstore.google.com/detail/autoflow-studio/knodokbipcajhdpafplmlljbaamgfkao",
 };
