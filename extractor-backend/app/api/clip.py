@@ -44,6 +44,7 @@ from pydantic import BaseModel, Field
 
 from app.auth import authenticated_user_id, security, verify_jwt
 from app.config import get_settings
+from app.rate_limit import ask_limiter
 from app.clip_analysis import CLIP_MODEL, _generate_window, read_video
 from app.job_store import JobStore
 
@@ -619,7 +620,7 @@ def _decode_attachments(raw: list[str]) -> list[tuple[bytes, str]]:
 @router.post("/ask", response_model=AskResponse)
 async def ask_model(
     body: AskRequest,
-    _user: dict = Depends(verify_jwt),
+    user: dict = Depends(verify_jwt),
 ) -> AskResponse:
     """
     Put one question to the model and return what it said.
@@ -649,6 +650,11 @@ async def ask_model(
     up. The video exclusion is kept as an explicit check rather than as an
     absence, because it is the part that was load-bearing.
     """
+    # Counted before anything is validated or sent. A caller who is over the
+    # ceiling should be refused at the door, not after the server has done the
+    # work of deciding their prompt was well formed.
+    ask_limiter().check(authenticated_user_id(user))
+
     prompt = (body.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="An empty prompt asks nothing.")
