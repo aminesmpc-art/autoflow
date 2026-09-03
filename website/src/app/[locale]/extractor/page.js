@@ -34,6 +34,20 @@ const EXTRACT_STYLES = [
   ["3d", "3D render"],
 ];
 
+/* Where "Install AutoFlow Studio" sends people.
+ *
+ * One constant because it is the only thing standing between this page and a
+ * working install button — the listing is not live yet, so paste the Chrome
+ * Web Store URL here and the button appears by itself. Everything below is
+ * already written for it.
+ *
+ * Empty is a supported state, not a broken one: with no address the page
+ * keeps the download as the main action rather than offering a link that
+ * goes nowhere. NOT the task-manager listing — that is a different product
+ * and would install the wrong extension. */
+const STUDIO_STORE_URL =
+  "https://chromewebstore.google.com/detail/autoflow-studio-%E2%80%94-node-wo/knodokbipcajhdpafplmlljbaamgfkao";
+
 const DEFAULT_EXTRACT_OPTS = {
   shotCount: "auto",
   language: "auto",
@@ -1048,8 +1062,17 @@ export default function ExtractorPage() {
                       </p>
                     )}
 
+                    {/* ── Three states, and each one gets its own button ──
+
+                        This was `hasStudio !== false`, which lumped "still
+                        asking" in with "installed" — so for the ~600ms of the
+                        probe a visitor WITHOUT Studio was shown "Open in
+                        Studio", which then turned into "Download" under their
+                        cursor. The comment on the state itself says a button
+                        that changes shape is worse than one that was always
+                        right, so now it waits instead of guessing. */}
                     <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
-                      {hasStudio !== false ? (
+                      {hasStudio === true && (
                         <button
                           className="cyber-btn"
                           style={{ padding: "16px 32px", background: "var(--primary)", color: "#000", fontWeight: 700 }}
@@ -1062,7 +1085,36 @@ export default function ExtractorPage() {
                         >
                           {studioSend.state === "sending" ? "Building…" : "⚡ Open in Studio"}
                         </button>
-                      ) : (
+                      )}
+
+                      {hasStudio === null && (
+                        <button
+                          className="cyber-btn"
+                          style={{ padding: "16px 32px", background: "var(--primary)", color: "#000", fontWeight: 700, opacity: 0.6 }}
+                          disabled
+                        >
+                          Looking for Studio…
+                        </button>
+                      )}
+
+                      {/* Not installed. Installing is the offer, because it is
+                          the one that produces a canvas rather than a file
+                          somebody still has to import by hand. */}
+                      {hasStudio === false && STUDIO_STORE_URL && (
+                        <a
+                          className="cyber-btn"
+                          href={STUDIO_STORE_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ padding: "16px 32px", background: "var(--primary)", color: "#000", fontWeight: 700, textDecoration: "none", display: "inline-block" }}
+                        >
+                          ⚡ Install AutoFlow Studio
+                        </a>
+                      )}
+
+                      {/* No address to send them to yet: the download stays the
+                          main action rather than a link that goes nowhere. */}
+                      {hasStudio === false && !STUDIO_STORE_URL && (
                         <button
                           className="cyber-btn"
                           style={{ padding: "16px 32px", background: "var(--primary)", color: "#000", fontWeight: 700 }}
@@ -1095,9 +1147,12 @@ export default function ExtractorPage() {
                         )}
                       </span>
 
-                      {/* Once the extension is there, the file is the fallback
-                          rather than the route — quiet, and still one click. */}
-                      {hasStudio && (
+                      {/* The file is the fallback either way — quiet, and still
+                          one click. It used to appear only when the extension
+                          was already installed, which is the one case that
+                          needs it least. Anyone who cannot install an
+                          extension at all is exactly who it is for. */}
+                      {(hasStudio === true || (hasStudio === false && STUDIO_STORE_URL)) && (
                         <button
                           onClick={() => {
                             downloadStudioWorkflow(
@@ -1137,9 +1192,33 @@ export default function ExtractorPage() {
                       </p>
                     )}
 
+                    {/* It said this before and gave nobody anywhere to click.
+                        Now it says what installing buys — every shot already a
+                        node, wired — because "install our extension" is a cost
+                        and this is the thing on the other side of it. */}
                     {hasStudio === false && (
-                      <p className="terminal-text" style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "16px", marginBottom: 0, textShadow: "none" }}>
-                        Install the AutoFlow Studio extension and reload this page to send workflows straight to the canvas.
+                      <p className="terminal-text" style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "16px", marginBottom: 0, textShadow: "none", lineHeight: 1.7 }}>
+                        {STUDIO_STORE_URL ? (
+                          <>
+                            With AutoFlow Studio installed, this becomes one click: every shot
+                            arrives as a node with its prompts already wired in, on a canvas you
+                            can run. {" "}
+                            <a
+                              href={STUDIO_STORE_URL}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: "var(--primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}
+                            >
+                              Install it
+                            </a>
+                            , reload this page, and the button above sends straight to the canvas.
+                          </>
+                        ) : (
+                          <>
+                            Install the AutoFlow Studio extension and reload this page to send
+                            workflows straight to the canvas instead of importing a file.
+                          </>
+                        )}
                       </p>
                     )}
 
