@@ -28,7 +28,9 @@ import {
 import { runAgent, type AgentStep, type ToolOutcome } from './agent';
 import { toolsByName } from './tools';
 import { advance, describeRun, forSource, resultOf } from '../clip/stages';
-import { clipRunners, stagesToSkip } from '../clip/runClip';
+import {
+  CLIP_NODE_ASK_CEILING, CUT_NODE_ASK_CEILING, clipRunners, stagesToSkip,
+} from '../clip/runClip';
 import { getMedia, getSource, putMedia } from '../clip/sourceStore';
 import { compilePlan } from '../builder/plan';
 
@@ -1594,14 +1596,25 @@ export class WorkflowRunner {
 
     const runners = clipRunners(deps, cfg);
 
-    latest = await advance(latest, {
-      runners,
-      skip: stagesToSkip(cfg),
-      onChange: (run) => {
-        latest = run;
-        useStudioStore.getState().updateNodeData(nodeId, { clipRun: run });
-      },
-    });
+    /* Bound what these stages may spend on the API. Nodes run one at a time —
+       the runner's step loop is sequential and awaited — so one module-level
+       budget is enough, and the finally matters more than the open: a stage
+       that throws must not leave its allowance sitting open for the next
+       node to spend. */
+    const { startAskBudget } = await import('../clip/readingApi');
+    startAskBudget(CLIP_NODE_ASK_CEILING);
+    try {
+      latest = await advance(latest, {
+        runners,
+        skip: stagesToSkip(cfg),
+        onChange: (run) => {
+          latest = run;
+          useStudioStore.getState().updateNodeData(nodeId, { clipRun: run });
+        },
+      });
+    } finally {
+      startAskBudget(null);
+    }
 
     const failed = Object.entries(latest.stages).find(([, r]) => r.status === 'failed');
     if (failed) throw new Error(failed[1].error || `The ${failed[0]} stage failed.`);
@@ -1813,6 +1826,13 @@ export class WorkflowRunner {
     const { clipMedia: media } = await import('../clip/clipMedia');
     const { runOneCut } = await import('../clip/runClip');
 
+    /* Bound what this cut may spend on the API. Closed with .finally rather
+       than a try block so the forty-line argument below keeps its indentation
+       — the guarantee is the same, and a diff that moves every line of a call
+       this long hides whatever else changed in it. */
+    const { startAskBudget } = await import('../clip/readingApi');
+    startAskBudget(CUT_NODE_ASK_CEILING);
+
     const platform = chatPlatform(nodeData.platform);
     const result = await runOneCut({
       ask: (message: string, options?: { firstTurn?: boolean; attachments?: string[] }) =>
@@ -1854,7 +1874,7 @@ export class WorkflowRunner {
       mode: nodeData.clipMode === 'explainer' ? 'explainer' : 'campaign',
       title: typeof nodeData.title === 'string' ? nodeData.title : undefined,
       why: typeof nodeData.why === 'string' ? nodeData.why : undefined,
-    });
+    }).finally(() => startAskBudget(null));
 
     /* mediaKey is what the node's player reads back out of the store. Without
        it the clip is encoded, held, and invisible — which is exactly how this

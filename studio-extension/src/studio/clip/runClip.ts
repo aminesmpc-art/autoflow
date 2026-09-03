@@ -588,6 +588,43 @@ export function layoutStage(deps: ClipDeps, cfg: ClipConfig): StageRunner {
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* What one node may spend on API asks                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * These bound the asks that go to /api/clip/ask — the ones the service pays
+ * for. Chat-tab asks are not counted and are not meant to be: those spend the
+ * user's own account, which is the whole reason the chat path exists.
+ *
+ * The unit is the NODE, not the run. On the website a run is one call and can
+ * be budgeted as one; a canvas lays out Cut nodes that execute separately,
+ * later, and one at a time when somebody re-runs a single clip. There is no
+ * moment that owns the whole thing.
+ *
+ * The stages between them make one API ask: the survey. Everything else in a
+ * Clipping node is the reading (metered separately, on /read) or local work.
+ * Six leaves room for a retry and for a stage that grows one.
+ */
+export const CLIP_NODE_ASK_CEILING = 6;
+
+/*
+ * A cut's worst case, when the reading could not answer anything about it:
+ *
+ *   locate the opening line, coarse then fine     2
+ *   locate the closing line, coarse then fine     2
+ *   where is the speaker, across eight stills     1
+ *   plan the edit sheet, when planEdit is on      1
+ *                                               ---
+ *                                                 6
+ *
+ * Eight, so the ordinary case never comes near it and the pathological one
+ * stops. A cut that runs out fails alone: planTheEdit swallows the refusal and
+ * lets the clip stand, and a locate that cannot be paid for fails that node
+ * rather than the workflow.
+ */
+export const CUT_NODE_ASK_CEILING = 8;
+
 export function clipRunners(
   deps: ClipDeps,
   cfg: ClipConfig,
