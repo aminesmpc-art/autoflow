@@ -1,0 +1,269 @@
+/* The working clipper on /clipping.
+   Kept in a stylesheet rather than inline like the extractor page: this
+   component has four screens and a results grid, and inline styles at that
+   size stop being readable at exactly the point somebody needs to change one. */
+
+.clip-tool {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--gradient-card), rgba(8, 8, 8, 0.9);
+  box-shadow: var(--shadow-card);
+  padding: 32px;
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+@media (max-width: 640px) {
+  .clip-tool { padding: 20px; border-radius: var(--radius-lg); }
+}
+
+.clip-tool-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.clip-tool-head h2 {
+  font-size: 1.5rem;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.clip-tool-head p {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* ── The drop target ──────────────────────────────────────────────── */
+
+.clip-drop {
+  border: 1px dashed rgba(255, 92, 0, 0.4);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 92, 0, 0.03);
+  padding: 44px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.clip-drop:hover,
+.clip-drop.is-over {
+  border-color: var(--primary);
+  background: rgba(255, 92, 0, 0.08);
+}
+
+.clip-drop-icon { font-size: 2rem; display: block; margin-bottom: 10px; }
+.clip-drop strong { display: block; font-size: 1.05rem; margin-bottom: 6px; }
+.clip-drop span.hint { color: var(--text-muted); font-size: 0.85rem; }
+
+.clip-file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.clip-file-name { font-weight: 600; word-break: break-all; }
+.clip-file-meta { color: var(--text-muted); font-size: 0.85rem; margin-top: 4px; }
+
+/* ── Options ──────────────────────────────────────────────────────── */
+
+.clip-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 18px;
+  margin: 24px 0;
+}
+
+.clip-field label {
+  display: block;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 7px;
+}
+
+.clip-field select,
+.clip-field input[type="number"],
+.clip-field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  background: #0a0a0a;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.92rem;
+  font-family: inherit;
+}
+
+.clip-field select:focus,
+.clip-field input:focus,
+.clip-field textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.clip-field .note {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.clip-checks { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 24px; }
+
+.clip-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.clip-check input { accent-color: var(--primary); width: 16px; height: 16px; }
+
+/* ── The stage rail ───────────────────────────────────────────────── */
+
+.clip-rail { display: grid; gap: 10px; margin: 24px 0; }
+
+.clip-stage {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.clip-stage .mark { width: 18px; text-align: center; flex: none; }
+.clip-stage .took { margin-left: auto; color: var(--text-muted); font-size: 0.8rem; }
+.clip-stage.running { border-color: var(--primary); background: rgba(255, 92, 0, 0.07); }
+.clip-stage.done { color: var(--text-secondary); }
+.clip-stage.failed { border-color: var(--accent); background: rgba(229, 9, 20, 0.07); }
+.clip-stage.pending { opacity: 0.5; }
+
+.clip-log {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  min-height: 1.4em;
+  margin: 0;
+  word-break: break-word;
+}
+
+/* ── Results ──────────────────────────────────────────────────────── */
+
+.clip-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 22px;
+  margin-top: 26px;
+}
+
+.clip-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+}
+
+.clip-card video {
+  width: 100%;
+  display: block;
+  background: #000;
+  aspect-ratio: 9 / 16;
+  object-fit: contain;
+}
+
+.clip-card-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 9px; flex: 1; }
+
+.clip-card-title {
+  font-weight: 650;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.clip-card-why { font-size: 0.83rem; color: var(--text-secondary); line-height: 1.55; margin: 0; }
+
+.clip-card-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.clip-score {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 92, 0, 0.15);
+  color: var(--primary-light);
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+.clip-card-actions { margin-top: auto; display: flex; gap: 10px; flex-wrap: wrap; padding-top: 4px; }
+
+.clip-mini {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.clip-mini:hover { border-color: var(--primary); color: var(--primary); }
+.clip-mini.primary { background: var(--primary); color: #000; border-color: var(--primary); font-weight: 700; }
+.clip-mini.primary:hover { background: var(--primary-light); color: #000; }
+
+.clip-sheet {
+  margin: 0;
+  padding: 10px 12px;
+  background: #060606;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.76rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  max-height: 190px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.clip-note {
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  line-height: 1.65;
+  margin: 18px 0 0;
+}
+
+.clip-note.error { border: 1px solid var(--accent); background: rgba(229, 9, 20, 0.08); color: #ffb3b6; }
+.clip-note.warn { border: 1px solid var(--warning); background: rgba(245, 158, 11, 0.08); color: #fcd9a0; }
+.clip-note.info { border: 1px solid var(--border); background: rgba(255, 255, 255, 0.02); color: var(--text-secondary); }
+
+.clip-actions-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 26px; }

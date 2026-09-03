@@ -1,0 +1,31 @@
+{
+  "_comment": "Written by webpack.web.js. The sources website/src/vendor/autoflow-clip.js was built from. If a test says these have moved, run `npm run build:web` in studio-extension and commit the result.",
+  "builtAt": "2026-09-03T08:28:26.756Z",
+  "entry": "src/web/clipWeb.ts",
+  "files": {
+    "src/shared/api.ts": "5b3696c0bb1dff14",
+    "src/studio/ask/clipperBrain.ts": "7dbd83f9649098bf",
+    "src/studio/ask/storyboard.ts": "1774d536612aa1b2",
+    "src/studio/builder/plan.ts": "3254d359d29d8a23",
+    "src/studio/clip/chunks.ts": "2c8084d33524e436",
+    "src/studio/clip/clipMedia.ts": "cccf8bcfa718b9fd",
+    "src/studio/clip/editSheet.ts": "93c1f5fd64585ac6",
+    "src/studio/clip/emitPlan.ts": "0c5043dddcb6d639",
+    "src/studio/clip/fromReading.ts": "3c5cdfac1b2cc1f3",
+    "src/studio/clip/omniChunks.ts": "fe9fab836d8b0b7b",
+    "src/studio/clip/peaks.ts": "74ecefe7a67a1190",
+    "src/studio/clip/prompts.ts": "ac71e975d97aad73",
+    "src/studio/clip/readingApi.ts": "1734d25839ba9c46",
+    "src/studio/clip/runClip.ts": "2e85e6e43bc352fa",
+    "src/studio/clip/stages.ts": "83ccaf440bb797bd",
+    "src/studio/clip/textMoments.ts": "2bf174bb30e297ee",
+    "src/studio/media/captions.ts": "87bb09e60ec24284",
+    "src/studio/media/cut.ts": "e21551717004a8b4",
+    "src/studio/media/decode.ts": "b5b59ea3b5fe3479",
+    "src/studio/media/pcm.ts": "2b418c9717433aa5",
+    "src/studio/media/reframe.ts": "6729cc2caef1f51f",
+    "src/studio/media/silence.ts": "aa6bee66f5eb51cc",
+    "src/types/index.ts": "edf72748ee4d597b",
+    "src/web/clipWeb.ts": "6c0cb86744c03630"
+  }
+}

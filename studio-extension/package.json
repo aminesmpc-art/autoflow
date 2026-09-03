@@ -1,12 +1,13 @@
 {
   "name": "autoflow-studio-extension",
-  "version": "0.28.0",
+  "version": "1.2.0",
   "description": "AutoFlow Studio \u2014 Visual node workflows for AI video and image generation",
   "scripts": {
     "build": "webpack --mode production --bail",
     "build:publish": "webpack --mode production --bail",
     "package": "npm run build:publish && node scripts/package.js",
     "build:dev": "webpack --mode development --devtool source-map --bail",
+    "build:web": "webpack --config webpack.web.js --mode production --bail",
     "dev": "webpack --mode development --watch",
     "test": "jest --config jest.config.js",
     "check:drift": "node scripts/check-engine-drift.js",

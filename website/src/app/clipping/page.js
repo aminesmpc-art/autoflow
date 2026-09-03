@@ -1,4 +1,5 @@
 import StoreLink from "../StoreLink";
+import ClipStudio from "./ClipStudio";
 import "../studio/studio.css";
 
 export const metadata = {
@@ -132,11 +133,19 @@ export default function ClippingPage() {
             beat, and every clip comes with the edit already written down.
           </p>
           <div className="studio-hero-ctas">
-            <StoreLink product="studio" className="btn btn-primary btn-lg">Install Studio — Free</StoreLink>
-            <a href="/pricing" className="btn btn-secondary btn-lg">
-              See Pricing →
-            </a>
+            <a href="#clip-it" className="btn btn-primary btn-lg">Clip a recording →</a>
+            <StoreLink product="studio" className="btn btn-secondary btn-lg">Install Studio — Free</StoreLink>
           </div>
+        </div>
+      </section>
+
+      {/* ── THE THING ITSELF ──
+          Above the explanation on purpose. Everything below this section is
+          the argument for the pipeline, and a working one is a better
+          argument than a description of it. */}
+      <section className="section" id="clip-it" style={{ paddingTop: "56px" }}>
+        <div className="container">
+          <ClipStudio />
         </div>
       </section>
 

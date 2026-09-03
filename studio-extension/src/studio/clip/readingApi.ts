@@ -28,6 +28,40 @@
 
 import { getAccessToken, getExtractorBase } from '../../shared/api';
 
+/* ------------------------------------------------------------------ */
+/* Credentials, for callers that are not the extension                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Where the token and the host come from when there is no chrome.storage.
+ *
+ * The website runs this same pipeline from a page, and a page has no
+ * extension storage to read — `getAccessToken()` there is not "signed out",
+ * it is a ReferenceError. Set once at startup by the web entry; null in the
+ * extension, where the stored values are the right answer.
+ */
+let injected: { token: string; baseUrl: string } | null = null;
+
+/** Supply the credentials directly. See src/web/clipWeb.ts. */
+export function useInjectedCredentials(
+  credentials: { token: string; baseUrl: string } | null,
+): void {
+  injected = credentials;
+}
+
+/** The token to send, from whichever store this build has. */
+async function tokenFor(): Promise<string | null> {
+  if (injected) return injected.token || null;
+  return getAccessToken();
+}
+
+/** The host to call. An explicit baseUrl still wins, as it did before. */
+async function baseFor(options: { baseUrl?: string }): Promise<string> {
+  if (options.baseUrl) return options.baseUrl;
+  if (injected) return injected.baseUrl;
+  return getExtractorBase();
+}
+
 export interface ReadSegment {
   start: number;
   end: number;
@@ -125,7 +159,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Whether this build can even try — there is no point offering it signed out. */
 export async function canReadOnServer(): Promise<boolean> {
-  return !!(await getAccessToken());
+  return !!(await tokenFor());
 }
 
 function readReading(body: unknown, fallbackDuration: number): VideoReading | null {
@@ -212,12 +246,12 @@ export async function readVideoOnServer(
   options: ReadOptions = {},
 ): Promise<VideoReading> {
   const say = options.onProgress || (() => {});
-  const token = await getAccessToken();
+  const token = await tokenFor();
   if (!token) {
     throw new ReadingUnavailable('not signed in');
   }
 
-  const base = options.baseUrl || (await getExtractorBase());
+  const base = await baseFor(options);
 
   const form = new FormData();
   form.append('file', file, file.name || 'video.mp4');
@@ -254,43 +288,61 @@ export async function readVideoOnServer(
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   let lastStep = '';
 
-  while (Date.now() < deadline) {
-    if (options.signal?.aborted) throw new DOMException('aborted', 'AbortError');
-    await sleep(POLL_INTERVAL_MS);
+  try {
+    while (Date.now() < deadline) {
+      if (options.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+      await sleep(POLL_INTERVAL_MS);
 
-    const poll = await fetch(`${base}/api/clip/status/${jobId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: options.signal,
-    });
-    if (!poll.ok) throw new Error(await describeFailure(poll));
+      const poll = await fetch(`${base}/api/clip/status/${jobId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: options.signal,
+      });
+      if (!poll.ok) throw new Error(await describeFailure(poll));
 
-    const status = (await poll.json()) as {
-      status?: string; step?: string; error?: string; result?: unknown;
-    };
+      const status = (await poll.json()) as {
+        status?: string; step?: string; error?: string; result?: unknown;
+      };
 
-    if (status.step && status.step !== lastStep) {
-      lastStep = status.step;
-      say(lastStep);
-    }
-
-    if (status.status === 'failed') {
-      throw new Error(status.error || 'The server could not read that video.');
-    }
-    if (status.status === 'completed') {
-      const reading = readReading(status.result, durationSec);
-      if (!reading) throw new Error('The reading came back in a shape this build cannot use.');
-      if (!reading.segments.length) {
-        throw new Error(
-          reading.dropped[0]
-            ? `Nothing usable came back: ${reading.dropped[0]}`
-            : 'The reading found no speech in that video.',
-        );
+      if (status.step && status.step !== lastStep) {
+        lastStep = status.step;
+        say(lastStep);
       }
-      return reading;
-    }
-  }
 
-  throw new Error('The server was still reading the video after fifteen minutes.');
+      if (status.status === 'failed') {
+        throw new Error(status.error || 'The server could not read that video.');
+      }
+      if (status.status === 'cancelled') {
+        throw new DOMException('The video reading was cancelled.', 'AbortError');
+      }
+      if (status.status === 'completed') {
+        const reading = readReading(status.result, durationSec);
+        if (!reading) throw new Error('The reading came back in a shape this build cannot use.');
+        if (!reading.segments.length) {
+          throw new Error(
+            reading.dropped[0]
+              ? `Nothing usable came back: ${reading.dropped[0]}`
+              : 'The reading found no speech in that video.',
+          );
+        }
+        return reading;
+      }
+    }
+
+    throw new Error('The server was still reading the video after fifteen minutes.');
+  } catch (error) {
+    /* Uploading and model reading keep consuming server resources after a tab
+       abort unless the owner explicitly cancels the accepted job. Do this
+       without the already-aborted signal, and never hide the original error. */
+    try {
+      await fetch(`${base}/api/clip/status/${jobId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      /* Best effort: the original failure is the useful one to report. */
+    }
+    throw error;
+  }
 }
 
 /**
@@ -321,10 +373,10 @@ export async function askOnServer(
   prompt: string,
   options: AskOptions = {},
 ): Promise<string> {
-  const token = await getAccessToken();
+  const token = await tokenFor();
   if (!token) throw new ReadingUnavailable('not signed in');
 
-  const base = options.baseUrl || (await getExtractorBase());
+  const base = await baseFor(options);
   const attachments = (options.attachments || []).filter(
     (a) => typeof a === 'string' && a.startsWith('data:'),
   );
