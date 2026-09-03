@@ -1,28 +1,92 @@
 import StoreLink from "../StoreLink";
 import ClipStudio from "./ClipStudio";
+import ClipDemo from "./ClipDemo";
 import "../studio/studio.css";
+import "./clipDemo.css";
+import "./clipPage.css";
 
 export const metadata = {
-  title: "AI Clipping — Turn Long Videos into Short Clips | AutoFlow Studio",
+  /* `absolute` because the root layout appends "| AutoFlow — AI Video
+     Automation" to every title, and this page was shipping 97 characters with
+     the brand in it twice. Google renders about 60. */
+  title: {
+    absolute: "Free AI Clip Maker — Turn Long Videos into Shorts | AutoFlow",
+  },
   description:
-    "Studio finds the moments worth posting in a long recording, cuts each one on the words it starts and ends on, keeps the speaker in frame from a measured face track, burns in captions, and hands you a shot-by-shot edit sheet.",
+    "Free AI video clipper. Drop a podcast, stream or interview and get short vertical clips for TikTok, Reels and YouTube Shorts — cut on the spoken line, reframed to 9:16 from a measured face track, captioned, and handed over with an edit sheet.",
+  keywords: [
+    "ai clip maker", "long video to shorts", "podcast to shorts",
+    "ai video clipper", "free clip generator", "tiktok clips from long video",
+    "youtube shorts maker", "reels clip maker", "auto captions 9:16",
+  ],
   alternates: {
     canonical: "https://www.auto-flow.studio/clipping",
   },
   openGraph: {
-    title: "AI Clipping — Turn Long Videos into Short Clips",
+    title: "Free AI Clip Maker — Turn Long Videos into Shorts",
     description:
-      "Find the moments, cut on the words, keep the speaker in frame, caption them, and get an edit sheet timed to the second. Inside AutoFlow Studio.",
+      "Drop a long recording and get short vertical clips: cut on the spoken line, reframed to 9:16, captioned, with an edit sheet timed to the second.",
     url: "https://www.auto-flow.studio/clipping",
     type: "website",
+    /* Named explicitly. Next MERGES this object over the root layout's rather
+       than inheriting the parts left out, so omitting images here meant every
+       share of this page was a bare card with no picture at all. */
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "AutoFlow — turn a long recording into short vertical clips",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "AI Clipping — Turn Long Videos into Short Clips",
+    title: "Free AI Clip Maker — Turn Long Videos into Shorts",
     description:
-      "Find the moments, cut on the words, keep the speaker in frame, caption them, and get an edit sheet timed to the second.",
+      "Drop a long recording and get short vertical clips: cut on the spoken line, reframed to 9:16, captioned, with an edit sheet.",
+    images: ["/og-image.png"],
   },
 };
+
+/* Questions people actually ask before using something like this — what it
+   costs, what happens to the file, whether it works where they are. Rendered
+   on the page AND emitted as FAQPage, which is the schema type here that
+   Google still turns into a result. */
+const FAQ = [
+  {
+    q: "Is the AI clip maker free?",
+    a: "Yes. A free account clips one recording a day; Pro raises that to ten. Reading a video runs a model over the whole file, which is the part that costs money — the cutting, reframing and captioning all happen in your own browser and cost nothing.",
+  },
+  {
+    q: "What happens to my video?",
+    a: "It is uploaded once so the model can read it — audio, transcript and timings in a single pass — and it is deleted when the reading finishes. Every clip is then cut, cropped and captioned locally in your browser, so the footage is not sent anywhere a second time.",
+  },
+  {
+    q: "How long can the recording be?",
+    a: "Up to two hours and 500 MB, in MP4, MOV, WebM or MKV. A twenty-minute recording is read in well under a minute; the encoding afterwards depends on your machine and how many clips you asked for.",
+  },
+  {
+    q: "Does it add captions automatically?",
+    a: "Yes, burned into the picture, word by word, in five looks including a karaoke-style highlight. The cue times come from the same measured reading the cut used, so they follow the voice rather than drifting from it.",
+  },
+  {
+    q: "Will the clips be vertical for TikTok, Reels and Shorts?",
+    a: "9:16 by default, with 1:1, 4:5 and 16:9 available. The crop follows a face track measured across the clip frame by frame, so the speaker stays in shot instead of walking out of a fixed centre crop.",
+  },
+  {
+    q: "Which browsers does it work in?",
+    a: "Any browser with WebCodecs: Chrome and Edge 94 and up, Safari 16.4 and up, Firefox 130 and up. The page checks before you upload anything and says so if it cannot encode, rather than failing after the reading is paid for.",
+  },
+  {
+    q: "How does it decide which moments are worth posting?",
+    a: "The loudness envelope shortlists candidates from the audio, then a model reads what is actually said in each one and scores it out of 100. You set the bar. Nothing is chosen for being loud — that only decides where to look.",
+  },
+  {
+    q: "Do I need the Chrome extension?",
+    a: "Not for this page. AutoFlow Studio runs the same pipeline on a canvas where clips become nodes you can re-cut, re-frame and re-caption without paying for the reading again, and every run here can be downloaded as a Studio workflow.",
+  },
+];
 
 /* The steps are numbered because the order is load-bearing, not for decoration:
    each one depends on the measurement the one before it produced. That is the
@@ -96,56 +160,130 @@ const FACTS = [
 export default function ClippingPage() {
   return (
     <>
+      {/* One graph rather than four tags. HowTo is kept because it still
+          describes the page honestly to anything that reads it, but Google
+          stopped rendering HowTo results in 2023, so it is no longer carrying
+          this page on its own — SoftwareApplication, FAQPage and
+          BreadcrumbList are the ones that can still produce a result. */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
           __html: JSON.stringify({
             "@context": "https://schema.org",
-            "@type": "HowTo",
-            name: "Turn a long recording into short clips with AutoFlow Studio",
-            description:
-              "How AutoFlow Studio finds postable moments in a long video, cuts them on the spoken words, keeps the speaker in frame and captions them.",
-            step: PIPELINE.map((s, i) => ({
-              "@type": "HowToStep",
-              position: i + 1,
-              name: s.title,
-              text: s.body,
-            })),
+            "@graph": [
+              {
+                "@type": "SoftwareApplication",
+                "@id": "https://www.auto-flow.studio/clipping#app",
+                name: "AutoFlow AI Clip Maker",
+                url: "https://www.auto-flow.studio/clipping",
+                applicationCategory: "MultimediaApplication",
+                applicationSubCategory: "Video Editing",
+                operatingSystem: "Any browser with WebCodecs (Chrome 94+, Edge 94+, Safari 16.4+, Firefox 130+)",
+                description:
+                  "Turns a long recording into short vertical clips: moments ranked from the audio, cut on the spoken line, reframed to 9:16 from a measured face track, captioned, and delivered with an edit sheet.",
+                featureList: [
+                  "Finds the moments worth posting in a long recording",
+                  "Cuts on the spoken line rather than a guessed timestamp",
+                  "9:16, 1:1, 4:5 and 16:9 reframing from a measured face track",
+                  "Burned-in word-timed captions in five styles",
+                  "Shot-by-shot edit sheet timed to the second",
+                  "Exports MP4 clips and an AutoFlow Studio workflow",
+                ],
+                offers: {
+                  "@type": "Offer",
+                  price: "0",
+                  priceCurrency: "USD",
+                  description: "One recording a day free; ten a day on Pro.",
+                },
+              },
+              {
+                "@type": "FAQPage",
+                "@id": "https://www.auto-flow.studio/clipping#faq",
+                mainEntity: FAQ.map(({ q, a }) => ({
+                  "@type": "Question",
+                  name: q,
+                  acceptedAnswer: { "@type": "Answer", text: a },
+                })),
+              },
+              {
+                "@type": "BreadcrumbList",
+                itemListElement: [
+                  {
+                    "@type": "ListItem",
+                    position: 1,
+                    name: "AutoFlow",
+                    item: "https://www.auto-flow.studio",
+                  },
+                  {
+                    "@type": "ListItem",
+                    position: 2,
+                    name: "AI Clipping",
+                    item: "https://www.auto-flow.studio/clipping",
+                  },
+                ],
+              },
+              {
+                "@type": "HowTo",
+                name: "Turn a long recording into short clips with AutoFlow",
+                description:
+                  "How AutoFlow finds postable moments in a long video, cuts them on the spoken words, keeps the speaker in frame and captions them.",
+                step: PIPELINE.map((s, i) => ({
+                  "@type": "HowToStep",
+                  position: i + 1,
+                  name: s.title,
+                  text: s.body,
+                })),
+              },
+            ],
           }),
         }}
       />
 
-      {/* ── HERO ── */}
-      <section className="studio-hero">
+      {/* ── HERO — the tool IS the hero ──
+          Everything below this section is the argument for the pipeline, and
+          a working one is a better argument than a description of one. The
+          headline is kept short so the drop zone is reachable without
+          scrolling on a laptop. */}
+      <section className="studio-hero clip-hero" id="clip-it">
         <div className="studio-hero-bg" />
         <div className="container" style={{ position: "relative", zIndex: 1 }}>
-          <div className="studio-badge">✂️ Inside AutoFlow Studio</div>
+          <div className="studio-badge">✂️ Free · runs in your browser</div>
           <h1>
-            A long recording in.<br />
-            <span className="text-gradient">Clips worth posting out.</span>
+            Turn a long video into<br />
+            <span className="text-gradient">short clips worth posting.</span>
           </h1>
-          <p
-            className="text-secondary"
-            style={{ maxWidth: "760px", margin: "24px auto 0", fontSize: "1.15rem", lineHeight: 1.7 }}
-          >
-            Studio listens to the whole thing, picks the moments that carry, and cuts each one on the
-            words it actually starts and ends on. The speaker stays in frame, the captions land on the
-            beat, and every clip comes with the edit already written down.
+          <p className="clip-hero-sub">
+            Drop a podcast, stream or interview. You get vertical clips for TikTok,
+            Reels and YouTube Shorts — cut on the line they open and close on,
+            reframed to 9:16, captioned, with the edit already written down.
           </p>
-          <div className="studio-hero-ctas">
-            <a href="#clip-it" className="btn btn-primary btn-lg">Clip a recording →</a>
-            <StoreLink product="studio" className="btn btn-secondary btn-lg">Install Studio — Free</StoreLink>
+
+          <div className="clip-hero-tool">
+            <ClipStudio />
           </div>
+
+          <ul className="clip-hero-trust">
+            <li>One recording a day, free</li>
+            <li>Up to 2 hours · 500 MB</li>
+            <li>Cut and captioned in your browser</li>
+            <li>No watermark</li>
+          </ul>
         </div>
       </section>
 
-      {/* ── THE THING ITSELF ──
-          Above the explanation on purpose. Everything below this section is
-          the argument for the pipeline, and a working one is a better
-          argument than a description of it. */}
-      <section className="section" id="clip-it" style={{ paddingTop: "56px" }}>
+      {/* ── WHAT COMES OUT ──
+          The page had no images at all, which for a video product meant a
+          visitor could read the whole argument and never see the output. */}
+      <section className="section" style={{ paddingTop: "40px" }}>
         <div className="container">
-          <ClipStudio />
+          <div className="section-header">
+            <div className="badge">What comes back</div>
+            <h2>
+              One recording in,<br />
+              <span className="text-gradient">a field of clips out.</span>
+            </h2>
+          </div>
+          <ClipDemo />
         </div>
       </section>
 
@@ -321,6 +459,38 @@ export default function ClippingPage() {
         </div>
       </section>
 
+      {/* ── FAQ ──
+          Real questions, and the schema type on this page most likely to earn
+          a result now that HowTo no longer does. Plain <details> so it works
+          with no JavaScript and every answer is in the HTML a crawler reads,
+          open or closed. */}
+      <section
+        className="section"
+        style={{ background: "rgba(255,255,255,0.01)", borderTop: "1px solid var(--border)" }}
+      >
+        <div className="container">
+          <div className="section-header">
+            <div className="badge">Questions</div>
+            <h2>
+              Before you upload<br />
+              <span className="text-gradient">two hours of anything.</span>
+            </h2>
+          </div>
+
+          <div className="clip-faq">
+            {FAQ.map(({ q, a }) => (
+              <details key={q} className="clip-faq-item">
+                <summary>
+                  <h3>{q}</h3>
+                  <span className="clip-faq-mark" aria-hidden="true" />
+                </summary>
+                <p>{a}</p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── CTA ── */}
       <section
         className="section"
@@ -332,13 +502,13 @@ export default function ClippingPage() {
             <span className="text-gradient">looking for the good bit.</span>
           </h2>
           <p className="text-secondary" style={{ maxWidth: "640px", margin: "0 auto 32px" }}>
-            Clipping is part of AutoFlow Studio. Free to install, ten workflow runs a month included.
+            Clip one here for free, or run the same pipeline on a canvas in AutoFlow
+            Studio, where every clip becomes a node you can re-cut without paying for
+            the reading again.
           </p>
           <div style={{ display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
-            <StoreLink product="studio" className="btn btn-primary btn-lg">Install Studio — Free</StoreLink>
-            <a href="/studio" className="btn btn-secondary btn-lg">
-              Explore the Canvas →
-            </a>
+            <a href="#clip-it" className="btn btn-primary btn-lg">Clip a recording →</a>
+            <StoreLink product="studio" className="btn btn-secondary btn-lg">Install Studio — Free</StoreLink>
           </div>
         </div>
       </section>

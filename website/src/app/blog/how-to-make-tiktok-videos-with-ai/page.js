@@ -302,7 +302,12 @@ metropolis, seamless morph, vertical video`}
               </details>
               <details>
                 <summary>What&apos;s the best video length for TikTok?</summary>
-                <p>7-15 seconds is the sweet spot. Google Flow generates ~8 second clips which is perfect. For longer content, chain multiple clips.</p>
+                <p>
+                  7-15 seconds is the sweet spot. Google Flow generates ~8 second clips which is
+                  perfect. For longer content, chain multiple clips — or go the other way and{" "}
+                  <Link href="/clipping">cut a long recording into short clips</Link>, which finds
+                  the moments worth posting, crops them to 9:16 and captions them.
+                </p>
               </details>
               <details>
                 <summary>Do I need AutoFlow Pro for TikTok content?</summary>

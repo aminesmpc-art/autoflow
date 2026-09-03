@@ -153,11 +153,14 @@ export default function ClipStudio() {
 
   /* Asked before the click, not at it: a browser that cannot encode should
      say so before someone uploads 400MB and pays for a reading, not after.
-     But only once there is an account to clip with. /clipping is linked from
-     the nav now, so most people arriving here are signed out, cannot run
-     anything, and were being made to fetch 152KB of demuxer to be told so. */
+
+     Not on mount, though. /clipping is in the nav, so most arrivals are
+     drive-by, and they were being made to fetch 152KB of demuxer to be told
+     something they were never going to use. Loaded once there is either an
+     account or a chosen file — both are intent, and reading a file's duration
+     needs the engine anyway. */
   useEffect(() => {
-    if (!user) return;
+    if (!user && !file) return;
     let alive = true;
     import("../../vendor/autoflow-clip")
       .then((mod) => { if (alive) setReady(mod.supported()); })
@@ -165,7 +168,7 @@ export default function ClipStudio() {
         if (alive) setReady({ ok: false, reason: "The clipping engine could not be loaded." });
       });
     return () => { alive = false; };
-  }, [user]);
+  }, [user, file]);
 
   /* Which allowance applies. Only the plan is asked for — the used count is
      written by the reserve call and has no route that reads it back. */
@@ -325,35 +328,6 @@ export default function ClipStudio() {
     return <div className="clip-tool"><p className="clip-log">Checking your account…</p></div>;
   }
 
-  if (!user) {
-    return (
-      <div className="clip-tool">
-        <div className="clip-tool-head">
-          <div>
-            <h2>Clip a recording</h2>
-            <p>
-              Reading a video runs a model over the whole file, so it needs an account —
-              that is what the daily allowance is counted against.
-            </p>
-          </div>
-        </div>
-        <div className="clip-actions-row">
-          {/* ?next= so signing in returns here rather than dropping them on
-              the extractor, which is where both auth pages went by default. */}
-          <a href="/login?next=%2Fclipping" className="btn btn-primary btn-lg">Sign in to clip</a>
-          <a href="/register?next=%2Fclipping" className="btn btn-secondary btn-lg">
-            Create a free account
-          </a>
-        </div>
-        <p className="clip-note info">
-          Prefer to keep the video on your own machine end to end?{" "}
-          <StoreLink product="studio">AutoFlow Studio</StoreLink> runs the same pipeline
-          inside the extension, against the chat accounts you already have.
-        </p>
-      </div>
-    );
-  }
-
   if (ready && !ready.ok) {
     return (
       <div className="clip-tool">
@@ -497,13 +471,34 @@ export default function ClipStudio() {
           </div>
 
           <div className="clip-actions-row">
-            <button className="btn btn-primary btn-lg" onClick={start} disabled={!ready?.ok}>
-              {ready ? "✂️ Find the clips" : "Loading the engine…"}
-            </button>
+            {/* The ask arrives here rather than in front of the tool: by this
+                point there is a file, there are settings, and there is a
+                reason to want an account. ?next= brings them back to this
+                page — they re-pick the file, which is the one thing a
+                navigation cannot carry. */}
+            {user ? (
+              <button className="btn btn-primary btn-lg" onClick={start} disabled={!ready?.ok}>
+                {ready ? "✂️ Find the clips" : "Loading the engine…"}
+              </button>
+            ) : (
+              <a href="/login?next=%2Fclipping" className="btn btn-primary btn-lg">
+                Sign in to clip — free
+              </a>
+            )}
             <span className="clip-log">
-              One reading of the video, then one encode per clip in this tab.
-              {isPro === false && (
-                <> Free accounts read one recording a day — <a href="/pricing">Pro raises it to ten</a>.</>
+              {user ? (
+                <>
+                  One reading of the video, then one encode per clip in this tab.
+                  {isPro === false && (
+                    <> Free accounts read one recording a day — <a href="/pricing">Pro raises it to ten</a>.</>
+                  )}
+                </>
+              ) : (
+                <>
+                  Reading a video runs a model over the whole file, so it is counted
+                  against an account — one recording a day, free.{" "}
+                  <a href="/register?next=%2Fclipping">Create one</a>, and you land back here.
+                </>
               )}
             </span>
           </div>

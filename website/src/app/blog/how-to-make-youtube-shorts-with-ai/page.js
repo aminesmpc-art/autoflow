@@ -176,7 +176,10 @@ slow motion, vertical, cinematic 4K`}
             <ul>
               <li>
                 <strong>Watch completion rate.</strong> Shorter = better. 8-15 seconds is ideal.
-                AI-generated clips from Flow are naturally in this range.
+                AI-generated clips from Flow are naturally in this range. Working from a long
+                recording instead?{" "}
+                <Link href="/clipping">Clip it into Shorts automatically</Link> — the cut lands on
+                the line it opens and closes on, so it never starts mid-word.
               </li>
               <li>
                 <strong>Re-watches (looping).</strong> Create seamless loops where the end connects

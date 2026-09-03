@@ -4,6 +4,11 @@
    size stop being readable at exactly the point somebody needs to change one. */
 
 .clip-tool {
+  /* The hero centres its text and the card sits inside it, so without this
+     every field label and the filename come out centred — which reads as a
+     poster rather than as a form you are meant to fill in. The drop zone sets
+     its own centring back, because there it is right. */
+  text-align: left;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: var(--gradient-card), rgba(8, 8, 8, 0.9);
@@ -80,7 +85,7 @@
 
 .clip-options {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 18px;
   margin: 24px 0;
 }

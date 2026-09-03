@@ -2,11 +2,23 @@ export default async function sitemap() {
   const baseUrl = 'https://www.auto-flow.studio';
   const locales = ['ar', 'fr', 'es', 'de', 'it'];
   
-  // Static routes — English served at root, localized at /{locale}/path
-  // Use realistic last-modified dates (update these when you actually change a page)
+  /* Static routes — English served at root, localized at /{locale}/path.
+     Use realistic last-modified dates (update these when you actually change
+     a page).
+
+     `englishOnly` marks the pages that live outside app/[locale] and therefore
+     have no translations. Without it they were given all five alternates like
+     everything else, and the sitemap advertised fifteen URLs that 404 —
+     /fr/studio, /es/clipping, /de/changelog and the rest. hreflang is a
+     cluster and a cluster with dead members is thrown away whole, so this was
+     also costing the pages that ARE translated.
+
+     Do not derive this from middleware's `unlocalizedPaths`: that list answers
+     a different question and disagrees — /pricing is in it and /fr/pricing
+     serves 200. Verified route by route against production 2026-09-03. */
   const routes = [
     { path: '', lastmod: '2026-08-22' },
-    { path: '/studio', lastmod: '2026-08-22' },
+    { path: '/studio', lastmod: '2026-08-22', englishOnly: true },
     { path: '/pricing', lastmod: '2026-08-22' },
     { path: '/faq', lastmod: '2026-06-19' },
     { path: '/blog', lastmod: '2026-06-19' },
@@ -14,25 +26,32 @@ export default async function sitemap() {
     { path: '/terms', lastmod: '2026-04-01' },
     { path: '/prompts', lastmod: '2026-07-04' },
     { path: '/extractor', lastmod: '2026-07-04' },
-    { path: '/clipping', lastmod: '2026-09-03' },
-    { path: '/changelog', lastmod: '2026-06-16' },
+    { path: '/clipping', lastmod: '2026-09-03', englishOnly: true },
+    { path: '/changelog', lastmod: '2026-06-16', englishOnly: true },
   ];
   
-  const staticSitemaps = routes.map(({ path: route, lastmod }) => {
-    const alternateLanguages = { en: `${baseUrl}${route}` };
-    locales.forEach(locale => {
-      alternateLanguages[locale] = `${baseUrl}/${locale}${route}`;
-    });
-
-    return {
+  const staticSitemaps = routes.map(({ path: route, lastmod, englishOnly }) => {
+    const entry = {
       url: `${baseUrl}${route}`,
       lastModified: new Date(lastmod),
       changeFrequency: 'weekly',
-      priority: route === '' ? 1.0 : route === '/extractor' ? 0.9 : 0.8,
-      alternates: {
-        languages: alternateLanguages,
-      },
+      priority: route === '' ? 1.0
+        : route === '/extractor' || route === '/clipping' ? 0.9
+        : 0.8,
     };
+
+    /* An English-only page names no alternates at all. Claiming `en` alone
+       would be truthful but pointless — a one-member cluster says nothing
+       that the URL does not already say. */
+    if (!englishOnly) {
+      const alternateLanguages = { en: `${baseUrl}${route}` };
+      locales.forEach(locale => {
+        alternateLanguages[locale] = `${baseUrl}/${locale}${route}`;
+      });
+      entry.alternates = { languages: alternateLanguages };
+    }
+
+    return entry;
   });
 
   // English-only blog posts

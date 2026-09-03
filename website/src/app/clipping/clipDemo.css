@@ -1,0 +1,217 @@
+/* The "what comes out" diagram. See ClipDemo.js for why it is drawn.
+
+   Sized in rem and percentages throughout: the whole point is that it holds
+   together from 360px to 1200px without a second version of itself. */
+
+.clip-demo {
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+/* ── The source recording ───────────────────────────────────────────── */
+
+.clip-demo-source {
+  margin: 0;
+  padding: 18px 20px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.clip-demo-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.clip-demo-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex: none;
+}
+
+.clip-demo-track {
+  position: relative;
+  height: 74px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* A chosen span. Sits behind the bars so the waveform reads as continuous. */
+.clip-demo-pick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(255, 92, 0, 0.16);
+  border-left: 1px solid rgba(255, 92, 0, 0.6);
+  border-right: 1px solid rgba(255, 92, 0, 0.6);
+}
+
+.clip-demo-pick-score {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--primary-light);
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 999px;
+  padding: 1px 6px;
+  line-height: 1.5;
+}
+
+.clip-demo-wave {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+}
+
+.clip-demo-wave i {
+  flex: 1;
+  min-width: 1px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.clip-demo-wave i.on { background: var(--primary); }
+
+.clip-demo-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* ── The arrow between ──────────────────────────────────────────────── */
+
+.clip-demo-arrow {
+  display: flex;
+  justify-content: center;
+  color: rgba(255, 92, 0, 0.55);
+  padding: 6px 0 2px;
+}
+
+/* ── The clips ──────────────────────────────────────────────────────── */
+
+/* Narrower than the recording above it, deliberately. Three 9:16 cards across
+   the full 980px are 559px tall each, which is a diagram the size of a screen;
+   at 640px they are 370px and the shape of the picture — one long wide thing
+   becoming three small upright ones — does the explaining on its own. */
+.clip-demo-out {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+@media (max-width: 560px) {
+  .clip-demo-out { gap: 10px; }
+}
+
+.clip-demo-clip { margin: 0; }
+
+.clip-demo-phone {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #0a0a0a;
+}
+
+.clip-demo-figure {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.clip-demo-ratio {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.clip-demo-caption {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  bottom: 12%;
+  text-align: center;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+/* The word being said, lit — the karaoke preset, in one frame. */
+.clip-demo-caption b {
+  display: block;
+  font-size: clamp(0.62rem, 2.1vw, 0.86rem);
+  font-weight: 800;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+
+.clip-demo-caption span {
+  display: block;
+  font-size: clamp(0.58rem, 1.9vw, 0.78rem);
+  font-weight: 700;
+  color: #fff;
+  text-transform: uppercase;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+
+.clip-demo-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.clip-demo-score {
+  color: var(--primary-light);
+  font-weight: 700;
+  background: rgba(255, 92, 0, 0.14);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+@media (max-width: 420px) {
+  .clip-demo-cc { display: none; }
+}
+
+.clip-demo-note {
+  margin: 20px auto 0;
+  max-width: 640px;
+  text-align: center;
+  font-size: 0.88rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
