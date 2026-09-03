@@ -9,6 +9,7 @@ import StoreLink from "./StoreLink";
 import { AuthProvider } from "../context/AuthContext";
 import AuthButtons from "./AuthButtons";
 import MobileBanner from "./MobileBanner";
+import LangDropdown from "./LangDropdown";
 
 export const metadata = {
   metadataBase: new URL("https://www.auto-flow.studio"),
@@ -262,29 +263,30 @@ export default function RootLayout({ children }) {
 function Header() {
   return (
     <header className="site-header">
-      <nav className="container header-nav">
+      <nav className="header-nav">
         <a href="/" className="logo">
           <span className="logo-icon">⚡</span>
           <span className="logo-text">AutoFlow</span>
         </a>
         <ul className="nav-links">
-          <li><a href="/#features">Features</a></li>
+          <li>
+            <a href="/studio" className="nav-item-feature">
+              <span className="nav-dot" /> Studio
+            </a>
+          </li>
+          <li>
+            <a href="/extractor" className="nav-item-feature">
+              <span className="nav-dot nav-dot-green" /> Extractor
+            </a>
+          </li>
+          <li><a href="/#features">Batch Queue</a></li>
           <li><a href="/#how-it-works">How It Works</a></li>
-          <li><a href="/extractor">Extractor</a></li>
-          <li><a href="/prompts">Prompts</a></li>
           <li><a href="/pricing">Pricing</a></li>
           <li><a href="/blog">Blog</a></li>
           <li><a href="/faq">FAQ</a></li>
         </ul>
         <div className="header-actions">
-          <div className="lang-switcher">
-            <a href="/" className="lang-option active">EN</a>
-            <a href="/es" className="lang-option">ES</a>
-            <a href="/de" className="lang-option">DE</a>
-            <a href="/ar" className="lang-option">AR</a>
-            <a href="/fr" className="lang-option">FR</a>
-            <a href="/it" className="lang-option">IT</a>
-          </div>
+          <LangDropdown />
           <AuthButtons />
           <StoreLink className="btn btn-primary btn-header">
             Install Free
@@ -306,25 +308,26 @@ function Footer() {
             <span className="logo-text">AutoFlow</span>
           </a>
           <p className="text-secondary">
-            Automate AI video generation with Google Flow. Batch process, queue,
-            and download — all on autopilot.
+            The complete generative AI video automation suite for Google Flow and beyond.
+            Visual node canvas, Story Director continuity, and batch queue processing.
           </p>
         </div>
         <div className="footer-col">
-          <span className="footer-heading">Product</span>
+          <span className="footer-heading">Products</span>
           <ul>
-            <li><a href="/#features">Features</a></li>
-            <li><a href="/#how-it-works">How It Works</a></li>
-            <li><a href="/pricing">Pricing</a></li>
-            <li><a href="/prompts">Prompts</a></li>
-            <li><a href="/blog">Blog</a></li>
+            <li><a href="/studio">AutoFlow Studio (Canvas)</a></li>
+            <li><a href="/extractor">AI Video Prompt Extractor</a></li>
+            <li><a href="/#features">AutoFlow Queue Manager</a></li>
+            <li><a href="/pricing">Pricing (Pro $9.99)</a></li>
+            <li><a href="/changelog">Changelog</a></li>
           </ul>
         </div>
         <div className="footer-col">
-          <span className="footer-heading">Support</span>
+          <span className="footer-heading">Resources</span>
           <ul>
+            <li><a href="/blog">Blog &amp; Guides</a></li>
             <li><a href="/faq">FAQ</a></li>
-            <li><a href="mailto:support@auto-flow.studio">Contact</a></li>
+            <li><a href="mailto:support@auto-flow.studio">Contact Support</a></li>
           </ul>
         </div>
         <div className="footer-col">
@@ -337,8 +340,8 @@ function Footer() {
       </div>
       <div className="container footer-bottom">
         <p className="text-secondary">
-          © {new Date().getFullYear()} AutoFlow. Not affiliated with Google.
-          Third-party automation tool.
+          © {new Date().getFullYear()} AutoFlow. Not affiliated with Google, OpenAI, Anthropic, or xAI.
+          Independent automation tools.
         </p>
       </div>
     </footer>

@@ -1,5 +1,5 @@
 import { getDictionary, locales, defaultLocale } from '../../dictionaries';
-import StoreLink from '../../StoreLink';
+import PricingCalculator from '../../PricingCalculator';
 
 export async function generateStaticParams() {
   return locales.filter(l => l !== defaultLocale).map(locale => ({ locale }));
@@ -31,50 +31,21 @@ export default async function LocalePricingPage({ params }) {
 
   return (
     <>
-      <section className="pricing-hero">
+      <section className="pricing-hero" style={{ paddingTop: "160px", paddingBottom: "60px", textAlign: "center" }}>
         <div className="container">
-          <div className="badge">{t.pricing.badge}</div>
-          <h1>{t.pricing.title} <span className="text-gradient">{t.pricing.titleGradient}</span></h1>
-          <p>{t.pricing.subtitle}</p>
+          <div className="badge" style={{ marginBottom: "20px" }}>{t.pricing.badge}</div>
+          <h1 style={{ fontSize: "2.8rem", marginBottom: "16px" }}>
+            {t.pricing.title} <span className="text-gradient">{t.pricing.titleGradient}</span>
+          </h1>
+          <p style={{ maxWidth: "680px", margin: "0 auto", fontSize: "1.15rem", color: "var(--text-secondary)" }}>
+            {t.pricing.subtitle}
+          </p>
         </div>
       </section>
 
-      <section className="section">
+      <section className="section" style={{ paddingTop: "20px", paddingBottom: "120px" }}>
         <div className="container">
-          <div className="pricing-grid">
-            {/* Free Tier */}
-            <div className="pricing-card">
-              <div className="pricing-name">{t.pricing.free.name}</div>
-              <div className="pricing-price">{t.pricing.free.price} <span>{t.pricing.free.period}</span></div>
-              <div className="pricing-desc">{t.pricing.free.desc}</div>
-              <ul className="pricing-features">
-                {t.pricing.free.features.map((f, i) => <li key={i}>{f}</li>)}
-              </ul>
-              <StoreLink className="btn btn-secondary">
-                {t.pricing.free.btn}
-              </StoreLink>
-            </div>
-
-            {/* Pro Tier */}
-            <div className="pricing-card featured">
-              <div className="pricing-name">{t.pricing.pro.name}</div>
-              <div className="pricing-price">{t.pricing.pro.price} <span>{t.pricing.pro.period}</span></div>
-              <div className="pricing-desc">{t.pricing.pro.desc}</div>
-              <ul className="pricing-features">
-                {t.pricing.pro.features.map((f, i) => <li key={i}>{f}</li>)}
-              </ul>
-              {/*
-                Goes to our own checkout, not straight to Whop: Whop's hosted
-                page leaves the email editable, and an address that isn't the
-                buyer's AutoFlow one leaves the payment unmatchable. Visitors
-                with no session land on the sign-in prompt, which is the point
-                — an account has to exist for the webhook to attach to.
-              */}
-              <a href="/checkout" className="btn btn-primary">
-                {t.pricing.pro.btn}
-              </a>
-            </div>
-          </div>
+          <PricingCalculator />
         </div>
       </section>
     </>

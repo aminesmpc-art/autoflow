@@ -31,10 +31,10 @@ export default function MobileMenu() {
             onClick={(e) => e.stopPropagation()}
           >
             <ul>
-              <li><a href={`${prefix}/#features`} onClick={() => setOpen(false)}>Features</a></li>
+              <li><a href={`${prefix}/studio`} onClick={() => setOpen(false)} style={{ color: "var(--primary-light)", fontWeight: "600" }}>✨ AutoFlow Studio (NEW)</a></li>
+              <li><a href={`${prefix}/extractor`} onClick={() => setOpen(false)} style={{ color: "var(--primary)", fontWeight: "600" }}>🔍 Video Extractor (FREE)</a></li>
+              <li><a href={`${prefix}/#features`} onClick={() => setOpen(false)}>Batch Queue</a></li>
               <li><a href={`${prefix}/#how-it-works`} onClick={() => setOpen(false)}>How It Works</a></li>
-              <li><a href={`${prefix}/extractor`} onClick={() => setOpen(false)}>Extractor</a></li>
-              <li><a href={`${prefix}/prompts`} onClick={() => setOpen(false)}>Prompts</a></li>
               <li><a href={`${prefix}/pricing`} onClick={() => setOpen(false)}>Pricing</a></li>
               <li><a href={`${prefix}/blog`} onClick={() => setOpen(false)}>Blog</a></li>
               <li><a href={`${prefix}/faq`} onClick={() => setOpen(false)}>FAQ</a></li>

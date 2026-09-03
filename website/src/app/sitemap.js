@@ -5,15 +5,16 @@ export default async function sitemap() {
   // Static routes — English served at root, localized at /{locale}/path
   // Use realistic last-modified dates (update these when you actually change a page)
   const routes = [
-    { path: '', lastmod: '2026-06-19' },
-    { path: '/pricing', lastmod: '2026-06-19' },
+    { path: '', lastmod: '2026-08-22' },
+    { path: '/studio', lastmod: '2026-08-22' },
+    { path: '/pricing', lastmod: '2026-08-22' },
     { path: '/faq', lastmod: '2026-06-19' },
     { path: '/blog', lastmod: '2026-06-19' },
     { path: '/privacy', lastmod: '2026-04-01' },
     { path: '/terms', lastmod: '2026-04-01' },
     { path: '/prompts', lastmod: '2026-07-04' },
-    { path: '/extractor', lastmod: '2026-08-25' },
-    { path: '/changelog', lastmod: '2026-08-25' },
+    { path: '/extractor', lastmod: '2026-07-04' },
+    { path: '/changelog', lastmod: '2026-06-16' },
   ];
   
   const staticSitemaps = routes.map(({ path: route, lastmod }) => {

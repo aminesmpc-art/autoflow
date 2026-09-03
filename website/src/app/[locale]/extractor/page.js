@@ -9,7 +9,12 @@ import {
   buildStudioWorkflow,
   downloadStudioWorkflow,
 } from "./studioWorkflow";
-import { studioInstalled, sendToStudio, toBuildOptions, estimateInStudio } from "./studioBridge";
+import { studioInstalled, sendToStudio, toBuildOptions } from "./studioBridge";
+
+/* Where "Install AutoFlow Studio" sends people. One constant, so the listing
+   moving is a one-line change. */
+const STUDIO_STORE_URL =
+  "https://chromewebstore.google.com/detail/autoflow-studio-%E2%80%94-node-wo/knodokbipcajhdpafplmlljbaamgfkao";
 
 /* Extraction options. Mirrors ExtractionOptions in
    extractor-backend/app/api/videos.py — the engine validates and falls back on
@@ -33,20 +38,6 @@ const EXTRACT_STYLES = [
   ["anime", "Anime"],
   ["3d", "3D render"],
 ];
-
-/* Where "Install AutoFlow Studio" sends people.
- *
- * One constant because it is the only thing standing between this page and a
- * working install button — the listing is not live yet, so paste the Chrome
- * Web Store URL here and the button appears by itself. Everything below is
- * already written for it.
- *
- * Empty is a supported state, not a broken one: with no address the page
- * keeps the download as the main action rather than offering a link that
- * goes nowhere. NOT the task-manager listing — that is a different product
- * and would install the wrong extension. */
-const STUDIO_STORE_URL =
-  "https://chromewebstore.google.com/detail/autoflow-studio-%E2%80%94-node-wo/knodokbipcajhdpafplmlljbaamgfkao";
 
 const DEFAULT_EXTRACT_OPTS = {
   shotCount: "auto",
@@ -95,7 +86,7 @@ const studioSelectStyle = {
 };
 
 export default function ExtractorPage() {
-  const { user, token, loading } = useAuth();
+  const { user, token, loading, login, register } = useAuth();
   const router = useRouter();
   
   const [mode, setMode] = useState("upload"); // upload, url
@@ -109,20 +100,23 @@ export default function ExtractorPage() {
   const [saveStatus, setSaveStatus] = useState("idle");
   const [studioOpts, setStudioOpts] = useState(DEFAULT_STUDIO_OPTS);
   const [studioSent, setStudioSent] = useState(false);
-  /* null while we are still asking. The three states are different on screen:
-     asking shows nothing, installed shows a Send button, missing shows the
-     download and a line saying where the extension is. */
+  /* null while the answer is unknown. Three states that look different on
+     screen: asking waits, installed sends, missing offers the install. */
   const [hasStudio, setHasStudio] = useState(null);
   const [studioSend, setStudioSend] = useState({ state: "idle", message: "", notes: [] });
-  /* What Studio says it would build. Null until it has answered, and null for
-     ever if it is not installed — in which case the page's own count is the
-     right one, because the page's own builder is what will run. */
-  const [studioCost, setStudioCost] = useState(null);
   const [extractOpts, setExtractOpts] = useState(DEFAULT_EXTRACT_OPTS);
   const [showExtractOpts, setShowExtractOpts] = useState(false);
   const [savedId, setSavedId] = useState(null);
   const [isPublished, setIsPublished] = useState(false);
   const [publishBusy, setPublishBusy] = useState(false);
+
+  // In-page Auth Modal state for guests
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authTab, setAuthTab] = useState("register"); // "register" or "login"
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState(null);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
 
   /** Publishing is opt-in: extractions save privately, and this is the only
       thing that puts one in the public gallery. */
@@ -153,10 +147,10 @@ export default function ExtractorPage() {
   const setStudioOpt = (key, value) =>
     setStudioOpts((prev) => ({ ...prev, [key]: value }));
 
-  /* Ask once whether Studio is installed. The answer decides which button the
-     Send section shows, so it is asked as soon as there is a result to send
-     rather than at the moment of the click — a button that changes shape under
-     the cursor is worse than one that was always right. */
+  // Built on every render so the counts below always match the current options.
+  // Cheap — a handful of shots, no I/O.
+  /* Asked as soon as there is a result rather than at the moment of the
+     click, so the button is right before it is reached for. */
   useEffect(() => {
     if (!result?.shots?.length) return;
     let alive = true;
@@ -164,17 +158,7 @@ export default function ExtractorPage() {
     return () => { alive = false; };
   }, [result]);
 
-  /* Re-asked on every option change, because the answer depends on them: the
-     count under the button should always be the count the button produces. */
-  useEffect(() => {
-    if (!hasStudio || !result?.shots?.length) return;
-    let alive = true;
-    estimateInStudio(result, toBuildOptions(studioOpts, result.video_name))
-      .then((cost) => { if (alive) setStudioCost(cost); });
-    return () => { alive = false; };
-  }, [hasStudio, result, studioOpts]);
-
-  /** Hand the extraction to the extension, which builds and opens it. */
+  /** Hand the extraction to the extension, which builds it and opens it. */
   const handleSendToStudio = async () => {
     if (!result) return;
     setStudioSend({ state: "sending", message: "", notes: [] });
@@ -185,22 +169,18 @@ export default function ExtractorPage() {
     if (reply.ok) {
       setStudioSend({
         state: "sent",
-        message: `Opened in Studio \u2014 ${reply.nodes} nodes. If the canvas didn't come up, open the extension and it's waiting.`,
-        /* Shots that were too thin to build, or a shot list longer than the
-           cap. Shown because the alternative is a workflow quietly smaller
-           than the analysis, discovered on the canvas or not at all. */
+        message: `Opened in Studio — ${reply.nodes} nodes. If the canvas did not come up, open the extension and it is waiting.`,
         notes: reply.notes || [],
       });
       return;
     }
-    /* A missing extension is not a failure to report as one — it is the
-       download path, which still works and is offered right below. */
-    if (reply.missing) setHasStudio(false);
-    setStudioSend({ state: "error", message: reply.error, notes: [] });
+    setStudioSend({
+      state: "error",
+      message: reply.error || "Studio could not build that.",
+      notes: [],
+    });
   };
 
-  // Built on every render so the counts below always match the current options.
-  // Cheap — a handful of shots, no I/O.
   const studioPreview =
     result?.shots?.length ? buildStudioWorkflow(result, studioOpts) : null;
   const studioGenCount =
@@ -228,9 +208,17 @@ export default function ExtractorPage() {
     }
   };
 
-  const startAnalysis = async () => {
+  const startAnalysis = async (explicitToken = null) => {
     if (mode === "upload" && !file) return;
     if (mode === "url" && !videoUrl.trim()) return;
+
+    const activeToken = explicitToken || token || (typeof window !== "undefined" ? localStorage.getItem("access_token") : null);
+
+    if (!user && !activeToken) {
+      setAuthError(null);
+      setShowAuthModal(true);
+      return;
+    }
 
     setStatus("uploading");
     setStepMessage("Checking plan limits...");
@@ -239,7 +227,7 @@ export default function ExtractorPage() {
     try {
       // Pre-flight limit check
       const limitRes = await fetch(`${DJANGO_API_URL}/extractions/check-limit/`, {
-        headers: { "Authorization": `Bearer ${token}` }
+        headers: { "Authorization": `Bearer ${activeToken}` }
       });
       if (limitRes.ok) {
         const limitData = await limitRes.json();
@@ -264,7 +252,7 @@ export default function ExtractorPage() {
         response = await fetch(`${API_URL}/analyze`, {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${token}`
+            "Authorization": `Bearer ${activeToken}`
           },
           body: formData,
         });
@@ -273,7 +261,7 @@ export default function ExtractorPage() {
         response = await fetch(`${API_URL}/analyze-url`, {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${token}`,
+            "Authorization": `Bearer ${activeToken}`,
             "Content-Type": "application/json"
           },
           body: JSON.stringify({ url: videoUrl.trim(), ...(options ? { options } : {}) }),
@@ -281,8 +269,8 @@ export default function ExtractorPage() {
       }
 
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.detail || "Upload failed");
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || err.message || "Upload failed");
       }
 
       const data = await response.json();
@@ -295,14 +283,44 @@ export default function ExtractorPage() {
     }
   };
 
+  const handleAuthSubmit = async (e) => {
+    e?.preventDefault();
+    if (!authEmail.trim() || !authPassword.trim()) {
+      setAuthError("Please enter both email and password.");
+      return;
+    }
+    setAuthSubmitting(true);
+    setAuthError(null);
+
+    try {
+      const res = authTab === "login" 
+        ? await login(authEmail.trim(), authPassword.trim())
+        : await register(authEmail.trim(), authPassword.trim());
+
+      if (res && res.success) {
+        setShowAuthModal(false);
+        const storedToken = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+        // Resume the extraction automatically with the new session
+        startAnalysis(storedToken);
+      } else {
+        setAuthError(res?.error || (authTab === "login" ? "Invalid email or password" : "Registration failed"));
+      }
+    } catch (err) {
+      setAuthError(err.message || "Authentication failed");
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
   // Poll for status
   useEffect(() => {
     let interval;
+    const activeToken = token || (typeof window !== "undefined" ? localStorage.getItem("access_token") : null);
     if (status === "processing" && jobId) {
       interval = setInterval(async () => {
         try {
           const response = await fetch(`${API_URL}/status/${jobId}`, {
-            headers: { "Authorization": `Bearer ${token}` }
+            headers: activeToken ? { "Authorization": `Bearer ${activeToken}` } : {}
           });
           const data = await response.json();
           
@@ -314,14 +332,16 @@ export default function ExtractorPage() {
             // Auto-save to Django
             setSaveStatus("saving");
             try {
+              const saveHeaders = {
+                "Content-Type": "application/json"
+              };
+              if (activeToken) saveHeaders["Authorization"] = `Bearer ${activeToken}`;
+
               const saveResponse = await fetch(`${DJANGO_API_URL}/extractions/`, {
                 method: "POST",
-                headers: {
-                  "Authorization": `Bearer ${token}`,
-                  "Content-Type": "application/json"
-                },
+                headers: saveHeaders,
                 body: JSON.stringify({
-                  video_name: mode === "upload" ? file.name : (() => {
+                  video_name: mode === "upload" ? file?.name : (() => {
                     try { return new URL(videoUrl).hostname; }
                     catch(e) { return "Video Link"; }
                   })(),
@@ -359,8 +379,6 @@ export default function ExtractorPage() {
     }
     return () => clearInterval(interval);
   }, [status, jobId, token, API_URL]);
-
-  if (loading) return <div className="container" style={{ minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center" }}>Loading...</div>;
 
   return (
     <div className="section" style={{ minHeight: "100vh", position: "relative", overflow: "hidden" }}>
@@ -435,138 +453,162 @@ export default function ExtractorPage() {
               </button>
             </div>
 
-          {/* --- Upload Zone or Auth CTA --- */}
+            {/* Quick Demo Sample Chips */}
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "8px", marginBottom: "32px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginRight: "4px" }}>Test with 1-click sample:</span>
+              <button
+                type="button"
+                className="sample-chip"
+                onClick={() => {
+                  setMode("url");
+                  setUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+                }}
+              >
+                🌆 Cyberpunk Tokyo (Sora)
+              </button>
+              <button
+                type="button"
+                className="sample-chip"
+                onClick={() => {
+                  setMode("url");
+                  setUrl("https://www.youtube.com/watch?v=jNQXAC9IVRw");
+                }}
+              >
+                🦅 Cinematic Drone (Runway)
+              </button>
+              <button
+                type="button"
+                className="sample-chip"
+                onClick={() => {
+                  setMode("url");
+                  setUrl("https://www.youtube.com/shorts/sample-video");
+                }}
+              >
+                ⚔️ Ronin Samurai (Kling)
+              </button>
+            </div>
+
+            {/* --- Upload Zone or URL Input (Available to All Visitors) --- */}
           {status === "idle" && (
-            user ? (
-              mode === "upload" ? (
-                <div 
-                  className="cyber-panel animate-in delay-1"
-                  onDrop={handleDrop}
-                  onDragOver={handleDragOver}
-                  style={{ 
-                    textAlign: "center",
-                    cursor: "pointer",
-                    padding: "100px 40px",
-                    transition: "all 0.2s",
-                  }}
-                  onClick={() => document.getElementById("file-upload").click()}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.boxShadow = "0 0 40px rgba(255, 92, 0, 0.2), inset 0 0 40px rgba(255, 92, 0, 0.1)";
-                    e.currentTarget.style.borderColor = "#FFF";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.boxShadow = "0 0 20px rgba(255, 92, 0, 0.05), inset 0 0 20px rgba(255, 92, 0, 0.05)";
-                    e.currentTarget.style.borderColor = "var(--primary)";
-                  }}
-                >
-                  <div style={{ position: "absolute", top: 10, left: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
-                  <div style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
-                  <div style={{ position: "absolute", bottom: 10, left: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
-                  <div style={{ position: "absolute", bottom: 10, right: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
-                  
-                  <input 
-                    id="file-upload" 
-                    type="file" 
-                    accept="video/mp4,video/quicktime,video/webm" 
-                    style={{ display: "none" }} 
-                    onChange={handleFileSelect}
-                  />
-                  {file ? (
-                    <div style={{ position: "relative", zIndex: 1 }}>
-                      <div className="terminal-text" style={{ fontSize: "4rem", marginBottom: "20px" }}>✅ Ready to Extract</div>
-                      <h3 style={{ marginBottom: "8px", fontSize: "1.8rem", color: "#FFF", fontFamily: "'JetBrains Mono', monospace" }}>{file.name}</h3>
-                      <p className="terminal-text" style={{ marginBottom: "32px", color: "var(--text-secondary)" }}>{(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to analyze</p>
-                      <button 
-                        className="cyber-btn" 
-                        onClick={(e) => { e.stopPropagation(); startAnalysis(); }}
-                        style={{ fontSize: "1.2rem", padding: "16px 40px", fontWeight: "700" }}
-                      >
-                        Extract Prompts
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ position: "relative", zIndex: 1 }}>
-                      <div className="terminal-text" style={{ fontSize: "3rem", marginBottom: "24px", animation: "terminal-blink 2s infinite" }}>📤</div>
-                      <h3 style={{ fontSize: "2rem", marginBottom: "12px", fontFamily: "'JetBrains Mono', monospace", color: "#FFF", textTransform: "uppercase" }}>Drop your video here</h3>
-                      <p className="terminal-text" style={{ fontSize: "1.1rem", color: "var(--text-secondary)" }}>Drag & drop or click to browse (Max 500MB)</p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div 
-                  className="cyber-panel animate-in delay-1"
-                  style={{ 
-                    textAlign: "center",
-                    padding: "80px 40px",
-                  }}
-                >
-                  <div style={{ position: "absolute", top: 10, left: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
-                  <div style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
-                  <div style={{ position: "absolute", bottom: 10, left: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
-                  <div style={{ position: "absolute", bottom: 10, right: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
-                  
+            mode === "upload" ? (
+              <div 
+                className="cyber-panel animate-in delay-1"
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                style={{ 
+                  textAlign: "center",
+                  cursor: "pointer",
+                  padding: "100px 40px",
+                  transition: "all 0.2s",
+                }}
+                onClick={() => document.getElementById("file-upload").click()}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = "0 0 40px rgba(255, 92, 0, 0.2), inset 0 0 40px rgba(255, 92, 0, 0.1)";
+                  e.currentTarget.style.borderColor = "#FFF";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = "0 0 20px rgba(255, 92, 0, 0.05), inset 0 0 20px rgba(255, 92, 0, 0.05)";
+                  e.currentTarget.style.borderColor = "var(--primary)";
+                }}
+              >
+                <div style={{ position: "absolute", top: 10, left: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
+                <div style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
+                <div style={{ position: "absolute", bottom: 10, left: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
+                <div style={{ position: "absolute", bottom: 10, right: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
+                
+                <input 
+                  id="file-upload" 
+                  type="file" 
+                  accept="video/mp4,video/quicktime,video/webm" 
+                  style={{ display: "none" }} 
+                  onChange={handleFileSelect}
+                />
+                {file ? (
                   <div style={{ position: "relative", zIndex: 1 }}>
-                    <div className="terminal-text" style={{ fontSize: "3rem", marginBottom: "24px" }}>🔗</div>
-                    <h3 style={{ fontSize: "2rem", marginBottom: "12px", fontFamily: "'JetBrains Mono', monospace", color: "#FFF", textTransform: "uppercase" }}>Paste a video link</h3>
-                    <p className="terminal-text" style={{ fontSize: "1.1rem", marginBottom: "32px", color: "var(--text-secondary)" }}>
-                      Supports YouTube, TikTok, Instagram, Twitter/X
-                    </p>
-                    
-                    <div style={{ display: "flex", gap: "0", maxWidth: "600px", margin: "0 auto", width: "100%" }}>
-                      <input 
-                        type="text"
-                        placeholder="https://www..."
-                        value={videoUrl}
-                        onChange={(e) => setVideoUrl(e.target.value)}
-                        className="terminal-text"
-                        style={{
-                          flex: 1,
-                          padding: "16px 24px",
-                          background: "#000",
-                          border: "1px solid var(--primary)",
-                          color: "var(--primary)",
-                          fontSize: "1rem",
-                          outline: "none",
-                          transition: "all 0.3s ease"
-                        }}
-                        onFocus={(e) => e.target.style.boxShadow = "inset 0 0 10px rgba(255, 92, 0, 0.2)"}
-                        onBlur={(e) => e.target.style.boxShadow = "none"}
-                      />
-                      <button 
-                        className="cyber-btn"
-                        onClick={startAnalysis}
-                        disabled={!videoUrl.trim()}
-                        style={{ 
-                          fontSize: "1.1rem", 
-                          padding: "16px 36px", 
-                          borderLeft: "none",
-                          whiteSpace: "nowrap",
-                          opacity: !videoUrl.trim() ? 0.5 : 1
-                        }}
-                      >
-                        Extract Prompts
-                      </button>
-                    </div>
+                    <div className="terminal-text" style={{ fontSize: "4rem", marginBottom: "20px" }}>✅ Ready to Extract</div>
+                    <h3 style={{ marginBottom: "8px", fontSize: "1.8rem", color: "#FFF", fontFamily: "'JetBrains Mono', monospace" }}>{file.name}</h3>
+                    <p className="terminal-text" style={{ marginBottom: "32px", color: "var(--text-secondary)" }}>{(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to analyze</p>
+                    <button 
+                      className="cyber-btn" 
+                      onClick={(e) => { e.stopPropagation(); startAnalysis(); }}
+                      style={{ fontSize: "1.2rem", padding: "16px 40px", fontWeight: "700" }}
+                    >
+                      Extract Prompts
+                    </button>
                   </div>
-                </div>
-              )
+                ) : (
+                  <div style={{ position: "relative", zIndex: 1 }}>
+                    <div className="terminal-text" style={{ fontSize: "3rem", marginBottom: "24px", animation: "terminal-blink 2s infinite" }}>📤</div>
+                    <h3 style={{ fontSize: "2rem", marginBottom: "12px", fontFamily: "'JetBrains Mono', monospace", color: "#FFF", textTransform: "uppercase" }}>Drop your video here</h3>
+                    <p className="terminal-text" style={{ fontSize: "1.1rem", color: "var(--text-secondary)" }}>Drag & drop or click to browse (Max 500MB)</p>
+                  </div>
+                )}
+              </div>
             ) : (
-              <div className="cyber-panel animate-in delay-1" style={{ padding: "80px 40px", textAlign: "center" }}>
-                <div className="terminal-text" style={{ fontSize: "3rem", marginBottom: "24px" }}>🔒</div>
-                <h3 style={{ marginBottom: "16px", fontSize: "2rem", fontFamily: "'JetBrains Mono', monospace", color: "#FFF", textTransform: "uppercase" }}>Sign in to get started</h3>
-                <p className="terminal-text" style={{ maxWidth: "500px", margin: "0 auto 32px", fontSize: "1.1rem", color: "var(--text-secondary)" }}>Create a free account to start extracting prompts from any AI video.</p>
-                <div style={{ display: "flex", gap: "16px", justifyContent: "center" }}>
-                  <a href="/login" className="cyber-btn" style={{ padding: "16px 40px", fontSize: "1.1rem", textDecoration: "none" }}>Log In</a>
-                  <a href="/register" className="cyber-btn" style={{ padding: "16px 40px", fontSize: "1.1rem", textDecoration: "none", background: "rgba(255, 92, 0, 0.1)" }}>Create Account</a>
+              <div 
+                className="cyber-panel animate-in delay-1"
+                style={{ 
+                  textAlign: "center",
+                  padding: "80px 40px",
+                }}
+              >
+                <div style={{ position: "absolute", top: 10, left: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
+                <div style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
+                <div style={{ position: "absolute", bottom: 10, left: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
+                <div style={{ position: "absolute", bottom: 10, right: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
+                
+                <div style={{ position: "relative", zIndex: 1 }}>
+                  <div className="terminal-text" style={{ fontSize: "3rem", marginBottom: "24px" }}>🔗</div>
+                  <h3 style={{ fontSize: "2rem", marginBottom: "12px", fontFamily: "'JetBrains Mono', monospace", color: "#FFF", textTransform: "uppercase" }}>Paste a video link</h3>
+                  <p className="terminal-text" style={{ fontSize: "1.1rem", marginBottom: "32px", color: "var(--text-secondary)" }}>
+                    Supports YouTube, TikTok, Instagram, Twitter/X
+                  </p>
+                  
+                  <div style={{ display: "flex", gap: "0", maxWidth: "600px", margin: "0 auto", width: "100%" }}>
+                    <input 
+                      type="text"
+                      placeholder="https://www..."
+                      value={videoUrl}
+                      onChange={(e) => setVideoUrl(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && videoUrl.trim()) startAnalysis(); }}
+                      className="terminal-text"
+                      style={{
+                        flex: 1,
+                        padding: "16px 24px",
+                        background: "#000",
+                        border: "1px solid var(--primary)",
+                        color: "var(--primary)",
+                        fontSize: "1rem",
+                        outline: "none",
+                        transition: "all 0.3s ease"
+                      }}
+                      onFocus={(e) => e.target.style.boxShadow = "inset 0 0 10px rgba(255, 92, 0, 0.2)"}
+                      onBlur={(e) => e.target.style.boxShadow = "none"}
+                    />
+                    <button 
+                      className="cyber-btn" 
+                      onClick={() => startAnalysis()}
+                      disabled={!videoUrl.trim()}
+                      style={{ 
+                        fontSize: "1.1rem", 
+                        padding: "16px 36px", 
+                        borderLeft: "none",
+                        whiteSpace: "nowrap",
+                        opacity: !videoUrl.trim() ? 0.5 : 1
+                      }}
+                    >
+                      Extract Prompts
+                    </button>
+                  </div>
                 </div>
               </div>
             )
           )}
 
-        {/* ── Extraction options ──
+        {/* ── Extraction options (Open to all visitors) ──
             Collapsed by default: the defaults reproduce the original
             behaviour exactly, so most people never need to open this. */}
-        {user && (status === "idle" || status === "error") && (
+        {(status === "idle" || status === "error") && (
           <div className="cyber-panel animate-in" style={{ marginTop: "24px", padding: "0", overflow: "hidden" }}>
             <button
               onClick={() => setShowExtractOpts((v) => !v)}
@@ -663,20 +705,32 @@ export default function ExtractorPage() {
         )}
 
         {(status === "uploading" || status === "processing") && (
-          <div className="cyber-panel animate-in" style={{ padding: "60px 40px", textAlign: "left" }}>
-            <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "2px", background: "var(--primary)", animation: "scanline 3s linear infinite" }}></div>
+          <div className="cyber-panel animate-in" style={{ padding: "50px 36px", textAlign: "left", position: "relative", overflow: "hidden" }}>
+            <div className="laser-scanner-line" />
             
-            <div className="terminal-text" style={{ fontSize: "1.2rem", marginBottom: "24px" }}>
-              ⚡ Analyzing your video...
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "10px" }}>
+              <div className="terminal-text" style={{ fontSize: "1.2rem", fontWeight: "700" }}>
+                ⚡ Neural Vision Analysis in Progress...
+              </div>
+              <span className="badge" style={{ background: "rgba(255, 92, 0, 0.2)", color: "var(--primary-light)", borderColor: "var(--primary)" }}>
+                {status === "uploading" ? "UPLOADING MEDIA" : "ANALYZING SHOTS"}
+              </span>
             </div>
-            
-            <div style={{ background: "#000", border: "1px solid rgba(255, 92, 0, 0.3)", padding: "24px", fontFamily: "'JetBrains Mono', monospace", color: "var(--primary)", height: "200px", overflow: "hidden", position: "relative", boxShadow: "inset 0 0 20px rgba(0,0,0,1)" }}>
-              <p style={{ margin: "0 0 8px 0" }}>Starting analysis...</p>
-              <p style={{ margin: "0 0 8px 0", opacity: 0.8 }}>Status: {stepMessage}</p>
-              <p style={{ margin: "0 0 8px 0", opacity: 0.6, animation: "cyber-glitch 2s infinite" }}>Analyzing visual elements...</p>
-              <p style={{ margin: "0 0 8px 0", opacity: 0.4 }}>Processing audio track...</p>
-              <p style={{ margin: "0 0 8px 0", opacity: 0.2 }}>Generating prompts...</p>
-              <div style={{ width: "12px", height: "20px", background: "var(--primary)", display: "inline-block", animation: "terminal-blink 1s infinite", verticalAlign: "middle", marginTop: "8px" }}></div>
+
+            <div style={{ background: "#050507", border: "1px solid rgba(255, 92, 0, 0.35)", borderRadius: "10px", padding: "24px", fontFamily: "'JetBrains Mono', monospace", color: "var(--primary)", minHeight: "220px", position: "relative", boxShadow: "inset 0 0 30px rgba(0,0,0,0.9)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px", color: "#10B981" }}>
+                <span>●</span> <span>[SYSTEM] Vision pipeline initialized</span>
+              </div>
+              <p style={{ margin: "0 0 10px 0", color: "#FFF" }}>
+                &gt; Current Stage: <strong style={{ color: "var(--primary-light)" }}>{stepMessage || "Deconstructing video into keyframe sequences..."}</strong>
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", opacity: 0.8, fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "16px" }}>
+                <div>[01/04] Detecting shot cuts, aspect ratio &amp; focal length...</div>
+                <div>[02/04] Vision AI extracting cinematic prompt &amp; lighting cues...</div>
+                <div>[03/04] Transcribing voiceover &amp; sound effect cues...</div>
+                <div>[04/04] Building character sheet &amp; ComfyUI node graph...</div>
+              </div>
+              <div style={{ width: "10px", height: "18px", background: "var(--primary)", display: "inline-block", animation: "terminal-blink 1s infinite", verticalAlign: "middle", marginTop: "12px" }}></div>
             </div>
           </div>
         )}
@@ -965,17 +1019,14 @@ export default function ExtractorPage() {
                   </div>
 
                   {/* ── Send to Studio ──
-                      Straight into the extension when it is installed: the
-                      page hands over the EXTRACTION and Studio compiles it
-                      with its own builder, so there is one node schema rather
-                      than a copy of it living here. The .json download stays
-                      for anyone without the extension. */}
+                      A .json in Studio's own export format. Studio already
+                      imports that shape, so this needs no extension update. */}
                   <div style={{ marginTop: "32px", padding: "28px", background: "#000", border: "1px solid var(--primary)" }}>
                     <h4 className="terminal-text" style={{ fontSize: "1.2rem", margin: "0 0 8px 0", color: "white", textShadow: "none" }}>
                       ⚡ Build an AutoFlow Studio Workflow
                     </h4>
                     <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--text-secondary)", margin: "0 0 24px 0", textShadow: "none" }}>
-                      Every shot becomes real nodes with its prompts already wired in — characters connected to every still, each still to its own clip. No copy-pasting, nothing left to rebuild by hand.
+                      Every shot becomes real nodes with its prompts already wired in — no copy-pasting, nothing left to rebuild by hand.
                     </p>
 
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "16px", marginBottom: "24px" }}>
@@ -1062,16 +1113,9 @@ export default function ExtractorPage() {
                       </p>
                     )}
 
-                    {/* ── Three states, and each one gets its own button ──
-
-                        This was `hasStudio !== false`, which lumped "still
-                        asking" in with "installed" — so for the ~600ms of the
-                        probe a visitor WITHOUT Studio was shown "Open in
-                        Studio", which then turned into "Download" under their
-                        cursor. The comment on the state itself says a button
-                        that changes shape is worse than one that was always
-                        right, so now it waits instead of guessing. */}
                     <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
+                      {/* Installed: hand the extraction over and let the
+                          extension build it on the canvas. */}
                       {hasStudio === true && (
                         <button
                           className="cyber-btn"
@@ -1087,6 +1131,8 @@ export default function ExtractorPage() {
                         </button>
                       )}
 
+                      {/* Still asking. Showing either of the other two here
+                          would change shape under the cursor a moment later. */}
                       {hasStudio === null && (
                         <button
                           className="cyber-btn"
@@ -1097,10 +1143,9 @@ export default function ExtractorPage() {
                         </button>
                       )}
 
-                      {/* Not installed. Installing is the offer, because it is
-                          the one that produces a canvas rather than a file
-                          somebody still has to import by hand. */}
-                      {hasStudio === false && STUDIO_STORE_URL && (
+                      {/* Not installed: installing is the offer, because it is
+                          the one that ends in a canvas rather than a file. */}
+                      {hasStudio === false && (
                         <a
                           className="cyber-btn"
                           href={STUDIO_STORE_URL}
@@ -1112,66 +1157,32 @@ export default function ExtractorPage() {
                         </a>
                       )}
 
-                      {/* No address to send them to yet: the download stays the
-                          main action rather than a link that goes nowhere. */}
-                      {hasStudio === false && !STUDIO_STORE_URL && (
-                        <button
-                          className="cyber-btn"
-                          style={{ padding: "16px 32px", background: "var(--primary)", color: "#000", fontWeight: 700 }}
-                          disabled={!studioPreview || studioPreview.nodes.length === 0}
-                          onClick={() => {
-                            downloadStudioWorkflow(
-                              result,
-                              studioOpts,
-                              (result.video_name || "Extracted Workflow")
-                            );
-                            setStudioSent(true);
-                          }}
-                        >
-                          ↓ Download Workflow
-                        </button>
-                      )}
                       <span className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--text-secondary)", textShadow: "none" }}>
-                        {studioCost ? (
-                          <>
-                            {studioCost.total} generation{studioCost.total === 1 ? "" : "s"}
-                            {" · "}
-                            {[
-                              studioCost.characters && `${studioCost.characters} character${studioCost.characters === 1 ? "" : "s"}`,
-                              studioCost.stills && `${studioCost.stills} still${studioCost.stills === 1 ? "" : "s"}`,
-                              studioCost.clips && `${studioCost.clips} clip${studioCost.clips === 1 ? "" : "s"}`,
-                            ].filter(Boolean).join(" · ")}
-                          </>
-                        ) : (
-                          <>{studioPreview?.nodes.length ?? 0} nodes · {studioGenCount} generation{studioGenCount === 1 ? "" : "s"}</>
-                        )}
+                        {studioPreview?.nodes.length ?? 0} nodes · {studioGenCount} generation{studioGenCount === 1 ? "" : "s"}
                       </span>
 
-                      {/* The file is the fallback either way — quiet, and still
-                          one click. It used to appear only when the extension
-                          was already installed, which is the one case that
-                          needs it least. Anyone who cannot install an
-                          extension at all is exactly who it is for. */}
-                      {(hasStudio === true || (hasStudio === false && STUDIO_STORE_URL)) && (
-                        <button
-                          onClick={() => {
-                            downloadStudioWorkflow(
-                              result,
-                              studioOpts,
-                              (result.video_name || "Extracted Workflow")
-                            );
-                            setStudioSent(true);
-                          }}
-                          className="terminal-text"
-                          style={{
-                            background: "none", border: "none", padding: 0, cursor: "pointer",
-                            fontSize: "0.85rem", color: "var(--text-secondary)",
-                            textDecoration: "underline", textShadow: "none",
-                          }}
-                        >
-                          or download the .json
-                        </button>
-                      )}
+                      {/* The file, always available and never the headline.
+                          It uses this page's own builder, so it works with or
+                          without the extension. */}
+                      <button
+                        onClick={() => {
+                          downloadStudioWorkflow(
+                            result,
+                            studioOpts,
+                            (result.video_name || "Extracted Workflow")
+                          );
+                          setStudioSent(true);
+                        }}
+                        disabled={!studioPreview || studioPreview.nodes.length === 0}
+                        className="terminal-text"
+                        style={{
+                          background: "none", border: "none", padding: 0, cursor: "pointer",
+                          fontSize: "0.85rem", color: "var(--text-secondary)",
+                          textDecoration: "underline", textShadow: "none",
+                        }}
+                      >
+                        or download the .json
+                      </button>
                     </div>
 
                     {studioSend.state === "sent" && (
@@ -1192,38 +1203,24 @@ export default function ExtractorPage() {
                       </p>
                     )}
 
-                    {/* It said this before and gave nobody anywhere to click.
-                        Now it says what installing buys — every shot already a
-                        node, wired — because "install our extension" is a cost
-                        and this is the thing on the other side of it. */}
                     {hasStudio === false && (
                       <p className="terminal-text" style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "16px", marginBottom: 0, textShadow: "none", lineHeight: 1.7 }}>
-                        {STUDIO_STORE_URL ? (
-                          <>
-                            With AutoFlow Studio installed, this becomes one click: every shot
-                            arrives as a node with its prompts already wired in, on a canvas you
-                            can run. {" "}
-                            <a
-                              href={STUDIO_STORE_URL}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{ color: "var(--primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}
-                            >
-                              Install it
-                            </a>
-                            , reload this page, and the button above sends straight to the canvas.
-                          </>
-                        ) : (
-                          <>
-                            Install the AutoFlow Studio extension and reload this page to send
-                            workflows straight to the canvas instead of importing a file.
-                          </>
-                        )}
+                        With AutoFlow Studio installed this becomes one click: every shot arrives
+                        as a node with its prompts already wired in, on a canvas you can run.{" "}
+                        <a
+                          href={STUDIO_STORE_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: "var(--primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}
+                        >
+                          Install it
+                        </a>
+                        , reload this page, and the button above sends straight to the canvas.
                       </p>
                     )}
 
                     {studioSent && (
-                      <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--primary)", marginTop: "12px", marginBottom: 0, textShadow: "none" }}>
+                      <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--primary)", marginTop: "20px", marginBottom: 0, textShadow: "none" }}>
                         ✓ Saved. In the extension open <strong>Studio → Import</strong> and pick the file.
                       </p>
                     )}
@@ -1241,6 +1238,54 @@ export default function ExtractorPage() {
                 </div>
               </div>
             )}
+
+            {/* Sticky Floating Action Bar */}
+            <div
+              className="glass-panel"
+              style={{
+                position: "sticky",
+                bottom: "24px",
+                margin: "40px auto 0",
+                maxWidth: "780px",
+                padding: "14px 24px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "16px",
+                flexWrap: "wrap",
+                zIndex: 90,
+                border: "1px solid rgba(255, 92, 0, 0.4)",
+                boxShadow: "0 20px 50px rgba(0,0,0,0.9), 0 0 30px rgba(255, 92, 0, 0.2)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "1.2rem" }}>⚡</span>
+                <span style={{ fontSize: "0.9rem", fontWeight: "600", color: "#FFF" }}>
+                  {result.shots?.length || 0} Shots Extracted
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    const allPrompts = result.shots?.map((s, i) => `Shot ${i+1}: ${s.prompt || s.visual_prompt || ''}`).join("\n\n");
+                    navigator.clipboard?.writeText(allPrompts || "");
+                    alert("All prompts copied to clipboard!");
+                  }}
+                  style={{ padding: "8px 16px", fontSize: "0.85rem" }}
+                >
+                  📋 Copy All Prompts
+                </button>
+                <a
+                  href="/studio"
+                  className="btn btn-primary"
+                  style={{ padding: "8px 18px", fontSize: "0.85rem" }}
+                >
+                  ✨ Open in Studio Canvas →
+                </a>
+              </div>
+            </div>
           </div>
         )}
         </div>
@@ -1401,6 +1446,300 @@ export default function ExtractorPage() {
             }),
           }}
         />
+        {/* --- In-Page Cyberpunk Auth Modal for Guests --- */}
+        {showAuthModal && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.85)",
+              backdropFilter: "blur(10px)",
+              WebkitBackdropFilter: "blur(10px)",
+              zIndex: 9999,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "20px",
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowAuthModal(false);
+            }}
+          >
+            <div
+              className="cyber-panel animate-in"
+              style={{
+                maxWidth: "460px",
+                width: "100%",
+                padding: "36px 28px",
+                position: "relative",
+                background: "#080808",
+                border: "1px solid var(--primary)",
+                boxShadow: "0 0 50px rgba(255, 92, 0, 0.25), inset 0 0 30px rgba(255, 92, 0, 0.05)",
+              }}
+            >
+              {/* Corner brackets */}
+              <div style={{ position: "absolute", top: 8, left: 8, width: 16, height: 16, borderTop: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
+              <div style={{ position: "absolute", top: 8, right: 8, width: 16, height: 16, borderTop: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
+              <div style={{ position: "absolute", bottom: 8, left: 8, width: 16, height: 16, borderBottom: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
+              <div style={{ position: "absolute", bottom: 8, right: 8, width: 16, height: 16, borderBottom: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
+
+              {/* Close button */}
+              <button
+                onClick={() => setShowAuthModal(false)}
+                className="terminal-text"
+                style={{
+                  position: "absolute",
+                  top: 14,
+                  right: 14,
+                  background: "transparent",
+                  border: "1px solid rgba(255, 92, 0, 0.3)",
+                  color: "var(--text-secondary)",
+                  width: "32px",
+                  height: "32px",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "1rem",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "#FFF";
+                  e.currentTarget.style.borderColor = "var(--primary)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "var(--text-secondary)";
+                  e.currentTarget.style.borderColor = "rgba(255, 92, 0, 0.3)";
+                }}
+                aria-label="Close modal"
+              >
+                ✕
+              </button>
+
+              {/* Header Badge */}
+              <div style={{ textAlign: "center", marginBottom: "16px" }}>
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "4px 12px",
+                    background: "rgba(255, 92, 0, 0.1)",
+                    border: "1px solid rgba(255, 92, 0, 0.4)",
+                    borderRadius: "20px",
+                    fontSize: "0.8rem",
+                    color: "var(--primary)",
+                  }}
+                >
+                  <span>⚡</span>
+                  <span className="terminal-text" style={{ fontSize: "0.78rem", letterSpacing: "1px", textTransform: "uppercase" }}>
+                    Free Plan • 3 Extractions / Day
+                  </span>
+                </div>
+              </div>
+
+              {/* Title & Subtitle */}
+              <h3
+                style={{
+                  fontSize: "1.5rem",
+                  textAlign: "center",
+                  color: "#FFF",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  marginBottom: "8px",
+                  textTransform: "uppercase",
+                }}
+              >
+                {authTab === "register" ? "Create Free Account" : "Welcome Back"}
+              </h3>
+              <p
+                className="terminal-text"
+                style={{
+                  textAlign: "center",
+                  color: "var(--text-secondary)",
+                  fontSize: "0.88rem",
+                  marginBottom: "20px",
+                  lineHeight: "1.5",
+                }}
+              >
+                {authTab === "register"
+                  ? "Sign up in 5 seconds to reverse-engineer this video and extract full prompts."
+                  : "Log in to your AutoFlow account to continue extracting."}
+              </p>
+
+              {/* Dual Tabs */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "0",
+                  marginBottom: "20px",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm)",
+                  overflow: "hidden",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => { setAuthTab("register"); setAuthError(null); }}
+                  style={{
+                    padding: "10px",
+                    background: authTab === "register" ? "var(--primary)" : "transparent",
+                    color: authTab === "register" ? "#000" : "var(--text-secondary)",
+                    border: "none",
+                    fontWeight: "600",
+                    cursor: "pointer",
+                    fontSize: "0.88rem",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  Create Account
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAuthTab("login"); setAuthError(null); }}
+                  style={{
+                    padding: "10px",
+                    background: authTab === "login" ? "var(--primary)" : "transparent",
+                    color: authTab === "login" ? "#000" : "var(--text-secondary)",
+                    border: "none",
+                    fontWeight: "600",
+                    cursor: "pointer",
+                    fontSize: "0.88rem",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  Log In
+                </button>
+              </div>
+
+              {/* Error Alert */}
+              {authError && (
+                <div
+                  className="terminal-text"
+                  style={{
+                    background: "rgba(255, 59, 48, 0.1)",
+                    border: "1px solid rgba(255, 59, 48, 0.4)",
+                    color: "#ff6b6b",
+                    padding: "10px 14px",
+                    borderRadius: "var(--radius-sm)",
+                    fontSize: "0.85rem",
+                    marginBottom: "16px",
+                    textAlign: "center",
+                  }}
+                >
+                  ⚠ {authError}
+                </div>
+              )}
+
+              {/* Form */}
+              <form onSubmit={handleAuthSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                <div>
+                  <label className="terminal-text" style={{ display: "block", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-secondary)", marginBottom: "6px" }}>
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    autoFocus
+                    placeholder="creator@example.com"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="terminal-text"
+                    style={{
+                      width: "100%",
+                      padding: "12px 14px",
+                      background: "#000",
+                      border: "1px solid var(--border)",
+                      color: "#FFF",
+                      fontSize: "0.95rem",
+                      outline: "none",
+                      borderRadius: "var(--radius-sm)",
+                      boxSizing: "border-box",
+                    }}
+                    onFocus={(e) => e.target.style.borderColor = "var(--primary)"}
+                    onBlur={(e) => e.target.style.borderColor = "var(--border)"}
+                  />
+                </div>
+
+                <div>
+                  <label className="terminal-text" style={{ display: "block", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-secondary)", marginBottom: "6px" }}>
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    className="terminal-text"
+                    style={{
+                      width: "100%",
+                      padding: "12px 14px",
+                      background: "#000",
+                      border: "1px solid var(--border)",
+                      color: "#FFF",
+                      fontSize: "0.95rem",
+                      outline: "none",
+                      borderRadius: "var(--radius-sm)",
+                      boxSizing: "border-box",
+                    }}
+                    onFocus={(e) => e.target.style.borderColor = "var(--primary)"}
+                    onBlur={(e) => e.target.style.borderColor = "var(--border)"}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="cyber-btn"
+                  disabled={authSubmitting}
+                  style={{
+                    marginTop: "6px",
+                    padding: "14px",
+                    fontSize: "1rem",
+                    fontWeight: "700",
+                    width: "100%",
+                    cursor: authSubmitting ? "wait" : "pointer",
+                    opacity: authSubmitting ? 0.7 : 1,
+                  }}
+                >
+                  {authSubmitting
+                    ? "Authenticating..."
+                    : authTab === "register"
+                    ? "Create Account & Extract"
+                    : "Log In & Extract"}
+                </button>
+              </form>
+
+              {/* Bottom Switcher */}
+              <div style={{ marginTop: "18px", textAlign: "center" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthTab(authTab === "register" ? "login" : "register");
+                    setAuthError(null);
+                  }}
+                  className="terminal-text"
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "var(--text-secondary)",
+                    fontSize: "0.85rem",
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                  }}
+                >
+                  {authTab === "register"
+                    ? "Already have an account? Log In"
+                    : "Don't have an account? Create one"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

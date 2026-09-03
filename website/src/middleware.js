@@ -26,19 +26,16 @@ const publicPaths = [
 
 // Paths that are English-only and exist outside of [locale]
 const unlocalizedPaths = [
+  '/studio',
+  /* Lives at app/clipping, outside [locale], so without this an English
+     visitor is rewritten to /en/clipping — a route that does not exist. */
+  '/clipping',
   '/blog',
   '/faq',
   '/pricing',
   '/privacy',
   '/terms',
-  '/changelog',
-  /* Not linked from the nav or the sitemap yet — it is held back until it
-     has images. Listed here so it can be previewed at its real URL. */
-  '/clipping',
-  /* Lives at app/studio, not app/[locale]/studio, so without this an English
-     visitor is rewritten to /en/studio — a route that does not exist — and the
-     page 404s while being present in the build. */
-  '/studio'
+  '/changelog'
 ];
 
 export function middleware(request) {

@@ -10,11 +10,39 @@ export default function AuthButtons() {
 
   if (user) {
     return (
-      <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-        <Link href="/extractor" className="btn btn-secondary" style={{ padding: "0.5rem 1rem", borderRadius: "8px", textDecoration: "none", color: "var(--text-primary)", background: "rgba(255, 255, 255, 0.1)" }}>
-          Extractor
+      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+        <Link
+          href="/dashboard"
+          style={{
+            padding: "5px 12px",
+            borderRadius: "9999px",
+            fontSize: "0.82rem",
+            fontWeight: "500",
+            textDecoration: "none",
+            color: "rgba(255, 255, 255, 0.85)",
+            background: "rgba(255, 255, 255, 0.06)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            transition: "all 0.15s ease",
+          }}
+        >
+          Dashboard
         </Link>
-        <button onClick={logout} className="btn btn-secondary" style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "white", padding: "0.5rem 1rem", borderRadius: "8px", cursor: "pointer" }}>
+        <button
+          onClick={logout}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "rgba(255, 255, 255, 0.6)",
+            padding: "5px 10px",
+            borderRadius: "9999px",
+            fontSize: "0.82rem",
+            fontWeight: "500",
+            cursor: "pointer",
+            transition: "all 0.15s ease",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#FFF")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255, 255, 255, 0.6)")}
+        >
           Log Out
         </button>
       </div>
@@ -22,7 +50,27 @@ export default function AuthButtons() {
   }
 
   return (
-    <Link href="/login" className="btn btn-secondary" style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "white", padding: "0.5rem 1rem", borderRadius: "8px", textDecoration: "none" }}>
+    <Link
+      href="/login"
+      style={{
+        background: "transparent",
+        color: "rgba(255, 255, 255, 0.8)",
+        padding: "6px 12px",
+        borderRadius: "9999px",
+        fontSize: "0.84rem",
+        fontWeight: "500",
+        textDecoration: "none",
+        transition: "all 0.15s ease",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.color = "#FFFFFF";
+        e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.color = "rgba(255, 255, 255, 0.8)";
+        e.currentTarget.style.background = "transparent";
+      }}
+    >
       Log In
     </Link>
   );

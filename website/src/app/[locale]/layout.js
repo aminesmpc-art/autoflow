@@ -1,5 +1,6 @@
 import { getDictionary, locales } from '../dictionaries';
 import StoreLink from '../StoreLink';
+import LangDropdown from '../LangDropdown';
 
 // Only match locales from generateStaticParams — don't catch /blog, /faq, etc.
 export const dynamicParams = false;
@@ -17,29 +18,31 @@ export default async function LocaleLayout({ children, params }) {
     <div className="locale-wrapper" dir={isRTL ? 'rtl' : 'ltr'} lang={locale}>
       {/* Locale-specific header */}
       <header className="site-header locale-header">
-        <nav className="container header-nav">
+        <nav className="header-nav">
           <a href={`/${locale}`} className="logo">
             <span className="logo-icon">⚡</span>
             <span className="logo-text">AutoFlow</span>
           </a>
           <ul className="nav-links">
+            <li>
+              <a href={`/${locale}/studio`} className="nav-item-feature">
+                <span className="nav-dot" /> Studio
+              </a>
+            </li>
+            <li>
+              <a href={`/${locale}/extractor`} className="nav-item-feature">
+                <span className="nav-dot nav-dot-green" /> Extractor
+              </a>
+            </li>
             <li><a href={`/${locale}#features`}>{t.nav.features}</a></li>
             <li><a href={`/${locale}#how-it-works`}>{t.nav.howItWorks}</a></li>
-            <li><a href={`/${locale}/extractor`}>Extractor</a></li>
             <li><a href={`/${locale}/prompts`}>Prompts</a></li>
             <li><a href={`/${locale}/pricing`}>{t.nav.pricing}</a></li>
             <li><a href={`/${locale}/blog`}>Blog</a></li>
             <li><a href={`/${locale}/faq`}>{t.nav.faq}</a></li>
           </ul>
           <div className="header-actions">
-            <div className="lang-switcher">
-              <a href="/" className={locale === 'en' ? 'active' : ''}>EN</a>
-              <a href="/es" className={locale === 'es' ? 'active' : ''}>ES</a>
-              <a href="/de" className={locale === 'de' ? 'active' : ''}>DE</a>
-              <a href="/ar" className={locale === 'ar' ? 'active' : ''}>AR</a>
-              <a href="/fr" className={locale === 'fr' ? 'active' : ''}>FR</a>
-              <a href="/it" className={locale === 'it' ? 'active' : ''}>IT</a>
-            </div>
+            <LangDropdown currentLocale={locale} />
             <StoreLink className="btn btn-primary btn-header">
               {t.nav.install}
             </StoreLink>

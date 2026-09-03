@@ -209,6 +209,119 @@
   height: auto;
   display: block;
 }
+/* ── Live Metrics Strip ── */
+.metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  max-width: 1100px;
+  margin: 48px auto 0;
+  padding: 24px 32px;
+  background: rgba(14, 14, 14, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+}
+
+.metric-value {
+  font-size: 1.8rem;
+  font-weight: 900;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1.1;
+}
+
+.metric-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* ── Creator Testimonial Cards ── */
+.testimonials-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
+  margin-top: 48px;
+}
+
+.testimonial-card {
+  background: rgba(12, 12, 12, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius-xl);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.testimonial-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 92, 0, 0.3);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 25px rgba(255, 92, 0, 0.08);
+}
+
+.testimonial-stars {
+  display: flex;
+  gap: 3px;
+  color: #FBBF24;
+  font-size: 1.1rem;
+}
+
+.testimonial-quote {
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.testimonial-author {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 16px;
+}
+
+.author-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(255, 92, 0, 0.3) 0%, rgba(229, 9, 20, 0.3) 100%);
+  border: 1px solid rgba(255, 92, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  color: var(--primary-light);
+  font-size: 0.95rem;
+}
+
+.author-info h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.author-info span {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
 /* ── Section Alt ── */
 .section-alt {
   background: var(--bg-surface);
@@ -359,44 +472,54 @@
 }
 
 .pricing-card.featured {
-  border-color: rgba(255, 92, 0, 0.4);
-  background: linear-gradient(145deg, rgba(255, 92, 0, 0.08) 0%, rgba(10, 10, 10, 0.8) 100%);
+  border-color: rgba(255, 92, 0, 0.45);
+  background: linear-gradient(155deg, rgba(255, 92, 0, 0.1) 0%, rgba(12, 12, 12, 0.85) 100%);
   position: relative;
-  transform: scale(1.02);
+  box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.8), 0 0 40px rgba(255, 92, 0, 0.15);
 }
 
 .pricing-card.featured:hover {
-  transform: scale(1.02) translateY(-8px);
-  box-shadow: 0 20px 80px rgba(255, 92, 0, 0.25), inset 0 0 0 1px rgba(255, 92, 0, 0.2);
+  transform: translateY(-6px);
+  border-color: rgba(255, 92, 0, 0.7);
+  box-shadow: 0 30px 70px -10px rgba(0, 0, 0, 0.9), 0 0 50px rgba(255, 92, 0, 0.25);
 }
 
 .pricing-card.featured::before {
-  content: 'MOST POPULAR';
+  content: '⚡ MOST POPULAR';
   position: absolute;
-  top: -12px;
+  top: -14px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 6px 20px;
-  background: var(--primary);
-  color: #000000;
-  font-size: 0.8rem;
+  padding: 5px 18px;
+  background: var(--gradient-primary);
+  color: #FFFFFF;
+  font-size: 0.75rem;
   font-weight: 800;
-  border-radius: var(--radius-sm);
-  letter-spacing: 0.1em;
-  box-shadow: 0 4px 15px rgba(255, 92, 0, 0.4);
+  border-radius: 99px;
+  letter-spacing: 0.08em;
+  box-shadow: 0 4px 20px rgba(255, 92, 0, 0.5);
 }
 
 .pricing-name {
   font-size: 1.5rem;
   font-weight: 800;
   margin-bottom: 12px;
+  letter-spacing: -0.02em;
 }
 
 .pricing-price {
   font-size: 3.5rem;
   font-weight: 900;
   margin-bottom: 8px;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.04em;
+  color: #FFFFFF;
+}
+
+.pricing-card.featured .pricing-price {
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .pricing-price span {
@@ -404,6 +527,7 @@
   font-weight: 500;
   color: var(--text-muted);
   letter-spacing: normal;
+  -webkit-text-fill-color: var(--text-muted);
 }
 
 .pricing-desc {
@@ -412,6 +536,7 @@
   margin-bottom: 32px;
   padding-bottom: 32px;
   border-bottom: 1px solid var(--border);
+  line-height: 1.6;
 }
 
 .pricing-features {
@@ -427,8 +552,9 @@
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  font-size: 1.05rem;
+  font-size: 1rem;
   color: var(--text-secondary);
+  line-height: 1.5;
 }
 
 .pricing-features li::before {
@@ -436,14 +562,16 @@
   color: var(--success);
   font-weight: 800;
   flex-shrink: 0;
-  background: rgba(16, 185, 129, 0.1);
-  width: 24px;
-  height: 24px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  width: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  margin-top: 1px;
 }
 
 .pricing-card .btn {
@@ -1085,17 +1213,22 @@
    also lines the two products up against each other rather than running them
    together as one undifferentiated list. */
 .pricing-features li.pricing-group {
-  margin-top: 8px;
-  font-size: 0.8rem;
+  margin-top: 20px;
+  margin-bottom: 6px;
+  font-size: 0.75rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--primary-light);
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: rgba(255, 92, 0, 0.1);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 92, 0, 0.25);
+  width: fit-content;
 }
 .pricing-features li.pricing-group:first-child { margin-top: 0; }
 .pricing-features li.pricing-group::before {
-  content: '';
-  background: none;
-  width: 24px;
-  height: auto;
+  display: none;
 }
