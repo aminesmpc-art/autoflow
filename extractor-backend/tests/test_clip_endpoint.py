@@ -20,6 +20,7 @@ import jwt
 from fastapi.testclient import TestClient
 
 from app.api import clip as clip_api
+from app.rate_limit import reset_ask_limiter
 from app.clip_analysis import ClipReading, TimedScene, TimedSegment, TrackedFace
 
 clip_api_face = TrackedFace
@@ -42,6 +43,16 @@ def clean_jobs():
     clip_api.jobs.clear()
     yield
     clip_api.jobs.clear()
+
+
+@pytest.fixture(autouse=True)
+def fresh_ask_ceiling():
+    """The ask limiter is a singleton, so tests would otherwise share one
+    allowance under one user id — and the file would start failing on whatever
+    test happened to be the sixty-first, for a reason unrelated to it."""
+    reset_ask_limiter()
+    yield
+    reset_ask_limiter()
 
 
 @pytest.fixture
@@ -374,6 +385,75 @@ class TestAsk:
         monkeypatch.setattr(clip_api.settings, "gemini_api_key", "")
         assert client.post("/api/clip/ask", json={"prompt": "rank"}).status_code == 503
 
+
+
+class TestAskCeiling:
+    """/ask charges no quota, so a ceiling is the only thing counting it.
+
+    /read reserves a daily job against the Django-owned allowance before any
+    model work starts. /ask reserved nothing at all: `verify_jwt` and then
+    straight to the model. The limiter class is tested on its own in
+    test_ask_rate_limit.py; what is worth proving here is that it is actually
+    attached to this endpoint, reads the caller from the token, and refuses
+    before spending anything."""
+
+    @pytest.fixture
+    def one_ask_allowed(self, monkeypatch):
+        from app import rate_limit
+
+        monkeypatch.setattr(rate_limit.get_settings(), "clip_ask_per_minute", 1)
+        rate_limit.reset_ask_limiter()
+        yield
+        rate_limit.reset_ask_limiter()
+
+    def test_refuses_past_the_ceiling_without_asking_the_model(
+        self, client, one_ask_allowed, monkeypatch
+    ):
+        calls = {"n": 0}
+
+        class FakeModels:
+            def generate_content(self, **_kwargs):
+                calls["n"] += 1
+                return SimpleNamespace(text='{"clips":[]}')
+
+        class FakeClient:
+            models = FakeModels()
+
+        import google.genai as genai
+
+        monkeypatch.setattr(genai, "Client", lambda **_kwargs: FakeClient())
+        monkeypatch.setattr(clip_api.settings, "gemini_api_key", "k", raising=False)
+
+        first = client.post("/api/clip/ask", json={"prompt": "rank these"})
+        second = client.post("/api/clip/ask", json={"prompt": "rank these again"})
+
+        assert first.status_code == 200
+        assert second.status_code == 429
+        # The refusal must come before the spending, not after it.
+        assert calls["n"] == 1
+        assert "Retry-After" in second.headers
+
+    def test_one_caller_cannot_silence_another(self, client, one_ask_allowed, monkeypatch):
+        class FakeModels:
+            def generate_content(self, **_kwargs):
+                return SimpleNamespace(text='{"clips":[]}')
+
+        class FakeClient:
+            models = FakeModels()
+
+        import google.genai as genai
+
+        monkeypatch.setattr(genai, "Client", lambda **_kwargs: FakeClient())
+        monkeypatch.setattr(clip_api.settings, "gemini_api_key", "k", raising=False)
+
+        client.post("/api/clip/ask", json={"prompt": "one"})
+        assert client.post("/api/clip/ask", json={"prompt": "two"}).status_code == 429
+
+        other = client.post(
+            "/api/clip/ask", json={"prompt": "mine"}, headers=auth_header("someone-else")
+        )
+
+        assert other.status_code == 200
 
 
 class TestAskAttachments:

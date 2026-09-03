@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     clip_job_stale_sec: int = 30 * 60
     max_concurrent_clip_jobs: int = 2
 
+    # Ceilings on /api/clip/ask, which charges no quota of its own.
+    # Far above legitimate use: the heaviest run the website produces is 46
+    # asks (6 + 2N, twenty clips), spread over minutes of encoding. See
+    # app/rate_limit.py for why this is a rate limit and not a quota.
+    clip_ask_per_minute: int = 60
+    clip_ask_per_day: int = 1000
+
     # Limits
     max_video_size_mb: int = 500
     max_video_duration_sec: int = 2 * 60 * 60
