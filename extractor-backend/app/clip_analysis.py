@@ -61,6 +61,12 @@ WINDOW_OVERLAP_SEC = 15.0
 # simultaneous requests.
 MAX_CONCURRENT_WINDOWS = 4
 
+# A transient provider failure should not turn a valid upload into a failed
+# clipping job. Each time window gets three bounded attempts.
+WINDOW_ATTEMPTS = 3
+MODEL_CALL_TIMEOUT_SEC = 180
+RETRY_BASE_DELAY_SEC = 0.75
+
 # Frames per second the model samples.
 #
 # The default is 1. Speech timing comes from the audio stream, which is charged
@@ -559,7 +565,12 @@ def _build_config(types_mod: Any) -> Any:
     return types_mod.GenerateContentConfig(**kwargs)
 
 
-def _video_part(types_mod: Any, source: Any, window: tuple[float, float]) -> Any:
+def _video_part(
+    types_mod: Any,
+    source: Any,
+    window: tuple[float, float],
+    source_mime_type: str,
+) -> Any:
     """The video, clipped to one window, sampled sparsely."""
     metadata = None
     video_meta = getattr(types_mod, "VideoMetadata", None)
@@ -573,7 +584,7 @@ def _video_part(types_mod: Any, source: Any, window: tuple[float, float]) -> Any
         metadata = video_meta(**fields)
 
     if isinstance(source, str):                       # a gs:// or https:// uri
-        part = types_mod.Part.from_uri(file_uri=source, mime_type="video/mp4")
+        part = types_mod.Part.from_uri(file_uri=source, mime_type=source_mime_type)
     else:                                             # an uploaded File object
         part = types_mod.Part.from_uri(
             file_uri=source.uri, mime_type=getattr(source, "mime_type", "video/mp4")
@@ -584,12 +595,51 @@ def _video_part(types_mod: Any, source: Any, window: tuple[float, float]) -> Any
     return part
 
 
+async def _generate_window(
+    client: Any,
+    *,
+    model: str,
+    contents: list[Any],
+    config: Any,
+    say,
+) -> Any:
+    last_error: BaseException | None = None
+    for attempt in range(1, WINDOW_ATTEMPTS + 1):
+        try:
+            async_models = getattr(getattr(client, "aio", None), "models", None)
+            if async_models is not None:
+                call = async_models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=config,
+                )
+            else:
+                call = asyncio.to_thread(
+                    client.models.generate_content,
+                    model=model,
+                    contents=contents,
+                    config=config,
+                )
+            return await asyncio.wait_for(
+                call,
+                timeout=MODEL_CALL_TIMEOUT_SEC,
+            )
+        except Exception as exc:                              # noqa: PERF203
+            last_error = exc
+            if attempt == WINDOW_ATTEMPTS:
+                break
+            say(f"model attempt {attempt} failed; retrying")
+            await asyncio.sleep(RETRY_BASE_DELAY_SEC * (2 ** (attempt - 1)))
+    raise RuntimeError(f"model failed after {WINDOW_ATTEMPTS} attempts: {last_error}") from last_error
+
+
 async def read_video(
     client: Any,
     source: Any,
     duration_sec: float,
     *,
     model: str = CLIP_MODEL,
+    source_mime_type: str = "video/mp4",
     on_progress: Optional[Callable[[str], None]] = None,
 ) -> ClipReading:
     """
@@ -613,12 +663,13 @@ async def read_video(
     async def one(window: tuple[float, float]) -> tuple[list[TimedSegment], list[TimedScene], str, str]:
         async with gate:
             say(f"reading {window[0]:.0f}–{window[1]:.0f}s")
-            part = _video_part(types, source, window)
-            response = await asyncio.to_thread(
-                client.models.generate_content,
+            part = _video_part(types, source, window, source_mime_type)
+            response = await _generate_window(
+                client,
                 model=model,
                 contents=[part, PROMPT],
                 config=config,
+                say=say,
             )
 
         reading = getattr(response, "parsed", None)
@@ -648,17 +699,25 @@ async def read_video(
 
     results = await asyncio.gather(*(one(w) for w in windows), return_exceptions=True)
 
+    failures = [
+        (window, result)
+        for window, result in zip(windows, results)
+        if isinstance(result, BaseException)
+    ]
+    if failures:
+        detail = "; ".join(
+            f"{window[0]:.0f}–{window[1]:.0f}s: {error}"
+            for window, error in failures
+        )
+        raise RuntimeError(f"could not read every window after retries ({detail})")
+
     seg_groups: list[list[TimedSegment]] = []
     scene_groups: list[list[TimedScene]] = []
     language = "en"
     summaries: list[str] = []
 
     for window, result in zip(windows, results):
-        if isinstance(result, BaseException):
-            dropped.append(
-                f"reading {window[0]:.0f}–{window[1]:.0f}s failed: {result}"
-            )
-            continue
+        assert not isinstance(result, BaseException)
         segs, scenes, lang, summary = result
         seg_groups.append(segs)
         scene_groups.append(scenes)
@@ -672,7 +731,7 @@ async def read_video(
 
     complaint = coverage_complaint(segments, duration_sec)
     if complaint:
-        dropped.append(f"the reading {complaint}")
+        raise RuntimeError(f"the reading {complaint}")
 
     say(f"{len(segments)} phrases, {len(scenes)} scenes")
     return ClipReading(

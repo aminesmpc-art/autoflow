@@ -14,33 +14,17 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, BackgroundTasks, status, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import jwt
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, field_validator
 
 from app.config import get_settings
+from app.auth import security, verify_jwt
 
 router = APIRouter()
 settings = get_settings()
 
 # In-memory job store (replace with Supabase in production)
 jobs: dict = {}
-
-security = HTTPBearer()
-
-def verify_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    try:
-        payload = jwt.decode(
-            credentials.credentials,
-            settings.jwt_secret_key,
-            algorithms=[settings.jwt_algorithm]
-        )
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token has expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
 
 # ============================================================================
 # AI Configuration

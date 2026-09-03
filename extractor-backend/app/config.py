@@ -1,15 +1,11 @@
 """Application configuration — loaded from environment variables."""
 
 from functools import lru_cache
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # Supabase
-    supabase_url: str = ""
-    supabase_anon_key: str = ""
-    supabase_service_key: str = ""
-
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     # AI
     gemini_api_key: str = ""
 
@@ -50,18 +46,23 @@ class Settings(BaseSettings):
     django_api_url: str = "https://api.auto-flow.studio/api"
     enforce_extraction_limits: bool = True
 
+    # Shared job status. Redis makes polling work across web workers and keeps
+    # completed results available through deploys; empty is for local tests.
+    redis_url: str = ""
+    job_state_ttl_sec: int = 24 * 60 * 60
+    clip_job_stale_sec: int = 30 * 60
+    max_concurrent_clip_jobs: int = 2
+
     # Limits
     max_video_size_mb: int = 500
+    max_video_duration_sec: int = 2 * 60 * 60
     allowed_video_types: list[str] = [
         "video/mp4",
         "video/quicktime",
         "video/x-msvideo",
         "video/webm",
+        "video/x-matroska",
     ]
-
-    class Config:
-        env_file = ".env"
-
 
 @lru_cache
 def get_settings() -> Settings:
