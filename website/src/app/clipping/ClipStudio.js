@@ -131,6 +131,9 @@ export default function ClipStudio() {
   const [plan, setPlan] = useState(null);
   const [error, setError] = useState(null);
   const [isPro, setIsPro] = useState(null);
+  /* {ceiling, spent, left} once a run finishes. Shown rather than kept: a
+     ceiling nobody can see reads as a broken feature the moment it bites. */
+  const [asks, setAsks] = useState(null);
 
   const abortRef = useRef(null);
   const inputRef = useRef(null);
@@ -233,6 +236,7 @@ export default function ClipStudio() {
     setFailed([]);
     setLog("");
     setPlanned(null);
+    setAsks(null);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -264,6 +268,7 @@ export default function ClipStudio() {
       });
       setPlan(result.plan);
       setFailed(result.failed);
+      setAsks(result.asks);
       if (!result.clips.length && !result.failed.length) {
         setError(
           "Nothing in that recording scored above the bar you set. Lower "
@@ -597,10 +602,26 @@ export default function ClipStudio() {
             ))}
           </div>
 
+          {asks?.left === 0 && (
+            <p className="clip-note warn">
+              This run reached its ceiling of {asks.ceiling} model asks, so anything still
+              unanswered was left alone rather than charged for — usually an edit sheet on
+              the last clips. The clips themselves are unaffected: they were cut before the
+              sheet was planned. Ask for fewer clips, or turn off <strong>Plan the edit</strong>,
+              and the rest of the run fits.
+            </p>
+          )}
+
           <p className="clip-note info">
             The .json opens in <StoreLink product="studio">AutoFlow Studio</StoreLink> — press
             <strong> ⭱ Import</strong> on the gallery screen and every clip arrives as a node
             you can re-cut, re-frame or re-caption without paying for the reading again.
+            {asks && (
+              <>
+                {" "}This run used <strong>{asks.spent} of {asks.ceiling}</strong> model asks
+                on top of reading the video.
+              </>
+            )}
           </p>
         </>
       )}

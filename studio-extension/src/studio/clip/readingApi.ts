@@ -62,6 +62,58 @@ async function baseFor(options: { baseUrl?: string }): Promise<string> {
   return getExtractorBase();
 }
 
+/* ------------------------------------------------------------------ */
+/* What one run may spend                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The run has asked as much as it is allowed to.
+ *
+ * Not a ReadingUnavailable, and the distinction is the whole point: that class
+ * means "this server cannot answer", and serverFirstAsk responds to it by
+ * putting the same question to a chat tab instead. A budget that redirected
+ * spending rather than stopping it would be worse than no budget, because it
+ * would look like one.
+ */
+export class AskBudgetSpent extends Error {
+  readonly budgetSpent = true;
+  constructor(spent: number, ceiling: number) {
+    super(
+      `This run has used its ${ceiling} model asks (${spent} spent). `
+      + 'Anything still unanswered was left alone rather than charged for.',
+    );
+    this.name = 'AskBudgetSpent';
+  }
+}
+
+export const isBudgetSpent = (e: unknown): boolean =>
+  !!e && typeof e === 'object' && (e as { budgetSpent?: boolean }).budgetSpent === true;
+
+let budget: { ceiling: number; spent: number } | null = null;
+
+/**
+ * Open a budget for one run, or clear it.
+ *
+ * Module-level because askOnServer is reached through serverFirstAsk from four
+ * different places, none of which are given the run's configuration. Passing a
+ * counter down to all of them would mean changing every signature between here
+ * and the stage that owns the run, for a number none of them care about.
+ *
+ * One run at a time, which is what both callers do — the extension runs a node
+ * at a time, the website one video at a time.
+ */
+export function startAskBudget(ceiling: number | null): void {
+  budget = typeof ceiling === 'number' && ceiling > 0
+    ? { ceiling: Math.floor(ceiling), spent: 0 }
+    : null;
+}
+
+/** What the open run has spent, or null when nothing is being counted. */
+export function askBudget(): { ceiling: number; spent: number; left: number } | null {
+  if (!budget) return null;
+  return { ceiling: budget.ceiling, spent: budget.spent, left: Math.max(0, budget.ceiling - budget.spent) };
+}
+
 export interface ReadSegment {
   start: number;
   end: number;
@@ -373,6 +425,12 @@ export async function askOnServer(
   prompt: string,
   options: AskOptions = {},
 ): Promise<string> {
+  /* Before the token, before the fetch. A refusal that has already sent the
+     request has not saved anything. */
+  if (budget && budget.spent >= budget.ceiling) {
+    throw new AskBudgetSpent(budget.spent, budget.ceiling);
+  }
+
   const token = await tokenFor();
   if (!token) throw new ReadingUnavailable('not signed in');
 
@@ -380,6 +438,11 @@ export async function askOnServer(
   const attachments = (options.attachments || []).filter(
     (a) => typeof a === 'string' && a.startsWith('data:'),
   );
+
+  /* Counted at the point of sending. A request that is made and then fails is
+     a request the model may still have been paid for, and a budget that only
+     counted successes would let a run retry its way past the ceiling. */
+  if (budget) budget.spent++;
 
   let response: Response;
   try {

@@ -30,7 +30,7 @@
 
 import { advance, emptyRun, STAGE_LABEL, STAGE_ORDER, type ClipRun, type StageId } from '../studio/clip/stages';
 import { clipRunners, runOneCut, stagesToSkip, type ClipConfig, type ClipDeps } from '../studio/clip/runClip';
-import { useInjectedCredentials } from '../studio/clip/readingApi';
+import { askBudget, startAskBudget, useInjectedCredentials } from '../studio/clip/readingApi';
 import type { Plan, PlanStep } from '../studio/builder/plan';
 import type { CaptionPreset } from '../studio/media/captions';
 import type { EditOp } from '../studio/clip/editSheet';
@@ -137,6 +137,14 @@ export interface WebClipOptions {
   targetAspect?: number;
   /** Names the run after the video it came from. */
   sourceName?: string;
+  /**
+   * The most model asks this run may make, on top of reading the video.
+   *
+   * Defaults to askCeilingFor(clipCount). Pass a number to override, or null
+   * to count nothing — which is what the extension does, where a person is
+   * watching a canvas and can stop it.
+   */
+  maxAsks?: number | null;
 
   signal?: AbortSignal;
   /** Called on every stage transition, for the progress rail. */
@@ -184,6 +192,8 @@ export interface WebClip {
 export interface WebClipResult {
   /** The finished clips, best first. */
   clips: WebClip[];
+  /** What the run spent against its ceiling, for the report. */
+  asks: { ceiling: number; spent: number; left: number } | null;
   /** The plan the survey laid out, for the Studio .json hand-off. */
   plan: Plan;
   /** The stage machine's final state, for the report. */
@@ -205,6 +215,24 @@ const presetOf = (named: string | undefined): CaptionPreset | undefined =>
   named && (CAPTION_PRESETS as string[]).includes(named)
     ? (named as CaptionPreset)
     : undefined;
+
+/**
+ * How many model asks a run of N clips is allowed.
+ *
+ * A run's asks are one for the survey, then per cut: up to four to locate the
+ * two spoken lines when the reading could not, one to find the speaker across
+ * eight stills, and one to plan the edit sheet. The reading answers the first
+ * five of those on ordinary footage, so the usual spend is 1 + N; the worst
+ * case is 1 + 6N, and ten clips of worst case is sixty-one asks that no quota
+ * counts.
+ *
+ * Two per cut plus six: comfortable headroom over the usual spend, and about a
+ * third of the pathological one. The point is not to make a good run fail — it
+ * is that a video which defeats the reading should stop somewhere rather than
+ * quietly costing six times what the same run costs on footage that works.
+ */
+export const askCeilingFor = (clips: number): number =>
+  6 + 2 * Math.max(1, Math.min(20, Math.floor(clips || 1)));
 
 /** A key for this file, in this tab. Content-addressing it would mean hashing
     500MB to learn something only this tab needs to know. */
@@ -237,6 +265,15 @@ export async function runWebClipping(
   const say = options.onLog || (() => {});
   const sourceKey = keyFor();
   sources.set(sourceKey, file);
+
+  /* Opened before any stage runs and left open until the run returns, so the
+     survey, the per-cut fallbacks and the edit sheets all draw on one number
+     rather than each getting their own allowance. */
+  startAskBudget(
+    options.maxAsks === null
+      ? null
+      : options.maxAsks ?? askCeilingFor(options.clipCount ?? 6),
+  );
 
   /* Imported here rather than at the top, for the same reason WorkflowRunner
      does it: this pulls in mediabunny, and a static import would put a demuxer
@@ -305,7 +342,7 @@ export async function runWebClipping(
   const cuts = plan.steps.filter((s) => s.type === 'cut');
   options.onPlanned?.(cuts.length);
   if (!cuts.length) {
-    return { clips: [], plan, run, failed: [], sourceKey };
+    return { clips: [], plan, run, failed: [], sourceKey, asks: askBudget() };
   }
 
   const clips: WebClip[] = [];
@@ -377,7 +414,16 @@ export async function runWebClipping(
     }
   }
 
-  return { clips, plan, run, failed, sourceKey };
+  const asks = askBudget();
+  if (asks && asks.left === 0) {
+    say(`the ${asks.ceiling}-ask ceiling was reached — anything unanswered was left alone`);
+  }
+  /* Closed here rather than in a finally: a throw above leaves the run's spend
+     readable, which is the state somebody debugging a failed run wants. The
+     next run opens its own. */
+  startAskBudget(null);
+
+  return { clips, plan, run, failed, sourceKey, asks };
 }
 
 /* The production extractor service. The same default the extension ships
