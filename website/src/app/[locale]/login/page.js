@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { afterAuthPath } from "../../afterAuth";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -21,7 +22,10 @@ export default function LoginPage() {
 
     const result = await login(email, password);
     if (result.success) {
-      router.push("/extractor");
+      /* Back to whatever sent them here, or the extractor when nothing did.
+         Read from the URL at this moment rather than with useSearchParams,
+         which would cost this page its static prerender. */
+      router.push(afterAuthPath(window.location.search));
     } else {
       setError(result.error || "Failed to log in.");
     }

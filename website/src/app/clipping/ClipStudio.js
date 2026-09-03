@@ -338,8 +338,12 @@ export default function ClipStudio() {
           </div>
         </div>
         <div className="clip-actions-row">
-          <a href="/login" className="btn btn-primary btn-lg">Sign in to clip</a>
-          <a href="/register" className="btn btn-secondary btn-lg">Create a free account</a>
+          {/* ?next= so signing in returns here rather than dropping them on
+              the extractor, which is where both auth pages went by default. */}
+          <a href="/login?next=%2Fclipping" className="btn btn-primary btn-lg">Sign in to clip</a>
+          <a href="/register?next=%2Fclipping" className="btn btn-secondary btn-lg">
+            Create a free account
+          </a>
         </div>
         <p className="clip-note info">
           Prefer to keep the video on your own machine end to end?{" "}
