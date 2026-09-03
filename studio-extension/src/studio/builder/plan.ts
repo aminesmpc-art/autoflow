@@ -192,12 +192,26 @@ export function readPlan(reply: string): { plan: Plan | null; problem?: string }
 
 /* ── Compiling ───────────────────────────────────────────── */
 
-/** Longest path back to a step with no inputs — the column to draw it in. */
+/**
+ * Longest path back to a step that depends on nothing - the column to draw in.
+ *
+ * startFrame and endFrame count. They were left out, and because a clip in
+ * frames mode has BOTH of them and no "inputs" at all, every such clip read as
+ * depending on nothing and was drawn in column zero - to the LEFT of the two
+ * stills it is made from. A six-still, five-clip keyframe pipeline came out as
+ * two stacks with ten edges running backwards across the whole canvas, which
+ * is what "only the workflow not understandable" was looking at.
+ *
+ * They are dependencies in every sense that matters: the clip cannot run until
+ * both stills exist, and check.ts has always counted them when working out
+ * what feeds what. Only the layout disagreed.
+ */
 function depthOf(id: string, byId: Map<string, PlanStep>, seen = new Set<string>()): number {
   if (seen.has(id)) return 0;          // a cycle; the validator will say so
   seen.add(id);
   const step = byId.get(id);
-  const inputs = (step?.inputs || []).filter((i) => byId.has(i));
+  const inputs = [...(step?.inputs || []), step?.startFrame, step?.endFrame]
+    .filter((i): i is string => !!i && byId.has(i));
   if (!inputs.length) return 0;
   return 1 + Math.max(...inputs.map((i) => depthOf(i, byId, new Set(seen))));
 }

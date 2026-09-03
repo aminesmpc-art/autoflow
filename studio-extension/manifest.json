@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFlow Studio \u2014 Node Workflows for AI Video",
-  "version": "0.28.0",
+  "version": "1.2.0",
   "description": "Visual node workflows that automate multi-step AI video generation in your browser. Independent tool, no affiliation.",
   "minimum_chrome_version": "114",
   "offline_enabled": false,
