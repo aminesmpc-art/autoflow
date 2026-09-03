@@ -38,6 +38,7 @@ urlpatterns = [
     path("usage/queue-run", views.ConsumeQueueRunView.as_view(), name="usage-queue-run"),
     path("usage/studio-run", views.ConsumeStudioRunView.as_view(), name="usage-studio-run"),
     path("usage/events", views.UsageEventView.as_view(), name="usage-events"),
+    path("usage/clipping-reserve", views.ConsumeClippingJobView.as_view(), name="usage-clipping-reserve"),
 
     # Rewards
     path("rewards/grant", views.GrantRewardView.as_view(), name="rewards-grant"),

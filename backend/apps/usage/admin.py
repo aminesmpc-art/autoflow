@@ -4,7 +4,15 @@ from django.db.models import Sum, Count, Q, F
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin
 
-from .models import DailyUsage, MonthlyUsage, UsageEvent
+from .models import ClippingUsage, DailyUsage, MonthlyUsage, UsageEvent
+
+
+@admin.register(ClippingUsage)
+class ClippingUsageAdmin(ModelAdmin):
+    list_display = ("user", "idempotency_key", "date", "created_at")
+    list_filter = ("date",)
+    search_fields = ("user__email", "idempotency_key")
+    readonly_fields = ("user", "idempotency_key", "date", "created_at")
 
 
 # ── Custom Filters ──

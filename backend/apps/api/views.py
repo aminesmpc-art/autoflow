@@ -17,6 +17,7 @@ from apps.plans.services import (
     mark_last_seen,
 )
 from apps.usage.models import UsageEvent
+from apps.usage.services import reserve_clipping_job
 from apps.users.models import CustomUser
 from apps.users.services import register_user, resend_verification, verify_email, request_password_reset, confirm_password_reset
 from apps.webhooks.models import WebhookEvent
@@ -31,6 +32,34 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class ConsumeClippingJobView(APIView):
+    """Authoritative daily clipping quota; extractor retries are idempotent."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        idempotency_key = request.data.get("idempotency_key")
+        if not isinstance(idempotency_key, str) or not idempotency_key.strip():
+            return Response(
+                {"detail": "idempotency_key is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        idempotency_key = idempotency_key.strip()
+        if len(idempotency_key) > 128:
+            return Response({"detail": "idempotency_key is too long."}, status=status.HTTP_400_BAD_REQUEST)
+
+        state = reserve_clipping_job(request.user, idempotency_key)
+        if not state["allowed"]:
+            return Response(
+                {"detail": f"Daily clipping limit reached ({state['limit']} per day).", **state},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        response_status = (
+            status.HTTP_201_CREATED if state["charged"] else status.HTTP_200_OK
+        )
+        return Response(state, status=response_status)
 
 
 # ================================================================

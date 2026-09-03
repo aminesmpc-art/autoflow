@@ -22,6 +22,7 @@ class DailyUsage(models.Model):
     full_prompts_used = models.PositiveIntegerField(default=0, help_text="Full-feature prompts (with images/frames)")
     extend_prompts_used = models.PositiveIntegerField(default=0, help_text="Extended video prompts")
     downloads_used = models.PositiveIntegerField(default=0, help_text="Media downloads today")
+    clipping_jobs_used = models.PositiveIntegerField(default=0, help_text="Clipping jobs accepted today")
     # Queue run counters (per mode)
     lite_runs_today = models.PositiveIntegerField(default=0, help_text="Lite queue runs today")
     flow_runs_today = models.PositiveIntegerField(default=0, help_text="Flow queue runs today")
@@ -79,6 +80,7 @@ class UsageEvent(models.Model):
         QUEUE_RUN_LITE = "queue_run_lite", "Queue Run (Lite)"
         QUEUE_RUN_FLOW = "queue_run_flow", "Queue Run (Flow)"
         QUEUE_RUN_FULL = "queue_run_full", "Queue Run (Full)"
+        CLIPPING_JOB_STARTED = "clipping_job_started", "Clipping Job Started"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
@@ -99,3 +101,29 @@ class UsageEvent(models.Model):
     def __str__(self):
         return f"{self.user.email} — {self.event_type} @ {self.created_at}"
 
+
+class ClippingUsage(models.Model):
+    """Immutable charge ledger used to make clipping retries idempotent."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="clipping_usages",
+    )
+    idempotency_key = models.CharField(max_length=128)
+    date = models.DateField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("user", "idempotency_key"),
+                name="unique_clipping_charge_per_user_job",
+            ),
+        ]
+        indexes = [models.Index(fields=("user", "date"), name="clip_usage_user_date")]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user.email} — {self.idempotency_key} @ {self.date}"
