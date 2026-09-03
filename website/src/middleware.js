@@ -34,7 +34,11 @@ const unlocalizedPaths = [
   '/changelog',
   /* Not linked from the nav or the sitemap yet — it is held back until it
      has images. Listed here so it can be previewed at its real URL. */
-  '/clipping'
+  '/clipping',
+  /* Lives at app/studio, not app/[locale]/studio, so without this an English
+     visitor is rewritten to /en/studio — a route that does not exist — and the
+     page 404s while being present in the build. */
+  '/studio'
 ];
 
 export function middleware(request) {
