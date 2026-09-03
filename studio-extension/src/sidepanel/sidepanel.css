@@ -579,31 +579,33 @@ body {
 
 /* ── Build Status Output ── */
 .sp-buildout {
-  padding: var(--s-3);
-  border-radius: var(--r-ctrl);
-  border: 1px solid var(--line);
-  background: var(--surface);
+  padding: 10px var(--s-3);
+  border-radius: var(--r-card);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   font-size: var(--t-micro);
   line-height: 1.5;
   color: var(--text-2);
 }
 .sp-buildout--ok {
   border-color: var(--accent-30);
-  background: var(--accent-8);
+  background: rgba(160, 122, 253, 0.04);
 }
 .sp-buildout--bad {
-  border-left: 3px solid var(--bad);
+  border-left: 2px solid var(--bad);
   background: var(--bad-12);
   color: var(--bad);
 }
 .sp-buildout__title {
   font-weight: 700;
   color: var(--text);
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 .sp-buildout--bad .sp-buildout__title { color: var(--bad); }
-.sp-buildout ul { margin: 6px 0 0; padding-left: 16px; }
-.sp-buildout li { margin-bottom: 3px; }
+.sp-buildout ul { margin: 4px 0 0; padding-left: 16px; }
+.sp-buildout li { margin-bottom: 2px; }
 
 /* ── Quick Ideas Blueprints ── */
 .sp-ideas {
@@ -1543,7 +1545,10 @@ body {
 .sp-tpl:active,
 .sp-ai__link:active,
 .sp-seg2__btn:active,
-.sp-pill:active { transform: scale(0.985); }
+.sp-pill:active {
+  transform: scale(0.97);
+  transition-duration: 60ms;
+}
 
 .sp-view:not([hidden]) { animation: sp-view-in var(--base) both; }
 @keyframes sp-view-in {
@@ -1606,17 +1611,24 @@ body {
 /* The composer, as one instrument. */
 .sp-composer {
   position: relative;
-  border: 1px solid var(--line-2);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-card);
-  background: var(--surface);
-  /* Lifted off the page rather than drawn on it. */
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 6px 20px -8px rgba(0, 0, 0, 0.5);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 /* The whole thing answers, not just the textarea inside it. */
 .sp-composer:focus-within {
-  border-color: var(--accent-50);
-  box-shadow: 0 0 0 3px var(--accent-8), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  border-color: var(--accent-30);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 0 0 2px var(--accent-8),
+    0 6px 20px -8px rgba(0, 0, 0, 0.5);
 }
 .sp-ask__box {
   display: block;
@@ -1763,19 +1775,22 @@ body {
    the code is doing. A stage that only names a phase — "Reading the plan" —
    tells somebody waiting nothing they can use. */
 .sp-stages {
-  padding: var(--s-3);
-  border-radius: var(--r-ctrl);
-  border: 1px solid var(--line);
-  background: var(--surface);
+  padding: 10px var(--s-3);
+  border-radius: var(--r-card);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
 .sp-stages__row {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   font-size: var(--t-small);
   color: var(--text-3);
-  padding: 5px 0;
+  padding: 4px 0;
 }
 /* A spine down the dots, so three marks read as one sequence rather than
    three unrelated bullets. */
@@ -1783,14 +1798,15 @@ body {
   content: '';
   position: absolute;
   left: 3px;
-  top: 18px;
-  bottom: -4px;
-  width: 1px;
+  top: 17px;
+  bottom: -3px;
+  width: 0.5px;
   background: var(--line-2);
+  opacity: 0.6;
 }
 .sp-stages__row--done:not(:last-of-type)::before {
   background: var(--ok);
-  opacity: 0.5;
+  opacity: 0.4;
 }
 .sp-stages__dot {
   width: 7px; height: 7px;
@@ -1803,28 +1819,27 @@ body {
 .sp-stages__row--live { color: var(--text); font-weight: 600; }
 .sp-stages__row--live .sp-stages__dot {
   background: var(--busy);
-  animation: sp-stage-pulse 1.4s ease-in-out infinite;
+  animation: sp-stage-pulse 1.8s ease-in-out infinite;
 }
 @keyframes sp-stage-pulse {
   0%, 100% { box-shadow: 0 0 0 0 var(--busy-16); opacity: 1; }
-  50%      { box-shadow: 0 0 0 4px var(--busy-16); opacity: 0.65; }
+  50%      { box-shadow: 0 0 0 3px var(--busy-16); opacity: 0.55; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sp-stages__row--live .sp-stages__dot { animation: none; }
 }
-/* The line that actually changes. Given room, because it is the part that
-   says the thing is alive — the stage names barely move. */
+/* The line that actually changes. */
 .sp-stages__note {
   font-size: var(--t-small);
   color: var(--text-2);
-  margin-top: 8px;
-  padding: 7px 9px;
+  margin-top: 6px;
+  padding: 6px 8px;
   border-radius: var(--r-chip);
   background: var(--sunken);
-  min-height: 30px;
+  min-height: 28px;
 }
 .sp-stages__cancel {
-  margin-top: 8px;
+  margin-top: 6px;
   padding: 0;
   font: inherit;
   font-size: var(--t-micro);
@@ -1833,6 +1848,7 @@ body {
   border: none;
   cursor: pointer;
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .sp-stages__cancel:hover { color: var(--bad); }
 
@@ -1842,9 +1858,12 @@ body {
    and unreadable to anyone deciding whether to spend four generations. */
 .sp-plan {
   padding: var(--s-3);
-  border-radius: var(--r-ctrl);
+  border-radius: var(--r-card);
   border: 1px solid var(--accent-30);
-  background: var(--accent-8);
+  background: rgba(160, 122, 253, 0.04);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
 .sp-plan__what {
   display: flex;
@@ -1865,6 +1884,7 @@ body {
   font-weight: 600;
   color: var(--accent);
   background: var(--accent-14);
+  border: 1px solid var(--accent-30);
   border-radius: var(--r-pill);
   padding: 2px 8px;
 }
@@ -1875,23 +1895,28 @@ body {
 }
 .sp-plan__shots {
   list-style: none;
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   counter-reset: shot;
 }
 .sp-plan__shot {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 7px;
   font-size: var(--t-small);
   color: var(--text-2);
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-chip);
-  padding: 7px 9px;
+  padding: 5px 8px;
+  transition: border-color var(--fast), background var(--fast);
+}
+.sp-plan__shot:hover {
+  border-color: var(--line-2);
+  background: var(--surface-2);
 }
 /* Numbered, because the order is the story. */
 .sp-plan__shot::before {
@@ -1899,9 +1924,10 @@ body {
   content: counter(shot);
   flex: 0 0 auto;
   font-size: var(--t-micro);
-  font-weight: 700;
-  color: var(--accent);
+  font-weight: 600;
+  color: var(--text-3);
   min-width: 12px;
+  font-variant-numeric: tabular-nums;
 }
 .sp-plan__label { min-width: 0; overflow-wrap: anywhere; }
 .sp-plan__meta {
@@ -1912,28 +1938,28 @@ body {
 }
 /* Everything that is not a shot, in one quiet line. */
 .sp-plan__helpers {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   font-size: var(--t-micro);
   color: var(--text-3);
 }
 .sp-plan__warn {
-  margin-top: 10px;
-  padding: 8px 10px;
+  margin-top: 8px;
+  padding: 7px 9px;
   border-radius: var(--r-chip);
-  border-left: 3px solid var(--warn);
+  border-left: 2px solid var(--warn);
   background: var(--warn-16);
   font-size: var(--t-micro);
   line-height: 1.5;
   color: var(--text-2);
 }
 .sp-plan__warn ul { margin: 4px 0 0; padding-left: 15px; }
-.sp-plan__warn li { margin-bottom: 3px; }
+.sp-plan__warn li { margin-bottom: 2px; }
 .sp-plan__warn-title { font-weight: 700; color: var(--warn); }
-.sp-plan__acts { display: flex; gap: 6px; margin-top: 12px; }
+.sp-plan__acts { display: flex; gap: 6px; margin-top: 10px; }
 .sp-plan__acts .sp-btn { flex: 1 1 auto; }
 .sp-plan__refine {
   display: flex;
-  gap: 6px;
+  gap: 5px;
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--line);
@@ -1947,28 +1973,35 @@ body {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-ctrl);
-  padding: 6px 8px;
+  padding: 5px 8px;
+  transition: border-color var(--fast), box-shadow var(--fast);
 }
 .sp-plan__ask::placeholder { color: var(--text-3); }
-.sp-plan__ask:focus { outline: none; border-color: var(--accent); }
+.sp-plan__ask:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-8);
+}
 .sp-plan__refine .sp-btn { flex: 0 0 auto; }
 
 /* ── Build: pictures of what you mean ── */
 .sp-shots {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 12px 10px;
+  gap: 5px;
+  padding: 0 12px 8px;
 }
 .sp-shot {
   position: relative;
-  width: 46px;
-  height: 46px;
+  width: 40px;
+  height: 40px;
   border-radius: var(--r-chip);
   overflow: hidden;
   border: 1px solid var(--line-2);
   background: var(--sunken);
+  transition: border-color var(--fast);
 }
+.sp-shot:hover { border-color: var(--accent-30); }
 .sp-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .sp-shot__x {
   position: absolute;
@@ -2019,7 +2052,7 @@ body {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   font-size: var(--t-micro);
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -2036,12 +2069,16 @@ body {
   background: none;
   border: none;
   cursor: pointer;
+  transition: color var(--fast);
 }
 .sp-past__clear:hover { color: var(--bad); }
-.sp-past__list { display: flex; flex-direction: column; gap: 4px; }
+.sp-past__list { display: flex; flex-direction: column; gap: 3px; }
 .sp-past__item {
   display: flex;
-  align-items: center;
+  /* Top, not centre: the row carries a name and the brief under it now, and
+     the timestamp should sit level with the name rather than float between
+     the two lines. */
+  align-items: flex-start;
   gap: 8px;
   width: 100%;
   text-align: left;
@@ -2051,19 +2088,72 @@ body {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-chip);
-  padding: 7px 9px;
+  padding: 5px 8px;
   cursor: pointer;
+  transition: border-color var(--fast), color var(--fast), background var(--fast);
 }
-.sp-past__item:hover { border-color: var(--accent-30); color: var(--text); }
+.sp-past__item:hover {
+  border-color: var(--accent-30);
+  color: var(--text);
+  background: var(--surface-2);
+}
+/* The name and the brief, stacked, sharing what is left after the timestamp. */
+.sp-past__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* What the model called the piece. The line that tells one build from another
+   when every brief opens with the same boilerplate. */
+.sp-past__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
 .sp-past__idea {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--t-micro);
+  color: var(--text-3);
 }
+/* How much text is in the composer, and what will be done with it.
+   Hidden for anything short enough to be an ordinary idea — a count under a
+   one-line sentence is noise. The brief state is tinted rather than merely
+   worded, so "this will be read first" registers without being read. */
+.sp-composer__size {
+  padding: 0 12px 6px;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+}
+
+.sp-composer__size--brief { color: var(--accent); }
+
+/* Marks a past build whose conversation can still be reopened. Blank for one
+   that cannot, rather than a second icon nobody can tell apart from the first. */
+.sp-past__thread {
+  flex: 0 0 auto;
+  /* Auto here now: the text block grew a second line and takes the slack, so
+     the marker and the timestamp are pushed to the right together and sit on
+     the name's baseline rather than between the two lines. */
+  margin-left: auto;
+  padding-top: 2px;
+  font-size: var(--t-micro);
+  line-height: 1;
+  opacity: 0.75;
+}
+
 .sp-past__when {
   margin-left: auto;
   flex: 0 0 auto;
+  padding-top: 1px;
   font-size: var(--t-micro);
   color: var(--text-3);
 }
@@ -2105,18 +2195,21 @@ body {
   justify-content: space-between;
   gap: 8px;
   margin-top: var(--s-4);
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-top: 1px solid var(--line);
+  padding: 9px 12px;
+  border: 1px dashed var(--line);
   border-radius: var(--r-ctrl);
-  background: var(--surface);
+  background: transparent;
   font-size: var(--t-small);
-  color: var(--text-2);
+  color: var(--text-3);
   cursor: pointer;
   text-decoration: none;
-  transition: border-color 120ms ease, color 120ms ease;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
 }
-.sp-ask__more:hover { border-color: var(--accent-30); color: var(--text); }
+.sp-ask__more:hover {
+  border-color: var(--accent-30);
+  color: var(--text-2);
+  background: var(--surface);
+}
 .sp-ask__more-go {
   color: var(--text-3);
   transition: transform 120ms ease, color 120ms ease;
@@ -2127,12 +2220,13 @@ body {
 .sp-manual { margin-top: var(--s-3); }
 .sp-manual > summary {
   list-style: none;
-  padding: 9px 12px;
-  border: 1px dashed var(--line-2);
+  padding: 8px 12px;
+  border: 1px dashed var(--line);
   border-radius: var(--r-ctrl);
   font-size: var(--t-small);
   color: var(--text-3);
   cursor: pointer;
+  transition: border-color var(--fast), color var(--fast);
 }
 .sp-manual > summary::-webkit-details-marker { display: none; }
 .sp-manual > summary::before {
@@ -2190,12 +2284,20 @@ body {
 
 /* Denser, quieter. Numbered discs in accent were louder than the step they
    labelled — Raycast would set this as three plain rows and move on. */
-.sp-how { gap: 2px; margin-top: 14px; }
+.sp-how { gap: 1px; margin-top: 14px; }
 .sp-how li {
   gap: 8px;
-  padding: 4px 0;
+  padding: 3px 0;
   font-size: var(--t-micro);
   color: var(--text-3);
+  animation: sp-how-in 300ms ease both;
+}
+.sp-how li:nth-child(1) { animation-delay: 50ms; }
+.sp-how li:nth-child(2) { animation-delay: 120ms; }
+.sp-how li:nth-child(3) { animation-delay: 190ms; }
+@keyframes sp-how-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
 }
 /* The disc is gone. A number in a bordered circle was decorating a step that
    only needed counting, and neither reference would draw it — the scale has
@@ -2225,10 +2327,19 @@ body {
 }
 
 /* Restrained. The glow was doing the work precision should do. */
-.sp-ask__go { box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset; }
+.sp-ask__go {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+  transition: filter 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
 .sp-ask__go:hover:not(:disabled) {
   filter: brightness(1.06);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset, 0 2px 12px -4px var(--accent-50);
+  transform: translateY(-0.5px) scale(1.015);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset, 0 2px 10px -3px var(--accent-50);
+}
+.sp-ask__go:active:not(:disabled) {
+  filter: brightness(0.94);
+  transform: scale(0.97);
+  transition-duration: 60ms;
 }
 
 /* The one place an upgrade is offered, and only while it is the thing

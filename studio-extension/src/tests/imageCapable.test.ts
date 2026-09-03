@@ -56,7 +56,11 @@ describe('nothing is sent that would be thrown away', () => {
   it('withholds the pictures from a chat that cannot attach them', () => {
     /* Carrying megabytes across two message boundaries and stretching the
        upload budget to six minutes, for a field the adapter ignores. */
-    expect(SRC).toMatch(/images: round === 0 && IMAGE_CAPABLE\.has\(key\) \? refImages : \[\]/);
+    /* `&& !threadOpen` joined it when a long pasted brief started being read
+       on a turn of its own: that turn sends the pictures, and the planning
+       turn is the next message in the same conversation, with them above it. */
+    expect(SRC).toMatch(
+      /images: round === 0 && !threadOpen && IMAGE_CAPABLE\.has\(key\) \? refImages : \[\]/);
     expect(SRC).toMatch(/images: IMAGE_CAPABLE\.has\(at\.platform\) \? refineImages : \[\]/);
   });
 

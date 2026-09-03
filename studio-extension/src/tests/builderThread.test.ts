@@ -38,7 +38,29 @@ const runner = read('studio', 'engine', 'WorkflowRunner.ts');
 
 describe('the builder keeps its conversation', () => {
   it('opens a chat for the first ask and continues it for repairs', () => {
-    expect(panel).toMatch(/newChat: round === 0 \? 'auto' : 'never'/);
+    expect(panel).toMatch(/newChat: round === 0 && !threadOpen \? 'auto' : 'never'/);
+  });
+
+  it('does not re-open the chat the reading turn already started', () => {
+    /* Exactly the guard the Story node has for its settings turn, below, and
+       arrived here for the same reason: a long pasted brief is now read on a
+       turn of its own before anything is planned. Opening a new chat for the
+       plan would throw that reading away and pay to send the document twice. */
+    expect(panel).toMatch(/let threadOpen = false;/);
+    expect(panel).toMatch(/threadOpen = true;/);
+  });
+
+  it('does not re-send the pictures the reading turn already sent', () => {
+    expect(panel).toMatch(/images: round === 0 && !threadOpen && IMAGE_CAPABLE/);
+  });
+
+  it('tells Gemini to keep the thread it is going to come back to', () => {
+    /* The builder's rounds are turns of one conversation, so the thread IS
+       the memory here in the way it is for a Story node — and Gemini deletes
+       a finished text thread unless told otherwise. Found while adding a turn
+       that depends on the thread surviving; it had been breaking the repair
+       rounds all along, which is the same failure this file was opened for. */
+    expect(worker).toMatch(/deleteWhenDone: false,/);
   });
 
   it('the worker forwards what it was asked for', () => {
@@ -49,8 +71,11 @@ describe('the builder keeps its conversation', () => {
        rather than hardcoded here. */
     expect(worker.replace(/\s+/g, ' ')).toMatch(
       /askChatForPlan\( msg\.platform, msg\.prompt, msg\.model \|\| '', msg\.newChat/);
-    expect(worker).toMatch(/newChat,\n\s+model,/);
-    expect(worker).not.toMatch(/newChat: 'auto',\n\s+model,/);
+    /* `deleteWhenDone` sits between these two now, so the check is that the
+       panel's flag is forwarded rather than hardcoded — which was always what
+       it was for. */
+    expect(worker).toMatch(/^\s+newChat,$/m);
+    expect(worker).not.toMatch(/newChat: 'auto',\n/);
   });
 
   it('defaults to a new chat when nobody says otherwise', () => {

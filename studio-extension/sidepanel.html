@@ -181,7 +181,14 @@
                   <circle cx="8.6" cy="8.6" r="1.4"/>
                 </svg>
               </button>
-              <input type="file" id="build-image-input" accept="image/*" multiple hidden />
+              <!-- How big the thing in the box is, when that is worth knowing.
+                 A one-line idea says nothing here. A pasted brief says how
+                 many words landed and whether it will be read before it is
+                 planned — both of which used to be discoverable only by
+                 running it. -->
+            <div class="sp-composer__size" id="build-idea-size" hidden></div>
+
+            <input type="file" id="build-image-input" accept="image/*" multiple hidden />
               <div class="sp-ask__who">
                 <span class="sp-ask__who-text">using</span>
                 <select id="build-engine" class="sp-ask__engine"

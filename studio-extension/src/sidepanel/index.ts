@@ -21,7 +21,8 @@ import { BRAND_MARKS } from '../studio/components/brandMarks';
 import type { Template } from '../studio/templates';
 import { getAskPresets } from '../studio/presets';
 import { signInWithGoogle } from './googleSignIn';
-import { buildSpec } from '../studio/builder/spec';
+import { buildSpec, readBriefAsk } from '../studio/builder/spec';
+import { looksLikeBrief, readBriefReply, wordCount } from '../studio/builder/brief';
 import { readPlan, compilePlan, extractJson } from '../studio/builder/plan';
 import {
   checkPlan, repairPlanMessage, explainPlan, type PlanProblem,
@@ -780,10 +781,52 @@ interface PendingBuild {
      conversation, so refine sends the plan instead of assuming the model
      still has it. Not needed when the conversation itself can be reopened. */
   resumeFrom?: any;
+  /**
+   * The plan the model actually wrote, in the shape it was asked for.
+   *
+   * Kept because a template is not that. compilePlan builds a template FROM a
+   * plan: nodes with positions, edges with handles and generated ids,
+   * category, difficulty — and the brief tells the model, in those words,
+   * never to send any of them. resumeFrom carried the template, and the
+   * sentence after it asked for "the complete JSON object again — the same
+   * shape". So on the one occasion the plan genuinely has to travel, the model
+   * was shown the shape it is forbidden to produce and told to match it.
+   */
+  plan?: any;
   /* The chat this plan was written in. Reopening it is better than
      reconstructing it: the model still has the whole thread, including the
      pictures and every repair round, none of which fits in one message. */
   chatUrl?: string;
+  /**
+   * Whether a conversation holding this plan is open right now.
+   *
+   * Separate from `resumeFrom`, and the whole reason the thread kept being
+   * thrown away. Those are two different questions that had been answered by
+   * one flag:
+   *
+   *   resumeFrom   does the model need the plan pasted to it?
+   *   threadOpen   is there a conversation to continue, or must one be started?
+   *
+   * refineBuild read `newChat: at.resumeFrom ? 'auto' : 'never'`, which was
+   * right while reopening only carried the plan when there was no live chat.
+   * Then reopening started carrying it ALWAYS — sound on its own terms, since
+   * a tab that opens is not the same as a conversation that loaded — and that
+   * one change silently flipped every reopened build to 'auto'. So the panel
+   * put the tab back on the right Gemini thread and then opened a new chat
+   * beside it, which is what "he dont remamber the conversation" is.
+   *
+   * Carrying the plan is cheap insurance. Starting a new chat is destructive.
+   * They do not belong on the same boolean.
+   */
+  threadOpen?: boolean;
+  /**
+   * The history entry this came from, when it came from one.
+   *
+   * Without it every Build click appends a row, so reopening one build and
+   * changing it three times leaves four rows with the same first line and no
+   * way to tell them apart — measured at seven in forty-five minutes.
+   */
+  originId?: string;
 }
 let pendingBuild: PendingBuild | null = null;
 
@@ -903,10 +946,40 @@ interface PastBuild {
   template: any;
   /** The conversation it was written in, when the site gave us one. */
   chatUrl?: string;
+  /** The brief was longer than IDEA_MAX and what is stored stops early. */
+  ideaClipped?: boolean;
+  /** The plan as the model wrote it, for a reopen that has to re-send it. */
+  plan?: any;
 }
 
 /** Enough to be useful, few enough that the list stays a list. */
 const PAST_MAX = 12;
+
+/**
+ * How much of the brief to keep. All of it, in practice.
+ *
+ * This was `slice(0, 400)`, written as though it were a display cap. It was
+ * not: reopenBuild puts this string straight back into the build box, so
+ * clicking an earlier build replaced a three-thousand-word master prompt with
+ * its first four hundred characters, and the next build was made from a
+ * quarter of one sentence.
+ *
+ * Measured on the report. The material that reached the model ended mid-word:
+ *
+ *     All outputs must depict entire buildings from a fixed d
+ *     ───────────── END USER MATERIAL ─────────────
+ *
+ * 401 characters. Everything the brief actually specified — six stills, five
+ * clips between them, the locked drone position — was in the part that never
+ * arrived, and the plan that came back was a reasonable answer to a question
+ * nobody asked. The reading turn did not run either: fifty-six words is not a
+ * document, and by then it genuinely was not one.
+ *
+ * The list row shows a short slice of this, which is the job the 400 was
+ * mistaken for and is done at render time now. */
+const IDEA_MAX = 24000;
+/** As much as reads on one line of the list. */
+const IDEA_ROW_MAX = 200;
 
 async function readPast(): Promise<PastBuild[]> {
   try {
@@ -917,19 +990,55 @@ async function readPast(): Promise<PastBuild[]> {
 
 async function rememberBuild(b: PendingBuild, idea: string): Promise<void> {
   const past = await readPast();
+  const full = idea.trim();
   const entry: PastBuild = {
     id: `b_${Date.now().toString(36)}`,
-    idea: idea.trim().slice(0, 400),
+    idea: full.slice(0, IDEA_MAX),
+    ...(full.length > IDEA_MAX ? { ideaClipped: true } : {}),
     name: String(b.template?.name || 'Workflow'),
     at: Date.now(),
     platform: b.platform,
     model: b.model,
     template: b.template,
+    ...(b.plan ? { plan: b.plan } : {}),
     chatUrl: b.chatUrl || '',
   };
+  /* Revise the row this came from rather than filing a new one.
+     Seven rows in forty-five minutes, every one of them the same first line,
+     because "Build" always appended. A build reopened and changed is the same
+     piece of work — it keeps its id and its place, moves to the top because
+     it is the thing most recently touched, and carries whatever the change
+     produced: a new template, and a conversation if one was started. */
+  const prior = b.originId ? past.find((p) => p.id === b.originId) : undefined;
+  if (prior) {
+    entry.id = prior.id;
+    /* The thread the reopened conversation is in, when this pass did not get
+       a fresher one. Losing it here would undo the reopening. */
+    if (!entry.chatUrl && prior.chatUrl) entry.chatUrl = prior.chatUrl;
+    /* And the brief, when the box was not the thing that changed. */
+    if (!entry.idea.trim() && prior.idea) {
+      entry.idea = prior.idea;
+      entry.ideaClipped = prior.ideaClipped;
+    }
+    if (!entry.plan && prior.plan) entry.plan = prior.plan;
+  }
+  const rest = prior ? past.filter((p) => p.id !== prior.id) : past;
+  const list = [entry, ...rest].slice(0, PAST_MAX);
   try {
-    await chrome.storage.local.set({ af_builds: [entry, ...past].slice(0, PAST_MAX) });
-  } catch { /* storage full — the build still happened */ }
+    await chrome.storage.local.set({ af_builds: list });
+  } catch {
+    /* A whole brief is far larger than the four-hundred-character preview this
+       used to keep, so running out of room is now something that can actually
+       happen. Dropping the build was the old answer and it is the wrong one:
+       the newest build is the one someone just asked for. Shed the oldest
+       until it fits, and keep at least this one. */
+    for (let keep = Math.floor(list.length / 2); keep >= 1; keep = Math.floor(keep / 2)) {
+      try {
+        await chrome.storage.local.set({ af_builds: list.slice(0, keep) });
+        break;
+      } catch { /* still too big — shed more */ }
+    }
+  }
   renderPast();
 }
 
@@ -954,16 +1063,50 @@ async function renderPast(): Promise<void> {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'sp-past__item';
+    /* The name first, because the brief does not tell these apart.
+     *
+     * This showed `b.idea` and fell back to the name. That is right for a
+     * typed idea — "a 3-shot vertical ad for cold brew" IS the label. It is
+     * useless for a pasted master prompt, where every row opens with the same
+     * boilerplate: seven builds in one afternoon, all of them reading "You are
+     * a cinematic AI workflow generator. You do NOT behave like a c…", with
+     * nothing but the timestamp between them.
+     *
+     * The name is what the model called the piece — "Drone Architectural
+     * Construction Timelapse" — and it is already stored. The brief goes on a
+     * second line, where it says which idea produced that name without being
+     * the only thing on offer. */
+    const title = document.createElement('span');
+    title.className = 'sp-past__name';
+    title.textContent = b.name || 'Workflow';
     const idea = document.createElement('span');
     idea.className = 'sp-past__idea';
-    idea.textContent = b.idea || b.name;
+    /* Sliced here rather than in storage — the row shows one line, and the
+       box needs the whole thing. Confusing those two is the bug above. */
+    idea.textContent = (b.idea || '').slice(0, IDEA_ROW_MAX);
+    idea.hidden = !idea.textContent.trim();
+    const text = document.createElement('span');
+    text.className = 'sp-past__text';
+    text.append(title, idea);
     const when = document.createElement('span');
     when.className = 'sp-past__when';
     when.textContent = ago(b.at);
-    row.append(idea, when);
+    row.append(text, when);
+    /* Visible before the click, not discovered after it.
+       A build with no saved conversation reopens as the plan alone, and there
+       was nothing on the row saying so — you clicked expecting the thread and
+       got a workflow, with no word about why. */
+    const thread = document.createElement('span');
+    thread.className = 'sp-past__thread';
+    thread.textContent = b.chatUrl ? '💬' : '';
+    thread.setAttribute('aria-hidden', 'true');
+    /* Before the timestamp, so the row reads name - marker - when rather than
+       putting an icon after the number and hard against the edge. */
+    row.insertBefore(thread, when);
     row.title = b.chatUrl
       ? `${b.name} — opens the ${engineName(b.platform)} conversation it was written in`
-      : `${b.name} — reopen to change it`;
+      : `${b.name} — reopen to change it. No saved conversation for this one, `
+        + 'so it comes back as the plan rather than the thread.';
     row.addEventListener('click', () => reopenBuild(b));
     list.append(row);
   }
@@ -997,6 +1140,16 @@ async function reopenBuild(b: PastBuild): Promise<void> {
      Where the site never gave us a conversation URL, or the conversation has
      since been deleted, carrying the plan is the fallback rather than the
      plan. Both work; one is much better informed. */
+  /* Said once, at the end, so a clipped brief and a missing conversation do
+     not overwrite each other in the same box. */
+  const notes: string[] = [];
+  if (b.ideaClipped) {
+    notes.push(
+      `This brief was longer than ${IDEA_MAX.toLocaleString()} characters and was kept up to `
+      + 'that point, so its ending is missing from the box. Paste it again if the end matters.',
+    );
+  }
+
   let live = false;
   if (b.chatUrl) {
     const res: any = await chrome.runtime.sendMessage({
@@ -1006,8 +1159,32 @@ async function reopenBuild(b: PastBuild): Promise<void> {
     if (!live) {
       buildSays('info', String(res?.error || 'That conversation could not be reopened'), [
         'Changing it will start a new chat and send the plan across instead.',
+        ...notes,
       ]);
+    } else if (notes.length) {
+      buildSays('info', 'Reopened', notes);
     }
+  } else {
+    /* The silence that got reported as "he dont open the chat in gemini".
+     *
+     * No URL was ever saved for this build, and until today that was the
+     * normal case on Gemini rather than the exception: the adapter deleted
+     * its own thread the moment the reply arrived, so by the time the worker
+     * read the tab to record where the conversation lived, there was no
+     * conversation and the address bar was back at /app. Nothing failed
+     * loudly. The build simply came back as a plan, every time, with no
+     * account of the thread it was written in.
+     *
+     * Fixed at the source — see deleteWhenDone in the worker's chat config —
+     * so builds made from now on keep their thread. The ones already in this
+     * list cannot be recovered, and saying so is better than a click that
+     * quietly does something else. */
+    buildSays('info', 'No saved conversation for this build', [
+      `It came back as the plan instead. Changing it starts a fresh ${engineName(b.platform)} `
+      + 'chat and sends the plan across, which works but knows less.',
+      'Builds made from now on keep their conversation, so this one is the last of its kind.',
+      ...notes,
+    ]);
   }
 
   showPlan({
@@ -1028,7 +1205,17 @@ async function reopenBuild(b: PastBuild): Promise<void> {
        The asymmetry decides it: a model that does still have the conversation
        open reads the plan twice and loses a few hundred tokens. A model that
        has neither cannot help at all. */
-    resumeFrom: b.template,
+    /* The plan where one was kept; the template only for a build made before
+       plans were stored, where it is better than nothing and is labelled for
+       what it is. */
+    resumeFrom: b.plan || b.template,
+    plan: b.plan,
+    /* The other half of that sentence, which used to be inferred from
+       resumeFrom and so was always wrong here. The plan travels either way;
+       whether a conversation is open is a different fact. */
+    threadOpen: live,
+    /* So changing it revises this build rather than filing another one. */
+    originId: b.id,
   });
 }
 
@@ -1303,18 +1490,54 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
      things sometimes returns two fixed and a fourth broken — so keeping the
      one with the fewest problems is the difference between shipping the good
      attempt and shipping the last one. */
-  let best: { template: any; quality: PlanProblem[] } | null = null;
+  let best: { template: any; plan: any; quality: PlanProblem[] } | null = null;
   let lastReply = '';
 
   try {
-    let message = buildSpec(idea)
-      + aboutImages(IMAGE_CAPABLE.has(key) ? refImages.length : 0, 'make');
+    /* A document gets read before it gets planned.
+     *
+     * The build box was built for a sentence, and what arrives in it is
+     * routinely a published master prompt for a niche: a thousand words of
+     * persona, state machine, thumbnail spec and publishing process, with the
+     * shot list somewhere inside. Asking one turn to dig that out AND not be
+     * recruited by "never break character" is two hard things at once, on
+     * whichever model the user happens to have open.
+     *
+     * So the long ones get a turn of their own first. It costs a turn and
+     * cannot cost a build: a reading that fails returns nothing, and the plan
+     * is written from the raw material exactly as it was before. */
+    let digest = '';
     let chatUrl = '';
+    let threadOpen = false;
+
+    if (looksLikeBrief(idea)) {
+      stage('write', `${name} is reading your brief first — ${wordCount(idea)} words is a `
+        + 'production document, not a sentence, and reading it before planning is what stops '
+        + 'it being followed instead of used.');
+      const read: any = await chrome.runtime.sendMessage({
+        type: 'PANEL_BUILD', platform: key, prompt: readBriefAsk(idea), model,
+        images: IMAGE_CAPABLE.has(key) ? refImages : [],
+        newChat: 'auto',
+      });
+      if (buildAborted) return;
+      /* A reading that never arrived is not an error worth stopping for. The
+         planning turn below is the one that has to work. */
+      if (read && !read.error) {
+        digest = readBriefReply(String(read.text || ''));
+        threadOpen = true;
+        if (read.conversationUrl) chatUrl = String(read.conversationUrl);
+      }
+    }
+
+    let message = buildSpec(idea, digest)
+      + aboutImages(IMAGE_CAPABLE.has(key) ? refImages.length : 0, 'make');
 
     for (let round = 0; round <= MAX_BUILD_REPAIRS; round++) {
       if (buildAborted) return;
       stage('write', round === 0
-        ? `${name} is writing them. This usually takes a minute or two.`
+        ? (digest
+          ? `${name} has read it and is writing the shots. This usually takes a minute or two.`
+          : `${name} is writing them. This usually takes a minute or two.`)
         : `${name} is fixing ${round === 1 ? 'what was wrong' : 'the rest'} — same conversation, so it keeps what worked.`);
 
       const res: any = await chrome.runtime.sendMessage({
@@ -1325,13 +1548,18 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
         /* Not sent to a chat that cannot attach them: the worker would carry
            them across two message boundaries for nothing, and a six-minute
            upload budget would be spent on it. */
-        images: round === 0 && IMAGE_CAPABLE.has(key) ? refImages : [],
+        /* And not again on the planning turn when the reading already sent
+           them: they are above it in the same conversation. */
+        images: round === 0 && !threadOpen && IMAGE_CAPABLE.has(key) ? refImages : [],
         /* A repair is the next turn of THIS conversation. Sent as a new chat
            it refers to a plan the model has never seen, and every repair round
            was doing exactly that — which is why the second attempt came back
            smaller than the first rather than fixed. The Story node's own loop
            has always done this correctly; the builder never did. */
-        newChat: round === 0 ? 'auto' : 'never',
+        /* 'never' once the reading has opened the thread, so the plan is
+           written with the brief and the reading of it both above — which is
+           the entire point of having read it. */
+        newChat: round === 0 && !threadOpen ? 'auto' : 'never',
       });
       if (!res || res.error) {
         showStages(false);
@@ -1368,7 +1596,7 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
          mean there is one, and it is worth keeping even if a later round never
          improves on it. */
       if (template && (!best || quality.length < best.quality.length)) {
-        best = { template, quality };
+        best = { template, plan, quality };
       }
 
       if (template && !quality.length && !problems.length) break;
@@ -1389,6 +1617,12 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
         template: best.template,
         warnings: explainPlan(best.quality),
         platform: key, name, model, chatUrl,
+        /* What the model wrote, kept beside what it compiled to. Only one of
+           the two is safe to show it again. */
+        plan: best.plan,
+        /* It was written in the chat that is open right now, so a change is
+           the next thing said in it rather than a new subject. */
+        threadOpen: true,
       });
       return;
     }
@@ -1429,21 +1663,39 @@ async function refineBuild(text: string): Promise<void> {
   showStages(true);
   stage('write', `Asking ${at.name} to change it…`);
 
-  const carry = at.resumeFrom
-    ? `Here is a workflow plan:\n\n${JSON.stringify(at.resumeFrom, null, 1)}\n\n`
+  /* Only paste the plan when the conversation is NOT live. When threadOpen
+     is true the model already has every message — the brief, the plan it
+     wrote, and every repair round — sitting above this turn. Sending the
+     whole JSON again wastes tokens, pushes the user's actual question down,
+     and teaches the model to echo the blob instead of answering the edit.
+     The plan only travels when the thread had to be reconstructed (reopened
+     from history with no live chat). */
+  const needsPlan = at.resumeFrom && !at.threadOpen;
+  const carry = needsPlan
+    ? (at.plan
+      /* The plan, in the shape the reply is asked for. */
+      ? `Here is the workflow plan to change:\n\n${JSON.stringify(at.plan, null, 1)}\n\n`
+      /* A build from before plans were stored. All that survives is the
+         compiled canvas, which is a different shape from the one wanted back —
+         so it is named as what it is rather than passed off as a plan. */
+      : 'Here is the compiled canvas this plan became. It is NOT the shape to reply in:\n\n'
+        + `${JSON.stringify(at.resumeFrom, null, 1)}\n\n`
+        + 'Read the shots and the wiring out of it, and answer in the plan shape described '
+        + 'above — "steps", with no nodes, edges, handles or positions.\n\n')
     : '';
 
   try {
     const res: any = await chrome.runtime.sendMessage({
       type: 'PANEL_BUILD', platform: at.platform, model: at.model,
       images: IMAGE_CAPABLE.has(at.platform) ? refineImages : [],
-      /* A plan reopened from history with no live chat URL is shown to a model that
-         has never seen it, so it travels with the message and opens a chat.
-         When the conversation was reopened live (live === true), resumeFrom is undefined
-         so it continues in that thread (newChat: 'never') and keeps all conversation memory! */
-      newChat: at.resumeFrom ? 'auto' : 'never',
+      /* Continue the conversation whenever there is one, and only then.
+         A tab that opened is not proof the thread loaded, so the plan still
+         travels when there is no live thread — but never when there is one. */
+      newChat: at.threadOpen ? 'never' : 'auto',
       prompt: `${carry}${text.trim()}${aboutImages(IMAGE_CAPABLE.has(at.platform) ? refineImages.length : 0, 'edit')}`
-        + `\n\nApply that to ${at.resumeFrom ? 'that plan' : 'the plan you just wrote'} `
+        /* "the plan you just wrote" is true after a fresh build and wrong in
+           a conversation reopened from last week, where it was written then. */
+        + `\n\nApply that to ${needsPlan ? 'that plan' : 'the plan already in this conversation'} `
         + 'and send the complete JSON object again — the same shape, with everything '
         + 'else unchanged. No prose around it, no code fence.',
     });
@@ -1467,7 +1719,12 @@ async function refineBuild(text: string): Promise<void> {
     }
 
     stage('ready', quality.length ? 'Changed — a few things worth knowing.' : 'Changed.');
-    showPlan({ ...at, template, warnings: explainPlan(quality), resumeFrom: undefined });
+    /* resumeFrom cleared and threadOpen set: whatever the state a moment ago,
+       a chat now exists that has just been sent this plan and answered it. */
+    showPlan({
+      ...at, template, warnings: explainPlan(quality),
+      resumeFrom: undefined, threadOpen: true,
+    });
   } catch (e: any) {
     stage('write', e?.message || 'The change could not be asked for.');
   } finally {
@@ -1513,12 +1770,53 @@ function wireBuilder(): void {
 
   const goBtn = document.getElementById('build-go-ai') as HTMLButtonElement | null;
   const how = document.getElementById('build-how') as HTMLElement | null;
+  const size = document.getElementById('build-idea-size') as HTMLElement | null;
+
+  /* The box grows with what is put in it.
+   *
+   * It was three rows, fixed, which is right for the sentence it was designed
+   * for — "a 3-shot vertical ad for cold brew". What actually gets pasted is a
+   * published master prompt: four and a half thousand characters, of which
+   * three lines showed. There was no way to see whether the whole thing had
+   * landed, which is how a build ran for weeks on the first four hundred
+   * characters of a brief without anyone being able to tell by looking.
+   *
+   * Capped, because a panel is narrow and a brief is long: past this it
+   * scrolls inside the box rather than pushing the button off the screen. */
+  const BOX_MIN = 68;
+  const BOX_MAX = 320;
+  const grow = () => {
+    idea.style.height = 'auto';
+    idea.style.height = `${Math.min(Math.max(idea.scrollHeight, BOX_MIN), BOX_MAX)}px`;
+    idea.style.overflowY = idea.scrollHeight > BOX_MAX ? 'auto' : 'hidden';
+  };
+
+  /* And says how much of it there is, when that is worth saying.
+   *
+   * Two facts, both of which used to be discoverable only by running it: how
+   * much text is in the box, and whether it is long enough that the builder
+   * will read it before planning. The second is the difference between one
+   * turn and two, and it decides how the brief is treated. */
+  const syncSize = () => {
+    if (!size) return;
+    const text = idea.value;
+    const words = wordCount(text);
+    if (!text.trim() || words < 40) { size.hidden = true; size.textContent = ''; return; }
+    size.hidden = false;
+    size.textContent = looksLikeBrief(text)
+      ? `${words.toLocaleString()} words — read as a brief first, then planned`
+      : `${words.toLocaleString()} words`;
+    size.classList.toggle('sp-composer__size--brief', looksLikeBrief(text));
+  };
+
   const syncGo = () => {
     const typed = !!idea.value.trim();
     if (goBtn) goBtn.disabled = !typed;
     /* Read once and then in the way. It fills the space that otherwise reads
        as unfinished, and stops filling it the moment it has done its job. */
     if (how) how.hidden = typed;
+    grow();
+    syncSize();
   };
   if (goBtn) {
     goBtn.addEventListener('click', () => {

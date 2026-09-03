@@ -226,12 +226,21 @@ describe('changing it without starting over', () => {
   });
 
   it('continues the conversation for a live plan, and introduces a reopened one', () => {
-    /* Two cases now. A plan the model just wrote is the next turn of that
-       thread. One reopened from history is being shown to a model that has
-       never seen it, and the thread it was written in is long gone. */
+    /* Two cases, and the flag telling them apart had to change.
+     *
+     * It was `at.resumeFrom`, on the reasoning that a plan carried in the
+     * message is one the model has never seen, so there is no thread to
+     * continue. True when written. It stopped being true when reopening began
+     * carrying the plan for a LIVE conversation as well — a tab that opens is
+     * not a thread that loaded, so belt and braces — at which point every
+     * reopened build answered 'auto' and started a chat beside the one the
+     * panel had just navigated back to. Reported as the panel not remembering
+     * the conversation, which is exactly what it was doing.
+     *
+     * threadOpen answers the question that was actually being asked. */
     const fn = SRC.slice(SRC.indexOf('async function refineBuild'));
-    expect(fn.slice(0, fn.indexOf('sendMessage') + 700))
-      .toContain("newChat: at.resumeFrom ? 'auto' : 'never'");
+    expect(fn.slice(0, fn.indexOf('sendMessage') + 900))
+      .toContain("newChat: at.threadOpen ? 'never' : 'auto'");
   });
 
   it('keeps the plan on screen when the change comes back unusable', () => {

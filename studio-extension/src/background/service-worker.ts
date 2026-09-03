@@ -495,6 +495,14 @@ async function askChatForPlan(
              reasonable for a prompt, destructive for JSON. */
           rawReply: true,
           newChat,
+          /* Every builder turn after the first is a repair or a plan written
+             against the reading above it, so the thread IS the memory here in
+             exactly the way it is for a Story node. Gemini deletes a finished
+             text thread unless told not to, and it was doing so the moment the
+             first reply landed — so a builder repair on Gemini went into an
+             empty chat and came back smaller than the attempt it was fixing.
+             See shouldTidy in content/gemini/tidy.ts. */
+          deleteWhenDone: false,
           model,
           aspectRatio: '1:1',
           creationType: 'ingredients',

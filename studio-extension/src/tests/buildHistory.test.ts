@@ -75,7 +75,11 @@ describe('showing the AI what you mean', () => {
   it('attaches them to the first turn only', () => {
     /* A repair is the next message in the same conversation and the pictures
        are already above it. Sending them again re-uploads for nothing. */
-    expect(SRC).toMatch(/images: round === 0 && IMAGE_CAPABLE\.has\(key\) \? refImages : \[\]/);
+    /* `&& !threadOpen` joined it when a long pasted brief started being read
+       on a turn of its own: that turn sends the pictures, and the planning
+       turn is the next message in the same conversation, with them above it. */
+    expect(SRC).toMatch(
+      /images: round === 0 && !threadOpen && IMAGE_CAPABLE\.has\(key\) \? refImages : \[\]/);
   });
 
   it('shrinks a phone photo before sending it', () => {
@@ -156,22 +160,204 @@ describe('reopening one to change it', () => {
        plan from yesterday is in that position by definition. */
     const fn = SRC.slice(SRC.indexOf('async function refineBuild'));
     const body = fn.slice(0, fn.indexOf('\n  } catch'));
-    expect(body).toMatch(/at\.resumeFrom[\s\S]{0,120}JSON\.stringify\(at\.resumeFrom/);
-    expect(body).toMatch(/newChat: at\.resumeFrom \? 'auto' : 'never'/);
+    /* And what travels is the PLAN. resumeFrom used to hold the compiled
+       template — nodes with positions, edges with handles, category,
+       difficulty, every one of them a thing the brief tells the model never
+       to send — under a sentence asking for "the same shape". */
+    expect(body).toMatch(/JSON\.stringify\(at\.plan/);
+    expect(body).toMatch(/NOT the shape to reply in/);
+    /* The newChat half of this assertion used to live here, keyed on the same
+       flag, and that pairing is what broke: once reopening carried the plan
+       for a LIVE thread too, `resumeFrom` stopped meaning "no conversation"
+       and every reopened build began opening a new chat next to the one the
+       panel had just navigated back to. Carrying the plan and starting a chat
+       are different decisions; only the first belongs to resumeFrom. */
+    expect(body).toMatch(/newChat: at\.threadOpen \? 'never' : 'auto'/);
   });
 
-  it('still continues the conversation for a plan that is live', () => {
-    /* Only a reopened one needs carrying. A plan the model just wrote is the
-       next turn, and re-sending it would waste the context it already has. */
+  it('only carries the plan when the conversation is not live', () => {
+    /* A plan the model just wrote is already in the thread — sending it again
+       wastes tokens, pushes the user's question down, and teaches the model
+       to echo the blob. Only a reopened build with no live thread needs it. */
     const fn = SRC.slice(SRC.indexOf('async function refineBuild'));
     expect(fn.slice(0, fn.indexOf('\n  } catch'))).toMatch(
-      /const carry = at\.resumeFrom[\s\S]{0,200}: '';/);
+      /const needsPlan = at\.resumeFrom && !at\.threadOpen/);
+    expect(fn.slice(0, fn.indexOf('\n  } catch'))).toMatch(
+      /const carry = needsPlan[\s\S]{0,900}: '';/);
   });
 
   it('stops carrying it once the change lands', () => {
     /* After one round the model has the plan in its own thread, so the next
-       change is an ordinary follow-up. */
-    expect(SRC).toMatch(/showPlan\(\{ \.\.\.at, template, warnings: explainPlan\(quality\), resumeFrom: undefined \}\)/);
+       change is an ordinary follow-up — and there is now certainly a thread,
+       whatever the state was a moment ago. */
+    expect(SRC).toMatch(/resumeFrom: undefined, threadOpen: true,/);
+  });
+});
+
+describe('changing a build instead of filing another one', () => {
+  /* Seven rows in forty-five minutes, every one of them opening with the same
+     "You are a cinematic AI workflow generator." Not seven builds — one, being
+     changed. "Build" always appended a row, and nothing carried the identity
+     of the entry a plan had been reopened from, so a piece of work being
+     revised became a pile of near-identical rows nobody could tell apart. */
+
+  it('carries the entry a reopened plan came from', () => {
+    expect(SRC).toMatch(/originId\?: string;/);
+    expect(SRC).toMatch(/originId: b\.id,/);
+  });
+
+  it('revises that row rather than adding a second one', () => {
+    expect(SRC).toMatch(/const prior = b\.originId \? past\.find\(\(p\) => p\.id === b\.originId\)/);
+    expect(SRC).toMatch(/entry\.id = prior\.id;/);
+    expect(SRC).toMatch(/past\.filter\(\(p\) => p\.id !== prior\.id\)/);
+  });
+
+  it('keeps the conversation the reopening found', () => {
+    /* Dropping it here would undo the reopen: the revised row would lose the
+       thread and the next click would be back to carrying a plan. */
+    expect(SRC).toMatch(/if \(!entry\.chatUrl && prior\.chatUrl\)/);
+  });
+
+  it('keeps the brief when the box was not the thing that changed', () => {
+    expect(SRC).toMatch(/if \(!entry\.idea\.trim\(\) && prior\.idea\)/);
+  });
+});
+
+describe('continuing the conversation, rather than one beside it', () => {
+  /* Reported as "he dont remamber the conversation to contine on it", and the
+     cause is one boolean answering two questions.
+
+         resumeFrom   does the model need the plan pasted to it?
+         threadOpen   is there a conversation to continue?
+
+     refineBuild read `newChat: at.resumeFrom ? 'auto' : 'never'`, and its own
+     comment explained why that worked: reopening only set resumeFrom when
+     there was no live chat. Then reopening began setting it ALWAYS — right on
+     its own terms, because a tab that opens is not a thread that loaded — and
+     that flipped every reopened build to 'auto'. The panel navigated back to
+     the Gemini conversation and then started a new chat next to it. */
+
+  it('asks whether a thread is open, not whether the plan travelled', () => {
+    expect(SRC).toMatch(/newChat: at\.threadOpen \? 'never' : 'auto'/);
+    /* Comments stripped first. The line this replaces is quoted in the one
+       explaining why it went, and a check that cannot tell the two apart
+       would fail on its own documentation. */
+    const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(code).not.toMatch(/newChat: at\.resumeFrom/);
+  });
+
+  it('still sends the plan across when there is no live thread', () => {
+    /* The belt and braces stays. A tab that opened is not proof the thread
+       loaded, and a model with the plan twice loses a few hundred tokens
+       while a model with neither cannot help at all. But it only travels
+       when the thread is NOT live — otherwise the model already has it. */
+    expect(SRC).toMatch(/const needsPlan = at\.resumeFrom && !at\.threadOpen/);
+    expect(SRC).toMatch(/const carry = needsPlan/);
+    /* The plan first; the template only for a build stored before plans were
+       kept, where it is better than nothing and is labelled as not the shape
+       to answer in. */
+    expect(SRC).toMatch(/resumeFrom: b\.plan \|\| b\.template,/);
+  });
+
+  it('knows a fresh build is already sitting in its own conversation', () => {
+    const at = SRC.indexOf('warnings: explainPlan(best.quality)');
+    expect(at).toBeGreaterThan(-1);
+    expect(SRC.slice(at, at + 700)).toMatch(/threadOpen: true/);
+    /* And the plan it wrote travels with it, so a reopen has the right shape
+       to hand back. */
+    expect(SRC.slice(at, at + 700)).toMatch(/plan: best\.plan/);
+  });
+
+  it('knows a reopened one only if the chat actually came back', () => {
+    expect(SRC).toMatch(/threadOpen: live,/);
+  });
+
+  it('knows there is certainly one once a change has been answered', () => {
+    const at = SRC.indexOf('resumeFrom: undefined, threadOpen: true');
+    expect(at).toBeGreaterThan(-1);
+  });
+});
+
+describe('the brief that came back as its first four hundred characters', () => {
+  /* Caught by running the real thing. A Notion master prompt was pasted, built
+     once, then reopened from the list and built again — and the material that
+     reached the model ended mid-word:
+
+         All outputs must depict entire buildings from a fixed d
+         ───────────── END USER MATERIAL ─────────────
+
+     401 characters. `slice(0, 400)` in rememberBuild, written as though it
+     were a display cap, and it is not one: reopenBuild puts the stored string
+     straight back into the build box. Everything the brief specified — six
+     stills, five clips between them, the locked drone position — was in the
+     part that never arrived, so the plan that came back was a good answer to
+     a question nobody had asked. The reading turn stayed quiet too: by then
+     the idea genuinely was fifty-six words. */
+
+  it('keeps the whole brief, not a preview of it', () => {
+    expect(SRC).toMatch(/const IDEA_MAX = \d{4,}/);
+    expect(SRC).toMatch(/idea: full\.slice\(0, IDEA_MAX\)/);
+    /* The line this replaces, left as an explicit check because it is one
+       edit away from coming back and it fails silently when it does. */
+    expect(SRC).not.toMatch(/idea: idea\.trim\(\)\.slice\(0, 400\)/);
+  });
+
+  it('shortens it for the row instead, which is the job that cap was doing', () => {
+    expect(SRC).toMatch(/const IDEA_ROW_MAX = \d+/);
+    expect(SRC).toMatch(/\.slice\(0, IDEA_ROW_MAX\)/);
+  });
+
+  it('says so when a brief really is too long to keep whole', () => {
+    expect(SRC).toMatch(/ideaClipped: true/);
+    expect(SRC).toMatch(/its ending is missing from the box/);
+  });
+
+  it('sheds old builds rather than losing the new one when storage is full', () => {
+    /* A whole brief is far bigger than a four-hundred-character preview, so
+       running out of room is now something that can happen — and the old
+       answer, dropping the build, throws away the one just asked for. */
+    expect(SRC).toMatch(/for \(let keep = Math\.floor\(list\.length \/ 2\)/);
+    expect(SRC).toMatch(/af_builds: list\.slice\(0, keep\)/);
+  });
+});
+
+describe('the build that had no conversation to go back to', () => {
+  /* Reported as: clicking an earlier build does not open the Gemini chat it
+     was written in, it just hands back the workflow.
+
+     True, and not because reopening was broken. No URL was ever saved for
+     those builds. The worker records where a conversation lives by reading
+     the tab's address the moment the reply lands — and on Gemini the adapter
+     was deleting its own thread at exactly that moment, so the address was
+     back at /app, the id regex found nothing, and chatUrl was stored empty.
+     Every Gemini build, silently, from the beginning.
+
+     The cause is fixed at the source (deleteWhenDone in the worker's chat
+     config, see builderThread). What is fixed here is the silence: a build
+     with no thread now says so, on the row and on the click, instead of
+     quietly coming back as something else. */
+
+  it('marks the rows that can still reach their conversation', () => {
+    expect(SRC).toMatch(/sp-past__thread/);
+    expect(SRC).toMatch(/b\.chatUrl \? '💬' : ''/);
+  });
+
+  it('says on the row itself what a build without one will do', () => {
+    expect(SRC).toMatch(/No saved conversation for this one/);
+    expect(SRC).toMatch(/comes back as the plan rather than the thread/);
+  });
+
+  it('does not stay silent when the click cannot open anything', () => {
+    /* The branch that did not exist. chatUrl empty skipped the whole block,
+       so the user clicked expecting a chat and got a plan with no account of
+       why — which is the report, word for word. */
+    expect(SRC).toMatch(/No saved conversation for this build/);
+    expect(SRC).toMatch(/this one is the last of its kind/);
+  });
+
+  it('still says the honest thing about what changing it will do', () => {
+    expect(SRC).toMatch(/starts a fresh \$\{engineName\(b\.platform\)\} /);
+    expect(SRC).toMatch(/which works but knows less/);
   });
 });
 
@@ -310,8 +496,11 @@ describe('reopening the conversation, not a summary of it', () => {
 
        A model that does have the conversation open reads the plan twice and
        loses a few hundred tokens. A model that has neither cannot help. */
+    /* What travels is the PLAN, though. The template is the compiled canvas
+       and a different shape from the one asked for in reply. */
     const fn = SRC.slice(SRC.indexOf('async function reopenBuild'));
-    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/resumeFrom: b\.template,/);
+    expect(fn.slice(0, fn.indexOf('\n}')))
+      .toMatch(/resumeFrom: b\.plan \|\| b\.template,/);
   });
 
   it('falls back to carrying the plan when the thread is gone', () => {
