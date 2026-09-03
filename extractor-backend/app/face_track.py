@@ -140,6 +140,7 @@ def track_faces(
     video_path: str,
     on_progress: Optional[Callable[[str], None]] = None,
     sample_fps: float = SAMPLE_FPS,
+    should_cancel: Optional[Callable[[], bool]] = None,
 ) -> list[FacePoint]:
     """
     Sample the video and report where the speaker is in each sampled frame.
@@ -188,6 +189,8 @@ def track_faces(
         out: list[FacePoint] = []
         index = 0
         while True:
+            if should_cancel and should_cancel():
+                return out
             ok, frame = capture.read()
             if not ok:
                 break

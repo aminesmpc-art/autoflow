@@ -16,6 +16,7 @@ import os
 from types import SimpleNamespace
 
 import pytest
+import jwt
 from fastapi.testclient import TestClient
 
 from app.api import clip as clip_api
@@ -32,6 +33,11 @@ def no_quota_check(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def valid_video_probe(monkeypatch):
+    monkeypatch.setattr(clip_api, "probe_video_duration", lambda _path: 240.0)
+
+
+@pytest.fixture(autouse=True)
 def clean_jobs():
     clip_api.jobs.clear()
     yield
@@ -40,7 +46,23 @@ def clean_jobs():
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    client = TestClient(app)
+    token = jwt.encode(
+        {"user_id": "user-1"},
+        clip_api.settings.jwt_secret_key,
+        algorithm=clip_api.settings.jwt_algorithm,
+    )
+    client.headers["Authorization"] = f"Bearer {token}"
+    return client
+
+
+def auth_header(user_id: str) -> dict[str, str]:
+    token = jwt.encode(
+        {"user_id": user_id},
+        clip_api.settings.jwt_secret_key,
+        algorithm=clip_api.settings.jwt_algorithm,
+    )
+    return {"Authorization": f"Bearer {token}"}
 
 
 def a_video(size: int = 2048) -> tuple[str, io.BytesIO, str]:
@@ -67,7 +89,12 @@ def stub_read(monkeypatch):
     def _open_source(path, say):
         opened["path"] = path
         opened["existed"] = os.path.exists(path)
-        return SimpleNamespace(), "gs://bucket/v.mp4", lambda: opened.update(cleaned=True)
+        return (
+            SimpleNamespace(),
+            "gs://bucket/v.mp4",
+            lambda: opened.update(cleaned=True),
+            "video/mp4",
+        )
 
     async def _read_video(client, source, duration_sec, **kwargs):
         opened["duration"] = duration_sec
@@ -82,6 +109,15 @@ def stub_read(monkeypatch):
 
 
 class TestReadEndpoint:
+    def test_requires_authentication(self):
+        name, data, mime = a_video()
+        response = TestClient(app).post(
+            "/api/clip/read",
+            files={"file": (name, data, mime)},
+            data={"duration_sec": "240.0"},
+        )
+        assert response.status_code == 401
+
     def test_reads_a_video_and_returns_the_timeline(self, client, stub_read):
         name, data, mime = a_video()
         response = client.post(
@@ -97,17 +133,76 @@ class TestReadEndpoint:
         assert status["result"]["segments"][0]["start"] == pytest.approx(83.1)
         assert status["result"]["scenes"][0]["speaker_x"] == pytest.approx(0.38)
 
-    def test_passes_the_duration_the_caller_measured(self, client, stub_read):
-        """The extension has already decoded the file to probe it. Measuring it
-        again here would mean putting ffmpeg on the server to learn a number
-        the caller already has."""
+    def test_uses_the_duration_measured_by_the_server(self, client, stub_read):
+        """A caller-supplied duration cannot be trusted for billing or limits."""
         name, data, mime = a_video()
         client.post(
             "/api/clip/read",
             files={"file": (name, data, mime)},
             data={"duration_sec": "1228.4"},
         )
-        assert stub_read["duration"] == pytest.approx(1228.4)
+        assert stub_read["duration"] == pytest.approx(240.0)
+
+    def test_rejects_a_video_the_server_cannot_decode(self, client, monkeypatch):
+        monkeypatch.setattr(clip_api, "probe_video_duration", lambda _path: None)
+        name, data, mime = a_video()
+        response = client.post(
+            "/api/clip/read",
+            files={"file": (name, data, mime)},
+            data={"duration_sec": "240.0"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_a_video_over_the_duration_limit(self, client, monkeypatch):
+        monkeypatch.setattr(clip_api.settings, "max_video_duration_sec", 60)
+        monkeypatch.setattr(clip_api, "probe_video_duration", lambda _path: 61.0)
+        name, data, mime = a_video()
+        response = client.post(
+            "/api/clip/read",
+            files={"file": (name, data, mime)},
+            data={"duration_sec": "1.0"},
+        )
+        assert response.status_code == 413
+
+    def test_reserves_quota_once_with_the_job_id(self, client, stub_read, monkeypatch):
+        seen = {}
+
+        async def reserve(auth, job_id):
+            seen.update(auth=auth, job_id=job_id)
+            return {"allowed": True}
+
+        monkeypatch.setattr(clip_api.settings, "enforce_extraction_limits", True)
+        monkeypatch.setattr(clip_api, "consume_clipping_quota", reserve)
+        name, data, mime = a_video()
+        response = client.post(
+            "/api/clip/read",
+            files={"file": (name, data, mime)},
+            data={"duration_sec": "240.0"},
+        )
+        assert response.status_code == 202
+        assert seen["job_id"] == response.json()["job_id"]
+        assert seen["auth"].startswith("Bearer ")
+
+    def test_quota_authority_failure_cannot_fall_back_unmetered(
+        self, client, stub_read, monkeypatch
+    ):
+        async def unavailable(_auth, _job_id):
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=502, detail="quota authority unavailable")
+
+        monkeypatch.setattr(clip_api.settings, "enforce_extraction_limits", True)
+        monkeypatch.setattr(clip_api, "consume_clipping_quota", unavailable)
+        name, data, mime = a_video()
+        response = client.post(
+            "/api/clip/read",
+            files={"file": (name, data, mime)},
+            data={"duration_sec": "240.0"},
+        )
+
+        assert response.status_code == 502
+        assert not clip_api.jobs
+        assert stub_read == {}
 
     def test_removes_the_temporary_file_afterwards(self, client, stub_read):
         """350MB per request, never cleaned up, fills a disk in a morning."""
@@ -219,6 +314,10 @@ class TestAsk:
         )
         return seen
 
+    def test_requires_authentication(self):
+        response = TestClient(app).post("/api/clip/ask", json={"prompt": "rank"})
+        assert response.status_code == 401
+
     def test_relays_the_prompt_and_returns_what_came_back(self, client, stub_gemini):
         r = client.post("/api/clip/ask", json={"prompt": "rank these moments"})
         assert r.status_code == 200
@@ -238,6 +337,13 @@ class TestAsk:
     def test_refuses_a_prompt_too_large_to_be_a_question(self, client, stub_gemini):
         r = client.post("/api/clip/ask", json={"prompt": "x" * 200_001})
         assert r.status_code == 413
+
+    def test_refuses_an_unbounded_output_request(self, client, stub_gemini):
+        r = client.post(
+            "/api/clip/ask",
+            json={"prompt": "rank", "max_output_tokens": 100_000},
+        )
+        assert r.status_code == 422
 
     def test_says_so_rather_than_hanging_when_the_model_refuses(self, client, monkeypatch):
         class Boom:
@@ -444,7 +550,10 @@ class TestFaceTrackOnTheRead:
     def test_returns_the_track_with_the_reading(self, client, stub_read, monkeypatch):
         monkeypatch.setattr(
             clip_api, "_track_faces_quietly",
-            lambda path, say: [clip_api_face(t=0.0, x=0.34), clip_api_face(t=0.5, x=0.58)],
+            lambda path, say, cancel=None: [
+                clip_api_face(t=0.0, x=0.34),
+                clip_api_face(t=0.5, x=0.58),
+            ],
         )
         name, data, mime = a_video()
         r = client.post(
@@ -460,7 +569,7 @@ class TestFaceTrackOnTheRead:
         Failing the job because a codec was unusual would throw away the
         working half for the optional one — the caller just asks a model per
         clip instead, which is what it did before this existed."""
-        def unavailable(path, say):
+        def unavailable(path, say, cancel=None):
             return []
 
         monkeypatch.setattr(clip_api, "_track_faces_quietly", unavailable)
@@ -480,7 +589,7 @@ class TestFaceTrackOnTheRead:
         nobody is watching."""
         seen = {}
 
-        def check(path, say):
+        def check(path, say, cancel=None):
             seen["existed"] = os.path.exists(path)
             return []
 
@@ -499,7 +608,11 @@ class TestFaceTrackOnTheRead:
             raise RuntimeError("no credentials on this server")
 
         monkeypatch.setattr(clip_api, "_open_source", boom)
-        monkeypatch.setattr(clip_api, "_track_faces_quietly", lambda path, say: [])
+        monkeypatch.setattr(
+            clip_api,
+            "_track_faces_quietly",
+            lambda path, say, cancel=None: [],
+        )
         name, data, mime = a_video()
         r = client.post(
             "/api/clip/read", files={"file": (name, data, mime)},
@@ -551,3 +664,52 @@ class TestStatusAndModel:
         body = client.get("/api/clip/model").json()
         assert body["model"] == clip_api.CLIP_MODEL
         assert "configured" in body
+        assert body["api_version"] == 2
+        assert body["limits"]["free_clips_per_day"] == 1
+        assert body["limits"]["pro_clips_per_day"] == 10
+        assert body["features"]["cancellation"] is True
+
+    def test_a_different_user_cannot_read_a_job(self, client):
+        clip_api.jobs["private-job"] = {
+            "job_id": "private-job",
+            "status": "queued",
+            "step": "queued",
+            "error": None,
+            "result": None,
+            "owner_id": "user-1",
+        }
+        response = client.get(
+            "/api/clip/status/private-job",
+            headers=auth_header("user-2"),
+        )
+        assert response.status_code == 404
+
+    def test_owner_can_cancel_a_queued_job(self, client):
+        clip_api.jobs["queued-job"] = {
+            "job_id": "queued-job",
+            "status": "queued",
+            "step": "queued",
+            "error": None,
+            "result": None,
+            "owner_id": "user-1",
+            "cancel_requested": False,
+        }
+        response = client.delete("/api/clip/status/queued-job")
+        assert response.status_code == 200
+        assert response.json()["status"] == "cancelling"
+        assert clip_api.jobs["queued-job"]["cancel_requested"] is True
+
+    def test_other_user_cannot_cancel_a_job(self, client):
+        clip_api.jobs["private-job"] = {
+            "job_id": "private-job",
+            "status": "queued",
+            "step": "queued",
+            "error": None,
+            "result": None,
+            "owner_id": "user-1",
+        }
+        response = client.delete(
+            "/api/clip/status/private-job",
+            headers=auth_header("user-2"),
+        )
+        assert response.status_code == 404

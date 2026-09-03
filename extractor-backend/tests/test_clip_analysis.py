@@ -321,7 +321,13 @@ class FakeModels:
             float(str(getattr(meta, "start_offset", "0s")).rstrip("s")),
             float(str(getattr(meta, "end_offset", "0s")).rstrip("s")),
         )
-        self.calls.append({"model": model, "window": window, "fps": getattr(meta, "fps", None)})
+        file_data = getattr(part, "file_data", None)
+        self.calls.append({
+            "model": model,
+            "window": window,
+            "fps": getattr(meta, "fps", None),
+            "mime": getattr(file_data, "mime_type", None),
+        })
         return SimpleNamespace(parsed=self.reply_for(window), text="")
 
 
@@ -368,35 +374,62 @@ class TestReadVideo:
     def test_asks_for_the_current_flash_model_and_sparse_frames(self):
         from app.clip_analysis import CLIP_FPS, CLIP_MODEL, read_video
 
-        client = fake_client(lambda w: a_reading([("00:01", "00:04", "a phrase here")]))
+        client = fake_client(lambda w: a_reading([("00:01", "00:40", "word " * 50)]))
         asyncio.run(read_video(client, "gs://bucket/v.mp4", 100.0))
 
         call = client.models.calls[0]
         assert call["model"] == CLIP_MODEL
         assert call["fps"] == CLIP_FPS
 
-    def test_one_bad_window_does_not_lose_the_others(self):
-        """A read of twenty minutes must not be thrown away because one window
-        of it came back unusable."""
+    def test_preserves_the_uploaded_container_mime(self):
         from app.clip_analysis import read_video
 
+        client = fake_client(lambda w: a_reading([("00:01", "00:40", "word " * 50)]))
+        asyncio.run(
+            read_video(
+                client,
+                "gs://bucket/v.webm",
+                100.0,
+                source_mime_type="video/webm",
+            )
+        )
+        assert client.models.calls[0]["mime"] == "video/webm"
+
+    def test_retries_a_transient_model_failure(self, monkeypatch):
+        from app.clip_analysis import read_video
+
+        monkeypatch.setattr("app.clip_analysis.RETRY_BASE_DELAY_SEC", 0)
+        attempts = 0
+
         def reply(window):
-            if window[0] > 400:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
                 raise RuntimeError("the model refused")
-            return a_reading([("00:10", "00:13", "a phrase that survived")])
+            return a_reading([("00:10", "00:40", "phrase after retry " * 20)])
 
         client = fake_client(reply)
-        out = asyncio.run(read_video(client, "gs://bucket/v.mp4", 1228.4))
+        out = asyncio.run(read_video(client, "gs://bucket/v.mp4", 100.0))
 
-        assert len(out.segments) == 1
-        assert any("failed" in d for d in out.dropped)
+        assert attempts == 3
+        assert out.segments[0].text.startswith("phrase after retry")
+
+    def test_fails_instead_of_returning_a_partial_timeline(self, monkeypatch):
+        from app.clip_analysis import read_video
+
+        monkeypatch.setattr("app.clip_analysis.RETRY_BASE_DELAY_SEC", 0)
+        client = fake_client(lambda _window: (_ for _ in ()).throw(RuntimeError("refused")))
+
+        with pytest.raises(RuntimeError, match="could not read every window"):
+            asyncio.run(read_video(client, "gs://bucket/v.mp4", 100.0))
+        assert len(client.models.calls) == 3
 
     def test_reports_a_reading_that_is_really_a_summary(self):
         from app.clip_analysis import read_video
 
         client = fake_client(lambda w: a_reading([("00:10", "00:13", "barely anything")]))
-        out = asyncio.run(read_video(client, "gs://bucket/v.mp4", 1228.4))
-        assert any("summary, not a transcript" in d for d in out.dropped)
+        with pytest.raises(RuntimeError, match="summary, not a transcript"):
+            asyncio.run(read_video(client, "gs://bucket/v.mp4", 1228.4))
 
     def test_survives_a_reply_that_ignored_the_schema(self):
         from app.clip_analysis import read_video
@@ -406,14 +439,14 @@ class TestReadVideo:
                 generate_content=lambda **kw: SimpleNamespace(
                     parsed=None,
                     text='```json\n{"language":"en","summary":"s","segments":'
-                    '[{"start":"00:10","end":"00:13","text":"a fenced phrase here"}],'
+                    '[{"start":"00:10","end":"00:40","text":"' + ("word " * 50) + '"}],'
                     '"scenes":[]}\n```',
                 )
             )
         )
         out = asyncio.run(read_video(client, "gs://bucket/v.mp4", 100.0))
         assert len(out.segments) == 1
-        assert out.segments[0].text == "a fenced phrase here"
+        assert out.segments[0].text.startswith("word word")
 
     def test_says_so_rather_than_throwing_when_a_reply_is_rubbish(self):
         from app.clip_analysis import read_video
@@ -423,6 +456,5 @@ class TestReadVideo:
                 generate_content=lambda **kw: SimpleNamespace(parsed=None, text="sorry, no.")
             )
         )
-        out = asyncio.run(read_video(client, "gs://bucket/v.mp4", 100.0))
-        assert out.segments == []
-        assert any("unusable" in d for d in out.dropped)
+        with pytest.raises(RuntimeError, match="no speech at all"):
+            asyncio.run(read_video(client, "gs://bucket/v.mp4", 100.0))

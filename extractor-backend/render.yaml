@@ -9,9 +9,35 @@ services:
         value: 3.12.0
       - key: GEMINI_API_KEY
         sync: false
+      - key: GCP_PROJECT_ID
+        sync: false
+      - key: GCP_CREDENTIALS_JSON
+        sync: false
+      - key: GCS_BUCKET_NAME
+        sync: false
+      - key: CLIP_LOCATION
+        value: global
+      - key: CLIP_MODEL
+        value: gemini-3.7-flash
       - key: JWT_SECRET_KEY
         sync: false
       - key: JWT_ALGORITHM
         value: HS256
       - key: FRONTEND_URL
         sync: false
+      - key: DJANGO_API_URL
+        value: https://api.auto-flow.studio/api
+      - key: ENFORCE_EXTRACTION_LIMITS
+        value: true
+      - key: REDIS_URL
+        sync: false
+      - key: JOB_STATE_TTL_SEC
+        value: 86400
+      - key: CLIP_JOB_STALE_SEC
+        value: 1800
+      - key: MAX_CONCURRENT_CLIP_JOBS
+        value: 2
+      - key: MAX_VIDEO_SIZE_MB
+        value: 500
+      - key: MAX_VIDEO_DURATION_SEC
+        value: 7200
