@@ -151,10 +151,13 @@ export default function ClipStudio() {
     import("../../vendor/autoflow-clip").then((mod) => mod.release()).catch(() => {});
   }, []);
 
-  /* Asked once, at mount rather than at the click: a browser that cannot
-     encode should say so before someone uploads 400MB and pays for a
-     reading, not after. */
+  /* Asked before the click, not at it: a browser that cannot encode should
+     say so before someone uploads 400MB and pays for a reading, not after.
+     But only once there is an account to clip with. /clipping is linked from
+     the nav now, so most people arriving here are signed out, cannot run
+     anything, and were being made to fetch 152KB of demuxer to be told so. */
   useEffect(() => {
+    if (!user) return;
     let alive = true;
     import("../../vendor/autoflow-clip")
       .then((mod) => { if (alive) setReady(mod.supported()); })
@@ -162,7 +165,7 @@ export default function ClipStudio() {
         if (alive) setReady({ ok: false, reason: "The clipping engine could not be loaded." });
       });
     return () => { alive = false; };
-  }, []);
+  }, [user]);
 
   /* Which allowance applies. Only the plan is asked for — the used count is
      written by the reserve call and has no route that reads it back. */
