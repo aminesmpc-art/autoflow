@@ -67,6 +67,22 @@ export interface NodeExecutionConfig {
    * "not a usable prompt" and failed the node.
    */
   rawReply?: boolean;
+  /**
+   * Whether the chat thread this turn uses may be deleted once it answers.
+   *
+   * Gemini is the only adapter that tidies up after itself, and it deletes
+   * text threads by default: a clipper asking nine times for the speaker
+   * position in a still leaves nine identical rows nobody will open, and the
+   * automation that made that mess clears it.
+   *
+   * A multi-turn ask is the opposite case and has to say so. Its second turn
+   * is a repair — "shot 4 dropped the shared details, send that one again" —
+   * which is meaningless to a model that cannot see the first. Leaving this
+   * unset there deleted the thread as soon as the opening reply arrived, so
+   * every repair and every improvement round on Gemini was typed into an
+   * empty chat. See askAgent, and shouldTidy in content/gemini/tidy.ts.
+   */
+  deleteWhenDone?: boolean;
 }
 
 export interface NodeResult {

@@ -55,7 +55,7 @@ function logLine(line: string): void {
    extension is rebuilt — the tab must be reloaded too — and a stale
    script is indistinguishable from a broken fix unless it says which
    one it is. */
-import { tidyAwayConversation, waitForNoDialog } from './tidy';
+import { shouldTidy, tidyAwayConversation, waitForNoDialog } from './tidy';
 
 const ADAPTER_BUILD = 'video-data-v4';
 
@@ -1087,19 +1087,9 @@ async function handleExecute(payload: any): Promise<any> {
 
   /* After the answer, never instead of it. The result has already been sent by
      the time this runs, so the worst a failure here can do is leave a row in
-     the sidebar.
-
-     Text threads only, unless asked otherwise. A clipping run's threads are
-     machine chatter — "give the horizontal position of the SPEAKER in each of
-     these 8 stills" — and nobody will ever open one again. A thread that
-     produced a picture or a clip is not that: the node captures one result,
-     and the thread is where the others, and any higher-quality version, still
-     live. Deleting those to tidy a sidebar would throw away work to save a
-     row, so it needs saying explicitly rather than defaulting on. */
-  const tidy = config?.deleteWhenDone === true
-    || (wantsText && config?.deleteWhenDone !== false);
-
-  if (config?.newChat !== 'never' && tidy) {
+     the sidebar. Which threads are ours to throw away is shouldTidy's
+     question, and it is answered in tidy.ts where it can be tested. */
+  if (shouldTidy(config)) {
     work
       .then(() => tidyAwayConversation(pathBefore))
       .catch((e: any) => console.warn('[AutoFlow Gemini] Could not tidy the thread:', e?.message || e));

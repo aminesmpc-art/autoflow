@@ -17,7 +17,7 @@ import { useStudioStore } from '../store';
 import { composeAskPrompt } from '../presets';
 import {
   shotContract, parseShots, checkShots, repairMessage, summarise, readJsonObject,
-  blockingProblems, describeProblems,
+  blockingProblems, describeProblems, fixableAdvisories, workflowNotes, polishMessage,
   orderShotTargets, alignShots, placeShots, type ShotTarget, type Shot, type Problem,
 } from '../ask/storyboard';
 import {
@@ -1258,6 +1258,19 @@ export class WorkflowRunner {
     const unresolved = new Map<number, Problem[]>();
     let storyText = '';
     let wroteBack = false;
+    /* Notes about the workflow rather than about any prompt, kept from the last
+       round so the closing summary can say why they were never sent anywhere. */
+    let notes: Problem[] = [];
+    /* The shots this round is trying to IMPROVE rather than rescue. They are
+       already banked; whatever comes back has to beat what is held or it is
+       dropped. Empty on every ordinary round, which is what keeps the code
+       below reading as the repair loop it has always been. */
+    let polishing = new Set<number>();
+    let polishRounds = 0;
+    /* One. A polish is worth a turn because the writer usually takes it; it is
+       not worth the whole budget, because the shot already renders and a
+       second pass on the same note is a model repeating itself. */
+    const MAX_POLISH = 1;
 
     for (let round = 0; round <= MAX_REPAIRS; round++) {
       if (this.abortRequested) throw new Error('Stopped');
@@ -1266,7 +1279,9 @@ export class WorkflowRunner {
         status: 'running',
         statusNote: round === 0
           ? `Writing ${targets.length} prompts…`
-          : `Fixing the format (${round} of ${MAX_REPAIRS})…`,
+          : polishing.size
+            ? `Improving ${polishing.size} prompt${polishing.size === 1 ? '' : 's'}…`
+            : `Fixing the format (${round} of ${MAX_REPAIRS})…`,
       });
 
       /* Attached on the first turn only. A repair is the next message in the
@@ -1325,7 +1340,11 @@ export class WorkflowRunner {
          is this a reference or a continuation, does it match the node's mode —
          are all "shot i against target i", so a reordered reply made the check
          wrong as well as the assignment. */
-      const pending = targets.map((_, i) => i).filter((i) => !accepted.has(i));
+      /* Banked shots being polished are pending again, deliberately. They have
+         a prompt that works; this round asks whether there is a better one, and
+         the answer travels the same road as any other reply. */
+      const pending = targets.map((_, i) => i)
+        .filter((i) => !accepted.has(i) || polishing.has(i));
 
       /* A full reply aligns by title as before. A repair reply carries only the
          shots that failed, and placeShots works out which those are. */
@@ -1336,7 +1355,11 @@ export class WorkflowRunner {
       /* Banked shots included, so the checker sees the whole set: the count
          rule stays meaningful and a slot nobody filled reads as empty, which
          is exactly what it is. */
-      const shots: Shot[] = targets.map((t, i) => accepted.get(i) || placed.get(i)
+      /* A shot being polished is checked in the form that just arrived, not the
+         one on the shelf — otherwise the round would grade the text it is
+         trying to replace, and every polish would look like it changed nothing. */
+      const shots: Shot[] = targets.map((t, i) => (polishing.has(i) ? placed.get(i) : undefined)
+        || accepted.get(i) || placed.get(i)
         || { n: i + 1, title: t.label || `Shot ${i + 1}`, prompt: '' });
 
       const storySettings = storyRun?.settings || readStorySettings(nodeData);
@@ -1357,13 +1380,35 @@ export class WorkflowRunner {
 
       if (story && !storyText) storyText = story;
 
+      notes = workflowNotes(problems);
+
       /* Bank every shot that nothing blocking is wrong with. Advisories travel
-         with it — they are worth saying out loud but never worth re-asking a
-         shot that would render perfectly well. */
+         with it — they never stop a shot being banked, because banked means
+         the prompt RENDERS and none of them stops it rendering. What they do
+         now is earn one more turn, further down. */
+      const heldBefore = Array.from(polishing)
+        .reduce((n, i) => n + (advisories.get(i) || []).length, 0);
+      let improved = 0;
       for (const i of pending) {
         const sh = placed.get(i);
         if (!sh || !sh.prompt) continue;
         const mine = problems.filter((p) => p.shot === i + 1);
+        /* The banked version is the floor.
+         *
+         * A shot being polished already has a prompt that renders, so a rewrite
+         * replaces it only by being better: fewer advisories, and nothing
+         * blocking. One that arrives worse, or the same, or carrying a code
+         * fence it did not have before, is dropped and the original stands. An
+         * improvement pass must not be able to leave the video worse off than
+         * never having run at all. */
+        if (polishing.has(i)) {
+          const before = (advisories.get(i) || []).length;
+          if (blockingProblems(mine).length || mine.length >= before) continue;
+          improved += before - mine.length;
+          accepted.set(i, sh);
+          advisories.set(i, mine);
+          continue;
+        }
         if (blockingProblems(mine).length) {
           unresolved.set(i, mine);
         } else {
@@ -1372,7 +1417,13 @@ export class WorkflowRunner {
           unresolved.delete(i);
         }
       }
-      studioLog('Story', `Round ${round + 1}: ${accepted.size} of ${targets.length} prompts banked`);
+      if (polishing.size) {
+        studioLog('Story', improved
+          ? `Round ${round + 1}: ${improved} of ${heldBefore} fixed`
+          : `Round ${round + 1}: the rewrite was no better, keeping what was already banked`);
+      } else {
+        studioLog('Story', `Round ${round + 1}: ${accepted.size} of ${targets.length} prompts banked`);
+      }
 
       /* Written back so the next run does not re-decide who the character is.
          Only what the user has not already locked — a field they typed
@@ -1385,8 +1436,34 @@ export class WorkflowRunner {
         if (Object.keys(patch).length) { store.updateNodeData(nodeId, patch); wroteBack = true; }
       }
 
-      if (accepted.size === targets.length) break;
+      /* Everything renders. Whether that is the end depends on what is left.
+       *
+       * It used to be unconditionally the end — `if (accepted.size ===
+       * targets.length) break` — and that one line is why a run could print
+       * six shots missing the shared identity, bank all six, and fix none of
+       * them. With nothing left to rescue there was nothing left to ask, so
+       * both repair rounds went unspent on problems the writer would have
+       * fixed had anyone mentioned them.
+       *
+       * One of them is spent here now, once, and only on notes a writer can
+       * act on. Everything that comes back is measured against what is already
+       * banked, so the worst case is a turn nobody needed. */
+      if (accepted.size === targets.length) {
+        const fixable = fixableAdvisories(Array.from(advisories.values()).flat());
+        if (!fixable.length || polishRounds >= MAX_POLISH || round === MAX_REPAIRS) break;
+        polishRounds++;
+        polishing = new Set(fixable.map((p) => p.shot - 1));
+        const only = Array.from(polishing).sort((a, b) => a - b).map((i) => i + 1);
+        studioLog('Story', `Every prompt renders. Asking again for shot${
+          only.length === 1 ? '' : 's'} ${only.join(', ')} — ${fixable.length} thing${
+          fixable.length === 1 ? '' : 's'} the writer can still fix.`);
+        message = polishMessage(fixable, targets, only);
+        continue;
+      }
       if (round === MAX_REPAIRS) break;
+      /* An ordinary repair round: nothing is being improved, so nothing is held
+         to the higher bar the polish branch sets. */
+      polishing = new Set<number>();
 
       const stillPending = targets.map((_, i) => i).filter((i) => !accepted.has(i));
       /* Only what is still wrong, and only for the shots still wanted. A
@@ -1453,8 +1530,17 @@ export class WorkflowRunner {
     }
     if (best.problems > 0) {
       studioLog('Story', `Running with ${best.problems} thing${
-        best.problems === 1 ? '' : 's'} worth fixing — none of them stops a clip rendering.`);
+        best.problems === 1 ? '' : 's'} still worth fixing — none of them stops a clip rendering.`);
       console.warn(`[Runner] Storyboard: proceeding with ${best.problems} advisory problem(s)`);
+    }
+    /* Said separately because it is a different kind of thing, and saying it is
+       what stops the two counts reading as an arithmetic error. The round
+       listing counts these; the tally above cannot, because no rewrite of any
+       prompt would answer them. */
+    if (notes.length) {
+      studioLog('Story', `${notes.length} note${notes.length === 1 ? '' : 's'} above ${
+        notes.length === 1 ? 'is' : 'are'} about how the workflow is wired, not the prompts — ${
+        notes.length === 1 ? 'it is' : 'they are'} for you, not the writer.`);
     }
 
     this.shotPlans.set(nodeId, best.shots.map((sh) => sh.prompt));
@@ -1582,6 +1668,10 @@ export class WorkflowRunner {
       minClipScore: typeof nodeData.minClipScore === 'number'
         ? nodeData.minClipScore
         : undefined,
+      /* Campaign work carries generated footage only when the brief was read
+         and found to allow it. Inherited by every cut this lays out, so the
+         decision is taken once rather than per cutaway. */
+      allowGenerated: nodeData.allowGenerated === true,
       /* One server call instead of six chat transcriptions. Defaults on: it
          is faster, it brings the timings that let every cut skip its own
          locating, and it degrades to the chat path when signed out. */
@@ -1726,8 +1816,14 @@ export class WorkflowRunner {
    * and this refuses it again — a node sitting on the canvas is an invitation
    * to use it, and the account doing the earning is worth more than a cutaway.
    */
-  private layOutBroll(nodeId: string, ops: any[], mode: string, styleReference = ''): number {
-    if (mode !== 'explainer') return 0;
+  private layOutBroll(
+    nodeId: string, ops: any[], mode: string, styleReference = '',
+    allowGenerated = false,
+  ): number {
+    /* The third place the same rule is applied, and the one that would have
+       been missed: the sheet can now PLAN a cutaway on campaign work, and
+       without this it would be planned, shown on the node, and never built. */
+    if (mode !== 'explainer' && !allowGenerated) return 0;
     const cutaways = (ops || []).filter((o) => o?.kind === 'broll' && String(o.what || '').trim());
     if (!cutaways.length) return 0;
 
@@ -1872,6 +1968,7 @@ export class WorkflowRunner {
       planEdit: nodeData.planEdit === true,
       omniParts: nodeData.omniParts === true,
       mode: nodeData.clipMode === 'explainer' ? 'explainer' : 'campaign',
+      allowGenerated: nodeData.allowGenerated === true,
       title: typeof nodeData.title === 'string' ? nodeData.title : undefined,
       why: typeof nodeData.why === 'string' ? nodeData.why : undefined,
     }).finally(() => startAskBudget(null));
@@ -1902,6 +1999,7 @@ export class WorkflowRunner {
       result.editSheet || [],
       nodeData.clipMode === 'explainer' ? 'explainer' : 'campaign',
       typeof nodeData.styleReference === 'string' ? nodeData.styleReference : '',
+      nodeData.allowGenerated === true,
     );
     if (cutaways) {
       store.updateNodeData(nodeId, { brollCount: cutaways });
@@ -1939,6 +2037,15 @@ export class WorkflowRunner {
       platform: platform as any,
       // Only the opening turn may reset — after that the thread is the memory.
       newChat: firstTurn ? 'auto' : 'never',
+      /* And the memory has to survive the opening turn.
+       *
+       * Every ask on this path is one turn of a conversation the runner will
+       * come back to: a storyboard repair, an improvement round, an agent
+       * reading a tool result. Gemini deletes a finished text thread unless
+       * told not to, and it was doing so the moment the first reply landed —
+       * so round two asked for "shot 4" in a chat with no shot 4 in it, and
+       * the director's whole repair loop was arguing with an empty room. */
+      deleteWhenDone: false,
       /* A TOOL block is not a prompt, and the prompt heuristic would reject a
          short one outright. The agent parser does its own unwrapping. */
       rawReply: true,

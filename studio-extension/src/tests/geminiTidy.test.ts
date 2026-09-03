@@ -20,7 +20,9 @@
  * whose two buttons are indistinguishable except by their text.
  */
 
-import { conversationId, findConversationRow, tidyAwayConversation } from '../content/gemini/tidy';
+import {
+  conversationId, findConversationRow, shouldTidy, tidyAwayConversation,
+} from '../content/gemini/tidy';
 
 /* ------------------------------------------------------------------ */
 
@@ -88,6 +90,59 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 /* ------------------------------------------------------------------ */
+
+describe('whether the thread is ours to throw away', () => {
+  /* The bug this describe exists for.
+   *
+   * A Story node is a conversation, not an ask. Turn one writes every prompt;
+   * turn two says what came back wrong and asks for those shots again. Turn
+   * two sends newChat 'never' and was correctly never the turn that deleted
+   * anything — but turn one sends 'auto' and asks for text, and text meant
+   * disposable. So the thread was deleted the moment the first reply landed,
+   * and turn two typed "send back only shot 4, the others are accepted" into
+   * an empty chat that had never seen a brief, a shot list or a reference
+   * still.
+   *
+   * The visible symptom was the director naming six things wrong with a plan
+   * and fixing none of them. Nothing in the logs said why, because from the
+   * runner's side the repair went out exactly as written. */
+  it('keeps a thread the caller says it will come back to', () => {
+    expect(shouldTidy({ mediaType: 'text', newChat: 'auto', deleteWhenDone: false }))
+      .toBe(false);
+  });
+
+  it('still clears a one-shot text ask, which is what it was built for', () => {
+    /* Nine "give the horizontal position of the SPEAKER in these 8 stills"
+       threads is the mess this whole module exists to clean up. */
+    expect(shouldTidy({ mediaType: 'text', newChat: 'auto' })).toBe(true);
+  });
+
+  it('never clears a thread that produced a picture or a clip', () => {
+    /* The node captures one result; the thread is where the others and any
+       higher-quality version still live. */
+    expect(shouldTidy({ mediaType: 'image', newChat: 'auto' })).toBe(false);
+    expect(shouldTidy({ mediaType: 'video', newChat: 'auto' })).toBe(false);
+  });
+
+  it('clears a media thread when the caller asks for it outright', () => {
+    expect(shouldTidy({ mediaType: 'image', newChat: 'auto', deleteWhenDone: true }))
+      .toBe(true);
+  });
+
+  it('never clears on a turn that is continuing a thread', () => {
+    /* Belt and braces: tidyAwayConversation refuses these too, because its
+       `before` path already names a conversation. */
+    expect(shouldTidy({ mediaType: 'text', newChat: 'never' })).toBe(false);
+    expect(shouldTidy({ mediaType: 'text', newChat: 'never', deleteWhenDone: true }))
+      .toBe(false);
+  });
+
+  it('does not fall over on a config that is not there', () => {
+    expect(shouldTidy(undefined)).toBe(false);
+    expect(shouldTidy(null)).toBe(false);
+    expect(shouldTidy({})).toBe(false);
+  });
+});
 
 describe('telling a conversation path from the new-chat route', () => {
   it('reads the id out of a conversation path', () => {

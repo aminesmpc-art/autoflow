@@ -151,8 +151,19 @@ describe('the runner banks shots rather than rounds', () => {
     expect(RUNNER).toMatch(/p\.shot === 0 \|\| stillPending\.includes\(p\.shot - 1\)/);
   });
 
-  it('stops as soon as every shot is banked', () => {
-    expect(RUNNER).toMatch(/if \(accepted\.size === targets\.length\) break;/);
+  it('stops RESCUING as soon as every shot is banked', () => {
+    /* This used to be the whole exit — `if (accepted.size === targets.length)
+       break` — and that is why a run could bank thirteen prompts carrying six
+       fixable notes and never mention them again: with nothing left to rescue
+       there was nothing left to ask. The branch now decides between stopping
+       and one improvement round; storyPolish.test.ts covers what it decides.
+       What has not changed is that a banked shot is never re-rescued. */
+    const at = RUNNER.indexOf('if (accepted.size === targets.length) {');
+    expect(at).toBeGreaterThan(-1);
+    const block = RUNNER.slice(at, RUNNER.indexOf('\n      }', at));
+    expect(block).toMatch(
+      /if \(!fixable\.length \|\| polishRounds >= MAX_POLISH \|\| round === MAX_REPAIRS\) break;/);
+    expect(block).not.toMatch(/unresolved/);
   });
 
   it('keeps what is banked when a repair turn dies', () => {

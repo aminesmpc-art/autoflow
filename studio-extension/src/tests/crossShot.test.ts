@@ -44,6 +44,71 @@ const two = (second: string, secondTarget = cont(), first = FIRST) => codesFor(
   [clip({ id: 'a', label: 'Clip A' }), secondTarget],
 );
 
+/* The negative guardrails every Story prompt ends with, written from `avoid`
+   plus the always-negatives. Verbatim from the run that got stuck. */
+const GUARDRAILS = 'The scene is without camera movement, camera angle changes, zooming, '
+  + 'panning, rotation, dolly movement, orbiting, changing room layout, inconsistent door '
+  + 'themes, mismatched character uniforms, realistic skin gore, live-action photography, '
+  + 'uncanny facial distortion, visible on-screen text, subtitles, watermarks, stickers, '
+  + 'fake app interfaces, or picture-level logo graphics.';
+
+describe('the guardrails are not a description of an empty room', () => {
+  /* The repair that could not be carried out.
+   *
+   * EMPTY_START carried an alternative reading `\bwith(?:out| no) \w+` —
+   * "without" followed by any word at all. Every prompt a Story node writes
+   * ends with the sentence above, and "without camera" matched it. So the
+   * checker believed EVERY prompt carrying an avoid block was describing a
+   * scene that had not been built yet.
+   *
+   * On a continuation that is blocking. The model was told to stop opening as
+   * though the scene were starting; it complied, thoroughly, three rounds
+   * running — while the sentence actually tripping the check was one the brief
+   * had told it to include. Reported as "4 of 6 prompts banked", three times
+   * over, on a run that could never have finished. */
+
+  const CONTINUES = 'Cristiano Ronaldo is already standing centred in front of the three '
+    + 'doorways with his pointing hand lowered, and Lionel Messi is already just inside the '
+    + 'left Roblox room near the PC setup. This exact arrangement is already present in the '
+    + 'first frame and continues directly forward from it, nobody returning to an earlier '
+    + 'position and nothing resetting.';
+
+  it('does not fail a continuation for carrying them', () => {
+    expect(two(`${CONTINUES} ${GUARDRAILS}`)).not.toContain('2:contRestart');
+  });
+
+  it('changes the verdict on the shot not at all', () => {
+    /* The invariant, and it holds completely now.
+     *
+     * A sentence the director appends to every prompt must not change what the
+     * checker makes of the shot it is appended to — there is nothing the writer
+     * can do about that sentence, so a check it trips cannot be satisfied.
+     *
+     * This was scoped to BLOCKING problems when it was written, because one
+     * advisory still moved: naming "camera movement, dolly movement, orbiting"
+     * as things to avoid also satisfied the motion rule, so `static` fell
+     * silent. That is fixed too — see motionCheck.test.ts — so the assertion
+     * is the whole verdict again. */
+    expect(two(`${CONTINUES} ${GUARDRAILS}`)).toEqual(two(CONTINUES));
+  });
+
+  it('still fails a continuation that really does restart, guardrails or not', () => {
+    const restarts = 'The scene opens on the three doorways for the first time, everyone '
+      + 'stepping into place as the piece begins.';
+    expect(two(`${restarts} ${GUARDRAILS}`)).toContain('2:contRestart');
+    expect(two(restarts)).toContain('2:contRestart');
+  });
+
+  it('still reads a real absence as emptiness', () => {
+    /* The words the alternative was written for. Narrowing it must not lose
+       them: "without furniture" says the room is empty, "without camera
+       movement" says nothing about the room. */
+    const bare = 'The same lounge, without furniture and with no lighting fitted, the boards '
+      + 'showing where the couch will go, before any of the work has started.';
+    expect(two(`${bare} ${GUARDRAILS}`)).toContain('2:contRestart');
+  });
+});
+
 describe('a continuation that restarts', () => {
   it.each([
     ['the scene opens', 'The scene opens on a sunlit bathroom as she reaches for the bottle on the shelf.'],
@@ -70,6 +135,18 @@ describe('a continuation that restarts', () => {
       'The scene opens on a sunlit bathroom as she reaches for the bottle on the shelf.',
       clip({ id: 'b', label: 'Clip B' }),
     )).not.toContain('2:contRestart');
+  });
+
+  it.each([
+    ['having not yet moved', 'The clip is already in progress. The others wait in line, having not yet moved, while she continues her step through the doorway.'],
+    ['not yet fully through', 'Caught mid-stride, he is not yet fully through the doorway and continues forward from the same position.'],
+  ])('does not mistake character action "%s" for an empty scene', (_label, prompt) => {
+    expect(two(prompt)).not.toContain('2:contRestart');
+  });
+
+  it('still refuses a physical scene that is not yet furnished', () => {
+    const prompt = 'The same room is not yet furnished, while workers carry a sofa across the floor.';
+    expect(two(prompt)).toContain('2:contRestart');
   });
 });
 

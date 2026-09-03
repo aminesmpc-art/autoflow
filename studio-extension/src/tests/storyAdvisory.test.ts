@@ -53,10 +53,17 @@ describe('which problems are worth stopping for', () => {
     for (const code of ['count', 'empty', 'thin']) expect(BLOCKING.has(code)).toBe(true);
   });
 
-  it('blocks a build opening that never says the scene is empty', () => {
-    /* A build sequence that starts with furniture already in the room produces
-       the finished state, not the starting state. Worth a reprompt. */
-    expect(BLOCKING.has('openNotFromNothing')).toBe(true);
+  it('does not block a build opening that never says the scene is empty', () => {
+    /* It used to, and it was the one member of BLOCKING that did not fit the
+       rule the set is defined by: nothing about "this prompt never says the
+       room is empty" gets typed into a generator. It is a judgement about the
+       scene, and it sat with the fences and stage labels because when it was
+       written the only alternative to stopping was saying nothing.
+
+       "Worth a reprompt" was the reason given, and it is still the right
+       reason — there is now a round that reprompts without stopping, and this
+       is the most fixable note the checker has. See storyPolish.test.ts. */
+    expect(BLOCKING.has('openNotFromNothing')).toBe(false);
   });
 
   it('lets the judgements through', () => {

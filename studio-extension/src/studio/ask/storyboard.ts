@@ -237,7 +237,87 @@ const BANNED: Array<{ code: string; re: RegExp; detail: string; scope?: ShotScop
 const NON_LATIN = /[぀-ヿ㐀-䶿一-鿿가-힯Ѐ-ӿ֐-׿؀-ۿ]/;
 
 /** Words that mean something moves. A video prompt without one is a still. */
-const MOTION = /\b(camera|pan|tilt|dolly|zoom|track(?:ing)?|orbit|push(?:es|ing)? in|pull(?:s|ing)? back|handheld|walk|walks|walking|run|runs|turn|turns|move|moves|moving|rise|rises|lift|lifts|pour|pours|spray|sprays|reach|reaches|hyperlapse|time-?lapse|slow motion|motion|steadicam|crane)\b/i;
+/**
+ * A long list of things the scene must NOT contain, removed.
+ *
+ * Every prompt a Story node writes carries its guardrails, and the brief asks
+ * for them woven into the description rather than appended — "an empty road
+ * with no cars or people", which is Google's own guidance and the reason the
+ * prompts land. So there is no block to split off, and the checker was reading
+ * the words a prompt promises to avoid as though they described the shot.
+ *
+ * Measured: `static` fired on one realistic prompt in six. A clip in which
+ * nothing whatsoever moves passed the "nothing moves" check because its
+ * guardrails said "no camera movement, ... dolly movement, orbiting".
+ *
+ * The length is what tells the two apart. A guardrail is a run of at least
+ * three comma-separated items after a negation and nothing else; a woven
+ * absence is one or two, followed by the description carrying on — "with no
+ * cars or people, the camera drifting along it" keeps its camera move.
+ *
+ * Only for checks that read a prompt for what IS there. EMPTY_START reads it
+ * for what is missing, and tells "without furniture" from "without camera
+ * movement" by the noun, which is a different question and already answered.
+ */
+const GUARDRAIL_LIST = new RegExp(
+  '\\b(?:without|no|never|avoid(?:ing)?)\\b'          // the negation
+  + '[^.;!?]*?'                                        // whatever it opens with
+  + '(?:,[^,.;!?]+){2,}'                               // three or more list items
+  + '(?:,?\\s*(?:or|and)\\s[^.;!?]+)?',                // "... or logos overlaid"
+  'gi',
+);
+
+export function positiveText(prompt: string): string {
+  return String(prompt || '').replace(GUARDRAIL_LIST, ' ');
+}
+
+/* Evidence that something MOVES.
+ *
+ * Two words came out of this list and are the reason it never spoke.
+ *
+ * `camera` is in almost every prompt by construction — the brief asks each one
+ * to name its camera — so "One fixed camera, locked off, nothing moves"
+ * satisfied the motion rule while saying the exact opposite. `crane` is a
+ * camera move and also the largest stationary object on a building site, which
+ * is the subject of a whole niche these prompts are written for.
+ *
+ * Everything else is deliberately generous, and errs toward silence. A missed
+ * tableau costs a worse clip; a false one now costs a real repair turn, since
+ * the improvement round asks the writer to fix it. Given the choice, this
+ * stays quiet. It is a named camera move, or something the subject does.
+ */
+const MOTION = new RegExp(
+  '\\b(?:'
+  /* Camera moves, named. Not the word "camera" — the move. */
+  + 'pans?|panning|tilts?|tilting|doll(?:y|ies|ying)|zooms?|zooming|'
+  + 'tracks?|tracking|orbits?|orbiting|arcs?|arcing|booms?|booming|'
+  + 'push(?:es|ing)? in|pull(?:s|ing)? back|handheld|steadicam|'
+  + 'crane (?:up|down|shot|move|rise)|hyperlapse|time-?lapse|'
+  + 'slow motion|in motion|motion blur|whip pan|'
+  /* And what a subject does. */
+  + 'walks?|walking|runs?|running|jogs?|jogging|sprints?|sprinting|'
+  + 'strides?|striding|paces?|pacing|wanders?|wandering|'
+  + 'steps?|stepping|enters?|entering|exits?|exiting|arrives?|arriving|'
+  + 'approach(?:es|ing)?|leaves|leaving|crosses|crossing|passes|passing|'
+  + 'follows?|following|chases?|chasing|'
+  + 'turns?|turning|spins?|spinning|rotates?|rotating|revolves?|revolving|'
+  + 'pivots?|pivoting|circles?|circling|swings?|swinging|swirls?|swirling|'
+  + 'moves?|moving|movement|shifts?|shifting|travels?|travelling|traveling|'
+  + 'drifts?|drifting|glides?|gliding|floats?|floating|flies|flying|'
+  + 'slides?|sliding|rolls?|rolling|bounces?|bouncing|'
+  + 'rises?|rising|falls?|falling|drops?|dropping|climbs?|climbing|'
+  + 'jumps?|jumping|leaps?|leaping|dives?|diving|dances?|dancing|'
+  + 'lifts?|lifting|lowers?|lowering|raises?|raising|'
+  + 'pushes|pushing|pulls?|pulling|throws?|throwing|catches|catching|'
+  + 'grabs?|grabbing|picks? up|sets? down|places?|placing|carries|carrying|'
+  + 'opens?|opening|closes?|closing|'
+  + 'pours?|pouring|sprays?|spraying|reach(?:es|ing)?|'
+  + 'waves?|waving|nods?|nodding|shakes?|shaking|points?|pointing|'
+  + 'leans?|leaning|bends?|bending|kneels?|kneeling|sits? down|stands? up|'
+  + 'stumbles?|stumbling|crawls?|crawling|sweeps?|sweeping|scans?|scanning'
+  + ')\\b',
+  'i',
+);
 
 /**
  * The envelope, appended to whatever brief the preset already supplies.
@@ -383,6 +463,30 @@ const STATE_TERMS: Array<{ what: string; terms: Array<[string, RegExp]> }> = [
   },
 ];
 
+/* The things whose ABSENCE says a scene has not been built yet.
+ *
+ * Named, rather than left as "anything at all". This list used to have a
+ * companion alternative reading `\\bwith(?:out| no) \\w+` — "without" followed
+ * by any word whatsoever — and that one line stopped a run dead.
+ *
+ * Every prompt a Story node writes ends with the negative guardrails, and they
+ * are phrased as a sentence: "The scene is without camera movement, camera
+ * angle changes, zooming, panning…". "without camera" matched. So EMPTY_START
+ * was true of EVERY prompt carrying an `avoid` block, which is every prompt
+ * the director writes.
+ *
+ * On a continuation shot that is blocking: contRestart reads "this prompt says
+ * the scene is starting from nothing" and refuses the shot. The model was then
+ * asked to stop opening as though the scene were starting — which it did,
+ * thoroughly, three rounds running, while the sentence actually tripping the
+ * check was one the brief had told it to include. Nothing it could write would
+ * ever clear it. Reported as four of six prompts banked, three times over.
+ *
+ * A repair that cannot be carried out is worse than no repair. */
+const NOTHING_THERE = '(?:furniture|decoration|decor|lighting|lights|fittings|fixtures|'
+  + 'rugs?|panels?|shelves|paint|colou?rs?|walls?|structure|bricks?|stone blocks?|'
+  + 'poured cement|construction|carvings?|details?)';
+
 const EMPTY_START = new RegExp(
   '\\b(?:'
   + 'empty|emptied|bare|barren|unfurnished|undecorated|unpainted|unfinished|'
@@ -390,12 +494,14 @@ const EMPTY_START = new RegExp(
   + 'cleared|leveled|flattened|excavated|'
   + 'raw (?:block|wood|clay|metal|material|stock|hardwood|timber)|'
   + 'solid block|uncarved|unsculpted|unshaped|'
-  + 'before (?:any|anything|the work|she|he|they|construction|building)|not yet '
+  + 'before (?:any|anything|the work|she|he|they|construction|building)|'
+  + 'not yet (?:built|constructed|furnished|decorated|painted|finished|fitted|'
+  + 'installed|assembled|carved|sculpted|shaped|poured|excavated|cleared|leveled)'
   + ')\\b'
-  + '|\\bno (?:furniture|decoration|decor|lighting|lights|fittings|fixtures|'
-  + 'rugs?|panels?|shelves|paint|colour|color|walls?|structure|bricks?|'
-  + 'stone blocks?|poured cement|construction|carvings?|details?)\\b'
-  + '|\\bwith(?:out| no) \\w+'
+  + `|\\bno ${NOTHING_THERE}\\b`
+  /* Same nouns, the other way round: "without furniture" says the room is
+     empty; "without camera movement" says nothing about the room at all. */
+  + `|\\bwith(?:out| no) ${NOTHING_THERE}\\b`
   + '|\\bbare (?:ground|soil|earth|surface|foundation|workbench|bench)',
   'i',
 );
@@ -1075,7 +1181,11 @@ export function checkShots(
       });
     }
 
-    if (target?.media === 'video' && target?.role !== 'reference' && !MOTION.test(p)) {
+    /* Read without the guardrails. A prompt promising not to pan is not a
+       prompt that pans, and reading it as one is why this check had gone
+       silent on every prompt the director writes. */
+    if (target?.media === 'video' && target?.role !== 'reference'
+      && !MOTION.test(positiveText(p))) {
       problems.push({
         shot: n, code: 'static',
         detail: 'This one becomes a moving clip but nothing in it moves. Say what the camera or the subject does.',
@@ -1301,12 +1411,61 @@ export const BLOCKING: ReadonlySet<string> = new Set([
   'count', 'empty', 'thin',
   'fence', 'numbered', 'meta', 'storyboard', 'markdown', 'placeholder',
   'stageLabels', 'audioLabels', 'fileName', 'editingJargon', 'sheetShape', 'contRestart',
-  'openNotFromNothing',
 ]);
+
+/* openNotFromNothing used to be in that set, and was the one member of it that
+ * did not fit the rule above. Nothing about "this prompt never says the room
+ * is empty" gets typed into a generator; it is a judgement about the scene,
+ * which is the definition of the other category. It sat in BLOCKING because
+ * when it was written there were only two outcomes — stop, or say nothing —
+ * and of those two, stopping was right.
+ *
+ * There are three now. The improvement round asks about a banked prompt that
+ * could be better, and an opening that does not establish an empty scene is
+ * the most fixable note in the whole checker: name it and a writer adds the
+ * sentence. So it is an advisory, and the run continues while it is fixed.
+ *
+ * The change matters more than it looks, because isBuild just grew to cover
+ * buildTimelapse and craftTransform. Left blocking, that widening would have
+ * turned every existing construction and craft workflow whose opening prompt
+ * is merely implicit into a workflow that refuses to run. */
 
 /** The problems worth refusing to spend a generation on. */
 export const blockingProblems = (problems: Problem[]): Problem[] =>
   problems.filter((p) => BLOCKING.has(p.code));
+
+/**
+ * The advisories worth spending a turn on.
+ *
+ * A shot is banked the moment nothing blocking is wrong with it, and for a
+ * while that was the end of the matter: the loop stopped as soon as every shot
+ * was banked, so a run that found six shots missing the shared identity
+ * printed all six and fixed none. Two repair rounds were budgeted and never
+ * spent. Banking asks whether a prompt is USABLE; it was being read as whether
+ * a prompt is GOOD, and those are not the same question.
+ *
+ * These are the ones a writer can act on, and the test is where the problem
+ * sits. A per-shot advisory is about the prompt, and asking for that shot
+ * again can make it better. A shot-0 advisory is about the WORKFLOW: noBoard
+ * asks for an image node ticked "Storyboard board", which no rewrite of any
+ * prompt can produce. Sending that to a model asks it to fix something outside
+ * the document in its hands, and a model that cannot comply invents
+ * compliance — here, by bolting a "Consistency Reference" block onto every
+ * prompt, which is the exact failure the anchor check was rewritten to stop.
+ */
+export const fixableAdvisories = (problems: Problem[]): Problem[] =>
+  problems.filter((p) => p.shot !== 0 && !BLOCKING.has(p.code));
+
+/**
+ * Its counterpart: what is wrong with the workflow rather than with any prompt.
+ *
+ * Worth naming separately because these are counted in the round listing and
+ * then, correctly, not in the tally of things the writer was asked to fix —
+ * which read as an arithmetic error to anyone watching ("7 problems", then
+ * "6 worth fixing") when it was really two different kinds of note.
+ */
+export const workflowNotes = (problems: Problem[]): Problem[] =>
+  problems.filter((p) => p.shot === 0 && !BLOCKING.has(p.code));
 
 /** One line per problem, in the order the shots run. */
 export function describeProblems(problems: Problem[]): string[] {
@@ -1362,6 +1521,48 @@ export function repairMessage(
       'and nothing outside it.',
     );
   }
+  return lines.join('\n');
+}
+
+/**
+ * The repair message's quieter twin.
+ *
+ * repairMessage opens "That reply cannot be used as written", which is simply
+ * true when a prompt arrives carrying a code fence. It is a lie when the
+ * prompt would render fine and is merely thinner than it should be, and the
+ * lie is not free: a model told its work is unusable rewrites the parts
+ * nobody complained about, so the shots that were already good come back
+ * changed. This one says the thing that is actually true — these render,
+ * they can be better, touch only what is listed.
+ */
+export function polishMessage(
+  problems: Problem[],
+  targets: ShotTarget[],
+  /** The shots being improved, 1-based. */
+  only: number[],
+): string {
+  const byShot = new Map<number, Problem[]>();
+  for (const p of problems) {
+    if (!byShot.has(p.shot)) byShot.set(p.shot, []);
+    (byShot.get(p.shot) as Problem[]).push(p);
+  }
+
+  const lines: string[] = [
+    'Those prompts will all render, so nothing here is urgent and nothing is being rejected.',
+    'These few are weaker than they need to be, though, and one more pass would fix them:',
+    '',
+  ];
+  for (const [n, list] of Array.from(byShot.entries()).sort((a, b) => a[0] - b[0])) {
+    lines.push(`Shot ${n} ("${targets[n - 1]?.label || `Shot ${n}`}"):`);
+    for (const p of list) lines.push(`  · ${p.detail}`);
+  }
+  lines.push(
+    '',
+    `Send back ONLY ${only.length === 1 ? 'shot' : 'shots'} ${only.join(', ')}, rewritten.`,
+    'Every other shot is accepted exactly as it stands — do not resend them, do not change them.',
+    'Keep whatever already works in the shots below; change only what is listed above.',
+    'Same JSON shape, "shots" array, "n" set to the shot number on each one, nothing outside the object.',
+  );
   return lines.join('\n');
 }
 

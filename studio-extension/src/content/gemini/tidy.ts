@@ -52,6 +52,47 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * controls leaves untidied threads rather than a broken node.
  */
 
+/**
+ * Whether the thread this turn used is the automation's to throw away.
+ *
+ * Lived as an expression in the adapter until a Story node run on Gemini
+ * failed in a way nothing could see. The Story loop is a CONVERSATION: it
+ * writes every prompt in turn one, then comes back in turn two to say what was
+ * wrong and ask for those shots again. Turn two sends newChat 'never', so it
+ * was never the turn that deleted anything — but turn ONE sends 'auto' and
+ * asks for text, and text meant disposable, so the thread was deleted the
+ * instant the first reply landed. Turn two then typed "send back only shot 4,
+ * the others are accepted" into an empty chat that had never seen a brief, a
+ * shot list, or a reference image.
+ *
+ * That is why the director could name six things wrong with a plan and fix
+ * none of them: the repair was real, the loop was right, and the room it was
+ * shouting into had been demolished.
+ *
+ * So `deleteWhenDone: false` now means what it says, and the runner sets it on
+ * every turn that opens a thread it intends to continue. The classification
+ * was wrong on its own terms too: the header above justifies deleting text
+ * threads because they are machine chatter nobody will reopen, and a Story
+ * thread holds the cast, the world, the look and thirteen prompts. That is the
+ * kind of thread the same paragraph says to keep.
+ */
+export function shouldTidy(config: {
+  mediaType?: string;
+  newChat?: 'auto' | 'never';
+  deleteWhenDone?: boolean;
+} | null | undefined): boolean {
+  /* Continuing a thread is not the turn that made it, and tidyAwayConversation
+     refuses these anyway — its `before` path already names a conversation.
+     Kept here so the decision reads in one place rather than two. */
+  if (config?.newChat === 'never') return false;
+  /* Said explicitly, either way, before anything is inferred from the media. */
+  if (config?.deleteWhenDone === false) return false;
+  if (config?.deleteWhenDone === true) return true;
+  /* Unsaid: a one-shot text ask is the clipper's machine chatter, and a
+     generation is work somebody will want to look at again. */
+  return config?.mediaType === 'text';
+}
+
 /** A conversation path, as opposed to the new-chat route. */
 export const conversationId = (path: string): string =>
   /^\/app\/([A-Za-z0-9_-]+)$/.exec(path)?.[1] || '';
