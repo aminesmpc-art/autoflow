@@ -37,7 +37,8 @@ export interface CastMember {
 }
 
 export type CameraProgressionId =
-  'dynamic' | 'establishingToClose' | 'actionTracking' | 'macroOrbit' | 'fixed' | 'propped';
+  'dynamic' | 'establishingToClose' | 'actionTracking' | 'macroOrbit' | 'fixed' | 'propped'
+  | 'mountedPOV' | 'lockedWide';
 
 export interface CameraProgressionOption {
   id: CameraProgressionId;
@@ -73,6 +74,27 @@ export const CAMERA_PROGRESSIONS: CameraProgressionOption[] = [
     hint: 'Steadicam, handheld tracking, and energetic subject movement.',
     rules: [
       'MOTION CAMERA: Keep camera actively tracking, dollying, or following the primary subject with dynamic steadicam or handheld motion.',
+    ],
+  },
+  {
+    /* Strapped to the thing, not aimed at it.
+       The whole genre lives or dies on one detail: a strap or the housing rim
+       showing at the edge of frame. Without it a generator produces a smooth
+       floating camera near the subject, which reads as a drone and throws away
+       the only thing a mounted shot has. Named here so it is not left to
+       whoever remembers to type it into `look`. */
+    id: 'mountedPOV',
+    name: 'Body-Mounted POV (Action Cam)',
+    hint: 'Strapped to the subject. The rig shows at the frame edge and the body drives it.',
+    rules: [
+      'MOUNTED CAMERA: the camera is physically strapped to the subject. Nobody is holding it.',
+      '  · Part of the mount is in frame at all times — a strap, the edge of a harness, the',
+      '    housing rim across the bottom of the picture. Say which, in every prompt. Without',
+      '    it the shot renders as a camera floating near the subject, which is a drone.',
+      '  · Wide-angle action-cam optics: the edges bow outward and near things loom large.',
+      '  · The frame moves because the BODY moves. Every step, turn and breath is in it, as',
+      '    constant micro-vibration rather than as anything a camera operator decided.',
+      '  · No pan, tilt or zoom is ever chosen. There is nobody there to choose one.',
     ],
   },
   {
@@ -117,6 +139,26 @@ export const CAMERA_PROGRESSIONS: CameraProgressionOption[] = [
     hint: 'Locked-off camera for precise hyperlapses and room builds.',
     rules: [
       'ONE fixed camera for the entire sequence. No pan, tilt, zoom, or camera movement.',
+    ],
+  },
+  {
+    /* Not the same as Locked Tripod, though it reads like it.
+       That one says the camera does not MOVE. This one says it is the same
+       camera in every shot, and that the frame was chosen for the LAST shot
+       rather than the first. The failure it exists for: a ground-up build
+       framed on bare land, where the finished tower grows out of the top of
+       the picture in shot five and the whole sequence is unusable. */
+    id: 'lockedWide',
+    name: 'Locked Wide, Same Angle Throughout',
+    hint: 'One position for the whole piece. The subject grows inside a frame that never moves.',
+    rules: [
+      'ONE CAMERA POSITION across every shot: same spot, same height, same lens, same angle.',
+      '  · Describe that position in full in EVERY prompt. The generator cannot see the',
+      '    other shots, so "the same angle as before" refers to nothing it can find.',
+      '  · The subject stays completely inside the frame in every shot, including the last,',
+      '    where it is largest. Frame for the finished thing from the first shot onward.',
+      '  · Nothing changes between shots except the subject: same time of day, same',
+      '    weather, same light. A sunset in shot four is a different day, not a later hour.',
     ],
   },
 ];
@@ -402,7 +444,8 @@ export interface StorySettings {
 }
 
 export type RuleId = 'cumulative' | 'fixedCamera' | 'samePerson' | 'inHand'
-  | 'phaseComplete' | 'satisfyingMoment' | 'cutRhythm';
+  | 'phaseComplete' | 'satisfyingMoment' | 'cutRhythm'
+  | 'frameChain' | 'scaleAnchor' | 'noRepeatAction';
 
 /**
  * The rules the room template used to hardcode, as switches.
@@ -414,6 +457,21 @@ export const RULES: Array<{ id: RuleId; name: string; line: string }> = [
     line: 'Everything completed stays visible and active for the rest of the piece — '
       + 'installed lights keep glowing, layers stay in place, nothing is removed, reset, '
       + 'hidden, turned off or replaced.',
+  },
+  {
+    /* The join, which nothing here had a switch for.
+       `cumulative` says what was built stays built, and `loop` says the last
+       frame meets the first. Neither says shot 4 opens on the frame shot 3
+       closed on — and that is what a chained craft or build pipeline is
+       actually made of, because it is what lets the last frame of one clip be
+       fed in as the first frame of the next. */
+    id: 'frameChain',
+    name: 'Each clip starts where the last one ended',
+    line: 'Every clip opens on the exact frame the clip before it closed on. Write that '
+      + 'shared moment into BOTH prompts — as the closing state at the end of one and the '
+      + 'opening state at the start of the next — in the same words, so the two join with '
+      + 'no visible cut. The generator sees one prompt at a time and cannot look back at '
+      + 'the clip before, so the handover exists only if both prompts describe it.',
   },
   {
     id: 'fixedCamera',
@@ -454,6 +512,24 @@ export const RULES: Array<{ id: RuleId; name: string; line: string }> = [
     line: 'Vary the cut rhythm within each clip: 2–3 quick action cuts followed by one '
       + 'longer, more deliberate close-up shot. This prevents monotonous pacing and '
       + 'heightens the satisfying feel of the craftsmanship.',
+  },
+  {
+    id: 'scaleAnchor',
+    name: 'Keep a size reference in frame',
+    line: 'Something of known size stays in shot — a fingertip, a coin, a whole hand beside '
+      + 'the work — and is named in every prompt. Photographed alone and lit well, a '
+      + 'miniature is indistinguishable from the full-size thing it copies, and the craft '
+      + 'the piece is about becomes invisible: the viewer sees an ordinary building rather '
+      + 'than a tiny one somebody made.',
+  },
+  {
+    id: 'noRepeatAction',
+    name: 'No two clips repeat the same action',
+    line: 'Every clip is a different movement, from a different angle, at a different '
+      + 'distance. No pose, gesture, strike, camera move or beat appears twice across the '
+      + 'piece, and no clip repeats a movement inside itself. Each prompt is written without '
+      + 'seeing what the others chose, so left alone they all converge on the most obvious '
+      + 'version of the action — name the specific one THIS clip does.',
   },
 ];
 
@@ -550,7 +626,8 @@ export const isUgc = (s: StorySettings): boolean =>
   || s.visualPreset === 'smartphonePOV'
   || s.structure === 'ugcAd';
 
-export type StructureId = 'hook' | 'transform' | 'buildTimelapse' | 'craftTransform' | 'loop' | 'free' | 'ugcAd';
+export type StructureId = 'hook' | 'twist' | 'transform' | 'buildTimelapse' | 'craftTransform'
+  | 'loop' | 'free' | 'ugcAd';
 
 export const STRUCTURES: Array<{ id: StructureId; name: string; hint: string; shape: string[] }> = [
   {
@@ -563,6 +640,27 @@ export const STRUCTURES: Array<{ id: StructureId; name: string; hint: string; sh
       'BUILD — each beat visibly larger than the last. Never a beat that only',
       '  repeats the one before it.',
       'PAYOFF — the strongest image in the piece, and the reason to have stayed.',
+    ],
+  },
+  {
+    /* Hook → Build → Payoff climbs; this one climbs and then drops.
+       The difference is where the surprise sits. A payoff is the biggest
+       version of what was promised; a twist is the thing that was not. Given
+       only the hook shape, a model writes the reversal into a middle beat
+       where it has the most room — and the piece then owes the viewer a second
+       ending, which it pays by repeating the twist smaller. */
+    id: 'twist',
+    name: 'Hook → Escalate → Twist',
+    hint: 'Comedy and creature clips. The reversal lands in the last beat, not the middle.',
+    shape: [
+      'HOOK — the situation, legible in a second: who, where, and what is about to go wrong.',
+      'ESCALATE — each beat is the SAME premise taken further, not a new idea. A viewer',
+      '  should be able to guess where this is heading. That guess is what the twist spends.',
+      'TWIST — it goes somewhere else, and it goes there in the FINAL beat, in the last',
+      '  seconds of it. A reversal the viewer has already absorbed has become the setup,',
+      '  and the piece then owes them an ending it has no time left to build.',
+      'BUTTON — the held reaction after the twist. One beat, no new information: the face,',
+      '  the aftermath, the thing sitting where it landed.',
     ],
   },
   {
@@ -876,13 +974,25 @@ export const hasStory = (s: StorySettings): boolean =>
 /**
  * Whether the piece is a build — something arrives that was not there.
  *
- * Two settings say it independently: the structure, and the rule that says
+ * Several settings say it independently: the structure, and the rule that says
  * nothing already built disappears. A user who describes a time-lapse with
  * "Nothing already built disappears" switched on and the structure left on
  * Hook is describing a build, and the opening still has to be empty.
+ *
+ * `buildTimelapse` and `craftTransform` were missing from here for as long as
+ * they have existed, and the omission was invisible because it fails silently:
+ * a user picking "Construction Timelapse Build" and nothing else got no
+ * opening-state instruction and no check on it, so the first clip could open
+ * on a half-built structure — the exact failure openNotFromNothing was written
+ * to catch, on the two structures most likely to hit it. Bare ground to
+ * finished building, and raw stock to finished piece, are builds by
+ * definition; there was never a reading on which they were not.
  */
 export const isBuild = (s: StorySettings): boolean =>
-  s.structure === 'transform' || s.rules.includes('cumulative');
+  s.structure === 'transform'
+  || s.structure === 'buildTimelapse'
+  || s.structure === 'craftTransform'
+  || s.rules.includes('cumulative');
 
 /**
  * The state the piece starts in, and why it kept coming back wrong.

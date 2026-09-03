@@ -127,9 +127,16 @@ describe('housekeeping', () => {
        — a build going up phase by phase, and raw stock becoming a finished
        piece. They arrived after this list was first written; the list is
        exhaustive on purpose, so adding one has to be a decision made here
-       too. */
+       too.
+
+       `twist` is the third such decision. Hook ➜ Build ➜ Payoff climbs to the
+       biggest version of what it promised; a comedy or creature clip ends on
+       the thing it did NOT promise, and given only the climbing shape a model
+       puts the reversal in a middle beat where there is room for it. See
+       storyNichePresets.test.ts. */
     expect(STRUCTURES.map((s) => s.id))
-      .toEqual(['hook', 'transform', 'buildTimelapse', 'craftTransform', 'loop', 'ugcAd', 'free']);
+      .toEqual(['hook', 'twist', 'transform', 'buildTimelapse', 'craftTransform',
+        'loop', 'ugcAd', 'free']);
     for (const s of STRUCTURES) expect(s.name.length).toBeGreaterThan(3);
   });
 });
@@ -154,11 +161,20 @@ describe('continuity rules', () => {
        written any way cannot also be checked, and these are worth checking. */
     expect(RULES.map((r) => r.id))
       .toEqual([
-        'cumulative', 'fixedCamera', 'samePerson', 'inHand',
+        'cumulative',
+        /* Next to cumulative because it is the one people confuse it with,
+           and it is not the same claim: cumulative is about what stays on
+           screen, this is about the seam between two clips. */
+        'frameChain',
+        'fixedCamera', 'samePerson', 'inHand',
         /* The three the build and craft formats hit: a phase left half-done
            when the clip ends, a clip with no payoff moment in it, and every
            clip cut to the same monotonous rhythm. */
         'phaseComplete', 'satisfyingMoment', 'cutRhythm',
+        /* And the two the miniature and creature formats hit: a tiny build
+           photographed with nothing to give its size away, and a piece whose
+           clips all do the same move from the same angle. */
+        'scaleAnchor', 'noRepeatAction',
       ]);
     for (const r of RULES) expect(r.line.length).toBeGreaterThan(40);
   });

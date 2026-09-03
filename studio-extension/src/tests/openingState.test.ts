@@ -53,6 +53,23 @@ describe('what counts as a build', () => {
     expect(isBuild({ ...DEFAULT_STORY, rules: ['cumulative'] })).toBe(true);
   });
 
+  it('counts the construction and craft structures, which it used to miss', () => {
+    /* Both arrived after isBuild was written and neither was added, so a user
+       who picked "Construction Timelapse Build" and nothing else got no
+       opening-state instruction and no check on it. The failure is silent and
+       expensive: the first clip opens on a half-built structure, which is
+       precisely what openNotFromNothing exists to catch, on the two structures
+       most likely to hit it. */
+    expect(isBuild({ ...DEFAULT_STORY, structure: 'buildTimelapse' })).toBe(true);
+    expect(isBuild({ ...DEFAULT_STORY, structure: 'craftTransform' })).toBe(true);
+  });
+
+  it('tells a construction piece its opening has to be empty', () => {
+    const b = storyBrief('a garden wall', { ...DEFAULT_STORY, structure: 'buildTimelapse' },
+      [clip('a', 'One'), clip('b', 'Two')]);
+    expect(b).toMatch(/This piece BUILDS/);
+  });
+
   it('is not every piece', () => {
     /* A piece that opens in a busy kitchen and stays there has no "before",
        and telling it to start empty would be telling it to start wrong. */
