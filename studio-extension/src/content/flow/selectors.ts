@@ -2401,10 +2401,17 @@ export function findMediaTypeTab(mediaType: 'image' | 'video'): Element | null {
      popover also holds the aspect ratios; the sidebar holds navigation. So a
      candidate counts only when an ancestor within a few levels also contains
      something shaped like a ratio. */
-  /* The ratios Flow actually offers, not any "n:n". A loose digit-colon-digit
-     also matches a timestamp — "0:10" beside a clip length would qualify a
-     sidebar that holds no ratios at all. */
-  const RATIO = /(?:16\s*:\s*9|9\s*:\s*16|1\s*:\s*1|4\s*:\s*3|3\s*:\s*4)/;
+  /* A ratio, written either way Flow writes one.
+     The buttons say "16:9"; the settings chip says it with a Material icon
+     whose ligature is `crop_16_9`, underscores and no colon:
+
+       <mat-icon class="google-symbols">crop_16_9</mat-icon>
+
+     Matching only the colon form missed the chip entirely. Pinned to the
+     ratios Flow offers rather than any n:n, because a loose
+     digit-colon-digit also matches a timestamp and "0:10" beside a clip
+     length would qualify a sidebar holding no ratios at all. */
+  const RATIO = /(?:16\s*[:_]\s*9|9\s*[:_]\s*16|1\s*[:_]\s*1|4\s*[:_]\s*3|3\s*[:_]\s*4)/;
   const nearRatio = (el: Element): boolean => {
     let up: Element | null = el.parentElement;
     for (let i = 0; i < 5 && up; i++) {
@@ -2414,22 +2421,47 @@ export function findMediaTypeTab(mediaType: 'image' | 'video'): Element | null {
     return false;
   };
 
-  const loose = Array.from(document.querySelectorAll<HTMLElement>(
-    'button,[role="tab"],[role="menuitemradio"],[role="option"],div,span',
-  )).filter((el) => {
-    if (!isVisible(el)) return false;
-    const label = labelText(el).toLowerCase();
-    if (!label || (label !== want && !matchesFlowText(label, want))) return false;
-    /* "videos"/"vidéos" is the library filter, never the mode tab. */
-    if (/s$/.test(label) && label !== want) return false;
-    return nearRatio(el);
-  });
+  /* Where to look, best first.
 
-  /* The most specific one, for the reason the Videos tab needed the same rule:
-     an ancestor's textContent contains its children's, so a wrapper matches
-     everything its tab matches and comes first in document order. */
-  loose.sort((a, b) => labelText(a).length - labelText(b).length);
-  return loose[0] || null;
+     Flow is Angular Material — `cdkOverlayOrigin` on the settings trigger, and
+     `mat-mdc-button-base` on its buttons. Angular's CDK renders every overlay,
+     this popover included, inside `.cdk-overlay-container` appended to <body>.
+     The sidebar is not in it. That is a framework fact rather than a Flow
+     choice, which makes it the most durable scope on offer — and it settles
+     the sidebar problem outright rather than inferring around it. */
+  const scopes: ParentNode[] = [
+    ...Array.from(document.querySelectorAll<HTMLElement>(
+      '.cdk-overlay-container, [role="dialog"], mat-dialog-container',
+    )),
+    document,
+  ];
+
+  const SELECTOR = 'button,[role="tab"],[role="menuitemradio"],[role="option"],div,span';
+  const pick = (scope: ParentNode, anchored: boolean): HTMLElement | null => {
+    const found = Array.from(scope.querySelectorAll<HTMLElement>(SELECTOR)).filter((el) => {
+      if (!isVisible(el)) return false;
+      const label = labelText(el).trim().toLowerCase();
+      if (!label || (label !== want && !matchesFlowText(label, want))) return false;
+      /* "videos"/"vidéos" is the library filter, never the mode tab. */
+      if (/s$/.test(label) && label !== want) return false;
+      /* Inside a known overlay the scope has already done the work; in the
+         open document a ratio nearby is what separates the popover from the
+         navigation. */
+      return anchored ? nearRatio(el) : true;
+    });
+
+    /* The most specific one, for the reason the Videos tab needed the same
+       rule: an ancestor's textContent contains its children's, so a wrapper
+       matches everything its tab matches and comes first in document order. */
+    found.sort((a, b) => labelText(a).trim().length - labelText(b).trim().length);
+    return found[0] || null;
+  };
+
+  for (const scope of scopes) {
+    const hit = pick(scope, scope === document);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 export function findModeButton(modeName: string): Element | null {

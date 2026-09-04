@@ -33,7 +33,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { findMediaTypeTab } from '../content/flow/selectors';
+import { findMediaTypeTab, labelText } from '../content/flow/selectors';
 
 const box = (el: Element, w = 90, h = 30): void => {
   (el as HTMLElement).getBoundingClientRect = () =>
@@ -164,5 +164,90 @@ describe('what it refuses to guess', () => {
     );
     // eslint-disable-next-line no-control-regex
     expect(src).not.toMatch(/[\x00-\x08\x0b\x0c\x0e-\x1f]/);
+  });
+});
+
+describe('the Flow that is actually there — Angular Material in a CDK overlay', () => {
+  /* Read off the live page. The settings trigger is:
+   *
+   *   <button matbutton flow-button aria-label="Settings trigger" cdkoverlayorigin
+   *           class="mdc-button mat-mdc-button-base settings-trigger-button …">
+   *     <span class="mdc-button__label">
+   *       <span class="settings-summary"> Video · 720p · 10s
+   *         <mat-icon class="mat-icon google-symbols">crop_16_9</mat-icon> x1
+   *       </span></span></button>
+   *
+   * Two things follow, and both had been guessed wrong:
+   *
+   *   · It is Angular Material, not Radix and not styled-components. So the
+   *     popover lives in `.cdk-overlay-container`, which Angular's CDK appends
+   *     to <body> — and the sidebar does not.
+   *   · The ratio is written `crop_16_9`, a Material ligature with underscores
+   *     and no colon. An anchor matching only "16:9" missed the chip entirely.
+   */
+
+  const TRIGGER = `
+    <button aria-label="Settings trigger" cdkoverlayorigin
+            class="mdc-button mat-mdc-button-base settings-trigger-button">
+      <span class="mdc-button__label">
+        <span class="settings-summary"> Video · 720p · 10s
+          <mat-icon class="mat-icon notranslate flow-icon-m google-symbols"
+                    data-mat-icon-type="font">crop_16_9</mat-icon> x1
+        </span></span></button>`;
+
+  /** The popover, where Angular actually renders it. */
+  const OVERLAY = `
+    <div class="cdk-overlay-container">
+      <div class="cdk-overlay-pane">
+        <button id="matImage" class="mat-mdc-button-base">
+          <mat-icon class="google-symbols">image</mat-icon>Image</button>
+        <button id="matVideo" class="mat-mdc-button-base">
+          <mat-icon class="google-symbols">videocam</mat-icon>Video</button>
+        <button id="matFrames" class="mat-mdc-button-base">Frames</button>
+      </div>
+    </div>`;
+
+  beforeEach(() => {
+    document.body.innerHTML = SIDEBAR + TRIGGER + OVERLAY;
+    boxAll();
+    for (const el of Array.from(document.querySelectorAll('mat-icon'))) box(el, 20, 20);
+  });
+
+  it('finds the Image tab inside the CDK overlay', () => {
+    expect((findMediaTypeTab('image') as HTMLElement)?.id).toBe('matImage');
+  });
+
+  it('finds the Video tab', () => {
+    expect((findMediaTypeTab('video') as HTMLElement)?.id).toBe('matVideo');
+  });
+
+  it('takes the overlay over the sidebar even with no ratio in the overlay', () => {
+    /* The scope settles it outright rather than inferring around it: the
+       sidebar is never inside .cdk-overlay-container, so it cannot win. */
+    expect(document.querySelector('.cdk-overlay-container')!.textContent)
+      .not.toMatch(/16|9:/);
+    expect((findMediaTypeTab('video') as HTMLElement)?.id).not.toBe('navVideos');
+  });
+
+  it('takes the button, not the pane that holds it', () => {
+    const got = findMediaTypeTab('image') as HTMLElement;
+    expect(got?.className).not.toContain('cdk-overlay');
+  });
+
+  it('reads the settings chip ratio, which is a ligature not a colon', () => {
+    /* The anchor this file previously used would not have matched the chip:
+       it wrote the ratio as crop_16_9, underscores and no colon. */
+    const chip = document.querySelector('.settings-summary')!;
+    expect(chip.textContent).toContain('crop_16_9');
+    expect(chip.textContent).not.toContain('16:9');
+  });
+
+  it('still ignores the ligature when reading a label', () => {
+    /* labelText strips icons so the chip reads "Video · 720p · 10s   x1" —
+       otherwise the ligature would fuse onto its neighbour and the count
+       token would stop being recognised. */
+    const chip = document.querySelector('.settings-summary') as HTMLElement;
+    expect(labelText(chip)).not.toContain('crop_16_9');
+    expect(labelText(chip)).toContain('720p');
   });
 });
