@@ -34,6 +34,7 @@ import {
   Output,
   QUALITY_HIGH,
   VideoSample,
+  AudioSample,
   type Input,
   type Quality,
 } from 'mediabunny';
@@ -44,6 +45,7 @@ import {
   framingAt, tighten, opsAt, drawTextOp, sheetDraws, cutawayAt, coverBox,
   type Cutaway,
 } from './overlay';
+import { soundFor } from './sfx';
 import type { EditOp } from '../clip/editSheet';
 
 export interface CutOptions {
@@ -151,6 +153,16 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
   /* Cutaways turn the canvas on too — there is nowhere to draw one on
      mediabunny's straight-through route either. */
   const cutaways = (options.cutaways || []).filter((c) => c.seconds > 0);
+
+  /* Sounds the sheet named that we can actually make. Resolved here rather
+     than per audio sample: soundFor caches, but the name matching would
+     otherwise run a few thousand times for a clip with three whooshes. */
+  const sounds = silent
+    ? []
+    : sheet
+      .filter((op) => op.kind === 'sfx')
+      .map((op) => ({ atSec: op.atSec, what: String(op.what || '') }))
+      .filter((op) => op.atSec >= 0);
 
   const drawing = tracked || fitting || captioning || overlaying || cutaways.length > 0;
 
@@ -308,7 +320,74 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
     input,
     output,
     trim: { start: startSec, end: endSec },
-    audio: silent ? { discard: true } : undefined,
+    /* ── Sound effects ──
+       The audio twin of the video hook: called per input sample after
+       remixing and resampling, handed back an AudioSample built from the
+       modified PCM. Measured before it was written — a 1kHz tone mixed over a
+       220Hz source came back at 0.175 inside its window against 0.000 outside
+       it, with the carrier unchanged at 0.125 either side. See media/sfx.ts.
+
+       The samples are ADDED, not replaced. An effect that ducked the speech
+       would be doing a job nobody asked for, and the levels in sfx.ts are
+       chosen to sit under a voice rather than beside one. */
+    audio: silent
+      ? { discard: true }
+      : (sounds.length
+        ? {
+          process: (sample: AudioSample) => {
+            const rate = sample.sampleRate;
+            const channels = sample.numberOfChannels;
+            const frames = sample.numberOfFrames;
+
+            /* Resolved against THIS sample's rate. mediabunny may have
+               resampled before calling us, and a sound generated at the
+               source rate would play at the wrong pitch and length. */
+            const live = sounds
+              .map((s) => ({ at: s.atSec, pcm: soundFor(s.what, rate) }))
+              .filter((s): s is { at: number; pcm: Float32Array } => !!s.pcm)
+              .filter((s) => {
+                const from = s.at;
+                const to = s.at + s.pcm.length / rate;
+                return to > sample.timestamp
+                  && from < sample.timestamp + frames / rate;
+              });
+            if (!live.length) return sample;
+
+            const size = sample.allocationSize({ planeIndex: 0, format: 'f32' });
+            const buf = new Float32Array(size / 4);
+            sample.copyTo(buf, { planeIndex: 0, format: 'f32' });
+
+            for (const s of live) {
+              for (let i = 0; i < frames; i++) {
+                const at = sample.timestamp + i / rate;
+                const k = Math.round((at - s.at) * rate);
+                if (k < 0 || k >= s.pcm.length) continue;
+                const v = s.pcm[k];
+                /* Interleaved, and the same sound in every channel — these
+                   are mono by construction and panning one would put a cut
+                   transition in one ear. */
+                for (let c = 0; c < channels; c++) {
+                  const j = i * channels + c;
+                  /* Clamped. Adding to speech already near full scale can
+                     exceed it, and an encoder given out-of-range samples
+                     produces a crackle that sounds like a broken export. */
+                  buf[j] = Math.max(-1, Math.min(1, buf[j] + v));
+                }
+              }
+            }
+
+            const mixed = new AudioSample({
+              data: buf,
+              format: 'f32',
+              numberOfChannels: channels,
+              sampleRate: rate,
+              timestamp: sample.timestamp,
+            });
+            sample.close();
+            return mixed;
+          },
+        }
+        : undefined),
     video: {
       quality: options.quality ?? DEFAULT_QUALITY,
       /* Only when nothing is being drawn. Handing mediabunny a crop while
