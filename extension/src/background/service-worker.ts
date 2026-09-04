@@ -279,7 +279,7 @@ async function getActiveFlowTabId(): Promise<number | null> {
 
   // Otherwise find any Flow tab — match exact patterns from manifest
   const flowTabs = await chrome.tabs.query({
-    url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
+    url: ['https://labs.google/flow*', 'https://labs.google/fx*', 'https://flow.google.com/*'],
   });
   if (flowTabs.length > 0 && flowTabs[0].id) return flowTabs[0].id;
 
@@ -306,7 +306,7 @@ async function ensureStudioFlowTab(): Promise<number | null> {
   const existing = await getActiveFlowTabId();
   if (existing) return existing;
 
-  let url = 'https://labs.google/fx/tools/flow';
+  let url = 'https://flow.google.com/';
   try {
     const r = await chrome.storage.local.get('af_last_flow_project');
     if (r?.af_last_flow_project) url = r.af_last_flow_project;
@@ -482,7 +482,7 @@ chrome.runtime.onConnect.addListener((port) => {
               payload: {
                 error: isChatGPT
                   ? 'Could not open a ChatGPT tab. Check that chatgpt.com is reachable and you are signed in.'
-                  : 'Could not open a Google Flow tab. Check that labs.google is reachable and you are signed in.',
+                  : 'Could not open a Google Flow tab. Check that flow.google.com is reachable and you are signed in.',
                 nodeId: msg.payload?.nodeId,
               },
             });
@@ -1228,7 +1228,7 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
 
     case 'FOCUS_FLOW_TAB': {
       const flowTabs = await chrome.tabs.query({
-        url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
+        url: ['https://labs.google/flow*', 'https://labs.google/fx*', 'https://flow.google.com/*'],
       });
       if (flowTabs.length > 0 && flowTabs[0].id) {
         await chrome.tabs.update(flowTabs[0].id, { active: true });
@@ -1718,7 +1718,11 @@ async function startQueueInTab(payload: { queueId: string; tabId?: number }): Pr
     // Verify the tab is actually a Google Flow tab before using it
     try {
       const tab = await chrome.tabs.get(payload.tabId);
-      if (tab.url && (tab.url.startsWith('https://labs.google/flow') || tab.url.startsWith('https://labs.google/fx'))) {
+      /* Both hosts. Google moved Flow to flow.google.com and the old URL
+         still resolves, so a user can be on either. */
+      if (tab.url && (tab.url.startsWith('https://labs.google/flow')
+        || tab.url.startsWith('https://labs.google/fx')
+        || tab.url.startsWith('https://flow.google.com/'))) {
         tabId = payload.tabId;
         await chrome.tabs.update(tabId, { active: true });
       }
@@ -1728,7 +1732,7 @@ async function startQueueInTab(payload: { queueId: string; tabId?: number }): Pr
   if (!tabId) {
     // Fallback: find the currently active Flow tab
     const tabs = await chrome.tabs.query({
-      url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
+      url: ['https://labs.google/flow*', 'https://labs.google/fx*', 'https://flow.google.com/*'],
       active: true,
       currentWindow: true,
     });
@@ -1738,13 +1742,13 @@ async function startQueueInTab(payload: { queueId: string; tabId?: number }): Pr
     } else {
       // Try any Flow tab
       const allFlowTabs = await chrome.tabs.query({
-        url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
+        url: ['https://labs.google/flow*', 'https://labs.google/fx*', 'https://flow.google.com/*'],
       });
       if (allFlowTabs.length > 0 && allFlowTabs[0].id) {
         tabId = allFlowTabs[0].id;
         await chrome.tabs.update(tabId, { active: true });
       } else {
-        await chrome.tabs.create({ url: 'https://labs.google/flow' });
+        await chrome.tabs.create({ url: 'https://flow.google.com/' });
         return { error: 'Opening Google Flow — wait a few seconds for it to load, then hit Run again!' };
       }
     }
@@ -1904,13 +1908,13 @@ async function handleCancelChain(payload: { chainId: string }): Promise<any> {
 async function ensureFlowTab(): Promise<number> {
   // Try existing Flow tab first
   const flowTabs = await chrome.tabs.query({
-    url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
+    url: ['https://labs.google/flow*', 'https://labs.google/fx*', 'https://flow.google.com/*'],
   });
 
   if (flowTabs.length > 0 && flowTabs[0].id) {
     const tabId = flowTabs[0].id;
     // Navigate to Flow homepage for a fresh project
-    await chrome.tabs.update(tabId, { active: true, url: 'https://labs.google/fx/tools/flow' });
+    await chrome.tabs.update(tabId, { active: true, url: 'https://flow.google.com/' });
     // Wait for navigation to complete
     await waitForTabLoad(tabId, 30_000);
     await sleep(3000); // Wait for React app
@@ -1918,7 +1922,7 @@ async function ensureFlowTab(): Promise<number> {
   }
 
   // Create new tab
-  const newTab = await chrome.tabs.create({ url: 'https://labs.google/fx/tools/flow', active: true });
+  const newTab = await chrome.tabs.create({ url: 'https://flow.google.com/', active: true });
   const tabId = newTab.id!;
   await waitForTabLoad(tabId, 30_000);
   await sleep(5000); // Extra wait for first load
@@ -2174,7 +2178,7 @@ async function blobToBase64(blob: Blob): Promise<string> {
 async function forwardToContentScript(msg: Message): Promise<any> {
   // Prefer the active Flow tab in the current window — this is likely the one the user sees
   const activeTabs = await chrome.tabs.query({
-    url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
+    url: ['https://labs.google/flow*', 'https://labs.google/fx*', 'https://flow.google.com/*'],
     active: true,
     currentWindow: true,
   });
@@ -2185,10 +2189,10 @@ async function forwardToContentScript(msg: Message): Promise<any> {
   } else {
     // Fallback: any Flow tab
     const allTabs = await chrome.tabs.query({
-      url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
+      url: ['https://labs.google/flow*', 'https://labs.google/fx*', 'https://flow.google.com/*'],
     });
     if (allTabs.length === 0 || !allTabs[0].id) {
-      await chrome.tabs.create({ url: 'https://labs.google/flow' });
+      await chrome.tabs.create({ url: 'https://flow.google.com/' });
       return { error: 'Google Flow opened in a new tab! Wait for it to load, then try again.' };
     }
     tabId = allTabs[0].id;
@@ -2284,7 +2288,7 @@ chrome.notifications.onClicked.addListener(async (notifId) => {
 
   // Focus or open a Flow tab
   const flowTabs = await chrome.tabs.query({
-    url: ['https://labs.google/flow*', 'https://labs.google/fx*'],
+    url: ['https://labs.google/flow*', 'https://labs.google/fx*', 'https://flow.google.com/*'],
   });
 
   let tabId: number | undefined;
@@ -2295,7 +2299,7 @@ chrome.notifications.onClicked.addListener(async (notifId) => {
       await chrome.windows.update(flowTabs[0].windowId, { focused: true });
     }
   } else {
-    const tab = await chrome.tabs.create({ url: 'https://labs.google/flow' });
+    const tab = await chrome.tabs.create({ url: 'https://flow.google.com/' });
     tabId = tab.id;
   }
 

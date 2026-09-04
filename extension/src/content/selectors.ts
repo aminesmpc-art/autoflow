@@ -1250,8 +1250,22 @@ export function findSettingsPanelTrigger(): Element | null {
    */
   const isCountChip = (t: string) => /\bx\d+\b/.test(t) || /\b\d+x\b/.test(t);
 
-  const menus = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'))
-    .filter(isVisible);
+  /* Every button that could open a popover.
+     This was `button[aria-haspopup="menu"]` alone, which is how Radix says it.
+     Flow is Angular Material now and says it differently — verified on the
+     live page, the settings chip is
+
+       <button matbutton aria-label="Settings trigger" cdkoverlayorigin
+               class="mdc-button mat-mdc-button-base settings-trigger-button">
+
+     with no aria-haspopup at all. Measured there: the old set was 11 buttons
+     and did NOT contain the chip; this set is 60 and does. The ratio-icon test
+     below already recognises it — crop_9_16 is right there in it — so widening
+     what reaches that test is the whole fix. */
+  const menus = Array.from(document.querySelectorAll<HTMLElement>(
+    'button[aria-haspopup="menu"], button[cdkoverlayorigin], button[aria-label],'
+    + ' button.settings-trigger-button, [role="button"][aria-haspopup="menu"]',
+  )).filter(isVisible);
 
   /**
    * Primary, structural test: the settings chip is the only menu button that
@@ -1286,11 +1300,34 @@ export function findSettingsPanelTrigger(): Element | null {
  * The trigger button has aria-expanded="true" / data-state="open"
  * when the panel is showing.
  */
+/**
+ * Is the composer's settings popover on screen?
+ *
+ * Asked of the trigger first, which is how Radix says it. Angular Material
+ * says nothing at all — measured on the live page, aria-expanded stayed null
+ * with the popover open — so this answered "closed" while it was open, and the
+ * caller, which opens the panel whenever this is false, pressed the chip again
+ * and CLOSED it. Open, close, open, close, three attempts, then the error.
+ *
+ * So the panel itself is the second answer. Angular's CDK renders overlays
+ * into `.cdk-overlay-pane`, and one holding a ratio or a media word is this
+ * popover rather than some other dialog — a bare "is any overlay open" would
+ * count a toast.
+ */
 export function isSettingsPanelOpen(): boolean {
   const trigger = findSettingsPanelTrigger();
-  if (!trigger) return false;
-  return trigger.getAttribute('aria-expanded') === 'true' ||
-    trigger.getAttribute('data-state') === 'open';
+  if (trigger && (trigger.getAttribute('aria-expanded') === 'true'
+    || trigger.getAttribute('data-state') === 'open')) return true;
+
+  const RATIO = /(?:16\s*[:_]\s*9|9\s*[:_]\s*16|1\s*[:_]\s*1|4\s*[:_]\s*3|3\s*[:_]\s*4)/;
+  return Array.from(document.querySelectorAll<HTMLElement>('.cdk-overlay-pane'))
+    .some((pane) => {
+      if (!isVisible(pane)) return false;
+      const text = pane.textContent || '';
+      return RATIO.test(text)
+        || matchesFlowText(text, 'image')
+        || matchesFlowText(text, 'video');
+    });
 }
 
 /**
@@ -1510,9 +1547,40 @@ export function labelText(el: Element): string {
 }
 
 /** True when a Radix tab is the selected one */
+/**
+ * Is this control the selected one?
+ *
+ * Every UI kit says it differently, and reading only one is how a click that
+ * worked reports that it did not. Radix uses data-state or aria-selected. The
+ * Image/Video control on flow.google.com is an Angular Material button-toggle
+ * and uses neither — read off the live page with the panel open:
+ *
+ *   <button class="mat-button-toggle-button" aria-checked="true">   Video
+ *   <mat-button-toggle class="… mat-button-toggle-checked">
+ *
+ * data-state and aria-selected were both null on every toggle. So the switch
+ * would find the tab, click it, ask whether it had taken, be told no, and give
+ * up after three tries — the same error as never finding it, for a completely
+ * different reason.
+ *
+ * The wrapper is consulted from the PARENT up, never from the element itself:
+ * closest() starts where it is called, and the button's own class is
+ * `mat-button-toggle-button`, which contains "button-toggle" — so it matched
+ * itself and the wrapper was never examined.
+ */
 export function isTabActive(el: Element): boolean {
-  return el.getAttribute('data-state') === 'active' ||
-         el.getAttribute('aria-selected') === 'true';
+  if (el.getAttribute('data-state') === 'active') return true;
+  if (el.getAttribute('aria-selected') === 'true') return true;
+  if (el.getAttribute('aria-checked') === 'true') return true;
+  if (el.getAttribute('aria-pressed') === 'true') return true;
+
+  const wrap = el.parentElement?.closest('mat-button-toggle, [class*="button-toggle"]');
+  if (wrap) {
+    if (wrap.getAttribute('aria-checked') === 'true') return true;
+    if (wrap.getAttribute('aria-pressed') === 'true') return true;
+    if (/(?:^|\s)[\w-]*button-toggle-checked(?:\s|$)/.test(wrap.className || '')) return true;
+  }
+  return false;
 }
 
 /**
@@ -1550,6 +1618,58 @@ export function findMediaTypeTab(mediaType: 'image' | 'video'): Element | null {
     const label = labelText(tab).toLowerCase();
     // Exact match: "videos" (the library filter) must not satisfy "video"
     if (label === want || matchesFlowText(label, want)) return tab;
+  }
+
+  /* ── Last resort: a Flow with no roles on anything ──
+     Every tier above needs role="tab". Measured on flow.google.com:
+     document.querySelectorAll('button[role="tab"]').length === 0. Its controls
+     are Angular Material button-toggles, so all three tiers missed and the run
+     stopped with "Could not switch Flow to Image mode".
+
+     Text alone is not safe, and the comment at the top of this function says
+     why: the sidebar carries Images and Vidéos library filters, they are
+     siblings of each other just like the real tabs, and they come EARLIER in
+     the document — so both "first match" and "find the pair" click "show me
+     videos" instead of "generate video".
+
+     Scope settles it. Angular's CDK renders every overlay, this popover
+     included, inside .cdk-overlay-container appended to <body>, and the
+     sidebar is not in it. That is a framework fact rather than a Flow choice.
+     The ratio anchor below is the fallback for the open document, and it
+     accepts `crop_16_9` as well as `16:9` because the chip writes the ratio as
+     a Material ligature — underscores, no colon. */
+  const RATIO = /(?:16\s*[:_]\s*9|9\s*[:_]\s*16|1\s*[:_]\s*1|4\s*[:_]\s*3|3\s*[:_]\s*4)/;
+  const nearRatio = (el: Element): boolean => {
+    let up: Element | null = el.parentElement;
+    for (let i = 0; i < 5 && up; i++) {
+      if (RATIO.test(up.textContent || '')) return true;
+      up = up.parentElement;
+    }
+    return false;
+  };
+
+  const scopes: ParentNode[] = [
+    ...Array.from(document.querySelectorAll<HTMLElement>(
+      '.cdk-overlay-container, [role="dialog"], mat-dialog-container',
+    )),
+    document,
+  ];
+  const SELECTOR = 'button,[role="tab"],[role="menuitemradio"],[role="option"],div,span';
+
+  for (const scope of scopes) {
+    const anchored = scope === document;
+    const found = Array.from(scope.querySelectorAll<HTMLElement>(SELECTOR)).filter((el) => {
+      if (!isVisible(el)) return false;
+      const label = labelText(el).trim().toLowerCase();
+      if (!label || (label !== want && !matchesFlowText(label, want))) return false;
+      /* "videos"/"vidéos" is the library filter, never the mode tab. */
+      if (/s$/.test(label) && label !== want) return false;
+      return anchored ? nearRatio(el) : true;
+    });
+    /* The most specific one: an ancestor's textContent contains its children's,
+       so a wrapper matches everything its tab matches and comes first. */
+    found.sort((a, b) => labelText(a).trim().length - labelText(b).trim().length);
+    if (found[0]) return found[0];
   }
   return null;
 }
