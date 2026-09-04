@@ -40,6 +40,8 @@ import {
 
 import { rectAt, type Rect, type ReframePlan } from './reframe';
 import { cueAt, drawCaption, type CaptionCue, type CaptionStyle } from './captions';
+import { framingAt, tighten, opsAt, drawTextOp, sheetDraws } from './overlay';
+import type { EditOp } from '../clip/editSheet';
 
 export interface CutOptions {
   startSec: number;
@@ -57,6 +59,11 @@ export interface CutOptions {
      whether most of the audience can follow the clip at all. */
   captions?: CaptionCue[];
   captionStyle?: CaptionStyle;
+  /* The planned edit, timed against the CLIP, so the ops that CAN be drawn
+     arrive on the picture instead of only in a list for CapCut. Only text,
+     punch and zoom are rendered — see overlay.ts for why the other five are
+     not drawing problems at all. */
+  editSheet?: EditOp[];
 }
 
 export interface CutResult {
@@ -126,7 +133,15 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
      had nowhere to be drawn. */
   const captions = (options.captions || []).filter((c) => c.endSec > c.startSec);
   const captioning = captions.length > 0;
-  const drawing = tracked || fitting || captioning;
+
+  /* The sheet turns the canvas on for the same reason captions do: a text card
+     or a push-in has nowhere to be drawn on mediabunny's straight-through
+     route. Only kinds this can actually render count — a sheet of nothing but
+     sound effects must not force a clip onto the slower path for no pixels. */
+  const sheet = (options.editSheet || []).filter((o) => typeof o?.atSec === 'number');
+  const overlaying = sheetDraws(sheet);
+
+  const drawing = tracked || fitting || captioning || overlaying;
 
   /* Output size is decided ONCE and never varies. An encoder is configured a
      single time; a frame that arrives one pixel wider than the configuration
@@ -166,6 +181,10 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
           processedWidth: outWidth,
           processedHeight: outHeight,
           process: (sample: VideoSample) => {
+            /* How tight the frame goes at this instant. 1 when the sheet asks
+               for nothing here, which is most frames of most clips. */
+            const push = overlaying ? framingAt(sheet, sample.timestamp) : 1;
+
             if (fitting) {
               /* The whole frame, centred, over a blurred enlarged copy of
                  itself. The backdrop is what stops a chart reading as a
@@ -193,8 +212,13 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
               );
               ctx!.filter = 'none';
 
+              /* Only the sharp copy pushes in. Tightening the backdrop too
+                 would move both layers together, and the whole reason the
+                 backdrop is there is to stay put behind a frame that does
+                 not fill the output. */
+              const f = tighten({ left: 0, top: 0, width: sw, height: sh }, push);
               sample.draw(
-                ctx!, 0, 0, sw, sh,
+                ctx!, f.left, f.top, f.width, f.height,
                 (outWidth - sw * contain) / 2, (outHeight - sh * contain) / 2,
                 sw * contain, sh * contain,
               );
@@ -208,7 +232,10 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
                late by exactly the trim start, so a clip cut from 1s showed
                the frame the plan wanted a second earlier. It was found by
                checking the colour of the output pixels, and by nothing else. */
-              const r = rectAt(plan, sample.timestamp);
+              /* Tightened about its own centre, so a tracked crop keeps
+                 pointing at the speaker through the push instead of drifting
+                 off them over a long hold. */
+              const r = tighten(rectAt(plan, sample.timestamp), push);
               /* draw() honours rotation metadata, which is what stops a
                  portrait phone clip being cropped as though it were
                  landscape. */
@@ -223,7 +250,8 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
                  the text is added. */
               const sw = sample.displayWidth || sample.codedWidth;
               const sh = sample.displayHeight || sample.codedHeight;
-              sample.draw(ctx!, 0, 0, sw, sh, 0, 0, outWidth, outHeight);
+              const r = tighten({ left: 0, top: 0, width: sw, height: sh }, push);
+              sample.draw(ctx!, r.left, r.top, r.width, r.height, 0, 0, outWidth, outHeight);
             }
 
             /* Seconds, not microseconds. Every keyframe time in a reframe plan
@@ -237,6 +265,16 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
                  right now, not just which line is up. */
               if (cue) {
                 drawCaption(ctx!, cue, outWidth, outHeight, options.captionStyle, sample.timestamp);
+              }
+            }
+
+            /* Last, so a card is never painted under a caption. They are kept
+               apart vertically as well — captions default to 0.72 of the
+               frame and a card sits at 0.24 — but drawing order is the half
+               of that promise which does not depend on a style setting. */
+            if (overlaying) {
+              for (const op of opsAt(sheet, sample.timestamp, ['text'])) {
+                drawTextOp(ctx!, op, outWidth, outHeight, sample.timestamp);
               }
             }
 
