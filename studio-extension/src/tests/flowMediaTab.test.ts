@@ -33,7 +33,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { findMediaTypeTab, labelText } from '../content/flow/selectors';
+import {
+  findMediaTypeTab, labelText, findSettingsPanelTrigger, isSettingsPanelOpen,
+} from '../content/flow/selectors';
 
 const box = (el: Element, w = 90, h = 30): void => {
   (el as HTMLElement).getBoundingClientRect = () =>
@@ -249,5 +251,90 @@ describe('the Flow that is actually there — Angular Material in a CDK overlay'
     const chip = document.querySelector('.settings-summary') as HTMLElement;
     expect(labelText(chip)).not.toContain('crop_16_9');
     expect(labelText(chip)).toContain('720p');
+  });
+});
+
+describe('opening the popover that holds the tabs', () => {
+  /* The tabs only exist while the popover is open — a CDK overlay is created
+     on open and destroyed on close — so finding them was never the first
+     problem. Two checks before it both failed on Angular Material, and each
+     one alone is enough to stop the run:
+
+       findSettingsPanelTrigger  wanted button[aria-haspopup="menu"]
+       isSettingsPanelOpen       wanted aria-expanded or data-state
+
+     The real chip has none of the three. So the trigger was never found, the
+     panel was never opened, and the run reported the last step in the chain
+     rather than the first. */
+
+  const CHIP = `
+    <button matbutton flow-button aria-label="Settings trigger" cdkoverlayorigin
+            class="mdc-button mat-mdc-button-base settings-trigger-button">
+      <span class="mdc-button__label">
+        <span class="settings-summary"> Video · 720p · 10s
+          <mat-icon class="mat-icon notranslate google-symbols">crop_16_9</mat-icon> x1
+        </span></span></button>`;
+
+  const OPEN_PANE = `
+    <div class="cdk-overlay-container"><div class="cdk-overlay-pane">
+      <button id="pImage"><mat-icon class="google-symbols">image</mat-icon>Image</button>
+      <button id="pVideo"><mat-icon class="google-symbols">videocam</mat-icon>Video</button>
+      <button id="p169">16:9</button>
+    </div></div>`;
+
+  const layout = (html: string) => {
+    document.body.innerHTML = html;
+    boxAll();
+    for (const el of Array.from(document.querySelectorAll('mat-icon'))) box(el, 20, 20);
+  };
+
+  it('finds the chip that carries no aria-haspopup', () => {
+    layout(CHIP);
+    const trig = findSettingsPanelTrigger() as HTMLElement;
+    expect(trig).not.toBeNull();
+    expect(trig.getAttribute('aria-label')).toBe('Settings trigger');
+  });
+
+  it('finds it by the ratio icon, which already knew this shape', () => {
+    /* crop_16_9 was always the structural test; it simply could not be
+       reached behind the aria-haspopup filter. */
+    layout(CHIP);
+    const trig = findSettingsPanelTrigger() as HTMLElement;
+    expect(trig.textContent).toContain('crop_16_9');
+  });
+
+  it('calls the panel closed when only the chip is on screen', () => {
+    layout(CHIP);
+    expect(isSettingsPanelOpen()).toBe(false);
+  });
+
+  it('calls it open when the CDK pane is up, though nothing says expanded', () => {
+    /* The chip never gains aria-expanded. Reading only that reported "closed"
+       while it was open, so the caller pressed the chip again and closed it —
+       open, close, open, close, three times, then the error. */
+    layout(CHIP + OPEN_PANE);
+    const trig = findSettingsPanelTrigger() as HTMLElement;
+    expect(trig.getAttribute('aria-expanded')).toBeNull();
+    expect(isSettingsPanelOpen()).toBe(true);
+  });
+
+  it('does not count an unrelated overlay as the settings panel', () => {
+    /* A toast or another menu is also a cdk-overlay-pane. Counting one would
+       make the engine believe a panel it never opened was already open. */
+    layout(`${CHIP}<div class="cdk-overlay-container">
+      <div class="cdk-overlay-pane"><span>Copied to clipboard</span></div></div>`);
+    expect(isSettingsPanelOpen()).toBe(false);
+  });
+
+  it('still reads aria-expanded when a Flow provides it', () => {
+    layout(`<button aria-haspopup="menu" aria-expanded="true">
+      <i class="google-symbols">crop_9_16</i>x1</button>`);
+    expect(isSettingsPanelOpen()).toBe(true);
+  });
+
+  it('finds the tabs once the pane is open', () => {
+    layout(CHIP + OPEN_PANE);
+    expect((findMediaTypeTab('image') as HTMLElement)?.id).toBe('pImage');
+    expect((findMediaTypeTab('video') as HTMLElement)?.id).toBe('pVideo');
   });
 });

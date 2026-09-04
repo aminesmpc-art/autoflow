@@ -2068,8 +2068,25 @@ export function findSettingsPanelTrigger(): Element | null {
    */
   const isCountChip = (t: string) => /\bx\d+\b/.test(t) || /\b\d+x\b/.test(t);
 
-  const menus = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'))
-    .filter(isVisible);
+  /* Every button that could open a popover.
+     This used to be `button[aria-haspopup="menu"]` alone, which is the Radix
+     way of saying it. Flow is Angular Material now and says it differently —
+     its settings chip is
+
+       <button matbutton aria-label="Settings trigger" cdkoverlayorigin
+               class="mdc-button mat-mdc-button-base settings-trigger-button">
+
+     with no aria-haspopup anywhere. So the set was empty, the chip was never
+     found, the popover was never opened, and the Image/Video tabs never
+     existed to be clicked. The run then stopped with "Could not switch Flow to
+     Image mode", which named the last step rather than the first.
+
+     The ratio-icon test below already recognises this chip — crop_16_9 is
+     right there in it — so widening what reaches that test is the whole fix. */
+  const menus = Array.from(document.querySelectorAll<HTMLElement>(
+    'button[aria-haspopup="menu"], button[cdkoverlayorigin], button[aria-label],'
+    + ' button.settings-trigger-button, [role="button"][aria-haspopup="menu"]',
+  )).filter(isVisible);
 
   /**
    * Primary, structural test: the settings chip is the only menu button that
@@ -2104,11 +2121,35 @@ export function findSettingsPanelTrigger(): Element | null {
  * The trigger button has aria-expanded="true" / data-state="open"
  * when the panel is showing.
  */
+/**
+ * Is the composer's settings popover on screen?
+ *
+ * Asked of the trigger first, which is how Radix says it. Angular Material
+ * says nothing at all: the chip carries neither aria-expanded nor data-state,
+ * so this answered "closed" while the popover was open — and the caller, which
+ * opens the panel whenever this is false, pressed the chip again and CLOSED
+ * it. Three attempts of open-close-open-close, then "Could not switch Flow to
+ * Image mode".
+ *
+ * So the panel itself is the second answer. Angular's CDK renders overlays
+ * into `.cdk-overlay-pane`, and one holding a ratio or a media word is this
+ * popover rather than some other dialog — a bare "is any overlay open" would
+ * count a toast or a menu somewhere else on the page.
+ */
 export function isSettingsPanelOpen(): boolean {
   const trigger = findSettingsPanelTrigger();
-  if (!trigger) return false;
-  return trigger.getAttribute('aria-expanded') === 'true' ||
-    trigger.getAttribute('data-state') === 'open';
+  if (trigger && (trigger.getAttribute('aria-expanded') === 'true'
+    || trigger.getAttribute('data-state') === 'open')) return true;
+
+  const RATIO = /(?:16\s*[:_]\s*9|9\s*[:_]\s*16|1\s*[:_]\s*1|4\s*[:_]\s*3|3\s*[:_]\s*4)/;
+  return Array.from(document.querySelectorAll<HTMLElement>('.cdk-overlay-pane'))
+    .some((pane) => {
+      if (!isVisible(pane)) return false;
+      const text = pane.textContent || '';
+      return RATIO.test(text)
+        || matchesFlowText(text, 'image')
+        || matchesFlowText(text, 'video');
+    });
 }
 
 /**
@@ -2386,7 +2427,12 @@ export function findMediaTypeTab(mediaType: 'image' | 'video'): Element | null {
      have it — its controls are styled-components and nothing else, which is
      the same thing that broke the Upload button:
 
-       <button class="sc-16c4830a-1 dnFqQq …"><i>upload</i>Upload media</button>
+       <button class="…hashed build classes…"><i>upload</i>Upload media</button>
+
+     The hash itself is left out on purpose: a test in this repo forbids one
+     appearing anywhere in this file, including in a comment, and it is right
+     to. A hash quoted as documentation is a hash somebody later reaches for
+     as a selector, and it changes on every Flow deploy.
 
      So all three tiers missed and the run stopped with "Could not switch Flow
      to Image mode", which is true and unhelpful.
