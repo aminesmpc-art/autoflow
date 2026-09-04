@@ -2380,7 +2380,56 @@ export function findMediaTypeTab(mediaType: 'image' | 'video'): Element | null {
     // Exact match: "videos" (the library filter) must not satisfy "video"
     if (label === want || matchesFlowText(label, want)) return tab;
   }
-  return null;
+
+  /* ── Last resort: a Flow with no roles on anything ──
+     Every tier above needs role="tab". The Flow on flow.google.com does not
+     have it — its controls are styled-components and nothing else, which is
+     the same thing that broke the Upload button:
+
+       <button class="sc-16c4830a-1 dnFqQq …"><i>upload</i>Upload media</button>
+
+     So all three tiers missed and the run stopped with "Could not switch Flow
+     to Image mode", which is true and unhelpful.
+
+     Text alone is not safe here, and the comment at the top of this function
+     says why: the left sidebar has Images and Vidéos filters, they are
+     siblings of each other just like the real tabs, and they appear earlier in
+     the document — so both "first match" and "find the pair" pick the filter
+     and the engine clicks "show me videos" instead of "generate video".
+
+     What separates them is what else is in the box. The composer's settings
+     popover also holds the aspect ratios; the sidebar holds navigation. So a
+     candidate counts only when an ancestor within a few levels also contains
+     something shaped like a ratio. */
+  /* The ratios Flow actually offers, not any "n:n". A loose digit-colon-digit
+     also matches a timestamp — "0:10" beside a clip length would qualify a
+     sidebar that holds no ratios at all. */
+  const RATIO = /(?:16\s*:\s*9|9\s*:\s*16|1\s*:\s*1|4\s*:\s*3|3\s*:\s*4)/;
+  const nearRatio = (el: Element): boolean => {
+    let up: Element | null = el.parentElement;
+    for (let i = 0; i < 5 && up; i++) {
+      if (RATIO.test(up.textContent || '')) return true;
+      up = up.parentElement;
+    }
+    return false;
+  };
+
+  const loose = Array.from(document.querySelectorAll<HTMLElement>(
+    'button,[role="tab"],[role="menuitemradio"],[role="option"],div,span',
+  )).filter((el) => {
+    if (!isVisible(el)) return false;
+    const label = labelText(el).toLowerCase();
+    if (!label || (label !== want && !matchesFlowText(label, want))) return false;
+    /* "videos"/"vidéos" is the library filter, never the mode tab. */
+    if (/s$/.test(label) && label !== want) return false;
+    return nearRatio(el);
+  });
+
+  /* The most specific one, for the reason the Videos tab needed the same rule:
+     an ancestor's textContent contains its children's, so a wrapper matches
+     everything its tab matches and comes first in document order. */
+  loose.sort((a, b) => labelText(a).length - labelText(b).length);
+  return loose[0] || null;
 }
 
 export function findModeButton(modeName: string): Element | null {
