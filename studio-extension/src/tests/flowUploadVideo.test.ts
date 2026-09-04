@@ -19,6 +19,11 @@
  * cannot be uploaded.
  */
 
+/// <reference types="node" />
+
+import * as fs from 'fs';
+import * as path from 'path';
+
 import {
   fallbackInstruction,
   libraryName,
@@ -228,5 +233,68 @@ describe('what it tells the user when it could not', () => {
     const { fn } = fakeFetch(happy);
     const out = await uploadToLibrary(clip(), 'c', { fetch: fn, projectId: PROJECT });
     expect(fallbackInstruction(out, 'c')).toBe('');
+  });
+});
+
+describe('Flow moved host', () => {
+  /* Reported from a live run: the panel said "Google Flow — not open" while
+     flow.google.com was open on screen, and the bridge answered with Chrome's
+     own words — "Extension manifest must request permission to access the
+     respective host". The extension only knew labs.google.
+
+     Google moved Flow from labs.google/fx/tools/flow to flow.google.com and
+     did not keep the path, so BOTH the host and the URL shape changed. */
+
+  const read = (rel: string) =>
+    fs.readFileSync(path.resolve(__dirname, rel), 'utf8').replace(/\r\n/g, '\n');
+
+  const MANIFEST = JSON.parse(read('../../manifest.json'));
+  const WORKER = read('../background/service-worker.ts');
+
+  it('reads a project id from the new URL, which has no /fx/tools/flow', () => {
+    expect(projectIdFromUrl(
+      'https://flow.google.com/project/08a09fe8-1799-489d-ab0f-06d9dc48ec4d',
+    )).toBe('08a09fe8-1799-489d-ab0f-06d9dc48ec4d');
+  });
+
+  it('still reads one from the old URL, which still resolves', () => {
+    expect(projectIdFromUrl(
+      'https://labs.google/fx/tools/flow/project/abc-123',
+    )).toBe('abc-123');
+  });
+
+  it('finds no project on a page that is not one', () => {
+    /* An empty id is not a small failure: uploadToLibrary refuses without one,
+       so a wrong match here reports "no project" from inside a project. */
+    expect(projectIdFromUrl('https://flow.google.com/')).toBe('');
+  });
+
+  it('asks for the new host in the manifest', () => {
+    expect(MANIFEST.host_permissions).toContain('https://flow.google.com/*');
+  });
+
+  it('injects the Flow content script there', () => {
+    /* Without this no content script runs on the page, which is what the
+       bridge was reporting. */
+    const flowScripts = MANIFEST.content_scripts.filter(
+      (c: any) => (c.js || []).some((j: string) => /flow-content|sw-bypass/.test(j)),
+    );
+    expect(flowScripts.length).toBeGreaterThan(0);
+    for (const cs of flowScripts) {
+      expect(cs.matches).toContain('https://flow.google.com/*');
+    }
+  });
+
+  it('looks for a Flow tab on both hosts', () => {
+    /* chrome.tabs.query takes a list. With one pattern it found nothing on the
+       new host, which is indistinguishable from the tab not being open. */
+    expect(WORKER).toMatch(/match: \['https:\/\/labs\.google\/\*', 'https:\/\/flow\.google\.com\/\*'\]/);
+    expect(WORKER).toMatch(/chrome\.tabs\.query\(\{ url: patterns \}\)/);
+  });
+
+  it('counts the permission as held when either host is granted', () => {
+    /* A permission withheld for a host the user is not on is not what is
+       stopping them, and reporting "blocked" would send them to fix nothing. */
+    expect(WORKER).toMatch(/granted = held\.some\(Boolean\);/);
   });
 });

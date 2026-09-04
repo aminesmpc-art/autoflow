@@ -244,10 +244,19 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 /* ── Platform tabs ── */
 
-const PLATFORMS: Record<Platform, { match: string; open: string; script: string; name: string }> = {
+const PLATFORMS: Record<
+  Platform,
+  { match: string | string[]; open: string; script: string; name: string }
+> = {
   flow: {
-    match: 'https://labs.google/*',
-    open: 'https://labs.google/fx/tools/flow',
+    /* Two hosts, because Google moved Flow.
+       It was labs.google/fx/tools/flow and is now flow.google.com, and the old
+       one still resolves — so a user can be on either. With only the old
+       pattern here, chrome.tabs.query found nothing on the new host and the
+       panel reported "Google Flow — not open" about a tab that was open on
+       screen. tabs.query takes a list, which is what this is. */
+    match: ['https://labs.google/*', 'https://flow.google.com/*'],
+    open: 'https://flow.google.com/',
     script: 'flow-content.js',
     name: 'Google Flow',
   },
@@ -315,17 +324,24 @@ function pushLog(source: string, line: string): void {
   if (studioLog.length > LOG_LIMIT) studioLog.splice(0, studioLog.length - LOG_LIMIT);
 }
 
-async function platformState(match: string): Promise<PlatformState> {
+async function platformState(match: string | string[]): Promise<PlatformState> {
+  const patterns = Array.isArray(match) ? match : [match];
   let granted = true;
   try {
-    granted = await chrome.permissions.contains({ origins: [match] });
+    /* Any one of them being granted is enough — the user may be on either
+       host, and a permission withheld for a host they are not using is not
+       what is stopping them. */
+    const held = await Promise.all(
+      patterns.map((o) => chrome.permissions.contains({ origins: [o] }).catch(() => true)),
+    );
+    granted = held.some(Boolean);
   } catch {
     /* Older Chrome, or a pattern it will not evaluate — assume access and let
        the query below be the answer. */
   }
 
   try {
-    if ((await chrome.tabs.query({ url: match })).length > 0) return 'open';
+    if ((await chrome.tabs.query({ url: patterns })).length > 0) return 'open';
   } catch {
     return granted ? 'closed' : 'blocked';
   }

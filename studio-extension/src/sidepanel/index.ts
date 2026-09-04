@@ -378,9 +378,9 @@ function wire(): void {
         chatgpt: 'https://chatgpt.com/',
         gemini: 'https://gemini.google.com/app',
         grok: 'https://grok.com/imagine',
-        flow: 'https://labs.google/fx/tools/flow',
+        flow: 'https://flow.google.com/',
       } as Record<string, string>)[row.dataset.plat || 'flow']
-        || 'https://labs.google/fx/tools/flow';
+        || 'https://flow.google.com/';
       chrome.tabs.create({ url }).catch(() => {});
     });
   }
