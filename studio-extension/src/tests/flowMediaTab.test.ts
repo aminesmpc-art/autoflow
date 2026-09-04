@@ -35,6 +35,7 @@ import * as path from 'path';
 
 import {
   findMediaTypeTab, labelText, findSettingsPanelTrigger, isSettingsPanelOpen,
+  isTabActive,
 } from '../content/flow/selectors';
 
 const box = (el: Element, w = 90, h = 30): void => {
@@ -336,5 +337,86 @@ describe('opening the popover that holds the tabs', () => {
     layout(CHIP + OPEN_PANE);
     expect((findMediaTypeTab('image') as HTMLElement)?.id).toBe('pImage');
     expect((findMediaTypeTab('video') as HTMLElement)?.id).toBe('pVideo');
+  });
+});
+
+describe('the toggles as the live page actually has them', () => {
+  /* Read off flow.google.com in a real signed-in Chrome, with the panel open:
+   *
+   *   <button class="mat-button-toggle-button" aria-checked="true">…Video
+   *   <mat-button-toggle class="… mat-button-toggle-checked">
+   *
+   * They are Angular Material button-toggles, not tabs. data-state and
+   * aria-selected are BOTH null on every one of them — measured, not assumed —
+   * so isTabActive answered "not selected" about the toggle that was selected.
+   *
+   * That is a third distinct failure with the same symptom: the switch would
+   * find the tab, click it, ask whether it had taken, be told no, and give up
+   * after three tries. Fixing the trigger and the panel check alone would not
+   * have made a single run work.
+   */
+
+  const TOGGLES = `
+    <div class="cdk-overlay-container"><div class="cdk-overlay-pane">
+      <mat-button-toggle>
+        <button id="tImage" class="mat-button-toggle-button" aria-checked="false">
+          <mat-icon class="google-symbols">image</mat-icon>Image</button>
+      </mat-button-toggle>
+      <mat-button-toggle class="mat-button-toggle-checked">
+        <button id="tVideo" class="mat-button-toggle-button" aria-checked="true">
+          <mat-icon class="google-symbols">videocam</mat-icon>Video</button>
+      </mat-button-toggle>
+      <button id="tRatio">16:9</button>
+    </div></div>`;
+
+  beforeEach(() => {
+    document.body.innerHTML = TOGGLES;
+    boxAll();
+    for (const el of Array.from(document.querySelectorAll('mat-icon,mat-button-toggle'))) box(el, 60, 30);
+  });
+
+  it('reads the selected toggle as selected', () => {
+    expect(isTabActive(document.getElementById('tVideo') as HTMLElement)).toBe(true);
+  });
+
+  it('reads the unselected one as unselected', () => {
+    expect(isTabActive(document.getElementById('tImage') as HTMLElement)).toBe(false);
+  });
+
+  it('confirms neither of the attributes it used to read is present', () => {
+    /* The measurement that explains the bug: both null on the real page. */
+    for (const id of ['tImage', 'tVideo']) {
+      const el = document.getElementById(id) as HTMLElement;
+      expect(el.getAttribute('data-state')).toBeNull();
+      expect(el.getAttribute('aria-selected')).toBeNull();
+    }
+  });
+
+  it('accepts the wrapper class when the button carries nothing', () => {
+    /* Which of the two holds the state has moved between Material versions. */
+    const el = document.getElementById('tVideo') as HTMLElement;
+    el.removeAttribute('aria-checked');
+    expect(el.closest('mat-button-toggle')?.className).toContain('button-toggle-checked');
+    expect(isTabActive(el)).toBe(true);
+  });
+
+  it('still reads a Radix tab, which says it a third way', () => {
+    document.body.innerHTML = `
+      <button id="r1" role="tab" data-state="active">Image</button>
+      <button id="r2" role="tab" aria-selected="true">Video</button>
+      <button id="r3" role="tab" data-state="inactive">Frames</button>`;
+    expect(isTabActive(document.getElementById('r1') as HTMLElement)).toBe(true);
+    expect(isTabActive(document.getElementById('r2') as HTMLElement)).toBe(true);
+    expect(isTabActive(document.getElementById('r3') as HTMLElement)).toBe(false);
+  });
+
+  it('finds both toggles through the overlay scope', () => {
+    expect((findMediaTypeTab('image') as HTMLElement)?.id).toBe('tImage');
+    expect((findMediaTypeTab('video') as HTMLElement)?.id).toBe('tVideo');
+  });
+
+  it('sees the panel as open from the pane alone', () => {
+    /* No trigger in this fixture at all — the pane is the whole answer. */
+    expect(isSettingsPanelOpen()).toBe(true);
   });
 });

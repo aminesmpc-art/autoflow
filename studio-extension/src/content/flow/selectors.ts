@@ -2379,10 +2379,45 @@ export function labelText(el: Element): string {
   return parts.join(' ').replace(/\s+/g, ' ').trim();
 }
 
-/** True when a Radix tab is the selected one */
+/**
+ * Is this control the selected one?
+ *
+ * Every UI kit says it differently, and reading only one is how a click that
+ * worked reports that it did not. Radix uses data-state="active" or
+ * aria-selected. The Image/Video control on flow.google.com is an Angular
+ * Material button-toggle and uses neither — read off the live page:
+ *
+ *   <button class="mat-button-toggle-button" aria-checked="true">   Video
+ *   <mat-button-toggle class="… mat-button-toggle-checked">
+ *
+ * with data-state and aria-selected both null. So the switch would find the
+ * tab, click it, ask whether it had taken, be told no, and give up after three
+ * tries — the same error as never finding it at all, for a completely
+ * different reason.
+ *
+ * The wrapper is consulted because a button-toggle marks the state on the
+ * <mat-button-toggle> around the button as well, and which of the two carries
+ * it has changed between Material versions.
+ */
 export function isTabActive(el: Element): boolean {
-  return el.getAttribute('data-state') === 'active' ||
-         el.getAttribute('aria-selected') === 'true';
+  if (el.getAttribute('data-state') === 'active') return true;
+  if (el.getAttribute('aria-selected') === 'true') return true;
+  if (el.getAttribute('aria-checked') === 'true') return true;
+  if (el.getAttribute('aria-pressed') === 'true') return true;
+
+  /* From the PARENT up, never from the element itself. closest() starts at the
+     node it is called on, and the button's own class is
+     `mat-button-toggle-button` — which contains "button-toggle", so it matched
+     itself and the wrapper was never looked at. Harmless while the button also
+     carries aria-checked, and silent the moment a Material version moves the
+     state to the wrapper alone. */
+  const wrap = el.parentElement?.closest('mat-button-toggle, [class*="button-toggle"]');
+  if (wrap) {
+    if (wrap.getAttribute('aria-checked') === 'true') return true;
+    if (wrap.getAttribute('aria-pressed') === 'true') return true;
+    if (/(?:^|\s)[\w-]*button-toggle-checked(?:\s|$)/.test(wrap.className || '')) return true;
+  }
+  return false;
 }
 
 /**
