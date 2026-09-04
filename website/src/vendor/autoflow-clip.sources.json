@@ -1,6 +1,6 @@
 {
   "_comment": "Written by webpack.web.js. The sources website/src/vendor/autoflow-clip.js was built from. If a test says these have moved, run `npm run build:web` in studio-extension and commit the result.",
-  "builtAt": "2026-09-04T15:04:37.701Z",
+  "builtAt": "2026-09-04T15:17:02.853Z",
   "entry": "src/web/clipWeb.ts",
   "files": {
     "src/shared/api.ts": "5b3696c0bb1dff14",
@@ -22,7 +22,7 @@
     "src/studio/media/captions.ts": "87bb09e60ec24284",
     "src/studio/media/cut.ts": "b743e816e9b773ad",
     "src/studio/media/decode.ts": "aa728cc328283a6a",
-    "src/studio/media/overlay.ts": "01e264d46a11e171",
+    "src/studio/media/overlay.ts": "45721c68c6fae32a",
     "src/studio/media/pcm.ts": "2b418c9717433aa5",
     "src/studio/media/reframe.ts": "6729cc2caef1f51f",
     "src/studio/media/silence.ts": "aa6bee66f5eb51cc",

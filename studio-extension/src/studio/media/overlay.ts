@@ -14,11 +14,37 @@
  *   punch   a framing change that holds
  *   zoom    a momentary push on one word
  *
- * The other five are not drawing problems. `broll` needs a second decoder,
- * `sfx` needs an audio mixdown, and `ramp`, `intro` and `outro` change the
- * clip's duration rather than its pixels — no canvas operation can express
- * any of them. They stay on the sheet for CapCut, and the node still shows
+ * The other five are not drawing problems. `broll` needs a second decoder —
+ * built, see the cutaway section below — while `sfx` needs an audio mixdown,
+ * and `ramp`, `intro` and `outro` change the clip's duration rather than its
+ * pixels. Those four stay on the sheet for CapCut, and the node still shows
  * them, so nothing is silently dropped.
+ *
+ * ── sfx: possible, and measured ───────────────────────────────────────────
+ *
+ * The open question was whether the encoder would accept audio we had mixed
+ * ourselves. It does. Run against a real Conversion in Chrome:
+ *
+ *   · ConversionAudioOptions.process is the audio twin of the video hook —
+ *     called per input sample after remixing and resampling, returning an
+ *     AudioSample, an array of them, or null to drop one.
+ *   · sample.allocationSize({ planeIndex: 0, format: 'f32' }) then copyTo()
+ *     gives the PCM as Float32. Adding into it and handing back
+ *     `new AudioSample({ data, format: 'f32', numberOfChannels, sampleRate,
+ *     timestamp })` is the whole of the mixing.
+ *   · A 1kHz tone added over a 220Hz source, encoded to AAC and decoded back,
+ *     measured 0.175 at 1kHz inside the mixed window against 0.000 outside
+ *     it, while the 220Hz carrier held at 0.125 before and 0.125 during. The
+ *     effect lands exactly where it was put, and the original survives it.
+ *
+ * So sfx is a build, not a research question. What it still needs is the
+ * sounds: the sheet NAMES one — "whoosh", "impact", "riser" — and naming is
+ * not having, so a small bundled set has to exist before any of it is worth
+ * wiring. That is asset work rather than encoder work.
+ *
+ * `ramp` stays out for a different reason. It retimes video AND audio and
+ * changes the clip's duration, which neither hook expresses: both transform
+ * samples in place, they do not resample a timeline.
  *
  * ── Why it looks like captions.ts ─────────────────────────────────────────
  *
