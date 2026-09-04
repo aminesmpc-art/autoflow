@@ -40,7 +40,10 @@ import {
 
 import { rectAt, type Rect, type ReframePlan } from './reframe';
 import { cueAt, drawCaption, type CaptionCue, type CaptionStyle } from './captions';
-import { framingAt, tighten, opsAt, drawTextOp, sheetDraws } from './overlay';
+import {
+  framingAt, tighten, opsAt, drawTextOp, sheetDraws, cutawayAt, coverBox,
+  type Cutaway,
+} from './overlay';
 import type { EditOp } from '../clip/editSheet';
 
 export interface CutOptions {
@@ -64,6 +67,10 @@ export interface CutOptions {
      punch and zoom are rendered — see overlay.ts for why the other five are
      not drawing problems at all. */
   editSheet?: EditOp[];
+  /* Generated cutaways, already rendered and timed against the CLIP. Separate
+     from the sheet because these are bytes rather than a plan: a cutaway is
+     the one kind that has to be made before it can be drawn. */
+  cutaways?: Cutaway[];
 }
 
 export interface CutResult {
@@ -141,7 +148,11 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
   const sheet = (options.editSheet || []).filter((o) => typeof o?.atSec === 'number');
   const overlaying = sheetDraws(sheet);
 
-  const drawing = tracked || fitting || captioning || overlaying;
+  /* Cutaways turn the canvas on too — there is nowhere to draw one on
+     mediabunny's straight-through route either. */
+  const cutaways = (options.cutaways || []).filter((c) => c.seconds > 0);
+
+  const drawing = tracked || fitting || captioning || overlaying || cutaways.length > 0;
 
   /* Output size is decided ONCE and never varies. An encoder is configured a
      single time; a frame that arrives one pixel wider than the configuration
@@ -165,27 +176,36 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
     if (!ctx) throw new Error('Could not get a 2D context to draw the reframed video into.');
   }
 
-  const conversion = await Conversion.init({
-    input,
-    output,
-    trim: { start: startSec, end: endSec },
-    audio: silent ? { discard: true } : undefined,
-    video: {
-      quality: options.quality ?? DEFAULT_QUALITY,
-      /* Only when nothing is being drawn. Handing mediabunny a crop while
-         also drawing that crop onto a canvas applies it twice, and the second
-         one lands on an already-cropped frame. */
-      ...(fixed && !drawing ? { crop: fixed } : {}),
-      ...(drawing && ctx && canvas
-        ? {
-          processedWidth: outWidth,
-          processedHeight: outHeight,
-          process: (sample: VideoSample) => {
+  /**
+   * One output frame: the picture, then everything drawn over it.
+   *
+   * Lifted out of the process hook so a cutaway can be awaited before it runs
+   * without making the common path async. Most clips have no cutaways and
+   * most frames of a clip that does are not inside one, so the hook below
+   * only returns a promise when it actually has to wait for something.
+   */
+  const paint = (sample: VideoSample, frame: CanvasImageSource | null): VideoSample => {
             /* How tight the frame goes at this instant. 1 when the sheet asks
                for nothing here, which is most frames of most clips. */
             const push = overlaying ? framingAt(sheet, sample.timestamp) : 1;
 
-            if (fitting) {
+            if (frame) {
+              /* A cutaway REPLACES the picture for its hold — that is what a
+                 cutaway is. Cover-fit rather than contain: a bordered box
+                 appearing mid-sentence reads as a mistake, not as an edit.
+                 Flow returns the ratio it was asked for, so the crop is
+                 normally nothing; this is what stops a mismatch showing bars.
+
+                 The push is deliberately NOT applied here. A punch is a move
+                 on the speaker, and carrying it onto footage that has no
+                 speaker in it just arrives as an unexplained scale. */
+              const cw = (frame as any).displayWidth || (frame as any).codedWidth
+                || (frame as any).width || outWidth;
+              const ch = (frame as any).displayHeight || (frame as any).codedHeight
+                || (frame as any).height || outHeight;
+              const box = coverBox(cw, ch, outWidth, outHeight);
+              ctx!.drawImage(frame, box.x, box.y, box.w, box.h);
+            } else if (fitting) {
               /* The whole frame, centred, over a blurred enlarged copy of
                  itself. The backdrop is what stops a chart reading as a
                  lazily reposted landscape video; black bars say "this was not
@@ -282,6 +302,37 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
               timestamp: sample.timestamp,
               duration: sample.duration,
             });
+  };
+
+  const conversion = await Conversion.init({
+    input,
+    output,
+    trim: { start: startSec, end: endSec },
+    audio: silent ? { discard: true } : undefined,
+    video: {
+      quality: options.quality ?? DEFAULT_QUALITY,
+      /* Only when nothing is being drawn. Handing mediabunny a crop while
+         also drawing that crop onto a canvas applies it twice, and the second
+         one lands on an already-cropped frame. */
+      ...(fixed && !drawing ? { crop: fixed } : {}),
+      ...(drawing && ctx && canvas
+        ? {
+          processedWidth: outWidth,
+          processedHeight: outHeight,
+          process: (sample: VideoSample) => {
+            /* A cutaway is the one thing here that cannot be drawn from a
+               description — it has to be generated first, and Flow takes
+               minutes over it. So the clip is encoded without them and
+               re-encoded once they exist; see finishCut in clip/runClip.ts. */
+            const over = cutaways.length ? cutawayAt(cutaways, sample.timestamp) : null;
+            if (!over) return paint(sample, null);
+
+            /* A cutaway that cannot be read is not worth losing the clip over.
+               The frame it would have covered simply shows the speaker, which
+               is what the clip looked like before any of this existed. */
+            return over.frameAt(sample.timestamp - over.atSec)
+              .then((frame) => paint(sample, frame))
+              .catch(() => paint(sample, null));
           },
         }
         : {}),

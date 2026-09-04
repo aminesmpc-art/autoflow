@@ -213,6 +213,31 @@ export class WorkflowRunner {
      nodes sat on the canvas untouched, and the only way to run them was to
      press Run a second time. */
   private extendRun: ((added: Node[]) => void) | null = null;
+  /**
+   * What each Cut node would need to be encoded a second time.
+   *
+   * A cutaway cannot be burned into a clip that was encoded before the cutaway
+   * existed, and Flow takes minutes to make one. So the clip is encoded
+   * immediately — the same fast clip as before any of this — and re-encoded
+   * from the SOURCE once its cutaways land, which is a fresh generation rather
+   * than an encode of an encode.
+   *
+   * Held in memory for the run rather than written to node data: it carries a
+   * reframe plan and a full set of caption cues, none of which anybody wants
+   * in a saved workflow, and a finish only ever happens in the run that
+   * created the cutaways.
+   */
+  private finishable = new Map<string, {
+    sourceKey: string;
+    startSec: number;
+    endSec: number;
+    plan: unknown;
+    captions: unknown[];
+    captionStyle?: unknown;
+    editSheet?: unknown[];
+    mediaKey: string;
+    label: string;
+  }>();
 
   /* Prompts written by one Ask AI node for several downstream nodes at once,
      in the order the contract listed them. Separate from nodeResults because
@@ -539,6 +564,13 @@ export class WorkflowRunner {
                 errorMessage: null,
               });
 
+              /* A cutaway landing is the event a finish waits for. Checked
+                 here rather than at the end of the run so a clip is finished
+                 as soon as its own cutaways are in, instead of waiting on
+                 unrelated nodes still generating. */
+              if (typeof nodeData.brollOwner === 'string' && nodeData.brollOwner) {
+                void this.finishCutIfReady(nodeData.brollOwner);
+              }
               succeeded = true;
               console.log(
                 `[Runner] Generate "${nodeData.label}": DONE — tile ${result.tileId}` +
@@ -1816,6 +1848,86 @@ export class WorkflowRunner {
    * and this refuses it again — a node sitting on the canvas is an invitation
    * to use it, and the account doing the earning is worth more than a cutaway.
    */
+  /**
+   * Re-encode a cut with its cutaways burned in, once they all exist.
+   *
+   * Soft in every direction. A cut with nothing recorded, a cutaway that never
+   * arrived, a decode that failed, an encode that threw — every one of them
+   * leaves the clip exactly as it already is, which is a finished clip with
+   * its captions, text and push-ins on it and its cutaways sitting beside it
+   * as separate labelled files. That was the whole product ten minutes ago and
+   * it is still a good one; nothing here is worth losing it for.
+   */
+  private async finishCutIfReady(cutId: string): Promise<void> {
+    const spec = this.finishable.get(cutId);
+    if (!spec) return;
+
+    const store = useStudioStore.getState();
+    const owned = store.nodes.filter((n) => (n.data as any)?.brollOwner === cutId);
+    if (!owned.length) return;
+
+    /* Every one, or none. Finishing on the first arrival would re-encode once
+       per cutaway — three encodes of the same clip to add three cutaways, each
+       throwing away the last. */
+    const ready = owned.filter((n) => {
+      const url = (n.data as any)?.previewVideoUrl;
+      return typeof url === 'string' && url.startsWith('data:');
+    });
+    if (ready.length < owned.length) return;
+
+    /* Claimed before any awaiting, so two cutaways finishing in the same tick
+       cannot both start an encode of the same clip. */
+    this.finishable.delete(cutId);
+
+    try {
+      const file = getSource(spec.sourceKey);
+      if (!file) return;
+
+      const { openCutaway } = await import('../media/decode');
+      const cutaways = [];
+      for (const node of ready) {
+        const d = node.data as any;
+        const bytes = await (await fetch(d.previewVideoUrl)).blob();
+        const made = await openCutaway(
+          bytes,
+          Number(d.brollAtSec) || 0,
+          /* What the sheet asked it to hold, never what Flow returned. Omni
+             rounds a 1.8s ask up to 4s, and holding the full four would cover
+             the line the cutaway was chosen to illustrate. */
+          Number(d.brollHoldSec) || 2,
+        );
+        if (made) cutaways.push(made);
+      }
+      if (!cutaways.length) return;
+
+      store.updateNodeData(cutId, { statusNote: `Burning in ${cutaways.length} cutaway(s)…` });
+
+      const { clipMedia } = await import('../clip/clipMedia');
+      const out = await clipMedia.cut(file, {
+        startSec: spec.startSec,
+        endSec: spec.endSec,
+        plan: spec.plan as any,
+        captions: spec.captions as any,
+        captionStyle: spec.captionStyle as any,
+        editSheet: spec.editSheet as any,
+        cutaways: cutaways as any,
+      });
+
+      /* Same key, so the node's player and every downstream reader pick the
+         finished clip up without knowing there were two of them. */
+      putMedia(spec.mediaKey, out.blob);
+      store.updateNodeData(cutId, {
+        mediaKey: spec.mediaKey,
+        cutReport: `${out.report} · ${cutaways.length} cutaway(s) burned in`,
+        statusNote: '',
+      });
+      console.log(`[Runner] Finished "${spec.label}" with ${cutaways.length} cutaway(s)`);
+    } catch (e: any) {
+      /* The clip that already exists is untouched. */
+      store.updateNodeData(cutId, { statusNote: '' });
+      console.warn(`[Runner] Could not burn in cutaways: ${e?.message || e}`);
+    }
+  }
   private layOutBroll(
     nodeId: string, ops: any[], mode: string, styleReference = '',
     allowGenerated = false,
@@ -1994,6 +2106,22 @@ export class WorkflowRunner {
 
     /* The assets the sheet asked for, generated beside the clip they belong
        to and labelled with the second they go at. */
+    /* Recorded BEFORE the cutaways are laid out, because laying them out is
+       what starts them generating — and the first one to land looks for this. */
+    if (result.finish && nodeData.sourceKey) {
+      this.finishable.set(nodeId, {
+        sourceKey: String(nodeData.sourceKey),
+        startSec: result.finish.startSec,
+        endSec: result.finish.endSec,
+        plan: result.finish.plan,
+        captions: result.finish.captions,
+        captionStyle: result.finish.captionStyle,
+        editSheet: result.finish.editSheet,
+        mediaKey: result.finish.mediaKey,
+        label: String(nodeData.label || 'clip'),
+      });
+    }
+
     const cutaways = this.layOutBroll(
       nodeId,
       result.editSheet || [],
@@ -2001,6 +2129,13 @@ export class WorkflowRunner {
       typeof nodeData.styleReference === 'string' ? nodeData.styleReference : '',
       nodeData.allowGenerated === true,
     );
+    if (!cutaways) {
+      /* No cutaways means no second pass. Dropping the record keeps the map
+         from holding a source file and a caption set for the rest of the run
+         on behalf of a clip that will never be finished. */
+      this.finishable.delete(nodeId);
+    }
+
     if (cutaways) {
       store.updateNodeData(nodeId, { brollCount: cutaways });
       console.log(`[Runner] ${cutaways} cutaway(s) laid out for "${nodeData.label}"`);

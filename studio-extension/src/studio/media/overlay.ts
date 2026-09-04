@@ -265,6 +265,55 @@ export function drawTextOp(
 }
 
 /* ────────────────────────────────────────────────────────────────────────
+   Cutaways
+   ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * A generated cutaway, ready to be drawn over the clip.
+ *
+ * It arrives as bytes rather than as a plan, because unlike every other kind
+ * here a cutaway cannot be drawn from a description — it has to be generated
+ * first, and Flow takes minutes over it. That is why this is a separate pass:
+ * see finishCut in runClip.ts for why the clip is encoded before its cutaways
+ * exist and re-encoded once they do.
+ */
+export interface Cutaway {
+  /** Seconds into the CLIP where it takes over. */
+  atSec: number;
+  /** How long it holds. */
+  seconds: number;
+  /** Something that can draw a frame at a given second of the cutaway. */
+  frameAt: (sec: number) => Promise<CanvasImageSource | null>;
+}
+
+/** The cutaway covering `t`, or null. The first one wins if two overlap. */
+export function cutawayAt(cutaways: readonly Cutaway[], t: number): Cutaway | null {
+  for (const c of cutaways) {
+    if (t >= c.atSec && t < c.atSec + c.seconds) return c;
+  }
+  return null;
+}
+
+/**
+ * Where a cutaway frame goes, filling the output without distorting it.
+ *
+ * Cover rather than contain. A cutaway that letterboxes is worse than no
+ * cutaway: the clip is 9:16 with the speaker filling it, and cutting to a
+ * bordered box mid-sentence reads as a mistake rather than as an edit. Flow
+ * returns the ratio it was asked for, so the overflow is normally nothing —
+ * this is what keeps a mismatch from showing bars instead of cropping.
+ */
+export function coverBox(
+  srcW: number, srcH: number, outW: number, outH: number,
+): { x: number; y: number; w: number; h: number } {
+  if (!(srcW > 0 && srcH > 0)) return { x: 0, y: 0, w: outW, h: outH };
+  const scale = Math.max(outW / srcW, outH / srcH);
+  const w = srcW * scale;
+  const h = srcH * scale;
+  return { x: (outW - w) / 2, y: (outH - h) / 2, w, h };
+}
+
+/* ────────────────────────────────────────────────────────────────────────
    What this can and cannot take
    ──────────────────────────────────────────────────────────────────────── */
 

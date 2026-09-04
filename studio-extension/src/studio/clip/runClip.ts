@@ -82,6 +82,10 @@ export interface ClipMedia {
     /* The drawable part of the edit sheet, timed against whatever is being
        encoded — the clip for the whole cut, rebased for each Omni piece. */
     editSheet?: EditOp[];
+    /* Generated cutaways, on the second pass only. A cutaway cannot exist
+       when the clip is first encoded, so the clip is made without them and
+       remade from the source once Flow returns them. */
+    cutaways?: import('../media/overlay').Cutaway[];
   }): Promise<CutLike>;
 }
 
@@ -175,6 +179,16 @@ export type TranscribeResult = Transcript & {
 
 export interface CutStageResult {
   mediaKey: string;
+  /** Everything a second encode with cutaways would need. See finishCutIfReady. */
+  finish?: {
+    startSec: number;
+    endSec: number;
+    plan: unknown;
+    captions: unknown[];
+    captionStyle?: unknown;
+    editSheet?: EditOp[];
+    mediaKey: string;
+  };
   /* What to ADD to this clip, and when. Not rendered onto it — the
      finishing happens in CapCut, so this is a list of timed instructions
      and, later, the assets to go with them. See clip/editSheet.ts. */
@@ -1014,6 +1028,19 @@ export async function runOneCut(
     report: out.report,
     omniParts: parts.length ? parts : undefined,
     omniSplit,
+    /* What it would take to encode this again with cutaways burned in. Handed
+       back rather than stored on the node: it carries a reframe plan and every
+       caption cue, which nobody wants in a saved workflow, and the second pass
+       only ever happens in the run that produced the cutaways. */
+    finish: {
+      startSec,
+      endSec,
+      plan,
+      captions,
+      captionStyle: cfg.captionStyle,
+      editSheet,
+      mediaKey,
+    },
     ...sheet,
   } satisfies CutStageResult;
 }
