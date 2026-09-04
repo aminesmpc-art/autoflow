@@ -293,7 +293,9 @@ describe('the wiring, in the code that ships', () => {
   });
 
   it('each Omni piece gets the sheet rebased, not the clip\'s', () => {
-    expect(RUN).toMatch(/editSheet: editSheet \? opsForChunk\(editSheet, piece\) : undefined/);
+    /* Ramps are dropped from a piece and only from a piece — a piece is cut
+       to fit Flow's ten-second ceiling, and a ramp makes its piece longer. */
+    expect(RUN).toMatch(/opsForChunk\(editSheet\.filter\(\(o\) => o\.kind !== 'ramp'\), piece\)/);
   });
 });
 

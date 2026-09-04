@@ -26,6 +26,7 @@ import {
 } from '../ask/clipperBrain';
 import type { EditOp } from './editSheet';
 import { planChunks, stitch, looksTranscribed, type ChunkText } from './chunks';
+import { rampMap } from '../media/retime';
 import { faceAsk, frameTimes, readFaces, transcribeAsk } from './prompts';
 import { planReframe, type ReframePlan } from '../media/reframe';
 import { envelopeOf, findPeaks, joinEnvelopes, textNear, type Envelope } from './peaks';
@@ -1000,8 +1001,18 @@ export async function runOneCut(
           /* Rebased like the captions and the plan beside it. Handed the
              clip's sheet unchanged, a card planned for the middle of a
              four-part clip would be drawn on all four pieces, each time at
-             the wrong second. */
-          editSheet: editSheet ? opsForChunk(editSheet, piece) : undefined,
+             the wrong second.
+
+             Ramps are dropped here, and only here. A piece exists to be handed
+             to Flow, which re-encodes whatever it is given — so a ramp baked
+             into one is work Flow throws away. It is also the thing that would
+             break the piece: pieces are cut to fit under Flow's ten-second
+             ceiling, and a ramp makes its piece longer, so a 9.7s piece with a
+             0.4s ramp in it arrives at 10.1s and is refused. The whole clip,
+             which is the thing that gets posted, keeps its ramp. */
+          editSheet: editSheet
+            ? opsForChunk(editSheet.filter((o) => o.kind !== 'ramp'), piece)
+            : undefined,
           captionStyle: cfg.captionStyle,
         });
         const partKey = `${mediaKey}#part${piece.index}`;
@@ -1021,7 +1032,11 @@ export async function runOneCut(
     mediaKey,
     startSec,
     endSec,
-    clipSeconds: endSec - startSec,
+    /* What the finished clip RUNS, which is not what was trimmed when a ramp
+       stretched part of it. Everything downstream — the node's own label, the
+       beat asks, the checks that a plan covers the whole clip — is talking
+       about the file somebody watches. */
+    clipSeconds: rampMap(editSheet, endSec - startSec).outSeconds,
     width: out.width,
     height: out.height,
     reframe: plan ? plan.mode : 'none',

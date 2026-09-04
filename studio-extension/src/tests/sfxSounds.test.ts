@@ -237,6 +237,8 @@ describe('the mix, in the code that ships', () => {
   });
 
   it('skips a sample no sound overlaps', () => {
-    expect(CUT).toMatch(/if \(!live\.length\) return sample;/);
+    /* Unless the clip is being retimed, in which case every sample is rebuilt
+       whether a sound overlaps it or not. */
+    expect(CUT).toMatch(/if \(!live\.length && !ramping\) return sample;/);
   });
 });

@@ -156,7 +156,7 @@ describe('when it cannot be done', () => {
 
   it('paints the speaker when a frame cannot be read', () => {
     /* One unreadable frame is one frame of speaker, not a failed encode. */
-    expect(CUT).toMatch(/\.catch\(\(\) => paint\(sample, null\)\)/);
+    expect(CUT).toMatch(/\.catch\(\(\) => spread\(paint\(sample, null, outT, outDur\)/);
   });
 });
 
@@ -172,11 +172,14 @@ describe('the cost of the common path is unchanged', () => {
   it('a clip with no cutaways never awaits per frame', () => {
     /* Most clips have none, and most frames of a clip that does are outside
        one. The hook returns a promise only when it has to wait. */
-    expect(CUT).toMatch(/if \(!over\) return paint\(sample, null\);/);
+    expect(CUT).toMatch(/if \(!over\) return spread\(paint\(sample, null, outT, outDur\)/);
   });
 
   it('the canvas is still only turned on when something needs it', () => {
-    expect(CUT).toMatch(/tracked \|\| fitting \|\| captioning \|\| overlaying \|\| cutaways\.length > 0/);
+    /* A ramp joins the list: a retimed frame is emitted as a new sample, and
+       the straight-through route hands packets over untouched. */
+    expect(CUT).toMatch(/tracked \|\| fitting \|\| captioning \|\| overlaying/);
+    expect(CUT).toMatch(/cutaways\.length > 0 \|\| ramping/);
   });
 
   it('decodes on demand instead of holding every frame in memory', () => {
