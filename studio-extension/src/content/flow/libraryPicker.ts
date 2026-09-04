@@ -152,15 +152,28 @@ export async function openMediaDialog(deps: Deps = {}): Promise<{ ok: true } | {
     });
   if (composer) { press(composer); await sleep(step); }
 
-  /* The + sits in the composer row. Matched by size and position as well as
-     label because "add" alone also matches the project's "Add Media". */
-  const plus = Array.from(doc.querySelectorAll<HTMLElement>('button')).find((b) => {
+  /* The + in the composer row.
+     Its label is exactly "add" — the project's "Add Media" button reads
+     "addAdd Media" because the Material ligature runs into the label, so the
+     exact match already separates them and the size check backs it up.
+
+     Position is a PREFERENCE here, not a requirement. It used to demand the
+     button sit in the bottom half of the window, which assumes innerHeight
+     describes the area actually being painted. In an anti-detect browser it
+     does not: MultiLogin spoofs screen size and device pixel ratio as part of
+     the fingerprint, and Flow's own popovers land in the wrong place there for
+     exactly the same reason. A heuristic that silently finds nothing on one
+     browser is worse than one that occasionally has to choose. */
+  const plusButtons = Array.from(doc.querySelectorAll<HTMLElement>('button')).filter((b) => {
     const r = b.getBoundingClientRect();
-    const view = doc.defaultView || window;
-    return r.width > 0 && r.width < 60
-      && r.top > view.innerHeight * 0.5
-      && (b.textContent || '').trim() === 'add';
+    return r.width > 0 && r.width < 60 && (b.textContent || '').trim() === 'add';
   });
+  const view = doc.defaultView || window;
+  const lower = (b: HTMLElement): number =>
+    (b.getBoundingClientRect().top > (view.innerHeight || 0) * 0.5 ? 0 : 1);
+  plusButtons.sort((a, b) => lower(a) - lower(b));
+
+  const plus = plusButtons[0];
   if (plus) { press(plus); await sleep(step); }
 
   /* Every element whose text carries the videocam ligature AND a word for
