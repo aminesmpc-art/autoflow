@@ -37,6 +37,7 @@
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 import { matchesFlowText, placeholderSelector } from './flowStrings';
+import { ingredientChips, isMediaImage, MEDIA_IMG_SELECTOR } from './flowDom';
 
 export interface AttachResult {
   ok: boolean;
@@ -92,11 +93,21 @@ function typeInto(input: HTMLInputElement, value: string): void {
 export function attachedCount(doc: Document = document): number {
   const dialogOpen = doc.querySelector('[role="dialog"], mat-dialog-container');
   if (dialogOpen) return 0;                    // the picker's own media is not a chip
+  /* Counted by component first. Measured on flow.google.com, the old test —
+     img[src*="media.getMediaUrlRedirect"] — matches ZERO images while the real
+     ingredients match four: the tRPC endpoint it named is gone, and media now
+     comes from flow-content.google. An ingredient is an ingredient because it
+     is an ingredient chip, not because of where its thumbnail is served from,
+     so the component name is both more durable and more honest. */
+  const chips = ingredientChips(doc);
+  if (chips.length) return chips.length;
+
+  /* The old site, which still resolves on labs.google. */
   const box = Array.from(doc.querySelectorAll('textarea,[contenteditable="true"]')).pop();
   if (!box) return 0;
   let scope: HTMLElement | null = box as HTMLElement;
   for (let i = 0; i < 4 && scope?.parentElement; i++) scope = scope.parentElement;
-  return scope ? scope.querySelectorAll('img[src*="media.getMediaUrlRedirect"]').length : 0;
+  return scope ? scope.querySelectorAll(MEDIA_IMG_SELECTOR).length : 0;
 }
 
 /**
