@@ -363,6 +363,107 @@ export async function trackUsage(promptCount: number = 1, promptType: 'text' | '
   }
 }
 
+/**
+ * Report that ONE prompt reached Flow and Flow accepted it.
+ *
+ * ── What makes this different from trackUsage ─────────────────────────────
+ *
+ * trackUsage reports an OUTCOME — this prompt finished, done or failed — and
+ * it moves no counter; the charge was already taken at queue start, before
+ * anything was sent. So today's billable number means "prompts queued", and
+ * every failure between starting and submitting is billed and invisible: a
+ * run stopped after 3 of 20 still charges 20.
+ *
+ * This reports a FACT with evidence: the interceptor read `mediaId` out of
+ * Flow's own response to the request that carried this prompt's text. It
+ * cannot exist for a prompt that never left the extension, and it is unique,
+ * so the server can make the write idempotent at the database rather than in
+ * application code.
+ *
+ * ── It does not charge, yet ───────────────────────────────────────────────
+ *
+ * The endpoint deliberately moves no counter. Both numbers are written for a
+ * period and compared on the same runs first, because switching the dashboard
+ * over in one step would drop every chart overnight with no way to tell the
+ * fix from a regression.
+ *
+ * Fire-and-forget by design: a metering write must never be able to fail a
+ * generation the user has already paid Google for.
+ */
+export async function trackSubmission(input: {
+  mediaId: string;
+  queueId: string;
+  promptIndex: number;
+  promptType: 'text' | 'full';
+  mode?: string;
+  /**
+   * Sent on a LATER call for the same media id, once the generation settles.
+   *
+   * It rides on the same row rather than a second event: a clip Flow accepted
+   * and then failed was still charged by Google, so it has to stay counted as
+   * sent while being excluded from completed. Two rows would make the billable
+   * number depend on how many times this reported, which is the class of bug
+   * the whole change is fixing.
+   */
+  outcome?: 'done' | 'failed';
+}): Promise<boolean> {
+  if (!input.mediaId) return false;
+  try {
+    const res = await apiFetch('/api/usage/submitted', {
+      method: 'POST',
+      body: JSON.stringify({
+        media_id: input.mediaId,
+        queue_id: input.queueId,
+        prompt_index: input.promptIndex,
+        prompt_type: input.promptType,
+        mode: input.mode || '',
+        outcome: input.outcome || '',
+      }),
+    });
+    /* A 404 is the expected answer from a backend that predates this
+       endpoint, and it is not a problem worth a console error on every
+       prompt — the old counting still works, this is purely additive. */
+    if (res.status === 404) return false;
+    if (!res.ok) {
+      console.warn('[AutoFlow] trackSubmission failed:', res.status);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn('[AutoFlow] trackSubmission error:', e);
+    return false;
+  }
+}
+
+/**
+ * Hand back the prompts a finished run never sent.
+ *
+ * Only meaningful while the server is charging on submission: the run claimed
+ * N at the start and holds them, so anything not sent has to be returned or it
+ * silently shrinks the user's quota for the rest of the day.
+ *
+ * Called however a run ends — completed, stopped, or failed. Idempotent, so a
+ * run that ends twice cannot hand back quota twice, and harmless against a
+ * server that has no such endpoint.
+ */
+export async function releaseQueueReservation(queueId: string): Promise<number> {
+  if (!queueId) return 0;
+  try {
+    const res = await apiFetch('/api/usage/release', {
+      method: 'POST',
+      body: JSON.stringify({ queue_id: queueId }),
+    });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return Number(data.freed) || 0;
+  } catch {
+    /* A hold nobody released expires server-side, so failing here costs the
+       user some quota for a few hours rather than permanently. Not worth
+       failing a run over. */
+    return 0;
+  }
+}
+
 export async function checkCanGenerate(promptType: 'text' | 'full' = 'text'): Promise<{ allowed: boolean; remaining: number; limit: number }> {
   try {
     const usage = await getDailyUsage();
@@ -509,10 +610,14 @@ export async function checkCanStartQueue(mode: 'lite' | 'flow' | 'full'): Promis
 
 /** Consume a queue run server-side. Call BEFORE starting the queue.
  *  Supports mixed queues: sends text_count + full_count separately. */
-export async function consumeQueueRun(mode: 'lite' | 'flow' | 'full', promptCount: number, promptType: 'text' | 'full' = 'text', textCount?: number, fullCount?: number): Promise<QueueRunCheckResult> {
+export async function consumeQueueRun(mode: 'lite' | 'flow' | 'full', promptCount: number, promptType: 'text' | 'full' = 'text', textCount?: number, fullCount?: number, queueId?: string): Promise<QueueRunCheckResult> {
   try {
     // If per-type counts are provided, send them for accurate mixed-queue tracking
     const payload: Record<string, unknown> = { mode, prompt_count: promptCount, prompt_type: promptType };
+    /* The run's own id. Under submission charging the server holds this run's
+       prompts against it rather than spending them, and needs the id to give
+       the unused ones back when the run ends. Harmless to an older server. */
+    if (queueId) payload.queue_id = queueId;
     if (textCount !== undefined && fullCount !== undefined) {
       payload.text_count = textCount;
       payload.full_count = fullCount;
