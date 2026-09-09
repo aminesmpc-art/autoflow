@@ -186,7 +186,8 @@ class DailyUsageAdmin(ModelAdmin):
 
     @admin.display(description="Prompts (Sent to Flow)")
     def prompt_usage_bar(self, obj):
-        """Shows only prompts ACTUALLY SENT to Google Flow (done + failed), not pre-charged."""
+        """Prompts Flow actually received — by receipt where one exists."""
+        from django.utils import timezone
         from apps.plans.services import FREE_TEXT_DAILY_LIMIT
         from apps.usage.models import UsageEvent
         from django.db.models import Sum, Q
@@ -197,16 +198,57 @@ class DailyUsageAdmin(ModelAdmin):
             created_at__date=obj.date,
         )
         total_charged = events.aggregate(s=Sum("prompt_count"))["s"] or 0
-        # Only count prompts that were ACTUALLY sent (done or failed — not pending)
-        sent = events.filter(
-            Q(metadata__status="done") | Q(metadata__status="failed")
-        ).aggregate(s=Sum("prompt_count"))["s"] or 0
-        sent_full = events.filter(
-            Q(metadata__status="done") | Q(metadata__status="failed"),
-            metadata__prompt_type="full",
-        ).aggregate(s=Sum("prompt_count"))["s"] or 0
+
+        # ── Prefer evidence over inference ───────────────────────────────
+        #
+        # done+failed is the best guess available without a receipt, and it
+        # catches the common case: a queue that never reported leaves its
+        # events "pending", which reads correctly as unsent.
+        #
+        # What it cannot catch is a prompt the extension marked FAILED because
+        # it gave up before submitting. Flow never saw that one, and it counts
+        # here as sent.
+        #
+        # A PROMPT_SUBMITTED row cannot be created that way — it exists only
+        # when the interceptor read a media id out of Flow's own response — so
+        # where those rows exist they are used instead. Rows from before the
+        # endpoint have none, and fall back to the old measure rather than
+        # reading as zero.
+        submitted = UsageEvent.objects.filter(
+            user=obj.user,
+            event_type=UsageEvent.EventType.PROMPT_SUBMITTED,
+            created_at__date=obj.date,
+        )
+        receipts = submitted.count()
+
+        # Zero receipts is ambiguous on its own: it means either "an extension
+        # older than the endpoint" or "a new extension, and nothing reached
+        # Flow" — opposite readings of the same absence. The data settles it.
+        # Once ANY receipt has ever been recorded, tracking was live, so from
+        # that day on zero means zero. Before it, fall back, or every historic
+        # row would read as nothing sent the day this ships.
+        tracking_since = UsageEvent.objects.filter(
+            event_type=UsageEvent.EventType.PROMPT_SUBMITTED,
+        ).order_by("created_at").values_list("created_at", flat=True).first()
+        tracked = bool(tracking_since) and obj.date >= timezone.localtime(tracking_since).date()
+
+        if receipts or tracked:
+            sent = receipts
+            sent_full = submitted.filter(metadata__prompt_type="full").count()
+        else:
+            sent = events.filter(
+                Q(metadata__status="done") | Q(metadata__status="failed")
+            ).aggregate(s=Sum("prompt_count"))["s"] or 0
+            sent_full = events.filter(
+                Q(metadata__status="done") | Q(metadata__status="failed"),
+                metadata__prompt_type="full",
+            ).aggregate(s=Sum("prompt_count"))["s"] or 0
         sent_text = sent - sent_full
-        pending = total_charged - sent  # pre-charged but never sent
+        # Clamped: a retry is a second submission with its own media id, so
+        # receipts can exceed what was charged. Negative would read as a data
+        # bug rather than as the honest excess it is.
+        pending = max(0, total_charged - sent)
+
 
         if sent == 0 and total_charged == 0:
             return format_html('<span style="color:#475569;font-size:12px;">No prompts</span>')
