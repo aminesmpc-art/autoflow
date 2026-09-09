@@ -86,6 +86,72 @@ def _flow_receipt_counts(date_filter):
     return sent, completed, never_sent
 
 
+def _clipping_counts(today):
+    """Clipping jobs, read off the charge ledger rather than a counter.
+
+    `ClippingUsage` is the authoritative row: exactly one per job that was
+    actually charged, held unique on (user, idempotency_key). Counting it
+    rather than `DailyUsage.clipping_jobs_used` means the figure cannot drift
+    from what was billed — the counter is incremented beside the row, so if
+    the two ever disagree the row is the one that was paid for.
+
+    ── What is NOT here, and why ─────────────────────────────────────────
+
+    Retries and limit-blocked attempts leave no trace. `reserve_clipping_job`
+    returns `charged=False` for both and writes nothing at all: no row, no
+    event, no counter change. That is correct for billing — a retry with the
+    same job id must be free — but it means "how often did people retry" and
+    "how often did someone hit the daily cap" cannot be answered from stored
+    data. Showing a zero for either would be a lie, so neither is shown; the
+    card says so instead of implying the answer is none.
+
+    `events` is here as an integrity check, not as a second metric. One
+    CLIPPING_JOB_STARTED is written in the same transaction as each ledger
+    row, so the two counts must match. A divergence means a write path was
+    added that skipped one of them.
+    """
+    from datetime import timedelta
+
+    from django.db.models import Count
+
+    from apps.usage.models import ClippingUsage, UsageEvent
+    from apps.usage.services import (
+        FREE_CLIPPING_DAILY_LIMIT,
+        PRO_CLIPPING_DAILY_LIMIT,
+    )
+
+    week_start = today - timedelta(days=6)
+    rows = ClippingUsage.objects.all()
+    week_rows = rows.filter(date__gte=week_start)
+
+    total = rows.count()
+    events = UsageEvent.objects.filter(
+        event_type=UsageEvent.EventType.CLIPPING_JOB_STARTED,
+    ).count()
+
+    top = (
+        rows.values("user__email")
+        .annotate(n=Count("id"))
+        .order_by("-n")
+        .first()
+    ) or {}
+
+    return {
+        "today": rows.filter(date=today).count(),
+        "week": week_rows.count(),
+        "total": total,
+        "users_week": week_rows.values("user").distinct().count(),
+        "users_total": rows.values("user").distinct().count(),
+        "events": events,
+        # True is the healthy state; the template only speaks up when it is not.
+        "ledger_matches_events": total == events,
+        "top_email": top.get("user__email") or "",
+        "top_count": top.get("n") or 0,
+        "free_limit": FREE_CLIPPING_DAILY_LIMIT,
+        "pro_limit": PRO_CLIPPING_DAILY_LIMIT,
+    }
+
+
 def dashboard_callback(request, context):
     """Provide chart data, KPI metrics, funnels, and analytics for the dashboard."""
     from apps.plans.models import Profile
@@ -722,6 +788,11 @@ def dashboard_callback(request, context):
             "gap": receipt_gap,
             "charged": False,
         },
+        # ── Clipping ──
+        #
+        # Counted off the charge ledger. Two of these numbers are deliberately
+        # absent rather than zero — see _clipping_counts.
+        "clipping": _clipping_counts(today),
         # Chart data
         "usage_chart": json.dumps({
             "labels": chart_labels,
