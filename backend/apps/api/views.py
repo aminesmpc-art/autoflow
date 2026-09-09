@@ -9,12 +9,15 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.plans.services import (
+    METER_ON_SUBMISSION,
+    commit_reserved_prompt,
     consume_download,
     consume_prompt,
     consume_queue_run,
     get_entitlement_snapshot,
     grant_reward_credits,
     mark_last_seen,
+    release_reservation,
 )
 from apps.usage.models import UsageEvent
 from apps.usage.services import reserve_clipping_job
@@ -550,6 +553,139 @@ class ConsumePromptView(APIView):
         })
 
 
+class PromptSubmittedView(APIView):
+    """Record that ONE prompt reached Flow and Flow accepted it.
+
+    ── Why this exists beside ConsumePromptView ──────────────────────────
+
+    Today's billable number is taken at queue start, before anything is
+    sent, so it means "prompts queued" and can never mean "prompts Flow
+    received". Every failure in between — a run stopped after 3 of 20,
+    settings that died at prompt 1, Google credits running out — is billed
+    and invisible.
+
+    The extension now has the signal that answers it: the interceptor reads
+    a media id out of Flow's OWN response to the request carrying this
+    prompt's text. That is server-observed proof for one specific prompt,
+    it is unique, and it cannot exist for a prompt that never left the
+    extension.
+
+    ── This endpoint does not charge ─────────────────────────────────────
+
+    Deliberately, for now. consume_queue_run keeps charging exactly as it
+    does today, and this writes the truer number alongside it. Switching
+    the dashboard over in one step would drop every chart overnight with no
+    way to tell the fix from a regression — so both are written for a
+    period and compared on the same runs first.
+
+    ── Idempotency is the unique index, not this code ────────────────────
+
+    A replay, a worker restart, a double-send: all of them lose to the
+    index on media_id rather than to a get_or_create race. `created` tells
+    the caller which happened, so a retry is cheap and honest.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        media_id = str(request.data.get("media_id") or "").strip()
+        if not media_id:
+            # Without it there is nothing to be idempotent ON, and an event
+            # that can be written twice is worse than no event.
+            return Response(
+                {"detail": "media_id is required — it is what makes this idempotent."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        queue_id = str(request.data.get("queue_id") or "").strip()[:128]
+        prompt_type = str(request.data.get("prompt_type") or "text")[:50]
+        mode = str(request.data.get("mode") or "")[:50]
+        raw_index = request.data.get("prompt_index")
+        try:
+            prompt_index = int(raw_index) if raw_index is not None else None
+        except (TypeError, ValueError):
+            prompt_index = None
+
+        # "done" / "failed", optional. Sent on a LATER call for the same media
+        # id, once the generation settles — see below.
+        outcome = str(request.data.get("outcome") or "").strip().lower()
+        if outcome not in ("done", "failed", ""):
+            outcome = ""
+
+        event, created = UsageEvent.objects.get_or_create(
+            media_id=media_id[:128],
+            defaults={
+                "user": request.user,
+                "event_type": UsageEvent.EventType.PROMPT_SUBMITTED,
+                "prompt_count": 1,
+                "queue_id": queue_id,
+                "prompt_index": prompt_index,
+                "metadata": {
+                    "prompt_type": prompt_type,
+                    "mode": mode,
+                    "source": "generation_bound",
+                },
+            },
+        )
+
+        # ── Charge, if that switch has been thrown ──
+        #
+        # Exactly once per media id, and only on the call that CREATED the
+        # row. A replay or an outcome report reaching the same row again must
+        # not charge a second time — which is the whole reason the identity
+        # lives in a unique index rather than in application code.
+        charged = False
+        if created and METER_ON_SUBMISSION:
+            charged = commit_reserved_prompt(
+                request.user, queue_id=queue_id, prompt_type=prompt_type)
+            event.metadata["charged"] = True
+            event.save(update_fields=["metadata"])
+
+        # The outcome rides on the SAME row rather than a second event.
+        #
+        # "Completed" is an outcome, not a second charge — a clip that Flow
+        # accepted and then failed was still charged by Google, so it must stay
+        # in "sent" while being excluded from "completed". Two rows would make
+        # the billable count depend on how many times the extension reported,
+        # which is exactly the class of bug this whole change is fixing.
+        if outcome and event.metadata.get("outcome") != outcome:
+            event.metadata["outcome"] = outcome
+            event.save(update_fields=["metadata"])
+
+        return Response({
+            "recorded": True,
+            "created": created,
+            "media_id": media_id,
+            "queue_id": event.queue_id,
+            "prompt_index": event.prompt_index,
+            "outcome": event.metadata.get("outcome"),
+            # Whether THIS call moved the meter. False while the switch is
+            # off, which is how it ships — see METER_ON_SUBMISSION.
+            "charged": charged,
+        })
+
+
+class ReleaseReservationView(APIView):
+    """Give back the prompts a finished run never sent.
+
+    Called when a queue ends, however it ends — completed, stopped, or failed.
+    Without it the hold sits there until it expires, quietly shrinking the
+    user's quota for the rest of the day: the same harm as charging for
+    prompts that were never sent, pointing the other way.
+
+    Safe to call more than once, and safe to call for a queue that was never
+    reserved. A run that ends twice must not hand back quota twice.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        queue_id = str(request.data.get("queue_id") or "").strip()
+        if not queue_id:
+            return Response({"detail": "queue_id is required."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        freed = release_reservation(request.user, queue_id=queue_id[:128])
+        return Response({"released": True, "freed": freed})
+
+
 class ConsumeDownloadView(APIView):
     """Track download consumption server-side. Free users: 20/day."""
     permission_classes = [IsAuthenticated]
@@ -605,9 +741,14 @@ class ConsumeQueueRunView(APIView):
         else:
             text_count = None
             full_count = None
+        # The run's own id, so a hold can be released when it ends and cannot
+        # be taken twice if the start is retried. Optional: an extension older
+        # than this simply gets a generated one, which expires on its own.
+        queue_id = str(request.data.get("queue_id") or "").strip()[:128]
         result = consume_queue_run(
             request.user, mode=mode, prompt_count=prompt_count,
             prompt_type=prompt_type, text_count=text_count, full_count=full_count,
+            queue_id=queue_id,
         )
         http_status = status.HTTP_200_OK if result["allowed"] else status.HTTP_403_FORBIDDEN
         return Response(result, status=http_status)

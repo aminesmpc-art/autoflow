@@ -37,6 +37,55 @@ def _event_prompt_counts(date_filter):
     return total, text, full
 
 
+def _flow_receipt_counts(date_filter):
+    """The three numbers, taken from evidence rather than from intent.
+
+    ── Why the existing figures cannot answer this ───────────────────────
+
+    `_event_prompt_counts` above calls done+failed "actually sent to Flow".
+    It is the best approximation that was available, and it is wrong in the
+    one direction that matters: `trackUsage` reports `failed` for a prompt
+    whether or not it ever left the extension. A queue that dies at prompt 1
+    marks all twenty failed, and all twenty land in "sent to Flow".
+
+    A PROMPT_SUBMITTED event cannot be created that way. It exists only when
+    the interceptor read a media id out of Flow's own response, so it is
+    proof of receipt rather than a report of intent.
+
+    Returns (sent, completed, never_sent):
+
+      sent        billable — Flow received it, and Google charged for it
+      completed   of those, how many produced media. An outcome, not a
+                  second charge: a clip Flow accepted and then failed stays
+                  in `sent`.
+      never_sent  charged at queue start and never received. The number
+                  nobody can currently see, and the reason the dashboard
+                  says 20 when the user got 14 videos.
+    """
+    from apps.usage.models import UsageEvent
+    from django.db.models import Sum
+
+    sent_qs = UsageEvent.objects.filter(
+        event_type=UsageEvent.EventType.PROMPT_SUBMITTED, **date_filter,
+    )
+    sent = sent_qs.count()
+    completed = sent_qs.filter(metadata__outcome="done").count()
+
+    # Everything the old path charged for, at any status — that IS the charge,
+    # because consume_queue_run takes it up front and ConsumePromptView only
+    # relabels the rows afterwards.
+    charged = UsageEvent.objects.filter(
+        event_type=UsageEvent.EventType.CONSUME_PROMPT, **date_filter,
+    ).aggregate(s=Sum("prompt_count"))["s"] or 0
+
+    # Clamped at zero on purpose. During the dual-write period the two paths
+    # can disagree in either direction — an extension older than the endpoint
+    # charges without ever reporting a submission — and a negative "never
+    # sent" would read as a data bug rather than as the skew it is.
+    never_sent = max(0, charged - sent)
+    return sent, completed, never_sent
+
+
 def dashboard_callback(request, context):
     """Provide chart data, KPI metrics, funnels, and analytics for the dashboard."""
     from apps.plans.models import Profile
@@ -83,7 +132,26 @@ def dashboard_callback(request, context):
     today_pending = today_events_qs.filter(
         metadata__status="pending"
     ).aggregate(s=Sum("prompt_count"))["s"] or 0
-    today_submitted = today_done + today_failed  # actually sent to Flow
+    # The old approximation. Kept, and kept honest about what it is: a prompt
+    # the extension reported an outcome for, which it does whether or not the
+    # prompt ever left the extension.
+    today_reported = today_done + today_failed
+    today_submitted = today_reported
+    submission_rate = round((today_submitted / today_total * 100) if today_total > 0 else 0)
+
+    # ── What Flow actually received ──
+    #
+    # Written alongside the number above rather than replacing it. Switching
+    # in one step would drop every chart overnight with no way to tell the fix
+    # from a regression, so both run on the same days until they can be
+    # compared on real traffic.
+    flow_sent, flow_completed, flow_never_sent = _flow_receipt_counts(
+        {"created_at__date": today}
+    )
+    # How far apart the two are. This is the whole point of the dual-write
+    # period: while it is large the old number is still the one being billed,
+    # and when it settles the switch is safe to make.
+    receipt_gap = today_reported - flow_sent
     submission_rate = round((today_submitted / today_total * 100) if today_total > 0 else 0)
 
     # Downloads from events (real downloads, not pre-consumed)
@@ -639,6 +707,20 @@ def dashboard_callback(request, context):
             "pending": today_pending,
             "total_charged": today_total,
             "rate": submission_rate,
+        },
+        # ── What Flow received, from the media-id evidence ──
+        #
+        # Three numbers instead of one overloaded one. The third is the one
+        # nothing in the system could answer before: it is what turns "why does
+        # it say 20 when I got 14 videos" into a self-answering screen.
+        "flow_receipt": {
+            "sent": flow_sent,                 # billable
+            "completed": flow_completed,       # an outcome, not a second charge
+            "never_sent": flow_never_sent,     # charged, never received
+            # Side by side with the old figure while both are written.
+            "reported": today_reported,
+            "gap": receipt_gap,
+            "charged": False,
         },
         # Chart data
         "usage_chart": json.dumps({
