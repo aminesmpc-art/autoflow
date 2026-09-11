@@ -328,9 +328,15 @@
                 <span class="af-card-title">Never Sent</span>
             </div>
         </div>
-        <div class="af-card-metric">{{ flow_receipt.never_sent|default:"0" }}</div>
+        <div class="af-card-metric">{{ flow_receipt.never_sent_tracked|default:"0" }}</div>
         <div class="af-card-highlight">Charged, never received</div>
-        <div class="af-card-footer">Queued and billed, but Flow never saw it. This is the number that explains &ldquo;why does it say 20 when I got 14 videos&rdquo;.</div>
+        <div class="af-card-footer">
+          Queued and billed, but Flow never saw it &mdash; the number that explains &ldquo;why does it say 20 when I got 14 videos&rdquo;.
+          {% if flow_receipt.coverage_pct < 100 %}
+            <br><strong>Counted only where it can be:</strong> {{ flow_receipt.coverage_pct }}% of today&rsquo;s charging comes from extensions that report.
+            The other {{ flow_receipt.untracked_charged }} charged {{ flow_receipt.untracked_charged|pluralize:"prompt,prompts" }} are on builds too old to say either way, so they are left out rather than counted as lost.
+          {% endif %}
+        </div>
     </div>
 
     <div class="af-card {% if flow_receipt.gap %}accent-red{% endif %}">
