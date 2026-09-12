@@ -795,15 +795,26 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
             )
             usage.save()
         else:
-            if text_count is not None and full_count is not None:
+            mixed = text_count is not None and full_count is not None
+            # One number bills and records.
+            #
+            # The counters used to add `prompt_count` while the events below
+            # were created from `text_count + full_count`. A caller whose
+            # split did not add up to its own total would therefore charge
+            # one amount and record another, in the same transaction, with
+            # nothing to reconcile them afterwards. No caller does today —
+            # 271 production runs checked, none mismatched — which is
+            # precisely why it would have gone unnoticed the day one did.
+            charged = (text_count + full_count) if mixed else prompt_count
+            if mixed:
                 usage.text_prompts_used += text_count
                 usage.full_prompts_used += full_count
             elif prompt_type == "full":
                 usage.full_prompts_used += prompt_count
             else:
                 usage.text_prompts_used += prompt_count
-            usage.free_prompts_used += prompt_count
-            usage.total_prompts_used += prompt_count
+            usage.free_prompts_used += charged
+            usage.total_prompts_used += charged
             usage.save()
 
         # ── Create "pending" per-prompt events ──
@@ -963,7 +974,27 @@ def consume_studio_run(user, node_count: int = 1, generate_count: int = None) ->
             usage.total_prompts_used += nodes_to_charge
             usage.save()
 
-            # Per-prompt events, mirroring consume_queue_run
+            # Per-prompt events, mirroring consume_queue_run.
+            #
+            # NOTE — these deliberately do NOT number what was charged, and
+            # the gap is recorded rather than closed.
+            #
+            # A free account is charged `node_count`: every node in the
+            # workflow, against the same daily allowance that gates Flow
+            # prompts. Only `generate_count` events are written, because only
+            # a generate node can ever produce a Flow media id, and counting
+            # a Gemini ask as "charged but never received" would slander the
+            # Flow pipeline for work that was never headed there.
+            #
+            # So a 5-node workflow with 2 generate nodes bills 5 and records
+            # 2, and DailyUsage.free_prompts_used runs ahead of the events by
+            # the difference — observed as a drift of 5 on 2026-09-13. Which
+            # of the two should move is a pricing decision, not a bug fix:
+            # billing per node is what FREE_STUDIO_DAILY_NODE_LIMIT implies,
+            # and changing either number changes what users are charged or
+            # what the dashboard claims. Until that is decided, the charge is
+            # at least stated here so the drift is explicable instead of
+            # looking like corruption.
             import uuid as _uuid
             batch_id = str(_uuid.uuid4())[:8]
             for i in range(max(1, generate_count or 1)):
@@ -978,6 +1009,10 @@ def consume_studio_run(user, node_count: int = 1, generate_count: int = None) ->
                         "status": "pending",
                         "batch_id": batch_id,
                         "seq": i,
+                        # What the account was actually billed for this run,
+                        # which is not the number of events beside it.
+                        "nodes_charged": nodes_to_charge,
+                        "generate_count": generate_count or 0,
                     },
                 )
 
