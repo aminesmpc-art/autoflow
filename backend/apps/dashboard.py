@@ -86,6 +86,68 @@ def _flow_receipt_counts(date_filter):
     return sent, completed, never_sent
 
 
+def _flow_receipt_coverage(date_filter):
+    """How much of the charging is even observable yet.
+
+    ── The number this exists to qualify ─────────────────────────────────
+
+    `never_sent` above is `charged - sent`, and those two are counted over
+    different populations. `charged` is every account. `sent` is only the
+    accounts whose extension carries the reporting code — which, while the
+    build rolls out, is a small minority of them.
+
+    So the card read "Charged, never received: 2,846" on a day when 83% of
+    the charged volume came from accounts that CANNOT report and never could.
+    That is not "Flow never saw it". It is "we were not listening". Stating
+    the first when the truth is the second is the kind of wrong number this
+    whole feature was built to get rid of, so it has to be qualified rather
+    than displayed bare.
+
+    An extension version would answer this exactly, but the client sends a
+    hard-coded `X-AutoFlow-Version` of 5.1 that the backend never reads, so
+    it cannot. Having ever produced a receipt is the honest proxy: an account
+    that reported once is running code that reports.
+
+    Returns a dict:
+
+      tracked_charged    charged by accounts that DO report
+      untracked_charged  charged by accounts that cannot
+      coverage_pct       share of charging that is observable at all
+      never_sent_tracked charged-but-not-received, among those accounts only
+                         — the only version of this number that means what
+                         the card says it means
+    """
+    from django.db.models import Sum
+
+    from apps.usage.models import UsageEvent
+
+    reporters = UsageEvent.objects.filter(
+        event_type=UsageEvent.EventType.PROMPT_SUBMITTED,
+    ).values("user_id")
+
+    def _charged(**extra):
+        return UsageEvent.objects.filter(
+            event_type=UsageEvent.EventType.CONSUME_PROMPT, **date_filter, **extra
+        ).aggregate(s=Sum("prompt_count"))["s"] or 0
+
+    total = _charged()
+    tracked = _charged(user_id__in=reporters)
+    sent = UsageEvent.objects.filter(
+        event_type=UsageEvent.EventType.PROMPT_SUBMITTED, **date_filter,
+    ).count()
+
+    return {
+        "tracked_charged": tracked,
+        "untracked_charged": max(0, total - tracked),
+        "coverage_pct": round(100 * tracked / total) if total else 0,
+        # Clamped for the same reason as never_sent: a retry is a second
+        # generation with its own media id and its own charge from Google,
+        # so a busy day can legitimately report more than the up-front
+        # charge counted, and a negative here would read as a data bug.
+        "never_sent_tracked": max(0, tracked - sent),
+    }
+
+
 def _clipping_counts(today):
     """Clipping jobs, read off the charge ledger rather than a counter.
 
@@ -218,6 +280,8 @@ def dashboard_callback(request, context):
     # period: while it is large the old number is still the one being billed,
     # and when it settles the switch is safe to make.
     receipt_gap = today_reported - flow_sent
+    # How much of today's charging the receipts can speak for at all.
+    flow_coverage = _flow_receipt_coverage({"created_at__date": today})
     submission_rate = round((today_submitted / today_total * 100) if today_total > 0 else 0)
 
     # Downloads from events (real downloads, not pre-consumed)
@@ -787,6 +851,10 @@ def dashboard_callback(request, context):
             "reported": today_reported,
             "gap": receipt_gap,
             "charged": False,
+            # Everything below qualifies the three numbers above. While the
+            # reporting build is still rolling out, `never_sent` counts the
+            # whole fleet against receipts only a fraction of it can send.
+            **flow_coverage,
         },
         # ── Clipping ──
         #
