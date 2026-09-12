@@ -121,9 +121,26 @@ def _flow_receipt_coverage(date_filter):
 
     from apps.usage.models import UsageEvent
 
+    # Bounded by WHEN each account started reporting, not merely whether it
+    # ever did.
+    #
+    # "Has a receipt at any point" makes this figure retroactive: an account
+    # that updates today joins the cohort for every past day too, and
+    # yesterday's coverage silently rises although nothing about yesterday
+    # changed. Observed doing exactly that — 2026-09-11 read 17% when measured
+    # on the day and 80% two days later. Worse than cosmetic: those accounts
+    # were on a silent build back then, so their old charging gets counted as
+    # observable and inflates never_sent_tracked for days already past.
+    #
+    # An account counts for a given day only if it had already reported by
+    # then, which is the same rule _sent_to_flow applies per row.
+    day = date_filter.get("created_at__date")
     reporters = UsageEvent.objects.filter(
         event_type=UsageEvent.EventType.PROMPT_SUBMITTED,
-    ).values("user_id")
+    )
+    if day is not None:
+        reporters = reporters.filter(created_at__date__lte=day)
+    reporters = reporters.values("user_id")
 
     def _charged(**extra):
         return UsageEvent.objects.filter(
