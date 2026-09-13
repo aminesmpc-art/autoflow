@@ -141,6 +141,18 @@ describe('the phases before it are still read first', () => {
     expect(getStudioTileState(t)).toBe('generating');
   });
 
+  it('accepts a real still at 100% in the current CDK grid', () => {
+    const t = tile('<span>100%</span><img data-media-id="m1" src="https://flow-content.google/image/m1">');
+    sized(t.querySelector('img')!);
+    expect(getStudioTileState(t, false)).toBe('completed');
+  });
+
+  it('keeps a video at 100% waiting until a playable clip attaches', () => {
+    const t = tile('<span>100%</span><img data-media-id="m1" src="https://flow-content.google/image/m1">');
+    sized(t.querySelector('img')!);
+    expect(getStudioTileState(t, true)).toBe('generating');
+  });
+
   it('a failed clip is failed, not thumbnail-only', () => {
     /* A failed tile also has no playable source. Holding the video verdict
        until after the failure text is read is the only reason this works —

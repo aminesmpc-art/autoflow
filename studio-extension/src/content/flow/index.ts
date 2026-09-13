@@ -32,7 +32,7 @@ import { DOM_SETTLE_MS } from '../../shared/constants';
 import { getRunningQueue, clearRunningQueue } from '../../shared/storage';
 import {
   initApiHelper, isApiAvailable, isInterceptorAlive, isCacheFresh, activeStatusCheck,
-  findStatusByMediaId, findStatusByPromptText, classifyError,
+  findStatusByMediaId, findStatusByPromptText, classifyError, observeGeneration,
 } from './apiHelper';
 import { matchesFlowText, exactMatchFlowText, FLOW_STRINGS } from './flowStrings';
 import { registerStudioImage, releaseStudioImages } from './studioImages';
@@ -1539,6 +1539,12 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
   const API_RECHECK_MS = 30_000;
   let lastActiveCheckAt = 0;
   let apiState: string | null = null;
+  /* Confirmation, as opposed to apiState's "whatever matched last".
+     Set only by this generation's own id on a fresh cache — see
+     observeGeneration. apiState falls back to matching the prompt TEXT, and
+     re-running a shot leaves an older, finished entry carrying exactly the
+     same text; that entry must never be what ends the wait. */
+  let apiConfirmsCompleted = false;
   let apiReported = '';
   let failedStreak = 0;
 
@@ -1561,6 +1567,7 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
         logLine(`Flow's API says this generation is ${status.state} (${status.rawStatus})`);
       }
       if (status) apiReported = status.rawStatus;
+      apiConfirmsCompleted = observeGeneration(prompt.mediaId, promptText).confirmsCompleted;
       if (!status || status.state !== 'failed') failedStreak = 0;
 
       /* Failed is worth acting on immediately. The DOM equivalent needs eight
@@ -1685,9 +1692,14 @@ async function pollStudioCompletion(nodeId: string, queue: any): Promise<void> {
     const serviceStillWorking = apiState === 'generating' || apiState === 'queued';
     if (state === 'completed' && serviceStillWorking) {
       state = 'generating';
-    } else if (state === 'completed' && isVideoNode && wait < 10 && apiState !== 'completed') {
+    } else if (state === 'completed' && isVideoNode && wait < 10 && !apiConfirmsCompleted) {
       // 2. Video rendering on Google Flow cannot legitimately finish in < 10 seconds
       // without API confirmation. Early 'completed' at wait < 10s is a false alarm from old DOM nodes.
+      /* `apiConfirmsCompleted`, not `apiState !== 'completed'`. The old test
+         let ANY 'completed' through, including one matched only on prompt
+         text — which, on a re-run of the same shot, is the previous
+         generation saying it finished. That is precisely how a stale tile
+         got accepted as the new result inside the first ten seconds. */
       state = 'generating';
     }
 
@@ -2057,6 +2069,11 @@ async function sendStudioResult(
            have to land in that number too, or the two products count the same
            resource differently. */
         mediaId: mediaId || '',
+        /* Could this page see itself when the result landed? Only the page
+           knows, and the worker cannot ask once the tab is gone. It separates
+           "hidden runs do not submit" from "hidden runs submit fine and
+           nobody collected" — the measurement step 1 asks for. */
+        hidden: (() => { try { return document.hidden; } catch { return undefined; } })(),
         imageUrl: mediaUrl || '',
         thumbnailUrl: mediaUrl || '',
         previewUrl: previewUrl || stills.preview || '',

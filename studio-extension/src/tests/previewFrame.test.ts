@@ -106,12 +106,26 @@ describe('a node does not report done with nothing in it', () => {
     join(__dirname, '..', 'content', 'flow', 'tileState.ts'), 'utf8');
 
   it('never mistakes an ingredient thumbnail for the result', () => {
-    /* Matched on the alt text Flow writes for a screen reader, which says
-       exactly what they are, rather than on a styled-components class. */
+    /* Matched on WHERE the image is, not on what its alt text says.
+     *
+     * The alt list is still there and still consulted — but it read
+     * "generated or uploaded by you", which is the old site's wording, and the
+     * current chip says "Ingredient image". It matched nothing, so every input
+     * picture counted as a result: an image batch reported itself finished the
+     * moment its own reference rendered, and a video batch mistook a chip for
+     * a poster and sat in thumbnail-only for two and a half minutes.
+     *
+     * That is how an exclusion list fails — silently, and only once the site
+     * has moved on. The structure it lives in does not move: an ingredient is
+     * inside .ingredients-list, in the flow-batch-info half of the batch,
+     * while the result is in .batch-tiles-section. */
     expect(TILE).toMatch(/const INGREDIENT_ALT = /);
     expect(TILE).toMatch(/generated or uploaded by you/);
+    expect(TILE).toMatch(/export function isIngredientImg\(img: Element\): boolean/);
+    expect(TILE).toMatch(/ingredients-list, flow-ingredient-chip, flow-image-ingredient-chip/);
     const fn = TILE.slice(TILE.indexOf('export function findLargestImgSrc'));
-    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/INGREDIENT_ALT\.test\(img\.getAttribute\('alt'\)/);
+    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/if \(isIngredientImg\(img\)\) continue;/);
+    expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/resultArea\(tile\)\.querySelectorAll/);
   });
 
   it('scrolls the output back to the top before giving up', () => {

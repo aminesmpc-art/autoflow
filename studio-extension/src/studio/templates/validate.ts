@@ -32,6 +32,11 @@ export const NODE_PORTS: Record<string, { in: string[]; out: string[] }> = {
      No image_ref — it plans the words, and the references belong to the
      nodes that actually generate. */
   story: { in: ['text'], out: ['text'] },
+  chief: { in: ['text'], out: ['text'] },
+  /* Motion Control. A video to move FROM, a still to move, and the words for
+     what to do with them. Its output is text — a report of what it built —
+     because the clips come from the Omni nodes it spawns, not from itself. */
+  motion: { in: ['text', 'video', 'image_ref'], out: ['text'] },
   /* Frames mode swaps the one image port for the two frame ports. It is a
      swap rather than an addition: in this mode the runner reads only
      frame_start and frame_end, so leaving image_ref on the node would offer a
@@ -75,7 +80,7 @@ export const NODE_PORTS: Record<string, { in: string[]; out: string[] }> = {
  * filter unable to re-run one, and the runner's own step filter the only
  * place that knew. Prompt, image and frame carry data and never run.
  */
-export const RUNNABLE_NODE_TYPES = ['generate', 'extend', 'agent', 'story', 'clip', 'cut'] as const;
+export const RUNNABLE_NODE_TYPES = ['generate', 'extend', 'agent', 'story', 'chief', 'clip', 'cut', 'motion'] as const;
 
 export const isRunnableType = (type: unknown): boolean =>
   typeof type === 'string' && (RUNNABLE_NODE_TYPES as readonly string[]).includes(type);
@@ -119,7 +124,7 @@ export const portsFor = (node: any) => {
    Templates needing either were just filtered out of the gallery with an
    info-level log, so a published template simply never appeared.
    capabilities.test.ts now checks both against the code and the manifest. */
-export const RENDERABLE_NODE_TYPES = ['prompt', 'image', 'generate', 'frame', 'extend', 'agent', 'story', 'clip', 'cut'] as const;
+export const RENDERABLE_NODE_TYPES = ['prompt', 'image', 'generate', 'frame', 'extend', 'agent', 'story', 'chief', 'clip', 'cut', 'motion'] as const;
 
 /* ── Grok's extend arithmetic ──────────────────────────────────
    Imagine starts a clip at 6, 10 or 15 seconds and extends it by 6 or 10,

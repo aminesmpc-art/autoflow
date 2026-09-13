@@ -21,10 +21,11 @@ import '@xyflow/react/dist/style.css';
 import { Icon } from './Icon';
 import { getUpgradeTarget } from '../../shared/api';
 import { StoryNode } from '../nodes/StoryNode';
+import { ChiefNode } from '../nodes/ChiefNode';
 import { ClippingNode } from '../nodes/ClippingNode';
 import { CutNode } from '../nodes/CutNode';
+import { MotionNode } from '../nodes/MotionNode';
 import { canConnect, connectionProblem } from '../canvas/connect';
-import { BrandIcon } from './BrandIcon';
 import { useStudioStore, FREE_LIMITS } from '../store';
 import { consumeStudioRun } from '../../shared/api';
 import { PromptNode } from '../nodes/PromptNode';
@@ -63,8 +64,10 @@ const nodeTypes = {
   extend: guarded(ExtendNode, 'Extend'),
   agent: guarded(AgentNode, 'Agent'),
   story: guarded(StoryNode, 'Director'),
+  chief: guarded(ChiefNode, 'Director Chief'),
   clip: guarded(ClippingNode, 'Clipping'),
   cut: guarded(CutNode, 'Cut'),
+  motion: guarded(MotionNode, 'Motion Control'),
 };
 
 const edgeTypes = {
@@ -580,6 +583,23 @@ function CanvasInner() {
     } as any);
   }, [addNode, nodes, guardAdd]);
 
+  const addChiefNode = useCallback(() => {
+    if (!guardAdd()) return;
+    const id = `chief_${Date.now()}`;
+    addNode({
+      id,
+      type: 'chief',
+      position: { x: 300, y: 250 + nodes.length * 50 },
+      data: {
+        type: 'chief',
+        label: `Director Chief ${nodes.filter((node) => node.type === 'chief').length + 1}`,
+        platform: 'chatgpt',
+        enabled: true,
+        status: 'idle',
+      },
+    } as any);
+  }, [addNode, nodes, guardAdd]);
+
   /* The Clipping node. Its own node rather than a mode on the Director:
      the Director writes prompts from an idea, this one reads a recording and
      decides what is in it. Same canvas, opposite direction of travel. */
@@ -596,6 +616,26 @@ function CanvasInner() {
         platform: 'gemini',
         sourceName: '',
         sourceKey: '',
+        status: 'idle',
+      },
+    } as any);
+  }, [addNode, nodes, guardAdd]);
+
+  const addMotionNode = useCallback(() => {
+    if (!guardAdd()) return;
+    const id = `motion_${Date.now()}`;
+    addNode({
+      id,
+      type: 'motion',
+      position: { x: 300, y: 250 + nodes.length * 50 },
+      data: {
+        type: 'motion',
+        label: `Motion Control ${nodes.filter((x) => x.type === 'motion').length + 1}`,
+        platform: 'gemini',
+        motionMode: 'move',
+        sourceName: '',
+        sourceKey: '',
+        aspectRatio: '9:16',
         status: 'idle',
       },
     } as any);
@@ -746,20 +786,26 @@ function CanvasInner() {
       )}
 
       {/* Node Toolbar (Left sidebar) */}
-      <div className="studio-toolbar">
+      <aside className="studio-toolbar" aria-label="Node library">
+        <div className="studio-toolbar__title">
+          <Icon name="nodes" />
+          <div><strong>Node library</strong><span>Click a tool to add it</span></div>
+          <span className="studio-toolbar__count">12</span>
+        </div>
+        <div className="studio-toolbar__items">
         <div className="studio-toolbar__group">
           <div className="studio-toolbar__heading">Inputs</div>
           <button className="studio-toolbar__btn studio-toolbar__btn--prompt" onClick={addPromptNode} aria-label="Add Prompt node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--prompt">
               <Icon name="prompt" kind="prompt" className="studio-toolbar__btn-icon" />
             </span>
-            <span className="studio-toolbar__btn-label">Prompt</span>
+            <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Prompt</span><small>Write your idea</small></span>
           </button>
           <button className="studio-toolbar__btn studio-toolbar__btn--image" onClick={addImageNode} aria-label="Add Image node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--image">
               <Icon name="image" kind="image" className="studio-toolbar__btn-icon" />
             </span>
-            <span className="studio-toolbar__btn-label">Image</span>
+            <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Image</span><small>Add a visual reference</small></span>
           </button>
         </div>
 
@@ -767,62 +813,78 @@ function CanvasInner() {
           <div className="studio-toolbar__heading">Generate</div>
           <button className="studio-toolbar__btn studio-toolbar__btn--flow" onClick={addGenerateNode} aria-label="Add Flow clip node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--flow">
-              <BrandIcon name="flow" className="studio-toolbar__btn-icon studio-toolbar__btn-icon--brand" />
+              <Icon name="clip" className="studio-toolbar__btn-icon" />
             </span>
-            <span className="studio-toolbar__btn-label">Flow clip</span>
+            <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Flow clip</span><small>Generate with Flow</small></span>
           </button>
           <button className="studio-toolbar__btn studio-toolbar__btn--grok" onClick={addGrokNode} aria-label="Add Grok clip node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--grok">
-              <BrandIcon name="grok" className="studio-toolbar__btn-icon studio-toolbar__btn-icon--brand" />
+              <Icon name="bolt" className="studio-toolbar__btn-icon" />
             </span>
-            <span className="studio-toolbar__btn-label">Grok clip</span>
+            <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Grok clip</span><small>Generate with Grok</small></span>
           </button>
           <button className="studio-toolbar__btn studio-toolbar__btn--ask" onClick={addAskNode} aria-label="Add Ask AI node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--ask">
               <Icon name="chat" kind="ask" className="studio-toolbar__btn-icon" />
             </span>
-            <span className="studio-toolbar__btn-label">Ask AI</span>
+            <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Ask AI</span><small>Turn a brief into prompts</small></span>
           </button>
+        </div>
+
+        <div className="studio-toolbar__group">
+          <div className="studio-toolbar__heading">Direct & automate</div>
           <button className="studio-toolbar__btn studio-toolbar__btn--story" onClick={addStoryNode} aria-label="Add Director node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--story">
               <Icon name="story" kind="video" className="studio-toolbar__btn-icon" />
             </span>
-            <span className="studio-toolbar__btn-label">Director</span>
+            <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Director</span><small>Plan connected shots</small></span>
           </button>
-          <button className="studio-toolbar__btn studio-toolbar__btn--clip" onClick={addClipNode} aria-label="Add Clipping node">
-            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--clip">
-              <Icon name="story" kind="video" className="studio-toolbar__btn-icon" />
+          <button className="studio-toolbar__btn studio-toolbar__btn--chief" onClick={addChiefNode} aria-label="Add Director Chief node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--chief">
+              <Icon name="chief" className="studio-toolbar__btn-icon" />
             </span>
-            <span className="studio-toolbar__btn-label">Clipping</span>
+            <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Director Chief</span><small>Coordinate your directors</small></span>
           </button>
           <button className="studio-toolbar__btn studio-toolbar__btn--agent" onClick={addAgentNode} aria-label="Add Agent node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--agent">
               <Icon name="agent" kind="agent" className="studio-toolbar__btn-icon" />
             </span>
-            <span className="studio-toolbar__btn-label">Agent</span>
+            <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Agent</span><small>Run a multi-step task</small></span>
           </button>
         </div>
 
         <div className="studio-toolbar__group">
-          <div className="studio-toolbar__heading">Continue a clip</div>
+          <div className="studio-toolbar__heading">Edit & continue</div>
+          <button className="studio-toolbar__btn studio-toolbar__btn--clip" onClick={addClipNode} aria-label="Add Clipping node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--clip">
+              <Icon name="scissors" className="studio-toolbar__btn-icon" />
+            </span>
+            <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Clipping</span><small>Find the best moments</small></span>
+          </button>
+          <button className="studio-toolbar__btn studio-toolbar__btn--motion" onClick={addMotionNode} aria-label="Add Motion Control node">
+            <span className="studio-toolbar__node-icon studio-toolbar__node-icon--motion">
+              <Icon name="motion" className="studio-toolbar__btn-icon" />
+            </span>
+            <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Motion Control</span><small>Guide character movement</small></span>
+          </button>
           <button className="studio-toolbar__btn studio-toolbar__btn--frame" onClick={addFrameNode} aria-label="Add Last Frame node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--frame">
               <Icon name="frame" kind="frame" className="studio-toolbar__btn-icon" />
             </span>
-            <span className="studio-toolbar__btn-label">Last frame</span>
+            <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Last frame</span><small>Capture the ending frame</small></span>
           </button>
           <button className="studio-toolbar__btn studio-toolbar__btn--extend" onClick={addExtendNode} aria-label="Add Extend node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--extend">
               <Icon name="extend" kind="frame" className="studio-toolbar__btn-icon" />
             </span>
-            <span className="studio-toolbar__btn-label">Extend</span>
+            <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Extend</span><small>Keep the sequence going</small></span>
           </button>
+        </div>
         </div>
 
         {/* Run control */}
-        <div className="studio-toolbar__divider" />
         {!isRunning && (
-          <>
+          <div className="studio-toolbar__actions">
             <button
               className="studio-toolbar__btn studio-toolbar__btn--run"
               onClick={handleRun}
@@ -841,15 +903,15 @@ function CanvasInner() {
                 aria-label={`Retry ${failedNodeIds.length} failed node${failedNodeIds.length === 1 ? '' : 's'}`}
                 title="Re-runs only the failed nodes and anything skipped because of them"
               >
-                <span className="studio-toolbar__btn-icon" aria-hidden="true">↻</span>
+                <Icon name="retry" className="studio-toolbar__btn-icon" />
                 <span className="studio-toolbar__btn-label">
                   Retry failed ({failedNodeIds.length})
                 </span>
               </button>
             )}
-          </>
+          </div>
         )}
-      </div>
+      </aside>
 
       {/* React Flow Canvas */}
       <ReactFlow

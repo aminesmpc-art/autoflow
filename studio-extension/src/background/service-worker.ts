@@ -16,6 +16,47 @@
    have failed at the first click, on the one path that needed it. Costs ~16KB
    in a worker that is already far larger than that. */
 import { uploadToFlow } from './debugUpload';
+import { trackSubmission } from '../shared/api';
+import { record as recordAttempt } from '../shared/attemptLog';
+import { outstandingAcrossRuns } from '../shared/runJournal';
+
+/* Media ids this worker has already reported as submitted. In memory on
+   purpose: it exists to stop one run re-posting the same id, not to survive
+   a restart. The endpoint is idempotent, so a recycled worker costs at most
+   one repeated call that creates nothing. */
+const _reportedStudioSubmissions = new Set<string>();
+
+/* ── Tab lifecycle, recorded because it is the thing that gets blamed ──
+ *
+ * A hidden run that produces nothing is currently indistinguishable from a
+ * discarded tab, a throttled one, and a page that submitted fine and simply
+ * stopped watching. Only this worker outlives all three, so only this worker
+ * can witness them.
+ *
+ * Keyed by tab rather than by attempt: Chrome tells us a tab went away, not
+ * which generation was riding on it. Entries carry tabId, so the tab's story
+ * and the attempt's story line up afterwards on that.
+ */
+const tabAttemptKey = (tabId: number) => `tab-${tabId}`;
+
+try {
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    void recordAttempt(tabAttemptKey(tabId), 'tab_removed', { tabId });
+  });
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    /* `discarded` is the one that matters: Chrome reclaimed the page and the
+       content script with it, so anything the page was waiting on is gone
+       even though the tab is still in the strip and still looks fine. */
+    if (changeInfo.discarded === true) {
+      void recordAttempt(tabAttemptKey(tabId), 'tab_discarded', { tabId });
+    }
+  });
+  chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
+    void recordAttempt(tabAttemptKey(removedTabId), 'tab_discarded', {
+      tabId: removedTabId, detail: `replaced by ${addedTabId}`,
+    });
+  });
+} catch { /* a context without chrome.tabs — instrumentation never throws */ }
 
 type Platform = 'flow' | 'chatgpt' | 'gemini' | 'grok' | 'claude' | 'zai';
 
@@ -37,6 +78,15 @@ export interface RunSnapshot {
   done: number;
   total: number;
   lastError: string;
+  /* Why hidden execution cannot continue on its own, in words for the user.
+     Empty when nothing needs them. Set only when the extension has genuinely
+     run out of ways to proceed without the tab being opened — a "Needs
+     attention" that appears for ordinary slowness teaches people to ignore
+     it, which costs more than it saves. */
+  needsAttention: string;
+  /* The tab their Open button should raise. Null when there is nothing to
+     open, so the panel can offer the explanation without a dead button. */
+  attentionTabId: number | null;
   updatedAt: number;
 }
 
@@ -49,6 +99,8 @@ const runState: RunSnapshot = {
   done: 0,
   total: 0,
   lastError: '',
+  needsAttention: '',
+  attentionTabId: null,
   updatedAt: Date.now(),
 };
 
@@ -161,6 +213,49 @@ const KEEPALIVE_ALARM = 'studio-keepalive';
    Note the period. Chrome clamps a packed extension's alarms to 30 seconds
    however small a number is asked for, so 0.5 is what this actually is rather
    than a wish for something faster. */
+/* ── Background Tabs (beta) ──────────────────────────────────────────────
+ *
+ * Off by default, and opt-in for a reason: bringing the tab forward is not a
+ * bug, it is the workaround. Chrome throttles a hidden tab's timers to about
+ * once a minute, and the only thing that resets that clock is the tab being
+ * VISIBLE. The routine below exists to buy un-throttled polling.
+ *
+ * What makes switching it off viable is that the adapters no longer depend on
+ * a fast tick: Gemini reads while hidden and wakes on a MutationObserver
+ * rather than the clock, Claude accepts a reply discovered after a delayed
+ * poll instead of calling it a timeout, and Flow confirms completion from a
+ * fresh id-matched status rather than from whatever matched last.
+ *
+ * Those three. ChatGPT, Grok and Z.AI have NOT been through that work, which
+ * is exactly why this is a flag and not a deletion — "remove routine focus
+ * stealing only after adapter tests pass", and they have not passed yet.
+ */
+const BACKGROUND_TABS_KEY = 'af_background_tabs';
+
+async function backgroundTabsOn(): Promise<boolean> {
+  try {
+    const got = await chrome.storage.local.get([BACKGROUND_TABS_KEY]);
+    return got?.[BACKGROUND_TABS_KEY] === true;
+  } catch {
+    /* Unreadable settings must not silently enable a beta. */
+    return false;
+  }
+}
+
+/**
+ * Raise a tab, unless the user asked us to stop doing that.
+ *
+ * A named helper rather than an inline guard so the call sites stay one line
+ * — several of them sit inside blocks that other tests read by character
+ * offset, and growing them there breaks assertions about code that has not
+ * changed. Navigating, re-injecting and polling all work perfectly well in a
+ * hidden tab; only a person needs it in front.
+ */
+async function raiseTabUnlessBackground(tabId: number): Promise<void> {
+  if (await backgroundTabsOn()) return;
+  try { await chrome.tabs.update(tabId, { active: true }); } catch { /* gone */ }
+}
+
 const TAB_PING_ALARM = 'studio-tab-ping';
 const TAB_PING_MINUTES = 0.5;
 let keptTabId: number | null = null;
@@ -189,6 +284,11 @@ async function startKeepalive(tabId: number, platform: Platform): Promise<void> 
  * handler. An alarm that outlives its run would pull the user off their own
  * canvas twice a minute, forever.
  */
+/* What the bridge last said about this tab, so a standing condition is
+   reported once rather than on every alarm. Cleared the moment a ping
+   succeeds, so the next real failure is news again. */
+let reinjectSaidFor: string | null = null;
+
 async function tabPingRoutine(): Promise<void> {
   if (keptTabId === null) { await stopKeepalive(); return; }
 
@@ -201,7 +301,13 @@ async function tabPingRoutine(): Promise<void> {
     return;
   }
 
-  if (!tab.active) {
+  /* The foreground grab, now conditional.
+     It takes the window away from whatever the user is doing, twice a minute,
+     for the length of a run — which is the entire thing background working
+     is meant to stop. With the beta on it is skipped and the tab is left
+     wherever the user put it; the health check below still runs, because
+     "is anything listening?" is a different question from "is it visible?". */
+  if (!tab.active && !(await backgroundTabsOn())) {
     try { await chrome.tabs.update(keptTabId, { active: true }); } catch { /* gone */ }
   }
 
@@ -212,29 +318,166 @@ async function tabPingRoutine(): Promise<void> {
      can no longer hear it. */
   try {
     await chrome.tabs.sendMessage(keptTabId, { type: 'PING' });
-  } catch {
-    const script = keptPlatform ? PLATFORMS[keptPlatform]?.script : undefined;
-    if (!script) return;
+    reinjectSaidFor = null;   // it answered; a later failure is news again
+    /* It is listening, so whatever the user was being asked to do is done.
+       A banner that outlives its cause is worse than none: the next real one
+       is read as the same stale message and ignored. */
+    if (runState.needsAttention) {
+      patchRunState({ needsAttention: '', attentionTabId: null });
+    }
+    return;
+  } catch { /* fall through and work out why */ }
+
+  const conf = keptPlatform ? PLATFORMS[keptPlatform] : undefined;
+  if (!conf?.script) return;
+
+  /* Is this even the right tab?
+  
+     Worth asking before injecting anything. A ping failing means nothing is
+     listening, which has two very different causes, and this used to print the
+     same line for both and then repeat it every tick:
+  
+       the adapter is orphaned in the right tab   — re-injecting fixes it
+       the kept tab is not that platform at all   — re-injecting a content
+                                                    script into an unrelated
+                                                    page cannot help and
+                                                    should not happen
+  
+     Neither was distinguishable from "No content script was listening ...
+     re-injected it", which is why it read as constant noise rather than as a
+     thing that had been dealt with. */
+  const url = tab.url || '';
+  const patterns = Array.isArray(conf.match) ? conf.match : [conf.match];
+
+  /* An unreadable URL is not a wrong one.
+  
+     This extension holds no "tabs" permission — only host permissions — so
+     chrome.tabs.get fills in `url` for a tab on one of those hosts and leaves
+     it empty for anything else. Treating empty as "not the platform" would
+     have refused to re-inject whenever the URL could not be read, which is
+     the opposite of the intent: the guard exists to stop a pointless
+     injection, not to add a new way of doing nothing.
+  
+     So it only refuses when it can actually see a URL and that URL is
+     plainly somewhere else. */
+  const onPlatform = !url || patterns.some((p) => matchesUrlPattern(url, p));
+  if (!onPlatform) {
+    /* Re-injecting into an unrelated page cannot help, so this is the case
+       where hidden execution genuinely cannot proceed and only the user can
+       resolve it. Named with the tab to raise, so the panel offers an Open
+       button rather than an instruction. */
+    patchRunState({
+      needsAttention: `The tab being used is no longer ${conf.name}. Open it and return to the run.`,
+      attentionTabId: keptTabId,
+    });
+    if (reinjectSaidFor !== `wrong:${url}`) {
+      reinjectSaidFor = `wrong:${url}`;
+      diag('Bridge', `The tab being kept is ${url || 'unknown'}, which is not a ${conf.name} `
+        + 'tab — nothing there can answer, and injecting into it would not help.');
+    }
+    return;
+  }
+
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: keptTabId }, files: [conf.script] });
+  } catch (err: any) {
+    diag('Bridge', `Cannot reach the ${conf.name} tab: ${err?.message || err}`);
+    return;
+  }
+
+  /* Did that actually help? The old code announced the re-injection and
+     assumed so. If the script still does not answer, saying "re-injected it"
+     every tick describes the attempt rather than the outcome — and the
+     outcome is the part worth knowing. */
+  /* Give it a moment to register, and ask more than once.
+   *
+   * executeScript resolving means the FILE was injected, not that the script
+   * has run far enough to add its onMessage listener. Pinging immediately
+   * therefore fails on a re-injection that is about to work perfectly — and
+   * the message for that failure reads "the adapter is failing as it loads",
+   * which is alarming and, in the run that produced it, false: the Flow
+   * adapter started its queue two seconds later and completed the node.
+   *
+   * Four tries over ~1.2s. Still fast enough that a genuinely broken adapter
+   * is reported on the same tick. */
+  let answered = false;
+  for (let i = 0; i < 4 && !answered; i++) {
+    if (i) await new Promise((r) => setTimeout(r, 400));
     try {
-      await chrome.scripting.executeScript({ target: { tabId: keptTabId }, files: [script] });
-      diag('Bridge', `No content script was listening in the ${
-        PLATFORMS[keptPlatform as Platform].name} tab - re-injected it.`);
-    } catch (err: any) {
-      diag('Bridge', `Cannot reach the ${PLATFORMS[keptPlatform as Platform].name} tab: ${
-        err?.message || err}`);
+      await chrome.tabs.sendMessage(keptTabId, { type: 'PING' });
+      answered = true;
+    } catch { /* not up yet */ }
+  }
+
+  try {
+    if (!answered) throw new Error('no answer');
+    if (reinjectSaidFor !== 'recovered') {
+      reinjectSaidFor = 'recovered';
+      diag('Bridge', `The ${conf.name} tab had no listener — re-injected, and it answers now.`);
+    }
+  } catch {
+    if (reinjectSaidFor !== 'stuck') {
+      reinjectSaidFor = 'stuck';
+      diag('Bridge', `The ${conf.name} tab still does not answer after re-injecting. `
+        + 'The adapter is failing as it loads — check the console in that tab.');
     }
   }
+}
+
+/** Does this URL match one of a platform's manifest-style patterns? */
+export function matchesUrlPattern(url: string, pattern: string): boolean {
+  /* Escape everything a regex would read specially — INCLUDING the star,
+     which is then put back as ".*".
+
+     Leaving * out of the escape set does not leave it meaning "anything": it
+     leaves it meaning "zero or more of the previous character". So
+     "https://flow.google.com/*" compiled to "…com/*" — com followed by any
+     number of slashes, including none — and since the pattern is not anchored
+     at the end, that matched https://flow.google.com.evil.test/x. A lookalike
+     host would have passed for the real one, and the worker would have
+     injected a content script into it. */
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\*]/g, '\\$&');
+  return new RegExp('^' + escaped.replace(/\\\*/g, '.*')).test(url);
 }
 
 async function stopKeepalive(): Promise<void> {
   chrome.alarms.clear(KEEPALIVE_ALARM).catch(() => {});
   chrome.alarms.clear(TAB_PING_ALARM).catch(() => {});
   keptPlatform = null;
+  reinjectSaidFor = null;
   if (keptTabId !== null) {
     try { await chrome.tabs.update(keptTabId, { autoDiscardable: true }); } catch { /* gone */ }
     keptTabId = null;
   }
 }
+
+/* ── What this worker inherited ──────────────────────────────────────────
+ *
+ * The worker is recycled routinely, and until now it came back with no idea
+ * that generations were outstanding. The user's only evidence was a canvas
+ * that looked unfinished, and the natural response to that is to press Run
+ * again — which buys every one of them a second time.
+ *
+ * Saying it out loud is the whole point. It does not resume anything: the
+ * scheduler still lives in the Studio page, so resuming is not this worker's
+ * to do yet. It makes the cost visible before someone spends it again.
+ */
+async function reportInheritedWork(): Promise<void> {
+  try {
+    const left = await outstandingAcrossRuns();
+    if (!left.length) return;
+    diag('Run', `${left.length} generation(s) were submitted and never collected `
+      + `before this worker restarted. They are paid for — recover them rather `
+      + `than running those nodes again.`);
+    patchRunState({
+      needsAttention: `${left.length} submitted generation(s) were not collected. `
+        + `Re-running those nodes would pay for them twice.`,
+      attentionTabId: null,
+    });
+  } catch { /* never let bookkeeping break startup */ }
+}
+
+void reportInheritedWork();
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   // Touching an API is enough to reset the idle timer.
@@ -389,9 +632,29 @@ async function ensurePlatformTab(platform: Platform): Promise<number | null> {
  * Returns false if the script never answers, so the caller can inject it
  * rather than send into the void.
  */
+/**
+ * How long to keep asking a LOADED page whether its script is listening.
+ *
+ * A page that has finished loading either has the content script or it does
+ * not, and waiting does not change which. The listener is registered at the
+ * top of the file, so a tab that has one answers on the first ping; a couple
+ * of seconds covers a script that is still evaluating.
+ *
+ * The whole budget used to go here. Every run of a workflow began by pinging a
+ * scriptless tab for THIRTY SECONDS before trying the one thing that fixes it
+ * — injecting the script — which is why the panel sat at "0 / 2 nodes
+ * completed, 0%" with an empty Diagnostics feed for half a minute, every
+ * single time. The timeout is for a page still LOADING; it was being spent on
+ * a page that had finished.
+ */
+const LISTEN_GRACE_MS = 2_500;
+
 async function waitForTabReady(tabId: number, timeoutMs = 30_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
 
+  /* Still loading. This is what the long budget is actually for — a tab the
+     user opened a moment ago, or one mid-reload, which will have a script
+     when it settles. */
   while (Date.now() < deadline) {
     try {
       const tab = await chrome.tabs.get(tabId);
@@ -402,7 +665,11 @@ async function waitForTabReady(tabId: number, timeoutMs = 30_000): Promise<boole
     await new Promise((r) => setTimeout(r, 250));
   }
 
-  while (Date.now() < deadline) {
+  /* Loaded. Now the question is only whether a script is there, and the
+     answer does not improve with time — so ask briefly and let the caller
+     inject, which is both faster and the actual remedy. */
+  const listenUntil = Math.min(deadline, Date.now() + LISTEN_GRACE_MS);
+  while (Date.now() < listenUntil) {
     try {
       await chrome.tabs.sendMessage(tabId, { type: 'PING' });
       return true;
@@ -918,6 +1185,31 @@ try {
 /** Types already reported, so one noisy caller cannot flood the console. */
 const reportedUnhandled = new Set<string>();
 
+/**
+ * Answer AutoFlow when it asks whether Studio is here.
+ *
+ * AutoFlow's Studio card opens this extension rather than its own bundled
+ * copy, and it has to know we exist before pointing a window at us —
+ * otherwise a user without Studio lands on a chrome-error page instead of the
+ * store listing. Reading the tab afterwards would have told it the same
+ * thing, but only with the "tabs" permission, which Chrome presents as "Read
+ * your browsing history". A ping costs nothing and needs no permission.
+ *
+ * Only AutoFlow can reach this: the manifest names its id in
+ * externally_connectable, so nothing else is even delivered here.
+ */
+/* Optional-chained: onMessageExternal only exists where externally_connectable
+   is declared, and the harnesses that load this worker stub chrome.runtime
+   without it. Registering unguarded threw at module load and took 19
+   unrelated tests down with it. */
+chrome.runtime.onMessageExternal?.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === 'AUTOFLOW_PING') {
+    sendResponse({ ok: true, name: 'AutoFlow Studio', version: chrome.runtime.getManifest().version });
+    return false;
+  }
+  return false;
+});
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Flow's React submit handlers ignore untrusted synthetic events.
   if (msg?.type === 'REACT_TRIGGER') {
@@ -1016,10 +1308,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.runtime.sendMessage({ type: 'PANEL_NEEDS_CLICK', payload: msg.payload }).catch(() => {});
     patchRunState({ lastError: line });
     if (sender.tab.id != null) {
-      chrome.tabs.update(sender.tab.id, { active: true }).catch(() => {});
-      if (sender.tab.windowId != null) {
-        chrome.windows.update(sender.tab.windowId, { focused: true }).catch(() => {});
-      }
+      /* The textbook "hidden execution cannot proceed": an adapter has hit
+         something only a person can clear. Under the beta that is stated and
+         left to the user — grabbing the window here would be the same
+         interruption the beta exists to remove, and it arrives at the least
+         predictable moment of all. With the beta off, behave as before. */
+      const tabId = sender.tab.id;
+      const windowId = sender.tab.windowId;
+      void backgroundTabsOn().then((quiet) => {
+        if (quiet) {
+          patchRunState({
+            needsAttention: line || 'The provider needs a click before the run can continue.',
+            attentionTabId: tabId,
+          });
+          return;
+        }
+        chrome.tabs.update(tabId, { active: true }).catch(() => {});
+        if (windowId != null) {
+          chrome.windows.update(windowId, { focused: true }).catch(() => {});
+        }
+      });
     }
     replyToStudio(msg);
     return false;
@@ -1028,12 +1336,49 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   /* A Build request's answer, which belongs to the panel rather than to a
      canvas node. Checked before the relay below, or it would be posted to a
      Studio window that is very often not open during a build. */
+  /* Media ids this worker has already reported. Cleared when the worker is
+     recycled, which is harmless: the endpoint is idempotent, so a restart
+     costs at most one repeated call that creates nothing. */
   if (msg?.type?.startsWith?.('STUDIO_NODE_') && sender.tab && settlePlan(msg)) {
     return false;
   }
 
   // Results arrive from a content script; forward them to the Studio window.
   if (msg?.type?.startsWith?.('STUDIO_') && sender.tab) {
+    /* Report the submission from HERE, not only from the runner.
+     *
+     * The runner lives in the Studio page — Canvas starts it — so closing
+     * Studio takes its trackSubmission call with it, while the generation it
+     * already paid for carries on. The queue extension had exactly this shape
+     * with its side panel: the dashboard read 0 sent against 2,492 charged
+     * until reporting moved to the background, and that was with the panel
+     * merely closed rather than a page Chrome is free to discard.
+     *
+     * Reporting twice is free — the endpoint is idempotent on the media id,
+     * so whichever call arrives second is answered created:false and adds no
+     * row. This is the copy that survives.
+     */
+    if (msg.type === 'STUDIO_NODE_RESULT' && msg.payload?.mediaId) {
+      const mediaId = String(msg.payload.mediaId);
+      if (!_reportedStudioSubmissions.has(mediaId)) {
+        _reportedStudioSubmissions.add(mediaId);
+        void recordAttempt(tabAttemptKey(sender.tab.id || 0), 'submitted', {
+          provider: 'flow',
+          nodeId: msg.payload.nodeId,
+          tabId: sender.tab.id,
+          mediaId,
+          ...(typeof msg.payload.hidden === 'boolean'
+            ? { hidden: msg.payload.hidden } : {}),
+        });
+        trackSubmission({
+          mediaId,
+          queueId: 'studio:background',
+          promptIndex: 0,
+          promptType: 'full',
+          mode: 'studio',
+        }).catch(() => { /* metering must never fail a generation */ });
+      }
+    }
     replyToStudio(msg);
     // Progress is worth surfacing in the panel too — it is the only place the
     // user can see a run without switching tabs.
@@ -1048,6 +1393,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // ── Panel ──
   if (msg?.type === 'PANEL_GET_STATE') {
     sendResponse(runState);
+    return false;
+  }
+
+  /* The Open button behind "Needs attention".
+   *
+   * Deliberately the ONLY thing in background mode that raises a tab, and it
+   * happens because the user clicked — which is the whole distinction this
+   * beta rests on. The routine grab was removed precisely so that focus
+   * changes are something the user asks for rather than something that
+   * happens to them twice a minute. */
+  if (msg?.type === 'PANEL_OPEN_ATTENTION_TAB') {
+    const id = runState.attentionTabId;
+    if (typeof id === 'number') {
+      chrome.tabs.update(id, { active: true })
+        .then((t) => (t?.windowId != null
+          ? chrome.windows.update(t.windowId, { focused: true })
+          : undefined))
+        .catch(() => { /* the tab went; the banner clears on the next ping */ });
+    }
+    sendResponse({ opened: typeof id === 'number' });
     return false;
   }
 
@@ -1087,7 +1452,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await chrome.tabs.update(tabId, { url });
           await waitForTabReady(tabId, 20_000);
         }
-        await chrome.tabs.update(tabId, { active: true });
+        await raiseTabUnlessBackground(tabId);
 
         /* Where did we actually land?
            A conversation id stays well-formed long after the conversation
@@ -1177,6 +1542,54 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
      The content scripts log to the console of the site they drive, which is
      the one place someone watching a run is not looking — finding out why a
      node failed meant opening devtools on chatgpt.com. */
+  /* Fetch a media file on the content script's behalf.
+   *
+   * Flow moved where it serves a finished clip from. It used to be
+   *
+   *   https://flow.google.com/asb/<token>=mm,22,15      same origin as the page
+   *
+   * and is now
+   *
+   *   https://flow-content.google/video/<uuid>?Expires=…&Signature=…
+   *
+   * which is a DIFFERENT origin. In MV3 a content script's cross-origin fetch
+   * follows the page's CORS rules, not the extension's, so the inline preview
+   * fetch simply failed — silently, returning '' — and every finished clip
+   * arrived on the canvas as a still with "open in Flow to play" under it.
+   *
+   * The worker is not subject to that: with the host in host_permissions it
+   * fetches with extension privileges. flow-content.google was missing from
+   * that list too, which is the other half of the same bug.
+   */
+  if (msg?.type === 'STUDIO_FETCH_MEDIA') {
+    (async () => {
+      const url = String(msg.payload?.url || '');
+      const maxBytes = Number(msg.payload?.maxBytes) || 15 * 1024 * 1024;
+      try {
+        if (!/^https:\/\//.test(url)) throw new Error('not an https url');
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const blob = await resp.blob();
+        if (blob.size > maxBytes) {
+          sendResponse({ error: `too large (${Math.round(blob.size / 1024 / 1024)}MB)` });
+          return;
+        }
+        /* As a data: URL, because that is what the canvas renders and what
+           survives the trip through a port message. */
+        const dataUrl: string = await new Promise((resolve, reject) => {
+          const fr = new FileReader();
+          fr.onload = () => resolve(String(fr.result || ''));
+          fr.onerror = () => reject(fr.error || new Error('read failed'));
+          fr.readAsDataURL(blob);
+        });
+        sendResponse({ dataUrl, type: blob.type, bytes: blob.size });
+      } catch (err: any) {
+        sendResponse({ error: err?.message || String(err) });
+      }
+    })();
+    return true; // async
+  }
+
   if (msg?.type === 'STUDIO_LOG') {
     pushLog(msg.payload?.source || 'Studio', msg.payload?.line || '');
     return false;
@@ -1345,7 +1758,10 @@ async function debugUploadEnabled(): Promise<boolean> {
   }
 }
 
-async function debugUploadToFlow(msg: any): Promise<{ ok: boolean; error?: string }> {
+/* Returns `names`: what each file was actually written to disk as, so the
+   caller can search Flow's library for the name it really has rather than the
+   one that was requested. See DebugUploadResult. */
+async function debugUploadToFlow(msg: any): Promise<{ ok: boolean; error?: string; names?: string[] }> {
   if (!(await debugUploadEnabled())) {
     return {
       ok: false,

@@ -109,6 +109,20 @@ export interface QueueSettings {
   stopOnError: boolean;
   automationMode: AutomationMode;   // 'full' | 'flow' | 'lite'
 
+  /* A video already in Flow's library, put on the prompt as an ingredient.
+     A NAME, not bytes — see content/flow/libraryPicker.ts.
+
+     It lives in settings rather than being attached before the queue starts,
+     because attaching it early does not survive: the engine opens the media
+     dialog for the reference images, applies the voice and fills the prompt
+     after that point, and the chip was gone by the time Generate was pressed.
+     Watched live, it went on and came straight back off. */
+  styleReference?: string;
+  /* Whether the generation is pointless without it. True for a Motion Control
+     piece, where that clip IS the motion being transferred, so a video made
+     without it is a different job at full price. */
+  styleReferenceRequired?: boolean;
+
   // Timing
   waitMinSec: number;                // Min wait time between prompts (default 10)
   waitMaxSec: number;                // Max wait time between prompts (default 20)
@@ -243,6 +257,10 @@ export type AutomationState =
   | 'VERIFY_SETTINGS'
   | 'APPLY_VOICE'
   | 'ATTACH_INGREDIENT_IMAGES'
+  /* Putting a clip that is already in Flow's library on the prompt. Its own
+     state because it is a dialog round-trip, and a run that stalls there
+     should say so rather than look like a slow ingredient upload. */
+  | 'ATTACH_LIBRARY_VIDEO'
   | 'ATTACH_FRAME_IMAGES'
   | 'FILL_PROMPT'
   | 'CLICK_GENERATE'
@@ -337,6 +355,26 @@ export interface Message {
 /** Mapped status from Google Flow's mediaGenerationStatus enum. */
 export type FlowGenerationState = 'queued' | 'generating' | 'completed' | 'failed' | 'unknown';
 
+/**
+ * What a status record's media URL actually points at.
+ *
+ * The distinction exists because a record carries more than its own result.
+ * An image-to-video generation carries its input frames from the moment it is
+ * submitted, and every tile carries a grid thumbnail — so "there is a media
+ * URL in here" is not "the video is ready". A Frames run reported itself
+ * finished at 45% for exactly that reason.
+ *
+ *   video   flow-content.google/video/<id>  — a generated video
+ *   image   flow-content.google/image/<id>  — a generated image, OR an input
+ *                                             frame or ingredient
+ *   thumb   flow.google.com/asb/<token>     — the grid poster, never the file
+ *   legacy  media.getMediaUrlRedirect       — labs.google's kind-agnostic
+ *                                             redirect, which serves whatever
+ *                                             the media turned out to be
+ *   none    no media URL at all
+ */
+export type FlowMediaKind = 'video' | 'image' | 'thumb' | 'legacy' | 'none';
+
 /** Parsed generation status from Google Flow's API. */
 export interface FlowGenerationStatus {
   /** Media/generation UUID (e.g. "5e32aa45-0db9-4d25-a56d-332db6c42a24") */
@@ -363,6 +401,30 @@ export interface FlowGenerationStatus {
   createdAt: string;
   /** Remaining credits after this generation */
   remainingCredits?: number;
+  /**
+   * Where this generation's file actually lives, when the API said so.
+   *
+   * On labs.google a media URL could be built from the id:
+   * media.getMediaUrlRedirect?name=<mediaId>. On flow.google.com it cannot —
+   * the URLs are signed and carry an Expires parameter, so the only way to
+   * have one is to read it from the response that issued it.
+   */
+  mediaUrl?: string;
+  /**
+   * What that URL points at — see FlowMediaKind.
+   *
+   * A caller that wants a video must check this, not just `state`. The parser
+   * cannot: it does not know what the queue asked for, so it reports the kind
+   * and leaves the judgement to whoever does.
+   */
+  mediaKind?: FlowMediaKind;
+  /**
+   * Whether the media URL is signed under THIS record's own media id.
+   *
+   * False means the record carried somebody else's asset — an ingredient, a
+   * start frame — and nothing of its own.
+   */
+  ownMedia?: boolean;
 }
 
 // ── Default settings ──

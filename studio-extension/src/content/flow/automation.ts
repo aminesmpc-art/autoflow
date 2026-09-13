@@ -40,6 +40,9 @@ import {
   findAttachedIngredients,
   findFrameSlots,
   frameSlotFilled,
+  labelText,
+  frameSlotHasChip,
+  frameSlotEmptyChip,
   describeFrameSlot,
   findFrameSlotClearButton,
   findFrameSlotDialog,
@@ -51,6 +54,7 @@ import {
   describeAssetDialog,
   findLoadedIngredients,
   waitForIngredients,
+  INGREDIENT_WAIT_MS,
   findFlowAlertIndicator,
   readFlowAlertMessage,
   readsAsCreditsExhausted,
@@ -110,6 +114,11 @@ import {
   findExtendPromptInput,
   findExtendModelSelectorTrigger,
   findExtendGenerateButton,
+  ingredientChipsSettled,
+  chipSettleReport,
+  mediaNamesOnPage,
+  uploadIsOnPage,
+  ingredientChipIds,
 } from './selectors';
 import type { TileSnapshot, FailedTileInfo, TileState } from './selectors';
 import { matchesFlowText, exactMatchFlowText, closeAriaSelectors, FLOW_STRINGS, searchInputSelector, isQuotaError, isSafetyViolation } from './flowStrings';
@@ -127,6 +136,7 @@ import {
   classifyError,
   activeStatusCheck,
   getInterceptorError,
+  getCachedStatus,
 } from './apiHelper';
 
 /**
@@ -173,11 +183,81 @@ function stripModelVersion(norm: string): string {
   return norm.replace(/\b\d+(\.\d+)*\b/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-let globalRunLock = false;
+/**
+ * Who is running, rather than whether anything is.
+ *
+ * This was a bare boolean, and stop() did not touch it — the flag was only
+ * cleared at the release points inside the run loop. So:
+ *
+ *   22:12:41  Queue stop requested
+ *   22:12:42  ERROR: Another queue is already running. Stop it before
+ *             starting a new one.
+ *
+ * Stop set `stopped = true` and returned. The engine was somewhere inside a
+ * long await — an ingredient wait is up to 90s, a generation wait minutes —
+ * so it did not reach a release point for a long time, and every attempt to
+ * fix the workflow and run again was refused by a queue that had already been
+ * told to stop.
+ *
+ * Naming the owner fixes a second fault in the same place. A new engine is
+ * built for every run, and the old one eventually finishes unwinding and
+ * clears the lock — the lock belonging to the run that had started in the
+ * meantime, letting a third one in on top of it. A release now only counts
+ * from the engine that took it.
+ */
+let runLockOwner: AutomationEngine | null = null;
 
 export function isRunLocked(): boolean {
-  return globalRunLock;
+  return !!runLockOwner && !runLockOwner.isStopped();
 }
+
+/** Clear the lock, but only if this engine is the one holding it. */
+function releaseRunLock(engine: AutomationEngine): void {
+  if (runLockOwner === engine) runLockOwner = null;
+}
+
+/* ------------------------------------------------------------------ */
+/* What attaching an image is allowed to take                          */
+/* ------------------------------------------------------------------ */
+
+/** Every chip has appeared AND is showing its picture. */
+export const INGREDIENT_SETTLE_MS = 90_000;
+
+/** The chips have appeared at all, after a paste or a library pick. */
+export const CHIP_APPEAR_MS = 10_000;
+
+/**
+ * The name a file is uploaded to Flow under.
+ *
+ * Built from the image's own id rather than its position, so one picture keeps
+ * one name across prompts — position-based names picked the wrong character
+ * image when two prompts wanted different ones in the same slot.
+ *
+ * Lifted out of uploadImageBatch because the verification after it needs the
+ * same names: "has Flow taken this file" is answered by looking for the name
+ * on the page, and it cannot look for a name only the batch loop knows.
+ */
+function uploadFilename(file: { mime?: string; id?: string }, fallback: string): string {
+  const ext = (file.mime || '').includes('png') ? 'png' : 'jpg';
+  const idSlug = (file.id || '').replace(/-/g, '').slice(0, 8) || fallback;
+  return `af_${idSlug}.${ext}`;
+}
+
+/**
+ * The longest an attach may legitimately take, for the watchdog outside it.
+ *
+ * Summed rather than guessed. A supervisor shorter than the work it watches
+ * reports a slow upload as a hang, which is what "Engine stalled at
+ * ATTACH_INGREDIENT_IMAGES for 90s" was: 90 seconds of watchdog over 145
+ * seconds of legitimate waiting, on the one stage where giving up early means
+ * either failing a prompt that was ready or generating without the reference.
+ *
+ * The margin is for the work between the waits — reading blobs out of the
+ * sidepanel, dismissing dialogs, the paste itself — which is small and not
+ * worth a constant of its own, but is not nothing.
+ */
+export const attachStallLimitMs = (): number =>
+  INGREDIENT_WAIT_MS + CHIP_APPEAR_MS + INGREDIENT_SETTLE_MS + 30_000;
 
 export class AutomationEngine {
   private queue: QueueObject | null = null;
@@ -215,6 +295,11 @@ export class AutomationEngine {
   }
   private paused = false;
   private stopped = false;
+
+  /** Whether this engine has been told to stop. Read by the run-lock owner. */
+  isStopped(): boolean {
+    return this.stopped;
+  }
   /** When this queue started, so startup milestones can report elapsed time. */
   private startedAt = 0;
   /** Milliseconds since the queue started, for the startup log. */
@@ -254,21 +339,29 @@ export class AutomationEngine {
   /** Start processing a queue */
   async start(queue: QueueObject, baselineTileCount?: number): Promise<void> {
     // ── Run-lock check ──
-    if (globalRunLock) {
+    /* A stopped engine is not a running one. It may still be unwinding out of
+       an await it cannot be interrupted inside, but it will do nothing further
+       — every step checks `stopped` before acting — so it has no claim on the
+       next run. */
+    if (runLockOwner && runLockOwner !== this && !runLockOwner.isStopped()) {
       this.log('error', 'Another queue is already running. Stop it before starting a new one.');
       this.sendRunLockChanged(true);
       return;
     }
-    globalRunLock = true;
+    runLockOwner = this;
     this.sendRunLockChanged(true);
 
     this.queue = queue;
     this.stopped = false;
     this.paused = false;
+    this.togglesEnsured = false;
     this.currentPromptIdx = queue.currentPromptIndex || 0;
 
     // Initialize API cache for this queue session
-    onQueueStart();
+    /* Tell the API cache what this queue is making. A record carries its
+       input frames and its grid poster as well as its result, so a completion
+       is only believed when the media that arrived is of the kind asked for. */
+    onQueueStart(queue.settings?.mediaType === 'image' ? 'image' : 'video');
 
     /* Elapsed milliseconds against this, printed at each startup milestone.
        "It takes too long to start" could not be answered from the log before
@@ -303,7 +396,7 @@ export class AutomationEngine {
     const settingsOk = await this.applyAllSettings(this.queue.settings);
     if (this.stopped) {
       this.sendQueueStatus('stopped');
-      globalRunLock = false;
+      releaseRunLock(this);
       this.sendRunLockChanged(false);
       return;
     }
@@ -319,7 +412,7 @@ export class AutomationEngine {
         this.updatePromptStatus(i, 'failed', msg);
       }
       this.sendQueueStatus('stopped');
-      globalRunLock = false;
+      releaseRunLock(this);
       this.sendRunLockChanged(false);
       return;
     }
@@ -423,8 +516,27 @@ export class AutomationEngine {
     // Check if recovery reload is needed (verifyAndReprompt saves status as 'queued' for recovery prompts)
     const queuedRemaining = this.queue.prompts.filter(p => p.status === 'queued').length;
     if (queuedRemaining > 0 && !this.stopped) {
-      if (this.mode === 'full') {
-        this.log('info', `Queue has ${queuedRemaining} unverified/cancelled prompt(s). Skipping recovery reload (Full Mode)...`);
+      if (this.mode === 'full' || this.mode === 'lite') {
+        /* Never reload in LITE. That is Studio.
+         *
+         * A reload destroys this content script in the middle of its own run.
+         * The poller watching the tile dies with it, no result is ever sent,
+         * and the node sits at "Generating video…" for ever while the clip is
+         * finished on the page behind it — "he reload the flow page when the
+         * generation finish, that case the bot crashing and show in the viewer
+         * still generating".
+         *
+         * The reload exists to restart the standalone extension's recovery
+         * scan, which reads the library after the page comes back. Studio has
+         * no such pass: it takes its result from the tile and the API while
+         * the page is still up. So there is nothing on the other side of a
+         * reload for it — only a lost run.
+         *
+         * The gate was `mode === 'full'` alone, so LITE fell into the reload
+         * branch, and LITE is the only mode Studio ever uses. */
+        this.log('info',
+          `Queue has ${queuedRemaining} unverified prompt(s). Not reloading `
+          + `(${this.mode === 'lite' ? 'Lite' : 'Full'} mode).`);
       } else {
         // Save uploaded assets set and hard failed indices to storage so they survive the reload
         try {
@@ -458,9 +570,23 @@ export class AutomationEngine {
     failedCount = this.queue.prompts.filter(p => p.status === 'failed').length;
 
     // ── Queue summary ──
+    /* Submitted is its own outcome, not a skip.
+     *
+     * LITE mode hands a prompt to Flow and moves on — it never waits for the
+     * tile, so the prompt ends as 'submitted' and never reaches 'done'. With
+     * skipped counted as "everything that is neither done nor failed", a LITE
+     * run that worked perfectly reported
+     *
+     *     Done: 0, Failed: 0, Skipped: 1
+     *
+     * for a prompt Flow had accepted, generated and returned a clip for. The
+     * number described the bookkeeping rather than what happened. */
     const totalPrompts = this.queue.prompts.length;
-    const skipped = totalPrompts - doneCount - failedCount;
-    const summary = `Queue "${this.queue.name}" finished — Done: ${doneCount}, Failed: ${failedCount}, Skipped: ${skipped}`;
+    const submittedCount = this.queue.prompts.filter(p => p.status === 'submitted').length;
+    const skipped = totalPrompts - doneCount - failedCount - submittedCount;
+    const summary = `Queue "${this.queue.name}" finished — Done: ${doneCount}, `
+      + (submittedCount ? `Submitted: ${submittedCount}, ` : '')
+      + `Failed: ${failedCount}, Skipped: ${skipped}`;
 
     if (this.stopped) {
       this.log('info', `Queue "${this.queue.name}" stopped by user. ${summary}`);
@@ -496,7 +622,7 @@ export class AutomationEngine {
             }).catch(() => {});
           } catch { /* ignore */ }
           try { await clearRunningQueue(); } catch { /* ignore */ }
-          globalRunLock = false;
+          releaseRunLock(this);
           this.sendRunLockChanged(false);
           window.location.reload();
           return;
@@ -543,7 +669,7 @@ export class AutomationEngine {
                 this.sendQueueSummary(finalDone, finalFailed, finalSkipped);
                 
                 try { await clearRunningQueue(); } catch { /* ignore */ }
-                globalRunLock = false;
+                releaseRunLock(this);
                 this.sendRunLockChanged(false);
                 this.log('info', `All ${dlCount} video(s) downloaded via API. Done! ✅ (${finalDone} done, ${finalFailed} failed)`);
                 return;
@@ -562,7 +688,7 @@ export class AutomationEngine {
           this.sendQueueStatus('completed');
           this.sendQueueSummary(finalDone, finalFailed, finalSkipped);
           try { await clearRunningQueue(); } catch { /* ignore */ }
-          globalRunLock = false;
+          releaseRunLock(this);
           this.sendRunLockChanged(false);
           return;
         }
@@ -581,7 +707,7 @@ export class AutomationEngine {
         } catch { /* ignore */ }
 
         try { await clearRunningQueue(); } catch { /* ignore */ }
-        globalRunLock = false;
+        releaseRunLock(this);
         this.sendRunLockChanged(false);
         window.location.reload();
         return;
@@ -602,7 +728,7 @@ export class AutomationEngine {
         } catch { /* ignore */ }
 
         try { await clearRunningQueue(); } catch { /* ignore */ }
-        globalRunLock = false;
+        releaseRunLock(this);
         this.sendRunLockChanged(false);
         window.location.reload();
         return;
@@ -616,7 +742,7 @@ export class AutomationEngine {
     try { await clearRunningQueue(); } catch { /* ignore */ }
 
     // ── Release run-lock ──
-    globalRunLock = false;
+    releaseRunLock(this);
     this.sendRunLockChanged(false);
   }
 
@@ -656,6 +782,11 @@ export class AutomationEngine {
           return;
         }
 
+        /* Whether the library clip made it onto the prompt. Read again below,
+           because a chip that went on and then vanished is the exact failure
+           this ordering exists to prevent. */
+        let libraryVideoOn = false;
+
         // State: ATTACH IMAGES — branch based on creation type
         if (prompt.images && prompt.images.length > 0) {
           const isFramesMode = this.queue!.settings.creationType === 'frames';
@@ -691,6 +822,43 @@ export class AutomationEngine {
           if (this.stopped) return;
         }
 
+        /* State: ATTACH LIBRARY VIDEO
+         *
+         * Last, and deliberately so. This used to be attached before the queue
+         * even started — and it went on and came straight back off, watched
+         * live. Everything between then and Generate touches the composer: the
+         * ingredient upload opens the media dialog, the voice picker opens the
+         * ingredient menu, and Flow's own "clear prompt on submit" treats a
+         * chip put there beforehand as leftovers from the last prompt.
+         *
+         * So it goes on at the last moment nothing else will disturb it, and
+         * the count check below re-reads it after the prompt is filled. */
+        const libraryVideo = String(this.queue!.settings.styleReference || '').trim();
+        if (libraryVideo) {
+          this.state = 'ATTACH_LIBRARY_VIDEO';
+          const { attachFromLibrary } = await import('./libraryPicker');
+          const got = await attachFromLibrary(libraryVideo, {
+            log: (line) => this.log('info', line),
+          });
+          libraryVideoOn = got.ok;
+          if (got.ok) {
+            this.log('info', `"${libraryVideo}" is on the prompt as an ingredient.`);
+          } else if (this.queue!.settings.styleReferenceRequired) {
+            /* Thrown, not logged: the retry wrapper around this prompt gets
+               another go at the dialog, and if it never lands the message is
+               what the node shows. Generating without it would spend a full
+               video on the prompt text alone. */
+            throw new Error(
+              `The motion source "${libraryVideo}" could not be put on the prompt — `
+              + `${got.reason}. Nothing was generated: without that clip this is a video `
+              + 'from the words alone, which is not what this node is for.'
+            );
+          } else {
+            this.log('warn', `No style reference: ${got.reason}. Generating without it.`);
+          }
+          if (this.stopped) return;
+        }
+
         // State: FILL_PROMPT
         this.state = 'FILL_PROMPT';
         await this.fillPrompt(prompt.text, this.queue!.settings);
@@ -708,8 +876,14 @@ export class AutomationEngine {
            re-read here rather than assumed to have survived. Generating with a
            reference missing produces a plausible clip built from the text
            alone, which is the one failure nothing downstream can detect. */
-        if (prompt.images && prompt.images.length > 0) {
-          if (this.queue!.settings.creationType === 'frames') {
+        /* The library clip is a chip like any other, so it belongs in this
+           count. Without it the check was skipped entirely for a piece with no
+           character still — nothing to count, nothing to verify — and that is
+           precisely the run where the clip is the only ingredient there is. */
+        const chipsBeforeGenerate = (prompt.images?.length || 0) + (libraryVideoOn ? 1 : 0);
+        if (chipsBeforeGenerate > 0) {
+          if (prompt.images && prompt.images.length > 0
+              && this.queue!.settings.creationType === 'frames') {
             /* Frames images live in the Start and End slots, not the
                ingredient tray, so counting chips here would report zero
                attached however well the paste went. Check the slots the
@@ -727,12 +901,15 @@ export class AutomationEngine {
             }
           } else {
             const attachedNow = findLoadedIngredients().length;
-            if (attachedNow < prompt.images.length) {
-              const ok = await waitForIngredients(prompt.images.length, 20_000);
+            if (attachedNow < chipsBeforeGenerate) {
+              const ok = await waitForIngredients(chipsBeforeGenerate, 20_000);
               if (!ok) {
+                const what = libraryVideoOn
+                  ? `${chipsBeforeGenerate} ingredient(s) — ${prompt.images?.length || 0} still(s) and the motion clip`
+                  : `${chipsBeforeGenerate} reference image(s)`;
                 throw new Error(
-                  `Flow shows ${findLoadedIngredients().length} of ${prompt.images.length} reference image(s) ` +
-                  'attached. Generating now would drop the reference, so this node stopped instead.'
+                  `Flow shows ${findLoadedIngredients().length} of ${what} attached. ` +
+                  'Generating now would drop the reference, so this node stopped instead.'
                 );
               }
             }
@@ -1119,7 +1296,9 @@ export class AutomationEngine {
           simulateClick(newProjectBtn);
           clickedNewProject = true;
           await sleep(6000); // wait longer for new project to load — Flow creates a project + navigates
-          // New projects reset toggles — ensure they're ON
+          // A new project really does reset them, so this is the one place the
+          // once-per-run claim is given back.
+          this.togglesEnsured = false;
           await this.ensureToggles();
           continue;
         }
@@ -1476,7 +1655,23 @@ export class AutomationEngine {
 
     // Each strategy returns true if it actually fired an action,
     // false if it immediately knows it can't work (skip the wait).
+    /* simulateClick first, then the native click, then the React pair.
+     *
+     * The order was the other way round and the native click was reported as
+     * working every single time — because waitForSettingsPanel said so on a
+     * signal that was true whether or not anything had opened. With that
+     * corrected, the ordering matters, and there is direct evidence for it in
+     * the same log: the VIEW settings panel, whose routine tries simulateClick
+     * first, opened on the first try on every one of its six attempts, while
+     * this one's native click never actually opened anything.
+     *
+     * The React pair go last rather than being deleted — they are what works
+     * on the old site, and they cost one MAIN-world round trip each here. */
     const strategies: Array<{ name: string; fn: () => boolean | Promise<boolean> }> = [
+      {
+        name: 'dispatched pointer+mouse+click',
+        fn: () => { simulateClick(trigger); return true; },
+      },
       {
         name: 'native .click()',
         fn: () => { nativeClick(trigger); return true; },
@@ -1496,10 +1691,6 @@ export class AutomationEngine {
           if (!ok) this.log('info', 'No React onClick handler found');
           return ok;
         },
-      },
-      {
-        name: 'dispatched pointer+mouse+click',
-        fn: () => { simulateClick(trigger); return true; },
       },
       {
         name: 'keyboard Space',
@@ -1573,10 +1764,31 @@ export class AutomationEngine {
     while (Date.now() - start < timeoutMs) {
       if (this.stopped) return false;
       if (isSettingsPanelOpen()) return true;
-      // The tabs live inside this panel, so their presence IS the panel.
+
+      /* The tabs only speak for the panel when they are INSIDE it.
+       *
+       * "their presence IS the panel" was the premise, and this Flow disproves
+       * it — measured on four separate steps of one run, every time:
+       *
+       *   WARN: Settings panel would not close — overlay=false mediaTabs=true
+       *
+       * The media-type tabs are visible with the panel shut. So this returned
+       * true immediately, every caller believed the panel was open, and none
+       * of them retried:
+       *
+       *   22:47:19  Media-type tabs mounted — settings panel is open
+       *   22:47:32  Creation: Frames menu item not found | panelOpen=false
+       *             | visible toggles: none
+       *
+       * Nothing was on screen to look at. That is why Frames never switched,
+       * and why the model selector needed its own "reopening and retrying"
+       * to recover — it was the only step that did not trust this.
+       *
+       * Requiring the tab to sit in a .cdk-overlay-pane keeps the signal for a
+       * build where the premise holds, and makes it correctly false here. */
       const tab = findMediaTypeTab('video') || findMediaTypeTab('image');
-      if (tab && isVisible(tab)) {
-        this.log('info', 'Media-type tabs mounted — settings panel is open');
+      if (tab && isVisible(tab) && tab.closest('.cdk-overlay-pane')) {
+        this.log('info', 'Media-type tabs mounted inside the overlay — settings panel is open');
         return true;
       }
       await sleep(100);
@@ -1601,23 +1813,47 @@ export class AutomationEngine {
 
     // Same specific test used to detect opening: the chip's own state, or the
     // media tabs being mounted (they only exist inside this panel).
-    const isOpen = () =>
-      isSettingsPanelOpen() ||
-      !!(findMediaTypeTab('video') || findMediaTypeTab('image'));
+    /* Same correction as waitForSettingsPanel: the tabs are visible on this
+       Flow with the panel shut, so counting them alone meant the panel could
+       never read as closed — which is why this warned on every run of a queue
+       whose prompt then filled perfectly. */
+    const isOpen = () => {
+      if (isSettingsPanelOpen()) return true;
+      const tab = findMediaTypeTab('video') || findMediaTypeTab('image');
+      return !!(tab && tab.closest('.cdk-overlay-pane'));
+    };
 
     if (!isOpen()) return;
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       if (this.stopped) return;
 
-      document.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Escape', code: 'Escape', bubbles: true, cancelable: true,
+      /* keyCode as well as key. Angular Material's overlay keyboard dispatcher
+         reads both, and 450ms because that is how long one Escape measured on
+         the live page — the old 200-350ms checked before the first press had
+         taken effect, so every close looked like a failure on attempt one. */
+      document.body.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
+        bubbles: true, cancelable: true,
       }));
-      await humanDelay(200, 350);
+      await sleep(450);
       if (!isOpen()) return;
 
+      /* Then the backdrop. The loop below it presses on document.body, which
+         is the Radix idea of an outside interaction — and on this Flow the
+         panel is a CDK overlay with a backdrop laid over the page, so a body
+         press never reaches anything. That is why this warned twice in a run
+         where the panel had in fact closed and the prompt filled perfectly. */
+      const backdrop = document.querySelector('.cdk-overlay-backdrop') as HTMLElement | null;
+      if (backdrop) {
+        backdrop.click();
+        await sleep(450);
+        if (!isOpen()) return;
+      }
+
       // Press outside the layer. body is never inside the portal content, so
-      // Radix treats this as an outside interaction and dismisses.
+      // Radix treats this as an outside interaction and dismisses. Kept for
+      // anyone still on the old site.
       for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
         const Ctor = type.startsWith('pointer') && typeof PointerEvent !== 'undefined'
           ? PointerEvent : MouseEvent;
@@ -1629,9 +1865,17 @@ export class AutomationEngine {
       if (!isOpen()) return;
     }
 
+    /* Which of the two says so. isOpen() is an OR — the overlay being there,
+       or the media-type tabs being findable — and they fail differently: an
+       overlay still up really does cover the composer, while tabs that linger
+       in the DOM after it closes are a detector fault and nothing more. This
+       warned on every run of a queue whose prompt then filled perfectly, so it
+       was almost certainly the second. */
     this.log('warn',
-      'Settings panel would not close — it may cover the prompt bar. ' +
-      'Continuing, but prompt entry could be blocked.');
+      'Settings panel would not close — it may cover the prompt bar. '
+      + `overlay=${isSettingsPanelOpen()} `
+      + `mediaTabsInOverlay=${!!((findMediaTypeTab('video') || findMediaTypeTab('image'))?.closest('.cdk-overlay-pane'))}. `
+      + 'Continuing, but prompt entry could be blocked.');
   }
 
   /**
@@ -1646,7 +1890,18 @@ export class AutomationEngine {
     // Helper to open settings, find a menu item, click it.
     // Radix TabsTrigger activates on mousedown, NOT click, so we use
     // simulateClick (which dispatches pointerdown→mousedown→click).
-    const applyMenuItem = async (label: string, description: string): Promise<boolean> => {
+    /* @param quiet  This call is a PROBE, so a miss is not news.
+     *
+     * Generations is asked for twice — "1x", then "x1" — because Flow has used
+     * both labels and only one exists on any given build. The first attempt is
+     * therefore expected to fail half the time, and it was logging
+     *
+     *     WARN: Generations: 1x menu item not found
+     *
+     * immediately before "Generations: x1 already active". A warning for the
+     * expected outcome of a deliberate probe teaches the reader to skim
+     * warnings, which is the opposite of what they are for. */
+    const applyMenuItem = async (label: string, description: string, quiet = false): Promise<boolean> => {
       if (this.stopped) return false;
       // Open settings panel if closed
       if (!isSettingsPanelOpen()) {
@@ -1658,7 +1913,35 @@ export class AutomationEngine {
         await humanDelay(300, 600);
       }
 
-      const item = findModeButton(label);
+      /* Look for it for a few seconds, not once.
+       *
+       *   22:15:22  Settings panel opened via native .click()
+       *   22:15:22  WARN: Creation: Frames menu item not found
+       *
+       * Same second. The toggle group carries
+       * mat-button-toggle-animations-enabled, so the panel animates in — and
+       * isVisible rejects anything still at opacity 0. One look taken during
+       * that animation finds nothing, the composer stays on Ingredients, and
+       * the Start/End slots the run is about to need are never rendered.
+       * Every "the frame buttons could not be found" after it was downstream
+       * of a mode that was never switched. */
+      let item = findModeButton(label);
+      /* Not for a probe. Generations is asked for as "1x" then "x1" because
+         Flow has used both and only one exists on a build, so the first is
+         EXPECTED to miss — and waiting three seconds to confirm what we knew
+         cost three seconds on every single run:
+
+           23:00:11  Image Ratio: 9:16 already active
+           23:00:14  Generations: x1 already active
+
+         The poll is for the real lookups, where a miss means the panel had
+         not finished animating in. */
+      if (!quiet) {
+        for (let waited = 0; !item && waited < 3000; waited += 250) {
+          await sleep(250);
+          item = findModeButton(label);
+        }
+      }
       if (item) {
         // Check if already selected/active
         const state = item.getAttribute('data-state');
@@ -1679,8 +1962,12 @@ export class AutomationEngine {
         // Verify the click worked by re-checking state
         const afterItem = findModeButton(label);
         if (afterItem) {
-          const afterState = afterItem.getAttribute('data-state');
-          if (afterState === 'active') {
+          /* isTabActive, not data-state alone. A Material button-toggle marks
+             itself with aria-checked and a class on the wrapper and sets
+             data-state on neither — so a click that worked was read as one
+             that had not, and the code went on to try React handlers that do
+             not exist on an Angular control. */
+          if (isTabActive(afterItem)) {
             this.log('info', `${description} confirmed active`);
           } else {
             // Fallback: try React handler directly
@@ -1692,7 +1979,19 @@ export class AutomationEngine {
         }
         return true;
       } else {
-        this.log('warn', `${description} menu item not found`);
+        /* Say what WAS on the panel, the way the model selector already does.
+           "not found" on its own cannot distinguish a renamed label from a
+           panel that had not rendered from a search looking in the wrong
+           place, and three runs were spent not knowing which. */
+        if (!quiet) {
+          const seen = Array.from(document.querySelectorAll(
+            'button[role="tab"], [role="menuitem"], [role="menuitemradio"], [role="option"], '
+            + '[data-radix-collection-item], button[role="radio"], mat-button-toggle button'
+          )).filter(isVisible).map((el) => `"${labelText(el)}"`);
+          this.log('warn',
+            `${description} menu item not found | panelOpen=${isSettingsPanelOpen()} `
+            + `| visible toggles: ${seen.length ? seen.join(' , ') : 'none'}`);
+        }
         return false;
       }
     };
@@ -1702,6 +2001,9 @@ export class AutomationEngine {
     // mode, and a silent miss here produced video prompts rendered as images.
     const wantMedia: 'image' | 'video' = settings.mediaType === 'image' ? 'image' : 'video';
     const mediaLabel = wantMedia === 'image' ? 'Image' : 'Video';
+    /* Did we actually change it. Only a real switch re-renders the menu, and
+       only a re-render needs the panel closed and reopened afterwards. */
+    let mediaTypeSwitched = false;
     this.mediaTypeApplied = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
       if (this.stopped) return false;
@@ -1731,6 +2033,7 @@ export class AutomationEngine {
         this.mediaTypeApplied = true;
         break;
       }
+      mediaTypeSwitched = true;
       simulateClick(tab);
       await humanDelay(500, 900);
 
@@ -1747,12 +2050,29 @@ export class AutomationEngine {
     }
     if (this.stopped) return false;
 
-    // Switching Image<->Video re-renders the entire settings menu (different
-    // controls per mode). Close it and let Radix settle — every later lookup
-    // (the model dropdown especially) must see the fresh menu, not stale
-    // pre-switch nodes. applyMenuItem/setModel reopen the panel on demand.
-    await this.closeSettingsPanel();
-    await humanDelay(500, 800);
+    /* Switching Image<->Video re-renders the entire settings menu (different
+       controls per mode). Close it and let it settle — every later lookup, the
+       model dropdown especially, must see the fresh menu and not stale
+       pre-switch nodes. applyMenuItem/setModel reopen on demand.
+     *
+     * ONLY when it actually switched. The tab being already correct re-renders
+     * nothing, so closing a good panel and opening it again is three seconds
+     * spent returning to where it started — and on a repeat run the type is
+     * already right nearly every time:
+     *
+     *   23:00:59  Media: Video confirmed active
+     *   23:01:00  Opening settings panel …          reopening what was just shut
+     *   23:01:02  Opening settings panel via native .click()
+     *
+     * Those last two seconds are the reopen landing while the panel is still
+     * animating out, so the first strategy misses and the fallback pays for
+     * it. Waiting for the overlay to actually be gone costs a fraction of
+     * that and removes the miss. */
+    if (mediaTypeSwitched) {
+      await this.closeSettingsPanel();
+      for (let i = 0; i < 12 && isSettingsPanelOpen(); i++) await sleep(100);
+      await humanDelay(200, 350);
+    }
 
     // 2. Select creation type (Ingredients / Frames) — only for VIDEO mode
     // Image mode in Flow UI doesn't have creation type options
@@ -1798,9 +2118,14 @@ export class AutomationEngine {
     // Try new format "1x" first, then old format "x1"
     const genNewFmt = `${settings.generations}x`;
     const genOldFmt = `x${settings.generations}`;
-    let genSet = await applyMenuItem(genNewFmt, `Generations: ${genNewFmt}`);
+    let genSet = await applyMenuItem(genNewFmt, `Generations: ${genNewFmt}`, true);
     if (!genSet) {
-      genSet = await applyMenuItem(genOldFmt, `Generations: ${genOldFmt}`);
+      genSet = await applyMenuItem(genOldFmt, `Generations: ${genOldFmt}`, true);
+    }
+    if (!genSet) {
+      this.log('warn',
+        `Generations: neither "${genNewFmt}" nor "${genOldFmt}" is on this panel — `
+        + 'leaving whatever Flow has set.');
     }
     if (this.stopped) return false;
 
@@ -2107,7 +2432,28 @@ export class AutomationEngine {
    * - "Show tile details" (shows generation progress and labels)
    * Opens the VIEW settings panel (gear icon), checks both, then closes.
    */
+  /** These are page-level and do not change between prompts — one go per run. */
+  private togglesEnsured = false;
+
   private async ensureToggles(): Promise<void> {
+    if (this.togglesEnsured) return;
+
+    /* Claim the attempt before making it, and reset it only where the page
+       itself resets — creating a new project.
+     *
+     * The whole block ran twice on every run: once after "+ New project", once
+     * from applySettings. Six seconds of opening the view panel, switching to
+     * Batch, and reading two toggles, all of it done a moment earlier:
+     *
+     *   23:00:02  Opening view settings … Switched to Batch view mode
+     *   23:00:14  Opening view settings … Switched to Batch view mode
+     *
+     * Claiming it at the END instead would leave it false on every early
+     * return below — the panel not opening, the run being stopped — and the
+     * next prompt would open the panel again. That is the sibling extension's
+     * "it keeps opening", and this is the same fix. */
+    this.togglesEnsured = true;
+
     if (this.stopped) return;
 
     // Open the VIEW settings panel (gear icon) — NOT the model settings panel
@@ -2700,14 +3046,98 @@ export class AutomationEngine {
       }
     }
 
-    // Final verification
+    /* Final verification: the pictures, not the boxes.
+    
+       This counted chips, and a chip appears the moment it is added — in the
+       placeholder state, before its image has arrived. On a large upload those
+       are seconds apart, and the run generated in between, with a reference
+       the model never actually received. The frames path already waits for
+       the media to be there; this is the same thing for ingredients.
+    
+       Two chips of the previous prompt's could also make the count up on their
+       own, which is why the ids are compared rather than the total. */
     await this.dismissDialogs();
-    const chipsAfter = findIngredientChips().length;
-    if (chipsAfter >= images.length) {
-      this.log('info', `All ${images.length} image(s) attached successfully (${chipsAfter} chips present)`);
+
+    /* Which of this prompt's files Flow is now showing a name for.
+       Matched on the filenames we sent, so another prompt's tiles cannot make
+       the count up on their own. */
+    const wantedNames: string[] = allFiles.map((f: any, i: number) => uploadFilename(f, `x_${i}`));
+    const namesNow = (): string[] => wantedNames.filter((f: string) => uploadIsOnPage(f));
+
+    const SETTLE_TIMEOUT_MS = INGREDIENT_SETTLE_MS;
+    const started = Date.now();
+    let ready = 0;
+
+    let said = 0;
+    while (Date.now() - started < SETTLE_TIMEOUT_MS) {
+      if (this.stopped) return false;
+      ready = ingredientChipIds().length;
+
+      /* The upload is done when Flow SHOWS THE NAME.
+       *
+       * That is the whole test, and it is the one the sibling extension has
+       * always used. Flow puts an uploaded file in the project as a tile and
+       * prints its filename on it once it has taken it — until then the tile
+       * is blank with a percentage. The name appearing IS the completion.
+       *
+       * What this replaces: ingredientChipsSettled(), which is PAGE-WIDE. It
+       * required every chip in the tray to be showing its picture, including
+       * ones an earlier prompt had left there. A run that uploaded one image
+       * and found three chips waited ninety seconds on two it never attached,
+       * then failed — with its picture plainly in the library the whole time.
+       *
+       * Chips still count, as the other way of seeing the same thing. Either
+       * is enough; neither is required to wait for the other. */
+      if (namesNow().length >= images.length) break;
+      if (ready >= images.length && ingredientChipsSettled()) break;
+
+      /* Say what it is waiting on, every ten seconds.
+       *
+       * This loop runs up to ninety seconds and said nothing at all — and it
+       * sits immediately after "All N chip(s) attached — done!", so the feed
+       * ended on a success and the node then appeared to freeze. Two rounds of
+       * guessing at a screenshot went into that gap.
+       *
+       * The counts are the useful part, because ingredientChipsSettled() is
+       * PAGE-WIDE: every chip in the tray has to be ready, not just this
+       * batch's.
+       *
+       * More chips than images is NORMAL and is not a fault. Omni 1.1 Flash
+       * takes up to five images AND a video, and the clipper attaches a video
+       * style reference from the library before the queue even starts. An
+       * earlier version of this line called the extra chips "left over from an
+       * earlier prompt" — which was wrong, and would have sent someone hunting
+       * a problem that was not there. Report the counts; do not narrate a
+       * cause for them. */
+      const elapsed = Date.now() - started;
+      if (elapsed > 5_000 && Math.floor(elapsed / 10_000) > said) {
+        said = Math.floor(elapsed / 10_000);
+        const report = chipSettleReport();
+        this.log('info',
+          `Waiting ${Math.round(elapsed / 1000)}s for the ingredient tray: `
+          + `${report.settled}/${report.total} ingredient(s) ready `
+          + `(${images.length} uploaded by this prompt).`);
+      }
+      await sleep(500);
+    }
+
+    const secs = Math.round((Date.now() - started) / 1000);
+    const named = namesNow().length;
+    if (named >= images.length) {
+      this.log('info', `Flow has all ${images.length} image(s) — the name is on the page (${secs}s)`);
       return true;
     }
-    this.log('warn', `Only ${chipsAfter}/${images.length} chips after all batches`);
+    if (ready >= images.length && ingredientChipsSettled()) {
+      this.log('info', `All ${images.length} image(s) attached and loaded in ${secs}s`);
+      return true;
+    }
+
+    /* Say which of the two it is. "Only 2/3 chips" and "3 chips, one still
+       empty" are different problems and were reported identically. */
+    const boxes = findIngredientChips().length;
+    this.log('warn',
+      `Flow never showed a name for ${images.length - named} of ${images.length} image(s) after ${secs}s `
+      + `(${boxes} chip(s) in the tray, ${ready} with a picture).`);
     return false;
   }
 
@@ -2727,12 +3157,8 @@ export class AutomationEngine {
     // distinct image gets a stable, unique name across prompts.
     // This prevents wrong-image selection when different prompts need
     // different character images at the same position.
-    const filenames: string[] = [];
-    for (let i = 0; i < batch.length; i++) {
-      const ext = batch[i].mime.includes('png') ? 'png' : 'jpg';
-      const idSlug = (batch[i].id || '').replace(/-/g, '').slice(0, 8) || `${batchIdx}_${i}`;
-      filenames.push(`af_${idSlug}.${ext}`);
-    }
+    const filenames: string[] = batch.map((f: any, i: number) =>
+      uploadFilename(f, `${batchIdx}_${i}`));
 
     // Split into new vs cached
     const newIndices: number[] = [];
@@ -2768,6 +3194,12 @@ export class AutomationEngine {
 
       // What is attached already — the wait below is for ours, not the total.
       const before = findLoadedIngredients().length;
+      /* And what the project already held. A paste does two separate things:
+         Flow TAKES the file into the project, and the composer ATTACHES a chip
+         for it. Only the second was being watched, so an upload that landed
+         but did not attach read as an upload that failed — the picture plainly
+         in the library, the node stopped saying it never arrived. */
+      const namesBefore = new Set(mediaNamesOnPage());
 
       const pasteEvent = new ClipboardEvent('paste', {
         bubbles: true,
@@ -2782,12 +3214,44 @@ export class AutomationEngine {
          reference silently dropped, and nothing on screen to say so. */
       const wantChips = before + newIndices.length;
       this.log('info', `Pasted ${newIndices.length} image(s) — waiting for them to attach...`);
-      if (!(await waitForIngredients(wantChips))) {
-        const got = findLoadedIngredients().length;
-        throw new Error(
-          `Only ${got} of ${wantChips} reference image(s) finished uploading to Flow. ` +
-          'Generating now would drop the reference, so this node stopped instead.'
-        );
+      if (!(await waitForIngredients(wantChips, undefined, (l) => this.log('info', l)))) {
+        /* The chip never attached. That is not the same as the upload having
+           failed, and treating it as such is what stopped a node with its
+           picture sitting in the Flow library — "the image is there".
+         *
+         * Flow prints a tile name once it has TAKEN the file, so a new name
+         * that was not there before the paste says the upload landed. When it
+         * did, the file is in the project and can simply be picked from it —
+         * the same route a cached image already takes, and the reason
+         * searchAndSelectAsset exists. */
+        const landed = mediaNamesOnPage().filter((n) => !namesBefore.has(n)).length;
+        const named = newIndices.filter((idx) => uploadIsOnPage(filenames[idx]));
+
+        if (landed > 0 || named.length > 0) {
+          this.log('warn',
+            `The upload reached Flow but did not attach itself — picking it from the library instead.`);
+          const addBtn = findIngredientAttachButton();
+          if (addBtn) {
+            for (const idx of newIndices) {
+              if (this.stopped) return false;
+              await this.searchAndSelectAsset(filenames[idx], addBtn as HTMLElement);
+              await sleep(200);
+            }
+          } else {
+            this.log('warn', 'Cannot find the "+" ingredient button to pick it from the library');
+          }
+        }
+
+        if (!(await waitForIngredients(wantChips, undefined, (l) => this.log('info', l)))) {
+          const got = findLoadedIngredients().length;
+          throw new Error(
+            `Only ${got} of ${wantChips} reference image(s) attached in Flow` +
+            (landed > 0 || named.length > 0
+              ? ' — the upload is in the project but could not be attached to the prompt. '
+              : '. ') +
+            'Generating now would drop the reference, so this node stopped instead.'
+          );
+        }
       }
       this.log('info', `${wantChips} reference image(s) attached and loaded`);
 
@@ -2818,7 +3282,7 @@ export class AutomationEngine {
     }
 
     // Wait for all chips to appear
-    const maxWaitMs = 10000;
+    const maxWaitMs = CHIP_APPEAR_MS;
     const startWait = Date.now();
     while (Date.now() - startWait < maxWaitMs) {
       if (this.stopped) return false;
@@ -2939,7 +3403,7 @@ export class AutomationEngine {
     /* Was a flat 6s. An upload slower than that meant the caller carried on
        and Generate fired with nothing attached. */
     const wantAfterUpload = chipsBefore + 1;
-    if (!(await waitForIngredients(wantAfterUpload))) {
+    if (!(await waitForIngredients(wantAfterUpload, undefined, (l) => this.log('info', l)))) {
       this.log('warn', `${filename} did not finish uploading — Flow shows ${findLoadedIngredients().length} attached`);
       return false;
     }
@@ -3022,6 +3486,33 @@ export class AutomationEngine {
       return false;
     }
 
+    /* Wait for the slots to exist before deciding they do not.
+     *
+     *   22:15:22  WARN: Creation: Frames menu item not found
+     *   22:15:29  WARN: Flow is not showing Start/End frame slots
+     *
+     * The second line is downstream of the first — the mode never switched, so
+     * the bar never rendered. But it asked once and gave up, which means that
+     * even with the switch working, Angular rendering the bar a moment later
+     * would look identical. Both faults produce the same sentence, so the
+     * sentence now distinguishes them. */
+    {
+      const deadline = Date.now() + 5000;
+      while (!findFrameSlots() && Date.now() < deadline) {
+        if (this.stopped) return false;
+        await sleep(250);
+      }
+      if (!findFrameSlots()) {
+        const toggle = findModeButton('Frames');
+        this.log('warn',
+          'Flow is not showing Start/End frame slots after 5s. '
+          + (toggle && isTabActive(toggle)
+            ? 'The composer says it IS in Frames mode, so the bar itself did not render.'
+            : 'The composer is not in Frames mode — the creation-type switch did not take.'));
+        return false;
+      }
+    }
+
     const labels: Array<'Start' | 'End'> = ['Start', 'End'];
 
     /* Empty both slots before anything else.
@@ -3034,28 +3525,56 @@ export class AutomationEngine {
       if (!(await this.clearFrameSlot(label))) return false;
     }
 
-    /* Every media id the library already holds, read before anything is
-       uploaded. This is how our image is identified afterwards: Flow renames
-       uploads to a UUID of its own, so the name we chose is not in the picker
-       to search for. Measured on a live composer — searching "af_" matched 0
-       of 2 rows that were both ours. */
-    const known = await this.readLibraryAssetIds();
-    if (known === null) {
-      this.log('warn', 'Could not read the asset picker to identify frame images');
-      return false;
+    /* Read LAZILY, not up front.
+     *
+     * This is the picker route's bookkeeping: every media id the library holds
+     * before we upload, so our row can be told from the rest afterwards. Flow
+     * renames uploads to a UUID of its own, so the name we chose is not in the
+     * picker to search for — measured on a live composer, searching "af_"
+     * matched 0 of 2 rows that were both ours.
+     *
+     * It used to run first, always, which meant opening the Start picker and
+     * scanning the whole library even when nothing was going to need it. The
+     * paste route below needs none of this, so it is only paid for if a paste
+     * does not land. */
+    let known: Set<string> | null = null;
+
+    const wanted = Math.min(imageBlobs.files.length, 2);
+    const names: string[] = [];
+    for (let i = 0; i < wanted; i++) {
+      const ext = imageBlobs.files[i].mime.includes('png') ? 'png' : 'jpg';
+      const idSlug = (images[i].id || '').replace(/-/g, '').slice(0, 8) || `${promptIdx}_${i}`;
+      names.push(`af_${idSlug}.${ext}`);
     }
 
-    for (let i = 0; i < Math.min(imageBlobs.files.length, 2); i++) {
+    /* The short way: both pictures pasted a second apart, and Flow puts them
+       in Start then End in the order they arrive. */
+    if (await this.pasteBothFrames(imageBlobs.files.slice(0, wanted), names)) {
+      names.forEach((n) => this.uploadedAssets.add(n));
+      this.log('info', `All frame image(s) attached for prompt #${promptIdx + 1}`);
+      return true;
+    }
+    if (this.stopped) return false;
+
+    /* The long way, for a Flow that does not take a pasted frame: upload each
+       one, find the row that was not there a moment ago, select it, commit it.
+       Only reached if the paste did not fill both slots. */
+    this.log('info', 'The frames did not take a paste — using the asset picker instead.');
+    for (let i = 0; i < wanted; i++) {
       if (this.stopped) return false;
       const label = labels[i];
       const fileData = imageBlobs.files[i];
       if (!fileData) continue;
+      const filename = names[i];
 
-      const ext = fileData.mime.includes('png') ? 'png' : 'jpg';
-      const idSlug = (images[i].id || '').replace(/-/g, '').slice(0, 8) || `${promptIdx}_${i}`;
-      const filename = `af_${idSlug}.${ext}`;
+      if (known === null) {
+        known = await this.readLibraryAssetIds();
+        if (known === null) {
+          this.log('warn', 'Could not read the asset picker to identify frame images');
+          return false;
+        }
+      }
 
-      // Upload, then find the row that was not there a moment ago.
       const mediaId = await this.uploadFrameImage(fileData, filename, known, label);
       if (!mediaId) return false;
       known.add(mediaId);
@@ -3066,6 +3585,102 @@ export class AutomationEngine {
 
     this.log('info', `All frame image(s) attached for prompt #${promptIdx + 1}`);
     return true;
+  }
+
+  /**
+   * Put an image straight into a frame slot by pasting it.
+   *
+   * The new Flow takes a pasted image into the Start/End slot directly — no
+   * picker, no search, no "Add to Prompt". Everything below this method exists
+   * because the old one did not: upload, then read the whole asset library to
+   * work out which row is ours (Flow renames uploads to a UUID, so the name we
+   * chose is not there to search for), then poll ninety seconds for that row,
+   * then click it, then commit it.
+   *
+   * That is four dialogs and a library scan to place one picture. When a paste
+   * lands, none of it runs.
+   *
+   * Tried in three places, cheapest first, because which element accepts the
+   * paste is a fact about Flow's markup that this cannot see from here:
+   *
+   *   the slot          the obvious target, and where a person would drop it
+   *   its inner button  the empty-chip control, when the slot wraps one
+   *   the prompt box    what the ingredient path pastes onto, and which fills
+   *                     the next empty slot on a composer that routes it
+   *
+   * Failure is cheap and expected — an older Flow ignores all three, the slot
+   * stays empty, and the caller falls back to the picker route with nothing
+   * lost but a few seconds. It is NOT reported as a warning for that reason.
+   */
+  /**
+   * Put both frames in, in one go, a second apart.
+   *
+   * Measured: the paste lands on the PROMPT BOX. Neither the slot nor its
+   * empty-chip accepts one, and offering each of them a ten-second poll before
+   * reaching the one that works cost twenty seconds per frame —
+   *
+   *   23:01:10  Attaching 2 frame image(s) for prompt #1
+   *   23:01:39  Start frame set by paste          29s
+   *   23:02:07  End frame set by paste            57s for two pictures
+   *
+   * so the working target goes first and the others are gone. What decides
+   * which slot a picture lands in is ORDER: Flow fills Start, then End. So
+   * both are pasted here, a second apart, and the pair is waited on together
+   * rather than one after the other. Two uploads overlap instead of queueing.
+   *
+   * @returns whether both slots ended up holding a picture.
+   */
+  private async pasteBothFrames(
+    files: Array<{ data: string; mime: string }>,
+    filenames: string[],
+  ): Promise<boolean> {
+    const promptInput = findPromptInput();
+    if (!(promptInput instanceof HTMLElement)) return false;
+
+    const want = Math.min(files.length, 2);
+    for (let i = 0; i < want; i++) {
+      if (this.stopped) return false;
+      const blob = this.base64ToBlob(files[i].data, files[i].mime);
+      /* A fresh DataTransfer each time. One already dispatched can arrive
+         empty on the next listener, and an empty paste is indistinguishable
+         from a Flow that does not accept them. */
+      const dt = new DataTransfer();
+      dt.items.add(new File([blob], filenames[i], { type: files[i].mime }));
+      promptInput.focus();
+      promptInput.dispatchEvent(new ClipboardEvent('paste', {
+        bubbles: true, cancelable: true, clipboardData: dt,
+      }));
+      this.log('info', `Pasted ${filenames[i]} for the ${i === 0 ? 'Start' : 'End'} frame`);
+      /* The gap is the ordering. Firing both in the same tick gives Flow no
+         way to tell which is first, and which slot each lands in stops being
+         something this can promise. */
+      if (i < want - 1) await sleep(1000);
+    }
+
+    /* Both at once. Each upload has to reach Google and come back, and they
+       overlap — waiting for the first before starting the second is what made
+       this take a minute. */
+    const deadline = Date.now() + 60_000;
+    let said = 0;
+    while (Date.now() < deadline) {
+      if (this.stopped) return false;
+      const slots = findFrameSlots();
+      if (slots) {
+        const filled = [slots.start, slots.end].slice(0, want).filter(frameSlotHasChip).length;
+        if (filled >= want) {
+          this.log('info', `Both frames in place after ${Math.round((Date.now() - (deadline - 60_000)) / 1000)}s`);
+          return true;
+        }
+        const elapsed = 60_000 - (deadline - Date.now());
+        if (elapsed > 5_000 && Math.floor(elapsed / 10_000) > said) {
+          said = Math.floor(elapsed / 10_000);
+          this.log('info',
+            `Waiting ${Math.round(elapsed / 1000)}s for the frames: ${filled}/${want} in place.`);
+        }
+      }
+      await sleep(500);
+    }
+    return false;
   }
 
   /** Open the Start picker briefly to read which assets already exist. */
@@ -3089,6 +3704,17 @@ export class AutomationEngine {
     const slot = label === 'Start' ? slots.start : slots.end;
     if (!frameSlotFilled(slot)) return true;
 
+    /* Hover first. The remove control is a mat-icon inside .hover-icon-overlay
+       and sits at data-state="closed" until the chip is pointed at, so a click
+       with no hover in front of it lands on nothing. */
+    const chip = slot.querySelector<HTMLElement>('button.chip-container') || slot;
+    for (const type of ['pointerover', 'mouseover', 'pointerenter', 'mouseenter', 'mousemove']) {
+      const Ctor = type.startsWith('pointer') && typeof PointerEvent !== 'undefined'
+        ? PointerEvent : MouseEvent;
+      chip.dispatchEvent(new Ctor(type, { bubbles: true, cancelable: true } as any));
+    }
+    await sleep(250);
+
     const clear = findFrameSlotClearButton(slot);
     if (!clear) {
       this.log('warn', `${label} frame is occupied and has no remove control — ${describeFrameSlot(slot)}`);
@@ -3097,8 +3723,13 @@ export class AutomationEngine {
     simulateClick(clear);
     await sleep(600);
 
+    /* A picker opening instead means the click reached the chip rather than
+       its remove icon. Close it rather than leaving an overlay over the
+       composer for everything downstream to click into. */
+    await this.dismissDialogs();
+
     const after = findFrameSlots();
-    const nowEmpty = after && !frameSlotFilled(label === 'Start' ? after.start : after.end);
+    const nowEmpty = after && !frameSlotHasChip(label === 'Start' ? after.start : after.end);
     if (!nowEmpty) {
       this.log('warn', `${label} frame would not clear — it still holds the previous image`);
       return false;
@@ -3275,9 +3906,19 @@ export class AutomationEngine {
 
       slot.scrollIntoView({ block: 'center', behavior: 'instant' });
       await sleep(150);
-      if (attempt === 0) simulateClick(slot);
-      else if (attempt === 1) nativeClick(slot);
-      else await reactTrigger(slot, 'onClick');
+      /* Click the button, not the wrapper around it. An empty slot on this
+         Flow is a div holding the control:
+      
+           <div cdkoverlayorigin class="frame-trigger">
+             <button class="empty-chip"> Début </button>
+      
+         and the listener is on the button. Clicking the div is a click on
+         nothing, which is why three attempts could pass with the slot right
+         there and no picker ever opening. */
+      const target = (slot.querySelector('button') as HTMLElement | null) || slot;
+      if (attempt === 0) simulateClick(target);
+      else if (attempt === 1) nativeClick(target);
+      else await reactTrigger(target, 'onClick');
       await humanDelay(500, 800);
 
       /* The dialog is the slot's own, resolved through aria-controls — not
@@ -3295,16 +3936,56 @@ export class AutomationEngine {
 
   /** Dismiss any open dialogs/popover/modals by pressing Escape */
   private async dismissDialogs(): Promise<void> {
-    for (let i = 0; i < 3; i++) {
-      const openDialog = document.querySelector(
-        '[role="dialog"]:not([hidden]), [data-radix-popper-content-wrapper], ' +
-        '[data-state="open"][aria-haspopup]'
-      );
-      if (!openDialog) break;
+    /* What counts as an open dialog on THIS Flow.
+     *
+     * Two of the three selectors this used were Radix — the Next.js Flow that
+     * no longer exists. On the Angular rebuild nothing matched, so the loop's
+     * `if (!openDialog) break` fired on the first pass and no Escape was ever
+     * sent. The asset picker then stayed open across the rest of the run:
+     *
+     *   20:32:49  Found result row for "af_7f075deb.jpg". Clicking to attach...
+     *   20:32:50  All 3 chip(s) attached — done!
+     *   (nothing further — the picker still on screen, search box still full)
+     *
+     * A CDK overlay also lays a backdrop over the page, so everything after
+     * this point was clicking into a sheet of glass. The engine was not
+     * computing; it was locked out of its own composer.
+     *
+     * Selectors read off the live page, not guessed — the same ones
+     * findFrameSlotDialog and findViewSettingsTrigger already use. */
+    const isOpen = () => document.querySelector(
+      '.cdk-overlay-backdrop, .cdk-overlay-pane, .add-menu-popover-container, ' +
+      'mat-dialog-container, [role="dialog"]:not([hidden]), ' +
+      '[data-radix-popper-content-wrapper], [data-state="open"][aria-haspopup]'
+    );
+
+    /* Escape three times, 450ms apart. Measured on the live page in the
+       sibling extension: Angular removes the panel on its next tick and one
+       Escape lands in about 400-500ms — the old 300-400ms wait here checked
+       before the first one had taken effect, and regularly two are needed. */
+    for (let i = 0; i < 3 && isOpen(); i++) {
       document.body.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Escape', code: 'Escape', bubbles: true, cancelable: true,
+        key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
+        bubbles: true, cancelable: true,
       }));
-      await humanDelay(300, 500);
+      await sleep(450);
+    }
+
+    /* Then the backdrop itself. document.body.click() cannot reach the body
+       while an overlay is up — the backdrop is what is on top, so it is the
+       thing that has to be clicked. */
+    if (isOpen()) {
+      const backdrop = document.querySelector('.cdk-overlay-backdrop') as HTMLElement | null;
+      if (backdrop) {
+        backdrop.click();
+        await sleep(450);
+      }
+    }
+
+    if (isOpen()) {
+      this.log('warn',
+        'A Flow dialog would not close. It covers the composer, so filling the prompt and '
+        + 'clicking Generate will not reach the page.');
     }
   }
 
@@ -3526,8 +4207,15 @@ export class AutomationEngine {
     // (replaces Chrome DevTools Protocol debugger approach)
     // ═══════════════════════════════════════════════════════════════
 
+    /* A run on the Angular Flow shows none of the three lines below, because
+       none of these handlers exist there — Radix is the old Next.js site. The
+       silence read as "the strategies ran and said nothing", so say it once
+       instead. */
+    let reactSeen = false;
+
     // Strategy 1: React onPointerDown via MAIN world (most Radix UI buttons use this)
     const trig1 = await reactTrigger(btn, 'onPointerDown');
+    if (trig1.found) reactSeen = true;
     if (trig1.found && trig1.success) {
       this.log('info', 'Strategy 1: React onPointerDown (isTrusted)');
       await humanDelay(800, 1200);
@@ -3539,6 +4227,7 @@ export class AutomationEngine {
 
     // Strategy 2: React onClick via MAIN world
     const trig2 = await reactTrigger(btn, 'onClick');
+    if (trig2.found) reactSeen = true;
     if (trig2.found && trig2.success) {
       this.log('info', 'Strategy 2: React onClick (isTrusted)');
       await humanDelay(800, 1200);
@@ -3551,6 +4240,7 @@ export class AutomationEngine {
     // Strategy 3: React onKeyDown Enter via MAIN world (on prompt input)
     if (promptInput) {
       const trig3 = await reactKeyTrigger(promptInput, 'Enter');
+      if (trig3.found) reactSeen = true;
       if (trig3.found && trig3.success) {
         this.log('info', 'Strategy 3: React onKeyDown Enter (isTrusted)');
         await humanDelay(800, 1200);
@@ -3568,6 +4258,12 @@ export class AutomationEngine {
     // generation was already submitted — clicking again on the empty
     // input just triggers "Prompt must be provided" error toasts.
     // ═══════════════════════════════════════════════════════════════
+    if (!reactSeen) {
+      this.log('info',
+        'No React handlers on the Generate button — this is the Angular Flow, '
+        + 'so the three strategies above cannot apply. Going straight to Enter.');
+    }
+
     const currentText = getPromptText();
     const promptAlreadyCleared = promptTextBefore.length > 0 && currentText !== promptTextBefore;
 
@@ -3576,33 +4272,51 @@ export class AutomationEngine {
       return;
     }
 
-    // Fallback 1: simulateClick (full pointer→mouse→click chain)
+    /* Enter first, then the clicks.
+     *
+     * This was the other way round, and the order cost nine seconds on every
+     * prompt. Measured on the live Angular Flow:
+     *
+     *   21:14:51  Fallback 1: simulateClick        (no)
+     *   21:14:53  Fallback 2: native .click()      (no)
+     *   21:14:56  Fallback 3: dispatched Enter     yes
+     *   21:15:00  Generation started
+     *
+     * Two strategies that do not work on this site, each followed by its own
+     * confirmation poll, ahead of the one that does. On a 21-shot board that
+     * is three minutes of pure waiting.
+     *
+     * The clicks are kept, after — they are what works on the old site, and
+     * an ordering read off one run is a preference, not a proof. */
+    if (promptInput) {
+      (promptInput as HTMLElement).focus();
+      promptInput.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true,
+      }));
+      this.log('info', 'Fallback 1: dispatched Enter on prompt');
+      await humanDelay(800, 1200);
+      if (await clickWorked()) {
+        this.log('info', 'Generation confirmed started after Enter');
+        return;
+      }
+    }
+
+    // Fallback 2: simulateClick (full pointer→mouse→click chain)
     simulateClick(btn);
-    this.log('info', 'Fallback 1: simulateClick');
+    this.log('info', 'Fallback 2: simulateClick');
     await humanDelay(800, 1200);
     if (await clickWorked()) {
       this.log('info', 'Generation confirmed started after simulateClick');
       return;
     }
 
-    // Fallback 2: Native .click()
+    // Fallback 3: Native .click()
     nativeClick(btn);
-    this.log('info', 'Fallback 2: native .click()');
+    this.log('info', 'Fallback 3: native .click()');
     await humanDelay(800, 1200);
     if (await clickWorked()) {
       this.log('info', 'Generation confirmed started after native click');
       return;
-    }
-
-    // Fallback 3: Dispatched Enter key on prompt
-    if (promptInput) {
-      (promptInput as HTMLElement).focus();
-      promptInput.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true,
-      }));
-      this.log('info', 'Fallback 3: dispatched Enter on prompt');
-      await humanDelay(800, 1200);
-      if (await clickWorked()) return;
     }
 
     /* Now it is worth the popover: nothing worked, and "no credits" is the
@@ -3862,6 +4576,12 @@ export class AutomationEngine {
   stop(): void {
     this.stopped = true;
     this.paused = false;
+    /* Release NOW, not whenever the loop next comes up for air. Stopping is
+       the user saying this run is over, and the usual next thing they do is
+       fix the workflow and press Run — which was being refused by the queue
+       they had just stopped. */
+    releaseRunLock(this);
+    this.sendRunLockChanged(false);
     this.log('info', 'Queue stop requested');
     // Immediately notify the UI so the user sees the state change
     this.sendQueueStatus('stopped');
@@ -3974,10 +4694,10 @@ export class AutomationEngine {
         this.currentPromptIdx++;
         if (this.queue && this.currentPromptIdx < this.queue.prompts.length) {
           // Release run-lock before re-start since start() acquires it
-          globalRunLock = false;
+          releaseRunLock(this);
           this.start(this.queue);
         } else {
-          globalRunLock = false;
+          releaseRunLock(this);
           this.sendRunLockChanged(false);
         }
       }, 500);
@@ -4626,7 +5346,7 @@ private async detectAndReportFailures(): Promise<void> {
       this.queue.currentPromptIndex = firstRetry;
       this.log('info', 'Retrying failed prompts...');
       // Release run-lock before re-start since start() acquires it
-      globalRunLock = false;
+      releaseRunLock(this);
       await this.start(this.queue);
     }
   }
@@ -4646,10 +5366,10 @@ private async detectAndReportFailures(): Promise<void> {
    * Build download items from completed prompts for API-based download.
    * Returns an array of { mediaId, filename } for each downloadable video.
    */
-  private buildApiDownloadItems(): Array<{ mediaId: string; filename: string }> {
+  private buildApiDownloadItems(): Array<{ mediaId: string; filename: string; url?: string }> {
     if (!this.queue) return [];
 
-    const items: Array<{ mediaId: string; filename: string }> = [];
+    const items: Array<{ mediaId: string; filename: string; url?: string }> = [];
     const isImage = this.queue.settings?.mediaType === 'image';
     const ext = isImage ? '.png' : '.mp4';
 
@@ -4670,7 +5390,18 @@ private async detectAndReportFailures(): Promise<void> {
         ? `P${pNum}_G1_${slug}${ext}`
         : `P${pNum}_G1${ext}`;
 
-      items.push({ mediaId: p.mediaId, filename });
+      /* Carry the signed URL when the API gave us one. On flow.google.com a
+         media URL cannot be built from the id — it is signed and expires — so
+         the only working URL is the one the status response issued. Without
+         this, every Full-mode video download requested the old tRPC endpoint,
+         which that site does not serve at all. */
+      const cached = getCachedStatus(p.mediaId);
+      /* Only use a URL that matches what we are downloading. A video queue
+         given an image URL would save a still under a .mp4 name and report
+         success; with no URL the downloader falls back, which is recoverable. */
+      const cachedUrl = cached?.mediaUrl || '';
+      const usable = cachedUrl && (isImage ? !cachedUrl.includes('/video/') : cachedUrl.includes('/video/'));
+      items.push({ mediaId: p.mediaId, filename, url: usable ? cachedUrl : undefined });
     }
 
     return items;
@@ -4683,7 +5414,10 @@ private async detectAndReportFailures(): Promise<void> {
    */
   private async verifyMediaUrl(mediaId: string): Promise<boolean> {
     try {
-      const url = `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=${mediaId}`;
+      /* The URL the API issued, when there is one; the old constructed form
+         otherwise, which still resolves for anyone on labs.google. */
+      const url = getCachedStatus(mediaId)?.mediaUrl
+        || `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=${mediaId}`;
       const resp: any = await new Promise((resolve) => {
         chrome.runtime.sendMessage(
           { type: 'VERIFY_MEDIA_URL', payload: { url } },
@@ -5643,9 +6377,14 @@ private async detectAndReportFailures(): Promise<void> {
    * way is invisible on the canvas, where a node is the only thing the user is
    * looking at. Diagnostics listens for STUDIO_LOG.
    *
-   * Reserved for facts that change what the user gets and that Flow will not
-   * report itself. A silent clip is exactly that: the generation succeeds, the
-   * node goes green, and nothing anywhere says the voice was dropped.
+   * this.log now mirrors every line here, so the canvas sees the whole run.
+   * It was not always so, and the gap cost two rounds of guessing at a stalled
+   * upload from a screenshot while the answer sat in the Flow tab's console.
+   *
+   * Still called directly for facts that change what the user gets and that
+   * Flow will not report itself — a silent clip is exactly that: the
+   * generation succeeds, the node goes green, and nothing anywhere says the
+   * voice was dropped.
    */
   private studioLog(line: string): void {
     try {
@@ -5666,6 +6405,24 @@ private async detectAndReportFailures(): Promise<void> {
     };
     console.log(`[AutoFlow] [${level.toUpperCase()}] ${message}`);
     chrome.runtime.sendMessage({ type: 'LOG', payload: entry }).catch(() => { });
+
+    /* And again where a Studio run can see it.
+     *
+     * 'LOG' is the standalone extension's queue log, read by its side panel.
+     * The Studio worker has no handler for it at all — studioLog() below says
+     * so in as many words — so every line this adapter has ever written was
+     * invisible on the canvas. A Flow node that stalled showed one line in
+     * Diagnostics, from the bridge, and nothing about what the node was doing.
+     *
+     * Two runs were spent guessing at a stalled upload from a screenshot
+     * because of this, while "Pasted 1 image(s) — waiting for them to
+     * attach..." was sitting in the Flow tab's console the whole time.
+     *
+     * Mirrored rather than moved: the standalone extension still reads 'LOG',
+     * and this file is shared with it. The Diagnostics buffer is a ring, which
+     * is what makes mirroring everything safe — the alternative on offer was
+     * silence. */
+    this.studioLog(level === 'info' ? message : `${level.toUpperCase()}: ${message}`);
   }
 
   private sendQueueStatus(status: string, promptIndex?: number): void {

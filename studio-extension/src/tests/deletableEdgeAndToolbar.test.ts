@@ -48,6 +48,28 @@ describe('Toolbar Redesign and Deletable Edge', () => {
     expect(ICON).toMatch(/story:\s*<>/);
   });
 
+  it('uses distinct, visible icons for clipping, motion and chief controls', () => {
+    for (const [action, icon] of [['addClipNode', 'scissors'], ['addMotionNode', 'motion'], ['addChiefNode', 'chief']]) {
+      const button = CANVAS.match(new RegExp(`<button[^>]*onClick=\\{${action}\\}[\\s\\S]*?<\\/button>`))?.[0];
+      expect(button).toContain(`<Icon name="${icon}"`);
+      expect(ICON).toContain(`${icon}:`);
+    }
+    for (const kind of ['clip', 'motion', 'chief']) {
+      expect(CSS).toMatch(new RegExp(`\\.studio-toolbar__node-icon--${kind}\\s*\\{[^}]*color:`));
+    }
+  });
+
+  it('keeps all twelve add-node actions and separates scrolling from execution controls', () => {
+    const palette = CANVAS.split('<aside className="studio-toolbar"')[1].split('</aside>')[0];
+    expect(palette.match(/aria-label="Add [^"]+ node"/g)).toHaveLength(12);
+    expect(palette).toContain('studio-toolbar__items');
+    expect(palette).toContain('studio-toolbar__actions');
+    expect(palette).toContain('onClick={handleRun}');
+    expect(palette).toContain('onClick={() => handleRetry()}');
+    expect(CSS).toMatch(/\.studio-toolbar__items\s*\{[^}]*overflow-y:\s*auto/);
+    expect(CSS).toContain('.studio-toolbar__btn:focus-visible');
+  });
+
   it('studio.css has styles for toolbar icons, animations, and edge delete button', () => {
     /* Renamed from __icon-box: these swatches carry the node-family
        colours (--n-prompt, --n-image, …), and the design system reserves

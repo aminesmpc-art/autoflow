@@ -179,6 +179,43 @@ export const NODE_DOCS: Record<string, NodeDoc> = {
       'them in, and you correct one word for every run after.',
   },
 
+  motion: {
+    title: 'Motion Control',
+    description:
+      'Takes the motion out of one video and puts it on something else. Omni will only '
+      + 'edit ten seconds at a time, so a longer source is cut into pieces, each piece is '
+      + 'SHOWN to a director model that writes its prompt, and then every piece is '
+      + 'generated here — one row each, with its prompt on it to read, reword and redo.',
+    inputs: [
+      { id: 'text', label: 'T — What to do with the motion' },
+      { id: 'video', label: 'V — The video the motion comes from' },
+      { id: 'image_ref', label: 'I — The character or subject to move (optional)' },
+    ],
+    outputs: [
+      { id: 'text', label: 'T — How the pieces went, in one line' },
+    ],
+    tip:
+      'A source under ten seconds is one generation and has no joins. Over that, every '
+      + 'piece is generated separately — the director keeps them consistent, it cannot make '
+      + 'them identical. Redoing one piece reuses the cut, the prompts and the upload, so '
+      + 'it never costs the director conversation again.',
+  },
+
+  chief: {
+    title: 'Director Chief',
+    description:
+      'Plans one global story bible, locks identity and production rules, then gives each '
+      + 'connected Director a bounded assignment based on its downstream nodes.',
+    inputs: [
+      { id: 'text', label: 'T — The complete production brief' },
+    ],
+    outputs: [
+      { id: 'text', label: 'T — One tailored assignment per connected Director' },
+    ],
+    tip:
+      'Connect the Chief only to Directors. Connect each Director to the images and clips it owns.',
+  },
+
 };
 
 /** Look up docs for a node type, with a safe fallback. */

@@ -539,6 +539,25 @@ async function trackReply(nodeId: string, priorReply: string, raw: boolean): Pro
   let lastChangeAt = Date.now();
   let stableCount = 0;
 
+  /* One delivery, two ways of arriving at it: two unchanged polls, or a
+     quiet window that expired with a complete answer already in hand. It
+     used to exist only in the first, which is why the second reported a
+     timeout instead of the reply it was holding. */
+  const deliver = (reply: string): void => {
+    /* raw for the workflow builder: cleanAssistantReply strips code fences
+       and leading lines, which is right for a prompt and destroys JSON. */
+    const text = raw ? reply : cleanAssistantReply(reply);
+    if (!raw && !looksLikeUsablePrompt(text)) {
+      send('STUDIO_NODE_ERROR', {
+        nodeId,
+        error: `Claude answered, but not with something usable as a prompt: "${text.slice(0, 80)}"`,
+      });
+      return;
+    }
+    logLine(`Reply captured (${text.length} chars)`);
+    send('STUDIO_NODE_RESULT', { nodeId, tileId: '', text });
+  };
+
   while (Date.now() - startedAt < TEXT_CEILING_MS) {
     await sleep(POLL_MS);
     const elapsed = Date.now() - startedAt;
@@ -559,25 +578,34 @@ async function trackReply(nodeId: string, priorReply: string, raw: boolean): Pro
       logLine(`Waiting ${Math.round(elapsed / 1000)}s — generating ${isGenerating()}, reply ${now.length} chars`);
     }
 
-    if (Date.now() - lastChangeAt > TEXT_QUIET_MS && !isGenerating()) break;
+    /* Account for what was just read BEFORE judging whether it has gone quiet.
+       These were the other way round, and the order is the whole bug: the
+       quiet test ran against a lastChangeAt that the text on THIS iteration
+       had not yet refreshed. Visible, polls are a second apart and it never
+       showed. Hidden, Chrome throttles the timer to about a minute, so the
+       first poll to see the finished answer measured a 60s gap against a 45s
+       quiet window, broke, and fell through to the timeout below — reporting
+       "did not finish answering" while holding the complete reply it had read
+       one line earlier. */
+    if (now && now !== priorReply) {
+      if (now === stable) stableCount++;
+      else { stable = now; stableCount = 0; lastChangeAt = Date.now(); }
+    }
+
+    /* Quiet with a complete answer in hand is success, not a timeout.
+       Breaking here used to mean erroring, which is indefensible when the
+       reply is sitting in `stable` — and on a throttled tab the two stable
+       polls that the happy path waits for may never both arrive inside the
+       quiet window. */
+    if (Date.now() - lastChangeAt > TEXT_QUIET_MS && !isGenerating()) {
+      if (stable && stable !== priorReply) { deliver(stable); return; }
+      break;
+    }
+
     if (!now || now === priorReply) continue;
 
-    if (now === stable) stableCount++;
-    else { stable = now; stableCount = 0; lastChangeAt = Date.now(); }
-
     if (stableCount >= 2 && !isGenerating()) {
-      /* raw for the workflow builder: cleanAssistantReply strips code fences
-         and leading lines, which is right for a prompt and destroys JSON. */
-      const text = raw ? now : cleanAssistantReply(now);
-      if (!raw && !looksLikeUsablePrompt(text)) {
-        send('STUDIO_NODE_ERROR', {
-          nodeId,
-          error: `Claude answered, but not with something usable as a prompt: "${text.slice(0, 80)}"`,
-        });
-        return;
-      }
-      logLine(`Reply captured (${text.length} chars)`);
-      send('STUDIO_NODE_RESULT', { nodeId, tileId: '', text });
+      deliver(now);
       return;
     }
   }

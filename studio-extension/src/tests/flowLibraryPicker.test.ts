@@ -144,10 +144,18 @@ describe('saying why it could not', () => {
     expect(out.reason).toMatch(/upload it once by hand/);
   });
 
-  it('says so when the Videos tab has moved', async () => {
+  it('says the tab has moved, but still attaches if it can', async () => {
+    /* A missing Videos tab is not a reason to fail an attach that can still
+       succeed: with the picker open, the search box present and the clip in
+       the results, whatever tab is showing is good enough. It says so, so a
+       silent tab change does not look like nothing happened. */
     buildFlow({ without: 'videos' });
-    const out = await attach('Clip-one');
-    expect(out.reason).toMatch(/Videos tab/);
+    const said: string[] = [];
+    const out = await attachFromLibrary('Clip-one', {
+      doc: document, step: 0, log: (l) => said.push(l),
+    });
+    expect(said.join(' ')).toMatch(/no Videos tab in the dialog/);
+    expect(out.ok).toBe(true);
   });
 
   it('says so when the search box has moved', async () => {

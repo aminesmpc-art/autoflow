@@ -661,16 +661,18 @@
   top: 68px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  width: 184px;
+  gap: 0;
+  width: 224px;
+  max-width: calc(100vw - 28px);
+  max-height: calc(100dvh - 92px);
   z-index: 10;
-  background: rgba(14, 14, 18, 0.88);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line-2);
   border-radius: var(--r-panel);
-  padding: 10px 8px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04), 0 0 30px rgba(139, 92, 246, 0.08);
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
   animation: toolbar-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -685,12 +687,24 @@
   gap: 2px;
 }
 
+.studio-toolbar__title { display: flex; align-items: center; gap: 10px; padding: 16px 14px; border-bottom: 1px solid var(--line); flex: none; }
+.studio-toolbar__title > svg { width: 22px; height: 22px; flex: none; color: var(--accent); }
+.studio-toolbar__title > div { flex: 1; min-width: 0; }
+.studio-toolbar__title strong { display: block; font-size: 13px; font-weight: 650; line-height: 1.4; }
+.studio-toolbar__title div > span { display: block; margin-top: 2px; font-size: 10px; color: var(--text-3); }
+.studio-toolbar__count { border: 1px solid var(--line-2); border-radius: 5px; padding: 2px 5px; color: var(--text-3); font-size: 10px; font-variant-numeric: tabular-nums; }
+.studio-toolbar__items { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; padding: 12px 8px; }
+.studio-toolbar__copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.studio-toolbar__copy small { color: var(--text-3); font-size: 10px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.studio-toolbar__actions { display: grid; gap: 6px; padding: 10px; border-top: 1px solid var(--line); background: var(--surface); flex: none; }
+
 .studio-toolbar__btn {
   position: relative;
   width: 100%;
-  height: 38px;
+  height: 46px;
   padding: 0 8px;
   background: transparent;
+  color: var(--text-2);
   border: 1px solid transparent;
   border-radius: var(--r-row);
   cursor: pointer;
@@ -699,18 +713,19 @@
   justify-content: flex-start;
   gap: 10px;
   text-align: left;
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .studio-toolbar__btn:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.08);
-  transform: translateX(4px);
+  background: var(--surface-2);
+  border-color: var(--line-2);
 }
 
 .studio-toolbar__btn:active {
-  transform: scale(0.97) translateX(3px);
+  background: var(--surface-3);
 }
+
+.studio-toolbar__btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--surface-2); }
 
 .studio-toolbar__btn:disabled {
   opacity: 0.4;
@@ -725,19 +740,24 @@
 
 /* ── Icon Box Badges ── */
 .studio-toolbar__node-icon {
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--r-ctrl);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  color: var(--text-2);
+  transition: background-color 0.15s ease;
 }
 
 .studio-toolbar__btn:hover .studio-toolbar__node-icon {
-  transform: scale(1.08);
+  filter: brightness(1.12);
 }
+
+.studio-toolbar__node-icon--clip { background: var(--n-video-10); border: 1px solid rgba(249, 115, 22, 0.25); color: var(--n-video); }
+.studio-toolbar__node-icon--motion { background: var(--n-ask-10); border: 1px solid rgba(56, 189, 248, 0.25); color: var(--n-ask); }
+.studio-toolbar__node-icon--chief { background: var(--n-story-10); border: 1px solid rgba(251, 113, 133, 0.25); color: var(--n-story); }
 
 .studio-toolbar__node-icon--prompt {
   background: rgba(34, 197, 94, 0.12);
@@ -830,8 +850,9 @@
 }
 
 .studio-toolbar__btn-icon {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
+  flex: none;
   color: inherit;
   transition: transform 0.2s ease;
 }
@@ -861,21 +882,20 @@
   pointer-events: none;
   transition: color 0.15s ease;
 }
-.studio-toolbar__btn:hover .studio-toolbar__btn-label { color: var(--on-solid); font-weight: 600; }
+.studio-toolbar__btn:hover .studio-toolbar__btn-label { color: var(--text); }
 
 /* ── Run Workflow Button ── */
 .studio-toolbar__btn--run {
   background: linear-gradient(135deg, var(--accent-solid), var(--accent-solid-dim));
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: var(--on-solid);
-  box-shadow: 0 4px 16px rgba(147, 51, 234, 0.4);
+  box-shadow: none;
 }
 .studio-toolbar__btn--run .studio-toolbar__btn-label,
 .studio-toolbar__btn--run .studio-toolbar__btn-icon { color: var(--on-solid); }
 .studio-toolbar__btn--run:hover {
   background: linear-gradient(135deg, var(--accent-solid-lit), var(--accent-solid));
-  box-shadow: 0 6px 24px rgba(168, 85, 247, 0.55);
-  transform: translateY(-1px);
+  box-shadow: none;
 }
 .studio-toolbar__btn--run:disabled {
   opacity: 0.4;
@@ -885,13 +905,13 @@
 }
 
 .studio-toolbar__btn--retry {
-  background: rgba(245, 158, 11, 0.16);
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: transparent;
+  border: 1px solid var(--line-2);
   color: var(--warn);
 }
 .studio-toolbar__btn--retry:hover {
-  background: rgba(245, 158, 11, 0.26);
-  box-shadow: 0 0 16px rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.1);
+  border-color: var(--warn);
 }
 
 .studio-toolbar__divider {
@@ -902,9 +922,9 @@
 }
 
 .studio-toolbar__heading {
-  padding: 4px 8px 3px;
-  font-size: var(--t-micro);
-  font-weight: 700;
+  padding: 4px 8px 6px;
+  font-size: 9px;
+  font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-3);
@@ -918,6 +938,11 @@
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 .studio-toolbar__group .studio-toolbar__heading { padding-top: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-toolbar { animation: none; }
+  .studio-toolbar__btn, .studio-toolbar__node-icon, .studio-toolbar__btn-label { transition: none; }
+}
 
 /* ── Edge Delete / Disconnect Button (Shown on line hover only) ── */
 .studio-edge__wrap {
@@ -2449,7 +2474,42 @@ video.sn-media__img { object-fit: contain; background: var(--canvas); cursor: de
    It is a plan, not a prompt, so it shows the plan: who it writes for, in the
    order it will write them, and a tick against each one it covered. A node
    responsible for five other nodes should look like it. */
-.sn--story { min-width: 390px; width: 390px; }
+.sn--story { min-width: 450px; width: 450px; }
+.sn--chief { min-width: 390px; width: 390px; border-left: 2px solid var(--n-agent); }
+.sn-wrap--kind-chief { width: 390px; min-width: 390px; }
+.sn-wrap--kind-chief .sn { border-color: var(--n-agent); }
+.sn-wrap--kind-chief .sn-label__icon { background: var(--n-agent-10); color: var(--n-agent); }
+.sn-chief__body { display: grid; gap: 10px; padding: 12px; }
+.sn-chief__directors { display: grid; gap: 6px; }
+
+.sn--chief .sn-chief__body { gap: 16px; padding: 18px; }
+.sn-chief__intro > span { color: var(--n-agent); font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.sn-chief__intro p { margin: 5px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.sn-chief__stats { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); }
+.sn-chief__stats > div { display: grid; gap: 5px; padding: 12px; }
+.sn-chief__stats > div + div { border-left: 1px solid var(--line-2); }
+.sn-chief__stats strong { color: var(--text); font-size: 23px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.sn-chief__stats small { color: var(--text-2); font-size: 12px; font-weight: 400; }
+.sn-chief__stats span { color: var(--text-2); font-size: 11px; }
+.sn-chief__field { display: grid; gap: 9px; min-width: 0; }
+.sn-chief__field .sn-field__label { color: var(--text-2); font-size: 12px; letter-spacing: 0; text-transform: none; }
+.sn-chief__field .sn-bar__sel { width: 100%; height: 38px; box-sizing: border-box; padding: 0 12px; color: var(--text); background-color: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; font-size: 13px; cursor: pointer; }
+.sn-chief__hint { font-size: 12px; line-height: 1.6; color: var(--text-2); }
+.sn-chief__section-title { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 12px; }
+.sn-chief__section-title svg { width: 17px; height: 17px; color: var(--n-agent); }
+.sn-chief__director { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 11px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.sn-chief__empty { display: grid; justify-items: center; gap: 8px; padding: 20px 16px; background: var(--surface); border: 1px dashed var(--line-2); border-radius: 10px; text-align: center; font-size: 12px; color: var(--text-2); }
+.sn-chief__empty > svg { width: 28px; height: 28px; margin-bottom: 4px; color: var(--n-agent); }
+.sn-chief__empty > strong { color: var(--text); font-size: 13px; }
+.sn-chief__empty p { margin: 0; line-height: 1.6; }
+.sn-chief__empty > span { font-size: 11px; line-height: 1.5; }
+.sn-chief__notice { display: flex; align-items: flex-start; gap: 8px; border: 1px solid var(--line-2); border-radius: 8px; padding: 12px; color: var(--text-2); font-size: 12px; line-height: 1.5; }
+.sn-chief__notice svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--n-video); }
+.sn-chief__checkpoint { padding: 14px; background: var(--surface); border: 1px solid var(--line-2); border-radius: 10px; color: var(--text-2); font-size: 12px; line-height: 1.6; }
+.sn-chief__checkpoint > strong { color: var(--text); }
+.sn-chief__checkpoint button { min-height: 32px; margin: 4px 4px 0 0; }
+.sn-wrap--kind-chief .sn-actions__btn svg, .sn--chief .sn-story__error svg { width: 16px; height: 16px; vertical-align: middle; }
+.sn-wrap--kind-chief :is(select, input, button):focus-visible { outline: 2px solid var(--n-agent); outline-offset: 3px; }
 
 .sn-story__badge {
   padding: 2px 8px;
@@ -2635,10 +2695,44 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   color: var(--text-2);
 }
 
-.sn-wrap--kind-story { width: 390px; min-width: 390px; }
+.sn-wrap--kind-story { width: 450px; min-width: 450px; }
 .sn-wrap--kind-story .sn { border-color: var(--accent-30); }
 .sn-wrap--kind-story .sn-label__icon { background: var(--accent-14); color: var(--accent); }
 .sn-count--running { color: var(--accent); font-weight: 600; }
+
+/* Director: readable controls and a compact, scannable shot sequence. */
+.sn-director__intro { padding: 16px 16px 12px; }
+.sn-director__intro > span { font-size: 11px; font-weight: 650; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; }
+.sn-director__intro p { margin: 5px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-2); }
+.sn-director__empty { display: grid; justify-items: center; gap: 8px; margin: 0 14px 14px; padding: 20px 16px; border: 1px dashed var(--line-2); border-radius: 10px; background: var(--surface); color: var(--text-2); text-align: center; font-size: 12px; }
+.sn-director__empty > svg { width: 28px; height: 28px; color: var(--accent); margin-bottom: 4px; }
+.sn-director__empty strong { color: var(--text); font-size: 13px; }
+.sn-director__empty p { margin: 0; line-height: 1.6; }
+.sn--story .sn-story__targets { margin: 0 14px 14px; padding: 10px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); }
+.sn--story .sn-story__count { gap: 8px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; }
+.sn--story .sn-story__ribbon { max-height: 220px; overscroll-behavior: contain; }
+.sn--story .sn-story__item { min-height: 34px; padding: 6px 8px; box-sizing: border-box; }
+.sn--story .sn-story__chip { display: inline-flex; align-items: center; gap: 4px; }
+.sn--story .sn-story__chip svg { width: 13px; height: 13px; }
+.sn--story .sn-story__tabs { margin: 0 14px; padding: 4px; gap: 4px; background: var(--surface); }
+.sn--story .sn-story__tab { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 38px; font-size: 11px; color: var(--text-2); }
+.sn--story .sn-story__tab svg { width: 15px; height: 15px; flex-shrink: 0; }
+.sn--story .sn-story__tab--active { background: var(--accent-14); border-color: var(--accent-30); color: var(--text); }
+.sn--story .sn-story__panel { margin: 12px 14px 14px; padding: 14px; gap: 16px; background: var(--sunken); border-radius: 10px; }
+.sn--story .sn-story__grid { gap: 14px 12px; }
+.sn--story .sn-story__panel .sn-field { min-width: 0; display: grid; gap: 7px; }
+.sn--story .sn-story__panel .sn-field__label { font-size: 12px; color: var(--text-2); letter-spacing: 0; text-transform: none; }
+.sn--story .sn-story__panel .sn-bar__sel { width: 100%; min-width: 0; height: 38px; box-sizing: border-box; padding: 0 9px; font-size: 12px; color: var(--text); background-color: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; cursor: pointer; }
+.sn--story .sn-story__hint, .sn--story .sn-story__note, .sn--story .sn-story__blank { color: var(--text-2); font-size: 12px; line-height: 1.6; }
+.sn--story > .sn-story__note { margin: 12px 14px; padding: 12px; background: var(--accent-14); border: 1px solid var(--accent-30); border-radius: 8px; }
+.sn--story .sn-story__timing-row { padding: 10px; margin-top: 0; }
+.sn--story .sn-story__timing-label { font-size: 12px; line-height: 1.5; }
+.sn--story .sn-story__cast { padding: 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); }
+.sn--story .sn-story__input { min-height: 34px; font-size: 12px; }
+.sn--story .sn-story__area { font-size: 12px; line-height: 1.6; padding: 10px; }
+.sn-wrap--kind-story .sn-actions__btn svg, .sn--story .sn-story__error svg { width: 16px; height: 16px; vertical-align: middle; }
+.sn-wrap--kind-story :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.sn--story :is(button, input, select, textarea):disabled { cursor: not-allowed; }
 
 /* ── Directorial Segmented Tabs ── */
 .sn-story__tabs {
@@ -3160,16 +3254,8 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   box-shadow: 0 12px 40px var(--accent-14), var(--glow-accent);
 }
 
-/* ── Toolbar button hover glow ── */
-.studio-toolbar__btn:hover:not(:disabled) {
-  box-shadow: inset 0 0 0 1px var(--glass-border);
-}
-.studio-toolbar__btn--run {
-  box-shadow: var(--glow-accent);
-}
-.studio-toolbar__btn--run:hover:not(:disabled) {
-  box-shadow: 0 0 28px rgba(160, 122, 253, 0.32);
-}
+/* Tool swatches stay quiet: the primary Run button carries the emphasis. */
+.studio-toolbar__btn:hover .studio-toolbar__node-icon { box-shadow: none; }
 
 /* ── Run bar gradient shimmer ── */
 .studio-runbar__fill {
@@ -3231,13 +3317,6 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   border-color: var(--glass-border);
 }
 
-/* ── Toolbar glass background ── */
-.studio-toolbar {
-  background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-color: var(--glass-border);
-}
 
 /* ── FrameNode hover polish ── */
 .fn-wrap:hover .fn {
@@ -3258,6 +3337,46 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
 .sn-wrap--kind-clip .sn-label__icon { background: var(--n-video-10); color: var(--n-video); }
 
 .sn--clip { min-width: 470px; width: 470px; border-left: 2px solid var(--n-video); }
+
+.sn-clipping__intro { padding: 16px 16px 12px; }
+.sn-clipping__intro > span { color: var(--n-video); font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.sn-clipping__intro p { margin: 5px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.sn-clipping__progress { margin: 0 16px 10px; }
+.sn-clipping__progress > div { display: flex; justify-content: space-between; margin-bottom: 8px; color: var(--text-2); font-size: 12px; }
+.sn-clipping__progress progress { display: block; width: 100%; height: 5px; border: 0; border-radius: 4px; overflow: hidden; appearance: none; }
+.sn-clipping__progress progress::-webkit-progress-bar { background: var(--surface-3); }
+.sn-clipping__progress progress::-webkit-progress-value { background: var(--n-video); }
+.sn-clipping__stage-status { font-size: 10px; text-transform: capitalize; padding: 3px 6px; border: 1px solid var(--line-2); border-radius: 5px; }
+.sn--clip .sn-clip__stages { margin: 0 16px 14px; gap: 5px; }
+.sn--clip .sn-clip__stage { min-height: 34px; padding: 7px 9px; font-size: 12px; }
+.sn--clip .sn-clip__stage--pending { color: var(--text-2); background: var(--surface); border-color: var(--line); }
+.sn-clipping__section-title { margin: 0 16px 9px; color: var(--text-2); font-size: 12px; font-weight: 600; }
+.sn--clip .sn-clip__strip { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin: 0 16px 16px; padding: 0; }
+.sn--clip .sn-clip__pick { width: 100%; min-width: 0; box-sizing: border-box; min-height: 36px; padding: 7px 10px; border-radius: 8px; background: var(--surface); font-size: 12px; color: var(--text); }
+.sn--clip .sn-clip__pick--num input { width: 48px; font-size: 12px; }
+.sn--clip .sn-clip__toggle { min-height: 34px; box-sizing: border-box; padding: 7px 10px; border-radius: 8px; font-size: 12px; }
+.sn--clip .sn-clip__tabs { margin: 0 16px; padding: 4px; gap: 4px; border: 1px solid var(--line-2); background: var(--surface); }
+.sn--clip .sn-clip__tab { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; color: var(--text-2); font-size: 12px; }
+.sn--clip .sn-clip__tab svg { width: 15px; height: 15px; flex-shrink: 0; }
+.sn--clip .sn-clip__tab--on { background: var(--n-video-10); color: var(--text); }
+.sn--clip .sn-clip__panel { margin: 12px 16px 16px; gap: 12px; }
+.sn--clip .sn-clip__drop { position: relative; align-items: center; padding: 24px 16px; gap: 7px; border-radius: 10px; background: var(--surface); }
+.sn--clip .sn-clip__drop input { display: block; position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.sn-clipping__upload-icon { display: grid; place-items: center; width: 38px; height: 38px; margin-bottom: 3px; border-radius: 9px; background: var(--n-video-10); color: var(--n-video); }
+.sn-clipping__upload-icon svg { width: 21px; height: 21px; }
+.sn--clip .sn-clip__drop-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.sn--clip .sn-clip__drop-meta, .sn--clip .sn-clip__hint { color: var(--text-2); font-size: 12px; line-height: 1.6; }
+.sn-clipping__empty { display: grid; justify-items: center; gap: 9px; padding: 20px 16px; color: var(--text-2); background: var(--surface); border: 1px dashed var(--line-2); border-radius: 10px; font-size: 12px; line-height: 1.6; text-align: center; }
+.sn-clipping__empty svg { width: 28px; height: 28px; color: var(--n-video); }
+.sn-clipping__empty strong { color: var(--text); }
+.sn--clip .sn-clip__moment { padding: 14px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); }
+.sn--clip .sn-clip__quote { font-size: 13px; line-height: 1.6; }
+.sn--clip .sn-clip__why { color: var(--text-2); font-size: 12px; line-height: 1.6; }
+.sn--clip .sn-set__control { min-height: 36px; font-size: 12px; border-radius: 8px; }
+.sn--clip .sn-clip__rules { font-size: 12px; line-height: 1.6; padding: 12px; }
+.sn--clip .sn-clip__next { margin: 0 16px 16px; padding: 12px; border-radius: 8px; font-size: 12px; line-height: 1.5; }
+.sn-wrap--kind-clip .sn-actions__btn svg { width: 16px; height: 16px; }
+.sn-wrap--kind-clip :is(button, input, select, textarea):focus-visible, .sn--clip .sn-clip__drop:focus-within { outline: 2px solid var(--n-video); outline-offset: 3px; }
 
 /* ── the stage rail ── */
 .sn-clip__stages {
@@ -3929,4 +4048,150 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
   font-size: var(--t-micro);
   color: var(--text-3);
   line-height: 1.4;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Motion Control — a Director for motion.
+
+   Sized like the Clipping node because it is the other node that starts
+   from footage rather than from an idea, and it carries the same kind of
+   list: a block per piece, holding its own prompt, its own clip and its
+   own retry. That list is the node — the pieces used to be spawned onto
+   the canvas, and could not finish in the run that made them.
+
+   The video port is its own colour. It takes THREE different things on the
+   left — words, a clip, a still — and three ports in one colour is three
+   ways to wire it wrong.
+   ══════════════════════════════════════════════════════════════════ */
+.sn-wrap--kind-motion { width: 470px; min-width: 470px; }
+.sn-wrap--kind-motion .sn { border-color: var(--n-video); }
+.sn-wrap--kind-motion .sn-label__icon { background: var(--n-video-10); color: var(--n-video); }
+
+.sn--motion { min-width: 470px; width: 470px; border-left: 2px solid var(--n-video); }
+
+.sn-motion__body { display: grid; gap: 16px; padding: 18px 20px; }
+.sn-wrap--kind-motion .sn-actions__btn svg, .sn-motion__piece .sn-retry-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+.sn-motion__piece .sn-retry-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.sn-motion__intro { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.sn-motion__intro > span { color: var(--n-video); font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.sn-motion__intro p { margin: 5px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.sn-motion__badge { flex-shrink: 0; padding: 4px 8px; border: 1px solid var(--line-2); border-radius: 6px; color: var(--n-video); background: var(--n-video-10); font-size: 11px; }
+.sn-motion__field { display: grid; gap: 9px; min-width: 0; }
+.sn-motion__audio-toggle { display: flex; align-items: flex-start; gap: 9px; padding: 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 12px; cursor: pointer; }
+.sn-motion__audio-toggle input { margin-top: 3px; accent-color: var(--n-video); }
+.sn-motion__audio-toggle span { display: grid; gap: 5px; }
+.sn-motion__audio-toggle small { color: var(--text-2); line-height: 1.5; }
+.sn-motion__field .sn-field__label { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 12px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.sn-motion__step { display: grid; place-items: center; width: 23px; height: 23px; border: 1px solid var(--line-2); border-radius: 6px; color: var(--text-2); font-size: 10px; font-variant-numeric: tabular-nums; background: var(--surface); }
+.sn-motion__field .sn-bar__sel { box-sizing: border-box; width: 100%; height: 38px; padding: 0 12px; color: var(--text); font-size: 13px; border-radius: 8px; border: 1px solid var(--line-2); background-color: var(--surface); cursor: pointer; }
+.sn-motion__intent { display: grid; gap: 8px; padding: 11px 12px; border-radius: 8px; background: var(--surface); }
+.sn-motion__intent p { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 8px; margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-2); }
+.sn-motion__intent strong { color: var(--text); font-weight: 600; }
+.sn-motion__hint { margin: 0; color: var(--text-2); font-size: 12px; line-height: 1.5; }
+.sn-motion__upload { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; padding: 20px 14px; border: 1px dashed var(--line-2); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 13px; cursor: pointer; }
+.sn-motion__upload:hover { border-color: var(--n-video); background: var(--n-video-10); }
+.sn-motion__upload input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.sn-motion__upload-icon { display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: 4px; border-radius: 9px; background: var(--n-video-10); color: var(--n-video); }
+.sn-motion__upload-icon svg { width: 20px; height: 20px; }
+.sn-motion__upload--full { border-style: solid; }
+.sn-motion__filename { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sn--motion :is(select, input, textarea, button):focus-visible,
+.sn-motion__upload:focus-within { outline: 2px solid var(--n-video); outline-offset: 3px; }
+.sn-motion__connections { display: flex; flex-wrap: wrap; gap: 8px 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 11px; color: var(--text-2); }
+.sn-motion__connections span { display: inline-flex; align-items: center; gap: 6px; }
+.sn-motion__connections b { display: grid; place-items: center; width: 18px; height: 18px; background: var(--surface); border: 1px solid var(--line-2); border-radius: 4px; color: var(--text); font-size: 10px; }
+.sn-motion__results-heading { display: flex; justify-content: space-between; gap: 12px; color: var(--text-2); font-size: 12px; }
+.sn-motion__results-heading strong { color: var(--text); }
+
+/* ── One piece of a motion job ─────────────────────────────────────────────
+   A block, not a row. sn-story__item next door is a single flex line, and a
+   piece carries four things — its heading, its prompt, its clip and its retry
+   — which that line would squash side by side into slivers.
+
+   The left edge carries the state. A colour there reads at a glance down a
+   list of six without adding a badge to every row. */
+.sn-motion__piece {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-2);
+  border-radius: var(--r-chip);
+  min-width: 0;
+}
+.sn-motion__piece--running { border-left-color: var(--n-video); }
+.sn-motion__piece--done    { border-left-color: var(--ok); }
+.sn-motion__piece--error   { border-left-color: var(--bad); }
+
+.sn-motion__piece-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  font-size: var(--t-micro);
+  color: var(--text-2);
+}
+
+/* Shorter than a Prompt node's: this is one piece of a shot, and six of them
+   at six rows each is a node nobody can see the bottom of. */
+.sn-motion__piece .sn-text { min-height: 64px; }
+.sn-motion__preview { min-width: 0; overflow: hidden; border: 1px solid var(--line-2); border-radius: 9px; background: var(--sunken); }
+.sn-motion__viewport { position: relative; display: grid; place-items: center; height: 240px; overflow: hidden; }
+.sn-motion__piece .sn-motion__media { position: static; inset: auto; display: block; width: 100%; height: 240px; max-height: 240px; object-fit: contain; border-radius: 0; }
+.sn-motion__no-preview { display: grid; justify-items: center; gap: 10px; color: var(--text-2); font-size: 12px; }
+.sn-motion__no-preview svg { width: 32px; height: 32px; color: var(--n-video); }
+.sn-motion__preview-note { display: grid; gap: 6px; padding: 12px; border-top: 1px solid var(--line); color: var(--text-2); font-size: 12px; line-height: 1.5; }
+.sn-motion__preview-note strong { color: var(--text); }
+.sn-motion__reload { justify-self: start; padding: 7px 10px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.sn-motion__reload:hover { border-color: var(--n-video); }
+.sn-motion__prompt { min-width: 0; border: 1px solid var(--line); border-radius: 7px; }
+.sn-motion__prompt summary { padding: 10px; color: var(--text-2); cursor: pointer; font-size: 12px; }
+.sn-motion__prompt summary:focus-visible { outline: 2px solid var(--n-video); outline-offset: -2px; }
+.sn-motion__prompt .sn-text { box-sizing: border-box; width: 100%; min-height: 120px; }
+.sn-motion__piece .sn-retry-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Capped, because the clips are usually 9:16.
+   A portrait video at width:100% in a 470px node is over 800px tall, and two
+   pieces of one job made a node you could not see the top and bottom of at
+   once. object-fit keeps the framing honest inside the cap; the letterbox is
+   --sunken rather than black, so it reads as part of the node rather than a
+   hole punched in it. */
+.sn-motion__piece img {
+  width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  border-radius: var(--r-chip);
+  background: var(--sunken);
+}
+
+.sn-motion__piece video {
+  width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  border-radius: var(--r-chip);
+  background: var(--sunken);
+}
+
+.sn-motion__err {
+  color: var(--bad);
+  font-size: var(--t-micro);
+  word-break: break-word;
+}
+
+/* The clip going IN, distinct from the image ports beside it. */
+.sn-port--video { background: var(--n-video) !important; box-shadow: 0 0 0 3px var(--n-video-10); }
+.sn-port--video:hover { box-shadow: 0 0 14px var(--n-video-10) !important; }
+
+/* The clip a node pulls from Flow's library.
+   Not a wire and not a thumbnail — a filename resolved at run time — so it
+   needs saying, or the node looks like it has no video. */
+.sn-media__ref {
+  display: block;
+  margin-top: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.75;
 }

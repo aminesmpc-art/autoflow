@@ -326,8 +326,8 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
   return (
     <div className={`sn-wrap sn-wrap--kind-clip ${selected ? 'sn-wrap--selected' : ''}`}>
       <div className="sn-actions">
-        <button className="sn-actions__btn" onClick={() => duplicateNode(id)} title="Duplicate node">⧉</button>
-        <button className="sn-actions__btn sn-actions__btn--danger" onClick={() => removeNode(id)} title="Delete node">🗑</button>
+        <button className="sn-actions__btn nodrag" onClick={() => duplicateNode(id)} title="Duplicate node" aria-label="Duplicate node"><Icon name="copy" /></button>
+        <button className="sn-actions__btn sn-actions__btn--danger nodrag" onClick={() => removeNode(id)} title="Delete node" aria-label="Delete node"><Icon name="trash" /></button>
       </div>
 
       <div className="sn sn--clip">
@@ -336,12 +336,13 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
         </Handle>
 
         <div className="sn-bar">
-          <Icon name="story" kind="video" className="sn-label__icon" />
+          <Icon name="scissors" kind="video" className="sn-label__icon" />
           <input
             className="sn-label__name nodrag"
             value={d.label || 'Clipping'}
             onChange={(e) => updateNodeData(id, { label: e.target.value })}
             placeholder="Clipping"
+            aria-label="Clipping node name"
           />
           <NodeInfoBadge type="clip" />
           {d.status === 'running' ? (
@@ -355,6 +356,11 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
           )}
         </div>
 
+        <div className="sn-clipping__intro"><span>Clip studio</span><p>Turn a long recording into moments worth sharing.</p></div>
+        <div className="sn-clipping__progress">
+          <div><strong>Preparation progress</strong><span>{Math.round(progress * 100)}%</span></div>
+          <progress aria-label="Clipping preparation progress" max={1} value={progress} />
+        </div>
         {/* ── stage rail: the whole pipeline, always visible ──
             A failed stage opens rather than just turning red. The error used
             to live only in the row's title attribute, so the node reported a
@@ -371,10 +377,12 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
                   type="button"
                   className={`sn-clip__stage sn-clip__stage--${rec.status} nodrag`}
                   title={lines[i] + (rec.status === 'done' ? ' — click to run again from here' : '')}
+                  aria-label={`${STAGE_LABEL[stageId]}: ${rec.status}${rec.status === 'done' ? '. Run again from here' : ''}`}
                   onClick={() => rec.status === 'done' && redoFrom(stageId)}
                 >
                   <span className="sn-clip__glyph">{STATUS_GLYPH[rec.status]}</span>
                   <span className="sn-clip__stage-name">{STAGE_LABEL[stageId]}</span>
+                  <span className="sn-clipping__stage-status">{rec.status}</span>
                   {rec.tookMs !== undefined && (
                     <span className="sn-clip__took">{(rec.tookMs / 1000).toFixed(1)}s</span>
                   )}
@@ -419,11 +427,13 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
             A run reads them every time; the node should state them every
             time. The rest — the brief, and the two numbers most people never
             touch — stay in a tab. */}
-        <div className="sn-clip__strip">
+        <div className="sn-clipping__section-title">Clip setup</div>
+        <div className="sn-clip__strip" role="group" aria-label="Clip setup">
           <select
             className="sn-clip__pick nodrag"
             value={chat}
             title="Which chat does the thinking"
+            aria-label="AI engine"
             onChange={(e) => changeSetting({ platform: e.target.value })}
           >
             {CHATS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -432,6 +442,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
             className="sn-clip__pick nodrag"
             value={mode}
             title="Campaign work follows someone else's brief"
+            aria-label="Clipping mode"
             onChange={(e) => changeSetting({ clipMode: e.target.value })}
           >
             <option value="campaign">Campaign</option>
@@ -440,6 +451,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
           <label className="sn-clip__pick sn-clip__pick--num" title="How many clips to make">
             <input
               type="number" min={1} max={20} className="nodrag"
+              aria-label="Clips to make"
               value={wanted}
               onChange={(e) => changeSetting({
                 wantedClips: Math.max(1, Math.min(20, Number(e.target.value) || DEFAULT_WANTED)),
@@ -451,6 +463,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
             className="sn-clip__pick nodrag"
             value={aspect}
             title="The shape of the finished clips"
+            aria-label="Aspect ratio"
             onChange={(e) => changeSetting({ aspect: e.target.value })}
           >
             {ASPECTS.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -480,6 +493,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               className="sn-clip__pick nodrag"
               value={captionPreset}
               title="How the burned-in words look"
+              aria-label="Caption style"
               onChange={(e) => changeSetting({ captionPreset: e.target.value })}
             >
               <option value="clean">Clean</option>
@@ -541,14 +555,16 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
           )}
         </div>
 
-        <div className="sn-clip__tabs">
+        <div className="sn-clip__tabs" role="group" aria-label="Clipping sections">
           {(['source', 'moments', 'settings'] as Tab[]).map((t) => (
             <button
               key={t}
               type="button"
               className={`sn-clip__tab nodrag ${tab === t ? 'sn-clip__tab--on' : ''}`}
               onClick={() => setTab(t)}
+              aria-pressed={tab === t}
             >
+              <Icon name={t === 'source' ? 'clip' : t === 'moments' ? 'scissors' : 'story'} />
               {t === 'source' ? 'Video' : t === 'moments' ? `Moments${moments.length ? ` (${moments.length})` : ''}` : 'The brief'}
             </button>
           ))}
@@ -565,11 +581,13 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               <input
                 type="file"
                 accept="video/*"
+                aria-label={sourceName ? 'Replace source video' : 'Choose source video'}
                 onChange={(e) => onFile(e.target.files?.[0] ?? null)}
               />
+              <span className="sn-clipping__upload-icon"><Icon name={sourceName ? 'clip' : 'import'} /></span>
               {sourceName ? (
                 <>
-                  <strong className="sn-clip__drop-name">{sourceName}</strong>
+                  <strong className="sn-clip__drop-name" title={sourceName}>{sourceName}</strong>
                   <span className="sn-clip__drop-meta">
                     {d.sourceSize ? `${(d.sourceSize / 1e6).toFixed(0)} MB` : ''} · click to replace
                   </span>
@@ -633,7 +651,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
                             <span className="sn-clip__score-bar">
                               <span className="sn-clip__score-fill" style={{ width: `${score}%` }} />
                             </span>
-                            <span className="sn-clip__score-num">{Math.round(score)}</span>
+                            <span className="sn-clip__score-num">{Math.round(score)}/100</span>
                           </span>
                         )}
                       </div>
@@ -649,7 +667,8 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
                 })}
               </div>
             ) : (
-              <div className="sn-story__empty">
+              <div className="sn-clipping__empty">
+                <Icon name="scissors" />
                 <strong>No moments ranked yet.</strong>
                 The audio shortlists them and the model ranks what is said —
                 never a timestamp.
@@ -683,6 +702,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
                     type="button"
                     className={`sn-clip__mode nodrag ${mode === m ? 'sn-clip__mode--on' : ''}`}
                     onClick={() => changeSetting({ clipMode: m })}
+                    aria-pressed={mode === m}
                   >
                     {m === 'campaign' ? 'Campaign' : 'Explainer'}
                   </button>
@@ -784,6 +804,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
             <textarea
               className="sn-clip__rules nodrag"
               value={d.campaignRules || ''}
+              aria-label="Campaign brief and clipping rules"
               placeholder={'Paste the campaign brief here — word for word.\n\nThe rules are shown to the chat when it ranks the moments, so a brief that bans misrepresentation or engagement farming actually changes what gets chosen.'}
               onChange={(e) => updateNodeData(id, { campaignRules: e.target.value })}
               /* On blur, not on change: this is a textarea, and invalidating

@@ -1060,7 +1060,17 @@ export function placeholderSelector(key: keyof typeof FLOW_STRINGS): string {
  * for search inputs in all known languages.
  */
 export function searchInputSelector(): string {
-  return '#add-menu-input, ' +
+  /* input.search-input first: it is a class, so it holds in every language.
+     The Angular picker renders
+  
+       <div class="search-input-container">
+         <mat-icon class="search-icon">search</mat-icon>
+         <input class="search-input" aria-label="Search assets" placeholder="Search assets">
+  
+     and the wording under it is translated — this user's interface is in
+     French — so the label and placeholder tiers below only work when the
+     translation happens to be one FLOW_STRINGS knows. */
+  return 'input.search-input, #add-menu-input, ' +
     FLOW_STRINGS.search
       .flatMap(t => [
         `input[aria-label*="${t}"]`,

@@ -240,12 +240,13 @@ describe('changing it without starting over', () => {
      * threadOpen answers the question that was actually being asked. */
     const fn = SRC.slice(SRC.indexOf('async function refineBuild'));
     expect(fn.slice(0, fn.indexOf('sendMessage') + 900))
-      .toContain("newChat: at.threadOpen ? 'never' : 'auto'");
+      .toContain("newChat: attempt > 0 || at.threadOpen ? 'never' : 'auto'");
   });
 
   it('keeps the plan on screen when the change comes back unusable', () => {
     const fn = SRC.slice(SRC.indexOf('async function refineBuild'));
-    expect(fn).toMatch(/keeping the plan you already have/);
+    expect(fn.indexOf('await refinePlan(')).toBeLessThan(fn.indexOf('showPlan({'));
+    expect(fn).toContain('...at, plan, template, warnings: []');
   });
 
   it('hides the box when there is no conversation behind the plan', () => {

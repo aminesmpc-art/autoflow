@@ -23,6 +23,12 @@ beforeEach(async () => {
 });
 
 describe('keeping and restoring clips', () => {
+  it('loads a production cache record without restoring all media', async () => {
+    const value = JSON.stringify({ signature: 'plan-v1', result: { imageUrl: 'https://example.test/clip' } });
+    await vault.saveMedia('chief-result:test:clip', new Blob([value], { type: 'application/json' }));
+    expect(await (await vault.loadMedia('chief-result:test:clip'))?.text()).toBe(value);
+    expect(await vault.loadMedia('missing')).toBeUndefined();
+  });
   it('gives a clip back after the tab is gone', async () => {
     await vault.saveMedia('src-1#Look at these straw', bytes(2048));
 

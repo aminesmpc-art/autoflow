@@ -13,6 +13,15 @@ import {
 } from './topoSort';
 import { trackUsage, trackSubmission } from '../../shared/api';
 import { bridge, type NodeExecutionConfig, type NodeResult } from './bridge';
+import {
+  beginRun as journalBeginRun,
+  finishRun as journalFinishRun,
+  cancelRun as journalCancelRun,
+  beginAttempt as journalBeginAttempt,
+  recordSubmitted as journalRecordSubmitted,
+  settleAttempt as journalSettleAttempt,
+  recoverable as journalRecoverable,
+} from '../../shared/runJournal';
 import { useStudioStore } from '../store';
 import { composeAskPrompt } from '../presets';
 import {
@@ -210,6 +219,8 @@ export class WorkflowRunner {
   private pauseRequested = false;
   /** Set by run(): true when this press was a targeted retry, not a full Run. */
   private targetedRun = false;
+  /* This press's journal id. Empty between runs. */
+  private runId = '';
 
   /** Results from each node (nodeId → result) */
   private nodeResults = new Map<string, NodeResult>();
@@ -412,6 +423,12 @@ export class WorkflowRunner {
     this.state = 'running';
     this.abortRequested = false;
     this.pauseRequested = false;
+
+    /* An id for this press, so what it submits can be reconciled after the
+       page that started it has gone. Everything the journal records hangs off
+       it — see shared/runJournal. */
+    this.runId = `run-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+    void journalBeginRun(this.runId);
     /* Whether this press means "make it again" or "finish what is left".
      *
      * Motion Control is the one node where the difference is expensive: a full
@@ -661,6 +678,20 @@ export class WorkflowRunner {
           // GENERATE nodes — this is where the magic happens
           store.setCurrentNode(step.nodeId);
           store.updateNodeData(step.nodeId, { status: 'running', progress: 0, errorMessage: null });
+
+          /* Open the attempt before anything can be submitted against it.
+             recordSubmitted attaches to an OPEN attempt, so without this the
+             media id has nowhere to land and the generation it paid for is
+             not written down anywhere. beginAttempt also hands back an
+             attempt already in flight rather than minting a second — which
+             is what makes "recover before retrying" hold by construction. */
+          if (this.runId) {
+            const prior = await journalRecoverable(this.runId, step.nodeId);
+            if (prior?.mediaId) {
+              studioLog('Run', `Node already submitted ${prior.mediaId.slice(-8)} — recovering rather than generating again.`);
+            }
+            await journalBeginAttempt(this.runId, step.nodeId, `${this.runId}:${step.nodeId}`);
+          }
           report({ nodeLabel: nodeData.label || 'Generating', progress: 0 });
 
           /* Attempt loop. Usage is settled exactly once per node, at its final
@@ -767,6 +798,15 @@ export class WorkflowRunner {
                 mode: 'studio',
                 outcome: 'done',
               }).catch(() => { /* metering must never fail a generation */ });
+
+              /* And write it into the run journal. From this instant the
+                 generation exists and has been charged, so a restart must
+                 recover it rather than ask for another. Fire-and-forget like
+                 the report above, and after it for the same reason: neither
+                 may hold up the run. */
+              if (this.runId) {
+                void journalRecordSubmitted(this.runId, step.nodeId, media);
+              }
             }
           } else {
             // Mark failed so dependent nodes skip instead of running with
@@ -802,6 +842,15 @@ export class WorkflowRunner {
             }
           }
 
+          /* Settle it either way. An attempt left unsettled reads as a
+             generation still owed a result, which is what stops a later run
+             asking for it again — so leaving a finished one open would be a
+             slow leak of false outstanding work. */
+          if (this.runId) {
+            void journalSettleAttempt(
+              this.runId, step.nodeId, succeeded ? 'done' : 'failed');
+          }
+
           // Don't abort the whole workflow — move on to the next node
           completedCount++;
           store.setRunProgress(completedCount, plannedTotal);
@@ -821,6 +870,7 @@ export class WorkflowRunner {
     store.setRunning(false);
     store.setPaused(false);
     this.state = this.abortRequested ? 'stopped' : 'done';
+    if (this.runId) void journalFinishRun(this.runId);
 
     /* Write it down NOW, not on the next edit.
        Autosave waits for the run to end, and nothing edits a workflow
@@ -2666,7 +2716,7 @@ export class WorkflowRunner {
   ): Promise<NodeResult> {
     const store = useStudioStore.getState();
     const {
-      motionBriefAsk, motionPieceAsk, readMotionPrompt, plainMotionPrompt, MODE_INTENT,
+      motionBriefAsk, motionPieceAsk, readMotionPrompt, plainMotionPrompt, MODE_INTENT, motionAudioPrompt,
     } = await import('../ask/motionControl');
     type MotionBrief = import('../ask/motionControl').MotionBrief;
     type MotionPiece = import('../ask/motionControl').MotionPiece;
@@ -2850,7 +2900,7 @@ export class WorkflowRunner {
       const cuts: Array<{ piece: MotionPiece; dataUrl: string; filename: string }> = [];
       for (const c of chunks) {
         if (this.abortRequested) throw new Error('Motion Control stopped.');
-        const cut: any = await clipMedia.cut(source, { startSec: c.startSec, endSec: c.endSec });
+        const cut: any = await clipMedia.cut(source, { startSec: c.startSec, endSec: c.endSec, silent: nodeData.motionMuteAudio === true });
         const blob: Blob = cut?.blob ?? cut;
         cuts.push({
           piece: {
@@ -2858,7 +2908,7 @@ export class WorkflowRunner {
             seconds: c.seconds, cutsSpeech: c.cutsSpeech,
           },
           dataUrl: await motionBlobToDataUrl(blob),
-          filename: partFileName(label, c.index, c.of),
+          filename: partFileName(nodeData.motionMuteAudio === true ? `${label}-silent` : label, c.index, c.of),
         });
         store.updateNodeData(nodeId, { statusNote: `Cut ${c.index}/${c.of}` });
       }
@@ -2919,6 +2969,8 @@ export class WorkflowRunner {
         seconds: p.piece.seconds,
         cutsSpeech: p.piece.cutsSpeech,
         filename: p.filename,
+        audioMuted: nodeData.motionMuteAudio === true,
+        muteRequested: havePrompts && existing.find((r) => r.index === p.piece.index)?.muteRequested,
         prompt: written[i]?.prompt || '',
         why: written[i]?.why || '',
         status: 'idle' as const,
@@ -3007,6 +3059,8 @@ export class WorkflowRunner {
     const write = () => store.updateNodeData(nodeId, { motionPieces: rows.map((r) => ({ ...r })) });
     let made = 0;
     const failures: string[] = [];
+    const retryPieceOnly = this.targetedRun ? Number(nodeData.motionRetryPiece) || 0 : 0;
+    store.updateNodeData(nodeId, { motionRetryPiece: undefined });
 
     for (const row of rows) {
       if (this.abortRequested) throw new Error('Motion Control stopped.');
@@ -3016,6 +3070,10 @@ export class WorkflowRunner {
          its own status rather than the node keeping one for all of them. */
       if (row.status === 'done' && (row.videoUrl || row.tileId)) {
         made++;
+        continue;
+      }
+      if (retryPieceOnly && row.index !== retryPieceOnly) {
+        if (row.status !== 'done') failures.push(`piece ${row.index} still needs attention`);
         continue;
       }
       if (!row.prompt.trim()) {
@@ -3036,8 +3094,30 @@ export class WorkflowRunner {
       studioLog('Motion', `Piece ${row.index}/${row.of}: generating from ${row.filename}.`);
 
       try {
+        if (row.muteRequested && !row.audioMuted) {
+          const original = sourceKey ? getSource(sourceKey) : undefined;
+          if (!original) throw new Error('Choose the original source video again to remove audio from this piece.');
+          if (!uploadReady) throw new Error('Turn on uploads on this node before retrying without audio.');
+          store.updateNodeData(nodeId, { statusNote: `Removing audio from piece ${row.index}...` });
+          const { clipMedia } = await import('../clip/clipMedia');
+          const { partFileName } = await import('../../content/flow/uploadVideo');
+          const silentCut = await clipMedia.cut(original, { startSec: row.startSec, endSec: row.endSec, silent: true });
+          if (this.abortRequested) throw new Error('Motion Control stopped.');
+          const filename = partFileName(`${label}-silent-${Date.now()}`, row.index, row.of);
+          const uploaded: any = await chrome.runtime.sendMessage({
+            type: 'DEBUG_UPLOAD_TO_FLOW',
+            files: [{ filename, dataUrl: await motionBlobToDataUrl(silentCut.blob) }],
+          });
+          if (!uploaded?.ok) throw new Error(uploaded?.error || 'Silent piece upload failed.');
+          const actual = String(uploaded.names?.[0] || '').trim();
+          row.filename = actual && !/[\\/]/.test(actual) ? actual : filename;
+          row.audioMuted = true;
+          row.muteRequested = false;
+          write();
+        }
+        if (this.abortRequested) throw new Error('Motion Control stopped.');
         const result = await this.awaitBridge(nodeId, {
-          prompt: row.prompt,
+          prompt: motionAudioPrompt(row.prompt, row.audioMuted === true),
           platform: 'flow',
           model: 'Omni 1.1 Flash',
           mediaType: 'video',
@@ -3461,6 +3541,12 @@ export class WorkflowRunner {
   stop(): void {
     this.abortRequested = true;
     this.pauseRequested = false;
+    /* On disk as well as in memory. abortRequested belongs to a runner that
+       lives in the Studio page; a run stopped seconds before that page goes
+       away would otherwise look, to anything that resumes it, exactly like a
+       run that was never stopped — and every node still owing a generation
+       would be submitted again. */
+    if (this.runId) void journalCancelRun(this.runId);
     bridge.stopExecution();
     /* And end whatever this side is waiting on. Telling the content script to
        stop is not enough: it stops driving the site, and the promise here goes

@@ -4,6 +4,7 @@
    and stable data-* attributes. Avoids brittle CSS paths.
    ============================================================ */
 import { matchesFlowText, exactMatchFlowText, FLOW_STRINGS, ariaLabelSelector } from './flowStrings';
+import { ingredientChips, isMediaImage } from './flowDom';
 
 /** Sleep helper */
 export function sleep(ms: number): Promise<void> {
@@ -409,6 +410,23 @@ export function findMoreMenuOnAsset(assetElement: Element): Element | null {
  *  a virtuoso scroller: div[data-testid="virtuoso-item-list"].
  */
 export function findAssetCards(): Element[] {
+  /* The Angular Flow. Measured on a live project showing six generated
+     videos, EVERY tier below returned zero:
+
+       div[id^="history-step-fe_id_"]   0
+       div[data-tile-id]                0
+       virtuoso [data-index] rows       0
+       [role=listitem|gridcell] etc     0
+       [role=grid], [role=list], …      0
+
+     So this returned an empty array, the run monitor had no tile to read, and
+     a queue could neither see a video finish nor see one fail — it reported
+     0 failed beside visibly failed tiles and waited on them forever. */
+  const flowTiles = Array.from(
+    document.querySelectorAll('flow-video-tile, flow-image-tile'),
+  ).filter(isVisible);
+  if (flowTiles.length > 0) return flowTiles;
+
   // Primary: history steps in the detail view. We prioritize these because
   // when the detail view is open, the background grid tiles often stop receiving React updates.
   const historySteps = document.querySelectorAll('div[id^="history-step-fe_id_"]');
@@ -629,8 +647,25 @@ export function findFrameButton(label: 'Start' | 'End'): Element | null {
  *  Google Symbols icon with text "add_2" and a hidden <span>Create</span>.
  */
 export function findIngredientAttachButton(): Element | null {
-  // Strategy 1 (BEST): button containing Google Symbols icon with "add_2"
-  // This is the most specific selector — the actual "+" ingredient button always has this icon.
+  /* Tier 0 (new Flow): the component that IS the add menu.
+     Read off the live page — the composer's "+" is
+
+       <flow-add-menu>
+         <button aria-label="Add ingredients to the prompt box">
+           <mat-icon class="mat-icon notranslate google-symbols">add</mat-icon>
+
+     Anchored on the component rather than that label, because the label is
+     translated: on a French account it reads "Ajouter des ingredients au
+     champ du prompt". The component name is not translated and does not move
+     when someone restyles the button. */
+  const addMenu = document.querySelector('flow-add-menu');
+  if (addMenu) {
+    const btn = addMenu.querySelector('button');
+    if (btn && isVisible(btn)) return btn;
+  }
+
+  // Strategy 1 (old Flow): button containing Google Symbols icon with "add_2"
+  // That was the ligature on the previous site; the new one writes plain "add".
   const buttons = document.querySelectorAll('button');
   for (const btn of buttons) {
     const icons = btn.querySelectorAll('i.google-symbols, i.material-icons, .google-symbols');
@@ -642,7 +677,8 @@ export function findIngredientAttachButton(): Element | null {
     }
   }
 
-  // Strategy 2: button with aria-haspopup="dialog" AND add icon near the prompt
+  // Strategy 2: button with aria-haspopup="dialog" AND add icon near the prompt.
+  // Kept for the old site. The new one has no aria-haspopup anywhere — measured 0.
   const promptArea = findPromptInput();
   if (promptArea) {
     let container = promptArea.parentElement;
@@ -663,9 +699,26 @@ export function findIngredientAttachButton(): Element | null {
     }
   }
 
-  // Strategy 3: button with "add" icon anywhere
-  for (const btn of buttons) {
-    const icons = btn.querySelectorAll('i.google-symbols, i.material-icons, .google-symbols');
+  /* Strategy 3: an "add" icon anywhere — last resort, and the reason this
+     function was returning the wrong element on the new site.
+
+     A bare "add" ligature is not unique there. Measured on a real project, the
+     first button carrying one is
+
+       aria-label="Add media menu"   in flow-tile-view-header   at (1218, 18)
+
+     a 40x40 control in the page header, unrelated to the composer's 32x32 "+"
+     at (484, 958). Every existing ingredient chip carries an "add" hover
+     overlay too, so which one won came down to document order.
+
+     Scoped to the prompt box when there is one, with the header and the chips
+     excluded outright. */
+  const composer = document.querySelector('flow-prompt-box, flow-base-prompt-box');
+  const scope: ParentNode = composer || document;
+  for (const btn of scope.querySelectorAll('button')) {
+    if (btn.closest('flow-tile-view-header')) continue;
+    if (btn.closest('flow-ingredient-chip, flow-image-ingredient-chip')) continue;
+    const icons = btn.querySelectorAll('i.google-symbols, i.material-icons, .google-symbols, mat-icon');
     for (const icon of icons) {
       const iconText = (icon.textContent || '').trim().toLowerCase();
       if (iconText === 'add') {
@@ -945,11 +998,59 @@ export function frameSlotFilled(slot: HTMLElement): boolean {
 /** The remove control on a filled slot, so a run does not inherit the frames
  *  the previous prompt left behind. */
 export function findFrameSlotClearButton(slot: HTMLElement): HTMLElement | null {
-  const buttons = Array.from(slot.querySelectorAll<HTMLElement>('button'));
+  /* The measured markup of a FILLED slot — read off the live composer:
+   *
+   *   <div cdkoverlayorigin class="frame-trigger">
+   *     <flow-image-ingredient-chip>
+   *       <button cdkoverlayorigin class="chip-container" aria-label="Image ingredient">
+   *         <div class="chip-image-wrapper"><img class="chip-image" src="…"></div>
+   *         <div class="hover-icon-overlay" data-state="closed">
+   *           <mat-icon class="hover-icon …">cancel</mat-icon>
+   *
+   * There is exactly ONE button in there, and it is not a remove control — it
+   * is the chip itself, and it carries cdkoverlayorigin, so clicking it OPENS
+   * THE PICKER. The old search matched it anyway: Material renders its icons
+   * as ligatures, so the button's textContent is literally "cancel" and the
+   * /cancel|close|clear|remove/ test passed on the wrong element. Clearing a
+   * frame therefore opened a dialog and reported that the slot would not
+   * clear.
+   *
+   * The remove control is the mat-icon inside .hover-icon-overlay. It is
+   * revealed on hover — hence data-state="closed" at rest — so the caller has
+   * to hover the chip before this is worth clicking.
+   */
+  const hoverIcon = slot.querySelector<HTMLElement>(
+    '.hover-icon-overlay mat-icon, mat-icon.hover-icon'
+  );
+  if (hoverIcon) return hoverIcon;
+
+  /* Older builds, where a real remove button existed. Kept below the measured
+     case, not above it. */
+  const buttons = Array.from(slot.querySelectorAll<HTMLElement>('button'))
+    .filter((b) => !b.classList.contains('chip-container'));
   const labelled = buttons.find((b) =>
     /cancel|close|clear|remove/i.test(`${b.textContent || ''} ${b.getAttribute('aria-label') || ''}`)
   );
   return labelled || buttons[0] || null;
+}
+
+/**
+ * Is this frame slot holding an image, judged by the element Flow puts there?
+ *
+ * frameSlotFilled asks the generic question — any loaded <img>, or any element
+ * with a background image — which is right for "has something rendered" and
+ * too loose for "did MY paste land": a stale thumbnail mid-removal satisfies
+ * it. A filled slot mounts a <flow-image-ingredient-chip> holding an
+ * img.chip-image with a signed flow-content.google src, and an empty one holds
+ * <button class="empty-chip">Start</button>. Both measured.
+ */
+export function frameSlotHasChip(slot: HTMLElement): boolean {
+  return !!slot.querySelector('flow-image-ingredient-chip img.chip-image[src]');
+}
+
+/** The empty slot's own control — what a paste or a click should target. */
+export function frameSlotEmptyChip(slot: HTMLElement): HTMLElement | null {
+  return slot.querySelector<HTMLElement>('button.empty-chip');
 }
 
 /* ── The asset picker ─────────────────────────────────────────
@@ -989,10 +1090,40 @@ export function findFrameSlotDialog(slot: HTMLElement): HTMLElement | null {
     const byId = document.getElementById(id);
     if (byId && isVisible(byId)) return byId;
   }
+
   const open = Array.from(
     document.querySelectorAll<HTMLElement>('[role="dialog"][data-state="open"]')
   ).filter(isVisible);
-  return open[open.length - 1] || null;
+  if (open.length) return open[open.length - 1];
+
+  /* The picker by its own name, which is exact and says what it is:
+  
+       <div class="add-menu-popover-container flow-menu-panel">
+         <h2 class="header-title">Select a frame image</h2>
+  
+     Preferred over the generic pane below, because a CDK overlay is also what
+     a select dropdown or a tooltip opens in, and the last one added is not
+     necessarily this. */
+  const named = Array.from(
+    document.querySelectorAll<HTMLElement>('.add-menu-popover-container')
+  ).filter(isVisible);
+  if (named.length) return named[named.length - 1];
+
+  /* The Angular Flow, which opens this as a CDK overlay instead.
+  
+     The slot says so itself — the trigger carries `cdkoverlayorigin`:
+  
+       <div cdkoverlayorigin class="frame-trigger">
+         <button class="empty-chip"> Début </button>
+  
+     and a CDK overlay is appended to the body in its own pane rather than
+     wired back to the trigger with aria-controls. So neither branch above can
+     see it, and openFrameSlotDialog exhausted its three attempts and gave up
+     with both slots plainly on screen. */
+  const panes = Array.from(
+    document.querySelectorAll<HTMLElement>('.cdk-overlay-pane')
+  ).filter(isVisible);
+  return panes[panes.length - 1] || null;
 }
 
 /** The selectable asset rows, newest first under Flow's default "Recent" sort. */
@@ -1103,6 +1234,30 @@ export function describeFrameSlot(slot: HTMLElement): string {
 
 /** Reference chips currently attached to the prompt bar. */
 export function findAttachedIngredients(): HTMLElement[] {
+  /* Current Angular Flow: semantic custom elements are stable across locale
+     and styling changes. Return the actual chip button when available because
+     its aria-busy state and image belong to the upload being verified. */
+  const current = ingredientChips(document)
+    .map((host) => (host.querySelector('button.chip-container, button') as HTMLElement | null) || host)
+    .filter((chip) => {
+      if (!isVisible(chip)) return false;
+      const img = chip.querySelector('img[src]');
+      if (img && isMediaImage(img)) return true;
+      /* A VIDEO ingredient has no <img> at all, and requiring one dropped it
+         here — before chipMediaReady, which has handled video chips all along
+         and never saw one. Motion Control found out the expensive way:
+
+           02:15:51  attached "Motion-Control-1-part1-of-2.mp4" as the style reference
+           02:16:12  Flow shows 1 of 2 ingredient(s) — 1 still(s) and the motion clip
+
+         The clip was on the prompt. attachFromLibrary had confirmed it with a
+         different counter. This one could not see it, so the run refused to
+         press Generate on a prompt that was correctly assembled. */
+      return !!chip.querySelector('video');
+    });
+  if (current.length) return current;
+
+  // Legacy labs.google markup.
   const chips: HTMLElement[] = [];
   for (const btn of document.querySelectorAll<HTMLElement>('button')) {
     const img = btn.querySelector('img[src*="getMediaUrlRedirect"]');
@@ -1124,11 +1279,41 @@ export function findAttachedIngredients(): HTMLElement[] {
  * loaded, and the element's own `complete`/`naturalWidth` say the same thing
  * without depending on a style Flow could restyle tomorrow.
  */
+/**
+ * Whether a chip is showing its media — picture OR clip.
+ *
+ * An ingredient is not always an image. Omni 1.1 Flash takes up to five
+ * images AND a video, and the clipper attaches exactly that: a video already
+ * in the Flow library, put on the prompt before the queue starts, so the
+ * generation matches the footage it belongs beside (see the styleReference
+ * block in flow/index.ts).
+ *
+ * Everything here required `img[src]` with naturalWidth > 0. A video chip
+ * holds a <video>, so it could never satisfy that — and since
+ * ingredientChipsSettled() asks whether EVERY chip is ready, one video
+ * reference made the answer permanently false. A node with a style reference
+ * then sat out the whole ninety-second settle wait and failed, with all of
+ * its ingredients correctly attached and visible on screen.
+ *
+ * The video test is deliberately weak: a source, or a poster. Not readyState,
+ * which is about playback buffering rather than about the reference existing,
+ * and not a class name, which would be a guess. `video` is a tag.
+ */
+function chipMediaReady(chip: Element): boolean {
+  if (chip.getAttribute('aria-busy') === 'true') return false;
+
+  const img = chip.querySelector<HTMLImageElement>('img[src]');
+  if (img && isMediaImage(img)) return img.complete && img.naturalWidth > 0;
+
+  const video = chip.querySelector<HTMLVideoElement>('video');
+  if (video) {
+    return !!(video.getAttribute('src') || video.querySelector('source') || video.poster);
+  }
+  return false;
+}
+
 export function findLoadedIngredients(): HTMLElement[] {
-  return findAttachedIngredients().filter((chip) => {
-    const img = chip.querySelector<HTMLImageElement>('img[src*="getMediaUrlRedirect"]');
-    return !!img && img.complete && img.naturalWidth > 0;
-  });
+  return findAttachedIngredients().filter(chipMediaReady);
 }
 
 /**
@@ -1138,17 +1323,42 @@ export function findLoadedIngredients(): HTMLElement[] {
  * decides — which beats the old behaviour of sleeping a fixed 8 seconds and
  * announcing success either way.
  */
+/* How long a pasted image may take to become a loaded chip.
+   Exported because the stall watchdog has to be longer than it; see
+   attachStallLimitMs in automation.ts. */
+export const INGREDIENT_WAIT_MS = 45_000;
+
 export async function waitForIngredients(
   expected: number,
-  timeoutMs = 45_000
+  timeoutMs = INGREDIENT_WAIT_MS,
+  say?: (line: string) => void
 ): Promise<boolean> {
   if (expected <= 0) return true;
-  const deadline = Date.now() + timeoutMs;
+  const startedAt = Date.now();
+  const deadline = startedAt + timeoutMs;
   let stable = 0;
+  let said = 0;
 
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 500));
-    if (findLoadedIngredients().length >= expected) {
+    const loaded = findLoadedIngredients().length;
+
+    /* Say what it is looking at, every ten seconds.
+     *
+     * This wait can run ninety seconds and reported nothing at all until it
+     * ended — so a stalled node showed a progress bar at 20% and no reason,
+     * and the difference between "no chip has appeared" and "a chip appeared
+     * but its picture has not loaded" was invisible from outside. Both were
+     * guessed at from screenshots twice; neither guess was checkable. */
+    const elapsed = Date.now() - startedAt;
+    if (say && elapsed > 5_000 && Math.floor(elapsed / 10_000) > said) {
+      said = Math.floor(elapsed / 10_000);
+      const boxes = findIngredientChips().length;
+      say(`Waiting ${Math.round(elapsed / 1000)}s for reference image(s): `
+        + `${loaded}/${expected} loaded, ${boxes} chip(s) attached.`);
+    }
+
+    if (loaded >= expected) {
       // Two consecutive clean reads: an upload finishing between polls would
       // otherwise let a half-attached set through.
       if (++stable >= 2) return true;
@@ -1188,6 +1398,31 @@ export interface FlowGenerationRow {
 const normalisePrompt = (s: string): string =>
   (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
+/**
+ * Something to call a tile by, on a Flow that names none of them.
+ *
+ * The page states a media id on an image tile:
+ *
+ *   <img class="image" data-media-id="c4b5e39e-…" src="…">
+ *
+ * and where it does not, the media URL carries a token that is just as stable
+ * — it is part of the src the framework re-renders, so it survives the
+ * virtual scroller recycling the row.
+ *
+ * An empty string is a real answer: a tile still generating has no media yet,
+ * and the caller matches it by its prompt instead.
+ */
+export function flowTileIdentity(tile: Element): string {
+  const stated = tile.querySelector('[data-media-id]');
+  const id = stated ? (stated.getAttribute('data-media-id') || '') : '';
+  if (id) return id;
+
+  const media = tile.querySelector('img, video') as HTMLImageElement | HTMLVideoElement | null;
+  const src = media ? ((media as any).currentSrc || media.getAttribute('src') || '') : '';
+  const m = /\/asb\/([A-Za-z0-9_-]{8,})|\/(?:image|video)\/([0-9a-f][0-9a-f-]{11,})/.exec(src);
+  return m ? (m[1] || m[2] || '') : '';
+}
+
 export function readGenerationRows(): FlowGenerationRow[] {
   const rows: FlowGenerationRow[] = [];
 
@@ -1197,11 +1432,27 @@ export function readGenerationRows(): FlowGenerationRow[] {
     const prompt = (wrapper?.firstElementChild as HTMLElement | null)?.textContent?.trim() || '';
     if (!prompt) continue;
 
-    // The row is the nearest ancestor that also owns the media.
+    /* The row is the nearest ancestor that also owns the media.
+    
+       Both shapes are looked for. The old Flow marked its media with
+       data-tile-id; the Angular one has no such attribute anywhere, and asking
+       only for it meant this loop found nothing, every row was skipped, and
+       readGenerationRows returned an empty list on every call.
+    
+       The consequence was not an error. findRowForPrompt simply never matched,
+       so the poller could not tell which tile was this node's and sat printing
+       "Tile (no id yet) is not in the page after 52s — but Flow's API says it
+       is finished", scrolling the output to the top and starting again, on a
+       clip that had been rendered a minute earlier.
+    
+       On this Flow the prompt lives in flow-batch-info and the media in
+       .batch-tiles-section, both children of div.batch-container — so walking
+       up from the prompt reaches the tile in about four steps. */
     let row: HTMLElement | null = wrapper as HTMLElement | null;
     let tile: Element | null = null;
     for (let depth = 0; depth < 8 && row; depth++, row = row.parentElement) {
-      tile = row.querySelector('[data-tile-id]');
+      tile = row.querySelector('[data-tile-id]')
+        || row.querySelector('flow-video-tile, flow-image-tile');
       if (tile) break;
     }
     if (!row || !tile) continue;
@@ -1223,12 +1474,21 @@ export function readGenerationRows(): FlowGenerationRow[] {
       .find(Boolean) || '';
 
     rows.push({
-      tileId: tile.getAttribute('data-tile-id') || '',
+      tileId: tile.getAttribute('data-tile-id') || flowTileIdentity(tile),
       prompt,
       model: lines.find((l) => /flash|veo|imagen|banana/i.test(l)) || '',
       aspectRatio: ratio,
       duration: (lines.find((l) => /length/i.test(l)) || '').replace(/^[^:]*:\s*/, ''),
-      element: row,
+      /* The TILE, not the batch container it sits in.
+      
+         The container also holds flow-batch-info, and that holds the prompt.
+         Tile state is read by scanning text for words like "violate",
+         "blocked" and "can't generate" — so handing the container over would
+         let a prompt containing any of those read as a failed generation.
+         The old shape did not have this problem: data-tile-id was on the
+         media itself, so `row` was only ever a fallback. Here it is what the
+         caller actually uses. */
+      element: (tile.matches('flow-video-tile, flow-image-tile') ? tile as HTMLElement : row),
     });
   }
   return rows;
@@ -1486,8 +1746,12 @@ export type TileState = 'generating' | 'completed' | 'failed' | 'empty' | 'unkno
  *  - `'unknown'`    — cannot determine
  */
 export function getTileState(tile: Element): TileState {
-  const icons = tile.querySelectorAll('.google-symbols, .material-icons, .material-symbols-outlined, .material-symbols, i.google-symbols, i.material-icons, i.material-symbols-outlined');
-  const tileTextRaw = tile.textContent?.toLowerCase() || '';
+  /* mat-icon included: the Angular Flow renders its ligatures there, so the
+     error/warning icons this reads were invisible to it. */
+  const icons = tile.querySelectorAll('mat-icon, .google-symbols, .material-icons, .material-symbols-outlined, .material-symbols, i.google-symbols, i.material-icons, i.material-symbols-outlined');
+  /* Apostrophes normalised: Flow writes "can’t generate" with a typographic
+     apostrophe, which does not match a pattern typed with a plain one. */
+  const tileTextRaw = (tile.textContent || '').toLowerCase().replace(/[‘’]/g, "'");
 
   // ── Signal 4: error/warning/failure icons → FAILED ──
   // NOTE: 'cancel' icon is NOT a failure — it appears on generating tiles
@@ -1507,6 +1771,12 @@ export function getTileState(tile: Element): TileState {
   if (matchesFlowText(tileTextRaw, 'generationFailed') || matchesFlowText(tileTextRaw, 'violate') ||
     matchesFlowText(tileTextRaw, 'tryAgain') || matchesFlowText(tileTextRaw, 'unableToGenerate') ||
     matchesFlowText(tileTextRaw, 'blocked') ||
+    /* Flow's refusal for third-party content reads "I can't generate the
+       video you requested right now due to interests of third-party content
+       providers" — it never says failed, blocked or violated, so none of the
+       words beside it matched and the tile read as still running. */
+    tileTextRaw.includes("can't generate") || tileTextRaw.includes('cannot generate') ||
+    tileTextRaw.includes('third-party content') ||
     matchesFlowText(tileTextRaw, 'generationCancelled')) {
     return 'failed';
   }
@@ -2167,6 +2437,34 @@ export function isSettingsPanelOpen(): boolean {
  * It does NOT contain generation count text like "x1".
  */
 export function findViewSettingsTrigger(): Element | null {
+  /* Tier 0 (new Flow): the gear, found by its ligature.
+     Read off the live page:
+
+       <button aria-label="Tile grid settings" aria-haspopup="menu">
+         <mat-icon class="mat-icon notranslate google-symbols">settings_2</mat-icon>
+
+     The ligature is the anchor because Material renders it as literal text
+     and marks it notranslate, so it reads "settings_2" on every locale while
+     the aria-label becomes "Parametres de la grille" on a French account.
+
+     This tier exists because the icon is a <mat-icon>. Every tier below looks
+     for i.google-symbols or span[class*="google-symbols"], and mat-icon is
+     neither an <i> nor a <span> — so all of them missed it, the function
+     returned null, and the panel simply never opened. */
+  const GEAR = ['settings_2', 'settings', 'tune', 'display_settings'];
+  const gearScopes: ParentNode[] = [
+    document.querySelector('flow-tile-view-header') || document,
+    document,
+  ];
+  for (const scope of gearScopes) {
+    for (const btn of scope.querySelectorAll('button')) {
+      if (!isVisible(btn)) continue;
+      for (const icon of btn.querySelectorAll('mat-icon, i, span')) {
+        const lig = (icon.textContent || '').trim().toLowerCase();
+        if (GEAR.includes(lig)) return btn;
+      }
+    }
+  }
   const btns = document.querySelectorAll('button[aria-haspopup="menu"]');
   for (const btn of btns) {
     if (!isVisible(btn)) continue;
@@ -2184,7 +2482,7 @@ export function findViewSettingsTrigger(): Element | null {
     }
 
     // Method 2: Look for settings_2 icon (Google Symbols)
-    const icons = btn.querySelectorAll('i.google-symbols, i[class*="google-symbols"], span.google-symbols, span[class*="google-symbols"]');
+    const icons = btn.querySelectorAll('mat-icon, i.google-symbols, i[class*="google-symbols"], span.google-symbols, span[class*="google-symbols"]');
     for (const icon of icons) {
       const iconText = icon.textContent?.trim().toLowerCase() || '';
       if (iconText === 'settings_2' || iconText === 'settings' || iconText === 'tune' ||
@@ -2198,7 +2496,7 @@ export function findViewSettingsTrigger(): Element | null {
     const rect = btn.getBoundingClientRect();
     if (rect.width <= 48 && rect.height <= 48 && text.length <= 20) {
       // Check if this button contains a single icon and no other content
-      const hasIcon = btn.querySelector('i, span[class*="symbol"]');
+      const hasIcon = btn.querySelector('i, mat-icon, span[class*="symbol"]');
       if (hasIcon && !matchesFlowText(text, 'video') && !matchesFlowText(text, 'image') &&
         !text.includes('veo') && !text.includes('nano') &&
         !text.includes('add') && !text.includes('create')) {
@@ -2213,6 +2511,11 @@ export function findViewSettingsTrigger(): Element | null {
  * Check if the VIEW settings panel is open.
  */
 export function isViewSettingsOpen(): boolean {
+  /* The panel itself, named by its component. aria-expanded is what the live
+     page sets today, but the composer's settings chip carries no such
+     attribute — so this does not depend on the trigger having one. */
+  if (document.querySelector('flow-tile-view-settings')) return true;
+
   const trigger = findViewSettingsTrigger();
   if (trigger && (trigger.getAttribute('aria-expanded') === 'true' || trigger.getAttribute('data-state') === 'open')) {
     return true;
@@ -2563,19 +2866,55 @@ export function findModeButton(modeName: string): Element | null {
     : null;
   if (flowKey) {
     // Check tabs, menu items, and buttons using all translations
+    /* button[role="radio"] and mat-button-toggle are the Angular Flow.
+    
+       The creation type — Ingredients or Frames — is a Material button-toggle
+       group there:
+    
+         <mat-button-toggle>
+           <button class="mat-button-toggle-button" role="radio" aria-checked="false">
+             <span class="toggle-label">
+               <mat-icon class="google-symbols">crop_free</mat-icon>
+               <span class="toggle-text">Images</span>
+    
+       and role="radio" appears in none of the tiers this list used to hold. So
+       findModeButton('Frames') returned null, applyMenuItem gave up, the
+       composer stayed on Ingredients, and the Start/End slots it was about to
+       look for were never rendered. Every later failure in that path —
+       "the frame buttons could not be found" — was downstream of a mode that
+       was never switched. */
     const candidates = document.querySelectorAll(
-      'button[role="tab"], [role="menuitem"], [role="menuitemradio"], [role="option"], [data-radix-collection-item]'
+      'button[role="tab"], [role="menuitem"], [role="menuitemradio"], [role="option"], '
+      + '[data-radix-collection-item], button[role="radio"], mat-button-toggle button'
     );
-    for (const el of candidates) {
-      if (!isVisible(el)) continue;
-      const text = labelText(el);
-      if (matchesFlowText(text, flowKey)) return el;
-    }
+    /* Strongest match first, because the translations overlap.
+    
+       FLOW_STRINGS.frames contains 'Images' — on a French UI that IS the
+       Frames tab. Which is right there, and ruinous under a loose match on an
+       English one, where "Images" is the OTHER toggle: asking for Frames
+       would return Ingredients, click it, and confidently report the mode
+       switched.
+    
+       So: the literal word asked for, then an exact translation, then the
+       loose contains-match that has to stay for labels carrying extra
+       wording. */
+    const visible = Array.from(candidates).filter(isVisible);
+    const wanted = lower;
+
+    const literal = visible.find((el) => labelText(el).trim().toLowerCase() === wanted);
+    if (literal) return literal;
+
+    const exact = visible.find((el) => exactMatchFlowText(labelText(el), flowKey));
+    if (exact) return exact;
+
+    const loose = visible.find((el) => matchesFlowText(labelText(el), flowKey));
+    if (loose) return loose;
   }
 
   // Primary: role="menuitem" or role="menuitemradio" within the open menu
   const menuItems = document.querySelectorAll(
-    '[role="menuitem"], [role="menuitemradio"], [role="option"], [data-radix-collection-item]'
+    '[role="menuitem"], [role="menuitemradio"], [role="option"], [data-radix-collection-item], '
+    + 'button[role="radio"], mat-button-toggle button'
   );
   for (const item of menuItems) {
     const text = labelText(item).toLowerCase();
@@ -2736,7 +3075,135 @@ export async function simulateTyping(
  *  3. Walk up from the Slate editor and find sibling containers with
  *     small image thumbnails
  */
+/**
+ * The names Flow is showing for the media in this project.
+ *
+ * An uploaded image becomes a tile in the project, and the tile prints its
+ * filename once the upload has finished:
+ *
+ *   <span class="footer-title">af_5d2d0448.png</span>
+ *
+ * While it is still going up the tile is there but blank, showing a
+ * percentage instead — 7% in the case that first showed this up. So the name
+ * appearing IS the upload completing, which is the signal to wait on rather
+ * than counting out a fixed number of seconds.
+ */
+export function mediaNamesOnPage(): string[] {
+  const names: string[] = [];
+
+  for (const el of document.querySelectorAll('.footer-title, flow-tile-hover-footer')) {
+    const text = (el.textContent || '').trim();
+    if (text) names.push(text);
+  }
+
+  /* The grid labels its tiles too, and the footer is only rendered while the
+     tile is hovered on some builds. */
+  for (const el of document.querySelectorAll('flow-grid-tile-container[aria-label]')) {
+    const label = (el.getAttribute('aria-label') || '').trim();
+    if (label) names.push(label);
+  }
+
+  return names;
+}
+
+/** Has Flow finished taking this upload, judged by its name appearing? */
+export function uploadIsOnPage(filename: string): boolean {
+  if (!filename) return false;
+  const wanted = filename.toLowerCase();
+  /* Flow may show the name without its extension, so compare on the stem. */
+  const stem = wanted.replace(/\.[a-z0-9]{2,5}$/i, '');
+  return mediaNamesOnPage().some((n) => {
+    const got = n.toLowerCase();
+    return got.includes(wanted) || (stem.length > 4 && got.includes(stem));
+  });
+}
+
+/**
+ * Is every attached ingredient actually showing its picture?
+ *
+ * A chip appears the instant it is added and only fills in later, so counting
+ * chips answers "has a box appeared", not "has the image arrived". Those come
+ * apart by seconds on a large upload, and the run generates in between —
+ * with a reference the model never received.
+ *
+ * NOT aria-busy. Measured on a chip whose image had not arrived:
+ *
+ *   <button class="chip-container" aria-label="Ingrédient" aria-busy="false">
+ *     <div class="chip-image-wrapper">
+ *       <div class="chip-placeholder"><mat-icon>image</mat-icon></div>
+ *
+ * "false" in the pending state as well as the finished one, so waiting on it
+ * would return immediately and buy nothing. What differs is the content: the
+ * placeholder is replaced by <img class="chip-image"> once the upload lands.
+ */
+/**
+ * How many of the tray's chips are showing their picture, and how many are not.
+ *
+ * ingredientChipsSettled() answers the same question with one bit, and one bit
+ * was not enough to debug with: a node sat in a silent ninety-second loop
+ * waiting for `every` chip to settle, and nothing anywhere said how many there
+ * were, how many were ready, or that two of them had been left in the tray by
+ * the prompt before this one. The wait is page-wide, so a stale chip that
+ * never loads blocks a node that did everything right.
+ */
+export function chipSettleReport(): { total: number; settled: number } {
+  const chips = findIngredientChips();
+  let settled = 0;
+  for (const chip of chips) {
+    const btn = chip.querySelector('button.chip-container') || chip;
+    if (btn.getAttribute('aria-busy') === 'true') continue;
+    if (chip.querySelector('.chip-placeholder')) continue;
+    const img = chip.querySelector('img.chip-image') || chip.querySelector('img');
+    if (img && img.getAttribute('src')) { settled++; continue; }
+    const video = chip.querySelector<HTMLVideoElement>('video');
+    if (video && (video.getAttribute('src') || video.querySelector('source') || video.poster)) settled++;
+  }
+  return { total: chips.length, settled };
+}
+
+export function ingredientChipsSettled(): boolean {
+  const chips = findIngredientChips();
+  if (chips.length === 0) return false;
+
+  return chips.every((chip) => {
+    const btn = chip.querySelector('button.chip-container') || chip;
+    if (btn.getAttribute('aria-busy') === 'true') return false;
+    if (chip.querySelector('.chip-placeholder')) return false;
+    /* A clip counts. This asked only for an <img>, and asks it of EVERY chip
+       — so a single video reference made the answer permanently false and the
+       attach waited out its whole budget with everything correctly in place. */
+    const img = chip.querySelector('img.chip-image') || chip.querySelector('img');
+    if (img && img.getAttribute('src')) return true;
+    const video = chip.querySelector<HTMLVideoElement>('video');
+    return !!(video && (video.getAttribute('src') || video.querySelector('source') || video.poster));
+  });
+}
+
+/**
+ * Which media each attached ingredient is showing.
+ *
+ * Comparing this before and after an attach says WHICH ingredients arrived,
+ * not merely how many — so a chip left over from the previous prompt cannot
+ * make up the difference when one of this prompt's images failed to land.
+ * A chip still waiting has no image, so it contributes nothing, which is
+ * exactly right.
+ */
+export function ingredientChipIds(): string[] {
+  const ids: string[] = [];
+  for (const chip of findIngredientChips()) {
+    const img = chip.querySelector('img.chip-image') || chip.querySelector('img');
+    const src = img ? (img.getAttribute('src') || '') : '';
+    const m = /\/(?:image|video)\/([0-9a-f][0-9a-f-]{11,})|\/asb\/([A-Za-z0-9_-]{8,})/.exec(src);
+    if (m) ids.push(m[1] || m[2]);
+    else if (src) ids.push(src.slice(0, 120));
+  }
+  return ids;
+}
+
 export function findIngredientChips(): Element[] {
+  const current = ingredientChips(document).filter(isVisible);
+  if (current.length) return current;
+
   const chips: Element[] = [];
 
   const promptComposer = findPromptComposer();
@@ -2964,24 +3431,67 @@ export async function findAllFailedTilesWithScroll(): Promise<FailedTileInfo[]> 
   return Array.from(collected.values());
 }
 
+/** The ligatures on a button, from either icon element Flow has used. */
+function retryIconLigatures(el: Element): string[] {
+  const icons = el.querySelectorAll(
+    'mat-icon, i.google-symbols, i[class*="google-symbols"], .material-icons, .material-symbols-outlined',
+  );
+  return Array.from(icons).map((i) => (i.textContent || '').trim());
+}
+
 /**
- * Find the Retry button (refresh icon) on a failed tile.
- * Flow renders: <button><i class="google-symbols">refresh</i><span>Retry</span></button>
+ * Find the Retry button on a failed tile.
+ *
+ * The Angular Flow renders a failed generation as its own element, with the
+ * three buttons together in one container:
+ *
+ *   <flow-error-tile>
+ *     <div class="error-message">
+ *       <mat-icon class="error-icon google-symbols">warning</mat-icon>
+ *       <div class="error-title">Failed</div>
+ *     <div class="buttons-container">
+ *       <button aria-label="Retry"><mat-icon>refresh</mat-icon></button>
+ *       <button aria-label="Reuse prompt"><mat-icon>undo</mat-icon></button>
+ *       <button aria-label="Delete"><mat-icon>delete_forever</mat-icon></button>
+ *
+ * Two things were wrong here. The icon lives in <mat-icon>, not <i>, so the
+ * ligature tier matched nothing — measured on a live project, 0 elements match
+ * `i.google-symbols` against 70 <mat-icon>. And "Retry" is an aria-label, not
+ * span text, so the text tier matched nothing either. Between them this
+ * returned null on every failed tile the current site can render.
+ *
+ * `refresh` is what distinguishes this button from the two beside it: `undo`
+ * only refills the prompt box and generates nothing, and `delete_forever`
+ * throws the tile away — matching either would be worse than finding nothing.
  */
 export function findRetryButtonOnTile(tile: Element): Element | null {
-  const buttons = tile.querySelectorAll('button');
+  /* Scope to the error tile when there is one: its buttons are the retry
+     controls, and nothing else on the tile can be confused for them. */
+  const scope = tile.querySelector('flow-error-tile .buttons-container')
+    || tile.querySelector('flow-error-tile')
+    || tile;
+
+  const buttons = Array.from(scope.querySelectorAll('button'));
+
+  // Tier 0: the refresh ligature — the same word in every locale.
   for (const btn of buttons) {
-    // Check for refresh icon
-    const icons = btn.querySelectorAll('i.google-symbols, i[class*="google-symbols"]');
-    for (const icon of icons) {
-      if (icon.textContent?.trim() === 'refresh') return btn;
-    }
-    // Check for "Retry" text in hidden spans
+    if (retryIconLigatures(btn).includes('refresh')) return btn;
+  }
+
+  // Tier 1: the aria-label, which is where the wording now lives.
+  for (const btn of buttons) {
+    const label = (btn.getAttribute('aria-label') || '').trim();
+    if (exactMatchFlowText(label, 'retryExact')) return btn;
+  }
+
+  // Tier 2: span text, for the old Flow.
+  for (const btn of buttons) {
     const spans = btn.querySelectorAll('span');
     for (const span of spans) {
       if (exactMatchFlowText(span.textContent?.trim() || '', 'retryExact')) return btn;
     }
   }
+
   return null;
 }
 
@@ -3133,6 +3643,35 @@ export function checkTileStates(tileIds: string[]): { generating: number; comple
  * ancestor of the tile list).  Returns null if tiles aren't in a scrollable area.
  */
 export function findOutputScroller(): HTMLElement | null {
+  const isScrollable = (el: HTMLElement): boolean => {
+    if (el.scrollHeight > el.clientHeight + 10 || el.scrollWidth > el.clientWidth + 10) return true;
+    /* CDK keeps the total range in a spacer and translates the content
+       wrapper, so its viewport can briefly report equal dimensions while a
+       virtual row is being recycled. The viewport element is still the only
+       object whose scrollTop causes Angular to remount that row. */
+    return el.matches('cdk-virtual-scroll-viewport, .cdk-virtual-scroll-viewport');
+  };
+  const walk = (start: Element | null): HTMLElement | null => {
+    let el = start as HTMLElement | null;
+    while (el && el !== document.documentElement) {
+      if (isScrollable(el)) return el;
+      el = el.parentElement;
+    }
+    return null;
+  };
+
+  // Flow's current Angular CDK grid (September 2026). The visible row itself
+  // is .virtual-scroll-container; scrolling its CDK viewport remounts rows.
+  const cdkViewport = document.querySelector(
+    'cdk-virtual-scroll-viewport, .cdk-virtual-scroll-viewport'
+  ) as HTMLElement | null;
+  if (cdkViewport) return cdkViewport;
+  const currentGrid = document.querySelector(
+    '.virtual-scroll-container, .cdk-virtual-scroll-content-wrapper, .virtual-item-container'
+  );
+  const currentScroller = walk(currentGrid);
+  if (currentScroller) return currentScroller;
+
   // Try the dedicated virtuoso scroller first
   const virtuosoScroller = document.querySelector('[data-testid="virtuoso-scroller"]') as HTMLElement | null;
   if (virtuosoScroller && virtuosoScroller.scrollHeight > virtuosoScroller.clientHeight + 10) {
@@ -3142,21 +3681,17 @@ export function findOutputScroller(): HTMLElement | null {
   // Walk up from the virtuoso item list
   const itemList = document.querySelector('[data-testid="virtuoso-item-list"]');
   if (itemList) {
-    let el = itemList.parentElement;
-    while (el && el !== document.documentElement) {
-      if (el.scrollHeight > el.clientHeight + 10) return el;
-      el = el.parentElement;
-    }
+    const scroller = walk(itemList.parentElement);
+    if (scroller) return scroller;
   }
 
   // Walk up from any tile
-  const anyTile = document.querySelector('div[data-tile-id]');
+  const anyTile = document.querySelector(
+    'div[data-tile-id], flow-grid-tile-container, flow-tile-container, [data-media-id]'
+  );
   if (anyTile) {
-    let el = anyTile.parentElement;
-    while (el && el !== document.documentElement) {
-      if (el.scrollHeight > el.clientHeight + 10) return el;
-      el = el.parentElement;
-    }
+    const scroller = walk(anyTile.parentElement);
+    if (scroller) return scroller;
   }
 
   return null;
@@ -3412,4 +3947,3 @@ export function findImageTabInDialog(): Element | null {
   }
   return null;
 }
-

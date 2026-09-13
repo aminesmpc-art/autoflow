@@ -71,9 +71,14 @@ describe('the runner waits longer than the adapters do', () => {
 
   it('is used by the Story and Agent path, not only by a single ask', () => {
     /* askAgent is the path a Story node takes, and it had its own hardcoded
-       three minutes — which is the one that actually produced the failure. */
+       three minutes — which is the one that actually produced the failure.
+
+       askOnce, not askAgent: the ask was split in two when nodes gained their
+       own conversations. askAgent is now the wrapper that retries with the full
+       context if the node's thread cannot be reopened; askOnce is the round
+       trip, and the backstop belongs to the round trip. */
     const runner = readFileSync(join(__dirname, '..', 'studio', 'engine', 'WorkflowRunner.ts'), 'utf8');
-    const askAgent = runner.slice(runner.indexOf('private async askAgent'));
-    expect(askAgent.slice(0, 1200)).toContain('TEXT_BACKSTOP_MS');
+    const askOnce = runner.slice(runner.indexOf('private async askOnce'));
+    expect(askOnce.slice(0, 1200)).toContain('TEXT_BACKSTOP_MS');
   });
 });

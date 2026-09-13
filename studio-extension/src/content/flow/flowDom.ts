@@ -50,12 +50,22 @@ export const FLOW_TAGS = {
   agentToggle: 'flow-agent-mode-toggle-chip',
 
   /* ── Ingredients attached to the prompt ──
-     Two nested elements: flow-ingredient-chip wraps
-     flow-image-ingredient-chip, which holds
-     <button class="chip-container" aria-label="Ingredient"> and
-     <img alt="Ingredient image"> sourced from flow-content.google. */
+     Two nested elements: flow-ingredient-chip wraps a typed inner chip, which
+     holds <button class="chip-container" aria-label="Ingredient">.
+
+     A STILL puts <img alt="Ingredient image"> inside it. A CLIP puts
+
+       <flow-video-ingredient-chip>
+         <button class="chip-container" aria-label="Ingredient" aria-busy="false">
+           <div class="chip-image-wrapper">
+             <video muted playsinline class="chip-video" src="…flow-content.google/video/…">
+           <mat-icon class="type-badge">videocam</mat-icon>
+
+     — read off the live page. No <img> anywhere in it, which is what made a
+     video ingredient invisible to anything that asked for one. */
   ingredientChip: 'flow-ingredient-chip',
   imageIngredientChip: 'flow-image-ingredient-chip',
+  videoIngredientChip: 'flow-video-ingredient-chip',
 
   /* ── Generated results ──
      A tile holds <img class="thumbnail" alt="Generated video thumbnail">,
@@ -123,13 +133,62 @@ export function isMediaImage(img: Element): boolean {
  * ingredient is an ingredient because it is an ingredient chip, not because of
  * where its thumbnail happens to be served from.
  */
+/**
+ * Where the COMPOSER keeps its ingredients.
+ *
+ * Read off the live page. The prompt box holds them in its own container:
+ *
+ *   .base-prompt-box
+ *     .prompt-top-row.has-ingredient-bar
+ *       flow-ingredient-bar.prompt-ingredient-bar
+ *         div.ingredient-bar-container      ← the chips attached to THIS prompt
+ *
+ * In Frames mode the same container holds the Start/End frame-triggers
+ * instead, which is why it is the right anchor for both.
+ */
+const COMPOSER_BAR = 'flow-ingredient-bar .ingredient-bar-container, .ingredient-bar-container';
+
+/**
+ * Where a FINISHED BATCH lists the ingredients it was made from.
+ *
+ * A different thing entirely, in the grid rather than the composer:
+ *
+ *   .batch-container
+ *     flow-batch-info
+ *       .ingredients-list
+ *         flow-ingredient-chip → flow-image-ingredient-chip
+ *
+ * Identical components, so a tag query cannot tell them apart. The composer's
+ * chip offers `cancel` on hover; a batch's offers `add`, because clicking it
+ * copies that ingredient back into the prompt.
+ */
+const BATCH_INGREDIENTS = 'flow-batch-info, .batch-container, .ingredients-list';
+
 export function ingredientChips(doc: Document = document): HTMLElement[] {
-  const found = doc.querySelectorAll<HTMLElement>(
-    `${FLOW_TAGS.imageIngredientChip}, ${FLOW_TAGS.ingredientChip}`,
+  /* Scoped to the composer, and NOT to the document.
+   *
+   * A document-wide query counted every past batch's ingredients as if they
+   * were attached to the prompt — and Flow's grid is virtualised, so batches
+   * mount and unmount as it scrolls and the number moves on its own. The
+   * upload wait computes its target as "what is attached now, plus the one I
+   * am adding", so it inherited that:
+   *
+   *   Waiting 41s for reference image(s): 5/7 loaded, 5 chip(s) attached.
+   *
+   * Seven wanted, five ever possible. Six were mounted when the target was
+   * taken; five a moment later. It could never be satisfied, and every
+   * ingredient upload sat out its whole budget before falling back.
+   */
+  const bar = doc.querySelector<HTMLElement>(COMPOSER_BAR);
+  const scope: ParentNode = bar || doc;
+  const found = scope.querySelectorAll<HTMLElement>(
+    `${FLOW_TAGS.imageIngredientChip}, ${FLOW_TAGS.videoIngredientChip}, `
+    + `${FLOW_TAGS.ingredientChip}`,
   );
+  const mine = Array.from(found).filter((el) => !el.closest(BATCH_INGREDIENTS));
   /* The two nest, so counting both double-counts. Keep only the outermost. */
-  return Array.from(found).filter(
-    (el) => !Array.from(found).some((other) => other !== el && other.contains(el)),
+  return mine.filter(
+    (el) => !mine.some((other) => other !== el && other.contains(el)),
   );
 }
 

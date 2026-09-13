@@ -2492,3 +2492,41 @@ body {
   line-height: 1.5;
   color: var(--text-3);
 }
+
+/* Builder: brief → plan → edit, within the existing Studio theme. */
+#view-build .sp-builder-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+#view-build .sp-ask__kicker { margin: 0; font-size: 10px; letter-spacing: .12em; color: var(--accent); }
+.sp-builder-badge { padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--text-2); font-size: 10px; white-space: nowrap; }
+#view-build .sp-ask__q { max-width: 360px; margin: 0 0 10px; font-size: clamp(23px, 5vw, 30px); line-height: 1.18; letter-spacing: -.035em; }
+.sp-builder-intro { margin: 0 0 20px; max-width: 440px; color: var(--text-2); font-size: 12px; line-height: 1.65; }
+.sp-builder-label { display: block; color: var(--text-2); font-size: 11px; font-weight: 600; letter-spacing: .025em; }
+#build-composer > .sp-builder-label { padding: 16px 16px 0; }
+#view-build .sp-ask__box { min-height: 150px; padding: 12px 16px 16px; font-size: 13px; line-height: 1.7; resize: vertical; }
+#view-build .sp-composer { border-radius: 14px; }
+#view-build .sp-composer__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; }
+#view-build .sp-ask__who { flex: 1; min-width: 140px; }
+#view-build .sp-ask__go { width: 100%; min-height: 42px; justify-content: center; border-radius: 8px; }
+#view-build .sp-ask__clip { width: 34px; height: 34px; }
+.sp-builder-starters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 20px; }
+.sp-builder-starters > span { color: var(--text-3); font-size: 11px; margin-right: 2px; }
+.sp-builder-starters .sp-idea { width: auto; padding: 7px 9px; min-height: 32px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--text-2); font: inherit; font-size: 11px; cursor: pointer; }
+.sp-builder-starters .sp-idea:hover { border-color: var(--accent); color: var(--text); background: var(--surface-2); }
+#view-build .sp-how { border-top: 1px solid var(--line); padding-top: 14px; }
+#view-build .sp-stages { border-radius: 12px; padding: 16px; }
+#view-build .sp-plan { padding: 18px; border-radius: 14px; }
+.sp-builder-plan-title { margin: 8px 0; color: var(--text); font-size: 19px; line-height: 1.35; overflow-wrap: anywhere; }
+.sp-builder-plan-desc { color: var(--text-2); font-size: 12px; line-height: 1.6; margin: 0 0 16px; }
+.sp-builder-plan-desc:empty, #build-plan-foot:empty { display: none; }
+#view-build .sp-plan__what { flex-wrap: wrap; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+#view-build .sp-plan__shots { max-height: 330px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+#view-build .sp-plan__shot { padding-top: 12px; padding-bottom: 12px; }
+.sp-builder-edit-label { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+#view-build .sp-plan__refine { flex-wrap: wrap; gap: 8px; border: 0; padding-top: 8px; }
+#view-build .sp-plan__ask { flex: 1 1 160px; min-width: 0; min-height: 38px; }
+#view-build .sp-plan__acts .sp-btn { min-height: 40px; }
+#view-build button:focus-visible, #view-build select:focus-visible, #view-build input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 360px) {
+  .sp-builder-badge { display: none; }
+  #view-build .sp-plan { padding: 12px; }
+  #view-build .sp-plan__acts { flex-wrap: wrap; }
+}

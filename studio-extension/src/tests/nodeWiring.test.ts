@@ -38,6 +38,7 @@ const COMPONENT: Record<string, string> = {
   frame: 'src/studio/nodes/FrameNode.tsx',
   extend: 'src/studio/nodes/ExtendNode.tsx',
   agent: 'src/studio/nodes/AgentNode.tsx',
+  chief: 'src/studio/nodes/ChiefNode.tsx',
   story: 'src/studio/nodes/StoryNode.tsx',
   clip: 'src/studio/nodes/ClippingNode.tsx',
   /* 'generate' is deliberately absent: its ports change with its dropdowns,

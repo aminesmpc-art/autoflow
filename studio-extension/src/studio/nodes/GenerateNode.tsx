@@ -341,6 +341,15 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                       ? 'Ready — press Run'
                       : 'Connect a prompt, then Run'}
                   </small>
+                  {/* A clip attached from Flow's library is otherwise invisible.
+                      It is not a wire and not a thumbnail — it is a filename the
+                      adapter looks up in the Videos tab at run time, so without
+                      this the node gives no sign it has a video at all. */}
+                  {!!nodeData.styleReference && (
+                    <small className="sn-media__ref" title={String(nodeData.styleReference)}>
+                      🎞 {String(nodeData.styleReference)} — from the Flow library
+                    </small>
+                  )}
                 </>
               )}
             </div>

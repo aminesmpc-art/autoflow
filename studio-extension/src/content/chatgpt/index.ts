@@ -35,11 +35,39 @@ const TEXT_QUIET_MS = 45 * 1000;
    extension is rebuilt — the tab must be reloaded too — and a stale
    script is indistinguishable from a broken fix unless it says which
    one it is. */
-const ADAPTER_BUILD = 'composer-pill-v3';
+const ADAPTER_BUILD = 'reply-clock-v4';
 
 /** Backstop for a wedged tab. */
 const TEXT_CEILING_MS = 10 * 60 * 1000;
 const POLL_MS = 2000;
+/* Images get a faster clock than text.
+ *
+ * The old loop slept 2s BEFORE its first look and then required the same src
+ * three times, so a finished picture was captured six seconds after it was
+ * done — twelve times over in a build workflow. What actually guards against
+ * grabbing a half-drawn preview is how LONG the src has held still, not how
+ * many times it was counted, so the hold is measured in milliseconds and
+ * sampled often enough to notice it promptly. */
+const IMAGE_POLL_MS = 600;
+/** Src unchanged this long, with ChatGPT idle: the picture is finished. */
+const IMAGE_SETTLE_MS = 1500;
+/**
+ * Src unchanged this long: finished whether or not ChatGPT says so.
+ *
+ * The bug this exists for. Capture used to require `!isGenerating()`, which
+ * reads a visible stop button — and ChatGPT's image turns can keep that button
+ * up after the picture has finished rendering, while it writes whatever
+ * follows. The node then sat at "Generating image…" with the finished image
+ * plainly on screen, for the full six minutes, and failed.
+ *
+ * Worse, the "I cannot find the image" diagnostic was ALSO behind
+ * !isGenerating(), so the one case that most needed explaining was the one
+ * case that stayed silent.
+ *
+ * Eight seconds of an unchanging src is not a preview. Nothing is lost by
+ * taking it, and a run is lost by waiting for a button that may never clear.
+ */
+const IMAGE_SETTLE_ALONE_MS = 8000;
 const MAX_CAPTURE_BYTES = 15 * 1024 * 1024;
 // Uploading happens before the question is even asked, so this is spent out of
 // the same budget as the answer — see waitForAttachments.
@@ -1034,20 +1062,27 @@ async function handleExecute(payload: any): Promise<any> {
 
 /** Fire-and-forget: poll until the generated image appears, then capture it */
 async function trackGeneration(nodeId: string, preexisting: Set<string>): Promise<void> {
-  // Completion = a NEW large image whose src stayed stable across two polls
-  // while ChatGPT is no longer streaming. Progressive previews swap srcs
-  // while rendering, so stability matters as much as presence.
+  /* Completion = a NEW large image whose src has held still long enough,
+     with ChatGPT idle — or, failing that, long enough on its own. Progressive
+     previews swap srcs while rendering, so stability matters as much as
+     presence; a stop button that never clears must not cost the run. */
   const startedAt = Date.now();
   let stableSrc = '';
-  let stableCount = 0;
+  let stableSince = 0;
   let explained = false;
+  let lastProgressAt = 0;
 
+  /* Looked at before the first sleep. An image that is already on the page
+     when tracking starts should not cost a poll interval to notice. */
   while (Date.now() - startedAt < GENERATION_TIMEOUT_MS) {
-    await sleep(POLL_MS);
-
     const elapsed = Date.now() - startedAt;
-    const progress = Math.min(90, 20 + Math.floor((elapsed / GENERATION_TIMEOUT_MS) * 90));
-    send('STUDIO_NODE_PROGRESS', { nodeId, progress });
+    /* Not every poll now that polls are three times as frequent — the bar
+       moves on a clock and nobody needs it re-sent twice a second. */
+    if (elapsed - lastProgressAt >= 2000) {
+      lastProgressAt = elapsed;
+      const progress = Math.min(90, 20 + Math.floor((elapsed / GENERATION_TIMEOUT_MS) * 90));
+      send('STUDIO_NODE_PROGRESS', { nodeId, progress });
+    }
 
     /* Every poll, because the answer grows as it streams and pushes itself
        out of view. ChatGPT renders what is near the viewport, so an image
@@ -1067,37 +1102,53 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
       (i) => !preexisting.has(i.currentSrc || i.src)
     );
     if (fresh.length === 0) {
-      /* Say why, once, well before the six-minute timeout.
+      /* Say why, once, well before the six-minute timeout, and say it where
+         somebody can read it.
          "Still generating" and "the image is right there and I cannot see it"
          look identical from the outside — a progress bar climbing on a timer.
-         This turns the second one into a line in the console naming which
-         filter ate it, instead of a node that hangs and then blames ChatGPT. */
-      if (!explained && elapsed > 45_000 && !isGenerating()) {
+         This names which filter ate it instead of hanging and blaming ChatGPT.
+
+         It used to require !isGenerating() as well, so on the one failure that
+         most needed explaining — ChatGPT leaving its stop button up — nothing
+         was said at all. */
+      if (!explained && elapsed > 45_000) {
         explained = true;
         const all = Array.from(document.querySelectorAll('img'));
         const bigEnough = all.filter((i) =>
           i.complete && i.naturalWidth >= 256 && i.naturalHeight >= 256);
-        console.warn(
-          '[AutoFlow ChatGPT] No result found yet and nothing is streaming. ' +
-          `Page has ${all.length} images, ${bigEnough.length} at result size; ` +
-          `${document.querySelectorAll('[data-message-author-role="assistant"]').length} assistant turns; ` +
-          `composer region ${composerRegion() ? 'identified' : 'NOT identified'}. ` +
-          'If the image is visible on screen, one of those filters is wrong.'
+        const turns = document.querySelectorAll('[data-message-author-role="assistant"]').length;
+        logLine(
+          `No image found after ${Math.round(elapsed / 1000)}s. `
+          + `${all.length} images on the page, ${bigEnough.length} at result size, `
+          + `${turns} assistant turn(s), ChatGPT ${isGenerating() ? 'still shows' : 'no longer shows'} `
+          + 'its stop button. If the picture is on screen, one of the filters is wrong.',
         );
       }
+      await sleep(IMAGE_POLL_MS);
       continue;
     }
 
     const candidate = fresh[fresh.length - 1];
     const src = candidate.currentSrc || candidate.src;
-    if (src === stableSrc) {
-      stableCount++;
-    } else {
+    if (src !== stableSrc) {
       stableSrc = src;
-      stableCount = 0;
+      stableSince = Date.now();
     }
+    const held = Date.now() - stableSince;
 
-    if (stableCount >= 2 && !isGenerating()) {
+    /* Two ways to be finished. The first is the ordinary one and is quick.
+       The second is the one that used to hang: ChatGPT still showing a stop
+       button long after the picture stopped changing. */
+    const settled = held >= IMAGE_SETTLE_MS && !isGenerating();
+    const heldAlone = held >= IMAGE_SETTLE_ALONE_MS;
+
+    if (settled || heldAlone) {
+      if (heldAlone && !settled) {
+        logLine(
+          `The image has not changed for ${Math.round(held / 1000)}s but ChatGPT still `
+          + 'shows its stop button. Taking the picture rather than waiting it out.',
+        );
+      }
       console.log('[AutoFlow ChatGPT] Image complete — capturing');
       try {
         const dataUrl = await captureImage(candidate);
@@ -1122,6 +1173,8 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
         return;
       }
     }
+
+    await sleep(IMAGE_POLL_MS);
   }
 
   send('STUDIO_NODE_ERROR', {
@@ -1229,18 +1282,26 @@ async function trackTextReply(
       );
     }
 
-    /* Silence, and nothing in flight. Checked before the "has it started"
-       skip below, so a chat that never answers at all still ends. */
-    if (Date.now() - lastChangeAt > TEXT_QUIET_MS && !isGenerating()
-        && turnFinished() !== false) break;
+    const generating = isGenerating();
+    const said = turnFinished();
+
     // Unchanged from before we asked means our answer hasn't started yet.
-    if (!current || current === priorReply) continue;
+    if (!current || current === priorReply) {
+      /* Silence, and nothing in flight. This is the no-answer backstop, not a
+         deadline for a reply that is visibly growing. */
+      if (Date.now() - lastChangeAt > TEXT_QUIET_MS && !generating && said !== false) break;
+      continue;
+    }
 
     if (current === lastSeen) {
       stableCount++;
     } else {
       lastSeen = current;
       stableCount = 0;
+      // Quiet means time since the text last changed, not time since we asked.
+      // Without this reset, a long reply that finished after 45 seconds was
+      // rejected on the same poll that found its completed action bar.
+      lastChangeAt = Date.now();
     }
 
     /* Two ways to know the turn is over, and they deserve different waits.
@@ -1260,8 +1321,7 @@ async function trackTextReply(
      * false still vetoes both: the site saying "still writing" outranks text
      * that merely looks settled.
      */
-    const said = turnFinished();
-    if (said !== false && (said === true || (stableCount >= 2 && !isGenerating()))) {
+    if (said !== false && (said === true || (stableCount >= 2 && !generating))) {
       const cleaned = raw ? current : cleanAssistantReply(current);
       if (!raw && !looksLikeUsablePrompt(cleaned)) {
         // Usually ChatGPT asking a clarifying question instead of answering.
