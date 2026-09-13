@@ -23,6 +23,7 @@ console.log('[AutoFlow Gemini] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
 import { sleepOrDomChange } from '../shared/hiddenWait';
+import { insertIntoEditable } from '../shared/composerText';
 
 const GENERATION_TIMEOUT_MS = 6 * 60 * 1000;
 /* A reply is finished when it STOPS GROWING, not when a clock runs out.
@@ -719,15 +720,12 @@ function fillComposer(el: HTMLElement, text: string): boolean {
     return el.value.trim().length > 0;
   }
 
-  const sel = window.getSelection();
-  sel?.selectAllChildren(el);
-  document.execCommand('insertText', false, text);
-  el.dispatchEvent(new InputEvent('input', { bubbles: true, data: text, inputType: 'insertText' }));
-
-  const landed = (el.innerText || el.textContent || '').trim();
-  // Proportional, with no ceiling: a fixed floor passes a 27-character
-  // placeholder for a 200-character prompt.
-  return landed.length >= Math.max(4, Math.floor(text.trim().length * 0.6));
+  /* execCommand needs the DOCUMENT to have focus, not merely to be visible,
+     so in a background tab it inserts nothing and says nothing. That is why
+     a hidden Gemini run sat waiting until the tab was clicked. The shared
+     helper keeps that path and falls back to a synthetic paste, which needs
+     no focus. */
+  return insertIntoEditable(el, text);
 }
 
 /* ── Reference images ── */

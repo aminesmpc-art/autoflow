@@ -2717,6 +2717,7 @@ export class WorkflowRunner {
     const store = useStudioStore.getState();
     const {
       motionBriefAsk, motionPieceAsk, readMotionPrompt, plainMotionPrompt, MODE_INTENT, motionAudioPrompt,
+      motionSubjectRedoAsk,
     } = await import('../ask/motionControl');
     type MotionBrief = import('../ask/motionControl').MotionBrief;
     type MotionPiece = import('../ask/motionControl').MotionPiece;
@@ -2826,7 +2827,7 @@ export class WorkflowRunner {
       place.push(data);
     }
     if (place.length > 1) throw new Error('Connect one place image to Motion Control so the environment is unambiguous.');
-    const { presetInstruction, referenceGuidance } = await import('../ask/motionGuidance');
+    const { presetInstruction, referenceGuidance, subjectDescriptionTerms } = await import('../ask/motionGuidance');
     const references = [...character, ...place];
     const referenceRules = referenceGuidance(character.length, place.length);
     const brief: MotionBrief = {
@@ -2957,7 +2958,52 @@ export class WorkflowRunner {
           const reply = await this.askAgent(
             nodeId, platform, motionPieceAsk(brief, p.piece), false, [p.dataUrl],
           );
-          const got = readMotionPrompt(reply, p.piece.index);
+          let got = readMotionPrompt(reply, p.piece.index);
+
+          /* ── The last check before anything is spent ──────────────────────
+           *
+           * Told three times not to describe the person, a model that has just
+           * watched her dance will still sometimes write down her hair and her
+           * clothes. Sent as it is, that prompt comes back "This generation
+           * might violate our policies" — uncharged, but the piece is lost and
+           * the row needs a hand-retry.
+           *
+           * One more message in a conversation that is already open, with no
+           * video attached, is the cheapest thing in this whole node. The
+           * failure it prevents is the most expensive.
+           *
+           * Never fatal: a re-ask that will not parse, or that comes back
+           * describing her again, keeps the prompt we already have. A worse
+           * prompt that might be refused still beats no prompt at all, and the
+           * row's own warning will show the user why. */
+          if (!MODE_INTENT[mode].narrateSubject) {
+            const terms = subjectDescriptionTerms(got.prompt);
+            if (terms.length) {
+              studioLog('Motion',
+                `Piece ${got.index}: the prompt describes the subject (${terms.join(', ')}) — `
+                + 'asking the director once more without it, before anything is generated.');
+              try {
+                const redo = await this.askAgent(
+                  nodeId, platform, motionSubjectRedoAsk(p.piece, terms), false,
+                );
+                const fixed = readMotionPrompt(redo, p.piece.index);
+                const left = subjectDescriptionTerms(fixed.prompt);
+                if (!left.length) {
+                  got = fixed;
+                  studioLog('Motion', `Piece ${got.index}: rewritten without the description.`);
+                } else {
+                  studioLog('Motion',
+                    `Piece ${got.index}: the rewrite still says ${left.join(', ')}. Keeping the `
+                    + 'first prompt — check the row before generating.');
+                }
+              } catch (redoError: any) {
+                studioLog('Motion',
+                  `Piece ${got.index}: the rewrite could not be read (${redoError?.message || redoError}). `
+                  + 'Keeping the first prompt — check the row before generating.');
+              }
+            }
+          }
+
           written.push({ prompt: got.prompt, why: got.why, alternatives: got.alternatives });
           studioLog('Motion', `Piece ${got.index}: ${got.why || got.prompt.slice(0, 80)}`);
         }

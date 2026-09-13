@@ -11,6 +11,7 @@ console.log('[AutoFlow ChatGPT] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from './chatgptReply';
 import { sleepOrDomChange } from '../shared/hiddenWait';
+import { insertIntoEditable } from '../shared/composerText';
 
 const GENERATION_TIMEOUT_MS = 6 * 60 * 1000; // ChatGPT image gen can take minutes
 // Writing a prompt is a chat round-trip, not a render — a node that hangs here
@@ -508,10 +509,12 @@ function fillComposer(el: HTMLElement, text: string): void {
     el.dispatchEvent(new Event('input', { bubbles: true }));
     return;
   }
-  const sel = window.getSelection();
-  sel?.selectAllChildren(el);
-  document.execCommand('insertText', false, text);
-  el.dispatchEvent(new Event('input', { bubbles: true }));
+  /* execCommand needs the DOCUMENT focused, not merely visible, so it is a
+     silent no-op in a background tab. The shared helper tries it first — the
+     path this adapter has always used — then a synthetic paste, which needs
+     no focus. The caller re-reads the LIVE composer afterwards either way,
+     because ChatGPT swaps the node out as it hydrates. */
+  insertIntoEditable(el, text);
 }
 
 /* ── Reference images ──

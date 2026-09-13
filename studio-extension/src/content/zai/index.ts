@@ -11,6 +11,7 @@ console.log('[AutoFlow Z.AI] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
 import { sleepOrDomChange } from '../shared/hiddenWait';
+import { insertIntoEditable } from '../shared/composerText';
 
 const TEXT_TIMEOUT_MS = 180 * 1000;
 const TEXT_QUIET_MS = 60 * 1000;
@@ -269,13 +270,10 @@ function fillComposer(el: HTMLElement, text: string): boolean {
     return el.value.trim().length > 0;
   }
 
-  const sel = window.getSelection();
-  sel?.selectAllChildren(el);
-  document.execCommand('insertText', false, text);
-  el.dispatchEvent(new InputEvent('input', { bubbles: true, data: text, inputType: 'insertText' }));
-
-  const landed = (el.innerText || el.textContent || '').trim();
-  return landed.length >= Math.max(4, Math.floor(text.trim().length * 0.6));
+  /* execCommand needs the DOCUMENT focused, not just visible — a no-op in a
+     background tab. The shared helper keeps it and falls back to a synthetic
+     paste, which needs no focus. */
+  return insertIntoEditable(el, text);
 }
 
 /** Extract text from the latest assistant message only, thoroughly stripping thinking blocks */

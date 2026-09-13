@@ -31,6 +31,7 @@ console.log('[AutoFlow Grok] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
 import { sleepOrDomChange } from '../shared/hiddenWait';
+import { insertIntoEditable } from '../shared/composerText';
 
 /* Bumped whenever this adapter's completion logic changes. A content
    script already injected into an open tab is NOT replaced when the
@@ -929,10 +930,11 @@ function fillComposer(el: HTMLElement, text: string): boolean {
     /* fall through */
   }
 
-  // Fallback: the editor's own insertText path.
-  window.getSelection()?.selectAllChildren(el);
-  document.execCommand('insertText', false, text);
-  el.dispatchEvent(new InputEvent('input', { bubbles: true, data: text, inputType: 'insertText' }));
+  /* Fallback: the editor's own insertText path, then a synthetic paste.
+     execCommand needs the DOCUMENT focused rather than merely visible, so in
+     a background tab it inserts nothing and reports nothing. The caret work
+     above still matters for extend mode and is left alone. */
+  insertIntoEditable(el, text);
   return enough();
 }
 

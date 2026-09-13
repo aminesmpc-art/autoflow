@@ -26,8 +26,9 @@
 
 import {
   motionBriefAsk, motionPieceAsk, readMotionPrompt, plainMotionPrompt,
-  MODE_INTENT, type MotionBrief, type MotionPiece,
+  motionSubjectRedoAsk, MODE_INTENT, type MotionBrief, type MotionPiece,
 } from '../studio/ask/motionControl';
+import { subjectDescriptionTerms } from '../studio/ask/motionGuidance';
 
 const piece = (index: number, of: number, extra: Partial<MotionPiece> = {}): MotionPiece => ({
   index, of, startSec: (index - 1) * 9.6, endSec: index * 9.6, seconds: 9.6,
@@ -76,8 +77,15 @@ describe('the opening turn', () => {
        the model hold the subject and the look steady across all three. */
     const ask = motionBriefAsk(brief(), 3);
     expect(ask).toMatch(/independently/);
-    expect(ask).toMatch(/The same subject, described the same way every time/);
+    /* Referred to, not described. Repeating a description "identically every
+       time" is what turned one refused prompt into every piece's prompt. */
+    expect(ask).toMatch(/The same subject, REFERRED TO the same way every time/);
+    expect(ask).toMatch(/Not described at all/);
     expect(ask).toMatch(/Continuity at the joins/);
+    /* restyle keeps the old rule: its subject is a material, and a material
+       has to be described before it can be generated. */
+    expect(motionBriefAsk(brief({ mode: 'restyle' }), 3))
+      .toMatch(/The same subject, described the same way every time/);
   });
 
   it('tells it there is a still, when there is one', () => {
@@ -90,6 +98,80 @@ describe('the opening turn', () => {
     const ask = motionBriefAsk(brief({ hasCharacter: false }), 2);
     expect(ask).toMatch(/NO character still was provided/);
     expect(ask).toMatch(/Do not write prompts that refer to one/);
+  });
+});
+
+/**
+ * The reference carries the person.
+ *
+ * Every generation from this prompt came back refused, uncharged:
+ *
+ *   "Apply the pose and motion from input video to provided character from
+ *    this image. The woman from the provided image, with short dark hair and
+ *    clear glasses, wearing a black sleeveless top and black shorts with a
+ *    white waistband, performing a dance. …"
+ *
+ * Google's own wording for the same job describes nobody. The image goes with
+ * every generation, so the description carried no information — only the risk
+ * that an identifiable person described beside a photo of her reads as a
+ * likeness request and is rejected before a frame is made.
+ */
+describe('the subject is pointed at, never described', () => {
+  it('forbids describing the person for move and swap', () => {
+    for (const mode of ['move', 'swap'] as const) {
+      const ask = motionBriefAsk(brief({ mode }), 2);
+      expect(ask).toMatch(/DO NOT DESCRIBE THE SUBJECT/);
+      expect(ask).toMatch(/no clothing/);
+      expect(MODE_INTENT[mode].narrateSubject).toBe(false);
+    }
+  });
+
+  it('exempts restyle, whose subject is a material', () => {
+    /* A material cannot be pointed at and left undescribed, and no filter is
+       looking for "fluid reflective surface". */
+    expect(MODE_INTENT.restyle.narrateSubject).toBe(true);
+    expect(motionBriefAsk(brief({ mode: 'restyle' }), 2)).not.toMatch(/DO NOT DESCRIBE THE SUBJECT/);
+  });
+
+  it('stops promising the prompt is for what they look like', () => {
+    /* The line that asked for the description in the first place. */
+    expect(MODE_INTENT.move.writes).not.toMatch(/what they look like/);
+    expect(MODE_INTENT.move.writes).toMatch(/never described/);
+  });
+
+  it('tells every piece to name the subject and stop', () => {
+    for (const i of [1, 2]) {
+      const ask = motionPieceAsk(brief(), piece(i, 2));
+      expect(ask).toMatch(/named ONLY as "the provided character from this image"/);
+      expect(ask).not.toMatch(/described identically to last time/);
+    }
+    /* restyle keeps the old bullet. */
+    expect(motionPieceAsk(brief({ mode: 'restyle' }), piece(1, 2)))
+      .toMatch(/described identically to last time/);
+  });
+
+  it('does not tell a director with no still to describe one either', () => {
+    expect(motionPieceAsk(brief({ hasCharacter: false }), piece(1, 2)))
+      .toMatch(/do not describe a person's appearance/);
+  });
+
+  it('quotes the offending words back when it asks for a rewrite', () => {
+    /* "Your prompt describes the subject" is an opinion the model can argue
+       with. "You wrote sleeveless, shorts" is a fact it can act on. */
+    const redo = motionSubjectRedoAsk(piece(2, 3), ['sleeveless', 'shorts', 'waistband']);
+    expect(redo).toMatch(/piece 2/);
+    expect(redo).toMatch(/sleeveless, shorts, waistband/);
+    expect(redo).toMatch(/do not generate/i);
+    /* It has to come back in the same shape, or the caller cannot read it. */
+    expect(redo).toMatch(/ONE JSON object/);
+  });
+
+  it('leaves the fallback prompt clean, because it is Google\'s own sentence', () => {
+    /* plainMotionPrompt is what runs when the director cannot be reached. It
+       must not be the thing that gets refused. */
+    const plain = plainMotionPrompt(brief({ wish: '' }), piece(1, 2));
+    expect(plain).toContain(MODE_INTENT.move.googleWording);
+    expect(subjectDescriptionTerms(plain)).toEqual([]);
   });
 });
 

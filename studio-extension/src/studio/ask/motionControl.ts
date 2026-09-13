@@ -154,6 +154,37 @@ export interface MotionBrief {
  *
  * `restyle` is the exception, and genuinely so: it re-expresses the movement in
  * another material, so the movement has to be described to be transformed.
+ *
+ * ── `narrateSubject`, and why the same argument applies to the person ─────
+ *
+ * Count the words again in Google's wording for `move`. Thirteen, and not one
+ * of them describes the movement — and not one of them describes the PERSON
+ * either. "provided character from this image" is the whole of it.
+ *
+ * That second omission was missed here for as long as the first one was
+ * honoured. The director was told the prompt is for "who is performing it and
+ * what they look like", told the reference defines "identity, face, body and
+ * clothing", and told to describe the subject "identically" on every piece. It
+ * did all three:
+ *
+ *   "… The woman from the provided image, with short dark hair and clear
+ *    glasses, wearing a black sleeveless top and black shorts with a white
+ *    waistband, performing a dance. …"
+ *
+ * Every generation came back "This generation might violate our policies", and
+ * uncharged — the input filter, before any frame was made. A face photo, plus
+ * an identifiable person described down to the waistband of her shorts, plus a
+ * dance clip, is what that filter is for. Repeating the description "identically
+ * every time" then guaranteed that one refused prompt became all of them.
+ *
+ * The description was never carrying information. The image is attached to
+ * every generation; the model can see her. It carried only risk, and the fix is
+ * the one already used for the lighting two paragraphs down: point at the
+ * reference instead of restating it.
+ *
+ * `restyle` is again the exception, and again genuinely: its subject is a
+ * material rather than a person, and a material cannot be pointed at and left
+ * undescribed.
  */
 export const MODE_INTENT: Record<MotionMode, {
   title: string;
@@ -162,6 +193,8 @@ export const MODE_INTENT: Record<MotionMode, {
   replaces: string;
   /** May the prompt describe the movement, or does that compete with the clip? */
   narrateMotion: boolean;
+  /** May the prompt describe the SUBJECT, or does the reference image carry them? */
+  narrateSubject: boolean;
   /** What the prompt is FOR — the things the video cannot carry. */
   writes: string;
 }> = {
@@ -172,7 +205,8 @@ export const MODE_INTENT: Record<MotionMode, {
     keeps: 'the motion, the pose, the timing and the camera',
     replaces: 'who or what is performing it — taken from the still',
     narrateMotion: false,
-    writes: 'who is performing it and what they look like — the one thing the footage does not carry',
+    narrateSubject: false,
+    writes: 'WHICH reference the performer comes from — pointed at, never described',
   },
   swap: {
     title: 'Swap the character',
@@ -182,7 +216,8 @@ export const MODE_INTENT: Record<MotionMode, {
     keeps: 'the motion AND the dialogue, so lip-sync survives',
     replaces: 'the character or object, everything else in the shot standing',
     narrateMotion: false,
-    writes: 'the new character, and what in the shot must stay exactly as it is',
+    narrateSubject: false,
+    writes: 'which reference the new character comes from, and what in the shot must stay exactly as it is',
   },
   restyle: {
     title: 'Restyle, keep the motion',
@@ -196,6 +231,9 @@ export const MODE_INTENT: Record<MotionMode, {
     /* The one mode that must describe the movement: it is being re-expressed
        in another material, and a material cannot be told to copy frames. */
     narrateMotion: true,
+    /* A material is not a person. It has to be described to be generated, and
+       no filter is looking for "fluid reflective surface". */
+    narrateSubject: true,
     writes: 'the movement as a shape, the material carrying it, and what must NOT appear',
   },
 };
@@ -225,7 +263,8 @@ export function motionBriefAsk(brief: MotionBrief, pieces: number): string {
     `WHAT THE USER ASKED FOR: ${brief.wish || '(nothing beyond the mode itself)'}`,
     brief.referenceRules || '',
     brief.hasCharacter
-      ? 'A character/subject still is attached. Every piece uses that same still, '
+      ? 'A character/subject still is attached, and it goes to every generation. Every '
+        + 'piece uses that same still, '
         + 'so refer to it as "the provided image" and never describe a different subject.'
       : 'NO character still was provided. Do not write prompts that refer to one — '
         + 'work from the footage and the user\'s words alone.',
@@ -246,6 +285,24 @@ export function motionBriefAsk(brief: MotionBrief, pieces: number): string {
         + 'turns"); never list the steps, the beats or the body parts, and never name '
         + 'a camera move or a framing, which come from the video too.',
     '',
+    /* The movement rule's twin, and the one that was missing while every
+       prompt was coming back refused. Same argument, different carrier: the
+       reference image holds the person, so a description of them competes with
+       it — and unlike the movement case, it also gets the generation rejected
+       before a single frame is made. */
+    m.narrateSubject
+      ? ''
+      : 'DO NOT DESCRIBE THE SUBJECT. The reference image is attached to every '
+        + 'generation and the model can see who it is looking at — the hair, the face, '
+        + 'the build, the clothes. Writing them out hands the model two versions of the '
+        + 'same person, and it blends them, so the result resembles your sentence rather '
+        + 'than the photograph. It is also the single most common reason a generation '
+        + 'comes back refused: an identifiable person described in text, sitting next to '
+        + 'a photo of them, reads to the safety filter as a likeness request, and the '
+        + 'whole prompt is rejected before anything is made. Write "the provided '
+        + 'character from this image" and stop there. No hair, no face, no skin, no '
+        + 'build, no age, no clothing — not once, and not in passing.',
+    '',
     `WHAT THE PROMPT IS FOR: ${m.writes}.`,
     '',
     `I will show you the ${pieces} pieces one at a time, in order. For each one you `
@@ -253,7 +310,15 @@ export function motionBriefAsk(brief: MotionBrief, pieces: number): string {
     '',
     'Three things to hold across all of them, because each piece is generated '
     + 'independently and drift between them is the main way this fails:',
-    '  1. The same subject, described the same way every time.',
+    /* "Described the same way every time" is right for a material and wrong
+       for a person: it takes one refused description and makes it every
+       piece's description. Both failing generations carried the same thirty
+       words about the same woman. */
+    m.narrateSubject
+      ? '  1. The same subject, described the same way every time.'
+      : '  1. The same subject, REFERRED TO the same way every time — "the provided '
+        + 'character from this image", word for word. Not described the same way. Not '
+        + 'described at all.',
     m.narrateMotion
       ? '  2. The same look — lighting, grade, lens feel — named explicitly in each prompt.'
       /* Named as a REFERENCE rather than as values. Inventing "bright soft studio
@@ -314,8 +379,13 @@ export function motionPieceAsk(brief: MotionBrief, piece: MotionPiece): string {
       : '  · NOT the movement. The clip carries it, and describing it competes with '
         + 'it. Name the action in a few words at most and move on',
     brief.hasCharacter
-      ? '  · the provided image as the subject, described identically to last time'
-      : '  · the subject as it appears in the footage',
+      ? (m.narrateSubject
+        ? '  · the provided image as the subject, described identically to last time'
+        : '  · the subject named ONLY as "the provided character from this image", the '
+          + 'same words as last time — and nothing about their hair, face, build, age or '
+          + 'clothing. The image goes with this clip; the model can see them')
+      : '  · the subject as it appears in the footage — name it in a few words, and do '
+        + 'not describe a person\'s appearance',
     m.narrateMotion
       ? '  · the look, named again in full — the model has no memory of the other pieces'
       : '  · "match the lighting, grade and framing of the input video" — do not invent '
@@ -336,6 +406,47 @@ export function motionPieceAsk(brief: MotionBrief, piece: MotionPiece): string {
     CONTRACT,
     brief.offerAlternatives ? 'Also include "alternatives": ["...", "..."] in that same JSON object: two complete alternative prompts, each at least 25 characters. Vary wording or visual emphasis only; keep the same reference roles, movement, timing, audio policy and user intent. These are for review, not extra generations.' : '',
   ].filter(Boolean).join('\n');
+}
+
+/**
+ * The one corrective turn, when the director described the person anyway.
+ *
+ * ── Why this is worth a whole extra turn ──────────────────────────────────
+ *
+ * The instruction not to describe the subject is now said three times — in the
+ * brief, in the prohibition beside it, and in the bullets on every piece — and
+ * a model that has just watched a video of a person will still sometimes write
+ * down what she looks like. It is the most natural sentence in the world to
+ * write, which is exactly why three prohibitions do not reliably stop it.
+ *
+ * What it costs to let one through is a refused generation: the prompt goes to
+ * Omni, comes back "This generation might violate our policies", and the row
+ * has to be retried by hand. What it costs to catch it is one message in a
+ * conversation that is already open, with no video attached and nothing
+ * generated. Those are not close.
+ *
+ * The offending words are quoted back deliberately. "Your prompt describes the
+ * subject" is an opinion the model can disagree with; "you wrote sleeveless,
+ * shorts, waistband" is a fact it can act on.
+ */
+export function motionSubjectRedoAsk(piece: MotionPiece, terms: string[]): string {
+  return [
+    `STOP — do not generate. The prompt you just wrote for piece ${piece.index} describes `
+    + `what the subject looks like. These words are the problem: ${terms.join(', ')}.`,
+    '',
+    'The character image is attached to the generation. The model can see her hair, her '
+    + 'face and her clothes without being told, so those words add nothing — and an '
+    + 'identifiable person described in text beside a photo of them is read as a likeness '
+    + 'request and refused outright. A refused prompt produces no video at all.',
+    '',
+    'Write the same prompt again with every physical description removed. The subject is '
+    + '"the provided character from this image" and nothing more — no hair, no face, '
+    + 'no skin, no build, no age, no clothing. Keep everything else exactly as you had '
+    + 'it: the action named in a few words, the environment, and the instruction to match '
+    + 'the lighting, grade and framing of the input video.',
+    '',
+    CONTRACT,
+  ].join('\n');
 }
 
 /** One piece's answer. */

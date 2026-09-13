@@ -29,7 +29,7 @@ import { useStudioStore } from '../store';
 import { NodeInfoBadge } from './NodeInfoBadge';
 import { hasSource, putSource, sourceKeyFor } from '../clip/sourceStore';
 import { MODE_INTENT, type MotionMode, type MotionPieceRow } from '../ask/motionControl';
-import { MOTION_PRESETS, motionPromptWarnings } from '../ask/motionGuidance';
+import { MOTION_PRESETS, motionPromptWarnings, subjectDescriptionWarning } from '../ask/motionGuidance';
 
 const MODES: MotionMode[] = ['move', 'swap', 'restyle'];
 
@@ -310,6 +310,16 @@ function MotionNodeInner({ id, data, selected }: NodeProps) {
                 disabled={isRunning}
                 onChange={(e) => patchPiece(p.index, { prompt: e.target.value })}
               />
+              {/* Its own box, above the advisory hints. This one is not "check
+                  that this is intentional" — it is the prompt coming back
+                  refused with nothing generated, and it has to be readable as
+                  a different kind of remark from the two below it. */}
+              {!!subjectDescriptionWarning(p.prompt, mode) && (
+                <div className="sn-story__empty">
+                  <strong>Likely to be refused</strong>
+                  {subjectDescriptionWarning(p.prompt, mode)}
+                </div>
+              )}
               {motionPromptWarnings(p.prompt, mode, p.audioMuted === true).map((warning) => <p className="sn-motion__hint" key={warning}>{warning}</p>)}
               </details>
 
