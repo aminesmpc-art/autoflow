@@ -36,6 +36,25 @@ export function sleepOrDomChange(ms: number, minMs = 250): Promise<void> {
     const startedAt = Date.now();
     let obs: MutationObserver | null = null;
 
+    /* Only observe while the tab is HIDDEN.
+     *
+     * The observer exists to compensate for Chrome clamping a hidden tab's
+     * timers. Visible, the timer is already accurate and the observer buys
+     * nothing — it only makes the loop run more often, because a page that
+     * is being interacted with mutates constantly. Measured: leaving it on
+     * while visible turned a 2000ms poll into a 250ms one, an eightfold
+     * increase in work on exactly the tab the user is looking at, and it
+     * broke three adapter suites that assume a loop ticks at its interval.
+     *
+     * So: hidden, the DOM is the faster signal. Visible, the clock already
+     * is, and this is a plain sleep with no behaviour change at all. */
+    let hidden = false;
+    try { hidden = document.hidden === true; } catch { hidden = false; }
+    if (!hidden) {
+      setTimeout(resolve, ms);
+      return;
+    }
+
     const finish = () => {
       if (settled) return;
       settled = true;

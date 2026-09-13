@@ -16,6 +16,7 @@ import {
   FlowGenerationStatus,
 } from '../../types';
 import { savePromptHistory, saveRunningQueue, clearRunningQueue } from '../../shared/storage';
+import { sleepOrDomChange } from '../shared/hiddenWait';
 import { getStudioImageFiles } from './studioImages';
 import {
   AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS, LEGACY_MODEL_NAMES,
@@ -4768,7 +4769,7 @@ export class AutomationEngine {
                 `timeout in ${Math.round((SUBMITTED_TIMEOUT_MS - submittedElapsed) / 1000)}s...`
               );
             }
-            await sleep(POLL_INTERVAL_MS);
+            await sleepOrDomChange(POLL_INTERVAL_MS);
             continue;
           }
 
@@ -4845,7 +4846,7 @@ export class AutomationEngine {
             `Post-queue waiting... ⟳${summary.generating} ✓${summary.completed} ✗${summary.failed} (${Math.round(elapsed / 1000)}s)`
           );
         }
-        await sleep(POLL_INTERVAL_MS);
+        await sleepOrDomChange(POLL_INTERVAL_MS);
         continue;
       }
 
@@ -4914,7 +4915,7 @@ export class AutomationEngine {
         );
       }
 
-      await sleep(POLL_INTERVAL_MS);
+      await sleepOrDomChange(POLL_INTERVAL_MS);
     }
 
     if (this.stopped) return;

@@ -197,11 +197,77 @@ describe('every adapter wakes on the DOM, not only the clock', () => {
     });
   }
 
+  /**
+   * Flow is the exception, and it needed a different answer.
+   *
+   * The chat adapters are woken by their own page changing. Flow's page
+   * only polls while it is doing something, so a hidden Flow tab mutates
+   * NOTHING — there is no DOM event to wait for. Its engine reads a status
+   * cache that goes stale and stays stale, and the call that refreshes it
+   * was initiated from a loop whose timer Chrome had clamped: the component
+   * that must stay awake was asking permission from the one put to sleep.
+   *
+   * So the worker drives it on its own alarm, which is not throttled that
+   * way. The DOM wake below is still worth having for the tiles that do
+   * change, but it is not what makes Flow work hidden.
+   */
+  it('flow is refreshed by the worker, which is never throttled', () => {
+    const WORKER = codeOnly(read('background', 'service-worker.ts'));
+    expect(WORKER).toMatch(/async function refreshFlowStatus\(/);
+    const at = WORKER.indexOf('async function tabPingRoutine(');
+    expect(WORKER.slice(at, at + 1800)).toMatch(/refreshFlowStatus\(keptTabId\)/);
+  });
+
+  it('only flow, since only flow stops producing its own data', () => {
+    const WORKER = codeOnly(read('background', 'service-worker.ts'));
+    const at = WORKER.indexOf('refreshFlowStatus(keptTabId)');
+    expect(WORKER.slice(Math.max(0, at - 200), at)).toMatch(/keptPlatform === 'flow'/);
+  });
+
+  /* Replaying a status request must never generate. The submit-exclusion
+     guard is what makes it safe to call this on a timer at all. */
+  it('the refresh it drives cannot submit', () => {
+    const BYPASS = codeOnly(read('content', 'flow', 'sw-bypass.ts'));
+    expect(BYPASS).toMatch(/found > 0 && !lastBatchIntroducedNewId/);
+  });
+
+  it('flow engine watch loops wake on the DOM too', () => {
+    const ENGINE = codeOnly(read('content', 'flow', 'automation.ts'));
+    expect(ENGINE).toMatch(/await sleepOrDomChange\(POLL_INTERVAL_MS\)/);
+    expect(ENGINE).not.toMatch(/await sleep\(POLL_INTERVAL_MS\)/);
+  });
+
+  /* Only the watch loops. The engine's other ~100 sleeps are deliberate
+     interaction timing — waiting for an animation, for a menu, for React to
+     settle — and waking those early on any mutation would break them. */
+  it('leaves interaction timing in the engine alone', () => {
+    const ENGINE = codeOnly(read('content', 'flow', 'automation.ts'));
+    expect((ENGINE.match(/await sleep\(/g) || []).length).toBeGreaterThan(50);
+  });
+
   it('there is exactly one implementation', () => {
     for (const [name, src] of ADAPTERS) {
       expect({ [name]: /new MutationObserver\(/.test(src) }).toEqual({ [name]: false });
     }
     expect(WAIT).toMatch(/new MutationObserver\(/);
+  });
+
+  /**
+   * Only while hidden — which is the whole reason it exists.
+   *
+   * Left on while visible it is pure cost: a page being interacted with
+   * mutates constantly, so the observer fires immediately and a 2000ms poll
+   * becomes a 250ms one. Eight times the work on the very tab the user is
+   * looking at. It broke three adapter suites that reasonably assume a loop
+   * ticks at its stated interval, which is how it was found.
+   */
+  it('is a plain sleep while the tab is visible', () => {
+    expect(WAIT).toMatch(/document\.hidden === true/);
+    const at = WAIT.indexOf('if (!hidden)');
+    expect(at).toBeGreaterThan(-1);
+    expect(WAIT.slice(at, at + 120)).toMatch(/setTimeout\(resolve, ms\)/);
+    // The early return must come BEFORE the observer is ever constructed.
+    expect(at).toBeLessThan(WAIT.indexOf('new MutationObserver('));
   });
 
   /* An observer that fires on every mutation of a chatty page turns a poll

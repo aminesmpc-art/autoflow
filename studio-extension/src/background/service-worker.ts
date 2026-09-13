@@ -317,6 +317,45 @@ async function startKeepalive(tabId: number, platform: Platform): Promise<void> 
    succeeds, so the next real failure is news again. */
 let reinjectSaidFor: string | null = null;
 
+/**
+ * Refresh Flow's generation status from HERE, not from the page.
+ *
+ * Flow's own page only polls while it is doing something, and a hidden tab
+ * is doing nothing — so the status cache goes stale and stays stale. The
+ * engine's answer is activeStatusCheck(), a replay of Flow's own status
+ * call, but the page initiates it from a loop whose timer Chrome has clamped
+ * to about a minute. The one component that needs to stay awake is asking
+ * permission from the one that has been put to sleep.
+ *
+ * A MutationObserver cannot help here, unlike the chat adapters: nothing in
+ * the page mutates, because the page is idle. The signal has to come from
+ * outside it.
+ *
+ * This worker's alarm is not throttled that way, so it drives the refresh
+ * instead. Thirty seconds is the floor Chrome allows a packed extension's
+ * alarms, and it is also roughly the cadence Flow polls at when visible.
+ *
+ * Replaying a captured status request never generates anything — see the
+ * submit-exclusion guard in sw-bypass.ts, which is what makes it safe to
+ * call on a timer at all.
+ */
+async function refreshFlowStatus(tabId: number): Promise<void> {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async () => {
+        const check = (window as any).__af_activeCheck;
+        if (typeof check !== 'function') return false;
+        try { return await check(); } catch { return false; }
+      },
+    });
+  } catch {
+    /* The tab went, or the interceptor is not installed. The engine's own
+       fallback still runs; this is an accelerant, not a dependency. */
+  }
+}
+
 async function tabPingRoutine(): Promise<void> {
   if (keptTabId === null) { await stopKeepalive(); return; }
 
@@ -337,6 +376,12 @@ async function tabPingRoutine(): Promise<void> {
      "is anything listening?" is a different question from "is it visible?". */
   if (!tab.active && !(await backgroundTabsOn())) {
     try { await chrome.tabs.update(keptTabId, { active: true }); } catch { /* gone */ }
+  }
+
+  /* Keep Flow's status fresh while its tab is hidden. Only Flow: it is the
+     only adapter whose page stops producing the data its engine reads. */
+  if (keptPlatform === 'flow') {
+    void refreshFlowStatus(keptTabId);
   }
 
   /* Every adapter answers PING, so a rejection here means nothing is listening
