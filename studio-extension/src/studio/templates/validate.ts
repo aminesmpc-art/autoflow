@@ -36,7 +36,7 @@ export const NODE_PORTS: Record<string, { in: string[]; out: string[] }> = {
   /* Motion Control. A video to move FROM, a still to move, and the words for
      what to do with them. Its output is text — a report of what it built —
      because the clips come from the Omni nodes it spawns, not from itself. */
-  motion: { in: ['text', 'video', 'image_ref'], out: ['text'] },
+  motion: { in: ['text', 'video', 'image_ref', 'place_ref'], out: ['text'] },
   /* Frames mode swaps the one image port for the two frame ports. It is a
      swap rather than an addition: in this mode the runner reads only
      frame_start and frame_end, so leaving image_ref on the node would offer a

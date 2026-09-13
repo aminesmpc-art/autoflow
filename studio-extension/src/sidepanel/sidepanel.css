@@ -2530,3 +2530,32 @@ body {
   #view-build .sp-plan { padding: 12px; }
   #view-build .sp-plan__acts { flex-wrap: wrap; }
 }
+
+
+/* ── Needs attention, and the beta toggle ─────────────────────────────── */
+
+.sp-attention:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  margin-top: var(--s-2);
+  border: 1px solid var(--warn-16);
+  border-radius: var(--r-card);
+  background: var(--warn-16);
+}
+.sp-attention__text { font-size: 12px; line-height: 1.45; color: var(--warn); }
+
+.sp-toggle {
+  display: flex;
+  gap: var(--s-2);
+  align-items: flex-start;
+  margin-top: var(--s-3);
+  padding: var(--s-2);
+  cursor: pointer;
+}
+.sp-toggle input { margin-top: 2px; flex: none; }
+.sp-toggle__text { display: flex; flex-direction: column; gap: 2px; }
+.sp-toggle__text strong { font-size: 12px; font-weight: 600; }
+/* 10px is the floor the stylesheet test enforces. */
+.sp-toggle__text small { font-size: 10px; line-height: 1.4; opacity: 0.72; }

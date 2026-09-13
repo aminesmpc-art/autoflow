@@ -272,7 +272,7 @@ describe('the node makes the clips itself', () => {
     /* The attachment is the whole idea. referenceImageData is named for images
        and carries any data: URL, which is what lets a model WATCH this. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/motionPieceAsk\(brief, p\.piece\), false, \[p\.dataUrl\]/);
   });
 
@@ -281,8 +281,8 @@ describe('the node makes the clips itself', () => {
        written by a model that has seen piece one. The thread machinery is the
        one added for the Directors. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
-    expect(body).toMatch(/motionBriefAsk\(brief, cuts\.length\), true, character/);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
+    expect(body).toMatch(/motionBriefAsk\(brief, cuts\.length\), true, references/);
   });
 
   it('generates every piece here, in one press', () => {
@@ -290,7 +290,7 @@ describe('the node makes the clips itself', () => {
        before the first step, so a node created during a run is never in it.
        Spawned Omni nodes could not run on the press that built them. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/await this\.awaitBridge\(nodeId, \{/);
     expect(body).toMatch(/model: 'Omni 1\.1 Flash'/);
     expect(body).toMatch(/creationType: 'ingredients'/);
@@ -301,7 +301,7 @@ describe('the node makes the clips itself', () => {
     /* styleReference is what the Flow adapter feeds to attachFromLibrary —
        Videos tab, search, Add to prompt. The route already exists. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/styleReference: row\.filename/);
     expect(body).toMatch(/styleReferenceRequired: true/);
   });
@@ -311,7 +311,7 @@ describe('the node makes the clips itself', () => {
        would answer each other's promises. A for..of is what makes it safe —
        a Promise.all here would be a race with a plausible-looking diff. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/for \(const row of rows\) \{/);
     expect(body).not.toMatch(/Promise\.all\(rows/);
   });
@@ -320,7 +320,7 @@ describe('the node makes the clips itself', () => {
     /* What turns a retry into "finish the ones that failed". The row keeps its
        own status precisely so this question can be asked per piece. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/if \(row\.status === 'done' && \(row\.videoUrl \|\| row\.tileId\)\)/);
   });
 
@@ -328,7 +328,7 @@ describe('the node makes the clips itself', () => {
     /* Pieces pointing at library entries that do not exist would each fail
        later, one at a time, for a reason belonging to a step already over. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     const guard = body.indexOf('Nothing was generated, so nothing has to be cleaned up');
     const make = body.indexOf('await this.awaitBridge(nodeId, {');
     expect(guard).toBeGreaterThan(-1);
@@ -340,7 +340,7 @@ describe('the node makes the clips itself', () => {
        generation that dies leaves the prompts and the library names on the
        node and a retry starts from there instead of the beginning. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     const saved = body.indexOf('motionPreparedFrom: sourceKey');
     const make = body.indexOf('await this.awaitBridge(nodeId, {');
     expect(saved).toBeGreaterThan(-1);
@@ -351,7 +351,7 @@ describe('the node makes the clips itself', () => {
     /* And keeps the ones that did. Reporting "done" over a missing clip is
        the failure mode this whole node has been fighting. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/if \(failures\.length\) \{/);
     expect(body).toMatch(/the pieces that `\s*\+ 'succeeded are kept/);
   });
@@ -360,14 +360,14 @@ describe('the node makes the clips itself', () => {
     /* The plain template is exactly what the director exists to improve on.
        Substituting it quietly would make a worse run look like a good one. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/The director could not be reached/);
     expect(body).toMatch(/motionDirected: directed/);
   });
 
   it('reports the joins that landed mid-speech', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/join\(s\) land mid-speech/);
   });
 });
@@ -389,8 +389,8 @@ describe('the node is a real node', () => {
     expect(CANVAS).toMatch(/Add Motion Control node/);
   });
 
-  it('declares the three ports it actually reads', () => {
-    expect(VALIDATE).toMatch(/motion: \{ in: \['text', 'video', 'image_ref'\], out: \['text'\] \}/);
+  it('declares the four ports it actually reads', () => {
+    expect(VALIDATE).toMatch(/motion: \{ in: \['text', 'video', 'image_ref', 'place_ref'\], out: \['text'\] \}/);
   });
 
   it('explains itself in the info badge', () => {
@@ -559,7 +559,7 @@ describe('every node the runner executes can be run', () => {
 describe('the step that cannot be worked around is checked first', () => {
   it('asks whether uploading is even switched on', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/chrome\.storage\.local\.get\(\['af_debug_upload'\]\)/);
   });
 
@@ -567,7 +567,7 @@ describe('the step that cannot be worked around is checked first', () => {
     /* The whole point. Asked after, the answer costs a Gemini conversation and
        two video uploads to find out. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     const check = body.indexOf("af_debug_upload");
     const cut = body.indexOf('planOmniChunks(');
     const direct = body.indexOf('motionBriefAsk(');
@@ -578,7 +578,7 @@ describe('the step that cannot be worked around is checked first', () => {
 
   it('treats unreachable storage as off rather than as consent', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/storage unreachable is not consent/);
   });
 
@@ -600,19 +600,19 @@ describe('the upload step is never silent', () => {
     /* It is the slowest step and the one that makes Chrome show a banner. A
        feed that stops dead here reads as a crash. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/Chrome will show a debugging banner/);
   });
 
   it('says why it failed, in the feed and not only on the node', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/studioLog\('Motion', `The upload failed: \$\{why\}`\)/);
   });
 
   it('says when it worked', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/piece\(s\) are in the Flow library/);
   });
 });
@@ -697,14 +697,14 @@ describe('a failed upload does not cost the director pass', () => {
        cut, six Gemini turns, two video uploads to Gemini — because the
        prompts were only written down after the step that failed. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/const havePrompts = this\.targetedRun/);
     expect(body).toMatch(/const reusable = havePrompts && nodeData\.motionUploaded === true/);
   });
 
   it('writes the prompts down before it tries to upload', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     const saved = body.indexOf('motionUploaded: false');
     const upload = body.indexOf("type: 'DEBUG_UPLOAD_TO_FLOW'");
     expect(saved).toBeGreaterThan(-1);
@@ -713,7 +713,7 @@ describe('a failed upload does not cost the director pass', () => {
 
   it('only claims the upload landed once it has', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     const failed = body.indexOf('The pieces could not be put into Flow');
     const stamped = body.indexOf('motionUploaded: true');
     expect(failed).toBeGreaterThan(-1);
@@ -724,7 +724,7 @@ describe('a failed upload does not cost the director pass', () => {
     /* Array position would put an edited row's prompt on the wrong piece the
        moment the cut plan changes by one. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/if \(havePrompts\) \{/);
     expect(body).toMatch(/existing\.find\(\(r\) => r\.index === p\.piece\.index\)/);
     expect(body).toMatch(/the director is not asked again/);
@@ -765,7 +765,7 @@ describe('the one switch it cannot work around is asked for up front', () => {
        switch. A prerequisite whose message points somewhere it is not is
        worse than no message. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).not.toMatch(/turned on in Settings/);
     expect(body).toMatch(/on this node/);
   });
@@ -785,7 +785,7 @@ describe('a retry does not pay for the expensive third twice', () => {
        the wording may have changed since. A targeted retry is not. */
     expect(RUNNER).toMatch(/this\.targetedRun = !!only;/);
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 24000);
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/const havePrompts = this\.targetedRun/);
     expect(body).toMatch(/const reusable = havePrompts &&/);
     expect(body).toMatch(/nodeData\.motionPreparedFrom === sourceKey/);

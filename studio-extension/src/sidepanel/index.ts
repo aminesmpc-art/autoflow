@@ -77,6 +77,21 @@ function formatElapsed(ms: number): string {
 }
 
 function renderRun(s: Partial<RunSnapshot>): void {
+  /* Needs attention, shown whether or not a run is live: the case it exists
+     for is a worker that came back to find work outstanding, which is
+     precisely when `running` is false. */
+  const att = document.getElementById('run-attention');
+  const attText = att?.querySelector('.sp-attention__text') as HTMLElement | null;
+  if (att && attText) {
+    const msg = (s as any).needsAttention || '';
+    att.hidden = !msg;
+    if (msg) attText.textContent = msg;
+    const btn = document.getElementById('btn-open-attention');
+    /* No tab to raise — the worker says so by leaving the id null. Hiding the
+       button beats offering one that does nothing. */
+    if (btn) btn.hidden = typeof (s as any).attentionTabId !== 'number';
+  }
+
   const live = !!s.running;
   $('run-idle').hidden = live;
   $('run-live').hidden = !live;
@@ -418,6 +433,24 @@ function wire(): void {
 
   $('btn-pause').addEventListener('click', () => control('pause'));
   $('btn-stop').addEventListener('click', () => control('stop'));
+
+  /* The only thing in background mode that raises a tab, and it happens
+     because the user asked. */
+  document.getElementById('btn-open-attention')?.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'PANEL_OPEN_ATTENTION_TAB' }).catch(() => {});
+  });
+
+  /* Background tabs (beta). Without this the flag could only be set from the
+     service-worker console, which is not a feature. */
+  const bgToggle = document.getElementById('opt-background-tabs') as HTMLInputElement | null;
+  if (bgToggle) {
+    chrome.storage.local.get(['af_background_tabs'])
+      .then((got) => { bgToggle.checked = got?.af_background_tabs === true; })
+      .catch(() => { /* unreadable settings read as off */ });
+    bgToggle.addEventListener('change', () => {
+      chrome.storage.local.set({ af_background_tabs: bgToggle.checked }).catch(() => {});
+    });
+  }
 
   const gbtn = document.getElementById('gate-google') as HTMLButtonElement | null;
   gbtn?.addEventListener('click', async () => {

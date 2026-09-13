@@ -29,6 +29,7 @@ import { useStudioStore } from '../store';
 import { NodeInfoBadge } from './NodeInfoBadge';
 import { hasSource, putSource, sourceKeyFor } from '../clip/sourceStore';
 import { MODE_INTENT, type MotionMode, type MotionPieceRow } from '../ask/motionControl';
+import { MOTION_PRESETS, motionPromptWarnings } from '../ask/motionGuidance';
 
 const MODES: MotionMode[] = ['move', 'swap', 'restyle'];
 
@@ -146,6 +147,9 @@ function MotionNodeInner({ id, data, selected }: NodeProps) {
         <Handle type="target" position={Position.Left} id="image_ref" className="sn-port sn-port--image" style={{ top: 160 }}>
           <span className="sn-port__glyph">I</span>
         </Handle>
+        <Handle type="target" position={Position.Left} id="place_ref" className="sn-port sn-port--image" style={{ top: 204 }}>
+          <span className="sn-port__glyph" title="Optional place image">P</span>
+        </Handle>
 
         <div className="sn-bar">
           <Icon name="motion" kind="video" className="sn-label__icon" />
@@ -168,6 +172,18 @@ function MotionNodeInner({ id, data, selected }: NodeProps) {
 
         <div className="sn-motion__body">
           <div className="sn-motion__intro"><span>Motion studio</span><p>Borrow the movement. Make it your own.</p></div>
+          <div className="sn-motion__field">
+            <label className="sn-field__label" htmlFor={`motion-preset-${id}`}>Prompt preset</label>
+            <select id={`motion-preset-${id}`} className="sn-bar__sel nodrag" value={d.motionPreset || 'custom'} disabled={isRunning}
+              onChange={(e) => updateNodeData(id, { motionPreset: e.target.value,
+                ...(e.target.value === 'material' ? { motionMode: 'restyle' } : e.target.value === 'dance' || e.target.value === 'walk' ? { motionMode: 'move' } : {}) })}>
+              {MOTION_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.title}</option>)}
+            </select>
+            <label className="sn-motion__audio-toggle nodrag"><input type="checkbox" checked={d.motionAlternatives === true} disabled={isRunning}
+              onChange={(e) => updateNodeData(id, { motionAlternatives: e.target.checked })} />
+              <span><strong>Offer prompt alternatives</strong><small>Ask for two options during the next full Run. The primary prompt generates the clip; alternatives are saved for review and never generate automatically.</small></span>
+            </label>
+          </div>
           <div className="sn-motion__field">
           <label className="sn-field__label" htmlFor={`motion-mode-${id}`}><span className="sn-motion__step">01</span>Choose a transformation</label>
           <select
@@ -243,8 +259,9 @@ function MotionNodeInner({ id, data, selected }: NodeProps) {
           </div>
 
           <div className="sn-motion__connections" aria-label="Node connections">
-            <span><b>T</b> Instructions</span><span><b>V</b> Motion source</span><span><b>I</b> Reference image</span>
+            <span><b>T</b> Instructions</span><span><b>V</b> Motion source</span><span><b>I</b> Character</span><span><b>P</b> Place (optional)</span>
           </div>
+          <p className="sn-motion__hint">Connect a place image to P to change the setting. Without it, keep the video’s location. I controls the character; P controls only the environment. Reference changes apply to retries too—use a full Run to rewrite all prompts.</p>
 
           {/* Only worth saying while there is nothing to fall back on. Once the
               pieces are cut and uploaded they generate from their names, so a
@@ -274,6 +291,13 @@ function MotionNodeInner({ id, data, selected }: NodeProps) {
 
               <details className="sn-motion__prompt nodrag nowheel">
               <summary>Review or edit prompt</summary>
+              {!!p.alternatives?.length && <div className="sn-motion__alternatives">
+                <span className="sn-motion__hint">Choose wording to edit. This does not generate a video.</span>
+                {p.alternatives.map((alternative, option) => <div key={option}><p className="sn-motion__hint">{alternative}</p><button type="button" className="sn-motion__reload" disabled={isRunning}
+                  onClick={() => patchPiece(p.index, { prompt: alternative, alternatives: p.alternatives!.map((text, at) => at === option ? p.prompt : text) })}>
+                  Use alternative {option + 1}
+                </button></div>)}
+              </div>}
               {/* Editable, because a piece that came back wrong is usually a
                   wording problem and re-asking the director costs a whole
                   conversation. */}
@@ -286,6 +310,7 @@ function MotionNodeInner({ id, data, selected }: NodeProps) {
                 disabled={isRunning}
                 onChange={(e) => patchPiece(p.index, { prompt: e.target.value })}
               />
+              {motionPromptWarnings(p.prompt, mode, p.audioMuted === true).map((warning) => <p className="sn-motion__hint" key={warning}>{warning}</p>)}
               </details>
 
               {p.status === 'error' && (

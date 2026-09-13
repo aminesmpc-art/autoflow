@@ -424,6 +424,27 @@
           </div>
 
           <div id="run-error" class="sp-error" hidden></div>
+
+          <!-- Hidden execution has stopped and only a person can move it on.
+               Raised by the worker, never by ordinary slowness: a banner that
+               appears for every slow node is one people learn to ignore. -->
+          <div id="run-attention" class="sp-attention" hidden>
+            <div class="sp-attention__text"></div>
+            <button id="btn-open-attention" class="sp-btn sp-btn--ghost" type="button">
+              <span>Open the tab</span>
+            </button>
+          </div>
+
+          <!-- Background Tabs (beta). Off by default. Without this the flag
+               could only be set from the service-worker console, which is not
+               a feature. -->
+          <label class="sp-toggle" for="opt-background-tabs">
+            <input type="checkbox" id="opt-background-tabs">
+            <span class="sp-toggle__text">
+              <strong>Background tabs (beta)</strong>
+              <small>Leave provider tabs where they are instead of bringing them forward. Flow, Gemini and Claude only — ChatGPT, Grok and Z.AI still need the tab in front.</small>
+            </span>
+          </label>
         </section>
 
         <!-- Platform Status Health Matrix -->

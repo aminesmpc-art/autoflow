@@ -101,7 +101,8 @@ describe('the character reaches every piece, without an edge to draw it', () => 
   it('sends it with every piece, as an ingredient', () => {
     /* The same still on all of them — that is what stops the subject drifting
        between independently generated clips. */
-    expect(body()).toMatch(/referenceImageData: character\.length \? character : undefined/);
+    expect(body()).toContain('const references = [...character, ...place]');
+    expect(body()).toMatch(/referenceImageData: references\.length \? references : undefined/);
   });
 
   it('draws no edges at all any more, so none can be wrong', () => {

@@ -106,6 +106,7 @@ export interface MotionPieceRow {
   muteRequested?: boolean;
   /** The uploaded ingredient has no audio track. */
   audioMuted?: boolean;
+  alternatives?: string[];
 }
 
 export interface MotionBrief {
@@ -114,6 +115,8 @@ export interface MotionBrief {
   wish: string;
   /** Whether a character/subject still was wired in. */
   hasCharacter: boolean;
+  referenceRules?: string;
+  offerAlternatives?: boolean;
 }
 
 /**
@@ -220,6 +223,7 @@ export function motionBriefAsk(brief: MotionBrief, pieces: number): string {
     `It keeps ${m.keeps}. It replaces ${m.replaces}.`,
     '',
     `WHAT THE USER ASKED FOR: ${brief.wish || '(nothing beyond the mode itself)'}`,
+    brief.referenceRules || '',
     brief.hasCharacter
       ? 'A character/subject still is attached. Every piece uses that same still, '
         + 'so refer to it as "the provided image" and never describe a different subject.'
@@ -327,7 +331,10 @@ export function motionPieceAsk(brief: MotionBrief, piece: MotionPiece): string {
       ? '  · and what must NOT appear, which this mode needs stated outright'
       : '',
     '',
+    brief.referenceRules || '',
+    'Reference-role rules above take precedence over generic instructions to preserve source lighting or background. Never change the source motion to create a new hook or ending.',
     CONTRACT,
+    brief.offerAlternatives ? 'Also include "alternatives": ["...", "..."] in that same JSON object: two complete alternative prompts, each at least 25 characters. Vary wording or visual emphasis only; keep the same reference roles, movement, timing, audio policy and user intent. These are for review, not extra generations.' : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -336,6 +343,7 @@ export interface MotionPrompt {
   index: number;
   prompt: string;
   why: string;
+  alternatives?: string[];
 }
 
 /**
@@ -369,7 +377,10 @@ export function readMotionPrompt(reply: string, index: number): MotionPrompt {
     throw new Error(`Piece ${index}: "${prompt}" is too short to be a prompt.`);
   }
 
-  return { index, prompt, why: String(parsed?.why ?? '').trim() };
+  const alternatives = Array.isArray(parsed?.alternatives)
+    ? [...new Set<string>(parsed.alternatives.filter((x: unknown): x is string => typeof x === 'string')
+      .map((x: string) => x.trim()).filter((x: string) => x.length >= 25 && x !== prompt))].slice(0, 2) : [];
+  return { index, prompt, why: String(parsed?.why ?? '').trim(), ...(alternatives.length ? { alternatives } : {}) };
 }
 
 /**

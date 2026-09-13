@@ -4147,6 +4147,7 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
 .sn-motion__reload:hover { border-color: var(--n-video); }
 .sn-motion__prompt { min-width: 0; border: 1px solid var(--line); border-radius: 7px; }
 .sn-motion__prompt summary { padding: 10px; color: var(--text-2); cursor: pointer; font-size: 12px; }
+.sn-motion__alternatives { display: grid; gap: 8px; padding: 10px; }
 .sn-motion__prompt summary:focus-visible { outline: 2px solid var(--n-video); outline-offset: -2px; }
 .sn-motion__prompt .sn-text { box-sizing: border-box; width: 100%; min-height: 120px; }
 .sn-motion__piece .sn-retry-btn:disabled { opacity: .5; cursor: not-allowed; }

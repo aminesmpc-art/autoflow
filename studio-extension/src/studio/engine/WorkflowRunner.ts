@@ -2818,10 +2818,23 @@ export class WorkflowRunner {
         || '';
       if (data) character.push(data);
     }
+    const place: string[] = [];
+    for (const srcId of (getNodeInputs(nodeId, edges).get('place_ref') || [])) {
+      const img = this.nodeResults.get(srcId);
+      const data = [img?.referenceUrl, img?.imageUrl].find((url) => url?.startsWith('data:image/'));
+      if (!data) throw new Error('The connected place image is unavailable. Load or generate it before running Motion Control.');
+      place.push(data);
+    }
+    if (place.length > 1) throw new Error('Connect one place image to Motion Control so the environment is unambiguous.');
+    const { presetInstruction, referenceGuidance } = await import('../ask/motionGuidance');
+    const references = [...character, ...place];
+    const referenceRules = referenceGuidance(character.length, place.length);
     const brief: MotionBrief = {
       mode,
-      wish: (prompt || nodeData.wish || '').trim(),
+      wish: [(prompt || nodeData.wish || '').trim(), presetInstruction(nodeData.motionPreset)].filter(Boolean).join('\n'),
       hasCharacter: character.length > 0,
+      referenceRules,
+      offerAlternatives: nodeData.motionAlternatives === true,
     };
 
     /* Is the one step that cannot be worked around even available?
@@ -2915,7 +2928,7 @@ export class WorkflowRunner {
 
       // 2. The director pass, in ONE conversation.
       const platform = chatPlatform(nodeData.platform);
-      const written: Array<{ prompt: string; why: string }> = [];
+      const written: Array<{ prompt: string; why: string; alternatives?: string[] }> = [];
       if (havePrompts) {
         /* Already written, for these same cuts. Asking again would produce
            different wording for a job nobody changed, and cost six Gemini
@@ -2924,14 +2937,14 @@ export class WorkflowRunner {
         directed = nodeData.motionDirected !== false;
         for (const p of cuts) {
           const had = existing.find((r) => r.index === p.piece.index);
-          written.push({ prompt: had?.prompt || '', why: had?.why || '' });
+          written.push({ prompt: had?.prompt || '', why: had?.why || '', alternatives: had?.alternatives });
         }
         studioLog('Motion',
           `Re-cut, but the ${written.length} prompt(s) already written are kept — `
           + 'the director is not asked again.');
       } else try {
         store.updateNodeData(nodeId, { statusNote: 'Showing the footage to the director...' });
-        await this.askAgent(nodeId, platform, motionBriefAsk(brief, cuts.length), true, character);
+        await this.askAgent(nodeId, platform, motionBriefAsk(brief, cuts.length), true, references);
 
         for (const p of cuts) {
           if (this.abortRequested) throw new Error('Motion Control stopped.');
@@ -2945,7 +2958,7 @@ export class WorkflowRunner {
             nodeId, platform, motionPieceAsk(brief, p.piece), false, [p.dataUrl],
           );
           const got = readMotionPrompt(reply, p.piece.index);
-          written.push({ prompt: got.prompt, why: got.why });
+          written.push({ prompt: got.prompt, why: got.why, alternatives: got.alternatives });
           studioLog('Motion', `Piece ${got.index}: ${got.why || got.prompt.slice(0, 80)}`);
         }
       } catch (error: any) {
@@ -2972,6 +2985,7 @@ export class WorkflowRunner {
         audioMuted: nodeData.motionMuteAudio === true,
         muteRequested: havePrompts && existing.find((r) => r.index === p.piece.index)?.muteRequested,
         prompt: written[i]?.prompt || '',
+        alternatives: written[i]?.alternatives,
         why: written[i]?.why || '',
         status: 'idle' as const,
       }));
@@ -3117,7 +3131,7 @@ export class WorkflowRunner {
         }
         if (this.abortRequested) throw new Error('Motion Control stopped.');
         const result = await this.awaitBridge(nodeId, {
-          prompt: motionAudioPrompt(row.prompt, row.audioMuted === true),
+          prompt: motionAudioPrompt(`${row.prompt}\nREFERENCE ROLES: ${referenceRules}`, row.audioMuted === true),
           platform: 'flow',
           model: 'Omni 1.1 Flash',
           mediaType: 'video',
@@ -3132,7 +3146,7 @@ export class WorkflowRunner {
              nice-to-have; this one IS the motion, so a clip generated without
              it is a different job done at full price. */
           styleReferenceRequired: true,
-          referenceImageData: character.length ? character : undefined,
+          referenceImageData: references.length ? references : undefined,
         }, 22 * 60 * 1000, '22 minutes');
 
         row.status = 'done';
