@@ -167,6 +167,7 @@ describe('focus changes become something the user asks for', () => {
       'backgroundTabsOn()',             // gated on the beta
       'PANEL_OPEN_ATTENTION_TAB',       // the user's own click
       'async function openStudio(',     // the user opening Studio
+      'lastRaisedFor !== raiseKey',     // once, when a provider takes over
     ];
 
     const re = /chrome\.tabs\.update\([^)]*active: true[^)]*\)/g;
@@ -179,6 +180,51 @@ describe('focus changes become something the user asks for', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  /**
+   * The one switch that survives the beta, and why.
+   *
+   * The Director finishes on Gemini and Flow takes over. Showing the user
+   * where the work went, once, is not the thing the beta removes — what it
+   * removes is being yanked back twice a minute for the rest of the run.
+   * Keyed on platform AND tab so six Flow nodes raise nothing after the
+   * first, and a run that never changes provider switches exactly once.
+   */
+  describe('the hand-off between providers', () => {
+    const keepalive = (): string => {
+      const at = WORKER.indexOf('async function startKeepalive(');
+      expect(at).toBeGreaterThan(-1);
+      return WORKER.slice(at, at + 1400);
+    };
+
+    it('raises the tab when the run moves to a new provider', () => {
+      expect(keepalive()).toMatch(/chrome\.tabs\.update\(tabId, \{ active: true \}\)/);
+    });
+
+    it('does it once, not on every node', () => {
+      expect(keepalive()).toMatch(/lastRaisedFor !== raiseKey/);
+      expect(keepalive()).toMatch(/const raiseKey = `\$\{platform\}:\$\{tabId\}`/);
+    });
+
+    it('counts a later run as a new hand-off', () => {
+      const at = WORKER.indexOf('async function stopKeepalive(');
+      expect(WORKER.slice(at, at + 600)).toMatch(/lastRaisedFor = null/);
+    });
+
+    /* Deliberately NOT gated on the beta: this is the hand-off, not the
+       routine grab the beta exists to remove.
+       Scoped to the raise block itself — a wider window runs past this
+       function into tabPingRoutine, which IS gated, and the first version of
+       this test failed on that rather than on anything being wrong. */
+    it('still happens with the beta on', () => {
+      const body = keepalive();
+      const from = body.indexOf('const raiseKey');
+      const to = body.indexOf('keptTabId = tabId');
+      expect(from).toBeGreaterThan(-1);
+      expect(to).toBeGreaterThan(from);
+      expect(body.slice(from, to)).not.toMatch(/backgroundTabsOn\(\)/);
+    });
   });
 
   it('a provider that needs a human is stated, not grabbed', () => {

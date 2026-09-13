@@ -261,7 +261,35 @@ const TAB_PING_MINUTES = 0.5;
 let keptTabId: number | null = null;
 let keptPlatform: Platform | null = null;
 
+/* The provider the run was last brought forward for, as platform:tab.
+   Null between runs, so the first hand-off of a run always counts. */
+let lastRaisedFor: string | null = null;
+
 async function startKeepalive(tabId: number, platform: Platform): Promise<void> {
+  /* Switch ONCE when the run moves to a different provider.
+   *
+   * This is the hand-off — the Director finishes on Gemini and Flow takes
+   * over — and it is the one moment a switch is worth making: the user is
+   * being shown where the work went, once, rather than being yanked back
+   * twice a minute for the rest of the run.
+   *
+   * It fires in background mode too, deliberately. Removing the ROUTINE grab
+   * is what that beta is for; this is not routine. Keyed on platform AND tab
+   * so six Flow nodes in a row raise nothing after the first, and a run that
+   * never leaves one provider switches exactly once.
+   */
+  const raiseKey = `${platform}:${tabId}`;
+  if (lastRaisedFor !== raiseKey) {
+    lastRaisedFor = raiseKey;
+    try {
+      const tab = await chrome.tabs.update(tabId, { active: true });
+      if (tab?.windowId != null) {
+        await chrome.windows.update(tab.windowId, { focused: true });
+      }
+      diag('Bridge', `Handed to ${platform} — brought its tab forward.`);
+    } catch { /* the tab went; the run will report that itself */ }
+  }
+
   keptTabId = tabId;
   keptPlatform = platform;
   chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.4 });
@@ -445,6 +473,8 @@ async function stopKeepalive(): Promise<void> {
   chrome.alarms.clear(TAB_PING_ALARM).catch(() => {});
   keptPlatform = null;
   reinjectSaidFor = null;
+  /* So the next run's first hand-off is a hand-off again. */
+  lastRaisedFor = null;
   if (keptTabId !== null) {
     try { await chrome.tabs.update(keptTabId, { autoDiscardable: true }); } catch { /* gone */ }
     keptTabId = null;
