@@ -22,8 +22,9 @@
 console.log('[AutoFlow Gemini] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
+import { isVisible } from '../shared/visible';
 import { sleepOrDomChange } from '../shared/hiddenWait';
-import { insertIntoEditable } from '../shared/composerText';
+import { insertIntoEditable, readRenderedText } from '../shared/composerText';
 
 const GENERATION_TIMEOUT_MS = 6 * 60 * 1000;
 /* A reply is finished when it STOPS GROWING, not when a clock runs out.
@@ -147,12 +148,7 @@ function send(type: string, payload: Record<string, unknown>): void {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-function isVisible(el: Element): boolean {
-  const rect = el.getBoundingClientRect();
-  if (rect.width < 5 || rect.height < 5) return false;
-  const style = getComputedStyle(el);
-  return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-}
+
 
 /* Chrome throttles timers in background tabs, and the tab we open is
    deliberately in the background. A round-trip to the worker keeps this
@@ -498,9 +494,12 @@ function readLatestReply(): string {
   const inner = document.querySelectorAll<HTMLElement>(
     'message-content, .model-response-text, .markdown-main-panel'
   );
-  if (inner.length) return inner[inner.length - 1].innerText || '';
+  /* innerText is layout-dependent and comes back empty on a tab Chrome is
+     not painting; textContent does not. Same species as the execCommand
+     problem — fine visible, silent and empty hidden. */
+  if (inner.length) return readRenderedText(inner[inner.length - 1]);
   const turns = document.querySelectorAll<HTMLElement>('model-response');
-  return turns.length ? turns[turns.length - 1].innerText || '' : '';
+  return turns.length ? readRenderedText(turns[turns.length - 1]) : '';
 }
 
 /**

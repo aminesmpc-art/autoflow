@@ -23,7 +23,7 @@ import {
   recoverable as journalRecoverable,
 } from '../../shared/runJournal';
 import { useStudioStore } from '../store';
-import { composeAskPrompt } from '../presets';
+import { composeAskPrompt, composeAskRequest } from '../presets';
 import {
   shotContract, parseShots, checkShots, repairMessage, summarise, readJsonObject,
   blockingProblems, describeProblems, fixableAdvisories, workflowNotes, polishMessage,
@@ -1066,7 +1066,7 @@ export class WorkflowRunner {
        point knows which one applies. */
     const hasReferenceImage = referenceImageData.length > 0 || referenceImageIds.length > 0;
     let askPrompt = nodeData.mediaType === 'text'
-      ? composeAskPrompt(nodeData.preset, prompt, hasReferenceImage)
+      ? composeAskRequest(nodeData.preset, prompt, hasReferenceImage, String(nodeData.askBrief || ''), String(nodeData.placePromptNotes || ''))
       : prompt;
 
     // An empty prompt still submits and burns a generation on Flow, so fail

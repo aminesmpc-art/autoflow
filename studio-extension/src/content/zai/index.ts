@@ -10,6 +10,7 @@
 console.log('[AutoFlow Z.AI] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
+import { isVisible } from '../shared/visible';
 import { sleepOrDomChange } from '../shared/hiddenWait';
 import { insertIntoEditable } from '../shared/composerText';
 
@@ -52,12 +53,7 @@ function logLine(line: string): void {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-function isVisible(el: Element): boolean {
-  const rect = el.getBoundingClientRect();
-  if (rect.width < 5 || rect.height < 5) return false;
-  const style = getComputedStyle(el);
-  return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-}
+
 
 /* Chrome background tab anti-throttle */
 let antiThrottle: ReturnType<typeof setInterval> | null = null;

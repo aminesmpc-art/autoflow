@@ -2700,6 +2700,33 @@ button.sn-story__done:focus-visible { outline: none; box-shadow: var(--focus-on-
 .sn-wrap--kind-story .sn-label__icon { background: var(--accent-14); color: var(--accent); }
 .sn-count--running { color: var(--accent); font-weight: 600; }
 
+/* Ask AI owns a writing workspace rather than an image-sized empty frame. */
+.sn-wrap.sn-wrap--ask { width: 440px; min-width: 440px; }
+.sn-wrap--ask > .sn { width: 100%; }
+.sn-wrap--ask .sn-craft-card { padding: 16px; }
+.sn-wrap--ask .sn-craft-card__head svg { width: 20px; height: 20px; color: var(--n-ask); }
+.sn-wrap--ask .sn-field__label { font-size: 12px; color: var(--text-2); }
+.sn-wrap--ask .sn-bar__sel { min-height: 36px; font-size: 12px; }
+.sn-wrap--ask .sn-field__hint { color: var(--text-2); line-height: 1.5; }
+.sn-ask__brief { display: grid; gap: 10px; min-width: 0; }
+.sn-ask__field { display: grid; gap: 8px; color: var(--text-2); font-size: 12px; }
+.sn-ask__field textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 100px; padding: 12px; font: inherit; line-height: 1.6; color: var(--text); background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; }
+.sn-ask__hint { margin: 0; color: var(--text-2); font-size: 11px; line-height: 1.6; }
+.sn-ask__preview { border: 1px solid var(--line-2); border-radius: 8px; padding: 10px; background: var(--surface); }
+.sn-ask__preview summary { cursor: pointer; color: var(--text); font-size: 12px; }
+.sn-ask__preview summary span { margin-left: 8px; color: var(--text-2); font-size: 10px; }
+.sn-ask__preview[open] .sn-ask__hint { margin-top: 10px; }
+.sn-ask__preview pre { max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; line-height: 1.6; color: var(--text-2); user-select: text; }
+.sn-ask__result { display: grid; gap: 8px; width: 100%; padding: 14px; box-sizing: border-box; max-height: 260px; }
+.sn-ask__result-head { display: flex; justify-content: space-between; gap: 8px; color: var(--text); font-size: 12px; }
+.sn-ask__result-head span { color: var(--text-2); font-size: 10px; }
+.sn-ask__result .sn-reply { position: static; padding: 0; min-height: 0; max-height: 145px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; user-select: text; }
+.sn-ask__preview button, .sn-ask__result button { justify-self: start; padding: 7px 10px; border: 1px solid var(--line-2); border-radius: 6px; color: var(--text); background: var(--surface-2); font: inherit; font-size: 11px; cursor: pointer; }
+.sn-ask__preview button:hover, .sn-ask__result button:hover { border-color: var(--n-ask); }
+.sn-wrap--ask [role="status"] { color: var(--text-2); font-size: 11px; }
+.sn-wrap--ask :is(input, textarea, select, button, summary):focus-visible { outline: 2px solid var(--n-ask); outline-offset: 2px; }
+.sn-wrap--ask button:disabled { opacity: .5; cursor: not-allowed; }
+
 /* Director: readable controls and a compact, scannable shot sequence. */
 .sn-director__intro { padding: 16px 16px 12px; }
 .sn-director__intro > span { font-size: 11px; font-weight: 650; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; }

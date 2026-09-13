@@ -650,6 +650,25 @@ export async function uploadToFlow(
       saved.push(result);
     }
 
+    /* ── Step 2.5: Arm the rights-consent watcher ─────────────────────────
+     *
+     * Flow shows "Rights to use this video" before the FIRST upload and will
+     * not take the file until it is answered. It is not an error and nothing
+     * here would report it as one: CDP satisfies the file chooser, the upload
+     * looks like it worked, and then nothing appears in the library — the
+     * attach afterwards says "No assets found", which is true and useless.
+     *
+     * Armed BEFORE the chooser rather than checked after it, because whether
+     * Flow raises the dialog on the Upload press or once the bytes are handed
+     * over is not established, and a watcher spanning both is cheaper than
+     * finding out the hard way. The content script polls; this does not await
+     * it, so a tab that never shows the dialog costs nothing.
+     *
+     * Never fatal. An upload that would have worked must still work when this
+     * message cannot be delivered. */
+    chrome.tabs.sendMessage(tabId, { type: 'WATCH_RIGHTS_DIALOG', ms: 45_000 })
+      .catch(() => { /* no content script, or the tab went away; the upload reports for itself */ });
+
     /* ── Step 3: Intercept file chooser and provide files ── */
     const paths = saved.map((s) => s.path);
     const result = await uploadViaFileChooser(tabId, paths);

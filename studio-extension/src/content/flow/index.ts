@@ -5,7 +5,7 @@
    ============================================================ */
 
 import { ImageMeta, Message, QueueObject } from '../../types';
-import { openMediaDialog } from './libraryPicker';
+import { openMediaDialog, watchForRightsConsent } from './libraryPicker';
 import { AutomationEngine, attachStallLimitMs, isRunLocked } from './automation';
 import { scanProjectForVideos, previewAsset, retrySingleTile, downloadAssetByMenu, waitForUpscalingDone, waitForExtendedVideoDownloadDone } from './scanner';
 import {
@@ -745,6 +745,24 @@ async function handleMessage(msg: Message): Promise<any> {
          a tab Chrome had discarded. */
       const opened = await openMediaDialog({ log: logLine });
       return opened.ok ? { ok: true } : { error: opened.reason };
+    }
+
+    /* Flow's "Rights to use this video" consent, which stands in front of the
+       FIRST upload and quietly stops it: the file chooser has already been
+       satisfied by CDP, so nothing reports a failure — the bytes just never
+       arrive, and the attach afterwards says "No assets found".
+
+       Armed by the worker BEFORE the chooser runs and left polling across the
+       whole upload, because whether Flow raises this on the Upload press or on
+       the hand-off is not settled, and watching costs one query per quarter
+       second. The worker does not await it. */
+    case 'WATCH_RIGHTS_DIALOG' as any: {
+      const ms = Number((msg as any).ms);
+      const dismissed = await watchForRightsConsent(
+        ms > 0 ? ms : 30_000,
+        { log: logLine },
+      );
+      return { ok: true, dismissed };
     }
 
     case 'PING':

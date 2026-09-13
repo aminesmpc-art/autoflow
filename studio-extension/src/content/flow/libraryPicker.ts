@@ -984,3 +984,133 @@ export async function attachFromLibrary(
   say(`attached "${name}" as the style reference`);
   return { ok: true };
 }
+
+/* ──────────────────────────────────────────────────────────────────────── */
+/* The rights consent                                                      */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The "Rights to use this video" dialog, and the button that retires it.
+ *
+ * ── What it is ────────────────────────────────────────────────────────────
+ *
+ * Flow puts a consent dialog in front of the FIRST upload and will not ingest
+ * the file until it is answered:
+ *
+ *   Rights to use this video
+ *   Make sure you have the necessary rights to any content or files that you
+ *   upload … you must comply with Google's Prohibited Use Policy.
+ *
+ *   [Cancel]              [I agree, do not show again]   [I agree]
+ *
+ * It is not an error and nothing reports it as one. The file chooser has
+ * already been satisfied by CDP, so the upload looks like it went through —
+ * and then nothing arrives in the library, and the attach that follows says
+ * "No assets found", which is true and useless.
+ *
+ * ── Which button ──────────────────────────────────────────────────────────
+ *
+ * The middle one. "I agree" alone answers this upload and comes back on the
+ * next one; "do not show again" is what makes the run after this one work
+ * without a person in front of it.
+ *
+ * ── How it is found ───────────────────────────────────────────────────────
+ *
+ * By the button's own text, inside a dialog, and never by class — the same
+ * rule as everything else in this file, and for the same reason: Flow's
+ * overlays are styled-components whose hashes change on every deploy.
+ *
+ * Order matters. `matchesFlowText` uses `includes`, so "i agree" matches "i
+ * agree, do not show again" too — the dismiss-forever variant is therefore
+ * tested FIRST and the plain one is only a fallback. Cancel is checked for
+ * explicitly and refused, because getting that wrong throws the upload away.
+ */
+export function rightsConsentButton(doc: Document = document): HTMLElement | null {
+  /* Scoped to overlays. An unscoped sweep for "I agree" across the whole page
+     would be free to find a footer link or a settings row on the project page
+     behind the dialog. */
+  const panes = Array.from(doc.querySelectorAll<HTMLElement>(
+    '[role="dialog"], [role="alertdialog"], mat-dialog-container, .cdk-overlay-pane',
+  )).filter(isShowing);
+
+  for (const pass of ['rightsDismissForever', 'rightsAgree'] as const) {
+    for (const pane of panes) {
+      const hit = Array.from(pane.querySelectorAll<HTMLElement>('button, [role="button"]'))
+        .filter(isShowing)
+        .find((b) => {
+          const text = (b.textContent || '').trim();
+          if (!text) return false;
+          /* Never the one that throws the upload away. Checked even though no
+             known translation of "cancel" contains "agree": the guard is one
+             comparison and the failure it prevents is a discarded upload. */
+          if (matchesFlowText(text, 'rightsDecline')) return false;
+          return matchesFlowText(text, pass);
+        });
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/** On screen and not merely present. Overlays are kept in the DOM when shut. */
+function isShowing(el: HTMLElement): boolean {
+  if (el.getAttribute('aria-hidden') === 'true') return false;
+  const rect = el.getBoundingClientRect();
+  if (!rect.width && !rect.height) return false;
+  const style = el.ownerDocument?.defaultView?.getComputedStyle(el);
+  if (!style) return true;
+  return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+}
+
+/** Press it if it is there. Says whether it was, and never throws. */
+export function dismissRightsConsent(deps: Deps = {}): boolean {
+  const doc = document;
+  try {
+    const button = rightsConsentButton(doc);
+    if (!button) return false;
+    const label = (button.textContent || '').trim().slice(0, 60);
+    press(button);
+    deps.log?.(`agreed to Flow's upload rights notice ("${label}")`);
+    return true;
+  } catch {
+    /* A consent dialog that cannot be pressed is the user's one manual click,
+       not a failed upload. */
+    return false;
+  }
+}
+
+/**
+ * Watch for it for a while, because nobody knows exactly when it arrives.
+ *
+ * It has been SEEN over the media dialog with the file already chosen. Whether
+ * Flow raises it when the Upload button is pressed or once the bytes are
+ * handed over is not something the screenshot settles, and the two orderings
+ * want the hook in different places.
+ *
+ * So this does not pick one. It is armed before the chooser runs and polls
+ * across the whole upload, which covers both without needing to know — and
+ * costs one querySelectorAll every quarter second.
+ *
+ * Returns how many it dismissed. Zero is the ordinary case after the first
+ * upload, and it is not a failure.
+ */
+export async function watchForRightsConsent(
+  ms: number = 30_000,
+  deps: Deps = {},
+): Promise<number> {
+  const until = Date.now() + Math.max(0, ms);
+  let dismissed = 0;
+  while (Date.now() < until) {
+    if (dismissRightsConsent(deps)) {
+      dismissed++;
+      /* Keep watching rather than returning. A multi-part upload can raise it
+         again if the first press landed on "I agree" — the translation for
+         "do not show again" may be missing in this language — and stopping
+         here would leave the second part stuck. */
+      await sleep(1000);
+    } else {
+      await sleep(250);
+    }
+  }
+  return dismissed;
+}

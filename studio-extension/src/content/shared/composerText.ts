@@ -81,3 +81,30 @@ export function insertIntoEditable(el: HTMLElement, text: string): boolean {
 
   return landed(el, text);
 }
+
+
+/**
+ * Read an element's text in a tab that may not be rendered.
+ *
+ * `innerText` is LAYOUT-dependent — it is defined as the text as rendered,
+ * so it needs a layout box to read from. A tab Chrome is not painting may
+ * have no layout computed at all, and innerText then comes back empty while
+ * the text is plainly in the DOM. `textContent` needs no layout.
+ *
+ * The same species as execCommand above: an API that works perfectly on a
+ * visible tab, returns nothing on a hidden one, and reports no error either
+ * way. innerText is still preferred, because it collapses whitespace and
+ * skips hidden nodes the way a reader would; textContent is the floor.
+ */
+export function readRenderedText(el: HTMLElement | null | undefined): string {
+  if (!el) return '';
+  try {
+    const rendered = (el.innerText || '').trim();
+    if (rendered) return el.innerText;
+  } catch { /* fall through */ }
+  try {
+    return el.textContent || '';
+  } catch {
+    return '';
+  }
+}

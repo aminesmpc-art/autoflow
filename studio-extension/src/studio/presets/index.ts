@@ -61,7 +61,25 @@ export const BUILTIN_ASK_PRESETS: AskPreset[] = [
     hint: 'Your text goes to the model unchanged.',
     brief: '{{subject}}',
   },
-
+  {
+    id: 'place_environment',
+    name: 'Place / Environment',
+    hint: 'Write a location-image prompt. Generate the image, then connect it to Motion Control’s P input.',
+    brief:
+      'Write ONE image-generation prompt for an environment reference used in motion transfer. Location brief: {{subject}}\n\n' +
+      'Create one coherent, unoccupied place, not a character sheet, collage, storyboard or sequence. ' +
+      'Specify architecture or terrain, spatial layout, floor or ground material, a few fixed landmarks, palette, time of day, lighting direction and shadows. ' +
+      'Keep a clearly visible ground plane and open usable space for a full-body character to move, with believable scale and perspective. ' +
+      'Respect the requested style, camera height, framing and aspect ratio. If omitted, use an eye-level medium-wide view; do not invent an aspect ratio. ' +
+      'Use a single camera viewpoint, not camera motion. Keep people, faces, crowds, readable text, watermarks and foreground obstructions out of the scene. ' +
+      'Use concrete visual descriptions, not promises of identical future generations. Under 180 words.' + ONLY_THE_PROMPT,
+    withImage:
+      'Write ONE image-generation prompt for an unoccupied PLACE reference based on the attached image. User changes: {{subject}}\n\n' +
+      'Read only the environment: preserve its visible layout, architecture, terrain, ground plane, materials, fixed landmarks, perspective and lighting unless the user requests a change. ' +
+      'Do not transfer people, faces, clothing or character identity from this image. Describe the environment as unoccupied with clear usable space for later full-body motion. ' +
+      'Keep one coherent camera view, not a collage or sequence. Respect requested style and aspect ratio; do not invent unseen room details as facts. ' +
+      'Avoid readable text, watermarks and foreground obstructions. Under 180 words.' + ONLY_THE_PROMPT,
+  },
   {
     id: 'nanobanana2_scene',
     name: '🍌 NanoBanana2 Scene Stills Master',
@@ -482,6 +500,10 @@ export function setAskPresets(presets: AskPreset[] | null | undefined): void {
   // Never leave the app with nothing to choose from: an empty published list
   // would silently remove the feature rather than update it.
   activePresets = presets && presets.length ? presets : BUILTIN_ASK_PRESETS;
+  // Older published catalogs must not hide the new node-specific place controls.
+  if (!activePresets.some((preset) => preset.id === 'place_environment')) {
+    activePresets = [...activePresets, BUILTIN_ASK_PRESETS.find((preset) => preset.id === 'place_environment')!];
+  }
 }
 
 /** @deprecated Use getAskPresets() — this is the bundled floor, not the live set. */
@@ -549,11 +571,15 @@ export function validatePreset(p: any): string[] {
 export function composeAskPrompt(
   presetId: string | undefined,
   subject: string,
-  hasImage: boolean
+  hasImage: boolean,
+  placeDetails: string = ''
 ): string {
   const preset = findPreset(presetId);
   const template = (hasImage && preset.withImage) || preset.brief;
-  const trimmed = (subject || '').trim();
+  const trimmed = [
+    (subject || '').trim(),
+    preset.id === 'place_environment' && placeDetails.trim() ? `Place details: ${placeDetails.trim()}` : '',
+  ].filter(Boolean).join('\n');
 
   /* An empty subject is normal for the image-led presets — "continue this
      shot" needs nothing but the frame. Substituting an empty string would
@@ -584,4 +610,11 @@ export function composeAskPrompt(
         .replace(/^[ \t]*\n/gm, '\n');
 
   return filled.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** Shared by the runner and Ask AI's draft preview. */
+export function composeAskRequest(presetId: string | undefined, incoming: string, hasImage: boolean,
+  localBrief = '', placeDetails = ''): string {
+  const subject = [incoming.trim(), localBrief.trim()].filter(Boolean).join('\n\n');
+  return composeAskPrompt(presetId, subject, hasImage, placeDetails);
 }

@@ -91,7 +91,10 @@ describe('every adapter that used execCommand now goes through it', () => {
   for (const name of USERS) {
     it(`${name} fills its composer through the shared helper`, () => {
       const src = codeOnly(read('content', name, 'index.ts'));
-      expect(src).toMatch(/import \{ insertIntoEditable \} from '\.\.\/shared\/composerText'/);
+      // Tolerates other named imports from the same module — gemini also
+      // pulls in readRenderedText, which broke the first version of this.
+      expect(src).toContain("insertIntoEditable");
+      expect(src).toContain("from '../shared/composerText'");
       expect(src).toMatch(/insertIntoEditable\(el, text\)/);
     });
   }

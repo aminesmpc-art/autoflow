@@ -10,6 +10,7 @@
 console.log('[AutoFlow ChatGPT] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from './chatgptReply';
+import { isVisible } from '../shared/visible';
 import { sleepOrDomChange } from '../shared/hiddenWait';
 import { insertIntoEditable } from '../shared/composerText';
 
@@ -146,12 +147,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function isVisible(el: Element): boolean {
-  const rect = el.getBoundingClientRect();
-  if (rect.width < 5 || rect.height < 5) return false;
-  const style = getComputedStyle(el);
-  return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-}
+
 
 /** The prompt composer: ProseMirror div on chat, textarea on some surfaces */
 function findComposer(): HTMLElement | null {
