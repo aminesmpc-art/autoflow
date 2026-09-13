@@ -18,6 +18,7 @@
 
 import { ScannedAsset, ScannedTileState, PromptHistoryEntry } from '../types';
 import { getPromptHistory } from '../shared/storage';
+import { isNewFlowGrid, readGridScrolled } from './flowTiles';
 import {
   findAssetCards,
   isVisible,
@@ -391,8 +392,11 @@ function imgElementToDataUrl(img: HTMLImageElement, maxSize = 160): string {
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     return canvas.toDataURL('image/jpeg', 0.7);
   } catch {
-    // Cross-origin tainted canvas — fall back to raw URL
-    return img.src || '';
+    /* A tainted canvas. The raw URL is NOT a fallback: the panel is a
+       chrome-extension:// page and cannot load a flow.google.com image, so
+       handing one over renders a broken-image icon with the alt text over it.
+       Nothing is better than that — the caller draws a placeholder. */
+    return '';
   }
 }
 
@@ -847,8 +851,66 @@ function enrichAndBuild(groups: TileGroup[], history: PromptHistoryEntry[]): Sca
  *   - Batch: each tile has its own row → merged by prompt text
  *   - Error messages are excluded from merge keys
  */
+/**
+ * Say what the scan actually got, per tile.
+ *
+ * Preview and download both hinge on videoSrc, and a tile can come back
+ * without one for several unrelated reasons — the media had not rendered
+ * when the row was read, the tile carries a <video> rather than an <img>, or
+ * the URL shape is one this build does not recognise. From the outside every
+ * one of those looks identical: "download not working".
+ *
+ * So the scan states its own result. Open the console on the Flow page, run a
+ * scan, and this prints one line per tile plus a summary — which turns a
+ * report of "same problem" into the specific thing that is missing.
+ */
+function reportScan(tiles: RawTile[]): void {
+  const rows = tiles.map((t, i) => {
+    const src = String((t as any).videoSrc || '');
+    let matches = -1;
+    try {
+      matches = (t as any).locator ? document.querySelectorAll((t as any).locator).length : -1;
+    } catch { matches = -2; /* the locator is not valid CSS */ }
+    return {
+      '#': i + 1,
+      type: (t as any).mediaType,
+      state: (t as any).tileState,
+      video: src ? `${src.slice(0, 42)}…` : '— MISSING —',
+      thumb: (t as any).thumbnailUrl ? String((t as any).thumbnailUrl).slice(0, 12) : '— none —',
+      locatorHits: matches,
+      prompt: String((t as any).promptLabel || '').slice(0, 28),
+    };
+  });
+
+  const noVideo = rows.filter(r => r.video === '— MISSING —').length;
+  const noMatch = rows.filter(r => r.locatorHits !== 1).length;
+
+  console.log(
+    `[AutoFlow] Scan result: ${tiles.length} tiles · ${noVideo} with NO video URL ` +
+    `(cannot preview or download) · ${noMatch} whose locator does not match exactly one tile`,
+  );
+  try { console.table(rows); } catch { console.log(rows); }
+}
+
 export async function scanProjectForVideos(): Promise<ScannedAsset[]> {
   console.log('[AutoFlow] Smart Scanner: starting Batch scan on', window.location.href);
+
+  /* The Angular Flow, which shares none of the anchors below.
+     Measured on a project showing eight generated videos: div[data-tile-id]
+     matched 0 and [data-index] matched 0, so the walk further down collected
+     nothing and the Library reported "No assets found" on a full page. That
+     site groups a prompt and its generations in div.batch-container, which is
+     the shape this scanner used to have to infer — see flowTiles.ts. */
+  if (isNewFlowGrid()) {
+    /* Scrolled, not just read: the grid sits in a CDK virtual scroller, which
+       recycles rows once the list outgrows its render window. Reading the DOM
+       once returns the top of the list and nothing below it. */
+    const tiles = await readGridScrolled(document, imgElementToDataUrl, sleep);
+    console.log(`[AutoFlow] Smart Scanner: new Flow grid — ${tiles.length} tiles`);
+    reportScan(tiles as unknown as RawTile[]);
+    const history = await getPromptHistory();
+    return enrichAndBuild(buildGroups(tiles as unknown as RawTile[]), history);
+  }
 
   // Save original view so we can restore it later
   const originalView = await getCurrentViewMode();
@@ -1041,7 +1103,11 @@ export async function downloadAssetByMenu(locator: string, resolution?: string):
     const items = document.querySelectorAll('[role="menuitem"]');
     for (const item of items) {
       if (!isVisible(item)) continue;
-      const icons = item.querySelectorAll('i.google-symbols, i[class*="google-symbols"]');
+      /* mat-icon is included because the Angular Flow renders its ligatures
+         there rather than in an <i>. Measured on that site: the tile menu
+         holds 12 role="menuitem" entries and i.google-symbols matches none
+         of them, so this returned false on a menu that was open and correct. */
+      const icons = item.querySelectorAll('mat-icon, i.google-symbols, i[class*="google-symbols"]');
       for (const icon of icons) {
         if (icon.textContent?.trim().toLowerCase() === 'download') return true;
       }
@@ -1049,9 +1115,40 @@ export async function downloadAssetByMenu(locator: string, resolution?: string):
     return false;
   }
 
-  // Try each target until the correct context menu opens
   let contextMenuOpen = false;
-  for (const target of clickTargets) {
+
+  /* The new Flow opens this menu from a button, not a right-click. Its tile
+     carries three: Favorite, Reuse prompt, and More options — and More
+     options is the one holding Download. Tried first because right-clicking
+     that tile does not produce the menu at all, so every target below would
+     be attempted and fail before giving up. */
+  const moreOptions = Array.from(card.querySelectorAll('button')).find((b) => {
+    const icon = b.querySelector('mat-icon');
+    return icon && icon.textContent?.trim().toLowerCase() === 'more_vert';
+  });
+  if (moreOptions) {
+    if (document.querySelectorAll('[role="menuitem"]').length > 0) {
+      pressEscape();
+      await sleep(300);
+    }
+    /* Hover first, and go through the full pointer chain. These buttons live
+       in a hover overlay: measured live, a bare .click() on More options left
+       the menu closed, while hovering the tile and dispatching the chain
+       opened all 12 items. */
+    for (const type of ['pointerover', 'pointerenter', 'mouseover', 'mouseenter']) {
+      card.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+    }
+    await sleep(120);
+    simulateClick(moreOptions);
+    await sleep(600);
+    if (hasDownloadMenu()) {
+      contextMenuOpen = true;
+      console.log('[AutoFlow] Download menu opened via the More options button');
+    }
+  }
+
+  // Try each target until the correct context menu opens
+  for (const target of contextMenuOpen ? [] : clickTargets) {
     // Dismiss any previously opened (wrong) menu
     if (document.querySelectorAll('[role="menuitem"]').length > 0) {
       pressEscape();
@@ -1144,10 +1241,38 @@ export async function downloadAssetByMenu(locator: string, resolution?: string):
   let fallback720: Element | null = null;
   let anyRes: Element | null = null;
 
+  /* A row the plan does not include is rendered but dead: clicking it does
+     nothing at all, so the submenu simply stays open and no file arrives.
+     Measured on a real account:
+
+       270p Animated GIF   enabled
+       720p Original size  enabled
+       1080p Upscaled      enabled
+       4K Upscaled         DISABLED
+
+     and DEFAULT_SETTINGS.videoResolution is '4K'. So the default install
+     clicked the one row that could never work, every time.
+
+     The class test has to exclude mat-mdc-tooltip-disabled, which the ENABLED
+     720p button also carries — matching "disabled" loosely marks every row
+     dead and downloads nothing at all. */
+  const isDisabledItem = (el: Element): boolean => {
+    if (el.hasAttribute('disabled')) return true;
+    if (el.getAttribute('aria-disabled') === 'true') return true;
+    const cls = (el.className || '').toString().replace(/[\w-]*tooltip-disabled/g, '');
+    return /disabled/.test(cls);
+  };
+
+  const skipped: string[] = [];
+
   for (const item of allItems) {
     if (!isVisible(item)) continue;
     if (item === downloadTrigger) continue; // skip the trigger itself
     if (item.getAttribute('aria-haspopup') === 'menu') continue; // skip other submenus
+    if (isDisabledItem(item)) {
+      skipped.push((item.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24));
+      continue;
+    }
 
     // Check the span children for resolution text (e.g. <span>1080p</span>)
     const spans = item.querySelectorAll('span');
@@ -1179,13 +1304,20 @@ export async function downloadAssetByMenu(locator: string, resolution?: string):
   const target = preferredRes || fallback720 || anyRes;
   if (target) {
     const targetText = target.textContent?.trim().replace(/\s+/g, ' ') || '';
+    /* Name what was skipped and what was taken instead. A download that
+       quietly picked a different resolution than the setting asked for should
+       say so, rather than leaving the user to wonder why 4K produced 720p. */
+    if (skipped.length) {
+      console.log(`[AutoFlow] Download: "${resKey}" unavailable on this plan (${skipped.join(', ')} disabled)`);
+    }
     console.log(`[AutoFlow] Download: clicking "${targetText}" (wanted: ${resKey})`);
     simulateClick(target);
     await sleep(500);
     return true;
   }
 
-  console.warn(`[AutoFlow] downloadAssetByMenu: resolution "${resKey}" not found in submenu`);
+  console.warn(`[AutoFlow] downloadAssetByMenu: no usable resolution for "${resKey}"` +
+    (skipped.length ? ` — these are disabled on this plan: ${skipped.join(', ')}` : ''));
   pressEscape();
   return false;
 }

@@ -20,7 +20,7 @@
      and automation.ts falls back to DOM → safe degradation
    ============================================================ */
 
-import { FlowGenerationStatus, FlowGenerationState } from '../types';
+import { FlowGenerationStatus, FlowGenerationState, FlowMediaKind } from '../types';
 
 // ── Global State Pattern for Extension Re-injections ──
 // Since content scripts can be re-evaluated when background workers wake up/restart,
@@ -34,8 +34,23 @@ interface GlobalApiState {
   lastCacheUpdate: number;
   queueStartTime: number;
   preSubmitSnapshot: Set<string>;
+  /** promptKey -> the media ids the interceptor tied to that prompt. */
+  boundMediaIds: Map<string, string[]>;
+  /** The build the MAIN-world interceptor in this tab reports. */
+  interceptorBuild: string;
+  /** So the stale-failure warning is logged once, not per record. */
+  warnedAboutStaleFailure: boolean;
+  /** What this queue is generating, so a completion can be checked against it. */
+  expectMedia: 'video' | 'image';
+  /** So the input-media warning is logged once, not per record. */
+  warnedAboutInputMedia: boolean;
   lastInterceptorError: string | null;
   messageListenerRegistered: boolean;
+  /** When the MAIN-world interceptor last proved it is running, 0 if never. */
+  interceptorAliveAt: number;
+  /** The most recent media file Flow fetched, for the panel's preview. */
+  lastMediaUrl: string;
+  lastMediaUrlAt: number;
 }
 
 function getApiState(): GlobalApiState {
@@ -48,11 +63,35 @@ function getApiState(): GlobalApiState {
       lastCacheUpdate: 0,
       queueStartTime: 0,
       preSubmitSnapshot: new Set<string>(),
+      boundMediaIds: new Map<string, string[]>(),
+      interceptorBuild: '',
+      warnedAboutStaleFailure: false,
+      expectMedia: 'video',
+      warnedAboutInputMedia: false,
       lastInterceptorError: null,
+      interceptorAliveAt: 0,
+      lastMediaUrl: '',
+      lastMediaUrlAt: 0,
       messageListenerRegistered: false,
     };
   }
   return win.__af_api_state;
+}
+
+/**
+ * Whether media of this kind proves the thing the queue asked for exists.
+ *
+ * `legacy` satisfies both: labs.google's redirect is kind-agnostic and was
+ * only ever issued for a media that existed, so refusing it would break the
+ * old site for no gain. An unset kind satisfies both too — it means the
+ * status came from a path that predates this field (the tRPC parser, an older
+ * interceptor still resident in the tab), and treating silence as failure
+ * would stall those runs rather than correct them.
+ */
+export function kindSatisfies(kind: FlowMediaKind | undefined, want: 'video' | 'image'): boolean {
+  if (!kind) return true;
+  if (kind === 'legacy') return true;
+  return kind === want;
 }
 
 // ── Status mapping ──
@@ -166,6 +205,26 @@ function parseMediaEntry(entry: any, remainingCredits?: number): FlowGenerationS
   };
 }
 
+/**
+ * Record that fresh data landed, and announce the API the first time it does.
+ *
+ * Shared by both protocol branches. The announcement fires once, on the
+ * transition out of "nothing has ever arrived" — that edge is what the panel's
+ * badge reads, and it is the reason the badge sat on "API Passive": on
+ * flow.google.com nothing ever reached this function at all.
+ */
+function cacheUpdated(state: GlobalApiState): void {
+  const wasApiAvailable = state.lastCacheUpdate > 0;
+  state.lastCacheUpdate = Date.now();
+
+  if (!wasApiAvailable) {
+    chrome.runtime.sendMessage({
+      type: 'API_STATUS_CHANGED',
+      payload: { isApiAvailable: true },
+    }).catch(() => {});
+  }
+}
+
 // ── Initialization ──
 
 /**
@@ -188,6 +247,29 @@ export async function initApiHelper(): Promise<void> {
         state.lastInterceptorError = payload?.message || 'Unknown interceptor error';
       }
 
+      /* The interceptor reporting that it is running. Kept apart from the
+         status cache on purpose: this says the pipe is open, the cache says
+         data has come through it. Conflating them is what made an idle tab
+         indistinguishable from a broken one. */
+      if (type === 'INTERCEPTOR_ALIVE') {
+        const first = state.interceptorAliveAt === 0;
+        state.interceptorAliveAt = Date.now();
+        state.interceptorBuild = String(payload?.build || '');
+        if (first) {
+          chrome.runtime.sendMessage({
+            type: 'API_STATUS_CHANGED',
+            payload: { isApiAvailable: 'active' },
+          }).catch(() => {});
+        }
+      }
+
+      /* A media file Flow just fetched. Recorded rather than acted on: the
+         panel asks for it when the user presses play. */
+      if (type === 'MEDIA_URL_SEEN' && typeof payload?.url === 'string') {
+        state.lastMediaUrl = payload.url;
+        state.lastMediaUrlAt = Date.now();
+      }
+
       if (type === 'CAPTURED_REQUEST_INFO') {
         chrome.storage.local.set({ autoflow_captured_request: payload }).catch(() => {});
       }
@@ -202,15 +284,100 @@ export async function initApiHelper(): Promise<void> {
             state.statusCache.set(status.mediaId, status);
           }
         }
-        const wasApiAvailable = state.lastCacheUpdate > 0;
-        state.lastCacheUpdate = Date.now();
+        cacheUpdated(state);
+      }
 
-        if (!wasApiAvailable) {
-          chrome.runtime.sendMessage({
-            type: 'API_STATUS_CHANGED',
-            payload: { isApiAvailable: true }
-          }).catch(() => {});
+      /* The new site. flow.google.com's batchexecute payloads are positional
+         arrays with no field names, so the interceptor reads them where it
+         has the raw body and sends statuses already parsed, rather than
+         shipping an anonymous nested array here for parseMediaEntry — which
+         understands the old tRPC field names and nothing else. */
+      if (type === 'STATUS_UPDATE_V2' && Array.isArray(payload?.statuses)) {
+        for (const status of payload.statuses as FlowGenerationStatus[]) {
+          if (!status?.mediaId) continue;
+
+          /* This API does not state failures, so a 'failed' arriving here is
+             never true — it is an older interceptor still running in this
+             tab, scanning record text for FAIL / SAFETY / BLOCK / REJECT /
+             CANCEL and finding one of them in the user's own prompt.
+
+             It is refused here, at the one door every reader comes through,
+             rather than at each place that acts on it. Two runs were lost to
+             fixing those one at a time: the first died on "a red hot air
+             balloon drifting over a city block at dawn" because processPrompt
+             believed it, and after that was guarded the next run still lost
+             "a blue crane lifting a safety barrier" and "orange autumn leaves
+             rejected by the wind" — because verifyAndReprompt believed it
+             too, and marked both a policy refusal with no retry while the
+             videos sat finished in the grid.
+
+             Failure is read from the page, where it is stated plainly:
+             flow-error-tile, with a reason and a Retry button. */
+          if (status.state === 'failed') {
+            if (!state.warnedAboutStaleFailure) {
+              state.warnedAboutStaleFailure = true;
+              console.warn(
+                '[AutoFlow] The interceptor in this tab reported an API failure, which this Flow never sends. ' +
+                'It is running old code — reload the Flow tab. Ignoring the failure and trusting the page.',
+              );
+            }
+            status.state = 'generating';
+            status.rawStatus = 'IGNORED_STALE_FAILURE';
+            status.failureReason = '';
+          }
+
+          /* A completion is only a completion if what arrived is the thing
+             this queue asked for.
+
+             A record references assets it did not produce. On a Frames run it
+             carries the two uploaded start/end frames from the moment it is
+             submitted, and those are ordinary signed image URLs — so a video
+             generation announced itself finished before it had rendered
+             anything, and the panel showed 1 ✅ / "All videos processed!"
+             over a tile still climbing through 45%.
+
+             Refused here for the same reason the stale failure above is: this
+             is the one door every reader comes through. There are twenty-odd
+             `state === 'completed'` sites in automation.ts and guarding them
+             one at a time is how the last three runs were lost. */
+          if (status.state === 'completed' && !kindSatisfies(status.mediaKind, state.expectMedia)) {
+            if (!state.warnedAboutInputMedia) {
+              state.warnedAboutInputMedia = true;
+              console.warn(
+                `[AutoFlow] A generation reported itself complete carrying only ` +
+                `${status.mediaKind || 'no'} media, and this queue is making ` +
+                `${state.expectMedia}s. That is an input frame or a grid poster, ` +
+                `not the result — waiting for the real one.`,
+              );
+            }
+            status.state = 'generating';
+            status.rawStatus = status.mediaKind === 'thumb' ? 'THUMBNAIL_ONLY' : 'INPUT_MEDIA_ONLY';
+            /* Not a usable URL for this queue either — carrying it forward is
+               how an uploaded start frame got saved under a video's name. */
+            status.mediaUrl = '';
+          }
+
+          /* Do not let a later mention downgrade a finished generation.
+             Flow re-sends records across calls, and an ancestor listing can
+             describe a media more thinly than the call that completed it;
+             taking the newer one would put a done video back to generating
+             and the queue would wait on it again. */
+          const known = state.statusCache.get(status.mediaId);
+          if (known?.state === 'completed' && status.state !== 'completed') continue;
+
+          state.statusCache.set(status.mediaId, status);
         }
+        cacheUpdated(state);
+      }
+
+      /* An exact prompt -> generation binding, made where the request and its
+         own response are both in hand. See sw-bypass.ts; the short version is
+         that "the first record after I clicked Generate" was picking up other
+         traffic on a channel that carries the whole application. */
+      if (type === 'GENERATION_BOUND' && Array.isArray(payload?.mediaIds)) {
+        const key = promptKey(String(payload.promptText || ''));
+        const ids = (payload.mediaIds as string[]).filter(Boolean);
+        if (key && ids.length) state.boundMediaIds.set(key, ids);
       }
     });
   }
@@ -242,25 +409,96 @@ export async function initApiHelper(): Promise<void> {
  * Call when a new queue starts. Clears old cached data and marks
  * the start time so we can filter entries from the current queue.
  */
-export function onQueueStart(): void {
+export function onQueueStart(expectMedia: 'video' | 'image' = 'video'): void {
   const state = getApiState();
   state.statusCache.clear();
   state.cachedCredits = null;
   state.lastCacheUpdate = 0;
   state.queueStartTime = Date.now();
   state.preSubmitSnapshot.clear();
+  /* What a completion has to carry to count. Without it every record that
+     merely references an image — every Frames and every ingredient run —
+     reads as a finished video. */
+  state.expectMedia = expectMedia;
+  state.warnedAboutInputMedia = false;
+  /* Bindings belong to one run. Keeping them would let a prompt reused in a
+     later queue bind to the generation the earlier queue made for it. */
+  state.boundMediaIds.clear();
 }
 
 /**
  * Call BEFORE clicking Generate. Snapshots current cache keys
  * so we can diff later to find the new generation entry.
  */
-export function onBeforeSubmit(): void {
+export function onBeforeSubmit(promptText?: string): void {
   const state = getApiState();
   state.preSubmitSnapshot.clear();
   for (const key of state.statusCache.keys()) {
     state.preSubmitSnapshot.add(key);
   }
+
+  /* Tell the interceptor what is about to be submitted, so it can tie the
+     reply to the request that carried this text rather than to whatever else
+     the page happened to ask for in the same second. The snapshot above stays
+     as the fallback for when no binding comes back. */
+  if (promptText) {
+    try {
+      window.postMessage(
+        { source: 'autoflow-engine', type: 'PENDING_PROMPT', payload: { text: promptText } },
+        '*',
+      );
+    } catch { /* the fallback still works */ }
+  }
+}
+
+/**
+ * The interceptor build this extension expects to be talking to.
+ *
+ * Kept beside the one sw-bypass stamps on the window, and bumped with it.
+ */
+export const EXPECTED_INTERCEPTOR_BUILD = 'batchexecute-3';
+
+/**
+ * The build actually running in this tab, or '' if it has not said yet.
+ *
+ * Why this is worth reporting: a MAIN-world script only injects at
+ * document_start, so a Flow tab that was open when the extension was updated
+ * keeps running the OLD interceptor for the rest of its life — while the
+ * panel, the content script and the worker are all new. Nothing looks wrong.
+ * The badge still reads "API Active", because both builds say they are alive.
+ *
+ * It is not a cosmetic mismatch. An older interceptor reported a generation
+ * as failed when any record text contained FAIL, BLOCK, CANCEL, SAFETY or
+ * REJECT — and the record includes the user's own prompt. "a red hot air
+ * balloon drifting over a city block at dawn" was read as failed three times
+ * while the video generated correctly.
+ */
+export function getInterceptorBuild(): string {
+  return getApiState().interceptorBuild;
+}
+
+/** True when this tab is running an interceptor older than this build. */
+export function isInterceptorStale(): boolean {
+  const build = getApiState().interceptorBuild;
+  return build !== '' && build !== EXPECTED_INTERCEPTOR_BUILD;
+}
+
+/** The comparison form of a prompt: letters and digits, nothing else. */
+function promptKey(text: string): string {
+  return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 120);
+}
+
+/**
+ * The generations the interceptor tied to this exact prompt, if any.
+ *
+ * Empty when the prompt was too short to match safely, when the binding has
+ * not arrived yet, or on the old tRPC path — every caller falls back to the
+ * previous heuristic in that case, so this can only improve the answer.
+ */
+export function findBoundMediaIds(promptText: string): string[] {
+  const key = promptKey(promptText);
+  if (!key) return [];
+  return getApiState().boundMediaIds.get(key) || [];
 }
 
 /**
@@ -272,9 +510,17 @@ export function getNewSubmissions(): FlowGenerationStatus[] {
   const state = getApiState();
   const result: FlowGenerationStatus[] = [];
   for (const [id, status] of state.statusCache) {
-    if (!state.preSubmitSnapshot.has(id)) {
-      result.push(status);
+    if (state.preSubmitSnapshot.has(id)) continue;
+
+    /* "New to the cache" is not "new". Flow describes old work whenever the
+       project is refreshed or the library is scrolled, so a video generated
+       weeks ago can be first SEEN here seconds after Generate was clicked and
+       would qualify. getAllCachedStatuses already screens on this; iterating
+       the cache directly skipped it. */
+    if (state.queueStartTime > 0 && status.createdAt) {
+      if (new Date(status.createdAt).getTime() < state.queueStartTime - 60_000) continue;
     }
+    result.push(status);
   }
   return result;
 }
@@ -430,6 +676,36 @@ export function isApiAvailable(): boolean {
   return state.lastCacheUpdate > 0;
 }
 
+/**
+ * Whether the MAIN-world interceptor has proved itself in this page.
+ *
+ * Deliberately sticky rather than time-windowed. Flow only talks to
+ * batchexecute when something is happening, so an idle project makes no calls
+ * for minutes at a time; ageing this out would report the interception as
+ * dead every time the user stopped working, which is the same false alarm
+ * this was added to remove.
+ */
+export function isInterceptorAlive(): boolean {
+  return getApiState().interceptorAliveAt > 0;
+}
+
+/**
+ * Arm the MAIN world to swallow the next file save, then forget any URL we
+ * already had so a stale one cannot be mistaken for this capture's result.
+ */
+export function armPreviewCapture(): void {
+  const state = getApiState();
+  state.lastMediaUrl = '';
+  state.lastMediaUrlAt = 0;
+  window.postMessage({ source: 'autoflow-content-script', type: 'ARM_PREVIEW_CAPTURE' }, '*');
+}
+
+/** The media URL seen since arming, or '' if none has arrived yet. */
+export function takeCapturedMediaUrl(): string {
+  const state = getApiState();
+  return state.lastMediaUrl;
+}
+
 /** Get the last captured interceptor error. */
 export function getInterceptorError(): string | null {
   const state = getApiState();
@@ -444,6 +720,7 @@ export function clearCache(): void {
   state.statusCache.clear();
   state.lastCacheUpdate = 0;
   state.preSubmitSnapshot.clear();
+  state.boundMediaIds.clear();
 }
 
 // ── Direct media ID lookup ──

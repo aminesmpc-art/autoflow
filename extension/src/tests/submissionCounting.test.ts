@@ -187,3 +187,140 @@ describe('the old counting is left alone', () => {
     expect(API).toMatch(/'\/api\/usage\/consume'/);
   });
 });
+
+/**
+ * The delivery chain for the media id.
+ *
+ * This is the part that was missing when the feature first shipped, and it
+ * failed in the way that is hardest to notice: every piece existed, so the
+ * code read as finished. The sidepanel gated on `prompt.mediaId`, the content
+ * script worked hard to capture one — with two rounds of late polling and an
+ * active API refresh — and a helper named sendPromptStatusUpdate even took a
+ * `mediaId` argument. It just had no callers, and nothing carried the id
+ * across the gap between them. The dashboard read 0 sent against 2,492
+ * charged and there was no error anywhere to explain it.
+ *
+ * The gap is structural, not incidental:
+ *
+ *   · the content script keeps the id ONLY on its in-memory queue — it never
+ *     writes to storage, so the id cannot reach the sidepanel that way
+ *   · the background rebuilds the queue FROM storage on every status update
+ *     and re-broadcasts that copy, so any field it does not explicitly carry
+ *     over is erased before the sidepanel ever sees it
+ *
+ * So the id has to ride the status message and be copied on arrival. Both
+ * halves are asserted here because either one alone silently reports nothing.
+ */
+describe('the media id reaches the sidepanel', () => {
+  const AUTOMATION = readFileSync(
+    join(__dirname, '..', 'content', 'automation.ts'), 'utf8').replace(/\r\n/g, '\n');
+  const WORKER = readFileSync(
+    join(__dirname, '..', 'background', 'service-worker.ts'), 'utf8').replace(/\r\n/g, '\n');
+
+  /** The content script's status message must carry the id it captured. */
+  it('is sent on the status message the content script emits', () => {
+    const at = AUTOMATION.indexOf('private updatePromptStatus(');
+    expect(at).toBeGreaterThan(-1);
+    const body = AUTOMATION.slice(at, at + 1600);
+    expect(body).toContain("type: 'PROMPT_STATUS_UPDATE'");
+    expect(body).toMatch(/mediaId: this\.queue\?\.prompts\[idx\]\?\.mediaId/);
+  });
+
+  /** And the background must copy it onto the queue it broadcasts back. */
+  it('is copied onto the stored prompt before the broadcast', () => {
+    const at = WORKER.indexOf('async function handlePromptStatusUpdate(');
+    expect(at).toBeGreaterThan(-1);
+    const body = WORKER.slice(at, at + 7000);
+
+    expect(body).toMatch(/if \(payload\.mediaId\) prompt\.mediaId = payload\.mediaId/);
+
+    // The copy has to happen BEFORE the broadcast, or it ships the old object.
+    const copy = body.indexOf('prompt.mediaId = payload.mediaId');
+    const cast = body.indexOf('broadcastToExtension');
+    expect(copy).toBeGreaterThan(-1);
+    expect(cast).toBeGreaterThan(copy);
+  });
+
+  /**
+   * A retry is a SECOND submission, and must not be swallowed.
+   *
+   * The first version of this fix took the first id and kept it. That reads
+   * as the safe choice and is the expensive one: when a generation fails the
+   * content script clears the id, clicks Retry, and Flow binds a NEW id —
+   * and Google charges for that second generation too. Holding the first id
+   * would report the retry under an id already counted, so the extra charge
+   * would disappear exactly where this feature exists to expose it.
+   */
+  it('lets a retry replace the id, because Google charged twice', () => {
+    const at = WORKER.indexOf('async function handlePromptStatusUpdate(');
+    const body = WORKER.slice(at, at + 7000);
+    expect(body).not.toContain('!prompt.mediaId');
+  });
+
+  /**
+   * An empty id must never erase one already reported.
+   *
+   * The content script sets mediaId to '' before clicking Retry. That blank
+   * travels on the next status message, and copying it over would wipe the
+   * stored id — so the copy is guarded on the value being truthy.
+   */
+  it('ignores a blank id rather than copying it over', () => {
+    const at = WORKER.indexOf('async function handlePromptStatusUpdate(');
+    expect(WORKER.slice(at, at + 7000)).toMatch(/if \(payload\.mediaId\)/);
+  });
+
+  /**
+   * Reporting must not depend on the side panel being open.
+   *
+   * The panel is where this was written, and a queue keeps running when the
+   * panel is closed — the content script and the worker carry it. Every
+   * prompt sent with it shut was charged and counted as never received.
+   *
+   * Reporting from both places is safe because the endpoint is idempotent on
+   * the media id, but the CLASSIFICATION has to agree: prompt_type is what
+   * would be charged if METER_ON_SUBMISSION is ever switched on, and the row
+   * keeps whichever value arrived first. Both sides read the merged image
+   * list off the stored prompt, so they land on the same answer.
+   */
+  it('is reported by the background, not only by the panel', () => {
+    const at = WORKER.indexOf('async function handlePromptStatusUpdate(');
+    const body = WORKER.slice(at, at + 7000);
+    expect(body).toContain('trackSubmission({');
+    expect(body).toMatch(/mediaId: prompt\.mediaId/);
+  });
+
+  it('classifies the prompt the same way the panel does', () => {
+    const at = WORKER.indexOf('async function handlePromptStatusUpdate(');
+    const body = WORKER.slice(at, at + 7000);
+    expect(body).toMatch(/prompt\.images\?\.length \|\| 0\) > 0/);
+    expect(body).toMatch(/creationType === 'frames'/);
+  });
+
+  it('reports the outcome too, so completed does not need the panel', () => {
+    const at = WORKER.indexOf('async function handlePromptStatusUpdate(');
+    const body = WORKER.slice(at, at + 7000);
+    expect(body).toMatch(/outcome: payload\.status as 'done' \| 'failed'/);
+  });
+
+  /** Once per id per run, or every progress tick would re-post it. */
+  it('does not re-post the same id on every tick', () => {
+    expect(WORKER).toContain('const _reportedSubmissions = new Set<string>()');
+    const at = WORKER.indexOf('async function handlePromptStatusUpdate(');
+    expect(WORKER.slice(at, at + 7000)).toContain('!_reportedSubmissions.has(prompt.mediaId)');
+  });
+
+  /**
+   * And the retry path has to ANNOUNCE the new id once it has one.
+   *
+   * The 'submitted' update fires before the retry is bound, so it carries the
+   * old id. Without a second call after the capture the new id stays in the
+   * content script's memory and the retry is never counted.
+   */
+  it('announces the id captured after a retry', () => {
+    const at = AUTOMATION.indexOf('captured new mediaId after retry');
+    expect(at).toBeGreaterThan(-1);
+    const around = AUTOMATION.slice(Math.max(0, at - 600), at);
+    expect(around).toContain('prompt.mediaId = newMediaId');
+    expect(around).toMatch(/this\.updatePromptStatus\(idx, 'submitted'\)/);
+  });
+});

@@ -1572,7 +1572,21 @@ async function addToQueue() {
       // Fail-closed: API couldn't be reached
       showToast('Could not verify your usage. Check your connection and try again.', 'error');
     } else {
-      showToast(`Daily ${promptType === 'full' ? 'full-feature' : 'text'} limit reached (${quota.limit}/day). Upgrade to Pro for unlimited.`, 'warning');
+      /* The dialog, not a toast. This is the ceiling the most people reach,
+         and it used to be announced by a warning that faded before it could
+         be acted on. */
+      const kind = promptType === 'full' ? 'Full-Feature Prompt' : 'Text Prompt';
+      const waiting = state.parsedPrompts.length;
+      void showLimitDialog({
+        label: kind,
+        used: quota.limit,
+        limit: quota.limit,
+        period: 'day',
+        unlocks: 'Unlimited prompts every day — text and full-feature, no daily caps.',
+        blocked: waiting > 0
+          ? `${waiting} prompt${waiting === 1 ? ' is' : 's are'} blocked until tomorrow.`
+          : undefined,
+      });
     }
     return;
   }
@@ -2499,7 +2513,16 @@ async function runQueue(queueId: string) {
   const quota = await checkCanGenerate(promptType as 'text' | 'full');
 
   if (!quota.allowed) {
-    showToast('Daily limit reached. Upgrade to Pro for unlimited.', 'warning');
+    void showLimitDialog({
+      label: promptType === 'full' ? 'Full-Feature Prompt' : 'Text Prompt',
+      used: quota.limit,
+      limit: quota.limit,
+      period: 'day',
+      unlocks: 'Unlimited prompts every day — text and full-feature, no daily caps.',
+      blocked: pendingCount > 0
+        ? `${pendingCount} queued prompt${pendingCount === 1 ? ' is' : 's are'} blocked until tomorrow.`
+        : undefined,
+    });
     state.isRunning = false;
     return;
   }
@@ -2608,13 +2631,41 @@ async function runQueue(queueId: string) {
 // QUEUE LIMIT DIALOG
 // ================================================================
 
-async function showQueueLimitDialog(mode: string, result: { used: number; limit: number; remaining: number; period: string; message?: string }) {
+/* What Pro costs, named at the moment the ceiling is hit.
+   The button used to read "Upgrade to Pro" with no number at all. At $9.99
+   the price IS the argument, and leaving it out invites people to guess high
+   and dismiss — the one outcome that cannot be recovered afterwards. Keep in
+   step with the pricing page. */
+const PRO_PRICE_LABEL = '$9.99/mo';
+
+/**
+ * One dialog for every daily ceiling.
+ *
+ * It served queue-run limits only. The prompt and download ceilings — which
+ * far more people actually reach — got a toast instead: a warning that faded
+ * after a few seconds with nothing in it to click. So the strongest upgrade
+ * surface in the product was shown to the smallest group, and the largest
+ * group was told "upgrade to Pro" by a message that was gone before they
+ * could act on it.
+ */
+async function showLimitDialog(opts: {
+  /** What ran out, already decorated — "⚡ Lite Run", "Text Prompt". */
+  label: string;
+  used: number;
+  limit: number;
+  period: string;
+  /** What Pro unblocks, in this ceiling's own words rather than in general. */
+  unlocks: string;
+  /** What is blocked RIGHT NOW. Named when the caller can count it: the
+      specific number is the part that argues, not the word "unlimited". */
+  blocked?: string;
+}) {
   // Remove any existing dialog
   document.getElementById('af-queue-limit-dialog')?.remove();
 
-  const modeLabels: Record<string, string> = { lite: '⚡ Lite', flow: '🔄 Flow', full: '🚀 Full' };
-  const modeLabel = modeLabels[mode] || mode;
-  const periodLabel = result.period === 'month' ? 'this month' : 'today';
+  const modeLabel = opts.label;
+  const result = { used: opts.used, limit: opts.limit };
+  const periodLabel = opts.period === 'month' ? 'this month' : 'today';
 
   const { url: upgradeUrl, email: upgradeEmail } = await getUpgradeTarget();
 
@@ -2641,7 +2692,10 @@ async function showQueueLimitDialog(mode: string, result: { used: number; limit:
         ">${modeLabel} Limit Reached</h3>
         <p style="
           color:#94a3b8;font-size:13px;line-height:1.5;margin:0 0 16px;
-        ">You've used <span style="color:#f1f5f9;font-weight:600;">${result.used}/${result.limit}</span> ${mode} runs ${periodLabel}.</p>
+        ">You've used <span style="color:#f1f5f9;font-weight:600;">${result.used}/${result.limit}</span> ${periodLabel}.</p>
+        ${opts.blocked ? `<p style="
+          color:#fca5a5;font-size:13px;line-height:1.5;margin:-8px 0 16px;font-weight:600;
+        ">${opts.blocked}</p>` : ''}
         
         <div style="
           background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.15);
@@ -2651,7 +2705,7 @@ async function showQueueLimitDialog(mode: string, result: { used: number; limit:
             ✨ Upgrade to Pro
           </div>
           <div style="color:#cbd5e1;font-size:12px;line-height:1.4;">
-            Unlimited runs in all modes — Lite, Flow & Full. No daily caps.
+            ${opts.unlocks}
           </div>
         </div>
 
@@ -2662,7 +2716,7 @@ async function showQueueLimitDialog(mode: string, result: { used: number; limit:
           text-decoration:none;text-align:center;
           box-shadow:0 4px 15px rgba(99,102,241,0.3);
           transition:transform 0.15s,box-shadow 0.15s;
-        ">Upgrade to Pro →</a>
+        ">Upgrade to Pro — ${PRO_PRICE_LABEL} →</a>
         <button id="af-limit-free-pro-btn" style="
           display:block;width:100%;margin-top:8px;padding:10px;
           background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);
@@ -2714,6 +2768,21 @@ async function showQueueLimitDialog(mode: string, result: { used: number; limit:
 
   // Also refresh the account tab reward CTA since user just hit the limit
   checkAndShowReviewReward(false);
+}
+
+/** The run ceilings, in the wording they already had. */
+function showQueueLimitDialog(
+  mode: string,
+  result: { used: number; limit: number; remaining: number; period: string; message?: string },
+) {
+  const modeLabels: Record<string, string> = { lite: '⚡ Lite', flow: '🔄 Flow', full: '🚀 Full' };
+  return showLimitDialog({
+    label: `${modeLabels[mode] || mode} Run`,
+    used: result.used,
+    limit: result.limit,
+    period: result.period,
+    unlocks: 'Unlimited runs in all modes — Lite, Flow & Full. No daily caps.',
+  });
 }
 
 // ================================================================
@@ -4468,7 +4537,14 @@ async function downloadSelectedAssets(): Promise<void> {
   // Server-side download limit check (free users: 20/day)
   const dlQuota = await consumeDownload(selected.length);
   if (!dlQuota.allowed) {
-    showToast(dlQuota.message || `Daily download limit reached (${dlQuota.limit}/day). Upgrade for unlimited!`, 'warning');
+    void showLimitDialog({
+      label: 'Download',
+      used: dlQuota.limit,
+      limit: dlQuota.limit,
+      period: 'day',
+      unlocks: 'Unlimited downloads every day, at full resolution.',
+      blocked: `${selected.length} file${selected.length === 1 ? '' : 's'} still waiting to download.`,
+    });
     return;
   }
 

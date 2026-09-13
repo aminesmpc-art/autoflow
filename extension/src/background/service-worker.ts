@@ -35,7 +35,7 @@ import {
   getChainByAlarm,
   getChainById,
 } from '../shared/storage';
-import { consumeDownload } from '../shared/api';
+import { consumeDownload, trackSubmission } from '../shared/api';
 
 // ================================================================
 // WEB REQUEST: Image Generation Detection (Web Worker bypass)
@@ -79,6 +79,41 @@ chrome.webRequest.onCompleted.addListener(
 // while we fire scheduled chains (which open tabs, inject scripts, etc).
 
 const OFFSCREEN_URL = 'offscreen.html';
+
+/**
+ * Put BOTH halves of the page side of AutoFlow back into a tab.
+ *
+ * content.js runs in the isolated world and can be re-injected freely.
+ * sw-bypass.js runs in MAIN, and until now was never re-injected — it is
+ * declared in the manifest at document_start and nothing else put it back.
+ *
+ * That asymmetry is a bug with a bill attached. Re-injecting only content.js
+ * leaves a tab with a NEW engine talking to an OLD interceptor, which is what
+ * happens to every Flow tab that was open when the extension updated. An
+ * older interceptor reported a generation as failed whenever a record
+ * contained the words FAIL, SAFETY, BLOCK, REJECT or CANCEL — and the record
+ * carries the user's prompt, so "a blue crane lifting a safety barrier" came
+ * back as a policy refusal, with the prompt printed as the reason, while the
+ * finished video sat in the grid.
+ *
+ * sw-bypass skips itself when the running build already matches, so this is a
+ * no-op on a healthy tab.
+ */
+async function injectPageScripts(tabId: number): Promise<void> {
+  /* MAIN first: it patches fetch and XHR, and should be in place before the
+     engine starts asking it for anything. */
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      files: ['sw-bypass.js'],
+    });
+  } catch (err: any) {
+    /* Not fatal on its own — the engine still runs, reading the DOM. */
+    console.warn('[AutoFlow] Could not refresh the MAIN-world interceptor:', err?.message);
+  }
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+}
 
 async function ensureOffscreen(): Promise<void> {
   // Check if offscreen doc already exists
@@ -252,10 +287,7 @@ async function tabPingRoutine() {
   } catch {
     // Content script not reachable — try re-injecting
     try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        files: ['content.js'],
-      });
+      await injectPageScripts(tabId);
       console.log('[AutoFlow] Re-injected content script via keepalive');
     } catch (err: any) {
       await logEntry('error', `Keepalive: cannot reach Flow tab — ${err.message}`);
@@ -582,14 +614,78 @@ chrome.runtime.onMessage.addListener((msg: Message, sender, sendResponse) => {
   return true; // async response
 });
 
+/**
+ * The AutoFlow Studio extension, as published.
+ *
+ * Kept beside studio-extension/STORE-LISTING.md, which is where the id comes
+ * from. It is a Web Store id, so it is stable for anyone who installed Studio
+ * the normal way and wrong for anyone running it unpacked — see OPEN_STUDIO.
+ */
+const STUDIO_EXTENSION_ID = 'knodokbipcajhdpafplmlljbaamgfkao';
+
+const STUDIO_STORE_URL =
+  `https://chromewebstore.google.com/detail/${STUDIO_EXTENSION_ID}`;
+
+/**
+ * Whether the Studio extension is installed and reachable.
+ *
+ * Asked by pinging it. Reading the tab afterwards would have been simpler,
+ * but chrome.tabs.get only fills in `url` for an extension holding the "tabs"
+ * permission — which AutoFlow does not, and which Chrome describes to users
+ * as "Read your browsing history". Sending a message to a known extension id
+ * needs no permission at all: it simply fails when nothing is listening.
+ *
+ * Studio answers this through onMessageExternal; see its service worker.
+ */
+async function studioInstalled(): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v: boolean) => { if (!settled) { settled = true; resolve(v); } };
+    /* Never hang the click on a missing extension. */
+    setTimeout(() => done(false), 1500);
+    try {
+      chrome.runtime.sendMessage(
+        STUDIO_EXTENSION_ID,
+        { type: 'AUTOFLOW_PING' },
+        (reply) => {
+          /* lastError must be read, or Chrome logs it as unchecked. */
+          const failed = !!chrome.runtime.lastError;
+          done(!failed && !!reply);
+        },
+      );
+    } catch {
+      done(false);
+    }
+  });
+}
+
 async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender): Promise<any> {
   switch (msg.type) {
     case 'OPEN_STUDIO': {
-      // Open AutoFlow Studio alongside the Flow page (side-by-side)
-      const studioUrl = chrome.runtime.getURL('studio.html');
+      /* Open the AutoFlow Studio EXTENSION alongside the Flow page.
+         Its id is fixed by the Web Store listing — recorded, and kept in step
+         with, studio-extension/STORE-LISTING.md. An unpacked copy of Studio
+         gets a different id derived from its folder, so a developer running
+         it that way lands on the store page instead; that is the documented
+         trade for not asking every user for the "management" permission just
+         to read the list of their installed extensions. */
+      const studioUrl = `chrome-extension://${STUDIO_EXTENSION_ID}/studio.html`;
 
-      // Check if Studio window is already open
-      const existingTabs = await chrome.tabs.query({ url: studioUrl });
+      /* Ask before opening. Pointing a window at an absent extension lands on
+         a chrome-error page, which tells the user nothing about what to do. */
+      if (!(await studioInstalled())) {
+        await chrome.tabs.create({ url: STUDIO_STORE_URL });
+        return { installed: false, storeUrl: STUDIO_STORE_URL };
+      }
+
+      /* Focus an already-open Studio window if we are allowed to see it.
+         Filtering tabs by URL needs the "tabs" permission, which we do not
+         ask for, so this can come back empty or throw — neither is a reason
+         to refuse to open Studio. */
+      let existingTabs: chrome.tabs.Tab[] = [];
+      try {
+        existingTabs = await chrome.tabs.query({ url: studioUrl });
+      } catch { /* not permitted — fall through and open a new one */ }
       if (existingTabs.length > 0 && existingTabs[0].windowId) {
         // Focus existing Studio window
         await chrome.windows.update(existingTabs[0].windowId, { focused: true });
@@ -629,7 +725,7 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
         height: screenHeight,
       });
 
-      return { windowId: studioWindow.id, tabId: studioWindow.tabs?.[0]?.id };
+      return { windowId: studioWindow.id, tabId: studioWindow.tabs?.[0]?.id, installed: true };
     }
 
     case 'DOWNLOAD_FILE':
@@ -1283,6 +1379,75 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
       broadcastToExtension(msg);
       return {};
 
+    /**
+     * Get a playable URL for one scanned asset.
+     *
+     * The panel cannot play a Library asset on its own: a grid tile carries a
+     * thumbnail and nothing else — no <video>, no media id — and the
+     * thumbnail host serves images only (measured: /asb/<token> returns
+     * image/jpeg, and the video variants 500). The only playable URL Flow
+     * issues is a signed flow-content.google/video/… one, and its download
+     * menu is the way to make it issue one for an existing asset.
+     *
+     * So: drive that menu, take the URL off the download Chrome is about to
+     * start, cancel it, and hand the URL back. No file is written.
+     */
+    /**
+     * Get a playable URL for one scanned asset.
+     *
+     * The work happens in the content script: a grid tile carries no <video>
+     * and no media id, and the thumbnail host serves images only, so the only
+     * playable URL is the signed one Flow fetches when its download menu is
+     * used. Watching chrome.downloads was the wrong place to stand — Flow
+     * saves a blob, so the download event carries a blob: URL and never the
+     * real one, which is why the file simply saved and nothing was captured.
+     */
+    /**
+     * Turn a tile's video URL into one the panel can actually play.
+     *
+     * Three contexts, and only this one works:
+     *
+     *   the panel        a chrome-extension:// page, so the request to
+     *                    flow.google.com is cross-site and Google's session
+     *                    cookies are withheld — the <video> sat black at 0:00
+     *   a content script same-origin with cookies, but fetch follows the
+     *                    redirect to googlevideo.com, which sends no CORS
+     *                    headers, so the fetch throws "Failed to fetch"
+     *   here             an extension worker holding host permissions is not
+     *                    subject to CORS at all, and sends the cookies
+     *
+     * What comes back is the resolved googlevideo URL, and that one is signed
+     * and needs no cookies — so the panel can play it directly, with no
+     * megabytes of base64 crossing between contexts.
+     */
+    case 'FETCH_ASSET_VIDEO': {
+      const src = msg.payload?.url;
+      if (!src) return { error: 'No video URL' };
+      try {
+        /* One byte: we want where it lands, not the file. */
+        const resp = await fetch(src, {
+          credentials: 'include',
+          headers: { Range: 'bytes=0-0' },
+        });
+        if (!resp.ok && resp.status !== 206) {
+          return { error: `Flow returned ${resp.status} for this video` };
+        }
+        const resolved = resp.url || src;
+        return { url: resolved, redirected: resp.redirected };
+      } catch (e: any) {
+        return { error: e?.message || 'Could not resolve the video URL' };
+      }
+    }
+
+    case 'GET_TILE_VIDEO_SRC':
+      return forwardToContentScript(msg);
+
+    case 'CAPTURE_ASSET_VIDEO_URL':
+      return forwardToContentScript({
+        type: 'DOWNLOAD_ASSET_FOR_PREVIEW',
+        payload: msg.payload,
+      } as Message);
+
     case 'SUPPRESS_DOWNLOADS':
       suppressDownloads = true;
       // Auto-expire after 60 seconds max (safety net)
@@ -1372,7 +1537,7 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
     case 'BATCH_API_DOWNLOAD': {
       // Direct API download — no DOM, no context menu, no library scan
       // URL pattern: /fx/api/trpc/media.getMediaUrlRedirect?name={mediaId}
-      const items: Array<{ mediaId: string; filename: string }> = msg.payload?.items || [];
+      const items: Array<{ mediaId: string; filename: string; url?: string }> = msg.payload?.items || [];
       const queueName = msg.payload?.queueName || 'AutoFlow_download';
       const results: string[] = [];
       const errors: string[] = [];
@@ -1407,7 +1572,13 @@ async function handleMessage(msg: Message, sender: chrome.runtime.MessageSender)
         });
 
         try {
-          const url = `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=${item.mediaId}`;
+          /* Use the URL the content script captured from the API when it has
+             one. flow.google.com signs its media URLs and expires them, so
+             they cannot be rebuilt from a media id the way labs.google's
+             could — that constructed form stays as the fallback, and still
+             works for anyone on the old site. */
+          const url = item.url
+            || `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=${item.mediaId}`;
           const filename = `AutoFlow/${queueName}/${item.filename}`;
 
           queueDownloadRename(filename);
@@ -1472,6 +1643,7 @@ const ourDownloadIds = new Set<number>();
 
 // Download suppression for upscale-only operations
 let suppressDownloads = false;
+
 let suppressTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // ── LLM Call handler ──
@@ -1660,6 +1832,12 @@ async function handleQueueStatusUpdate(payload: {
 }
 
 // ── Prompt status update ──
+/* Media ids this worker has already reported, so a run does not re-post the
+   same submission on every progress tick. Cleared whenever the worker is
+   recycled, which is harmless: the endpoint is idempotent, so the worst a
+   restart costs is one repeated call that creates nothing. */
+const _reportedSubmissions = new Set<string>();
+
 async function handlePromptStatusUpdate(payload: {
   queueId: string;
   promptIndex: number;
@@ -1667,6 +1845,11 @@ async function handlePromptStatusUpdate(payload: {
   error?: string;
   outputFiles?: string[];
   attempts?: number;
+  /* Flow's own id for the generation, forwarded from the content script.
+     The content script captures it and keeps it on its in-memory queue; this
+     is the only path by which it reaches the stored queue, and therefore the
+     sidepanel. Without it the submission is never reported. */
+  mediaId?: string;
   isApiAvailable?: boolean;
 }): Promise<void> {
   return withStorageLock(async () => {
@@ -1684,9 +1867,64 @@ async function handlePromptStatusUpdate(payload: {
     if (payload.error !== undefined) prompt.error = payload.error;
     if (payload.outputFiles) prompt.outputFiles = payload.outputFiles;
     if (payload.attempts !== undefined) prompt.attempts = payload.attempts;
+    /* The NEWEST id wins, and that is deliberate.
+       A retry is a fresh generation: the content script clears the old id,
+       clicks Retry, and captures a new one — and Google charges for both.
+       Keeping only the first would report the retry under an id that was
+       already counted, so the second charge would vanish. An empty value is
+       ignored rather than copied, so clearing the id locally before a retry
+       does not erase the one already reported. */
+    if (payload.mediaId) prompt.mediaId = payload.mediaId;
     queue.updatedAt = Date.now();
     await updateQueue(queue);
     console.log(`[AutoFlow BG] Prompt #${payload.promptIndex + 1} → ${payload.status}, done: ${queue.prompts.filter(p => p.status === 'done').length}/${queue.prompts.length}`);
+
+    /* Report the submission from HERE as well as from the panel.
+     *
+     * The panel is where this was written, and the panel can be closed. A
+     * queue keeps running when it is — the content script and this worker
+     * carry it — so every prompt sent with the panel shut was charged and
+     * counted as never received. Reporting here removes that dependency.
+     *
+     * Reporting twice is free: the endpoint is idempotent on the media id,
+     * so whichever call arrives second is answered `created: false` and adds
+     * no row. And the classification below matches the panel's, because the
+     * stored prompt already carries the MERGED image list — per-prompt,
+     * character and shared — so both sides call the same prompt the same
+     * type. That has to hold: prompt_type is what would be charged if
+     * METER_ON_SUBMISSION is ever switched on. */
+    if (prompt.mediaId && !_reportedSubmissions.has(prompt.mediaId)) {
+      _reportedSubmissions.add(prompt.mediaId);
+      const isFull = (prompt.images?.length || 0) > 0
+        || queue.settings?.creationType === 'frames';
+      trackSubmission({
+        mediaId: prompt.mediaId,
+        queueId: queue.id,
+        promptIndex: payload.promptIndex,
+        promptType: isFull ? 'full' : 'text',
+        mode: queue.settings?.automationMode || '',
+      }).catch(() => { /* metering must never fail a generation */ });
+    }
+
+    /* The outcome, once it settles. Same row, same reasoning as the panel:
+       a clip Flow accepted and then failed stays counted as sent. */
+    if (prompt.mediaId && (payload.status === 'done' || payload.status === 'failed')) {
+      const outcomeKey = `${prompt.mediaId}:${payload.status}`;
+      if (!_reportedSubmissions.has(outcomeKey)) {
+        _reportedSubmissions.add(outcomeKey);
+        const isFull = (prompt.images?.length || 0) > 0
+          || queue.settings?.creationType === 'frames';
+        trackSubmission({
+          mediaId: prompt.mediaId,
+          queueId: queue.id,
+          promptIndex: payload.promptIndex,
+          promptType: isFull ? 'full' : 'text',
+          mode: queue.settings?.automationMode || '',
+          outcome: payload.status as 'done' | 'failed',
+        }).catch(() => { /* metering must never fail a generation */ });
+      }
+    }
+
     broadcastToExtension({
       type: 'PROMPT_STATUS_UPDATE',
       payload: {
@@ -1778,10 +2016,7 @@ async function startQueueInTab(payload: { queueId: string; tabId?: number }): Pr
     });
   } catch (err: any) {
     // Content script might not be injected yet, inject it
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ['content.js'],
-    });
+    await injectPageScripts(tabId);
     await sleep(1000);
     await chrome.tabs.sendMessage(tabId, {
       type: 'START_QUEUE',
@@ -1967,7 +2202,7 @@ async function startChainQueue(queue: QueueObject, tabId: number, chain: Schedul
   try {
     await chrome.tabs.sendMessage(tabId, { type: 'START_QUEUE', payload: { queue } });
   } catch {
-    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+    await injectPageScripts(tabId);
     await sleep(2000);
     await chrome.tabs.sendMessage(tabId, { type: 'START_QUEUE', payload: { queue } });
   }
@@ -2206,10 +2441,7 @@ async function forwardToContentScript(msg: Message): Promise<any> {
     // Content script is not reachable (extension was reloaded or context invalidated).
     // Re-inject the content script and retry.
     try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        files: ['content.js'],
-      });
+      await injectPageScripts(tabId);
       // Give the re-injected script a moment to initialise its listener
       await sleep(500);
       const retryResponse = await chrome.tabs.sendMessage(tabId, msg);
@@ -2377,7 +2609,8 @@ chrome.downloads.onDeterminingFilename.addListener(
     if (pendingRenames.length > 0) {
       // Check the download is from a Google/Flow domain
       const url = downloadItem.url || '';
-      if (url.includes('labs.google') || url.includes('googleapis.com') || url.includes('googleusercontent.com')) {
+      if (url.includes('labs.google') || url.includes('googleapis.com')
+    || url.includes('googleusercontent.com') || url.includes('flow-content.google')) {
         const rename = pendingRenames.shift()!;
         console.log(`[AutoFlow] Renaming download to: ${rename.filename}`);
         suggest({ filename: rename.filename, conflictAction: 'uniquify' });

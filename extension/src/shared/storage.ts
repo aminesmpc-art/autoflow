@@ -130,6 +130,29 @@ export async function getSettings(): Promise<QueueSettings> {
     raw.orientation = raw.ratio === '9:16' ? 'portrait' : 'landscape';
     delete raw.ratio;
   }
+  /* One-time move off the old defaults.
+     A saved value wins over DEFAULT_SETTINGS, so changing the default alone
+     reaches new installs only — anyone who has ever opened the panel keeps
+     the old one. The two being moved are:
+
+       videoResolution '4K'          the download menu renders that row but
+                                     disables it on plans without it, so the
+                                     shipped default asked for the one
+                                     resolution that could never be clicked
+       model 'Veo 3.1 - Quality'     not what these runs use
+
+     Guarded by a marker so it happens once. A later deliberate choice of 4K
+     or Quality is then left alone, which a plain rewrite-on-read would
+     silently undo every time the settings were opened. */
+  if (!raw.defaultsMovedV1) {
+    if (raw.videoResolution === '4K') raw.videoResolution = 'Original (720p)';
+    if (raw.model === 'Veo 3.1 - Quality') raw.model = 'Veo 3.1 - Fast';
+    raw.defaultsMovedV1 = true;
+    const migrated = { ...DEFAULT_SETTINGS, ...raw };
+    await saveSettings(migrated as QueueSettings);
+    return migrated;
+  }
+
   // Ensure new fields have defaults
   return { ...DEFAULT_SETTINGS, ...raw };
 }
