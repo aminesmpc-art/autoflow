@@ -10,6 +10,7 @@
 console.log('[AutoFlow ChatGPT] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from './chatgptReply';
+import { sleepOrDomChange } from '../shared/hiddenWait';
 
 const GENERATION_TIMEOUT_MS = 6 * 60 * 1000; // ChatGPT image gen can take minutes
 // Writing a prompt is a chat round-trip, not a render — a node that hangs here
@@ -1260,7 +1261,7 @@ async function trackTextReply(
   let stableCount = 0;
 
   while (Date.now() - startedAt < TEXT_CEILING_MS) {
-    await sleep(POLL_MS);
+    await sleepOrDomChange(POLL_MS);
 
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {

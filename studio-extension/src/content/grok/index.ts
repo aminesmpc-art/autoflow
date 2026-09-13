@@ -30,6 +30,7 @@
 console.log('[AutoFlow Grok] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
+import { sleepOrDomChange } from '../shared/hiddenWait';
 
 /* Bumped whenever this adapter's completion logic changes. A content
    script already injected into an open tab is NOT replaced when the
@@ -1631,7 +1632,7 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
   let explained = false;
 
   while (Date.now() - startedAt < GENERATION_TIMEOUT_MS) {
-    await sleep(POLL_MS);
+    await sleepOrDomChange(POLL_MS);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
       nodeId,
@@ -1741,7 +1742,7 @@ async function trackVideoGeneration(nodeId: string, preexisting: Set<string>): P
   let stalled = 0;
 
   while (Date.now() - startedAt < GENERATION_TIMEOUT_MS) {
-    await sleep(POLL_MS);
+    await sleepOrDomChange(POLL_MS);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
       nodeId,
@@ -1900,7 +1901,7 @@ async function trackTextReply(
   let stableCount = 0;
 
   while (Date.now() - startedAt < TEXT_TIMEOUT_MS) {
-    await sleep(POLL_MS);
+    await sleepOrDomChange(POLL_MS);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
       nodeId,

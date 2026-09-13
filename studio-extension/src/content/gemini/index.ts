@@ -22,6 +22,7 @@
 console.log('[AutoFlow Gemini] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
+import { sleepOrDomChange } from '../shared/hiddenWait';
 
 const GENERATION_TIMEOUT_MS = 6 * 60 * 1000;
 /* A reply is finished when it STOPS GROWING, not when a clock runs out.
@@ -1250,49 +1251,6 @@ function videoSrc(v: HTMLVideoElement): string {
  * the saved workflow. The URL is what every other video path in this extension
  * passes, and the runner already knows how to fetch one when it needs frames.
  */
-/**
- * Wait, but wake on the DOM as well as on the clock.
- *
- * A hidden tab has its timers clamped to roughly a minute, so a poll loop
- * alone notices a finished clip whenever Chrome gets round to it.
- * MutationObserver is NOT throttled by visibility, so the DOM itself becomes
- * the faster of the two signals — the "DOM events plus bounded
- * reconciliation" the plan asks for, with the timer as the reconciliation
- * that still runs if the mutation is missed.
- *
- * `minMs` keeps a chatty page from spinning this into a busy loop: mutations
- * before it are ignored, and the observer only shortens the tail of the wait.
- */
-function sleepOrDomChange(ms: number, minMs = 250): Promise<void> {
-  return new Promise((resolve) => {
-    let settled = false;
-    const startedAt = Date.now();
-    let obs: MutationObserver | null = null;
-
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      try { obs?.disconnect(); } catch { /* already gone */ }
-      resolve();
-    };
-
-    const timer = setTimeout(finish, ms);
-
-    try {
-      obs = new MutationObserver(() => {
-        if (Date.now() - startedAt >= minMs) finish();
-      });
-      obs.observe(document.body, {
-        childList: true, subtree: true,
-        attributes: true, attributeFilter: ['src'],
-      });
-    } catch {
-      /* No body, or observers unavailable — the timer alone still carries it. */
-    }
-  });
-}
-
 async function trackVideo(nodeId: string, preexisting: Set<string>): Promise<void> {
   const startedAt = Date.now();
   let stableSrc = '';
@@ -1413,7 +1371,7 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
   let explained = false;
 
   while (Date.now() - startedAt < GENERATION_TIMEOUT_MS) {
-    await sleep(POLL_MS);
+    await sleepOrDomChange(POLL_MS);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
       nodeId,
@@ -1495,7 +1453,7 @@ async function trackTextReply(
   let quietPolls = 0;
 
   while (Date.now() - startedAt < TEXT_CEILING_MS) {
-    await sleep(POLL_MS);
+    await sleepOrDomChange(POLL_MS);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
       nodeId,

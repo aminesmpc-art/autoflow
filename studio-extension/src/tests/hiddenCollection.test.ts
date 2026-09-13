@@ -154,46 +154,73 @@ describe('gemini collects while hidden', () => {
     expect(trackVideo()).not.toMatch(/if \(document\.hidden\) continue/);
   });
 
-  it('wakes on the DOM as well as the clock', () => {
-    expect(trackVideo()).toMatch(/await sleepOrDomChange\(/);
-    expect(codeOnly(GEMINI)).toMatch(/new MutationObserver\(/);
+  /* Decoding IS degraded while hidden, unlike reading — and the poster
+     capture already guards on it. Asserted so the guard is not "tidied". */
+  it('still guards the poster capture on a decoded frame', () => {
+    expect(trackVideo()).toMatch(/videoWidth > 0 && .*videoHeight > 0/);
+  });
+});
+
+/**
+ * Every adapter waits the same way, so it waits well in one place.
+ *
+ * Nothing here is broken by a hidden tab on its own — they all read the DOM
+ * fine. What suffers is everything counted in POLLS rather than seconds,
+ * because Chrome clamps a hidden tab's timers to about a minute:
+ *
+ *   Grok wants three unchanged polls   three minutes, not six seconds
+ *   Z.AI, ChatGPT and Gemini want two  two minutes, not four
+ *
+ * MutationObserver is not throttled by visibility, so the DOM becomes the
+ * faster signal and the timer becomes the backstop. Gemini had this first;
+ * it now lives in content/shared so the other three have it too rather than
+ * three more copies of it.
+ */
+describe('every adapter wakes on the DOM, not only the clock', () => {
+  const WAIT = codeOnly(read('content', 'shared', 'hiddenWait.ts'));
+
+  const ADAPTERS: Array<[string, string]> = [
+    ['gemini', codeOnly(GEMINI)],
+    ['chatgpt', codeOnly(read('content', 'chatgpt', 'index.ts'))],
+    ['grok', codeOnly(read('content', 'grok', 'index.ts'))],
+    ['zai', codeOnly(read('content', 'zai', 'index.ts'))],
+  ];
+
+  for (const [name, src] of ADAPTERS) {
+    it(`${name} uses the shared wait`, () => {
+      expect(src).toMatch(/import \{ sleepOrDomChange \} from '\.\.\/shared\/hiddenWait'/);
+      expect(src).toMatch(/await sleepOrDomChange\(/);
+    });
+
+    it(`${name} has no timer-only poll left in its result loop`, () => {
+      expect(src).not.toMatch(/await sleep\(POLL_MS\)/);
+    });
+  }
+
+  it('there is exactly one implementation', () => {
+    for (const [name, src] of ADAPTERS) {
+      expect({ [name]: /new MutationObserver\(/.test(src) }).toEqual({ [name]: false });
+    }
+    expect(WAIT).toMatch(/new MutationObserver\(/);
   });
 
   /* An observer that fires on every mutation of a chatty page turns a poll
      loop into a busy loop. */
   it('will not spin on a chatty page', () => {
-    const g = codeOnly(GEMINI);
-    const at = g.indexOf('function sleepOrDomChange(');
-    expect(at).toBeGreaterThan(-1);
-    const body = g.slice(at, at + 1200);
-    expect(body).toMatch(/minMs/);
-    expect(body).toMatch(/Date\.now\(\) - startedAt >= minMs/);
+    expect(WAIT).toMatch(/minMs/);
+    expect(WAIT).toMatch(/Date\.now\(\) - startedAt >= minMs/);
   });
 
-  it('disconnects the observer rather than leaking one per poll', () => {
-    const g = codeOnly(GEMINI);
-    const at = g.indexOf('function sleepOrDomChange(');
-    const body = g.slice(at, at + 1200);
-    expect(body).toMatch(/obs\?\.disconnect\(\)/);
-    expect(body).toMatch(/clearTimeout\(timer\)/);
+  it('disconnects rather than leaking an observer per poll', () => {
+    expect(WAIT).toMatch(/obs\?\.disconnect\(\)/);
+    expect(WAIT).toMatch(/clearTimeout\(timer\)/);
   });
 
-  it('settles once, however both signals race', () => {
-    const g = codeOnly(GEMINI);
-    const at = g.indexOf('function sleepOrDomChange(');
-    const body = g.slice(at, at + 1200);
-    expect(body).toMatch(/if \(settled\) return;/);
+  it('settles once, however the two signals race', () => {
+    expect(WAIT).toMatch(/if \(settled\) return;/);
   });
 
   it('falls back to the timer where observers are unavailable', () => {
-    const g = codeOnly(GEMINI);
-    const at = g.indexOf('function sleepOrDomChange(');
-    expect(g.slice(at, at + 1200)).toMatch(/\} catch \{/);
-  });
-
-  /* Decoding IS degraded while hidden, unlike reading — and the poster
-     capture already guards on it. Asserted so the guard is not "tidied". */
-  it('still guards the poster capture on a decoded frame', () => {
-    expect(trackVideo()).toMatch(/videoWidth > 0 && .*videoHeight > 0/);
+    expect(WAIT).toMatch(/\} catch \{/);
   });
 });

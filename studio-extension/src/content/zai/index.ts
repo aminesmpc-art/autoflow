@@ -10,6 +10,7 @@
 console.log('[AutoFlow Z.AI] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
+import { sleepOrDomChange } from '../shared/hiddenWait';
 
 const TEXT_TIMEOUT_MS = 180 * 1000;
 const TEXT_QUIET_MS = 60 * 1000;
@@ -401,7 +402,7 @@ async function trackTextReply(nodeId: string, raw = false): Promise<void> {
   let stableCount = 0;
 
   while (Date.now() - startedAt < TEXT_CEILING_MS) {
-    await sleep(POLL_MS);
+    await sleepOrDomChange(POLL_MS);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
       nodeId,
