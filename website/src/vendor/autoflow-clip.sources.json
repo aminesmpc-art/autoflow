@@ -1,12 +1,12 @@
 {
   "_comment": "Written by webpack.web.js. The sources website/src/vendor/autoflow-clip.js was built from. If a test says these have moved, run `npm run build:web` in studio-extension and commit the result.",
-  "builtAt": "2026-09-04T15:44:41.373Z",
+  "builtAt": "2026-09-09T20:40:24.094Z",
   "entry": "src/web/clipWeb.ts",
   "files": {
-    "src/shared/api.ts": "5b3696c0bb1dff14",
+    "src/shared/api.ts": "3adada3e2a8d7acb",
     "src/studio/ask/clipperBrain.ts": "7dbd83f9649098bf",
-    "src/studio/ask/storyboard.ts": "37eed1680d4b6daf",
-    "src/studio/builder/plan.ts": "2db4fb5a25d7babb",
+    "src/studio/ask/storyboard.ts": "ccdade41ee3d7022",
+    "src/studio/builder/plan.ts": "c9637931dd86c1bf",
     "src/studio/clip/chunks.ts": "2c8084d33524e436",
     "src/studio/clip/clipMedia.ts": "cccf8bcfa718b9fd",
     "src/studio/clip/editSheet.ts": "93c1f5fd64585ac6",
@@ -28,7 +28,7 @@
     "src/studio/media/retime.ts": "d4138434f512efee",
     "src/studio/media/sfx.ts": "e3bfdbda184dbdb6",
     "src/studio/media/silence.ts": "aa6bee66f5eb51cc",
-    "src/types/index.ts": "edf72748ee4d597b",
+    "src/types/index.ts": "1772da0f5fe940b6",
     "src/web/clipWeb.ts": "ddeb093e71d55b21"
   }
 }

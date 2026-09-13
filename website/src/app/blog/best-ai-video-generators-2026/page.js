@@ -319,6 +319,14 @@ export default function BlogPost() {
               game-changer. No other tool on this list offers that.
             </p>
             <p>
+              Generating is only half of it. If your source material is already
+              long — a stream, a webinar, an interview — none of the generators
+              above will cut it down for you. That is a different job, and the{" "}
+              <Link href="/clipping">free AI clip maker</Link> does it: it finds
+              the moments worth posting, cuts on the spoken line, reframes to
+              9:16 and captions them.
+            </p>
+            <p>
               <a
                 href="https://chromewebstore.google.com/detail/autoflow-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc"
                 target="_blank"
