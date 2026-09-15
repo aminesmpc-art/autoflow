@@ -276,6 +276,8 @@ class DailyUsageAdmin(ModelAdmin):
         from apps.usage.models import UsageEvent
         from django.db.models import Sum, Q
 
+        from apps.plans.services import METER_ON_SUBMISSION
+
         stats = _sent_to_flow(obj.user, obj.date)
         total_charged = stats["total_charged"]
         sent = stats["sent"]
@@ -283,8 +285,36 @@ class DailyUsageAdmin(ModelAdmin):
         sent_text = stats["sent_text"]
         pending = stats["unsent"]
 
+        # ── Receipts are the headline; the ALLOWANCE owns the "/50" ──
+        #
+        # This column is "Prompts (Sent to Flow)", so `sent` is the right
+        # number to lead with. What was wrong is what it was shown AGAINST:
+        # receipts rendered over the daily limit, with a progress bar filling
+        # toward it, which reads as "this is how much allowance is gone".
+        # It is not — charging is taken up front, and the limit is enforced on
+        # free_prompts_used. Seen on a real row:
+        #
+        #   bar "5/50"          receipts, over the allowance denominator
+        #   10 done, 2 failed   twelve generations actually settled
+        #   "5 / 18 charged"    eighteen actually billed
+        #
+        # Read as allowance, that row says 45 prompts left. The true figure is
+        # 32, and check_prompt_quota stops the user at it — a line the admin
+        # panel could not show.
+        #
+        # So both numbers appear, each against the thing it actually measures:
+        # receipts stand alone, and the bar belongs to what is billed.
+        #
+        # free_prompts_used is on this very row and is authoritative, so read
+        # it rather than re-deriving it from events — the counter and the event
+        # log are allowed to drift on purpose (see
+        # StudioChargesPerNodeOnPurposeTests) and only the counter gates.
+        #
+        # When METER_ON_SUBMISSION is thrown, receipts BECOME what is billed
+        # and the two collapse into one number, as they should.
+        billed = sent if METER_ON_SUBMISSION else (obj.free_prompts_used or 0)
 
-        if sent == 0 and total_charged == 0:
+        if sent == 0 and total_charged == 0 and billed == 0:
             return format_html('<span style="color:#475569;font-size:12px;">No prompts</span>')
 
         try:
@@ -293,7 +323,7 @@ class DailyUsageAdmin(ModelAdmin):
             is_pro = False
 
         limit = FREE_TEXT_DAILY_LIMIT
-        pct = min(100, round(sent / limit * 100)) if not is_pro and limit > 0 else 0
+        pct = min(100, round(billed / limit * 100)) if not is_pro and limit > 0 else 0
 
         # Color coding
         if is_pro:
@@ -309,7 +339,8 @@ class DailyUsageAdmin(ModelAdmin):
             bar_color = "linear-gradient(90deg, #10b981, #34d399)"
             glow = "rgba(16,185,129,0.4)"
 
-        # Type chips
+        # Type chips — these stay RECEIPTS, which is what they have always
+        # meant. The bar is what was billed; the chips are what Flow received.
         chips = []
         if sent_text > 0:
             chips.append(f'<span style="color:#60a5fa;font-size:11px;">📝{sent_text}</span>')
@@ -323,6 +354,17 @@ class DailyUsageAdmin(ModelAdmin):
                 f'title="{pending} prompts charged but never sent to Flow">⏳{pending} unsent</span>'
             )
 
+        # The allowance, named. Only when it differs from the receipt count,
+        # so a tidy row stays tidy.
+        if not METER_ON_SUBMISSION and billed != sent:
+            chips.append(
+                f'<span style="color:#38bdf8;font-size:10px;opacity:0.85;" '
+                f'title="Billed against the daily limit: {billed} of {FREE_TEXT_DAILY_LIMIT}. '
+                f'Receipts from Flow: {sent}. Charging is taken up front, so the '
+                f'limit is enforced on {billed}, not on {sent}.">'
+                f'⚖{billed}/{FREE_TEXT_DAILY_LIMIT} billed</span>'
+            )
+
         chip_html = '<span style="margin-left:4px;">' + ' '.join(chips) + '</span>' if chips else ''
 
         if is_pro:
@@ -331,13 +373,13 @@ class DailyUsageAdmin(ModelAdmin):
                 '<span style="font-weight:700;font-size:14px;color:#a5b4fc;">{}</span>'
                 '{}'
                 '</div>',
-                sent, format_html(chip_html),
+                billed, format_html(chip_html),
             )
 
         return format_html(
             '<div style="min-width:160px;">'
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">'
-            '<span style="font-weight:700;font-size:13px;color:#f8fafc;">{}/{}</span>'
+            '<span style="font-weight:700;font-size:13px;color:#f8fafc;">{}</span>'
             '{}'
             '</div>'
             '<div style="height:6px;border-radius:999px;background:rgba(0,0,0,0.3);overflow:hidden;">'
@@ -345,7 +387,7 @@ class DailyUsageAdmin(ModelAdmin):
             'transition:width 0.5s ease;"></div>'
             '</div>'
             '</div>',
-            sent, limit, format_html(chip_html),
+            sent, format_html(chip_html),
             pct, bar_color, glow,
         )
 
