@@ -13,6 +13,8 @@
 
 import type { Node, Edge } from '@xyflow/react';
 
+import { WRONG_ROOM_TEMPLATE } from './wrongRoom';
+
 export interface Template {
   id: string;
   name: string;
@@ -965,6 +967,7 @@ const ANIMAL_COMEDY_BRIEF =
   + 'completely seriously, while a queue of unbothered cats waits its turn.';
 
 export const BUILTIN_TEMPLATES: Template[] = [
+  WRONG_ROOM_TEMPLATE,
   /* ─────────────── Starters ─────────────── */
   {
     id: 'tpl_simple_image',

@@ -74,6 +74,27 @@ function gridTile(): void {
   Object.defineProperty(img, 'naturalWidth', { value: 512 });
 }
 
+/** Current French Angular markup supplied from a failing live run. */
+function frenchAngularChip({ loaded, busy = false }: { loaded: boolean; busy?: boolean }): HTMLElement {
+  const host = document.createElement('div');
+  host.innerHTML = `<div class="prompt-top-row has-ingredient-bar"><flow-ingredient-bar>
+    <div class="ingredient-bar-container"><flow-ingredient-chip><flow-image-ingredient-chip>
+      <button class="chip-container" aria-label="Ingrédient" aria-busy="${busy}">
+        <div class="chip-image-wrapper"><img alt="Image de l'ingrédient" class="chip-image"
+          src="https://flow-content.google/image/b2b0057c-1851-4c79-8755-213a5e7193a1"></div>
+        <div class="hover-icon-overlay"><mat-icon class="google-symbols">cancel</mat-icon></div>
+      </button>
+    </flow-image-ingredient-chip></flow-ingredient-chip></div></flow-ingredient-bar></div>`;
+  document.body.append(host);
+  for (const el of Array.from(host.querySelectorAll<HTMLElement>('*'))) {
+    (el as any).getBoundingClientRect = box(50, 50);
+  }
+  const img = host.querySelector('img')!;
+  Object.defineProperty(img, 'complete', { value: loaded, configurable: true });
+  Object.defineProperty(img, 'naturalWidth', { value: loaded ? 512 : 0, configurable: true });
+  return host;
+}
+
 beforeEach(() => { document.body.innerHTML = ''; });
 
 describe('findAttachedIngredients', () => {
@@ -97,6 +118,11 @@ describe('findAttachedIngredients', () => {
     gridTile();
     expect(findAttachedIngredients()).toHaveLength(1);
   });
+
+  it('finds the current French Angular ingredient without relying on English labels', () => {
+    frenchAngularChip({ loaded: true });
+    expect(findAttachedIngredients()).toHaveLength(1);
+  });
 });
 
 describe('findLoadedIngredients', () => {
@@ -111,6 +137,17 @@ describe('findLoadedIngredients', () => {
   it('counts it once the image has loaded', () => {
     chip({ loaded: true });
     expect(findLoadedIngredients()).toHaveLength(1);
+  });
+
+  it('counts the current flow-content.google chip once it is loaded and not busy', () => {
+    frenchAngularChip({ loaded: true });
+    expect(findLoadedIngredients()).toHaveLength(1);
+  });
+
+  it('does not accept an Angular chip while Flow marks it busy', () => {
+    frenchAngularChip({ loaded: true, busy: true });
+    expect(findAttachedIngredients()).toHaveLength(1);
+    expect(findLoadedIngredients()).toHaveLength(0);
   });
 });
 

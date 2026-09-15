@@ -85,6 +85,10 @@ import {
   findExtendPromptInput,
   findExtendModelSelectorTrigger,
   findExtendGenerateButton,
+  promptTextOfTile,
+  ingredientChipIds,
+  ingredientChipsSettled,
+  mediaNamesOnPage,
 } from './selectors';
 import type { TileSnapshot, FailedTileInfo, TileState } from './selectors';
 import { matchesFlowText, exactMatchFlowText, closeAriaSelectors, FLOW_STRINGS } from './flowStrings';
@@ -102,6 +106,12 @@ import {
   classifyError,
   activeStatusCheck,
   getInterceptorError,
+  getCachedStatus,
+  kindSatisfies,
+  findBoundMediaIds,
+  isInterceptorStale,
+  getInterceptorBuild,
+  EXPECTED_INTERCEPTOR_BUILD,
 } from './apiHelper';
 
 /**
@@ -164,6 +174,17 @@ export class AutomationEngine {
       image when the user asked for a video is a wasted credit and a broken
       workflow, so start() aborts rather than continuing on Flow defaults. */
   private mediaTypeApplied = true;
+  /**
+   * Whether the view toggles have already been checked in this run.
+   *
+   * They are page-level and do not change between prompts, but
+   * verifyOrReapplySettings runs before every prompt and can call
+   * applyAllSettings, which ends in ensureToggles — so the tile-grid settings
+   * panel was opening over the page again on prompt after prompt. Checking
+   * once is enough; a new project resets it, because a new project resets the
+   * toggles themselves.
+   */
+  private togglesEnsured = false;
   /** Resolver for re-prompt dialog — waits for user to edit or skip a failed prompt */
   private repromptResolver: ((result: { text: string; skip: boolean }) => void) | null = null;
   /** Resolver for batch re-prompt — waits for user to edit/skip ALL failed prompts at once */
@@ -198,8 +219,11 @@ export class AutomationEngine {
     this.paused = false;
     this.currentPromptIdx = queue.currentPromptIndex || 0;
 
-    // Initialize API cache for this queue session
-    onQueueStart();
+    /* Initialise the API cache for this queue session, and tell it what this
+       queue is making. A record carries its input frames and its grid poster
+       as well as its result, so a completion is only believed when the media
+       that arrived is of the kind that was asked for. */
+    onQueueStart(queue.settings?.mediaType === 'image' ? 'image' : 'video');
 
     this.log('info', `Starting queue "${queue.name}" with ${queue.prompts.length} prompts`);
     this.sendQueueStatus('running');
@@ -222,9 +246,23 @@ export class AutomationEngine {
     }
 
     // ── Apply settings once at queue start (mode, ratio, generations, model) ──
+    /* A fresh run re-checks them once. The engine outlives a queue, so
+       without this a second run would trust a flag set during the first. */
+    this.togglesEnsured = false;
     await this.ensurePageReady();
     this.mode = this.queue.settings.automationMode || 'flow';
     this.log('info', `Automation mode: ${this.mode.toUpperCase()}`);
+
+    /* Say so before any credits are spent. A MAIN-world script only injects
+       at document_start, so a Flow tab that was already open when the
+       extension updated keeps the interceptor it started with — while the
+       panel and the content script are new. Everything looks healthy,
+       including the "API Active" badge, because both builds report alive. */
+    if (isInterceptorStale()) {
+      const msg = `This Flow tab is running an OLD interceptor (${getInterceptorBuild()}, expected ${EXPECTED_INTERCEPTOR_BUILD}). Reload the tab before running — otherwise generations can be misreported as failed and re-submitted.`;
+      this.log('warn', msg);
+      this.sendPhaseUpdate('running', 'Old interceptor in this tab — reload Flow for reliable results');
+    }
     await humanDelay(500, 1000);
     const settingsOk = await this.applyAllSettings(this.queue.settings);
     if (this.stopped) {
@@ -346,57 +384,10 @@ export class AutomationEngine {
       }
     }
 
-    // Check if recovery reload is needed (verifyAndReprompt saves status as 'queued' for recovery prompts)
-    const queuedRemaining = this.queue.prompts.filter(p => p.status === 'queued').length;
-    if (queuedRemaining > 0 && !this.stopped) {
-      if (this.mode === 'full') {
-        this.log('info', `Queue has ${queuedRemaining} unverified/cancelled prompt(s). Skipping recovery reload (Full Mode)...`);
-      } else {
-        // Save uploaded assets set and hard failed indices to storage so they survive the reload
-        try {
-          const hardFailedIndices = this.queue.prompts
-            .map((p, idx) => p.status === 'failed' ? idx : -1)
-            .filter(idx => idx !== -1);
-          await new Promise<void>((resolve, reject) => {
-            chrome.storage.local.set({
-              'autoflow_uploaded_assets': Array.from(this.uploadedAssets),
-              'autoflow_hard_failed_indices': hardFailedIndices
-            }, () => {
-              if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
-              else resolve();
-            });
-          });
-          this.log('info', `Saved ${this.uploadedAssets.size} uploaded assets and ${hardFailedIndices.length} hard-failed indices to storage.`);
-        } catch (err: any) {
-          this.log('warn', `Failed to save recovery metadata: ${err.message}`);
-        }
-
-        this.log('info', `Queue has ${queuedRemaining} unverified/cancelled prompt(s) — reloading page to run recovery...`);
-        this.sendPhaseUpdate('reloading', 'Refreshing page for recovery scan...');
-        await sleep(1500);
-        window.location.reload();
-        return;
-      }
-    }
-
-    // Recount after smart completion
-    doneCount = this.queue.prompts.filter(p => p.status === 'done').length;
-    failedCount = this.queue.prompts.filter(p => p.status === 'failed').length;
-
-    // ── Queue summary ──
-    const totalPrompts = this.queue.prompts.length;
-    const skipped = totalPrompts - doneCount - failedCount;
-    const summary = `Queue "${this.queue.name}" finished — Done: ${doneCount}, Failed: ${failedCount}, Skipped: ${skipped}`;
-
-    if (this.stopped) {
-      this.log('info', `Queue "${this.queue.name}" stopped by user. ${summary}`);
-      this.sendQueueStatus('stopped');
-    } else {
-      this.log('info', summary);
-      this.sendQueueStatus('completed');
-    }
-
-    this.sendQueueSummary(doneCount, failedCount, skipped);
+    /* No recovery reload. verifyAndReprompt now settles every prompt against
+       the page before it returns, so nothing is left 'queued' waiting for a
+       reload to resolve it — and the reload's own reason, Flow's fake
+       "cancelled" tiles, no longer exists. */
     this.state = 'IDLE';
 
     // ── Auto-scan library after queue completes ──
@@ -408,7 +399,7 @@ export class AutomationEngine {
         const isImageMode = this.queue!.settings?.mediaType === 'image';
         if (isImageMode) {
           this.log('info', `Queue complete (Full Mode, images) — using library scan for downloads...`);
-          this.sendPhaseUpdate('reloading', 'Refreshing page for library scan...');
+          this.sendPhaseUpdate('scanning', 'Scanning the library...');
           const finalDone = this.queue!.prompts.filter(p => p.status === 'done').length;
           const finalFailed = this.queue!.prompts.filter(p => p.status === 'failed').length;
           const finalSkipped = this.queue!.prompts.length - finalDone - finalFailed;
@@ -418,13 +409,12 @@ export class AutomationEngine {
             await saveRunningQueue(this.queue!, this.queue!.prompts.length, false);
             chrome.runtime.sendMessage({
               type: 'AUTO_SCAN_LIBRARY',
-              payload: { queueName: this.queue!.name, autoDownload: shouldAutoDownload, afterReload: true },
+              payload: { queueName: this.queue!.name, autoDownload: shouldAutoDownload, afterReload: false },
             }).catch(() => {});
           } catch { /* ignore */ }
           try { await clearRunningQueue(); } catch { /* ignore */ }
           globalRunLock = false;
           this.sendRunLockChanged(false);
-          window.location.reload();
           return;
         }
 
@@ -479,29 +469,28 @@ export class AutomationEngine {
           }
         }
 
-        // Fallback: reload page → library scan → context menu download (Full Mode, skipping reload)
-        if (this.mode === 'full') {
-          this.log('info', `Queue complete (Full Mode, skipping library scan reload).`);
-          const finalDone = this.queue!.prompts.filter(p => p.status === 'done').length;
-          const finalFailed = this.queue!.prompts.filter(p => p.status === 'failed').length;
-          const finalSkipped = this.queue!.prompts.length - finalDone - finalFailed;
-          this.sendQueueStatus('completed');
-          this.sendQueueSummary(finalDone, finalFailed, finalSkipped);
-          try { await clearRunningQueue(); } catch { /* ignore */ }
-          globalRunLock = false;
-          this.sendRunLockChanged(false);
-          return;
-        }
+        /* Fallback: reload → library scan → download.
+           Full mode used to stop here instead, reporting the queue complete
+           and returning with nothing downloaded — while the line above it
+           logged "falling back to library scan". Whenever the API path could
+           not produce a URL (which on this Flow is the normal case for a
+           finished video, since the signed /video/ URL only exists while the
+           generation is in flight) the run ended with no files. So it takes
+           the same fallback every other mode takes.
 
-        // Fallback: reload page → library scan → context menu download
+           Full mode downloads unconditionally — the API attempt above is not
+           gated on the auto-download setting either — so the scan it asks for
+           downloads too. */
+        const scanShouldDownload = this.mode === 'full' ? true : shouldAutoDownload;
         this.log('info', `Queue complete — reloading page for library scan...`);
-        this.sendPhaseUpdate('reloading', 'Refreshing page for library scan...');
+        this.announceCompletion();
+        this.sendPhaseUpdate('scanning', 'Scanning the library...');
         try {
           await saveRunningQueue(this.queue!, this.queue!.prompts.length, false);
           try {
             chrome.runtime.sendMessage({
               type: 'AUTO_SCAN_LIBRARY',
-              payload: { queueName: this.queue!.name, autoDownload: shouldAutoDownload, afterReload: true },
+              payload: { queueName: this.queue!.name, autoDownload: scanShouldDownload, afterReload: false },
             }).catch(() => {});
           } catch { /* ignore */ }
         } catch { /* ignore */ }
@@ -509,20 +498,30 @@ export class AutomationEngine {
         try { await clearRunningQueue(); } catch { /* ignore */ }
         globalRunLock = false;
         this.sendRunLockChanged(false);
-        window.location.reload();
         return;
 
       } else if (this.mode === 'flow') {
-        // ── FLOW MODE: reload + scan library only, NO auto-download ──
-        // User browses the library and downloads manually.
-        this.log('info', `Queue complete — reloading page for library scan (no auto-download)...`);
-        this.sendPhaseUpdate('reloading', 'Refreshing page for library scan...');
+        /* FLOW MODE: reload, scan the library, select everything and download
+           it in prompt order. This used to pass autoDownload: false and leave
+           the user to click through the grid themselves.
+
+           The ordering asked for is already what the panel does with this:
+           handleAutoScanLibrary sets the library sort to "By prompt #" and
+           selects every video, and downloadSelectedAssets issues them sorted
+           by promptNumber — descending, so prompt 1 is written last and lands
+           at the top of the browser's download list.
+
+           It still honours the auto-download setting: with that off the scan
+           happens and the grid is filled in, but nothing is written to disk. */
+        this.log('info', `Queue complete — reloading page for library scan${shouldAutoDownload ? ' and download' : ''}...`);
+        this.announceCompletion();
+        this.sendPhaseUpdate('scanning', 'Scanning the library...');
         try {
           await saveRunningQueue(this.queue!, this.queue!.prompts.length, false);
           try {
             chrome.runtime.sendMessage({
               type: 'AUTO_SCAN_LIBRARY',
-              payload: { queueName: this.queue!.name, autoDownload: false, afterReload: true },
+              payload: { queueName: this.queue!.name, autoDownload: shouldAutoDownload, afterReload: false },
             }).catch(() => {});
           } catch { /* ignore */ }
         } catch { /* ignore */ }
@@ -530,11 +529,11 @@ export class AutomationEngine {
         try { await clearRunningQueue(); } catch { /* ignore */ }
         globalRunLock = false;
         this.sendRunLockChanged(false);
-        window.location.reload();
         return;
       } else {
         // Lite mode: just finish — no library scan, no auto-download
         this.log('info', 'Queue complete (Lite mode).');
+        this.announceCompletion();
       }
     }
 
@@ -625,8 +624,10 @@ export class AutomationEngine {
         // Snapshot tile IDs BEFORE clicking Generate (for tracking which tiles belong to this prompt)
         const tileIdsBefore = new Set(getAllTileIds());
 
-        // Snapshot API cache BEFORE Generate (so we can diff later to find new entries)
-        onBeforeSubmit();
+        /* Snapshot the cache, and tell the interceptor which prompt is going
+           out — it can then tie the reply to the request that carried this
+           text, instead of the engine guessing from arrival order. */
+        onBeforeSubmit(prompt.text);
 
         // State: CLICK_GENERATE
         this.state = 'CLICK_GENERATE';
@@ -682,8 +683,9 @@ export class AutomationEngine {
             // onBeforeSubmit() — exactly the generation(s) from this click.
             if (isCacheFresh()) {
               const newEntries = getNewSubmissions();
-              if (newEntries.length > 0) {
-                const entry = newEntries[0]; // primary generation for this prompt
+              const picked = this.pickGenerationFor(prompt, idx, newEntries);
+              if (picked) {
+                const entry = picked;
 
                 // 🆕 Store mediaId on the prompt for reliable API lookups later
                 if (entry.mediaId && !prompt.mediaId) {
@@ -692,6 +694,30 @@ export class AutomationEngine {
                 }
 
                 if (entry.state === 'failed') {
+                  /* The page decides whether something failed, not the API.
+                     A failed generation renders <flow-error-tile>, with the
+                     reason written in it and a Retry button beside it. The
+                     API states no failure at all on this Flow — so an API
+                     "failed" here is either an old interceptor still running
+                     in this tab (a MAIN-world script only injects at
+                     document_start, so an open tab keeps the build it started
+                     with) or a record we misread.
+
+                     This is not hypothetical. A run of ten prompts died on
+                     the first one, three times in a minute, while the grid
+                     showed it generating at 15% and then 37% and it finished
+                     perfectly: the prompt was "a red hot air balloon drifting
+                     over a city block at dawn", and the old interceptor
+                     scanned record text for the word BLOCK. Four videos were
+                     generated and paid for, and the run reported none. */
+                  const domSays = this.domStateForPrompt(prompt.text);
+                  if (domSays === 'completed' || domSays === 'generating') {
+                    this.log('warn',
+                      `Prompt #${idx + 1}: API says failed but the grid shows it ${domSays} — trusting the page. ` +
+                      `If this repeats, the Flow tab is running an old interceptor: reload it.`);
+                    break;
+                  }
+
                   const errorClass = await this.getLlmOrFallbackErrorClass(entry.rawStatus, entry.failureReason);
                   this.log('warn',
                     `Prompt #${idx + 1}: API → FAILED (${entry.rawStatus}) [${errorClass}]`
@@ -846,10 +872,14 @@ export class AutomationEngine {
           const MEDIA_ID_INTERVAL = 2000;
           const pollStart = Date.now();
           while (Date.now() - pollStart < MEDIA_ID_POLL_MS) {
-            const finalEntries = getNewSubmissions();
-            if (finalEntries.length > 0 && finalEntries[0].mediaId) {
-              prompt.mediaId = finalEntries[0].mediaId;
-              this.log('info', `Prompt #${idx + 1}: late mediaId capture ${finalEntries[0].mediaId.slice(-8)} (${Math.round((Date.now() - pollStart) / 1000)}s)`);
+            /* Same rule as the first capture: the binding decides, then the
+               prompt text, and only then arrival order. This loop runs late,
+               when more unrelated traffic has had time to land, so taking
+               entry [0] here was the most exposed of the three. */
+            const late = this.pickGenerationFor(prompt, idx, getNewSubmissions());
+            if (late?.mediaId) {
+              prompt.mediaId = late.mediaId;
+              this.log('info', `Prompt #${idx + 1}: late mediaId capture ${late.mediaId.slice(-8)} (${Math.round((Date.now() - pollStart) / 1000)}s)`);
               break;
             }
             await sleep(MEDIA_ID_INTERVAL);
@@ -859,10 +889,10 @@ export class AutomationEngine {
             const refreshed = await activeStatusCheck();
             if (refreshed) {
               await sleep(500);
-              const freshEntries = getNewSubmissions();
-              if (freshEntries.length > 0 && freshEntries[0].mediaId) {
-                prompt.mediaId = freshEntries[0].mediaId;
-                this.log('info', `Prompt #${idx + 1}: mediaId captured via active refresh ${freshEntries[0].mediaId.slice(-8)}`);
+              const fresh = this.pickGenerationFor(prompt, idx, getNewSubmissions());
+              if (fresh?.mediaId) {
+                prompt.mediaId = fresh.mediaId;
+                this.log('info', `Prompt #${idx + 1}: mediaId captured via active refresh ${fresh.mediaId.slice(-8)}`);
               }
             } else {
               const errMsg = getInterceptorError();
@@ -876,11 +906,19 @@ export class AutomationEngine {
         return;
 
       } catch (err: any) {
-        // Guard: only REAL safety/policy errors skip retry.
-        // "cancelled" is a FAKE transient state — DO NOT skip retry for it.
+        /* Only a real policy refusal skips the retry; anything else is worth
+           another attempt.
+
+           There is no "cancelled" state on this Flow — a failed generation
+           renders flow-error-tile with a reason and a Retry button, and that
+           is the whole vocabulary. The fake-cancel handling that used to live
+           here treated any message containing "generation failed" as a
+           cancel, announced "Google cancelled prompt #N (usually fake)", and
+           retried after 3 seconds instead of backing off. Fed by one wrong
+           API failure it re-submitted the same prompt three times in a
+           minute, generating and charging for four copies of a video it then
+           reported as none. */
         const errLower = (err.message || '').toLowerCase();
-        const isFakeCancel = errLower.includes('cancelled') || errLower.includes('canceled') ||
-          (errLower.includes('generation failed') && !errLower.includes('policies') && !errLower.includes('safety'));
 
         if (errLower.includes('safety') || errLower.includes('polic') ||
             errLower.includes('harmful') || errLower.includes('violat') ||
@@ -891,16 +929,6 @@ export class AutomationEngine {
           attempts = MAX_RETRIES + 1; // force skip — real safety block
         } else {
           attempts++;
-          // Reassure the user on fake cancels
-          if (isFakeCancel) {
-            this.log('info', `Prompt #${idx + 1}: Google showed "cancelled" — this is usually a false alarm. AutoFlow is auto-retrying...`);
-            this.sendPhaseUpdate('recovering', `Google cancelled prompt #${idx + 1} (usually fake) — auto-retrying...`);
-            // Send visible alert to sidepanel so user doesn't panic
-            chrome.runtime.sendMessage({
-              type: 'FAKE_CANCEL_ALERT',
-              payload: { promptIndex: idx + 1, attempt: attempts },
-            }).catch(() => {});
-          }
         }
         prompt.attempts = attempts;
         this.log('error', `Prompt #${idx + 1} error (attempt ${attempts}): ${err.message}`);
@@ -917,10 +945,10 @@ export class AutomationEngine {
           return;
         }
 
-        // Backoff before retry (shorter for fake cancels — they resolve fast)
-        const backoff = isFakeCancel
-          ? Math.min(BACKOFF_BASE_MS, 3000)  // Max 3s for fake cancels
-          : BACKOFF_BASE_MS * Math.pow(2, attempts - 1);
+        /* Back off properly. The 3-second path existed for "fake cancels"
+           and is what turned one wrong reading into three submissions inside
+           a minute; a real transient needs time to clear, not a fast retry. */
+        const backoff = BACKOFF_BASE_MS * Math.pow(2, attempts - 1);
         this.log('info', `Retrying prompt #${idx + 1} in ${backoff / 1000}s...`);
         await sleep(backoff);
       }
@@ -1009,6 +1037,7 @@ export class AutomationEngine {
           clickedNewProject = true;
           await sleep(6000); // wait longer for new project to load — Flow creates a project + navigates
           // New projects reset toggles — ensure they're ON
+          this.togglesEnsured = false;
           await this.ensureToggles();
           continue;
         }
@@ -1199,7 +1228,7 @@ export class AutomationEngine {
     await sleep(500);
 
     // Snapshot API cache BEFORE extend Generate (for mediaId capture)
-    onBeforeSubmit();
+    onBeforeSubmit(prompt.text);
 
     // Snapshot tile IDs before
     const tileIdsBefore = new Set(getAllTileIds());
@@ -1305,6 +1334,11 @@ export class AutomationEngine {
         // Capture mediaId for this extension prompt
         if (entry && entry.mediaId && !prompt.mediaId) {
           prompt.mediaId = entry.mediaId;
+          /* Announce it here rather than leaving it to the verification pass.
+             This phase sends no status of its own, so the id would otherwise
+             wait for whatever marks the prompt done later — and an extend that
+             never reaches that pass would be charged and never counted. */
+          this.updatePromptStatus(idx, 'submitted');
           this.log('info', `Extension #${idx + 1}: captured mediaId ${entry.mediaId.slice(-8)}`);
         }
         if (entry && (entry.state === 'completed' || entry.state === 'failed')) {
@@ -1532,6 +1566,31 @@ export class AutomationEngine {
   private async applyAllSettings(settings: QueueSettings): Promise<boolean> {
     this.state = 'APPLY_SETTINGS';
 
+    /* Clear anything already open before touching the composer.
+       An Angular overlay lays a backdrop over the whole page, so while one is
+       up — the tile-grid settings panel, a tile's More options menu, a picker
+       left open by hand — the click that opens the composer's settings panel
+       never reaches it. The switch then finds no Video toggle, exhausts its
+       three attempts, and the whole queue is failed with "Could not switch
+       Flow to Video mode". Every prompt in that run died of a menu somebody
+       had left open. */
+    await this.dismissStrayOverlays();
+
+    /* Wait for the settings chip itself, not just the prompt box.
+       ensurePageReady returns as soon as findPromptInput() succeeds, and on a
+       freshly created project the editor is live before the composer's
+       settings chip is. A queue that started right after "Opening a new Flow
+       project" therefore ran the media-type switch against a composer that
+       was not finished: three attempts inside a second, no toggle found, and
+       every prompt failed with "Could not switch Flow to Video mode". */
+    for (let waited = 0; waited < 12000 && !findSettingsPanelTrigger(); waited += 400) {
+      if (this.stopped) return false;
+      await sleep(400);
+    }
+    if (!findSettingsPanelTrigger()) {
+      this.log('warn', 'Settings chip never appeared — the composer may still be loading');
+    }
+
     // Helper to open settings, find a menu item, click it.
     // Radix TabsTrigger activates on mousedown, NOT click, so we use
     // simulateClick (which dispatches pointerdown→mousedown→click).
@@ -1568,8 +1627,12 @@ export class AutomationEngine {
         // Verify the click worked by re-checking state
         const afterItem = findModeButton(label);
         if (afterItem) {
-          const afterState = afterItem.getAttribute('data-state');
-          if (afterState === 'active') {
+          /* isTabActive, not data-state alone. A Material button-toggle marks
+             itself with aria-checked and a class on the wrapper, and sets
+             data-state on neither — so a click that worked was read as one
+             that had not, and the code went on to try React handlers that do
+             not exist on an Angular control. */
+          if (isTabActive(afterItem)) {
             this.log('info', `${description} confirmed active`);
           } else {
             // Fallback: try React handler directly
@@ -1592,6 +1655,9 @@ export class AutomationEngine {
     const wantMedia: 'image' | 'video' = settings.mediaType === 'image' ? 'image' : 'video';
     const mediaLabel = wantMedia === 'image' ? 'Image' : 'Video';
     this.mediaTypeApplied = false;
+    /* Whether we actually changed the mode, as opposed to finding it already
+       right. Only a real change needs the menu torn down and rebuilt. */
+    let mediaTypeSwitched = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
       if (this.stopped) return false;
       if (!isSettingsPanelOpen()) {
@@ -1620,6 +1686,7 @@ export class AutomationEngine {
         this.mediaTypeApplied = true;
         break;
       }
+      mediaTypeSwitched = true;
       simulateClick(tab);
       await humanDelay(500, 900);
 
@@ -1636,12 +1703,19 @@ export class AutomationEngine {
     }
     if (this.stopped) return false;
 
-    // Switching Image<->Video re-renders the entire settings menu (different
-    // controls per mode). Close it and let Radix settle — every later lookup
-    // (the model dropdown especially) must see the fresh menu, not stale
-    // pre-switch nodes. applyMenuItem/setModel reopen the panel on demand.
-    await this.closeSettingsPanel();
-    await humanDelay(500, 800);
+    /* Switching Image<->Video re-renders the entire settings menu (different
+       controls per mode). Close it and let it settle — every later lookup (the
+       model dropdown especially) must see the fresh menu, not stale pre-switch
+       nodes. applyMenuItem/setModel reopen the panel on demand.
+
+       Only when the mode actually changed, though. Most runs start in the mode
+       they want — the composer remembers it between sessions — and tearing the
+       menu down to rebuild it identically cost a close, a reopen and up to
+       1.4s of settling on every single run, for nothing. */
+    if (mediaTypeSwitched) {
+      await this.closeSettingsPanel();
+      await humanDelay(500, 800);
+    }
 
     // 2. Select creation type (Ingredients / Frames) — only for VIDEO mode
     // Image mode in Flow UI doesn't have creation type options
@@ -1909,31 +1983,72 @@ export class AutomationEngine {
    * - "Show tile details" (shows generation progress and labels)
    * Opens the VIEW settings panel (gear icon), checks both, then closes.
    */
+  /**
+   * Close any Angular overlay that is currently up.
+   *
+   * Escape dispatched on document.body is what works: measured on the live
+   * page, that closes the panel within ~400ms, while the same event on
+   * `document`, a synthetic click on the backdrop, and a full synthetic
+   * pointer chain on it all leave the overlay open. The delay matters as much
+   * as the target — Angular re-renders on its next tick, so checking straight
+   * after dispatch reports failure on a dismissal that did work.
+   */
+  private async dismissStrayOverlays(): Promise<void> {
+    const isOpen = () => !!document.querySelector('.cdk-overlay-backdrop')
+      || !!document.querySelector('flow-tile-view-settings');
+
+    for (let i = 0; i < 3 && isOpen(); i++) {
+      if (this.stopped) return;
+      document.body.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
+        bubbles: true, cancelable: true,
+      }));
+      await sleep(400);
+    }
+
+    if (isOpen()) {
+      /* Not fatal on its own — say so, so that a later "could not switch"
+         is read as the consequence it is rather than a new mystery. */
+      this.log('warn', 'A Flow dialog is still open; settings may not apply');
+    }
+  }
+
   private async ensureToggles(): Promise<void> {
     if (this.stopped) return;
+    if (this.togglesEnsured) return;
 
-    // Open the VIEW settings panel (gear icon) — NOT the model settings panel
-    const opened = await this.openViewSettingsPanel();
-    if (!opened || this.stopped) return;
+    /* Claim the attempt before making it. These toggles are page-level and do
+       not change between prompts, so one attempt per run is the whole budget.
+       Setting this at the END meant every early return below — the panel not
+       opening, or the run being stopped mid-way — left it false, and the next
+       prompt opened the panel again. That is the "it keeps opening". */
+    this.togglesEnsured = true;
 
-    // Switch to Batch view mode (better for automation — shows all tiles)
-    const switched = await switchToViewMode('Batch');
-    if (switched) {
-      this.log('info', 'Switched to Batch view mode');
+    try {
+      // Open the VIEW settings panel (gear icon) — NOT the model settings panel
+      const opened = await this.openViewSettingsPanel();
+      if (!opened || this.stopped) return;
+
+      // Switch to Batch view mode (better for automation — shows all tiles)
+      const switched = await switchToViewMode('Batch');
+      if (switched) {
+        this.log('info', 'Switched to Batch view mode');
+      }
+      if (this.stopped) return;
+
+      // Re-open view settings if switchToViewMode closed it
+      if (!isViewSettingsOpen()) {
+        await this.openViewSettingsPanel();
+      }
+
+      // Check both toggles while the panel is open
+      await this.ensureToggleOn('clearPromptOnSubmit');
+      await this.ensureToggleOn('showTileDetails');
+    } finally {
+      /* Whatever happened above, the page is handed back uncovered. Every
+         return in the try used to skip this. */
+      await this.closeViewSettingsPanel();
     }
-    if (this.stopped) return;
-
-    // Re-open view settings if switchToViewMode closed it
-    if (!isViewSettingsOpen()) {
-      await this.openViewSettingsPanel();
-    }
-
-    // Check both toggles while the panel is open
-    await this.ensureToggleOn('clearPromptOnSubmit');
-    await this.ensureToggleOn('showTileDetails');
-
-    // Close the view settings panel
-    await this.closeViewSettingsPanel();
   }
 
   /**
@@ -2006,15 +2121,47 @@ export class AutomationEngine {
   /**
    * Close the VIEW settings panel.
    */
+  /**
+   * Close the tile-grid settings panel.
+   *
+   * It kept being left open across the whole run, covering the grid. Two
+   * reasons, both here:
+   *
+   *   The wait was too short. Angular removes the panel on its next tick, and
+   *   this checked after 200-400ms — measured on the live page, one Escape
+   *   lands in about 400-500ms and it regularly takes two.
+   *
+   *   The fallback did nothing. document.body.click() cannot reach the body:
+   *   a CDK overlay puts a backdrop over the page, and the backdrop is what
+   *   has to be clicked.
+   *
+   * So it uses what was measured to work — Escape on document.body, up to
+   * three times, waiting properly between — and then the backdrop itself.
+   * Note this deliberately does NOT bail out when the run has been stopped:
+   * a panel left covering the page is exactly the thing being fixed, and
+   * stopping is no reason to leave it there.
+   */
   private async closeViewSettingsPanel(): Promise<void> {
-    if (!isViewSettingsOpen() || this.stopped) return;
-    document.body.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Escape', code: 'Escape', bubbles: true, cancelable: true,
-    }));
-    await humanDelay(200, 400);
-    if (isViewSettingsOpen()) {
-      document.body.click();
-      await humanDelay(200, 400);
+    const isOpen = () => isViewSettingsOpen() || !!document.querySelector('.cdk-overlay-backdrop');
+
+    for (let i = 0; i < 3 && isOpen(); i++) {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
+        bubbles: true, cancelable: true,
+      }));
+      await sleep(450);
+    }
+
+    if (isOpen()) {
+      const backdrop = document.querySelector('.cdk-overlay-backdrop') as HTMLElement | null;
+      if (backdrop) {
+        backdrop.click();
+        await sleep(450);
+      }
+    }
+
+    if (isOpen()) {
+      this.log('warn', 'The tile settings panel would not close; it may cover part of the grid');
     }
   }
 
@@ -2433,16 +2580,77 @@ export class AutomationEngine {
         cancelable: true,
         clipboardData: dt,
       });
+      const before = new Set(ingredientChipIds());
+      const namesBefore = new Set(mediaNamesOnPage());
       promptInput.dispatchEvent(pasteEvent);
-      this.log('info', `Pasted ${newIndices.length} new image(s) — waiting 8s for upload...`);
+      this.log('info', `Pasted ${newIndices.length} image(s) — waiting for Flow to finish uploading...`);
 
-      await sleep(8000);
+      /* Wait for the upload to actually finish, rather than for eight seconds
+         to pass.
+         
+         Flow states it on each chip: aria-busy="true" while the image is
+         going up, "false" once it is there. The fixed sleep this replaces was
+         wrong in both directions — a small image is ready in about a second,
+         and a large one was still at 7% when the sleep expired and the run
+         carried on without it. */
+      const UPLOAD_TIMEOUT_MS = 120_000;
+      const started = Date.now();
+      let arrived = 0;
+      let named = 0;
 
-      // Mark as uploaded
-      for (const idx of newIndices) {
-        this.uploadedAssets.add(filenames[idx]);
+      while (Date.now() - started < UPLOAD_TIMEOUT_MS) {
+        if (this.stopped) return false;
+
+        /* Two ways of seeing the same thing, and either is enough.
+        
+           The name: Flow lists the upload as a tile in the project and prints
+           a name for it once it has taken it. Until then the tile is blank
+           with a percentage on it.
+        
+           Counted as "names that were not there before", NOT by looking for
+           the filename we pasted under. Which name Flow shows is not settled
+           — a manually uploaded picture keeps its own ("VICTORIAN
+           GENTLEMAN.jpeg"), and whether a pasted one keeps af_<id>.png has
+           not been checked. Comparing against our own name would depend on
+           that answer, and get it wrong silently: every upload would sit out
+           the whole timeout waiting for a name that never appears. Counting
+           new names does not care what any of them say.
+        
+           The chip: the composer's ingredient starts as a placeholder icon
+           and becomes the picture when the image is there.
+        
+           Deliberately NOT aria-busy, which reads "false" in both states. */
+        named = mediaNamesOnPage().filter((n) => !namesBefore.has(n)).length;
+        arrived = ingredientChipIds().filter((id: string) => !before.has(id)).length;
+
+        if (named >= newIndices.length) break;
+        if (arrived >= newIndices.length && ingredientChipsSettled()) break;
+        await sleep(500);
       }
-      this.log('info', 'New image(s) uploaded!');
+
+      const secs = Math.round((Date.now() - started) / 1000);
+      const done = Math.max(named, arrived);
+
+      if (done >= newIndices.length) {
+        for (const idx of newIndices) {
+          this.uploadedAssets.add(filenames[idx]);
+        }
+        this.log('info', `${done} image(s) finished uploading in ${secs}s`);
+      } else {
+        /* Carry on regardless — an upload that is slow is not an upload that
+           failed, and stopping the prompt over one would cost more than it
+           saves.
+        
+           What is NOT done is recording them as uploaded. That used to happen
+           unconditionally, and the damage was silent and later: the next
+           prompt took the "cached" path, searched Flow by filename for an
+           image it had never actually seen land, found nothing, and generated
+           with no reference at all. Left out of the cache, the next prompt
+           simply pastes it again. */
+        this.log('warn',
+          `${done}/${newIndices.length} image(s) confirmed after ${secs}s — continuing, ` +
+          `and they will be pasted again next time rather than searched for`);
+      }
     }
 
     // --- SEARCH cached images (one by one) ---
@@ -2454,11 +2662,21 @@ export class AutomationEngine {
       }
 
       let selectedCount = 0;
+      const notFound: number[] = [];
       for (const idx of cachedIndices) {
         if (this.stopped) return false;
         const selected = await this.searchAndSelectAsset(filenames[idx], addBtn as HTMLElement);
-        if (selected) selectedCount++;
-        else this.log('warn', `Failed to select "${filenames[idx]}"`);
+        if (selected) {
+          selectedCount++;
+        } else {
+          /* The cache said this image was in the project and it is not.
+             Forget that, so the next prompt uploads it instead of searching
+             for it again — and say so, because continuing quietly here is
+             how a prompt ends up generating with no reference image. */
+          this.uploadedAssets.delete(filenames[idx]);
+          notFound.push(idx);
+          this.log('warn', `"${filenames[idx]}" is not in the project after all — dropped from the cache`);
+        }
         await sleep(200);
       }
       this.log('info', `Searched ${selectedCount}/${cachedIndices.length} cached image(s)`);
@@ -4118,16 +4336,32 @@ private async detectAndReportFailures(): Promise<void> {
    * Build download items from completed prompts for API-based download.
    * Returns an array of { mediaId, filename } for each downloadable video.
    */
-  private buildApiDownloadItems(): Array<{ mediaId: string; filename: string }> {
+  private buildApiDownloadItems(): Array<{ mediaId: string; filename: string; url?: string }> {
     if (!this.queue) return [];
 
-    const items: Array<{ mediaId: string; filename: string }> = [];
+    const items: Array<{ mediaId: string; filename: string; url?: string }> = [];
     const isImage = this.queue.settings?.mediaType === 'image';
     const ext = isImage ? '.png' : '.mp4';
 
+    /* Why a prompt was left out, counted so the run can say it.
+    
+       An empty list is not a quiet outcome: the caller only downloads
+       `if (downloadItems.length > 0)`, so zero items means the API download
+       never runs at all — and with it, the download is never counted. A user
+       whose 20 prompts all generated and were charged for showed 0 downloads,
+       and nothing anywhere said which of these two conditions was the reason.
+    
+       They are quite different problems. "Not done" means verification never
+       confirmed the video; "no media id" means the run never tied a
+       generation to the prompt, which is the association this build
+       tightened. */
+    let notDone = 0;
+    let noMediaId = 0;
+
     for (let i = 0; i < this.queue.prompts.length; i++) {
       const p = this.queue.prompts[i];
-      if (p.status !== 'done' || !p.mediaId) continue;
+      if (p.status !== 'done') { notDone++; continue; }
+      if (!p.mediaId) { noMediaId++; continue; }
 
       // Build filename: P001_G1_short_prompt_slug.mp4 (or .png for images)
       const pNum = String(i + 1).padStart(3, '0');
@@ -4142,7 +4376,31 @@ private async detectAndReportFailures(): Promise<void> {
         ? `P${pNum}_G1_${slug}${ext}`
         : `P${pNum}_G1${ext}`;
 
-      items.push({ mediaId: p.mediaId, filename });
+      /* Carry the signed URL when the API gave us one. On flow.google.com a
+         media URL cannot be built from the id — it is signed and expires — so
+         the only working URL is the one the status response issued. Without
+         this, every Full-mode video download requested the old tRPC endpoint,
+         which that site does not serve at all. */
+      const cached = getCachedStatus(p.mediaId);
+      /* Only use a URL that matches what we are downloading. A video queue
+         given an image URL would save a still under a .mp4 name and report
+         success; with no URL the downloader falls back, which is recoverable. */
+      const cachedUrl = cached?.mediaUrl || '';
+      const usable = cachedUrl && (isImage ? !cachedUrl.includes('/video/') : cachedUrl.includes('/video/'));
+      items.push({ mediaId: p.mediaId, filename, url: usable ? cachedUrl : undefined });
+    }
+
+    if (items.length === 0) {
+      this.log('warn',
+        `Nothing to download via the API: ${notDone} prompt(s) not marked done, ` +
+        `${noMediaId} with no media id, out of ${this.queue.prompts.length}. ` +
+        `Falling back to the library scan.`);
+    } else {
+      const withUrl = items.filter((it) => it.url).length;
+      this.log('info',
+        `API download list: ${items.length} of ${this.queue.prompts.length} prompt(s), ` +
+        `${withUrl} with a signed URL ready` +
+        (notDone || noMediaId ? ` (skipped ${notDone} not done, ${noMediaId} with no media id)` : ''));
     }
 
     return items;
@@ -4155,7 +4413,26 @@ private async detectAndReportFailures(): Promise<void> {
    */
   private async verifyMediaUrl(mediaId: string): Promise<boolean> {
     try {
-      const url = `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=${mediaId}`;
+      const cached = getCachedStatus(mediaId);
+
+      /* Answering is not the same as being the right thing. An uploaded start
+         frame resolves perfectly well, and this check passed it — which is
+         how a Frames run got "COMPLETED + URL valid ✅" logged against a video
+         that was still rendering. Check what the URL is of first; the network
+         round trip below only tells us the file exists. */
+      const want: 'video' | 'image' =
+        this.queue?.settings?.mediaType === 'image' ? 'image' : 'video';
+      if (cached && !kindSatisfies(cached.mediaKind, want)) {
+        this.log('warn',
+          `Media ${mediaId.slice(0, 8)}: the API's URL is ${cached.mediaKind}, not the ${want} ` +
+          `this queue asked for — not a completion.`);
+        return false;
+      }
+
+      /* The URL the API issued, when there is one; the old constructed form
+         otherwise, which still resolves for anyone on labs.google. */
+      const url = cached?.mediaUrl
+        || `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=${mediaId}`;
       const resp: any = await new Promise((resolve) => {
         chrome.runtime.sendMessage(
           { type: 'VERIFY_MEDIA_URL', payload: { url } },
@@ -4169,6 +4446,135 @@ private async detectAndReportFailures(): Promise<void> {
       // If we can't verify, assume valid (fail-open for downloads)
       return true;
     }
+  }
+
+  /**
+   * The generation this prompt produced, chosen from what the API has said.
+   *
+   * Three sources, strongest first.
+   *
+   *   1. The interceptor's binding. It saw the request that carried this
+   *      prompt and the reply to that same request, so the tie is exact.
+   *
+   *   2. A new record whose own prompt text matches this one.
+   *
+   *   3. The first new record, which is what this used to do on its own.
+   *      Kept as a floor — a short prompt cannot be bound safely, and the old
+   *      tRPC path sends no bindings at all — but it is a guess, and it is
+   *      logged as one so a wrong id can be recognised in a run log rather
+   *      than puzzled over later.
+   *
+   * Why it matters: this one channel carries the whole application's traffic
+   * — a project load alone describes 58 generations — so "first thing after
+   * the click" routinely picked up a library scroll or a background refresh.
+   * The wrong id then flowed into the completion check, the URL verification
+   * and the download list, each reporting another generation's state as this
+   * prompt's.
+   */
+  private pickGenerationFor(
+    prompt: { text: string },
+    idx: number,
+    candidates: FlowGenerationStatus[],
+  ): FlowGenerationStatus | null {
+    /* The binding first, and BEFORE the empty-candidates return.
+     *
+     * findBoundMediaIds is the interceptor saying "this exact request carried
+     * this exact prompt text" — the most authoritative answer there is, and
+     * it needs no candidate list to be useful. It used to sit after
+     * `if (candidates.length === 0) return null`, so whenever getNewSubmissions()
+     * happened to come back empty the binding was thrown away unread and the
+     * prompt finished with no media id.
+     *
+     * Empty is not rare. getNewSubmissions() only returns what has entered the
+     * status cache SINCE onBeforeSubmit, and Flow only refreshes that cache
+     * while it is actively polling — so a prompt that settles during a quiet
+     * moment, or in a tab Chrome has backgrounded, routinely asks at a point
+     * where nothing new has landed yet. The binding was already there. */
+    const bound = findBoundMediaIds(prompt.text);
+    if (bound.length) {
+      const exact = candidates.find((c) => bound.includes(c.mediaId));
+      if (exact) return exact;
+      /* Bound, but that generation is not in this batch of new records yet.
+         The binding is still the better answer — read it from the cache. */
+      for (const id of bound) {
+        const cached = getCachedStatus(id);
+        if (cached) return cached;
+      }
+      /* Bound, and nothing cached under it yet. The ID alone is enough for
+         the one thing this is for — saying which generation was ours — so
+         report it rather than nothing. Fields the cache would have filled
+         stay empty, which every caller already tolerates: they read .mediaId
+         and treat the rest as advisory. */
+      return { mediaId: bound[0], promptText: prompt.text } as FlowGenerationStatus;
+    }
+
+    if (candidates.length === 0) return null;
+
+    const needle = prompt.text.trim().toLowerCase().slice(0, 30);
+    if (needle.length > 10) {
+      const byText = candidates.find((c) => {
+        const t = (c.promptText || '').toLowerCase();
+        return t.includes(needle) || prompt.text.toLowerCase().includes(t.slice(0, 30));
+      });
+      if (byText) return byText;
+    }
+
+    if (candidates.length > 1) {
+      this.log('warn',
+        `Prompt #${idx + 1}: ${candidates.length} new generations and none tied to this prompt — taking the first, which may be another prompt's`);
+    }
+    return candidates[0];
+  }
+
+  /**
+   * May this run re-submit a prompt to recover a failure?
+   *
+   * The two modes recover differently, and the difference is the point of
+   * having two modes:
+   *
+   *   FULL runs the project itself, so it re-prompts. Each re-submission is a
+   *        fresh generation with its own media id, which it then tracks.
+   *
+   *   FLOW runs inside the session the user is already working in, so it
+   *        presses the Retry button Flow puts on the failed tile and nothing
+   *        else. Re-prompting there would spend a credit on a generation the
+   *        user did not ask for, and land it in their project untracked.
+   *
+   * LITE never reaches the verifier at all.
+   */
+  /**
+   * What the page shows for a prompt, found by its batch's prompt text.
+   *
+   * Needed because Flow mode now refuses to re-prompt: without this, a prompt
+   * that finished while its API record still read "generating" would be
+   * routed to the retry pass, match no failed tile, and be written off as
+   * failed — turning a delivered video into a reported failure.
+   *
+   * Matching is by the batch prompt for the same reason the retry pass uses
+   * it: this Flow gives its tiles no id, and the prompt is the only thing
+   * tying a tile back to the queue.
+   */
+  private domStateForPrompt(text: string): TileState | null {
+    const needle = text.trim().toLowerCase().slice(0, 80);
+    if (needle.length <= 10) return null;
+
+    let best: TileState | null = null;
+    for (const card of findAssetCards()) {
+      const batchPrompt = promptTextOfTile(card).trim().toLowerCase();
+      if (!batchPrompt) continue;
+      if (!batchPrompt.includes(needle) && !needle.includes(batchPrompt)) continue;
+
+      const state = getTileState(card);
+      /* A batch holds several generations of one prompt. One good tile is
+         enough, so completed wins outright; otherwise keep looking. */
+      if (state === 'completed') return 'completed';
+      if (!best || best === 'unknown') best = state;
+    }
+    return best;
+  }
+
+  private canReprompt(): boolean {
+    return this.mode === 'full';
   }
 
   private async verifyAndReprompt(): Promise<void> {
@@ -4363,6 +4769,23 @@ private async detectAndReportFailures(): Promise<void> {
             }
 
           } else if (apiMatch.state === 'failed') {
+            /* The page decides, here as in processPrompt. This is the branch
+               that marked "a blue crane lifting a safety barrier" and
+               "orange autumn leaves rejected by the wind" as policy refusals
+               with no retry, while both videos sat finished in the grid —
+               the words SAFETY and REJECTED are what classifyError reads. */
+            const domSays = this.domStateForPrompt(p.text);
+            if (domSays === 'completed' || domSays === 'generating') {
+              this.log('warn',
+                `Prompt #${i + 1}: API says failed but the grid shows it ${domSays} — trusting the page`);
+              if (domSays === 'completed') {
+                this.updatePromptStatus(i, 'done');
+                apiConfirmedDone++;
+              }
+              pendingVerificationCount--;
+              continue;
+            }
+
             const errorClass = await this.getLlmOrFallbackErrorClass(apiMatch.rawStatus, apiMatch.failureReason);
             if (errorClass === 'safety' || errorClass === 'quota') {
               this.updatePromptStatus(i, 'failed', `API: ${apiMatch.rawStatus} [${errorClass}]`);
@@ -4447,64 +4870,24 @@ private async detectAndReportFailures(): Promise<void> {
             // This happens when activeStatusCheck fails and we're reading old data.
             let routedToRetry = false;
 
-            // FIX 5: Per-prompt tile check instead of global allTilesSettled().
-            // Check if THIS prompt's specific tiles have settled, not ALL tiles on page.
-            // This prevents one slow prompt from blocking routing for all others.
-            if (p.tileIds && p.tileIds.length > 0) {
-              const promptTileStates = checkTileStates(p.tileIds);
-              const promptTilesSettled = promptTileStates.generating === 0;
-              if (promptTilesSettled && (promptTileStates.failed > 0 || promptTileStates.completed > 0)) {
-                this.log('info', `Prompt #${i + 1}: API says "${apiMatch.state}" but prompt's tiles settled (✓${promptTileStates.completed} ✗${promptTileStates.failed}) — routing to retry`);
-                toRetryViaDom.push(i);
-                pendingVerificationCount--;
-                routedToRetry = true;
-                continue;
-              }
-            } else {
-              // No tileIds — fall back to global check (legacy behavior)
-              const domAlreadySettled = allTilesSettled();
-              if (domAlreadySettled) {
-                this.log('info', `Prompt #${i + 1}: API says "${apiMatch.state}" but DOM already settled — skipping wait, routing to retry`);
-                toRetryViaDom.push(i);
-                pendingVerificationCount--;
-                routedToRetry = true;
-                continue;
-              }
-            }
+            /* The API decides when a generation has finished. While it says
+               this one is still running, the page is NOT asked to second-
+               guess that — it is asked one question only, and that is
+               whether the generation failed, because the API never states a
+               failure.
 
-            // Specific tile check — look for the actual tile in DOM
-            const activeTiles = findAssetCards().filter(el => isVisible(el));
-            const promptNeedle = p.text.trim().toLowerCase().slice(0, 40);
-            let tileForPromptExists = false;
-            let tileIsGenerating = false;
-
-            for (const tile of activeTiles) {
-              const tileText = tile.textContent?.toLowerCase() || '';
-              const tileId = (tile as HTMLElement).dataset?.tileId || '';
-              const isMatch = (p.tileIds && p.tileIds.includes(tileId)) ||
-                              tileText.includes(promptNeedle) ||
-                              promptNeedle.includes(tileText.slice(0, 40));
-              
-              if (isMatch) {
-                tileForPromptExists = true;
-                const state = getTileState(tile);
-                if (state === 'generating') {
-                  tileIsGenerating = true;
-                }
-                break;
-              }
-            }
-
-            if (activeTiles.length > 0 && !tileForPromptExists) {
-              this.log('warn', `Prompt #${i + 1}: Tile is completely missing (cancelled/deleted in DOM) — routing to retry`);
-              toRetryViaDom.push(i);
-              pendingVerificationCount--;
-              routedToRetry = true;
-              continue;
-            }
-            
-            if (activeTiles.length > 0 && tileForPromptExists && !tileIsGenerating) {
-              this.log('info', `Prompt #${i + 1}: Tile found but is no longer generating (completed/failed in DOM) — routing to retry`);
+               What used to be here tried to catch a stale API by looking for
+               the prompt's tile in the DOM, and it could not work on this
+               Flow: it matched a tile by its own textContent, and a tile
+               contains only its error message. The prompt lives in
+               flow-batch-info, a sibling. So no tile ever matched, every
+               still-running prompt was declared "tile completely missing",
+               and it was routed to the retry pass while its video was
+               busily generating — which in FULL mode meant re-submitting it.
+               That is why a run's last prompts were the ones that broke. */
+            const domState = this.domStateForPrompt(p.text);
+            if (domState === 'failed') {
+              this.log('info', `Prompt #${i + 1}: the grid shows a failed tile — routing to the retry pass`);
               toRetryViaDom.push(i);
               pendingVerificationCount--;
               routedToRetry = true;
@@ -4568,7 +4951,12 @@ private async detectAndReportFailures(): Promise<void> {
                 pendingVerificationCount--;
                 resolvedViaDom = true;
               } else if (allFailed) {
-                if ((p.attempts || 0) < VERIFY_MAX_RETRIES) {
+                if (!this.canReprompt()) {
+                  this.updatePromptStatus(i, 'failed', 'Image failed and Flow mode does not re-prompt');
+                  this.log('warn', `Prompt #${i + 1}: image failed — Flow mode does not re-prompt ❌`);
+                  apiConfirmedFailed++;
+                  pendingVerificationCount--;
+                } else if ((p.attempts || 0) < VERIFY_MAX_RETRIES) {
                   this.log('info', `Prompt #${i + 1}: image failed (DOM) — re-submitting...`);
                   p.attempts = (p.attempts || 0) + 1;
                   await this.processPrompt(p, i);
@@ -4646,16 +5034,26 @@ private async detectAndReportFailures(): Promise<void> {
         `🔄${toRetryViaDom.length} to check DOM, ❓${noApiData} no API data, ⏳${waitingOnGeneration} still generating`
       );
 
-      // FIX 2: Break when nothing is actionable.
-      // If only 'still generating' prompts remain (waitingOnGeneration > 0), the retry wait
-      // loop after Step 3 will handle them. Don't spin 12 rounds doing nothing.
-      if (toRetryViaDom.length === 0 && pendingVerificationCount === 0) {
-        if (waitingOnGeneration > 0) {
-          this.log('info', `No actionable prompts — ${waitingOnGeneration} still generating, will be checked by retry wait loop.`);
-        } else {
-          this.log('info', 'No active/submitted prompts remaining to verify and no failed prompts to retry.');
-        }
+      /* Stop only when there is nothing left to do AND nothing left to
+         finish.
+
+         This used to break out while videos were still generating, on the
+         reasoning that "the retry wait loop after Step 3 will handle them" —
+         but Step 3 is below this break, so that loop never ran for them.
+         The verifier simply left, the summary counted whatever had landed by
+         then, and the download went with it.
+
+         That is what ended a full run at "Done! 9 videos complete" with the
+         tenth sitting at 100% in the grid: it was still generating when the
+         round found nothing else to act on, so the run walked away from a
+         video that arrived seconds later. */
+      if (toRetryViaDom.length === 0 && pendingVerificationCount === 0 && waitingOnGeneration === 0) {
+        this.log('info', 'No active/submitted prompts remaining to verify and no failed prompts to retry.');
         break;
+      }
+
+      if (toRetryViaDom.length === 0 && pendingVerificationCount === 0) {
+        this.log('info', `Nothing to retry — waiting on ${waitingOnGeneration} generation(s) still running.`);
       }
 
       // ─── Step 3: DOM retry — find failed tiles and click retry buttons ───
@@ -4691,15 +5089,22 @@ private async detectAndReportFailures(): Promise<void> {
           }
         }
 
-        // Strategy 2 (fallback): Match by prompt text — use 80 chars instead of 40
+        /* Strategy 2 (fallback): match by prompt text.
+           This reads ft.promptText — the batch's own prompt — rather than the
+           tile's textContent. On this Flow the tile contains only the error
+           message; the prompt lives in flow-batch-info beside it, so matching
+           against the tile could never hit. Strategy 1 cannot hit either
+           (tileIds is empty here), which left every failed tile unmatched. */
         if (!matchedTile) {
           const promptNeedle = prompt.text.trim().toLowerCase().slice(0, 80);
           for (const ft of failedTiles) {
-            const tileText = ft.element.textContent?.toLowerCase() || '';
-            if (promptNeedle.length > 10 && tileText.includes(promptNeedle)) {
-              matchedTile = ft;
-              break;
-            }
+            if (promptNeedle.length <= 10) break;
+            const haystack = `${ft.promptText} ${ft.element.textContent || ''}`.toLowerCase();
+            if (haystack.includes(promptNeedle)) { matchedTile = ft; break; }
+            /* Flow truncates a long prompt in the batch header, so compare the
+               other way too before giving up. */
+            const tilePrompt = ft.promptText.trim().toLowerCase();
+            if (tilePrompt.length > 10 && promptNeedle.includes(tilePrompt)) { matchedTile = ft; break; }
           }
         }
 
@@ -4714,6 +5119,29 @@ private async detectAndReportFailures(): Promise<void> {
             }
           }
           // Truly missing — tile gone + URL dead
+          if (!this.canReprompt()) {
+            /* Flow mode runs inside the user's own session and retries by
+               pressing the tile's own Retry button. With no tile there is no
+               button, and re-prompting is exactly what this mode must not do
+               — it would spend a credit on an untracked generation.
+
+               Before writing the prompt off, ask the page. It arrives here
+               whenever the API record lags behind the grid, which includes
+               the case where the generation actually finished. */
+            const domState = this.domStateForPrompt(prompt.text);
+            if (domState === 'completed') {
+              this.updatePromptStatus(idx, 'done');
+              this.log('info', `Prompt #${idx + 1}: no failed tile — the grid shows it completed ✅`);
+              continue;
+            }
+            if (domState === 'generating') {
+              this.log('info', `Prompt #${idx + 1}: still generating on the page — leaving it to the next round`);
+              continue;
+            }
+            this.updatePromptStatus(idx, 'failed', 'No tile found and Flow mode does not re-prompt');
+            this.log('warn', `Prompt #${idx + 1}: no tile found — Flow mode does not re-prompt ❌`);
+            continue;
+          }
           if ((prompt.attempts || 0) < VERIFY_MAX_RETRIES) {
             this.log('info', `Prompt #${idx + 1}: tile missing + URL dead — resubmitting from scratch...`);
             prompt.attempts = (prompt.attempts || 0) + 1;
@@ -4761,7 +5189,9 @@ private async detectAndReportFailures(): Promise<void> {
           
           // Click retry
           this.log('info', `Prompt #${idx + 1}: clicking retry button (attempt ${(prompt.attempts || 0) + 1}/3)...`);
-          onBeforeSubmit();
+          /* Retry regenerates the same prompt, so the reply to Flow's own
+             retry request still quotes it and binds the same way. */
+          onBeforeSubmit(prompt.text);
           const triggerResult = await reactTrigger(retryBtn, 'onClick');
           if (!triggerResult.success) {
             this.log('warn', `Prompt #${idx + 1}: reactTrigger failed on button, falling back to native/simulate click`);
@@ -4782,22 +5212,23 @@ private async detectAndReportFailures(): Promise<void> {
           // Capture new mediaId — try twice for reliability
           let newMediaId = '';
           for (let capture = 0; capture < 2 && !newMediaId; capture++) {
-            const newEntries = getNewSubmissions();
-            if (newEntries.length > 0) {
-              const match = newEntries.find(e => 
-                e.promptText.toLowerCase().includes(prompt.text.toLowerCase().slice(0, 30)) ||
-                prompt.text.toLowerCase().includes(e.promptText.toLowerCase().slice(0, 30))
-              );
-              if (match) {
-                newMediaId = match.mediaId;
-              }
-            }
+            /* This site already compared prompt text rather than taking the
+               first entry — it was the one capture that did. It now goes
+               through the same chooser as the others, which puts the
+               interceptor's exact binding ahead of that comparison. */
+            const match = this.pickGenerationFor(prompt, idx, getNewSubmissions());
+            if (match?.mediaId) newMediaId = match.mediaId;
             if (!newMediaId && capture === 0) {
               await sleep(3000); // Second chance after 3 more seconds
             }
           }
           if (newMediaId) {
             prompt.mediaId = newMediaId;
+            /* Announce it. The 'submitted' sent just above carried the OLD id,
+               because the retry had not been bound yet when it fired. Without
+               this second call the new id never leaves the content script, and
+               a retry Google charged for is never counted as sent. */
+            this.updatePromptStatus(idx, 'submitted');
             this.log('info', `Prompt #${idx + 1}: captured new mediaId after retry: ${newMediaId}`);
           } else {
             this.log('warn', `Prompt #${idx + 1}: could not capture mediaId after retry — will verify via DOM`);
@@ -4831,9 +5262,19 @@ private async detectAndReportFailures(): Promise<void> {
             }
           }
 
-          // URL dead or no mediaId — Truly cancelled
-          // Fall back to resubmitting from scratch!
-          this.log('info', `Prompt #${idx + 1}: Tile has no Retry button (cancelled) + URL dead — resubmitting from scratch...`);
+          /* URL dead or no mediaId. On the Flow that exists now every failed
+             tile renders flow-error-tile with a Retry button beside it, so
+             reaching here means the tile was not read correctly rather than
+             that the generation is unrecoverable — worth saying plainly in
+             the log instead of calling it "cancelled", a state this Flow no
+             longer has. */
+          if (!this.canReprompt()) {
+            this.updatePromptStatus(idx, 'failed', 'Failed tile had no Retry button');
+            this.log('warn', `Prompt #${idx + 1}: no Retry button on the failed tile — Flow mode does not re-prompt ❌`);
+            matchedTile.element.setAttribute('data-autoflow-retried', 'true');
+            continue;
+          }
+          this.log('info', `Prompt #${idx + 1}: no Retry button + URL dead — resubmitting from scratch...`);
           if ((prompt.attempts || 0) < VERIFY_MAX_RETRIES) {
             prompt.attempts = (prompt.attempts || 0) + 1;
             // FIX 4: Clear stale tracking before resubmission
@@ -4911,8 +5352,11 @@ private async detectAndReportFailures(): Promise<void> {
         }
       }
 
-      // If there are still pending/generating prompts, sleep for 15 seconds before starting the next round
-      if (pendingVerificationCount > 0 && !this.stopped && round < MAX_ROUNDS) {
+      /* Sleep before the next round while anything is outstanding —
+         including generations still running. Without waitingOnGeneration
+         here the loop would spin its remaining rounds back to back and burn
+         them in seconds, which is no better than the break it replaced. */
+      if ((pendingVerificationCount > 0 || waitingOnGeneration > 0) && !this.stopped && round < MAX_ROUNDS) {
         const SLEEP_MS = 15000; // 15 seconds
         this.log('info', `Waiting ${SLEEP_MS / 1000}s before Verification Round ${round + 1}/${MAX_ROUNDS}...`);
         await sleep(SLEEP_MS);
@@ -4945,30 +5389,37 @@ private async detectAndReportFailures(): Promise<void> {
       return p.status !== 'done' && p.status !== 'failed';
     });
 
+    /* Settle anything still unresolved against the page, here and now.
+       
+       This used to mark those prompts 'queued' and save the run for a
+       post-reload recovery pass. That pass existed for one reason — its own
+       comment says "page was reloaded to clear fake cancelled tiles" — and
+       Google has since fixed that. What it actually did was reload the tab
+       and call startQueue() to REGENERATE the prompts, which is re-prompting:
+       the one thing FLOW mode must not do, and it was the only mode that
+       reached it, since FULL already skipped the reload.
+       
+       The page has the answer by this point. The retry pass has run, so a
+       prompt is either finished, or it is not coming. */
     if (finalRecoveryIndices.length > 0 && !this.stopped) {
-      this.log('info', `${finalRecoveryIndices.length} prompt(s) need post-reload verification`);
-      this.sendPhaseUpdate('recovering', `Verifying ${finalRecoveryIndices.length} prompt(s) after reload...`);
+      this.log('info', `Settling ${finalRecoveryIndices.length} unresolved prompt(s) against the page...`);
+      this.sendPhaseUpdate('checking', `Checking ${finalRecoveryIndices.length} prompt(s) on the page...`);
+
       for (const idx of finalRecoveryIndices) {
         const p = this.queue.prompts[idx];
-        if ((p.attempts || 0) >= VERIFY_MAX_RETRIES) {
-          // Exhausted retries — mark hard failed
-          p.status = 'failed';
-          p.error = `Failed after ${VERIFY_MAX_RETRIES} retry attempts`;
-          this.updatePromptStatus(idx, 'failed', p.error);
-        } else {
-          p.status = 'queued';
-          p.error = undefined;
-          p.tileIds = [];
-          this.updatePromptStatus(idx, 'queued');
+        const domState = this.domStateForPrompt(p.text);
+
+        if (domState === 'completed') {
+          this.updatePromptStatus(idx, 'done');
+          this.log('info', `Prompt #${idx + 1}: found completed on the page ✅`);
+          continue;
         }
-      }
-      
-      const queuedRemaining = this.queue.prompts.filter(p => p.status === 'queued').length;
-      if (queuedRemaining > 0) {
-        try {
-          await saveRunningQueue(this.queue, this.queue.prompts.length, true, this.baselineTileCount);
-          this.log('info', `Saved ${queuedRemaining} unverified prompts for post-reload recovery`);
-        } catch { /* ignore */ }
+
+        p.error = domState === 'generating'
+          ? 'Still generating when the run ended'
+          : 'No finished video found on the page';
+        this.updatePromptStatus(idx, 'failed', p.error);
+        this.log('warn', `Prompt #${idx + 1}: ${p.error} ❌`);
       }
     }
 
@@ -5122,6 +5573,28 @@ private async detectAndReportFailures(): Promise<void> {
     chrome.runtime.sendMessage({ type: 'LOG', payload: entry }).catch(() => { });
   }
 
+  /**
+   * Tell the panel the run ended.
+   *
+   * Only two paths ever did — full mode with images, and the API-download
+   * shortcut — so a queue that finished any OTHER way stayed 'running' in the
+   * panel forever. The card read RUNNING at 3/3 and 100%, and since the panel
+   * clears `state.isRunning` on this message alone, the next batch could not
+   * start either. The run lock in this script was already released; the panel
+   * simply never heard that the queue was done.
+   *
+   * Sent before the library scan, matching where the images path already puts
+   * it: generating IS finished at this point, and the scan is a post-step that
+   * should not hold the next run hostage.
+   */
+  private announceCompletion(): void {
+    if (!this.queue || this.stopped) return;
+    const done = this.queue.prompts.filter(p => p.status === 'done').length;
+    const failed = this.queue.prompts.filter(p => p.status === 'failed').length;
+    this.sendQueueStatus('completed');
+    this.sendQueueSummary(done, failed, this.queue.prompts.length - done - failed);
+  }
+
   private sendQueueStatus(status: string, promptIndex?: number): void {
     chrome.runtime.sendMessage({
       type: 'QUEUE_STATUS_UPDATE',
@@ -5134,7 +5607,44 @@ private async detectAndReportFailures(): Promise<void> {
     }).catch(() => { });
   }
 
+  /**
+   * Last chance to say which generation this prompt was.
+   *
+   * A receipt exists only where a media id does, and a media id is captured in
+   * four places — all of which need the interceptor to have bound the
+   * generation at that moment. A prompt reaches `done` from TWENTY-THREE
+   * places, most of them DOM verification that needs no id at all.
+   *
+   * Those two preconditions are not the same, and the gap between them is
+   * visible in production: an account with twelve prompts settled done or
+   * failed and five receipts. The other seven were charged up front, finished
+   * correctly, and are counted as "charged, never received" — blaming the Flow
+   * pipeline for a bookkeeping miss on our side.
+   *
+   * Reading the cache once more here closes most of it. No network: this is
+   * the same chooser the capture sites use, over data the interceptor has
+   * already relayed, so it costs a map lookup and cannot fail a generation.
+   */
+  private bindMediaIdIfMissing(idx: number): void {
+    const prompt = this.queue?.prompts[idx];
+    if (!prompt || prompt.mediaId) return;
+    try {
+      const picked = this.pickGenerationFor(prompt, idx, getNewSubmissions());
+      if (picked?.mediaId) {
+        prompt.mediaId = picked.mediaId;
+        this.log('info',
+          `Prompt #${idx + 1}: bound mediaId ${picked.mediaId.slice(-8)} as it settled — `
+          + 'it would have gone unreported otherwise');
+      }
+    } catch { /* never let bookkeeping break a run */ }
+  }
+
   private updatePromptStatus(idx: number, status: string, error?: string, outputFiles?: string[]): void {
+    /* Before the message is built, because the id it carries is read below.
+       Terminal states only: a prompt still running has every later chance to
+       bind one, and guessing early is how the wrong generation gets claimed. */
+    if (status === 'done' || status === 'failed') this.bindMediaIdIfMissing(idx);
+
     if (this.queue) {
       this.queue.prompts[idx].status = status as any;
       if (error !== undefined) this.queue.prompts[idx].error = error;
@@ -5149,6 +5659,12 @@ private async detectAndReportFailures(): Promise<void> {
         error,
         outputFiles,
         attempts: this.queue?.prompts[idx]?.attempts,
+        /* The id Flow returned for this generation, if it was captured.
+           It lives on the in-memory queue here and nowhere else — this
+           content script never writes to storage — so it has to travel on
+           the status message or the sidepanel never learns the prompt was
+           actually accepted. */
+        mediaId: this.queue?.prompts[idx]?.mediaId,
         credits: getRemainingCredits(),
         isApiAvailable: isApiAvailable(),
       },

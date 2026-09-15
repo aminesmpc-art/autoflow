@@ -65,7 +65,17 @@ const UPLOAD_COMMAND = 'upload, finalize';
 
 /** The project a Flow URL is pointing at, or '' when it is not a project page. */
 export function projectIdFromUrl(href: string = location.href): string {
-  const m = /\/fx\/tools\/flow\/project\/([A-Za-z0-9-]+)/.exec(href);
+  /* Two shapes, because Google moved Flow and did not keep the path.
+
+       labs.google/fx/tools/flow/project/<id>      the original
+       flow.google.com/project/<id>               where it lives now
+
+     Matching only the first returned '' on the new host, and an empty project
+     id is not a small failure here: uploadToLibrary refuses without one, so
+     the upload reported that it could not find a project on a page that was
+     sitting inside one. */
+  const m = /^https?:\/\/(?:labs\.google\/fx\/tools\/flow|flow\.google\.com)\/project\/([A-Za-z0-9-]+)/
+    .exec(href);
   return m ? m[1] : '';
 }
 

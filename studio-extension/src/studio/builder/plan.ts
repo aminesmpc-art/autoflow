@@ -25,7 +25,7 @@ import { validateTemplate, isRunnableType } from '../templates/validate';
 import type { Template } from '../templates';
 
 /** What a plan may ask for. One name per node type the canvas can draw. */
-export type PlanStepType = 'image' | 'generate' | 'extend' | 'frame' | 'agent' | 'story' | 'cut';
+export type PlanStepType = 'image' | 'generate' | 'extend' | 'frame' | 'agent' | 'story' | 'chief' | 'cut';
 
 export interface PlanStep {
   id: string;
@@ -249,7 +249,7 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
   }
   if (problems.length) return { template: null, problems };
 
-  const TYPES: PlanStepType[] = ['image', 'generate', 'extend', 'frame', 'agent', 'story', 'cut'];
+  const TYPES: PlanStepType[] = ['image', 'generate', 'extend', 'frame', 'agent', 'story', 'chief', 'cut'];
   for (const s of byId.values()) {
     if (!TYPES.includes(s.type)) {
       problems.push(`Step "${s.id}" has type "${s.type}"; use one of ${TYPES.join(', ')}.`);
@@ -323,6 +323,24 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
     }
     for (const input of s.inputs || []) {
       if (!byId.has(input)) problems.push(`Step "${s.id}" takes input "${input}", which is not a step.`);
+    }
+    if (s.type === 'chief') {
+      const consumers = Array.from(byId.values())
+        .filter((candidate) => (candidate.inputs || []).includes(s.id));
+      const directors = consumers.filter((candidate) => candidate.type === 'story');
+      if (directors.length < 2 || directors.length > 3) {
+        problems.push(
+          `Step "${s.id}" is a Director Chief with ${directors.length} child Directors; `
+          + 'connect it to two or three.',
+        );
+      }
+      const wrong = consumers.filter((candidate) => candidate.type !== 'story');
+      if (wrong.length) {
+        problems.push(
+          `Step "${s.id}" can feed only Director steps, but it feeds `
+          + wrong.map((candidate) => `"${candidate.id}"`).join(', ') + '.',
+        );
+      }
     }
   }
   if (problems.length) return { template: null, problems };
@@ -411,6 +429,37 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
       continue;
     }
 
+    if (step.type === 'chief') {
+      const y = nextY(col);
+      nodes.push({
+        id: step.id, type: 'chief', position: { x, y },
+        data: {
+          type: 'chief', label: step.label || 'Director Chief',
+          platform: step.platform || 'chatgpt', enabled: true, status: 'idle',
+        },
+      });
+      const incoming = (step.inputs || []).filter((input) => byId.has(input));
+      if (incoming.length > 1) {
+        problems.push(`Step "${step.id}" takes written text from ${incoming.length} steps; it can use one.`);
+      }
+      if (incoming.length && step.prompt) {
+        problems.push(`Step "${step.id}" has both a written-text input and its own prompt. Use one.`);
+      }
+      if (incoming.length) edge(incoming[0], step.id, 'text', 'text', '#8b5cf6');
+      if (!incoming.length && String(step.prompt || '').trim()) {
+        const promptId = `${step.id}_p`;
+        nodes.push({
+          id: promptId, type: 'prompt', position: { x: x - COL_W + 60, y: y + 40 },
+          data: { type: 'prompt', label: `${step.label || step.id} brief`, text: String(step.prompt).trim() },
+        });
+        edge(promptId, step.id, 'text', 'text', '#8b5cf6');
+      }
+      if (!incoming.length && !String(step.prompt || '').trim()) {
+        problems.push(`Step "${step.id}" has no production brief and nothing feeding it text.`);
+      }
+      continue;
+    }
+
     /* Story director node — writes all prompts across connected nodes at run time */
     if (step.type === 'story') {
       const y = nextY(col);
@@ -447,6 +496,14 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
         });
         edge(pid, step.id, 'text', 'text', '#8b5cf6');
       }
+      const incoming = (step.inputs || []).filter((input) => byId.has(input));
+      if (incoming.length > 1) {
+        problems.push(`Step "${step.id}" takes written text from ${incoming.length} steps; it can use one.`);
+      }
+      if (incoming.length && step.prompt) {
+        problems.push(`Step "${step.id}" has both a written-text input and its own prompt. Use one.`);
+      }
+      if (incoming.length) edge(incoming[0], step.id, 'text', 'text', '#8b5cf6');
       continue;
     }
 
@@ -457,7 +514,9 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
        supplies it; otherwise the plan's literal prompt becomes a prompt node.
        Both at once would give the node two text edges, and the runner reads
        one — so the wire wins and the literal is dropped, with a note. */
-    const mediaOf = (s?: PlanStep) => (s?.type === 'agent' || s?.type === 'story' ? 'text' : s?.media);
+    const mediaOf = (s?: PlanStep) => (
+      s?.type === 'agent' || s?.type === 'story' || s?.type === 'chief' ? 'text' : s?.media
+    );
     const textInputs = (step.inputs || []).filter((i) => mediaOf(byId.get(i)) === 'text');
     const mediaInputs = (step.inputs || []).filter((i) => mediaOf(byId.get(i)) !== 'text');
 

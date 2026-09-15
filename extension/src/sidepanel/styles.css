@@ -2282,6 +2282,20 @@ body {
   border-radius: var(--radius-xs);
   background: var(--bg-secondary);
 }
+
+/* Stands in for a thumbnail that is missing, so the card does not fall back
+   to the browser's broken-image icon with the label spilled across it. The
+   same shape as a real thumbnail, so the grid does not shift. */
+.af-lib-thumb-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 16/9;
+  border-radius: var(--radius-xs);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+}
 .af-lib-label {
   font-size: 10px;
   color: var(--text-muted);

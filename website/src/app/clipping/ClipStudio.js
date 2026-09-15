@@ -272,7 +272,7 @@ export default function ClipStudio() {
       if (!result.clips.length && !result.failed.length) {
         setError(
           "Nothing in that recording scored above the bar you set. Lower "
-          + "“Worth posting, above” and run it again — the reading is already paid for.",
+          + "“Minimum moment score” and run it again — the reading is already paid for.",
         );
       }
     } catch (e) {
@@ -322,15 +322,19 @@ export default function ClipStudio() {
   };
 
   const stageRows = useMemo(() => STAGE_ORDER.map((id) => {
-    const rec = run?.stages?.[id] || { status: "pending" };
-    const mark = { done: "✓", running: "…", failed: "✕", skipped: "–", pending: "○" }[rec.status] || "○";
+    const stage = run?.stages?.[id] || { status: "pending" };
+    const rec = !running && stage.status === "running" ? { ...stage, status: "stopped" } : stage;
+    const mark = { done: "✓", running: "…", failed: "✕", skipped: "–", stopped: "–", pending: "○" }[rec.status] || "○";
     return { id, rec, mark, label: STAGE_LABELS[id] };
-  }), [run]);
+  }), [run, running]);
+
+  const currentStep = clips.length && !running ? 3 : running || run ? 2 : file ? 1 : 0;
+  const formatLabel = ASPECTS.find(([value]) => value === aspect)?.[1];
 
   /* ── Screens ────────────────────────────────────────────────────── */
 
   if (loading) {
-    return <div className="clip-tool"><p className="clip-log">Checking your account…</p></div>;
+    return <div className="clip-tool clip-loading" role="status"><span className="clip-eyebrow">CLIPPING WORKSPACE</span><h2>Getting your workspace ready</h2><p className="clip-log">Checking your account…</p></div>;
   }
 
   if (ready && !ready.ok) {
@@ -346,34 +350,46 @@ export default function ClipStudio() {
     <div className="clip-tool">
       <div className="clip-tool-head">
         <div>
-          <h2>Clip a recording</h2>
+          <span className="clip-eyebrow">CLIPPING WORKSPACE</span>
+          <h2>One recording. Your next set of clips.</h2>
           <p>
-            The whole file is read once on the server. Every clip is then cut in this
-            browser — the video never leaves it a second time.
+            Upload your source, choose the output, then review the strongest moments.
           </p>
         </div>
-        {isPro !== null && (
-          <span className="clip-score">
-            {isPro ? READS_PER_DAY.pro : READS_PER_DAY.free} recording
-            {(isPro ? READS_PER_DAY.pro : READS_PER_DAY.free) === 1 ? "" : "s"} a day
-          </span>
-        )}
+        <div className="clip-allowance">
+          <span>{isPro === true ? "PRO PLAN" : isPro === false || !user ? "FREE PLAN" : "DAILY ALLOWANCE"}</span>
+          <strong>{isPro === true ? `${READS_PER_DAY.pro} recordings / day` : isPro === false || !user ? `${READS_PER_DAY.free} recording / day` : "Free 1 · Pro 10"}</strong>
+          <small>Per source recording, not per clip</small>
+        </div>
       </div>
 
+      <ol className="clip-stepper" aria-label="Clipping workflow">
+        {["Upload source", "Choose output", "Create clips", "Review & export"].map((label, index) => (
+          <li key={label} className={index === currentStep ? "active" : index < currentStep ? "complete" : ""} aria-current={index === currentStep ? "step" : undefined}>
+            <span aria-hidden="true">{index < currentStep ? "✓" : `0${index + 1}`}</span>{label}
+          </li>
+        ))}
+      </ol>
+
+      <div className="clip-source-layout">
+      <div className="clip-source-panel">
+      <div className="clip-section-title"><h3>Source video</h3><span>MP4 · MOV · WebM · MKV</span></div>
       {!file ? (
         <div
           className={`clip-drop${over ? " is-over" : ""}`}
-          onClick={() => inputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setOver(true); }}
           onDragLeave={() => setOver(false)}
           onDrop={onDrop}
         >
-          <span className="clip-drop-icon">✂️</span>
+          <svg className="clip-drop-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5" /></svg>
           <strong>Drop a recording here</strong>
-          <span className="hint">MP4, MOV, WebM or MKV · up to 500 MB and two hours</span>
+          <span className="hint">Podcasts, interviews, streams — start with the full story.</span>
+          <button type="button" className="clip-browse" onClick={() => inputRef.current?.click()}>Choose video <span aria-hidden="true">↗</span></button>
+          <span className="hint">Up to 500 MB · 2 hours maximum</span>
           <input
             ref={inputRef}
             type="file"
+            aria-label="Source video file"
             accept="video/*"
             hidden
             onChange={(e) => takeFile(e.target.files?.[0] || null)}
@@ -390,16 +406,35 @@ export default function ClipStudio() {
           {!running && (
             <button
               className="clip-mini"
-              onClick={() => { forget(); setFile(null); setDuration(null); setClips([]); }}
+              onClick={() => { forget(); setFile(null); setDuration(null); setClips([]); setRun(null); setPlan(null); setPlanned(null); setFailed([]); setError(null); setAsks(null); }}
             >
               Choose another
             </button>
           )}
         </div>
       )}
+      <p className="clip-source-note">Uploaded once for AI analysis. Clips are cut and captioned locally in this tab.</p>
+      </div>
+      <aside className="clip-output-preview" aria-label="Output settings preview">
+        <div className="clip-section-title"><h3>Your output</h3><span>Settings preview</span></div>
+        <div className="clip-preview-stage">
+          <div className={`clip-preview-frame preset-${preset}`} style={{ aspectRatio: aspect, width: `${150 * aspect}px` }}>
+            <span className="clip-preview-frame-label">{formatLabel?.split(" — ")[0]}</span>
+            <svg viewBox="0 0 80 90" fill="none" aria-hidden="true"><circle cx="40" cy="27" r="16" /><path d="M12 88V69a28 28 0 0 1 56 0v19" /></svg>
+            {captions && <p className="clip-caption-sample">Make every <em>moment</em> count.</p>}
+          </div>
+        </div>
+        <p className="clip-preview-summary">Up to <strong>{clipCount} clips</strong> · {longest}s max each</p>
+        <p className="clip-preview-disclaimer">Illustration only · actual framing and captions vary</p>
+      </aside>
+      </div>
 
       {file && !running && clips.length === 0 && (
         <>
+          <div className="clip-section-title clip-settings-heading"><div><h3>Make it yours</h3><p>Set the format and let the clipper find the moments.</p></div></div>
+          <div className="clip-format-options" role="group" aria-label="Output format">
+            {ASPECTS.map(([value, text]) => <button type="button" key={text} aria-pressed={aspect === value} onClick={() => setAspect(value)}><span className="clip-format-icon" style={{ aspectRatio: value }} aria-hidden="true" /><span>{text}</span>{aspect === value && <span aria-hidden="true">✓</span>}</button>)}
+          </div>
           <div className="clip-options">
             <div className="clip-field">
               <label htmlFor="clip-count">How many clips</label>
@@ -407,7 +442,7 @@ export default function ClipStudio() {
                 id="clip-count" type="number" min="1" max="20" value={clipCount}
                 onChange={(e) => setClipCount(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
               />
-              <span className="note">The best ones, ranked. Ten is a lot to review.</span>
+              <span className="note">Up to this many, ranked by quality.</span>
             </div>
 
             <div className="clip-field">
@@ -420,22 +455,12 @@ export default function ClipStudio() {
             </div>
 
             <div className="clip-field">
-              <label htmlFor="clip-score">Worth posting, above</label>
+              <label htmlFor="clip-score">Minimum moment score</label>
               <input
                 id="clip-score" type="number" min="0" max="100" value={minScore}
                 onChange={(e) => setMinScore(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
               />
               <span className="note">Out of 100. Below this a moment is dropped.</span>
-            </div>
-
-            <div className="clip-field">
-              <label htmlFor="clip-aspect">Shape</label>
-              <select id="clip-aspect" value={aspect} onChange={(e) => setAspect(Number(e.target.value))}>
-                {ASPECTS.map(([value, text]) => (
-                  <option key={text} value={value}>{text}</option>
-                ))}
-              </select>
-              <span className="note">A measured face track keeps the speaker in frame.</span>
             </div>
 
             <div className="clip-field">
@@ -475,7 +500,7 @@ export default function ClipStudio() {
             </label>
           </div>
 
-          <div className="clip-actions-row">
+          <div className="clip-actions-row clip-start-row">
             {/* The ask arrives here rather than in front of the tool: by this
                 point there is a file, there are settings, and there is a
                 reason to want an account. ?next= brings them back to this
@@ -483,7 +508,7 @@ export default function ClipStudio() {
                 navigation cannot carry. */}
             {user ? (
               <button className="btn btn-primary btn-lg" onClick={start} disabled={!ready?.ok}>
-                {ready ? "✂️ Find the clips" : "Loading the engine…"}
+                {ready ? "Find my clips →" : "Loading the engine…"}
               </button>
             ) : (
               <a href="/login?next=%2Fclipping" className="btn btn-primary btn-lg">
@@ -511,12 +536,14 @@ export default function ClipStudio() {
       )}
 
       {(running || run) && (
-        <>
+        <section className="clip-processing" aria-label="Processing status">
+          <div className="clip-section-title"><div><span className="clip-eyebrow">PRODUCTION STATUS</span><h3>{running ? "Finding your next highlights" : error ? "Run needs attention" : clips.length ? "Your clips are ready to review" : "Processing stopped"}</h3></div>{running && <span className="clip-live-label">In progress</span>}</div>
           <div className="clip-rail">
             {stageRows.map(({ id, rec, mark, label }) => (
               <div key={id} className={`clip-stage ${rec.status}`}>
                 <span className="mark">{mark}</span>
                 <span>{label}</span>
+                {rec.status === "stopped" && <span className="took">Stopped</span>}
                 {rec.status === "failed" && rec.error && <span className="took">{rec.error}</span>}
                 {rec.tookMs != null && rec.status === "done" && (
                   <span className="took">{(rec.tookMs / 1000).toFixed(1)}s</span>
@@ -524,23 +551,23 @@ export default function ClipStudio() {
               </div>
             ))}
             {planned != null && (
-              <div className={`clip-stage ${clips.length >= planned ? "done" : "running"}`}>
-                <span className="mark">{clips.length >= planned ? "✓" : "…"}</span>
+              <div className={`clip-stage ${clips.length >= planned ? "done" : running ? "running" : "stopped"}`}>
+                <span className="mark">{clips.length >= planned ? "✓" : running ? "…" : "–"}</span>
                 <span>Cut and encode</span>
-                <span className="took">{clips.length} of {planned}</span>
+                <span className="took">{clips.length} of {planned}{!running && clips.length < planned ? " · incomplete" : ""}</span>
               </div>
             )}
           </div>
-          <p className="clip-log">{log}</p>
+          <p className="clip-log" role="status">{log || (running ? "Keep this tab open while your clips are created." : "Review the stage details above.")}</p>
           {running && (
             <div className="clip-actions-row">
-              <button className="clip-mini" onClick={stop}>Stop</button>
+              <button className="clip-mini" onClick={stop}>Stop processing</button>
             </div>
           )}
-        </>
+        </section>
       )}
 
-      {error && <p className="clip-note error">{error}</p>}
+      {error && <p className="clip-note error" role="alert">{error}</p>}
 
       {failed.length > 0 && (
         <div className="clip-note warn">
@@ -553,6 +580,7 @@ export default function ClipStudio() {
 
       {clips.length > 0 && (
         <>
+          <div className="clip-section-title clip-results-heading"><div><span className="clip-eyebrow">YOUR HIGHLIGHTS</span><h3>{clips.length} clip{clips.length === 1 ? "" : "s"} ready{running ? " so far" : " to review"}</h3><p>Preview each cut, review its score, then download your favourites.</p></div></div>
           <div className="clip-actions-row">
             <button className="clip-mini primary" onClick={downloadAll}>
               ↓ Download all {clips.length}
@@ -568,12 +596,12 @@ export default function ClipStudio() {
           <div className="clip-results">
             {clips.map((clip) => (
               <article className="clip-card" key={clip.id}>
-                <video src={clip.url} controls preload="metadata" playsInline />
+                <div className="clip-card-media"><span className="clip-rank">#{clip.rank}</span><video src={clip.url} aria-label={clip.title || clip.hookLine || `Clip ${clip.rank}`} controls preload="metadata" playsInline /></div>
                 <div className="clip-card-body">
                   <h3 className="clip-card-title">{clip.title || clip.hookLine}</h3>
                   {clip.why && <p className="clip-card-why">{clip.why}</p>}
                   <div className="clip-card-meta">
-                    {clip.score != null && <span className="clip-score">{clip.score}</span>}
+                    {clip.score != null && <span className="clip-score">Score {clip.score}/100</span>}
                     <span>{clip.seconds.toFixed(1)}s</span>
                     <span>{mmss(clip.startSec)}–{mmss(clip.endSec)}</span>
                     <span>{clip.width}×{clip.height}</span>

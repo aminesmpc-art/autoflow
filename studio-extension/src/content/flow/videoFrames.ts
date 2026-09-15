@@ -134,7 +134,17 @@ export async function captureVideoEndFrame(
 
   try {
     for (const target of targets) {
-      await seekVideo(video, target);
+      /* Only draw where the playhead actually is. Drawing after a seek that
+         did not happen is what returned the first frame of the shot as its
+         last one — silently, because a frame came back and it looked fine. */
+      if (!await seekVideo(video, target)) {
+        logLine(
+          `Last frame: could not seek to ${target.toFixed(2)}s of ${duration.toFixed(2)}s `
+          + `(playhead sat at ${video.currentTime.toFixed(2)}s) — not drawing from there`
+        );
+        continue;
+      }
+
       const frame = await drawWhenDecodable(video);
       if (frame) {
         if (target !== targets[0]) {
@@ -165,22 +175,44 @@ function restorePreload(video: HTMLVideoElement, original: string | null): void 
   else video.preload = original as any;
 }
 
-/** Move the playhead and wait for the browser to admit it has moved. */
-export async function seekVideo(video: HTMLVideoElement, target: number): Promise<void> {
-  await new Promise<void>((resolve) => {
+/**
+ * Move the playhead, and say whether it actually moved.
+ *
+ * The boolean is the point. This used to return void and resolve the same way
+ * on a completed seek and on its own three-second timeout, so a caller could
+ * not tell them apart — it would go on to draw whatever was on screen, which
+ * on a video that never seeked is the FIRST frame.
+ *
+ * That is how a Last Frame node came back holding the opening frame of the
+ * shot: black, before the reveal, handed to the clip chained below it as the
+ * thing to continue from.
+ *
+ * The event alone is not enough either, so the position is checked against
+ * the target afterwards. Chrome fires 'seeked' for a seek it clamped to a
+ * range it actually has buffered, which on an unfetched tail can land far
+ * from where it was asked to go.
+ */
+export async function seekVideo(video: HTMLVideoElement, target: number): Promise<boolean> {
+  const fired = await new Promise<boolean>((resolve) => {
     let settled = false;
-    const finish = () => {
+    const finish = (ok: boolean) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      video.removeEventListener('seeked', finish);
-      resolve();
+      video.removeEventListener('seeked', onSeeked);
+      resolve(ok);
     };
+    const onSeeked = () => finish(true);
     // Never hang a run on a video that refuses to seek.
-    const timer = setTimeout(finish, 3000);
-    video.addEventListener('seeked', finish);
-    try { video.currentTime = target; } catch { finish(); }
+    const timer = setTimeout(() => finish(false), 3000);
+    video.addEventListener('seeked', onSeeked);
+    try { video.currentTime = target; } catch { finish(false); }
   });
+
+  if (!fired) return false;
+  /* Half a second of tolerance: a seek lands on the nearest keyframe, not on
+     the exact offset asked for. */
+  return Math.abs(video.currentTime - target) <= 0.5;
 }
 
 /**
@@ -255,10 +287,23 @@ export async function framesFromVideoBlob(
          most likely to sit in a range that will not decode in time, and half
          a second earlier is still the end of the shot. */
       for (const target of [duration - 0.05, duration - 0.3, duration - 1].filter((t) => t > 0)) {
-        await seekVideo(video, target);
+        /* Verified, as on the page path. Drawing after a seek that did not
+           happen returns the frame the playhead never left — the first one. */
+        if (!await seekVideo(video, target)) continue;
         last = await drawWhenDecodable(video);
         if (last) break;
       }
+    }
+
+    /* Falling back to the opening frame is better than an empty node, but it
+       is NOT an end frame and must not pass for one quietly. That silence is
+       how a Last Frame node came back holding the black opening of the shot,
+       and handed it to the clip chained below as the thing to continue from. */
+    if (!last && first) {
+      logLine(
+        'Last frame: could not reach the end of the clip, so the OPENING frame is '
+        + 'standing in — continuity from this node will be wrong'
+      );
     }
     return { first: first || last, last: last || first };
   } catch (e: any) {

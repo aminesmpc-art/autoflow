@@ -2,6 +2,11 @@
  * @jest-environment jsdom
  */
 
+/// <reference types="node" />
+
+import * as fs from 'fs';
+import * as path from 'path';
+
 /**
  * Why a Last Frame node came back empty.
  *
@@ -153,5 +158,60 @@ describe('capturing the last frame of a clip', () => {
     v.currentTime = 0;
     await captureVideoEndFrame(v, (l) => logged.push(l));
     expect(v.currentTime).toBe(0);
+  });
+});
+
+/**
+ * A Last Frame node that came back holding the FIRST frame.
+ *
+ * The node sat next to its clip showing the black opening of the shot —
+ * before the reveal — and handed that to the clip chained below it as the
+ * thing to continue from.
+ *
+ * seekVideo returned void and resolved identically whether the seek finished
+ * or its own three-second timeout fired. The caller could not tell those
+ * apart, so it drew whatever was on screen; on a video that never seeked,
+ * that is frame 0. Nothing failed, nothing was logged, and the frame looked
+ * perfectly plausible — it was simply the wrong end of the shot.
+ *
+ * The event on its own is not proof either: Chrome fires 'seeked' for a seek
+ * it clamped to a range it actually holds, which on an unfetched tail can
+ * land far from where it was asked to go. So the position is checked too.
+ */
+describe('a frame is only taken where the playhead really is', () => {
+  const SRC = fs.readFileSync(
+    path.resolve(__dirname, '../content/flow/videoFrames.ts'), 'utf8').replace(/\r\n/g, '\n');
+  const bare = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
+  it('reports whether the seek happened', () => {
+    expect(bare).toMatch(/export async function seekVideo\([^)]*\): Promise<boolean>/);
+  });
+
+  it('does not call a timeout a successful seek', () => {
+    expect(bare).toMatch(/setTimeout\(\(\) => finish\(false\), 3000\)/);
+  });
+
+  it('checks where the playhead landed, not just that it moved', () => {
+    /* A seek is clamped to what is buffered, and 'seeked' fires for that. */
+    expect(bare).toMatch(/Math\.abs\(video\.currentTime - target\) <= 0\.5/);
+  });
+
+  it('skips the target instead of drawing from the wrong place', () => {
+    expect(bare).toMatch(/if \(!await seekVideo\(video, target\)\) \{/);
+  });
+
+  it('says so when it could not seek there', () => {
+    expect(SRC).toMatch(/not drawing from there/);
+  });
+
+  it('guards the downloaded-clip path the same way', () => {
+    /* It had the same hole, and a worse ending: `last: last || first`
+       substituted the opening frame with nothing said. */
+    expect(bare).toMatch(/if \(!await seekVideo\(video, target\)\) continue;/);
+  });
+
+  it('announces a first-frame substitution rather than passing it off', () => {
+    expect(SRC).toMatch(/OPENING frame is/);
+    expect(SRC).toMatch(/continuity from this node will be wrong/);
   });
 });

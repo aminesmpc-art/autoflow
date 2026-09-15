@@ -48,7 +48,7 @@ import {
   getActiveQueueId,
   savePromptHistory,
 } from '../shared/storage';
-import { login, loginWithGoogle, getGoogleConfig, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, getUpgradeTarget, consumeDownload, checkCanStartQueue, consumeQueueRun, ensureSession, claimReviewReward, getReviewRewardStatus, requestPasswordReset, confirmPasswordReset } from '../shared/api';
+import { login, loginWithGoogle, getGoogleConfig, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, trackSubmission, getUpgradeTarget, consumeDownload, checkCanStartQueue, consumeQueueRun, releaseQueueReservation, ensureSession, claimReviewReward, getReviewRewardStatus, requestPasswordReset, confirmPasswordReset } from '../shared/api';
 import { applyLanguage, initLanguage } from './i18n';
 
 // ================================================================
@@ -221,7 +221,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Check if a Flow tab is already open — if not, show the guidance banner
   try {
-    const flowTabs = await chrome.tabs.query({ url: ['https://labs.google/flow*', 'https://labs.google/fx*'] });
+    const flowTabs = await chrome.tabs.query({ url: ['https://labs.google/flow*', 'https://labs.google/fx*', 'https://flow.google.com/*'] });
     const banner = document.getElementById('flow-tab-banner');
     if (banner && flowTabs.length === 0) {
       banner.style.display = 'flex';
@@ -1572,7 +1572,21 @@ async function addToQueue() {
       // Fail-closed: API couldn't be reached
       showToast('Could not verify your usage. Check your connection and try again.', 'error');
     } else {
-      showToast(`Daily ${promptType === 'full' ? 'full-feature' : 'text'} limit reached (${quota.limit}/day). Upgrade to Pro for unlimited.`, 'warning');
+      /* The dialog, not a toast. This is the ceiling the most people reach,
+         and it used to be announced by a warning that faded before it could
+         be acted on. */
+      const kind = promptType === 'full' ? 'Full-Feature Prompt' : 'Text Prompt';
+      const waiting = state.parsedPrompts.length;
+      void showLimitDialog({
+        label: kind,
+        used: quota.limit,
+        limit: quota.limit,
+        period: 'day',
+        unlocks: 'Unlimited prompts every day — text and full-feature, no daily caps.',
+        blocked: waiting > 0
+          ? `${waiting} prompt${waiting === 1 ? ' is' : 's are'} blocked until tomorrow.`
+          : undefined,
+      });
     }
     return;
   }
@@ -2499,7 +2513,16 @@ async function runQueue(queueId: string) {
   const quota = await checkCanGenerate(promptType as 'text' | 'full');
 
   if (!quota.allowed) {
-    showToast('Daily limit reached. Upgrade to Pro for unlimited.', 'warning');
+    void showLimitDialog({
+      label: promptType === 'full' ? 'Full-Feature Prompt' : 'Text Prompt',
+      used: quota.limit,
+      limit: quota.limit,
+      period: 'day',
+      unlocks: 'Unlimited prompts every day — text and full-feature, no daily caps.',
+      blocked: pendingCount > 0
+        ? `${pendingCount} queued prompt${pendingCount === 1 ? ' is' : 's are'} blocked until tomorrow.`
+        : undefined,
+    });
     state.isRunning = false;
     return;
   }
@@ -2554,7 +2577,10 @@ async function runQueue(queueId: string) {
   }
 
   // Consume the queue run server-side BEFORE starting (with per-type counts for mixed queues)
-  const consumeResult = await consumeQueueRun(mode, pendingCount, promptType as 'text' | 'full', textCount, fullCount);
+  /* The run's id goes with the claim. Under submission charging the server
+     holds this run's prompts against it rather than spending them, and needs
+     the id to hand the unused ones back when the run ends. */
+  const consumeResult = await consumeQueueRun(mode, pendingCount, promptType as 'text' | 'full', textCount, fullCount, queueId);
   if (!consumeResult.allowed) {
     showQueueLimitDialog(mode, consumeResult);
     state.isRunning = false;
@@ -2605,13 +2631,41 @@ async function runQueue(queueId: string) {
 // QUEUE LIMIT DIALOG
 // ================================================================
 
-async function showQueueLimitDialog(mode: string, result: { used: number; limit: number; remaining: number; period: string; message?: string }) {
+/* What Pro costs, named at the moment the ceiling is hit.
+   The button used to read "Upgrade to Pro" with no number at all. At $9.99
+   the price IS the argument, and leaving it out invites people to guess high
+   and dismiss — the one outcome that cannot be recovered afterwards. Keep in
+   step with the pricing page. */
+const PRO_PRICE_LABEL = '$9.99/mo';
+
+/**
+ * One dialog for every daily ceiling.
+ *
+ * It served queue-run limits only. The prompt and download ceilings — which
+ * far more people actually reach — got a toast instead: a warning that faded
+ * after a few seconds with nothing in it to click. So the strongest upgrade
+ * surface in the product was shown to the smallest group, and the largest
+ * group was told "upgrade to Pro" by a message that was gone before they
+ * could act on it.
+ */
+async function showLimitDialog(opts: {
+  /** What ran out, already decorated — "⚡ Lite Run", "Text Prompt". */
+  label: string;
+  used: number;
+  limit: number;
+  period: string;
+  /** What Pro unblocks, in this ceiling's own words rather than in general. */
+  unlocks: string;
+  /** What is blocked RIGHT NOW. Named when the caller can count it: the
+      specific number is the part that argues, not the word "unlimited". */
+  blocked?: string;
+}) {
   // Remove any existing dialog
   document.getElementById('af-queue-limit-dialog')?.remove();
 
-  const modeLabels: Record<string, string> = { lite: '⚡ Lite', flow: '🔄 Flow', full: '🚀 Full' };
-  const modeLabel = modeLabels[mode] || mode;
-  const periodLabel = result.period === 'month' ? 'this month' : 'today';
+  const modeLabel = opts.label;
+  const result = { used: opts.used, limit: opts.limit };
+  const periodLabel = opts.period === 'month' ? 'this month' : 'today';
 
   const { url: upgradeUrl, email: upgradeEmail } = await getUpgradeTarget();
 
@@ -2638,7 +2692,10 @@ async function showQueueLimitDialog(mode: string, result: { used: number; limit:
         ">${modeLabel} Limit Reached</h3>
         <p style="
           color:#94a3b8;font-size:13px;line-height:1.5;margin:0 0 16px;
-        ">You've used <span style="color:#f1f5f9;font-weight:600;">${result.used}/${result.limit}</span> ${mode} runs ${periodLabel}.</p>
+        ">You've used <span style="color:#f1f5f9;font-weight:600;">${result.used}/${result.limit}</span> ${periodLabel}.</p>
+        ${opts.blocked ? `<p style="
+          color:#fca5a5;font-size:13px;line-height:1.5;margin:-8px 0 16px;font-weight:600;
+        ">${opts.blocked}</p>` : ''}
         
         <div style="
           background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.15);
@@ -2648,7 +2705,7 @@ async function showQueueLimitDialog(mode: string, result: { used: number; limit:
             ✨ Upgrade to Pro
           </div>
           <div style="color:#cbd5e1;font-size:12px;line-height:1.4;">
-            Unlimited runs in all modes — Lite, Flow & Full. No daily caps.
+            ${opts.unlocks}
           </div>
         </div>
 
@@ -2659,7 +2716,7 @@ async function showQueueLimitDialog(mode: string, result: { used: number; limit:
           text-decoration:none;text-align:center;
           box-shadow:0 4px 15px rgba(99,102,241,0.3);
           transition:transform 0.15s,box-shadow 0.15s;
-        ">Upgrade to Pro →</a>
+        ">Upgrade to Pro — ${PRO_PRICE_LABEL} →</a>
         <button id="af-limit-free-pro-btn" style="
           display:block;width:100%;margin-top:8px;padding:10px;
           background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);
@@ -2711,6 +2768,21 @@ async function showQueueLimitDialog(mode: string, result: { used: number; limit:
 
   // Also refresh the account tab reward CTA since user just hit the limit
   checkAndShowReviewReward(false);
+}
+
+/** The run ceilings, in the wording they already had. */
+function showQueueLimitDialog(
+  mode: string,
+  result: { used: number; limit: number; remaining: number; period: string; message?: string },
+) {
+  const modeLabels: Record<string, string> = { lite: '⚡ Lite', flow: '🔄 Flow', full: '🚀 Full' };
+  return showLimitDialog({
+    label: `${modeLabels[mode] || mode} Run`,
+    used: result.used,
+    limit: result.limit,
+    period: result.period,
+    unlocks: 'Unlimited runs in all modes — Lite, Flow & Full. No daily caps.',
+  });
 }
 
 // ================================================================
@@ -3272,6 +3344,55 @@ function getSortedGroups(assets: ScannedAsset[]): [string, ScannedAsset[]][] {
   return groupArr;
 }
 
+/**
+ * A tile's picture, or a placeholder standing in for one.
+ *
+ * An <img> whose src is empty — or which points at flow.google.com, which
+ * this page cannot load — renders as a broken-image icon with the alt text
+ * spilled across the card. A thumbnail can legitimately be missing (the asset
+ * is still generating, or the grid handed over a tile with no image on it),
+ * so the missing case gets a deliberate placeholder instead of a broken one.
+ */
+/**
+ * Can this page actually display that URL?
+ *
+ * Two kinds get through. Drawn bytes always work. And a flow-content.google
+ * URL carries its own Expires/Signature, so it loads without the user's
+ * cookies — verified by opening one in a browser with no Flow session, which
+ * returned the image.
+ *
+ * Everything else is refused, in particular a flow.google.com /asb/
+ * thumbnail: that one needs the page's cookies, and handing it over is what
+ * used to render every tile as a broken icon with its label spilled across
+ * the card.
+ */
+function canRender(url: string): boolean {
+  if (!url) return false;
+  if (url.startsWith('data:')) return true;
+  return url.startsWith('https://flow-content.google/') && url.includes('Signature=');
+}
+
+function thumbHtml(asset: ScannedAsset, cls: string): string {
+  /* A tile that renders the video itself has no thumbnail to draw — an Omni
+     generation is a bare <video> with a signed flow-content.google URL and no
+     <img> anywhere. That URL carries its own authorisation, so the first
+     frame can be shown by loading the video's metadata and nothing more. */
+  const vs = (asset as any).videoSrc as string | undefined;
+  if (!canRender(asset.thumbnailUrl) && asset.mediaType === 'video' && vs && canRender(vs)) {
+    return `<video class="${cls}" src="${escapeHtml(vs)}#t=0.1" preload="metadata"
+                   muted playsinline aria-label="${escapeHtml(asset.label)}"></video>`;
+  }
+
+  if (!canRender(asset.thumbnailUrl)) {
+    return `<div class="af-lib-thumb-empty" title="${escapeHtml(asset.label)}">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" opacity="0.45">
+          <path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5z"/>
+        </svg>
+      </div>`;
+  }
+  return `<img class="${cls}" src="${escapeHtml(asset.thumbnailUrl)}" alt="${escapeHtml(asset.label)}" />`;
+}
+
 function renderLibrary() {
   const grid = $('#library-grid');
   grid.innerHTML = '';
@@ -3411,7 +3532,7 @@ function renderLibrary() {
           ${genBadge}
           ${stateBadge}
           <div class="af-lib-preview">
-            <img class="af-lib-thumb" src="${escapeHtml(asset.thumbnailUrl)}" alt="${escapeHtml(asset.label)}" />
+            ${thumbHtml(asset, 'af-lib-thumb')}
             <div class="af-lib-play-overlay">
               <svg width="36" height="36" viewBox="0 0 24 24" fill="white" opacity="0.9"><path d="M8 5v14l11-7z"/></svg>
             </div>
@@ -3443,19 +3564,58 @@ function renderLibrary() {
             <div style="width:28px;height:28px;border:3px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:af-spin 0.8s linear infinite"></div>
           `;
 
-          const videoUrl = (asset as any).videoSrc || '';
+          let videoUrl = (asset as any).videoSrc || '';
+
+          /* A signed URL dies about an hour after it was issued, and the
+             scan may have been a while ago. Treat an expired one as missing
+             so it is fetched fresh below, rather than played and failing. */
+          if (videoUrl && /[?&]Expires=(\d+)/.test(videoUrl)) {
+            const at = Number(/[?&]Expires=(\d+)/.exec(videoUrl)![1]) * 1000;
+            if (at <= Date.now()) videoUrl = '';
+          }
+
           if (!videoUrl) {
-            showToast('No video URL available');
-            playOverlay.innerHTML = `<svg width="36" height="36" viewBox="0 0 24 24" fill="white" opacity="0.9"><path d="M8 5v14l11-7z"/></svg>`;
-            return;
+            /* Either the scan read this row before Flow rendered its video,
+               or the URL it recorded has since expired. Ask the page for the
+               one the tile is holding NOW.
+               
+               Deliberately NOT the download menu. Driving that makes Flow
+               issue a URL by starting a download, which is downloading a
+               video in order to look at it. It is the right mechanism for
+               fetching a file and the wrong one for a preview. */
+            const live: any = await sendToBackground({
+              type: 'GET_TILE_VIDEO_SRC',
+              payload: { locator: asset.locator },
+            });
+            if (live?.url) {
+              videoUrl = live.url;
+              (asset as any).videoSrc = videoUrl;
+            } else {
+              showToast(live?.error || 'This tile has no video to play yet', 'warning');
+              playOverlay.innerHTML = `<svg width="36" height="36" viewBox="0 0 24 24" fill="white" opacity="0.9"><path d="M8 5v14l11-7z"/></svg>`;
+              return;
+            }
           }
 
           try {
-            // Fetch video through extension's host_permissions (bypasses CORS)
-            const resp = await fetch(videoUrl);
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            const blob = await resp.blob();
-            const blobUrl = URL.createObjectURL(blob);
+            /* Resolve it first, in the background worker.
+               The panel cannot load the flow.google.com URL itself: it is a
+               chrome-extension:// page, so that request is cross-site and
+               Google's session cookies are withheld — the player sat black at
+               0:00. The worker holds host permissions, is not subject to CORS,
+               and sends the cookies; what it hands back is the resolved
+               googlevideo URL, which is signed and needs no cookies, so this
+               element can play it. */
+            const resolved: any = await sendToBackground({
+              type: 'FETCH_ASSET_VIDEO',
+              payload: { url: videoUrl },
+            });
+            if (resolved?.url) {
+              videoUrl = resolved.url;
+              (asset as any).videoSrc = videoUrl;
+            } else if (resolved?.error) {
+              throw new Error(resolved.error);
+            }
 
             // Replace thumbnail with video element
             const thumb = preview.querySelector('.af-lib-thumb') as HTMLElement;
@@ -3463,7 +3623,7 @@ function renderLibrary() {
 
             videoEl = document.createElement('video');
             videoEl.className = 'af-lib-video';
-            videoEl.src = blobUrl;
+            videoEl.src = videoUrl;
             videoEl.controls = true;
             videoEl.autoplay = true;
             videoEl.playsInline = true;
@@ -3502,9 +3662,23 @@ function renderLibrary() {
           ${genBadge}
           ${stateBadge}
           <div class="af-lib-preview">
-            <img class="af-lib-img" src="${escapeHtml(asset.thumbnailUrl)}" alt="${escapeHtml(asset.label)}" />
+            ${thumbHtml(asset, 'af-lib-img')}
           </div>
         `;
+      }
+
+      /* A signed URL expires. When one does, swap in the placeholder rather
+         than letting the browser draw its broken-image icon — the failure
+         this whole path exists to avoid. Attached here rather than as an
+         inline onerror, which the extension's CSP refuses. */
+      const thumbEl = card.querySelector('.af-lib-thumb, .af-lib-img') as HTMLElement | null;
+      if (thumbEl) {
+        thumbEl.addEventListener('error', () => {
+          const stand = document.createElement('div');
+          stand.className = 'af-lib-thumb-empty';
+          stand.title = asset.label;
+          thumbEl.replaceWith(stand);
+        }, { once: true });
       }
 
       // Selection logic
@@ -3958,6 +4132,19 @@ function handleQueueStatusUpdate(queue: QueueObject) {
     stopKeepalivePort();  // Release service worker keepalive
     updateStatusDot('connected');
     showToast(`Queue "${queue.name}" ${queue.status}.`);
+
+    /* Hand back what this run never sent.
+     *
+     * Both endings matter, and `stopped` matters most: a run stopped after 3
+     * of 20 is precisely the case that is billed for 20 today. Under
+     * submission charging the other 17 are still held, and a hold nobody
+     * releases would shrink the user's quota for hours — the same harm as
+     * charging for prompts that never went, pointing the other way.
+     *
+     * Fire-and-forget: the hold expires server-side on its own, so a failure
+     * here costs a little quota for a few hours rather than permanently, and
+     * it is not worth interrupting the end of a run for. */
+    releaseQueueReservation(queue.id).catch(() => {/* it expires anyway */});
   } else if (queue.status === 'running') {
     updateStatusDot('running');
   }
@@ -4108,6 +4295,45 @@ function handlePromptStatusUpdate(data: { queue: QueueObject; promptIndex: numbe
     }
   }
 
+  /* ── Reached Flow: reported the moment there is proof, not at the end ──
+   *
+   * `mediaId` is read out of Flow's OWN response to the request that carried
+   * this prompt's text. Its existence is the proof, so this fires on the id
+   * rather than on the outcome — which is the whole difference between the
+   * two numbers:
+   *
+   *   · a prompt that FAILED after Flow accepted it still has an id, and
+   *     Google still charged for it, so it counts
+   *   · a prompt that never reached Flow has no id and never will, so it
+   *     does not — today it is billed anyway, invisibly
+   *
+   * Deduped on the id itself: this handler runs on every progress update, and
+   * the same prompt reports many times before it settles. The endpoint is
+   * idempotent regardless, but there is no reason to make it prove that on
+   * every tick.
+   *
+   * This charges nothing. It is written alongside the existing count so the
+   * two can be compared on the same runs before anything switches over. */
+  if (prompt?.mediaId) {
+    const submissionKey = `sent:${prompt.mediaId}`;
+    if (!_trackedPromptUsage.has(submissionKey)) {
+      _trackedPromptUsage.add(submissionKey);
+
+      const framesMode = data.queue.settings?.creationType === 'frames';
+      const withImages = (Array.isArray(prompt.images) && prompt.images.length > 0)
+        || (state.promptImages.get(data.promptIndex)?.some(Boolean) || false)
+        || state.sharedImages.length > 0;
+
+      trackSubmission({
+        mediaId: prompt.mediaId,
+        queueId: data.queue.id,
+        promptIndex: data.promptIndex,
+        promptType: (withImages || framesMode) ? 'full' : 'text',
+        mode: data.queue.settings?.automationMode || '',
+      }).catch(() => {/* metering must never fail a generation */});
+    }
+  }
+
   // ── Per-prompt tracking: report REAL completions to backend ──
   // Track each prompt ONCE when it reaches a final state (done or failed).
   // This creates individual events so the dashboard shows real progress: 7/10, 8/10...
@@ -4126,6 +4352,27 @@ function handlePromptStatusUpdate(data: { queue: QueueObject; promptIndex: numbe
       
       trackUsage(1, promptType, prompt.status as 'done' | 'failed').catch(() => {/* non-blocking */});
       console.log(`[AutoFlow SP] Tracked prompt #${data.promptIndex + 1} → ${prompt.status} (${promptType})`);
+
+      /* And the outcome of the SUBMISSION, when there was one.
+       *
+       * Separate from the report above because it answers a different
+       * question. That one says what happened to a queued prompt; this says
+       * what became of a generation Flow actually accepted — which is the
+       * only population "completed" may be measured against.
+       *
+       * It carries the same media id deliberately: the server updates the
+       * existing row rather than adding one, so reporting the outcome can
+       * never change how many submissions were counted. */
+      if (prompt.mediaId) {
+        trackSubmission({
+          mediaId: prompt.mediaId,
+          queueId: data.queue.id,
+          promptIndex: data.promptIndex,
+          promptType,
+          mode: data.queue.settings?.automationMode || '',
+          outcome: prompt.status as 'done' | 'failed',
+        }).catch(() => {/* metering must never fail a generation */});
+      }
     }
   }
 
@@ -4290,7 +4537,14 @@ async function downloadSelectedAssets(): Promise<void> {
   // Server-side download limit check (free users: 20/day)
   const dlQuota = await consumeDownload(selected.length);
   if (!dlQuota.allowed) {
-    showToast(dlQuota.message || `Daily download limit reached (${dlQuota.limit}/day). Upgrade for unlimited!`, 'warning');
+    void showLimitDialog({
+      label: 'Download',
+      used: dlQuota.limit,
+      limit: dlQuota.limit,
+      period: 'day',
+      unlocks: 'Unlimited downloads every day, at full resolution.',
+      blocked: `${selected.length} file${selected.length === 1 ? '' : 's'} still waiting to download.`,
+    });
     return;
   }
 
@@ -4344,17 +4598,22 @@ async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownloa
     libraryTab.click();
   }
 
-  // If page is reloading, wait for it to fully load
+  /* The run no longer reloads the page before scanning — Flow keeps the grid
+     up to date on its own, and the reload was there for a fake-cancel problem
+     Google has since fixed. So the usual wait is short: the page is already
+     loaded, and only the last tile is still settling. */
   if (afterReload) {
     showToast('Page reloading — waiting for it to finish...', 'info');
     await new Promise(r => setTimeout(r, 8000));
   } else {
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 1500));
   }
 
-  // Trigger scan with retry logic (page might still be loading after reload)
+  /* Retry either way. Without the reload the scan lands sooner after the last
+     generation, so a first attempt can still catch the grid mid-render — and
+     a scan that gives up on one try is a run with no downloads. */
   let response: any = null;
-  const maxRetries = afterReload ? 3 : 1;
+  const maxRetries = 3;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     response = await sendToBackground({ type: 'SCAN_LIBRARY' });
     if (response && !response.error) break;
@@ -4385,18 +4644,32 @@ async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownloa
 
   renderLibrary();
 
-  // Auto-download in FULL mode: select all videos and trigger download
+  /* Select everything and download it, in the prompt order set just above.
+     Both automated modes arrive here now — Full mode when its API download
+     could not produce URLs, and Flow mode as its normal download path.
+
+     Videos win when the project has any, because a video run also leaves
+     image assets in the library and those are not what was asked for. An
+     image run has no videos, so it selects the images instead — before this
+     it filtered to videos, found none, and downloaded nothing at all. */
   if (autoDownload) {
-    const videoAssets = state.scannedAssets.filter(a => a.mediaType === 'video');
-    if (videoAssets.length === 0) {
-      showToast('Auto-download: no videos to download.', 'info');
+    const videos = state.scannedAssets.filter(a => a.mediaType === 'video');
+    const wanted = videos.length > 0
+      ? videos
+      : state.scannedAssets.filter(a => a.mediaType === 'image');
+
+    if (wanted.length === 0) {
+      showToast('Auto-download: nothing to download.', 'info');
       return;
     }
-    videoAssets.forEach(a => a.selected = true);
+
+    state.scannedAssets.forEach(a => { a.selected = false; });
+    wanted.forEach(a => { a.selected = true; });
     renderLibrary();
 
     // Call download directly — don't rely on the UI button
-    showToast(`Auto-downloading ${videoAssets.length} video(s)...`, 'info');
+    const kind = videos.length > 0 ? 'video' : 'image';
+    showToast(`Auto-downloading ${wanted.length} ${kind}(s) in prompt order...`, 'info');
     await downloadSelectedAssets();
   }
 }

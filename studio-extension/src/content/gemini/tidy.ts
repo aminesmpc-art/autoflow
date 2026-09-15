@@ -197,3 +197,44 @@ export async function tidyAwayConversation(before: string): Promise<void> {
   console.warn('[AutoFlow Gemini] The thread was not removed — it is still in the sidebar');
 }
 
+
+/**
+ * Put the page back into a conversation this run started earlier.
+ *
+ * Needed because `newChat: 'never'` only means "do not open a new one". It
+ * types into whatever is on screen, which after a Director has run is the
+ * DIRECTOR's chat — so the Chief's next turn, written as a follow-up to a plan
+ * it had made, would arrive in a conversation that had never seen one.
+ *
+ * The sidebar row is clicked rather than the URL assigned. Gemini is an
+ * Angular SPA and its rows are client-side routes: clicking keeps the document,
+ * and this content script with it. Assigning location.href is a real
+ * navigation, which tears the script down mid-run and leaves the node waiting
+ * on a reply nothing is listening for. The same reasoning governs the mode
+ * switches in the adapter.
+ *
+ * @returns whether the page is now in that conversation. False is a real
+ *   answer, not a soft failure: the caller must not type a follow-up into
+ *   whatever chat it landed in instead.
+ */
+export async function openConversation(id: string): Promise<boolean> {
+  if (!id) return false;
+  if (conversationId(location.pathname) === id) return true;
+
+  /* The row may not be rendered yet — the sidebar fills in after a route
+     change, and a long list virtualises. Worth a few tries before giving up. */
+  for (let i = 0; i < 20; i++) {
+    const row = findConversationRow(id);
+    const link = row?.querySelector<HTMLElement>('a') || row;
+    if (link) {
+      link.click();
+      for (let j = 0; j < 20; j++) {
+        if (conversationId(location.pathname) === id) return true;
+        await sleep(150);
+      }
+      return false;
+    }
+    await sleep(300);
+  }
+  return false;
+}

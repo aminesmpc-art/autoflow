@@ -26,6 +26,7 @@ import {
 } from '../ask/clipperBrain';
 import type { EditOp } from './editSheet';
 import { planChunks, stitch, looksTranscribed, type ChunkText } from './chunks';
+import { rampMap } from '../media/retime';
 import { faceAsk, frameTimes, readFaces, transcribeAsk } from './prompts';
 import { planReframe, type ReframePlan } from '../media/reframe';
 import { envelopeOf, findPeaks, joinEnvelopes, textNear, type Envelope } from './peaks';
@@ -79,6 +80,13 @@ export interface ClipMedia {
     startSec: number; endSec: number; plan?: ReframePlan | null; silent?: boolean;
     captions?: import('../media/captions').CaptionCue[];
     captionStyle?: import('../media/captions').CaptionStyle;
+    /* The drawable part of the edit sheet, timed against whatever is being
+       encoded — the clip for the whole cut, rebased for each Omni piece. */
+    editSheet?: EditOp[];
+    /* Generated cutaways, on the second pass only. A cutaway cannot exist
+       when the clip is first encoded, so the clip is made without them and
+       remade from the source once Flow returns them. */
+    cutaways?: import('../media/overlay').Cutaway[];
   }): Promise<CutLike>;
 }
 
@@ -172,6 +180,16 @@ export type TranscribeResult = Transcript & {
 
 export interface CutStageResult {
   mediaKey: string;
+  /** Everything a second encode with cutaways would need. See finishCutIfReady. */
+  finish?: {
+    startSec: number;
+    endSec: number;
+    plan: unknown;
+    captions: unknown[];
+    captionStyle?: unknown;
+    editSheet?: EditOp[];
+    mediaKey: string;
+  };
   /* What to ADD to this clip, and when. Not rendered onto it — the
      finishing happens in CapCut, so this is a list of timed instructions
      and, later, the assets to go with them. See clip/editSheet.ts. */
@@ -902,8 +920,51 @@ export async function runOneCut(
   const captions = phrases.length ? cuesForClip(phrases, startSec, endSec) : [];
   if (captions.length) deps.log?.(`burning in ${captions.length} caption cues`);
 
+  /* ── The pieces, planned before anything is encoded ──
+     planOmniChunks needs only the runtime and the caption times, both of
+     which exist here — so where the joins fall is knowable without having
+     cut anything yet. That matters because the sheet is told about them. */
+  const { planOmniChunks, describeChunks, cuesForChunk, planForChunk, opsForChunk } =
+    await import('./omniChunks');
+  const pieces = cfg.omniParts
+    ? planOmniChunks(
+      endSec - startSec,
+      captions.map((c) => ({ startSec: c.startSec, endSec: c.endSec })),
+    )
+    : [];
+
+  /* ── The sheet, before the encode rather than after ──
+     It used to be planned afterwards, on the reasoning that the encode takes
+     minutes and the ask takes one call, so a failed ask must never cost the
+     clip. That reasoning still holds and is still enforced — planTheEdit is
+     soft all the way through and returns an empty sheet on every failure, and
+     the encode below runs either way.
+
+     What changed is that some of the sheet is now DRAWN. A plan that arrives
+     after the pixels cannot be burned into them, and re-encoding a finished
+     clip to add a text card is a second generation of loss for one line of
+     type. So the order flips, and the only cost is that a run with Edit plan
+     switched on waits for one text ask before encoding — which is the thing
+     that switch asks for. */
+  let sheet: Awaited<ReturnType<typeof planTheEdit>> = {};
+  if (cfg.planEdit) {
+    sheet = await planTheEdit(
+      deps, cfg, captions, endSec - startSec, onServer,
+      /* Every join, as a second into the clip: the running total of the
+         pieces before it. The clip's own opening is not a join — nothing was
+         spliced there — so the last total is dropped rather than the first. */
+      pieces.slice(0, -1).map((_, i) =>
+        pieces.slice(0, i + 1).reduce((sum, piece) => sum + piece.seconds, 0)),
+    );
+  }
+
+  /* Only what can be drawn goes to the encoder. The rest of the sheet stays
+     on the node for CapCut, which is where a ramp or a sound effect has to be
+     done anyway — see media/overlay.ts. */
+  const editSheet = sheet.editSheet;
+
   const out = await deps.media.cut(file, {
-    startSec, endSec, plan, captions,
+    startSec, endSec, plan, captions, editSheet,
     captionStyle: cfg.captionStyle,
   });
   /* Keyed by the lines rather than by the source, because a source now has
@@ -924,12 +985,6 @@ export async function runOneCut(
   const parts: NonNullable<CutStageResult['omniParts']> = [];
   let omniSplit: string | undefined;
   if (cfg.omniParts) {
-    const { planOmniChunks, describeChunks, cuesForChunk, planForChunk } =
-      await import('./omniChunks');
-    const pieces = planOmniChunks(
-      endSec - startSec,
-      captions.map((c) => ({ startSec: c.startSec, endSec: c.endSec })),
-    );
     omniSplit = describeChunks(pieces);
 
     /* One piece means it already fits, and re-encoding the whole clip
@@ -943,6 +998,21 @@ export async function runOneCut(
           endSec: startSec + piece.endSec,
           plan: planForChunk(plan as any, piece) as typeof plan,
           captions: cuesForChunk(captions, piece),
+          /* Rebased like the captions and the plan beside it. Handed the
+             clip's sheet unchanged, a card planned for the middle of a
+             four-part clip would be drawn on all four pieces, each time at
+             the wrong second.
+
+             Ramps are dropped here, and only here. A piece exists to be handed
+             to Flow, which re-encodes whatever it is given — so a ramp baked
+             into one is work Flow throws away. It is also the thing that would
+             break the piece: pieces are cut to fit under Flow's ten-second
+             ceiling, and a ramp makes its piece longer, so a 9.7s piece with a
+             0.4s ramp in it arrives at 10.1s and is refused. The whole clip,
+             which is the thing that gets posted, keeps its ramp. */
+          editSheet: editSheet
+            ? opsForChunk(editSheet.filter((o) => o.kind !== 'ramp'), piece)
+            : undefined,
           captionStyle: cfg.captionStyle,
         });
         const partKey = `${mediaKey}#part${piece.index}`;
@@ -958,34 +1028,34 @@ export async function runOneCut(
     }
   }
 
-  /* Planned AFTER the clip exists and never allowed to cost it.
-     The cut is the thing that took minutes and cannot be remade for free;
-     the sheet is one text ask over a transcript already in hand. Throwing
-     the first away because the second failed would be the wrong trade by
-     several orders of magnitude. */
-  let sheet: Awaited<ReturnType<typeof planTheEdit>> = {};
-  if (cfg.planEdit) {
-    sheet = await planTheEdit(
-      deps, cfg, captions, endSec - startSec, onServer,
-      /* Every join, as a second into the clip: the running total of the parts
-         before it. The clip's own opening is not a join — nothing was spliced
-         there — so the last total is dropped rather than the first. */
-      parts.slice(0, -1).map((_, i) =>
-        parts.slice(0, i + 1).reduce((sum, part) => sum + part.seconds, 0)),
-    );
-  }
-
   return {
     mediaKey,
     startSec,
     endSec,
-    clipSeconds: endSec - startSec,
+    /* What the finished clip RUNS, which is not what was trimmed when a ramp
+       stretched part of it. Everything downstream — the node's own label, the
+       beat asks, the checks that a plan covers the whole clip — is talking
+       about the file somebody watches. */
+    clipSeconds: rampMap(editSheet, endSec - startSec).outSeconds,
     width: out.width,
     height: out.height,
     reframe: plan ? plan.mode : 'none',
     report: out.report,
     omniParts: parts.length ? parts : undefined,
     omniSplit,
+    /* What it would take to encode this again with cutaways burned in. Handed
+       back rather than stored on the node: it carries a reframe plan and every
+       caption cue, which nobody wants in a saved workflow, and the second pass
+       only ever happens in the run that produced the cutaways. */
+    finish: {
+      startSec,
+      endSec,
+      plan,
+      captions,
+      captionStyle: cfg.captionStyle,
+      editSheet,
+      mediaKey,
+    },
     ...sheet,
   } satisfies CutStageResult;
 }

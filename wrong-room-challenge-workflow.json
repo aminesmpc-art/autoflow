@@ -1,0 +1,1345 @@
+{
+  "id": "tpl_wrong_room_challenge",
+  "name": "Wrong Room Challenge — 10 × 4s",
+  "description": "Ten character-locked scene images become ten narrated four-second Flow clips in one fixed three-door cartoon world.",
+  "useCase": "Viral Shorts and TikTok choice games with a fast hook, escalating assignments, a wrong-choice twist, native narration and independently retryable scenes.",
+  "category": "Content",
+  "difficulty": "Advanced",
+  "nodeCount": 26,
+  "thumbnail": "🚪",
+  "nodes": [
+    {
+      "id": "brief",
+      "type": "prompt",
+      "position": {
+        "x": 40,
+        "y": 300
+      },
+      "data": {
+        "type": "prompt",
+        "label": "Wrong Room Episode Brief",
+        "text": "Create a fast viral short called “The Wrong Room Challenge”. The story is ten separate four-second scenes, but it must read as one continuous event in the identical three-door studio. Characters already assigned to a room remain visibly inside it in all later scenes. Only poses, expressions, character positions and the selected doorway glow may change. Use one simple action per clip, a slight squash-and-stretch bounce, and a strong readable reaction by the end. The first frame must hook immediately; the tenth must hold as a clean final group tableau.\n\nFor each SCENE STILL, depict the exact opening composition of that numbered scene. Keep dialogue and sound out of the picture and do not render captions as image text. For each matching VIDEO CLIP, animate forward from that still and end on the stated reaction. End every video prompt with one Ambient noise sentence, one SFX sentence, and exactly one short attributed off-screen Narrator line in curly quotation marks. Keep that spoken line under ten words so it fits naturally inside four seconds.\n\nScene 1: Leo Azul stands in the centre foreground; Captain Riko points toward the Pixel Meadow. Required narrator words, bright delivery: First up, Leo. Which room will he get? SFX: short pointing whoosh.\n\nScene 2: Riko points unmistakably at the centre doorway; Leo leans back with surprised wide eyes. Required narrator words, confident delivery: Pixel room for Leo. He looks surprised! SFX: whoosh, then a light selection chime.\n\nScene 3: Leo walks through the centre doorway as green light blooms around him; Moss steps aside and welcomes him. Required narrator words, happy delivery: Leo enters the Pixel Meadow. Correct! SFX: soft footsteps and one bright ding.\n\nScene 4: Leo remains visible in the centre room; Gia Nova enters the foreground and Riko turns toward her, beginning to point left. Required narrator words, playful delivery: Gia is next. Riko already knows. SFX: quick entrance swish.\n\nScene 5: Gia smiles and crosses toward the blue Neon Arcade while Riko holds the left-pointing pose. Required narrator words, warm delivery: Gia chooses the Neon Arcade. Perfect! SFX: footsteps, blue shimmer and one ding.\n\nScene 6: Leo and Gia remain in their rooms; Turbo Jay bursts into the foreground with an energetic bounce as Riko points right. Required narrator words, excited delivery: Turbo Jay arrives at maximum energy! SFX: elastic boing and pointing whoosh.\n\nScene 7: the red Brick Bedroom glows; Turbo freezes, eyes huge, then throws both arms upward in delighted shock. Required narrator words, quick delivery: The Brick Bedroom? Turbo cannot believe it! SFX: red shimmer, crowd cheer and ding.\n\nScene 8: assigned contestants remain visible; Nico Block enters and pauses between the centre and right doors while Riko folds his arms and watches. Required narrator words, cautious delivery: Nico is last. Choose very carefully. SFX: low playful suspense pulse.\n\nScene 9: Nico moves into the WRONG Brick Bedroom instead of the matching Pixel Meadow; a red warning glow pulses around the right doorway as Riko plants one hand on his hip. Required narrator words, shouted delivery: Wait! Wrong room! Nico chose bricks! SFX: loud buzzer and crowd gasp.\n\nScene 10: final group hold—Leo in the Pixel Meadow, Gia in the Neon Arcade, Turbo in the Brick Bedroom, Nico half-stepping back out in confusion, and Riko centred like the leader with one raised eyebrow. Required narrator words, laughing delivery: Everyone is placed... except confused Nico! SFX: light crowd laughter and a final impact sting.\n\nReserve uncluttered top-centre space in every composition for the editor caption “CHOOSE THE WRONG ROOM = LOSE 😱”. Do not ask the image or video model to draw those letters; keeping the safe area clean makes the final overlay sharp and correctly spelled in the editor."
+      }
+    },
+    {
+      "id": "director_chief",
+      "type": "chief",
+      "position": {
+        "x": 390,
+        "y": 300
+      },
+      "data": {
+        "type": "chief",
+        "label": "Director Chief — Global Continuity",
+        "platform": "chatgpt",
+        "mediaType": "text",
+        "enabled": true,
+        "status": "idle"
+      }
+    },
+    {
+      "id": "board_director",
+      "type": "story",
+      "position": {
+        "x": 760,
+        "y": 40
+      },
+      "data": {
+        "type": "story",
+        "label": "Continuity Board Director",
+        "platform": "chatgpt",
+        "mediaType": "text",
+        "structure": "free",
+        "cameraProgression": "fixed",
+        "audioMode": "none",
+        "visualPreset": "cgi3d",
+        "timedBeats": false,
+        "beats": 10,
+        "cast": [
+          {
+            "name": "Captain Riko",
+            "look": "Original fictional adult football captain with warm brown skin, short swept black hair, a square friendly face, athletic realistic-human proportions and a slightly oversized cartoon head. Emerald-and-coral number 7 jersey with no badge or logo, black shorts and white trainers.",
+            "role": "Confident judge who stands between the doors and points to each choice"
+          },
+          {
+            "name": "Leo Azul",
+            "look": "Original fictional block-avatar athlete with a glossy cobalt rectangular body, rounded block limbs, a realistic friendly oval face, wavy dark-brown hair and a plain sky-blue-and-white striped sports top with no badge or logo.",
+            "role": "Friendly first contestant"
+          },
+          {
+            "name": "Gia Nova",
+            "look": "Original fictional block-avatar woman with a glossy violet rectangular body, a realistic heart-shaped face, long dark auburn ponytail, teal cropped jacket, purple trousers and white shoes, always poised and smiling.",
+            "role": "Confident second contestant"
+          },
+          {
+            "name": "Turbo Jay",
+            "look": "Original fictional block-avatar entertainer with a glossy orange rectangular body, a realistic expressive round face, short coiled black hair, lime hoodie, charcoal trousers and huge readable eyes.",
+            "role": "High-energy third contestant with exaggerated reactions"
+          },
+          {
+            "name": "Nico Block",
+            "look": "Original fictional pixel-block athlete with a turquoise cubic torso and limbs, a realistic narrow face, short curly dark hair, plum sports shirt and a playful confused expression.",
+            "role": "Final contestant who deliberately chooses the wrong room"
+          },
+          {
+            "name": "Moss the Builder",
+            "look": "Original fictional square-headed pixel-world guide with chestnut block hair, green shirt, tan pixel trousers and a calm neutral expression.",
+            "role": "Silent background guide who always remains visible inside the centre room"
+          }
+        ],
+        "world": "One bright colourful studio room seen from one fixed front-facing medium-wide camera. Three open doorways stand side-by-side and never change order or geometry. LEFT is the Neon Arcade: blue neon light, a clean gaming desk, monitor, keyboard, chair and abstract game posters with no readable brands. CENTRE is the Pixel Meadow: green pixel-textured walls, grass-and-earth cubes and Moss the Builder visible inside. RIGHT is the Brick Bedroom: red walls, an interlocking-brick bed, colourful brick toys and cosy decorations. The main floor is pale wood. Door frames, furniture, props, lighting direction and every background object stay in exactly the same place in all ten scenes.",
+        "look": "High-detail polished 3D cartoon animation with glossy toy-like materials, soft cinematic lighting, vibrant saturated colours, expressive faces and family-friendly comedy. Original fictional people only. Vertical 9:16. The fixed camera never pans, tilts, zooms, dollies, or changes lens, height, distance or angle.",
+        "avoid": "recognisable public figures, celebrity likenesses, brand logos, trademarked game characters, readable poster brands, changing doorway order, changing room geometry, changing outfits, changing faces, extra characters, duplicated limbs, camera movement, cuts, split screens, photoreal live action, frightening imagery",
+        "rules": [
+          "fixedCamera",
+          "samePerson",
+          "cumulative"
+        ]
+      }
+    },
+    {
+      "id": "continuity_board",
+      "type": "generate",
+      "position": {
+        "x": 900,
+        "y": 40
+      },
+      "data": {
+        "type": "generate",
+        "label": "Master Continuity Board — 10 Panels",
+        "platform": "chatgpt",
+        "mediaType": "image",
+        "model": "Nano Banana Pro",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null,
+        "storyboardSheet": true
+      }
+    },
+    {
+      "id": "director_1_5",
+      "type": "story",
+      "position": {
+        "x": 760,
+        "y": 400
+      },
+      "data": {
+        "type": "story",
+        "label": "Scene Director — 1 to 5",
+        "platform": "chatgpt",
+        "mediaType": "text",
+        "structure": "free",
+        "cameraProgression": "fixed",
+        "audioMode": "cinematic",
+        "visualPreset": "cgi3d",
+        "timedBeats": true,
+        "beats": 10,
+        "cast": [
+          {
+            "name": "Captain Riko",
+            "look": "Original fictional adult football captain with warm brown skin, short swept black hair, a square friendly face, athletic realistic-human proportions and a slightly oversized cartoon head. Emerald-and-coral number 7 jersey with no badge or logo, black shorts and white trainers.",
+            "role": "Confident judge who stands between the doors and points to each choice"
+          },
+          {
+            "name": "Leo Azul",
+            "look": "Original fictional block-avatar athlete with a glossy cobalt rectangular body, rounded block limbs, a realistic friendly oval face, wavy dark-brown hair and a plain sky-blue-and-white striped sports top with no badge or logo.",
+            "role": "Friendly first contestant"
+          },
+          {
+            "name": "Gia Nova",
+            "look": "Original fictional block-avatar woman with a glossy violet rectangular body, a realistic heart-shaped face, long dark auburn ponytail, teal cropped jacket, purple trousers and white shoes, always poised and smiling.",
+            "role": "Confident second contestant"
+          },
+          {
+            "name": "Turbo Jay",
+            "look": "Original fictional block-avatar entertainer with a glossy orange rectangular body, a realistic expressive round face, short coiled black hair, lime hoodie, charcoal trousers and huge readable eyes.",
+            "role": "High-energy third contestant with exaggerated reactions"
+          },
+          {
+            "name": "Nico Block",
+            "look": "Original fictional pixel-block athlete with a turquoise cubic torso and limbs, a realistic narrow face, short curly dark hair, plum sports shirt and a playful confused expression.",
+            "role": "Final contestant who deliberately chooses the wrong room"
+          },
+          {
+            "name": "Moss the Builder",
+            "look": "Original fictional square-headed pixel-world guide with chestnut block hair, green shirt, tan pixel trousers and a calm neutral expression.",
+            "role": "Silent background guide who always remains visible inside the centre room"
+          }
+        ],
+        "world": "One bright colourful studio room seen from one fixed front-facing medium-wide camera. Three open doorways stand side-by-side and never change order or geometry. LEFT is the Neon Arcade: blue neon light, a clean gaming desk, monitor, keyboard, chair and abstract game posters with no readable brands. CENTRE is the Pixel Meadow: green pixel-textured walls, grass-and-earth cubes and Moss the Builder visible inside. RIGHT is the Brick Bedroom: red walls, an interlocking-brick bed, colourful brick toys and cosy decorations. The main floor is pale wood. Door frames, furniture, props, lighting direction and every background object stay in exactly the same place in all ten scenes.",
+        "look": "High-detail polished 3D cartoon animation with glossy toy-like materials, soft cinematic lighting, vibrant saturated colours, expressive faces and family-friendly comedy. Original fictional people only. Vertical 9:16. The fixed camera never pans, tilts, zooms, dollies, or changes lens, height, distance or angle.",
+        "avoid": "recognisable public figures, celebrity likenesses, brand logos, trademarked game characters, readable poster brands, changing doorway order, changing room geometry, changing outfits, changing faces, extra characters, duplicated limbs, camera movement, cuts, split screens, photoreal live action, frightening imagery",
+        "rules": [
+          "fixedCamera",
+          "samePerson",
+          "cumulative"
+        ]
+      }
+    },
+    {
+      "id": "director_6_10",
+      "type": "story",
+      "position": {
+        "x": 760,
+        "y": 1900
+      },
+      "data": {
+        "type": "story",
+        "label": "Scene Director — 6 to 10",
+        "platform": "chatgpt",
+        "mediaType": "text",
+        "structure": "free",
+        "cameraProgression": "fixed",
+        "audioMode": "cinematic",
+        "visualPreset": "cgi3d",
+        "timedBeats": true,
+        "beats": 10,
+        "cast": [
+          {
+            "name": "Captain Riko",
+            "look": "Original fictional adult football captain with warm brown skin, short swept black hair, a square friendly face, athletic realistic-human proportions and a slightly oversized cartoon head. Emerald-and-coral number 7 jersey with no badge or logo, black shorts and white trainers.",
+            "role": "Confident judge who stands between the doors and points to each choice"
+          },
+          {
+            "name": "Leo Azul",
+            "look": "Original fictional block-avatar athlete with a glossy cobalt rectangular body, rounded block limbs, a realistic friendly oval face, wavy dark-brown hair and a plain sky-blue-and-white striped sports top with no badge or logo.",
+            "role": "Friendly first contestant"
+          },
+          {
+            "name": "Gia Nova",
+            "look": "Original fictional block-avatar woman with a glossy violet rectangular body, a realistic heart-shaped face, long dark auburn ponytail, teal cropped jacket, purple trousers and white shoes, always poised and smiling.",
+            "role": "Confident second contestant"
+          },
+          {
+            "name": "Turbo Jay",
+            "look": "Original fictional block-avatar entertainer with a glossy orange rectangular body, a realistic expressive round face, short coiled black hair, lime hoodie, charcoal trousers and huge readable eyes.",
+            "role": "High-energy third contestant with exaggerated reactions"
+          },
+          {
+            "name": "Nico Block",
+            "look": "Original fictional pixel-block athlete with a turquoise cubic torso and limbs, a realistic narrow face, short curly dark hair, plum sports shirt and a playful confused expression.",
+            "role": "Final contestant who deliberately chooses the wrong room"
+          },
+          {
+            "name": "Moss the Builder",
+            "look": "Original fictional square-headed pixel-world guide with chestnut block hair, green shirt, tan pixel trousers and a calm neutral expression.",
+            "role": "Silent background guide who always remains visible inside the centre room"
+          }
+        ],
+        "world": "One bright colourful studio room seen from one fixed front-facing medium-wide camera. Three open doorways stand side-by-side and never change order or geometry. LEFT is the Neon Arcade: blue neon light, a clean gaming desk, monitor, keyboard, chair and abstract game posters with no readable brands. CENTRE is the Pixel Meadow: green pixel-textured walls, grass-and-earth cubes and Moss the Builder visible inside. RIGHT is the Brick Bedroom: red walls, an interlocking-brick bed, colourful brick toys and cosy decorations. The main floor is pale wood. Door frames, furniture, props, lighting direction and every background object stay in exactly the same place in all ten scenes.",
+        "look": "High-detail polished 3D cartoon animation with glossy toy-like materials, soft cinematic lighting, vibrant saturated colours, expressive faces and family-friendly comedy. Original fictional people only. Vertical 9:16. The fixed camera never pans, tilts, zooms, dollies, or changes lens, height, distance or angle.",
+        "avoid": "recognisable public figures, celebrity likenesses, brand logos, trademarked game characters, readable poster brands, changing doorway order, changing room geometry, changing outfits, changing faces, extra characters, duplicated limbs, camera movement, cuts, split screens, photoreal live action, frightening imagery",
+        "rules": [
+          "fixedCamera",
+          "samePerson",
+          "cumulative"
+        ]
+      }
+    },
+    {
+      "id": "scene_1",
+      "type": "generate",
+      "position": {
+        "x": 900,
+        "y": 300
+      },
+      "data": {
+        "type": "generate",
+        "label": "Scene 1 Still — Leo Gets His Choice",
+        "platform": "chatgpt",
+        "mediaType": "image",
+        "model": "Nano Banana Pro",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "clip_1",
+      "type": "generate",
+      "position": {
+        "x": 1400,
+        "y": 300
+      },
+      "data": {
+        "type": "generate",
+        "label": "Clip 1 — Leo Gets His Choice (4s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Veo 3.1 - Fast",
+        "aspectRatio": "9:16",
+        "duration": "4s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "scene_2",
+      "type": "generate",
+      "position": {
+        "x": 900,
+        "y": 600
+      },
+      "data": {
+        "type": "generate",
+        "label": "Scene 2 Still — The Pixel Decision",
+        "platform": "chatgpt",
+        "mediaType": "image",
+        "model": "Nano Banana Pro",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "clip_2",
+      "type": "generate",
+      "position": {
+        "x": 1400,
+        "y": 600
+      },
+      "data": {
+        "type": "generate",
+        "label": "Clip 2 — The Pixel Decision (4s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Veo 3.1 - Fast",
+        "aspectRatio": "9:16",
+        "duration": "4s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "scene_3",
+      "type": "generate",
+      "position": {
+        "x": 900,
+        "y": 900
+      },
+      "data": {
+        "type": "generate",
+        "label": "Scene 3 Still — Leo Enters",
+        "platform": "chatgpt",
+        "mediaType": "image",
+        "model": "Nano Banana Pro",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "clip_3",
+      "type": "generate",
+      "position": {
+        "x": 1400,
+        "y": 900
+      },
+      "data": {
+        "type": "generate",
+        "label": "Clip 3 — Leo Enters (4s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Veo 3.1 - Fast",
+        "aspectRatio": "9:16",
+        "duration": "4s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "scene_4",
+      "type": "generate",
+      "position": {
+        "x": 900,
+        "y": 1200
+      },
+      "data": {
+        "type": "generate",
+        "label": "Scene 4 Still — Gia Arrives",
+        "platform": "chatgpt",
+        "mediaType": "image",
+        "model": "Nano Banana Pro",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "clip_4",
+      "type": "generate",
+      "position": {
+        "x": 1400,
+        "y": 1200
+      },
+      "data": {
+        "type": "generate",
+        "label": "Clip 4 — Gia Arrives (4s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Veo 3.1 - Fast",
+        "aspectRatio": "9:16",
+        "duration": "4s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "scene_5",
+      "type": "generate",
+      "position": {
+        "x": 900,
+        "y": 1500
+      },
+      "data": {
+        "type": "generate",
+        "label": "Scene 5 Still — Gia Chooses Neon",
+        "platform": "chatgpt",
+        "mediaType": "image",
+        "model": "Nano Banana Pro",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "clip_5",
+      "type": "generate",
+      "position": {
+        "x": 1400,
+        "y": 1500
+      },
+      "data": {
+        "type": "generate",
+        "label": "Clip 5 — Gia Chooses Neon (4s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Veo 3.1 - Fast",
+        "aspectRatio": "9:16",
+        "duration": "4s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "scene_6",
+      "type": "generate",
+      "position": {
+        "x": 900,
+        "y": 1800
+      },
+      "data": {
+        "type": "generate",
+        "label": "Scene 6 Still — Turbo Jay Arrives",
+        "platform": "chatgpt",
+        "mediaType": "image",
+        "model": "Nano Banana Pro",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "clip_6",
+      "type": "generate",
+      "position": {
+        "x": 1400,
+        "y": 1800
+      },
+      "data": {
+        "type": "generate",
+        "label": "Clip 6 — Turbo Jay Arrives (4s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Veo 3.1 - Fast",
+        "aspectRatio": "9:16",
+        "duration": "4s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "scene_7",
+      "type": "generate",
+      "position": {
+        "x": 900,
+        "y": 2100
+      },
+      "data": {
+        "type": "generate",
+        "label": "Scene 7 Still — Turbo Reacts",
+        "platform": "chatgpt",
+        "mediaType": "image",
+        "model": "Nano Banana Pro",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "clip_7",
+      "type": "generate",
+      "position": {
+        "x": 1400,
+        "y": 2100
+      },
+      "data": {
+        "type": "generate",
+        "label": "Clip 7 — Turbo Reacts (4s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Veo 3.1 - Fast",
+        "aspectRatio": "9:16",
+        "duration": "4s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "scene_8",
+      "type": "generate",
+      "position": {
+        "x": 900,
+        "y": 2400
+      },
+      "data": {
+        "type": "generate",
+        "label": "Scene 8 Still — Nico Must Choose",
+        "platform": "chatgpt",
+        "mediaType": "image",
+        "model": "Nano Banana Pro",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "clip_8",
+      "type": "generate",
+      "position": {
+        "x": 1400,
+        "y": 2400
+      },
+      "data": {
+        "type": "generate",
+        "label": "Clip 8 — Nico Must Choose (4s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Veo 3.1 - Fast",
+        "aspectRatio": "9:16",
+        "duration": "4s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "scene_9",
+      "type": "generate",
+      "position": {
+        "x": 900,
+        "y": 2700
+      },
+      "data": {
+        "type": "generate",
+        "label": "Scene 9 Still — Wrong Room Twist",
+        "platform": "chatgpt",
+        "mediaType": "image",
+        "model": "Nano Banana Pro",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "clip_9",
+      "type": "generate",
+      "position": {
+        "x": 1400,
+        "y": 2700
+      },
+      "data": {
+        "type": "generate",
+        "label": "Clip 9 — Wrong Room Twist (4s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Veo 3.1 - Fast",
+        "aspectRatio": "9:16",
+        "duration": "4s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "scene_10",
+      "type": "generate",
+      "position": {
+        "x": 900,
+        "y": 3000
+      },
+      "data": {
+        "type": "generate",
+        "label": "Scene 10 Still — Final Group Hold",
+        "platform": "chatgpt",
+        "mediaType": "image",
+        "model": "Nano Banana Pro",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    },
+    {
+      "id": "clip_10",
+      "type": "generate",
+      "position": {
+        "x": 1400,
+        "y": 3000
+      },
+      "data": {
+        "type": "generate",
+        "label": "Clip 10 — Final Group Hold (4s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Veo 3.1 - Fast",
+        "aspectRatio": "9:16",
+        "duration": "4s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "resultUrl": null,
+        "previewUrl": "",
+        "resultTileId": null,
+        "progress": 0,
+        "errorMessage": null
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_brief_director_chief_t",
+      "source": "brief",
+      "target": "director_chief",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_chief_board_director_t",
+      "source": "director_chief",
+      "target": "board_director",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_chief_director_1_5_t",
+      "source": "director_chief",
+      "target": "director_1_5",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_chief_director_6_10_t",
+      "source": "director_chief",
+      "target": "director_6_10",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_board_director_continuity_board_t",
+      "source": "board_director",
+      "target": "continuity_board",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_1_5_scene_1_t",
+      "source": "director_1_5",
+      "target": "scene_1",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_1_5_clip_1_t",
+      "source": "director_1_5",
+      "target": "clip_1",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_continuity_board_scene_1_i",
+      "source": "continuity_board",
+      "target": "scene_1",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_scene_1_clip_1_i",
+      "source": "scene_1",
+      "target": "clip_1",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_1_5_scene_2_t",
+      "source": "director_1_5",
+      "target": "scene_2",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_1_5_clip_2_t",
+      "source": "director_1_5",
+      "target": "clip_2",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_continuity_board_scene_2_i",
+      "source": "continuity_board",
+      "target": "scene_2",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_scene_2_clip_2_i",
+      "source": "scene_2",
+      "target": "clip_2",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_1_5_scene_3_t",
+      "source": "director_1_5",
+      "target": "scene_3",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_1_5_clip_3_t",
+      "source": "director_1_5",
+      "target": "clip_3",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_continuity_board_scene_3_i",
+      "source": "continuity_board",
+      "target": "scene_3",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_scene_3_clip_3_i",
+      "source": "scene_3",
+      "target": "clip_3",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_1_5_scene_4_t",
+      "source": "director_1_5",
+      "target": "scene_4",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_1_5_clip_4_t",
+      "source": "director_1_5",
+      "target": "clip_4",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_continuity_board_scene_4_i",
+      "source": "continuity_board",
+      "target": "scene_4",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_scene_4_clip_4_i",
+      "source": "scene_4",
+      "target": "clip_4",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_1_5_scene_5_t",
+      "source": "director_1_5",
+      "target": "scene_5",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_1_5_clip_5_t",
+      "source": "director_1_5",
+      "target": "clip_5",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_continuity_board_scene_5_i",
+      "source": "continuity_board",
+      "target": "scene_5",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_scene_5_clip_5_i",
+      "source": "scene_5",
+      "target": "clip_5",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_6_10_scene_6_t",
+      "source": "director_6_10",
+      "target": "scene_6",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_6_10_clip_6_t",
+      "source": "director_6_10",
+      "target": "clip_6",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_continuity_board_scene_6_i",
+      "source": "continuity_board",
+      "target": "scene_6",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_scene_6_clip_6_i",
+      "source": "scene_6",
+      "target": "clip_6",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_6_10_scene_7_t",
+      "source": "director_6_10",
+      "target": "scene_7",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_6_10_clip_7_t",
+      "source": "director_6_10",
+      "target": "clip_7",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_continuity_board_scene_7_i",
+      "source": "continuity_board",
+      "target": "scene_7",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_scene_7_clip_7_i",
+      "source": "scene_7",
+      "target": "clip_7",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_6_10_scene_8_t",
+      "source": "director_6_10",
+      "target": "scene_8",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_6_10_clip_8_t",
+      "source": "director_6_10",
+      "target": "clip_8",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_continuity_board_scene_8_i",
+      "source": "continuity_board",
+      "target": "scene_8",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_scene_8_clip_8_i",
+      "source": "scene_8",
+      "target": "clip_8",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_6_10_scene_9_t",
+      "source": "director_6_10",
+      "target": "scene_9",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_6_10_clip_9_t",
+      "source": "director_6_10",
+      "target": "clip_9",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_continuity_board_scene_9_i",
+      "source": "continuity_board",
+      "target": "scene_9",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_scene_9_clip_9_i",
+      "source": "scene_9",
+      "target": "clip_9",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_6_10_scene_10_t",
+      "source": "director_6_10",
+      "target": "scene_10",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_6_10_clip_10_t",
+      "source": "director_6_10",
+      "target": "clip_10",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_continuity_board_scene_10_i",
+      "source": "continuity_board",
+      "target": "scene_10",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_scene_10_clip_10_i",
+      "source": "scene_10",
+      "target": "clip_10",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    }
+  ],
+  "requiresNodeTypes": [
+    "prompt",
+    "chief",
+    "story",
+    "generate"
+  ],
+  "requiresPlatforms": [
+    "chatgpt",
+    "flow"
+  ],
+  "tier": "free"
+}

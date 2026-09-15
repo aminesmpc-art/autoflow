@@ -148,8 +148,11 @@ function harness(history: number) {
     }
   });
 
-  const results = () => sent.filter((m) => m?.type === 'STUDIO_NODE_RESULT');
-  return { execute, sent, results, startReply, growReply, finishReply, composer };
+  const results = (nodeId?: string) => sent.filter((m) =>
+    m?.type === 'STUDIO_NODE_RESULT' && (!nodeId || m?.payload?.nodeId === nodeId));
+  const errors = (nodeId?: string) => sent.filter((m) =>
+    m?.type === 'STUDIO_NODE_ERROR' && (!nodeId || m?.payload?.nodeId === nodeId));
+  return { execute, sent, results, errors, startReply, growReply, finishReply, composer };
 }
 
 const ASK = {
@@ -226,5 +229,34 @@ describe('a conversation that already has history', () => {
 
     expect(await waitFor(() => h.results().length > 0, 20000)).toBe(true);
     expect(String(h.results()[0].payload?.text || '')).toContain('nothing cropped');
+  });
+});
+
+describe('a long reply that finishes after the quiet budget', () => {
+  it('captures the completed reply instead of timing it out', async () => {
+    const h = harness(0);
+    const nodeId = 'long-reply';
+    h.execute({ ...ASK, nodeId });
+    await waitFor(() => h.composer.textContent === '', 3000);
+
+    h.startReply(HALF);
+    // Let one poll observe the partial text while ChatGPT is still writing.
+    await tick(2300);
+
+    const realNow = Date.now();
+    const now = jest.spyOn(Date, 'now').mockReturnValue(realNow + 61_000);
+    try {
+      h.growReply(FULL);
+      h.finishReply();
+      // One poll now sees the exact state from the live diagnostics:
+      // older than 45s, text grew, action bar present, stop button absent.
+      await tick(2300);
+
+      expect(h.errors(nodeId)).toHaveLength(0);
+      expect(h.results(nodeId)).toHaveLength(1);
+      expect(String(h.results(nodeId)[0].payload?.text || '')).toContain('nothing cropped');
+    } finally {
+      now.mockRestore();
+    }
   });
 });

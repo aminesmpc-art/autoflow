@@ -281,6 +281,37 @@ export function describeChunks(chunks: OmniChunk[]): string {
  */
 
 /** Cues that fall inside a chunk, retimed to start at zero. */
+/**
+ * The sheet's ops, rebased into one piece.
+ *
+ * Same job as cuesForChunk and planForChunk: a piece is encoded as its own
+ * video starting at zero, so an op at 12s into the clip is at 12s minus the
+ * piece's own start. Handed the clip's sheet unchanged, a card planned for the
+ * middle of a four-part clip would be drawn on every part, all four times at
+ * the wrong second.
+ *
+ * An op is kept when it OVERLAPS the piece rather than when it starts inside
+ * it, so a two-second card spanning a join still appears on both sides of the
+ * join instead of vanishing at the seam. Its start is allowed to go negative
+ * for the same reason: the second half of that card is mid-card, and clamping
+ * it to zero would restart the fade-in on the new piece.
+ */
+export function opsForChunk<T extends { atSec: number; seconds?: number }>(
+  ops: readonly T[],
+  chunk: { startSec: number; endSec: number },
+  defaultHoldSec = 1.6,
+): T[] {
+  const out: T[] = [];
+  for (const op of ops) {
+    const hold = typeof op.seconds === 'number' && op.seconds > 0 ? op.seconds : defaultHoldSec;
+    const from = op.atSec;
+    const to = from + hold;
+    if (to <= chunk.startSec || from >= chunk.endSec) continue;
+    out.push({ ...op, atSec: from - chunk.startSec });
+  }
+  return out;
+}
+
 export function cuesForChunk<T extends { startSec: number; endSec: number }>(
   cues: T[],
   chunk: { startSec: number; endSec: number },

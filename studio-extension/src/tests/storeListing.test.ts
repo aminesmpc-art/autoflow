@@ -84,12 +84,39 @@ describe('every host permission is one we actually use', () => {
 
   const BACKEND = 'api.auto-flow.studio';
 
-  it('backs each host permission with a content script, except our own API', () => {
+  /**
+   * Hosts we fetch FROM but never run in.
+   *
+   * flow-content.google is where Flow serves finished media. It used to serve
+   * it from flow.google.com/asb/, same origin as the page, so a content script
+   * could fetch a clip itself. It now serves
+   *
+   *   https://flow-content.google/video/<uuid>?Expires=…&Signature=…
+   *
+   * and in MV3 a content script's cross-origin fetch follows the PAGE's CORS
+   * rules — so that request can only be made from the service worker, and only
+   * with the host granted here. Without it every finished clip arrived on the
+   * canvas as a still with "open in Flow to play" under it.
+   *
+   * No content script is injected there and none should be: there is no page,
+   * only files. Anything added to this list has to be a host we FETCH from, and
+   * saying so here is the point — the rule below exists to stop permissions
+   * accumulating without a reason attached.
+   */
+  const FETCH_ONLY = new Set([BACKEND, 'flow-content.google']);
+
+  it('backs each host permission with a content script, or names why not', () => {
     const scriptedHosts = new Set(Array.from(scripted).map(host));
     const unbacked = (manifest.host_permissions || [])
-      .filter((h: string) => host(h) !== BACKEND)
+      .filter((h: string) => !FETCH_ONLY.has(host(h)))
       .filter((h: string) => !scriptedHosts.has(host(h)));
     expect(unbacked).toEqual([]);
+  });
+
+  it('can reach the host Flow serves finished media from', () => {
+    /* Paired with the rule above so the exception cannot quietly become the
+       absence of one. */
+    expect(manifest.host_permissions).toContain('https://flow-content.google/*');
   });
 
   it('still talks to our own backend', () => {

@@ -52,8 +52,15 @@ export function getStudioTileState(
     if (val && parseFloat(val) > 0) return 'generating';
   }
 
-  // Percentage text (e.g. "36%", "99%")
-  if (extractTileProgress(tile) !== null) return 'generating';
+  // Percentage text (e.g. "36%", "99%"). Flow's current image grid can
+  // leave the 100% label mounted beside the finished image during its CDK row
+  // transition. For stills, a real output image carrying data-media-id at
+  // 100% is the result. Videos remain generating until a playable source is
+  // attached; their 100% means encoding/finalising, not completion.
+  const progress = extractTileProgress(tile);
+  const finishedStillAtHundred = !expectVideo && progress === 100
+    && !!tile.querySelector('img[data-media-id][src]');
+  if (progress !== null && !finishedStillAtHundred) return 'generating';
 
   const icons = tile.querySelectorAll('.google-symbols, .material-icons, .material-symbols-outlined, .material-symbols');
   for (const icon of icons) {
@@ -90,14 +97,14 @@ export function getStudioTileState(
    * had, so it gets its own name. The caller decides how long to allow it —
    * see THUMBNAIL_GRACE_MS — because that is a question about time and this
    * function is a question about the DOM. */
-  const video = tile.querySelector('video');
-  if (video) {
-    const playable = video.currentSrc
+  const video = resultArea(tile).querySelector('video');
+  const playable = video
+    ? (video.currentSrc
       || video.getAttribute('src')
       || video.querySelector('source[src]')?.getAttribute('src')
-      || '';
-    if (playable) return 'completed';
-  }
+      || '')
+    : '';
+  if (playable) return 'completed';
 
   /* Authoritative: once the tile holds a <video>, no <img> beside it gets a
      vote on whether the clip is ready. Flow renders a thumbnail <img> inside a
@@ -107,13 +114,29 @@ export function getStudioTileState(
      Held rather than returned, because a tile that failed also has no playable
      source, and the failure text below has to be read before this is answered.
      Returning here would have turned every failed clip into a 20-minute wait. */
-  const videoWithoutClip = (!!video || expectVideo)
-    && !!(video?.getAttribute('poster') || findLargestImgSrc(tile));
+  /* A <video> element that is present and has no source is a clip that has
+     not arrived, whether or not anything is being shown in its place.
+   *
+     The poster half of this test used to carry it alone, and once the
+     ingredient chips stopped standing in for a poster there was nothing left
+     to catch the case — so a video tile with no clip fell through to the
+     play_circle check below and reported itself finished. That icon is part
+     of the tile's furniture: <div class="type-icon-container"> holds one on a
+     video tile from the moment it mounts. It says "this is a clip", not "this
+     clip is ready", and it must not answer for a <video> that is empty. */
+  const videoWithoutClip =
+    (!!video && !playable)
+    || ((!!video || expectVideo)
+      && !!(video?.getAttribute('poster') || findLargestImgSrc(tile)));
 
   /* A still's own image is its result. A clip's is a placeholder until the
      <video> arrives, so it must not be allowed to answer the question. */
-  const imgs = (video || expectVideo) ? [] : tile.querySelectorAll('img[src]');
+  const imgs = (video || expectVideo) ? [] : resultArea(tile).querySelectorAll('img[src]');
   for (const img of imgs) {
+    /* An ingredient is an input. Without this an image batch reads as
+       finished the moment its own reference picture renders — before the
+       generation it is a reference FOR has produced anything. */
+    if (isIngredientImg(img)) continue;
     const src = img.getAttribute('src') || '';
     // Skip data URIs under 200 chars (tracking pixels / placeholders)
     if (src.startsWith('data:') && src.length < 200) continue;
@@ -176,16 +199,57 @@ export function extractTileProgress(tile: Element): number | null {
 
    Matched on the alt text Flow gives them, which is written for a screen
    reader and says exactly what they are. */
-const INGREDIENT_ALT = /generated or uploaded by you|present in your collection/i;
+/**
+ * The part of a batch that holds the RESULT.
+ *
+ * Read off the live grid — a finished batch is two halves:
+ *
+ *   <div class="batch-container virtual-item-container">
+ *     <div class="batch-tiles-section">        the result
+ *       <flow-image-tile><img class="image" data-media-id="…">
+ *       …or…
+ *       <flow-video-tile><video src="…/asb/…=mm,22,15">
+ *     <flow-batch-info>                        everything ABOUT it
+ *       <flow-expandable-prompt>               the prompt
+ *       <div class="ingredients-list">         the INPUT pictures
+ *         <flow-image-ingredient-chip><img class="chip-image" src="…">
+ *       <div class="metadata">                 model, size, ratio
+ *
+ * Everything here used to read the whole batch, so the input chips got a vote
+ * on whether the output existed. Two ways that goes wrong, and both were seen:
+ * an image batch reads as finished the moment its own ingredient renders, and
+ * a video batch whose clip has not attached yet finds a chip image and calls
+ * itself thumbnail-only — the state that then waited a hundred and fifty
+ * seconds for a player to mount.
+ *
+ * Scoped structurally rather than by alt text. INGREDIENT_ALT below is the old
+ * site's wording and matches none of the current chips, which is exactly how
+ * an exclusion list fails: silently, and only once the site has moved on.
+ */
+export function resultArea(tile: Element): Element {
+  return tile.querySelector('.batch-tiles-section') || tile;
+}
+
+/** True for an image that is an INPUT to the generation, not its output. */
+export function isIngredientImg(img: Element): boolean {
+  if (img.closest('.ingredients-list, flow-ingredient-chip, flow-image-ingredient-chip')) return true;
+  if (img.classList.contains('chip-image')) return true;
+  return INGREDIENT_ALT.test(img.getAttribute('alt') || '');
+}
+
+/* The old site's alt text. Kept for anyone still on it, and deliberately no
+   longer the only defence — "Ingredient image" is what the current chip says
+   and it matches nothing here. */
+const INGREDIENT_ALT = /generated or uploaded by you|present in your collection|ingredient/i;
 
 export function findLargestImgSrc(tile: Element): string {
-  const imgs = tile.querySelectorAll('img[src]');
+  const imgs = resultArea(tile).querySelectorAll('img[src]');
   let bestSrc = '';
   let bestArea = 0;
   for (const img of imgs) {
     const src = img.getAttribute('src') || '';
     if (src.startsWith('data:') && src.length < 200) continue;
-    if (INGREDIENT_ALT.test(img.getAttribute('alt') || '')) continue;
+    if (isIngredientImg(img)) continue;
     const rect = img.getBoundingClientRect();
     const area = rect.width * rect.height;
     if (area > bestArea) {
@@ -195,4 +259,3 @@ export function findLargestImgSrc(tile: Element): string {
   }
   return bestSrc;
 }
-

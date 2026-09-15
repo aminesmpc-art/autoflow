@@ -1,0 +1,109 @@
+{
+  "name": "Voice Test — Café",
+  "description": "Every branch of the voice logic in one run: a solo speaker, a two-hander decided by the speaker field, an empty room, a shot with no reference image, and a clip whose voice was set by hand.",
+  "steps": [
+    {
+      "id": "maya_ref",
+      "type": "generate",
+      "media": "image",
+      "platform": "flow",
+      "label": "Maya Still",
+      "prompt": "Vertical 9:16 photograph of a woman in her late twenties standing inside a small neighbourhood cafe. Dark curly hair tied back loosely, rain-damp red wool coat over a grey jumper, small silver hoop earrings. Warm tungsten light, misted window behind her, brass espresso machine out of focus in the background, shallow depth of field, realistic film grain. Neutral expression, facing camera, head and upper body in frame.",
+      "aspectRatio": "9:16"
+    },
+    {
+      "id": "barista_ref",
+      "type": "generate",
+      "media": "image",
+      "platform": "flow",
+      "label": "Barista Still",
+      "prompt": "Vertical 9:16 photograph of a man in his forties standing behind a cafe counter. Shaved head, short greying beard, green canvas apron over a black long-sleeve shirt, small swallow tattoo on his forearm. Brass espresso machine beside him, warm tungsten light, misted windows behind, shallow depth of field, realistic film grain. Neutral expression, facing camera, head and upper body in frame.",
+      "aspectRatio": "9:16"
+    },
+
+    {
+      "id": "director",
+      "type": "story",
+      "platform": "chatgpt",
+      "label": "Cafe Director",
+      "prompt": "A quiet neighbourhood cafe on a rainy afternoon. Five short vertical clips, in this exact order and with exactly this casting, because the casting is what is being tested:\n\n1. Maya alone at the counter, shaking rain off her coat and asking for her usual. Only Maya is in frame and only Maya speaks.\n2. Maya and the barista at the counter together, one line each. Decide which of the two carries the line and name that character in the speaker field.\n3. The empty cafe: rain on the window, steam off an untouched cup. Nobody is in frame and nobody speaks.\n4. Maya alone by the window, saying one quiet line to herself.\n5. The barista alone wiping down the machine after closing, saying one line.",
+      "cast": [
+        {
+          "name": "Maya",
+          "look": "Woman in her late twenties, dark curly hair tied back loosely, rain-damp red wool coat over a grey jumper, small silver hoop earrings, no other jewellery.",
+          "role": "lead",
+          "voice": "Kore"
+        },
+        {
+          "name": "the barista",
+          "look": "Man in his forties, shaved head, short greying beard, green canvas apron over a black long-sleeve shirt, small swallow tattoo on his forearm.",
+          "role": "second",
+          "voice": "Charon"
+        },
+        {
+          "name": "the dog",
+          "look": "Small wiry brown terrier asleep under the window table, worn leather collar.",
+          "role": "background"
+        }
+      ],
+      "world": "A small neighbourhood cafe on a rainy afternoon. Warm tungsten light, misted windows, dark wood counter, brass espresso machine.",
+      "look": "Vertical 9:16, natural window light, shallow depth of field, muted greens and warm browns, realistic film grain.",
+      "structure": "free",
+      "cameraProgression": "establishingToClose",
+      "audioMode": "dialogue",
+      "visualPreset": "liveAction"
+    },
+
+    {
+      "id": "shot_solo",
+      "type": "generate",
+      "media": "video",
+      "platform": "flow",
+      "label": "Maya Orders",
+      "inputs": ["director", "maya_ref"],
+      "aspectRatio": "9:16",
+      "duration": "8s"
+    },
+    {
+      "id": "shot_duo",
+      "type": "generate",
+      "media": "video",
+      "platform": "flow",
+      "label": "The Exchange",
+      "inputs": ["director", "maya_ref", "barista_ref"],
+      "aspectRatio": "9:16",
+      "duration": "8s"
+    },
+    {
+      "id": "shot_empty",
+      "type": "generate",
+      "media": "video",
+      "platform": "flow",
+      "label": "Empty Room",
+      "inputs": ["director", "maya_ref"],
+      "aspectRatio": "9:16",
+      "duration": "8s"
+    },
+    {
+      "id": "shot_noimage",
+      "type": "generate",
+      "media": "video",
+      "platform": "flow",
+      "label": "By The Window",
+      "inputs": ["director"],
+      "aspectRatio": "9:16",
+      "duration": "8s"
+    },
+    {
+      "id": "shot_manual",
+      "type": "generate",
+      "media": "video",
+      "platform": "flow",
+      "label": "After Closing",
+      "inputs": ["director", "barista_ref"],
+      "aspectRatio": "9:16",
+      "duration": "8s",
+      "voice": "Fenrir"
+    }
+  ]
+}

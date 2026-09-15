@@ -161,6 +161,15 @@ export default function BlogPost() {
               <li>Hit 10M views = <strong>$500/month</strong></li>
               <li>Hit 40M views = <strong>$2,000/month</strong></li>
             </ul>
+            <p>
+              Ninety Shorts a month is the part that stops most people, and
+              generating every one from scratch is the slow way to get there.
+              If you already have long footage — a stream, a podcast, an
+              interview — the{" "}
+              <Link href="/clipping">free AI clip maker</Link> cuts it into
+              vertical clips on the spoken line, reframes to 9:16 and captions
+              them, so one recording becomes a week of posts.
+            </p>
             <h3>Best Niches for AI Shorts</h3>
             <ul>
               <li>🌍 Satisfying/ASMR content (liquid pouring, cutting, building)</li>

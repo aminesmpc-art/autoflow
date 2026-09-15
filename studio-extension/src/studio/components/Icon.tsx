@@ -24,7 +24,8 @@ import React from 'react';
 
 export type IconName =
   | 'prompt' | 'image' | 'clip' | 'bolt' | 'chat' | 'agent' | 'frame' | 'extend' | 'story'
-  | 'play' | 'pause' | 'back' | 'upgrade' | 'import' | 'check' | 'alert' | 'dot';
+  | 'play' | 'pause' | 'back' | 'upgrade' | 'import' | 'check' | 'alert' | 'dot'
+  | 'scissors' | 'motion' | 'chief' | 'retry' | 'nodes' | 'copy' | 'trash';
 
 /* Paths only. The wrapper owns size, stroke and colour so a new icon cannot
    quietly arrive at a different weight. */
@@ -37,7 +38,7 @@ const PATHS: Record<IconName, React.ReactNode> = {
   clip: <><path d="M3 9.6h18V19a1.4 1.4 0 0 1-1.4 1.4H4.4A1.4 1.4 0 0 1 3 19V9.6z" /><path d="M3.2 9.6l.9-3.8a1.2 1.2 0 0 1 1.4-.9l14.2 3a1.2 1.2 0 0 1 .9 1.4l-.1.3" /><path d="M8.8 5.2L7.4 9.4M14.2 6.3l-1.4 4.2" /></>,
   // Story / Director: script book / story flow
   story: <><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5z" /><path d="M6 6h10M6 10h10M6 14h6" /></>,
-  // Grok's mark is a bolt, and so is the speed of it.
+  // A generic energy/speed symbol, not a provider trademark.
   bolt: <path d="M13.2 2.8L5 13.6h5.6l-.8 7.6 8.2-10.8h-5.6l.8-7.6z" />,
   // Ask a chat model.
   chat: <path d="M20.5 11.8a7.7 7.7 0 0 1-11 7l-4.9 1.4 1.5-4.3a7.7 7.7 0 1 1 14.4-4.1z" />,
@@ -55,6 +56,13 @@ const PATHS: Record<IconName, React.ReactNode> = {
   check: <path d="M4.5 12.6l4.9 4.9L19.6 7.2" />,
   alert: <><path d="M12 3.4l9.4 16.2H2.6L12 3.4z" /><path d="M12 9.6v4.6" /><path d="M12 17.4h.01" /></>,
   dot: <circle cx="12" cy="12" r="4" fill="currentColor" stroke="none" />,
+  copy: <><rect x="8" y="8" width="12" height="13" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></>,
+  trash: <><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" /></>,
+  scissors: <><circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="m8.2 8.2 12 12M8.2 15.8 20.2 3.8M14 10l-2 2" /></>,
+  motion: <><circle cx="5" cy="18" r="2" /><path d="M7 18h6a4 4 0 0 0 0-8h-2a4 4 0 0 1 0-8h7M15 5l3-3 3 3" /></>,
+  chief: <><rect x="8" y="3" width="8" height="5" rx="1.2" /><rect x="2" y="16" width="7" height="5" rx="1.2" /><rect x="15" y="16" width="7" height="5" rx="1.2" /><path d="M12 8v4M5.5 16v-4h13v4" /></>,
+  retry: <><path d="M3 10a9 9 0 1 1 1.6 7M3 4v6h6" /></>,
+  nodes: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /><path d="M10 6.5h4a3.5 3.5 0 0 1 3.5 3.5v4M6.5 10v4a3.5 3.5 0 0 0 3.5 3.5h4" /></>,
 };
 
 interface Props {

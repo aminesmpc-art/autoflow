@@ -6,6 +6,84 @@
 import { AuthTokens, UserProfile, DailyUsageResponse } from '../types';
 
 const API_BASE = 'https://api.auto-flow.studio';
+
+/* The standby, and why it is on a domain we do not own.
+ *
+ * Every quota gate in this file fails CLOSED — checkCanGenerate and
+ * checkCanStartQueue both return allowed:false when usage cannot be read,
+ * deliberately, because failing open would hand every account unlimited free
+ * usage for the length of an outage. The cost of that choice is that if this
+ * one host is unreachable, nobody can generate anything. Pro included: there
+ * is no cached entitlement to fall back on.
+ *
+ * A standby at api2.auto-flow.studio would not help in the case that actually
+ * needs it. If the DOMAIN is what goes — lapsed registration, a DNS takeover,
+ * a registrar dispute — every name under it goes with it. up.railway.app is
+ * registered by someone else entirely and serves the same container, so it
+ * survives exactly the failure that would otherwise brick the install base.
+ *
+ * Both hosts are compiled in. Neither is read from storage: anything able to
+ * write chrome.storage could otherwise point every request — bearer tokens
+ * included — at a host of its choosing. The list is the allowlist.
+ *
+ * This has to ship BEFORE it is needed. host_permissions is enforced by
+ * Chrome, so a host absent from the manifest cannot be reached no matter what
+ * this constant says, and adding one means a store review measured in days.
+ */
+const API_FALLBACK = 'https://web-production-a81f8d.up.railway.app';
+
+/* Sticky for the session once the primary has failed, so a sustained outage
+   costs one failed request rather than one per call. */
+let _usingFallback = false;
+
+/* Long enough that a slow but working server still answers, short enough that
+   a dead one does not hold the UI. Matches what the auth tests advance to. */
+const REQUEST_DEADLINE_MS = 15000;
+
+/**
+ * fetch against the API, failing over to the standby.
+ *
+ * Only a NETWORK-level failure triggers the switch. A 4xx or 5xx is an answer
+ * — the host is up and has an opinion — and retrying that against the other
+ * host would double every genuine error.
+ */
+async function apiFetchRaw(path: string, init: RequestInit = {}): Promise<Response> {
+  const first = _usingFallback ? API_FALLBACK : API_BASE;
+
+  /* A deadline, because a stalled connection otherwise hangs forever.
+     fetch has no timeout of its own: a server that accepts the socket and
+     then says nothing leaves the promise pending for as long as the tab
+     lives, and every caller here awaits it behind a spinner the user cannot
+     dismiss. An unanswered request has to become an error on its own. */
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_DEADLINE_MS);
+  const signed: RequestInit = { ...init, signal: init.signal ?? controller.signal };
+
+  try {
+    return await fetch(`${first}${path}`, signed);
+  } catch (err) {
+    /* An abort is OUR deadline firing, not evidence that this host is down.
+       Retrying it against the standby would double the wait the deadline
+       exists to cap, and would ask a second host the question the first was
+       never given time to answer. */
+    if ((err as any)?.name === 'AbortError') throw err;
+
+    const other = first === API_BASE ? API_FALLBACK : API_BASE;
+    const res = await fetch(`${other}${path}`, signed);
+    _usingFallback = other === API_FALLBACK;
+    console.warn(`[AutoFlow] ${first} unreachable — using ${other}`);
+    return res;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Why a request produced no answer, in words a user can act on. */
+function connectionMessage(err: any): string {
+  return err?.name === 'AbortError'
+    ? 'The server took too long to respond. Please try again.'
+    : 'Could not reach the server. Check your internet connection.';
+}
 // Our own page, which embeds Whop's checkout widget with the email locked.
 // See getUpgradeTarget() for why we don't link straight to whop.com.
 const CHECKOUT_PAGE_URL = 'https://www.auto-flow.studio/checkout';
@@ -36,7 +114,25 @@ async function clearTokens(): Promise<void> {
 
 // ── Core Fetch Wrapper ──
 
-const EXTENSION_VERSION = '5.1';
+/* Read from the manifest rather than typed here.
+ *
+ * This was hard-coded '5.1' and stayed there through 8.x, so every request
+ * announced a version three majors old. Nothing broke, because the backend
+ * does not read the header — but that is also why it went unnoticed, and it
+ * is the field that would make receipt coverage exact instead of a proxy:
+ * "which accounts are on a build that reports" is answerable directly from a
+ * true version, and currently has to be inferred from whether an account has
+ * ever produced a receipt.
+ *
+ * getManifest() is synchronous and available in every extension context. The
+ * guard is for the test environment, where chrome is not defined. */
+const EXTENSION_VERSION = (() => {
+  try {
+    return chrome.runtime.getManifest().version;
+  } catch {
+    return 'unknown';
+  }
+})();
 
 async function apiFetch(
   path: string,
@@ -62,7 +158,7 @@ async function apiFetch(
     headers.set('Authorization', `Bearer ${tokens.access}`);
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await apiFetchRaw(`${path}`, {
     ...options,
     headers,
   });
@@ -80,7 +176,7 @@ async function apiFetch(
 
 async function refreshAccessToken(refreshToken: string): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+    const res = await apiFetchRaw(`/api/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh: refreshToken }),
@@ -130,7 +226,7 @@ export async function ensureSession(): Promise<'valid' | 'refreshed' | 'expired'
 
   // Try a lightweight API call to check if the access token still works
   try {
-    const res = await fetch(`${API_BASE}/api/auth/me`, {
+    const res = await apiFetchRaw(`/api/auth/me`, {
       headers: {
         'Authorization': `Bearer ${tokens.access}`,
         'Content-Type': 'application/json',
@@ -177,7 +273,7 @@ function extractError(data: any, fallback: string): string {
 
 export async function register(email: string, password: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/register`, {
+    const res = await apiFetchRaw(`/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -191,13 +287,13 @@ export async function register(email: string, password: string): Promise<{ ok: b
 
     return { ok: true, message: data.message || 'Account created! You can log in now.' };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: connectionMessage(err) };
   }
 }
 
 export async function login(email: string, password: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/login`, {
+    const res = await apiFetchRaw(`/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -213,13 +309,13 @@ export async function login(email: string, password: string): Promise<{ ok: bool
     await clearSessionExpired();
     return { ok: true, message: 'Logged in!' };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: connectionMessage(err) };
   }
 }
 
 export async function loginWithGoogle(idToken: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/google`, {
+    const res = await apiFetchRaw(`/api/auth/google`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id_token: idToken }),
@@ -235,13 +331,13 @@ export async function loginWithGoogle(idToken: string): Promise<{ ok: boolean; m
     await clearSessionExpired();
     return { ok: true, message: 'Logged in with Google!' };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: connectionMessage(err) };
   }
 }
 
 export async function getGoogleConfig(): Promise<{ client_id: string } | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/google/config`);
+    const res = await apiFetchRaw(`/api/auth/google/config`);
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -360,6 +456,107 @@ export async function trackUsage(promptCount: number = 1, promptType: 'text' | '
   } catch (e) {
     console.error('[AutoFlow] trackUsage error:', e);
     return false;
+  }
+}
+
+/**
+ * Report that ONE prompt reached Flow and Flow accepted it.
+ *
+ * ── What makes this different from trackUsage ─────────────────────────────
+ *
+ * trackUsage reports an OUTCOME — this prompt finished, done or failed — and
+ * it moves no counter; the charge was already taken at queue start, before
+ * anything was sent. So today's billable number means "prompts queued", and
+ * every failure between starting and submitting is billed and invisible: a
+ * run stopped after 3 of 20 still charges 20.
+ *
+ * This reports a FACT with evidence: the interceptor read `mediaId` out of
+ * Flow's own response to the request that carried this prompt's text. It
+ * cannot exist for a prompt that never left the extension, and it is unique,
+ * so the server can make the write idempotent at the database rather than in
+ * application code.
+ *
+ * ── It does not charge, yet ───────────────────────────────────────────────
+ *
+ * The endpoint deliberately moves no counter. Both numbers are written for a
+ * period and compared on the same runs first, because switching the dashboard
+ * over in one step would drop every chart overnight with no way to tell the
+ * fix from a regression.
+ *
+ * Fire-and-forget by design: a metering write must never be able to fail a
+ * generation the user has already paid Google for.
+ */
+export async function trackSubmission(input: {
+  mediaId: string;
+  queueId: string;
+  promptIndex: number;
+  promptType: 'text' | 'full';
+  mode?: string;
+  /**
+   * Sent on a LATER call for the same media id, once the generation settles.
+   *
+   * It rides on the same row rather than a second event: a clip Flow accepted
+   * and then failed was still charged by Google, so it has to stay counted as
+   * sent while being excluded from completed. Two rows would make the billable
+   * number depend on how many times this reported, which is the class of bug
+   * the whole change is fixing.
+   */
+  outcome?: 'done' | 'failed';
+}): Promise<boolean> {
+  if (!input.mediaId) return false;
+  try {
+    const res = await apiFetch('/api/usage/submitted', {
+      method: 'POST',
+      body: JSON.stringify({
+        media_id: input.mediaId,
+        queue_id: input.queueId,
+        prompt_index: input.promptIndex,
+        prompt_type: input.promptType,
+        mode: input.mode || '',
+        outcome: input.outcome || '',
+      }),
+    });
+    /* A 404 is the expected answer from a backend that predates this
+       endpoint, and it is not a problem worth a console error on every
+       prompt — the old counting still works, this is purely additive. */
+    if (res.status === 404) return false;
+    if (!res.ok) {
+      console.warn('[AutoFlow] trackSubmission failed:', res.status);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn('[AutoFlow] trackSubmission error:', e);
+    return false;
+  }
+}
+
+/**
+ * Hand back the prompts a finished run never sent.
+ *
+ * Only meaningful while the server is charging on submission: the run claimed
+ * N at the start and holds them, so anything not sent has to be returned or it
+ * silently shrinks the user's quota for the rest of the day.
+ *
+ * Called however a run ends — completed, stopped, or failed. Idempotent, so a
+ * run that ends twice cannot hand back quota twice, and harmless against a
+ * server that has no such endpoint.
+ */
+export async function releaseQueueReservation(queueId: string): Promise<number> {
+  if (!queueId) return 0;
+  try {
+    const res = await apiFetch('/api/usage/release', {
+      method: 'POST',
+      body: JSON.stringify({ queue_id: queueId }),
+    });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return Number(data.freed) || 0;
+  } catch {
+    /* A hold nobody released expires server-side, so failing here costs the
+       user some quota for a few hours rather than permanently. Not worth
+       failing a run over. */
+    return 0;
   }
 }
 
@@ -509,10 +706,14 @@ export async function checkCanStartQueue(mode: 'lite' | 'flow' | 'full'): Promis
 
 /** Consume a queue run server-side. Call BEFORE starting the queue.
  *  Supports mixed queues: sends text_count + full_count separately. */
-export async function consumeQueueRun(mode: 'lite' | 'flow' | 'full', promptCount: number, promptType: 'text' | 'full' = 'text', textCount?: number, fullCount?: number): Promise<QueueRunCheckResult> {
+export async function consumeQueueRun(mode: 'lite' | 'flow' | 'full', promptCount: number, promptType: 'text' | 'full' = 'text', textCount?: number, fullCount?: number, queueId?: string): Promise<QueueRunCheckResult> {
   try {
     // If per-type counts are provided, send them for accurate mixed-queue tracking
     const payload: Record<string, unknown> = { mode, prompt_count: promptCount, prompt_type: promptType };
+    /* The run's own id. Under submission charging the server holds this run's
+       prompts against it rather than spending them, and needs the id to give
+       the unused ones back when the run ends. Harmless to an older server. */
+    if (queueId) payload.queue_id = queueId;
     if (textCount !== undefined && fullCount !== undefined) {
       payload.text_count = textCount;
       payload.full_count = fullCount;
@@ -577,7 +778,7 @@ export async function getReviewRewardStatus(): Promise<ReviewRewardResult> {
 /** Request a password reset. Sends a 6-digit code via email. */
 export async function requestPasswordReset(email: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/password/reset-request`, {
+    const res = await apiFetchRaw(`/api/auth/password/reset-request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
@@ -588,14 +789,14 @@ export async function requestPasswordReset(email: string): Promise<{ ok: boolean
     }
     return { ok: false, message: extractError(data, 'Failed to request password reset.') };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: connectionMessage(err) };
   }
 }
 
 /** Confirm password reset by providing email, code, and new password. */
 export async function confirmPasswordReset(email: string, code: string, newPassword: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/password/reset-confirm`, {
+    const res = await apiFetchRaw(`/api/auth/password/reset-confirm`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, code, new_password: newPassword }),
@@ -606,7 +807,7 @@ export async function confirmPasswordReset(email: string, code: string, newPassw
     }
     return { ok: false, message: extractError(data, 'Failed to reset password.') };
   } catch (err) {
-    return { ok: false, message: 'Could not reach the server. Check your internet connection.' };
+    return { ok: false, message: connectionMessage(err) };
   }
 }
 

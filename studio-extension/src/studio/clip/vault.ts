@@ -91,6 +91,15 @@ export interface VaultRecord {
 export const canPersist = (): boolean =>
   typeof indexedDB !== 'undefined' && indexedDB !== null;
 
+/** Read one production checkpoint without loading the entire media vault. */
+export async function loadMedia(key: string): Promise<Blob | undefined> {
+  if (!canPersist()) return undefined;
+  try {
+    const record = await run<VaultRecord | undefined>('readonly', store => store.get(`media:${key}`));
+    return record?.kind === 'media' ? record.blob : undefined;
+  } catch { return undefined; }
+}
+
 let connection: IDBDatabase | null = null;
 
 /* Strictly increasing, even when the clock is not.

@@ -37,6 +37,7 @@ const PORTS: Record<string, { in: string[]; out: string[] }> = {
      validate.ts: a test that imported the implementation's map would agree
      with it by construction and prove nothing. */
   story: { in: ['text'], out: ['text'] },
+  chief: { in: ['text'], out: ['text'] },
   /* Frames mode swaps the ingredient tray for Flow's Start and End slots, so
      it swaps the port too: a node in this mode that still drew image_ref would
      accept a wire the runner never reads. Spelled out here rather than

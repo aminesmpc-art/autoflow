@@ -168,9 +168,24 @@ describe('each tick', () => {
   });
 
   it('does not re-inject while something is answering', async () => {
+    /* Re-injection specifically, which is a FILE injection. The tick also
+       runs a func-based status refresh for Flow now, so asserting that
+       executeScript was never called at all no longer says what it meant
+       to — it would fail on a call that is not a re-injection. */
     await startRun(port());
     await fireAlarm('studio-tab-ping');
-    expect(calls['scripting.executeScript']).toBeUndefined();
+    const files = (calls['scripting.executeScript'] || []).map(([o]) => o.files?.[0]);
+    expect(files.filter(Boolean)).toEqual([]);
+  });
+
+  /* Flow's page stops polling while hidden, so its status cache goes stale
+     and the engine reads nothing. The refresh has to be driven from here,
+     where the timer is not throttled. */
+  it('refreshes flow status on the tick, in the page rather than by injection', async () => {
+    await startRun(port());
+    await fireAlarm('studio-tab-ping');
+    const runs = calls['scripting.executeScript'] || [];
+    expect(runs.some(([o]: any[]) => typeof o.func === 'function' && o.world === 'MAIN')).toBe(true);
   });
 });
 

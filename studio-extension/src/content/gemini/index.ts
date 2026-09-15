@@ -22,6 +22,9 @@
 console.log('[AutoFlow Gemini] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
+import { isVisible } from '../shared/visible';
+import { sleepOrDomChange } from '../shared/hiddenWait';
+import { insertIntoEditable, readRenderedText } from '../shared/composerText';
 
 const GENERATION_TIMEOUT_MS = 6 * 60 * 1000;
 /* A reply is finished when it STOPS GROWING, not when a clock runs out.
@@ -39,6 +42,35 @@ const GENERATION_TIMEOUT_MS = 6 * 60 * 1000;
 const TEXT_TIMEOUT_MS = 90 * 1000;
 /** No change and nothing running for this long means it is over. */
 const TEXT_QUIET_MS = 45 * 1000;
+/* Silence BEFORE the first token is a different thing from silence after it.
+ *
+ * TEXT_QUIET_MS is a budget for "the answer stopped growing". It was being
+ * applied from the moment of asking, because lastChangeAt only moves when the
+ * reply text changes and before the first token it never moves. So a model
+ * that thinks for longer than 45 seconds — which Flash Extended does routinely
+ * — spent the rest of its thinking one bad poll away from being abandoned.
+ *
+ * That is what killed a Director Chief run: the Diagnostics feed read
+ *
+ *     Waiting 16s — finished false, generating true, reply 0 chars
+ *     Waiting 30s — finished false, generating true, reply 0 chars
+ *     Waiting 47s — finished false, generating true, reply 0 chars
+ *
+ * and the full answer was sitting in the Gemini tab afterwards. 0 chars is not
+ * a fault there; it is what thinking looks like.
+ *
+ * So the wait before the answer starts gets its own budget, and it is long,
+ * because there is nothing to be gained by giving up on a model that is
+ * visibly working. TEXT_CEILING_MS is still the outer backstop. */
+const NO_ANSWER_YET_MS = 5 * 60 * 1000;
+/* And an ending has to be observed twice.
+ *
+ * The break above needed a SINGLE poll reading "not generating" to end the
+ * run. isGenerating() reads the page, and the page passes through states
+ * where it is momentarily neither streaming nor finished — between a thinking
+ * phase ending and the first token, the send button re-enables and every
+ * other signal is absent. One flicker there ended a live turn. */
+const QUIET_POLLS_REQUIRED = 2;
 /* Gemini had no logger. Every wait it ever performed was invisible in
    Diagnostics, so a Gemini node that hung told the user nothing at all —
    the other three adapters have had this since they were written. */
@@ -55,9 +87,9 @@ function logLine(line: string): void {
    extension is rebuilt — the tab must be reloaded too — and a stale
    script is indistinguishable from a broken fix unless it says which
    one it is. */
-import { shouldTidy, tidyAwayConversation, waitForNoDialog } from './tidy';
+import { shouldTidy, tidyAwayConversation, waitForNoDialog, openConversation, conversationId } from './tidy';
 
-const ADAPTER_BUILD = 'video-data-v4';
+const ADAPTER_BUILD = 'thinking-wait-v5';
 
 /** Backstop for a wedged tab. */
 const TEXT_CEILING_MS = 10 * 60 * 1000;
@@ -116,12 +148,7 @@ function send(type: string, payload: Record<string, unknown>): void {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-function isVisible(el: Element): boolean {
-  const rect = el.getBoundingClientRect();
-  if (rect.width < 5 || rect.height < 5) return false;
-  const style = getComputedStyle(el);
-  return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-}
+
 
 /* Chrome throttles timers in background tabs, and the tab we open is
    deliberately in the background. A round-trip to the worker keeps this
@@ -295,15 +322,42 @@ function looksSignedOut(): boolean {
  * is present and disabled. The real completion signal is the reply text
  * holding still across consecutive polls; this is the secondary guard.
  */
-function isGenerating(): boolean {
+/**
+ * @param sinceTurns  How many model turns existed when we submitted. Until the
+ *   page has more than that, THIS turn has not rendered and the newest element
+ *   on the page belongs to the previous one.
+ *
+ * That distinction is the whole reason the parameter exists. Without it the
+ * checks below read the last finished answer: its `.response-footer` carries
+ * `complete`, so this returned false — "nothing is generating" — while Gemini
+ * was thinking about the question we had just asked. Paired with a quiet timer
+ * that had already been armed, one such poll abandoned a live turn.
+ */
+function isGenerating(sinceTurns = 0): boolean {
   /* Gemini states this outright. The live DOM carries aria-busy on both the
      markdown panel and the label announcer, and the footer gains a `complete`
      class when the turn ends — all of it maintained by Gemini for screen
      readers, which makes it far steadier than any button. */
   const turns = document.querySelectorAll<HTMLElement>('model-response, structured-content-container');
-  const latest = turns[turns.length - 1];
+  /* Our turn has not appeared yet. Nothing on the page describes it, so the
+     per-turn markers below cannot be consulted — fall through to the page-wide
+     ones, which do still speak for the request in flight. */
+  const ours = turns.length > sinceTurns;
+  const latest = ours ? turns[turns.length - 1] : null;
   if (latest) {
     if (latest.querySelector('[aria-busy="true"]')) return true;
+
+    /* A finished video turn, before the footer is consulted.
+    
+       The footer's `complete` class is maintained for a text answer; a clip
+       arrives in a <video-player> whose controls are the footer, and waiting
+       for a class that never lands leaves a rendered video reading as still
+       generating. Gemini only offers Download video once the file exists, so
+       its presence settles it. */
+    const playable = Array.from(latest.querySelectorAll<HTMLElement>('[aria-label]'))
+      .some((el) => /^\s*download\s+video\s*$/i.test(el.getAttribute('aria-label') || ''));
+    if (playable) return false;
+
     const footer = latest.querySelector('.response-footer');
     if (footer) return !footer.classList.contains('complete');
   }
@@ -393,9 +447,39 @@ function turnFinished(): boolean | null {
   )).find((el) => !el.closest('code-block'));
   if (icon) return true;
 
-  return !!Array.from(scope.querySelectorAll<HTMLElement>('button'))
+  const copyBtn = Array.from(scope.querySelectorAll<HTMLElement>('button'))
     .find((b) => !b.closest('code-block')
       && /^\s*copy\s*$/i.test(b.getAttribute('aria-label') || ''));
+  if (copyBtn) return true;
+
+  /* A video turn has no Copy at all.
+   *
+   * Its footer is the player's own controls — Download video, Share video,
+   * Mute video, Play video — and nothing else. Reading the absence of Copy as
+   * "still going" is what left a finished clip waiting: Gemini had rendered
+   * the whole thing, 0:10 of 0:10, while the node sat at "Generating video…"
+   * because this returned false on every poll and the caller's
+   * `turnFinished() !== false` never opened.
+   *
+   * Download video is the marker, because Gemini only offers it once there is
+   * a file to download. */
+  const finishedPlayer = Array.from(last.querySelectorAll<HTMLElement>('[aria-label]'))
+    .some((el) => /^\s*(download|share)\s+video\s*$/i.test(el.getAttribute('aria-label') || ''));
+  if (finishedPlayer) return true;
+
+  /* A media turn without those controls yet: cannot tell. Null, not false —
+     the caller blocks only on an explicit "still going". */
+  if (last.querySelector('video-player, video, generated-video')) return null;
+
+  /* A text turn, and no Copy on it. HERE the absence does mean the answer is
+     still being written, because Gemini puts Copy on every finished one — so
+     this stays false, and the caller keeps refusing a half-written reply.
+     
+     Returning null for this case as well was tried and was wrong: it let a
+     turn reading "half an answ" through as a finished result. The difference
+     is whether the turn is text at all, which is why it is checked and not
+     assumed. */
+  return false;
 }
 
 /**
@@ -410,9 +494,12 @@ function readLatestReply(): string {
   const inner = document.querySelectorAll<HTMLElement>(
     'message-content, .model-response-text, .markdown-main-panel'
   );
-  if (inner.length) return inner[inner.length - 1].innerText || '';
+  /* innerText is layout-dependent and comes back empty on a tab Chrome is
+     not painting; textContent does not. Same species as the execCommand
+     problem — fine visible, silent and empty hidden. */
+  if (inner.length) return readRenderedText(inner[inner.length - 1]);
   const turns = document.querySelectorAll<HTMLElement>('model-response');
-  return turns.length ? turns[turns.length - 1].innerText || '' : '';
+  return turns.length ? readRenderedText(turns[turns.length - 1]) : '';
 }
 
 /**
@@ -632,15 +719,12 @@ function fillComposer(el: HTMLElement, text: string): boolean {
     return el.value.trim().length > 0;
   }
 
-  const sel = window.getSelection();
-  sel?.selectAllChildren(el);
-  document.execCommand('insertText', false, text);
-  el.dispatchEvent(new InputEvent('input', { bubbles: true, data: text, inputType: 'insertText' }));
-
-  const landed = (el.innerText || el.textContent || '').trim();
-  // Proportional, with no ceiling: a fixed floor passes a 27-character
-  // placeholder for a 200-character prompt.
-  return landed.length >= Math.max(4, Math.floor(text.trim().length * 0.6));
+  /* execCommand needs the DOCUMENT to have focus, not merely to be visible,
+     so in a background tab it inserts nothing and says nothing. That is why
+     a hidden Gemini run sat waiting until the tab was clicked. The shared
+     helper keeps that path and falls back to a synthetic paste, which needs
+     no focus. */
+  return insertIntoEditable(el, text);
 }
 
 /* ── Reference images ── */
@@ -973,6 +1057,29 @@ async function handleExecute(payload: any): Promise<any> {
      resetting between turns would drop the tool results it just read. */
   if (config?.newChat !== 'never') {
     await startNewChat();
+  } else if (config?.resumeConversation) {
+    /* Continue THIS node's thread, not whichever one is on screen.
+     *
+     * 'never' on its own means "do not open a new chat", and after a Director
+     * has run, the chat on screen is the Director's. The Chief's review turn —
+     * written as a follow-up to a plan it made — would arrive in a
+     * conversation that had never seen one, and the reply would look fine.
+     *
+     * Failing is the right outcome when we cannot get back. The runner clears
+     * the node's thread and asks again with the full context, which costs a
+     * turn; answering in the wrong room costs the run and says nothing. */
+    const back = await openConversation(config.resumeConversation);
+    if (!back) {
+      logLine(`Could not return to conversation ${config.resumeConversation} — not answering in the wrong thread.`);
+      send('STUDIO_NODE_ERROR', {
+        nodeId,
+        error: 'Could not reopen this node\'s Gemini conversation. It may have been deleted. '
+          + 'The run will ask again with the full context.',
+        threadLost: true,
+      });
+      return;
+    }
+    logLine(`Continuing this node's own conversation (${config.resumeConversation}).`);
   } else {
     console.log('[AutoFlow Gemini] Continuing the current thread (agent turn)');
   }
@@ -1033,6 +1140,10 @@ async function handleExecute(payload: any): Promise<any> {
       : collectResultImages().map((i) => i.currentSrc || i.src),
   );
   const priorReply = wantsText ? readLatestReply().trim() : '';
+  /* How many model turns exist BEFORE we ask. Everything after this point that
+     wants to know "is our turn running" has to be able to tell our turn from
+     the last one, and a count taken here is the only thing that can. */
+  const turnsBefore = document.querySelectorAll('model-response, structured-content-container').length;
 
   const references: string[] = (config?.referenceImageData || [])
     .filter((d: unknown): d is string => typeof d === 'string' && d.startsWith('data:'));
@@ -1079,7 +1190,7 @@ async function handleExecute(payload: any): Promise<any> {
   // before a generation finishes. Results travel by sendMessage instead.
   startAntiThrottle();
   const work = wantsText
-    ? trackTextReply(nodeId, priorReply, config?.rawReply === true)
+    ? trackTextReply(nodeId, priorReply, config?.rawReply === true, turnsBefore)
     : wantsVideo
       ? trackVideo(nodeId, preexisting)
       : trackGeneration(nodeId, preexisting);
@@ -1144,8 +1255,16 @@ async function trackVideo(nodeId: string, preexisting: Set<string>): Promise<voi
   let explained = false;
 
   while (Date.now() - startedAt < 12 * 60 * 1000) {
-    await sleep(2000);
-    if (document.hidden) continue;          // a throttled tab reads nothing useful
+    await sleepOrDomChange(2000);
+    /* Reading while hidden, deliberately.
+       This used to `continue` on document.hidden, on the theory that a
+       throttled tab reads nothing useful. The DOM of a hidden tab is
+       perfectly readable — what Chrome throttles is timers and rendering,
+       not querySelector. So the skip did not avoid a bad read, it avoided
+       ALL reads: a run hidden for its duration span the full twelve minutes
+       collecting nothing and then reported a timeout for a clip that had
+       finished. Decoding is the part that genuinely degrades, and the poster
+       capture below already guards on videoWidth for exactly that. */
 
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
@@ -1249,7 +1368,7 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
   let explained = false;
 
   while (Date.now() - startedAt < GENERATION_TIMEOUT_MS) {
-    await sleep(POLL_MS);
+    await sleepOrDomChange(POLL_MS);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
       nodeId,
@@ -1318,15 +1437,20 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
  * cleanAssistantReply strips surrounding quotes, which can be part of the JSON.
  */
 async function trackTextReply(
-  nodeId: string, priorReply: string, raw = false
+  nodeId: string, priorReply: string, raw = false, sinceTurns = 0
 ): Promise<void> {
   const startedAt = Date.now();
   let lastSeen = '';
   let lastChangeAt = Date.now();
   let stableCount = 0;
+  /* Has our answer produced a single character yet. Everything about how long
+     to wait depends on this, and nothing did before. */
+  let answerStarted = false;
+  /* Consecutive polls that read "not generating". One is a flicker. */
+  let quietPolls = 0;
 
   while (Date.now() - startedAt < TEXT_CEILING_MS) {
-    await sleep(POLL_MS);
+    await sleepOrDomChange(POLL_MS);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
       nodeId,
@@ -1340,18 +1464,45 @@ async function trackTextReply(
        model still thinking from an adapter that could no longer recognise the
        end — nor from a tab running a previously injected script, which no
        amount of rebuilding fixes and nothing anywhere reported. */
+    const running = isGenerating(sinceTurns);
     if (elapsed > 10_000
         && Math.floor(elapsed / 15_000) !== Math.floor((elapsed - POLL_MS) / 15_000)) {
       logLine(
-        `Waiting ${Math.round(elapsed / 1000)}s — finished ${String(turnFinished())}, generating ${isGenerating()}, reply ${current.length} chars`
+        `Waiting ${Math.round(elapsed / 1000)}s — finished ${String(turnFinished())}, generating ${running}, `
+        + `reply ${current.length} chars${answerStarted ? '' : ' (not started — thinking)'}`
       );
     }
 
     /* Silence, and nothing in flight. Checked before the "has it started"
-       skip below, so a chat that never answers at all still ends. */
-    if (Date.now() - lastChangeAt > TEXT_QUIET_MS && !isGenerating()) break;
+       skip below, so a chat that never answers at all still ends.
+     *
+     * Two budgets, because the two silences mean different things. After the
+     * first token, no growth for TEXT_QUIET_MS is an ending. Before it, there
+     * is nothing to have stopped — the model is thinking, and thinking longer
+     * than 45 seconds is ordinary on an extended model. Applying the first
+     * budget to the second case is what reported a Director Chief as timed out
+     * with its finished answer on screen.
+     *
+     * And an ending must be seen twice. The page passes through moments where
+     * it is neither streaming nor finished; a single reading there is not
+     * evidence that anything is over. */
+    quietPolls = running ? 0 : quietPolls + 1;
+    const silentFor = Date.now() - lastChangeAt;
+    const budget = answerStarted ? TEXT_QUIET_MS : NO_ANSWER_YET_MS;
+    if (silentFor > budget && quietPolls >= QUIET_POLLS_REQUIRED) {
+      logLine(
+        answerStarted
+          ? `Reply stopped growing ${Math.round(silentFor / 1000)}s ago and nothing is running — taking it as finished.`
+          : `No answer after ${Math.round(silentFor / 1000)}s and nothing is running — giving up.`
+      );
+      break;
+    }
     // Unchanged from before we asked means our answer has not started.
     if (!current || current === priorReply) continue;
+    if (!answerStarted) {
+      answerStarted = true;
+      logLine(`Answer started after ${Math.round(elapsed / 1000)}s.`);
+    }
 
     if (current === lastSeen) stableCount++;
     else { lastSeen = current; stableCount = 0; lastChangeAt = Date.now(); }
@@ -1378,7 +1529,7 @@ async function trackTextReply(
      * and must keep it.
      */
     const said = turnFinished();
-    if (said !== false && (said === true || (stableCount >= 2 && !isGenerating()))) {
+    if (said !== false && (said === true || (stableCount >= 2 && !running))) {
       const cleaned = raw ? current : cleanAssistantReply(current);
       if (!raw && !looksLikeUsablePrompt(cleaned)) {
         send('STUDIO_NODE_ERROR', {
@@ -1388,7 +1539,13 @@ async function trackTextReply(
         return;
       }
       logLine(`Reply captured (${cleaned.length} chars)`);
-      send('STUDIO_NODE_RESULT', { nodeId, tileId: '', text: cleaned });
+      /* Where this happened, so the node can be brought back here. Read at
+         the moment the answer lands, which is the only time it is certainly
+         this turn's thread. */
+      send('STUDIO_NODE_RESULT', {
+        nodeId, tileId: '', text: cleaned,
+        conversationPath: conversationId(location.pathname),
+      });
       return;
     }
   }

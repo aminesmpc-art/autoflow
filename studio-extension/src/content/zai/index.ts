@@ -10,6 +10,9 @@
 console.log('[AutoFlow Z.AI] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
+import { isVisible } from '../shared/visible';
+import { sleepOrDomChange } from '../shared/hiddenWait';
+import { insertIntoEditable } from '../shared/composerText';
 
 const TEXT_TIMEOUT_MS = 180 * 1000;
 const TEXT_QUIET_MS = 60 * 1000;
@@ -50,12 +53,7 @@ function logLine(line: string): void {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-function isVisible(el: Element): boolean {
-  const rect = el.getBoundingClientRect();
-  if (rect.width < 5 || rect.height < 5) return false;
-  const style = getComputedStyle(el);
-  return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-}
+
 
 /* Chrome background tab anti-throttle */
 let antiThrottle: ReturnType<typeof setInterval> | null = null;
@@ -268,13 +266,10 @@ function fillComposer(el: HTMLElement, text: string): boolean {
     return el.value.trim().length > 0;
   }
 
-  const sel = window.getSelection();
-  sel?.selectAllChildren(el);
-  document.execCommand('insertText', false, text);
-  el.dispatchEvent(new InputEvent('input', { bubbles: true, data: text, inputType: 'insertText' }));
-
-  const landed = (el.innerText || el.textContent || '').trim();
-  return landed.length >= Math.max(4, Math.floor(text.trim().length * 0.6));
+  /* execCommand needs the DOCUMENT focused, not just visible — a no-op in a
+     background tab. The shared helper keeps it and falls back to a synthetic
+     paste, which needs no focus. */
+  return insertIntoEditable(el, text);
 }
 
 /** Extract text from the latest assistant message only, thoroughly stripping thinking blocks */
@@ -401,7 +396,7 @@ async function trackTextReply(nodeId: string, raw = false): Promise<void> {
   let stableCount = 0;
 
   while (Date.now() - startedAt < TEXT_CEILING_MS) {
-    await sleep(POLL_MS);
+    await sleepOrDomChange(POLL_MS);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
       nodeId,

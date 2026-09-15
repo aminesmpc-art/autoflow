@@ -247,15 +247,13 @@ export default function ClippingPage() {
       <section className="studio-hero clip-hero" id="clip-it">
         <div className="studio-hero-bg" />
         <div className="container" style={{ position: "relative", zIndex: 1 }}>
-          <div className="studio-badge">✂️ Free · runs in your browser</div>
+          <div className="studio-badge clip-product-badge">AUTOFLOW CLIPPING <span>AI-powered · browser-based editing</span></div>
           <h1>
-            Turn a long video into<br />
-            <span className="text-gradient">short clips worth posting.</span>
+            Long video. <span className="text-gradient">Short-form potential.</span>
           </h1>
           <p className="clip-hero-sub">
-            Drop a podcast, stream or interview. You get vertical clips for TikTok,
-            Reels and YouTube Shorts — cut on the line they open and close on,
-            reframed to 9:16, captioned, with the edit already written down.
+            Find the moments worth sharing. Turn podcasts, interviews and streams into
+            ranked, reframed, captioned clips for Shorts, Reels and TikTok.
           </p>
 
           <div className="clip-hero-tool">

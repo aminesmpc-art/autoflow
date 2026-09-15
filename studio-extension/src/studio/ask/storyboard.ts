@@ -91,6 +91,48 @@ export interface Problem {
   code: string;
   /** Written to be read by the model, not only by us. */
   detail: string;
+  /**
+   * The words in the prompt that triggered this, with a little either side.
+   *
+   * A rule name tells the writer that a rule exists; the words tell it what to
+   * change. Without this a repair rewrites everything except the trigger,
+   * which is exactly how a Construction Timelapse spent three attempts on
+   * `contRestart`: the offending word was `leveled`, inside the handover
+   * sentence the brief requires it to repeat verbatim, and nothing in the
+   * message pointed at it.
+   *
+   * Absent on problems that are about a missing thing rather than a present
+   * one — there is no span to quote for "never says it carries on".
+   */
+  matched?: string;
+}
+
+/**
+ * The words a pattern matched, with enough either side to find them.
+ *
+ * Four words of context rather than the bare match: `leveled` appears twice in
+ * a construction prompt and "immaculately leveled, smooth rectangular" appears
+ * once, so the writer can locate it in a single read instead of searching four
+ * hundred words for a word it cannot see.
+ */
+export function triggerText(
+  prompt: string,
+  hit: RegExpExecArray,
+  words = 4,
+): string | undefined {
+  /* A zero-length match has no words to quote. Some rules fire on what is
+     ABSENT — one of them is a bare negative lookahead that matches the empty
+     string at index 0 — and quoting "the first four words of the prompt" there
+     would invent a trigger and send the writer to change something innocent. */
+  if (!hit[0]) return undefined;
+
+  const before = prompt.slice(0, hit.index).split(/\s+/).filter(Boolean).slice(-words);
+  const after = prompt
+    .slice(hit.index + hit[0].length)
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, words);
+  return [...before, hit[0], ...after].join(' ').trim();
 }
 
 /* Composer limits. Flow shows a 20000 character counter; the others are
@@ -487,11 +529,18 @@ const NOTHING_THERE = '(?:furniture|decoration|decor|lighting|lights|fittings|fi
   + 'rugs?|panels?|shelves|paint|colou?rs?|walls?|structure|bricks?|stone blocks?|'
   + 'poured cement|construction|carvings?|details?)';
 
+/* The ground itself, as opposed to anything standing on it. */
+const GROUND = 'ground|site|earth|soil|plot|terrain|land|lot|pad|surface';
+
+/* Prepared ground. Emptiness when an opening shot says it, ordinary carried
+   state when a continuation does — see RESTART_EMPTY. */
+const PREPARED_GROUND =
+  `\\b(?:cleared|level(?:l)?ed|flattened|excavated|graded)\\s+(?:${GROUND})\\b`;
+
 const EMPTY_START = new RegExp(
   '\\b(?:'
   + 'empty|emptied|bare|barren|unfurnished|undecorated|unpainted|unfinished|'
   + 'stripped|gutted|untouched|vacant|blank|derelict|raw concrete|bare boards|'
-  + 'cleared|leveled|flattened|excavated|'
   + 'raw (?:block|wood|clay|metal|material|stock|hardwood|timber)|'
   + 'solid block|uncarved|unsculpted|unshaped|'
   + 'before (?:any|anything|the work|she|he|they|construction|building)|'
@@ -502,9 +551,26 @@ const EMPTY_START = new RegExp(
   /* Same nouns, the other way round: "without furniture" says the room is
      empty; "without camera movement" says nothing about the room at all. */
   + `|\\bwith(?:out| no) ${NOTHING_THERE}\\b`
-  + '|\\bbare (?:ground|soil|earth|surface|foundation|workbench|bench)',
+  + '|\\bbare (?:ground|soil|earth|surface|foundation|workbench|bench)'
+  + `|${PREPARED_GROUND}`,
   'i',
 );
+
+/**
+ * The same words, minus the ones a continuation is entitled to use.
+ *
+ * A build's inherited state is ground — a slab on graded earth, a floor over a
+ * cleared plot — so prepared-ground adjectives appear in every correct
+ * continuation, and reading them as a restart made the repair unwinnable: the
+ * brief requires the handover verbatim, and the handover is what trips it.
+ * Observed twice, on `leveled` and then on `graded`, three attempts each.
+ *
+ * Everything left is a statement that the work has NOT happened —
+ * "unfurnished", "not yet built", "before any of the work" — and a
+ * continuation saying one of those is arguing with the frame it was handed
+ * however firmly it also claims to continue.
+ */
+const RESTART_EMPTY = new RegExp(EMPTY_START.source.replace(`|${PREPARED_GROUND}`, ''), 'i');
 
 const ATTRIBUTED =
   /\b(?:says?|said|whispers?|shouts?|asks?|answers?|replies|replied|murmurs?|mutters?|exclaims?|adds|calls|yells?|sings?|tells|breathes)\b[^\u201c\u201d"]{0,40}["\u201c]([^"\u201d]{2,})["\u201d]/gi;
@@ -1086,7 +1152,19 @@ export function checkShots(
     const scope: ShotScope = target?.isSheet ? 'sheet' : 'clip';
     for (const rule of BANNED) {
       if (rule.scope && !rule.scope.includes(scope)) continue;
-      if (rule.re.test(p)) problems.push({ shot: n, code: rule.code, detail: `The prompt ${rule.detail}` });
+      /* exec rather than test, so the problem can quote what it found. Every
+         one of these rules fires on words that are in the prompt, and naming
+         them is the difference between a repair that edits the trigger and one
+         that rewrites the shot around it. */
+      const hit = rule.re.exec(p);
+      if (hit) {
+        problems.push({
+          shot: n,
+          code: rule.code,
+          detail: `The prompt ${rule.detail}`,
+          matched: triggerText(p, hit),
+        });
+      }
     }
 
     /* ── Dialogue that a generator can actually speak ──
@@ -1269,12 +1347,16 @@ export function checkShots(
          describes the room as it was before the work, is arguing with the
          frame it has been handed. The clip restarts and the render is
          wasted. */
-      if (RESTARTS.test(p) || EMPTY_START.test(p)) {
+      /* RESTART_EMPTY, not EMPTY_START: a continuation may describe the ground
+         it inherited without being accused of starting over. See its comment. */
+      const restart = RESTARTS.exec(p) || RESTART_EMPTY.exec(p);
+      if (restart) {
         problems.push({
           shot: n, code: 'contRestart',
           detail: 'opens as though the scene were starting, but this shot continues '
             + `from "${target.continues || 'the shot before it'}" and is handed its last `
             + 'frame. Describe what is already there and carry the action on from it.',
+          matched: triggerText(p, restart),
         });
       } else if (!CONTINUES.test(p)) {
         /* Advisory. A shot can continue perfectly well by describing
@@ -1503,7 +1585,16 @@ export function repairMessage(
   }
   for (const [n, list] of Array.from(byShot.entries()).sort((a, b) => a[0] - b[0])) {
     lines.push(`Shot ${n}:`);
-    for (const p of list) lines.push(`  · ${p.detail}`);
+    for (const p of list) {
+      lines.push(`  · ${p.detail}`);
+      /* The span, on its own line and in quotes. A repair that is told the
+         rule rewrites the shot; a repair that is told the words changes the
+         words. Only the second one converges. */
+      if (p.matched) {
+        lines.push(`    The words that read that way: \u201c${p.matched}\u201d`);
+        lines.push('    Change those specific words. The rest of the shot is accepted.');
+      }
+    }
   }
   if (only && only.length && only.length < targets.length) {
     const named = only.map((n: number) => `${n} ("${targets[n - 1]?.label || `Shot ${n}`}")`);
