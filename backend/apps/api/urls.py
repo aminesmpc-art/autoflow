@@ -34,6 +34,12 @@ urlpatterns = [
 
     # Usage
     path("usage/consume", views.ConsumePromptView.as_view(), name="usage-consume"),
+    # One prompt reached Flow and Flow accepted it. Does not charge until
+    # METER_ON_SUBMISSION is on — written alongside the existing count so the
+    # two can be compared on the same runs before anything switches over.
+    path("usage/submitted", views.PromptSubmittedView.as_view(), name="usage-submitted"),
+    # A finished run hands back what it never sent. Idempotent.
+    path("usage/release", views.ReleaseReservationView.as_view(), name="usage-release"),
     path("usage/download", views.ConsumeDownloadView.as_view(), name="usage-download"),
     path("usage/queue-run", views.ConsumeQueueRunView.as_view(), name="usage-queue-run"),
     path("usage/studio-run", views.ConsumeStudioRunView.as_view(), name="usage-studio-run"),

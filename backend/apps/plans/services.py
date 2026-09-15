@@ -6,7 +6,7 @@ Views call these functions; no business logic in serializers or views.
 """
 import logging
 from datetime import date as date_type
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
 from django.conf import settings
 from django.db import transaction, IntegrityError
@@ -15,7 +15,7 @@ from django.utils import timezone
 
 from apps.plans.models import PlanType, Profile
 from apps.rewards.models import CreditStatus, RewardCreditLedger
-from apps.usage.models import DailyUsage, MonthlyUsage, UsageEvent
+from apps.usage.models import DailyUsage, MonthlyUsage, PromptReservation, UsageEvent
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,140 @@ FREE_DOWNLOAD_DAILY_LIMIT = getattr(settings, "FREE_DOWNLOAD_DAILY_LIMIT", 20)
 FREE_LITE_DAILY_LIMIT = getattr(settings, "FREE_LITE_DAILY_LIMIT", 3)
 FREE_FLOW_DAILY_LIMIT = getattr(settings, "FREE_FLOW_DAILY_LIMIT", 5)
 FREE_FULL_DAILY_LIMIT_RUNS = getattr(settings, "FREE_FULL_DAILY_LIMIT_RUNS", 1)
+
+# ── Charging on submission ────────────────────────────────────────────────
+#
+# OFF by default, and deliberately so. Turning it on changes what every user
+# is billed: today's number means "prompts queued" and the new one means
+# "prompts Flow received", so the same day's history reads lower under the new
+# rule with nothing to distinguish the fix from a regression.
+#
+# Both numbers are written either way — see PromptSubmittedView and the
+# dashboard's flow_receipt block. This flag only decides which one MOVES THE
+# METER, so the switch is a deliberate act taken once the two have been
+# compared on real runs, rather than a side effect of a deploy.
+METER_ON_SUBMISSION = getattr(settings, "METER_ON_SUBMISSION", False)
+
+# How long a hold survives without being released. Long enough for the longest
+# real queue — a 20-prompt Full run with retries — and short enough that a
+# worker that died mid-run frees the user's quota the same day.
+RESERVATION_TTL_HOURS = getattr(settings, "RESERVATION_TTL_HOURS", 6)
+
+
+def held_prompt_count(user) -> int:
+    """Prompts this user has claimed and not yet spent or released.
+
+    Counted into every limit check, so the gate is exactly as strict as it is
+    under up-front charging. Without it, charging at submission would let a
+    free user with five left start a hundred-prompt queue and overshoot before
+    the meter caught up.
+    """
+    expire_stale_reservations(user)
+    return PromptReservation.objects.filter(
+        user=user, released_at__isnull=True,
+    ).aggregate(s=Sum("held"))["s"] or 0
+
+
+def expire_stale_reservations(user=None) -> int:
+    """Release holds nobody ever closed.
+
+    A run that is stopped, a tab that is closed, a worker Chrome recycled: all
+    of them leave a hold open. Unreleased holds would silently shrink the
+    user's quota for the rest of the day, which is the same class of harm as
+    charging for prompts that were never sent — just pointing the other way.
+    """
+    stale = PromptReservation.objects.filter(released_at__isnull=True,
+                                             expires_at__lte=timezone.now())
+    if user is not None:
+        stale = stale.filter(user=user)
+    return stale.update(released_at=timezone.now(), held=0)
+
+
+def reserve_prompts(user, queue_id: str, mode: str, text_count: int,
+                    full_count: int) -> PromptReservation:
+    """Claim prompts for a run without spending them."""
+    total = max(0, text_count) + max(0, full_count)
+    reservation, _ = PromptReservation.objects.get_or_create(
+        queue_id=queue_id,
+        defaults={
+            "user": user,
+            "mode": mode,
+            "held": total,
+            "held_text": max(0, text_count),
+            "held_full": max(0, full_count),
+            "expires_at": timezone.now() + timedelta(hours=RESERVATION_TTL_HOURS),
+        },
+    )
+    return reservation
+
+
+def commit_reserved_prompt(user, queue_id: str, prompt_type: str = "text") -> bool:
+    """Spend ONE held prompt, because Flow received one.
+
+    Returns True when a hold was converted into a charge.
+
+    A submission with no matching reservation still charges — a hold that
+    expired, or a queue started before this was switched on, does not make the
+    generation free. Google charged for it either way, and a charge that
+    silently does not happen is the same defect as one that should not have.
+    """
+    now = timezone.now()
+    today = now.date()
+    get_or_create_daily_usage(user, today)
+
+    with transaction.atomic():
+        usage = DailyUsage.objects.select_for_update().get(user=user, date=today)
+        reservation = (PromptReservation.objects
+                       .select_for_update()
+                       .filter(queue_id=queue_id, user=user, released_at__isnull=True)
+                       .first())
+
+        if reservation and reservation.held > 0:
+            reservation.held -= 1
+            reservation.committed += 1
+            if prompt_type == "full" and reservation.held_full > 0:
+                reservation.held_full -= 1
+            elif reservation.held_text > 0:
+                reservation.held_text -= 1
+            reservation.save(update_fields=["held", "committed", "held_text", "held_full"])
+
+        if prompt_type == "full":
+            usage.full_prompts_used += 1
+        else:
+            usage.text_prompts_used += 1
+        usage.free_prompts_used += 1
+        usage.total_prompts_used += 1
+        usage.save()
+        return True
+
+
+def release_reservation(user, queue_id: str) -> int:
+    """Give back whatever this run never sent. Returns how many."""
+    with transaction.atomic():
+        reservation = (PromptReservation.objects
+                       .select_for_update()
+                       .filter(queue_id=queue_id, user=user, released_at__isnull=True)
+                       .first())
+        if not reservation:
+            return 0
+        freed = reservation.held
+        reservation.held = 0
+        reservation.held_text = 0
+        reservation.held_full = 0
+        reservation.released_at = timezone.now()
+        reservation.save(update_fields=["held", "held_text", "held_full", "released_at"])
+        return freed
+
+# Studio workflow limits (visual builder) — runs per MONTH, plus a node cap.
+# Node count is enforced server-side too: the client-side cap lives in
+# chrome.storage and is trivially editable.
+FREE_STUDIO_MONTHLY_LIMIT = getattr(settings, "FREE_STUDIO_MONTHLY_LIMIT", 15)
+FREE_STUDIO_MAX_NODES = getattr(settings, "FREE_STUDIO_MAX_NODES", 5)
+# Keep legacy constant for backward compat
+FREE_DAILY_LIMIT = FREE_TEXT_DAILY_LIMIT
+
+
+# ── Daily usage helpers ──
 # Studio workflow limits (visual builder) — 10 runs per MONTH, plus 50 node executions per DAY.
 FREE_STUDIO_MONTHLY_LIMIT = getattr(settings, "FREE_STUDIO_MONTHLY_LIMIT", 10)
 FREE_STUDIO_DAILY_NODE_LIMIT = getattr(settings, "FREE_STUDIO_DAILY_NODE_LIMIT", 50)
@@ -513,7 +647,8 @@ def can_start_queue(user, mode: str) -> dict:
 
 
 def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str = "text",
-                      text_count: int = None, full_count: int = None) -> dict:
+                      text_count: int = None, full_count: int = None,
+                      queue_id: str = "") -> dict:
     """Atomically record a queue run AND pre-consume prompts for the given mode.
 
     Supports mixed queues: if text_count and full_count are provided, each type
@@ -585,8 +720,14 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
                 monthly.save()
 
         # ── Enforce prompt limits server-side ──
+        #
+        # Held prompts count against the limit exactly as spent ones do. Under
+        # up-front charging this is zero and nothing changes; under submission
+        # charging it is what keeps the gate as strict as it is today, instead
+        # of letting a free user with five left start a hundred-prompt queue.
+        held = held_prompt_count(user) if METER_ON_SUBMISSION else 0
         if not profile.is_pro:
-            free_remaining = FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used
+            free_remaining = FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used - held
             if prompt_count > free_remaining:
                 # Cap to whatever is remaining (don't let API callers bypass)
                 prompt_count = max(0, free_remaining)
@@ -612,7 +753,7 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
 
             # Enforce full-feature limit
             if full_count is not None and full_count > 0:
-                full_remaining = FREE_FULL_DAILY_LIMIT - usage.full_prompts_used
+                full_remaining = FREE_FULL_DAILY_LIMIT - usage.full_prompts_used - held
                 if full_count > full_remaining:
                     return {
                         "allowed": False,
@@ -623,7 +764,7 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
                         "message": "Daily full-feature limit reached. Upgrade to Pro for unlimited.",
                     }
             elif prompt_type == "full":
-                full_remaining = FREE_FULL_DAILY_LIMIT - usage.full_prompts_used
+                full_remaining = FREE_FULL_DAILY_LIMIT - usage.full_prompts_used - held
                 if prompt_count > full_remaining:
                     prompt_count = max(0, full_remaining)
                     if prompt_count <= 0:
@@ -636,17 +777,45 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
                             "message": "Daily full-feature limit reached. Upgrade to Pro for unlimited.",
                         }
 
-        # ── Pre-consume prompts (charge upfront) ──
-        if text_count is not None and full_count is not None:
-            usage.text_prompts_used += text_count
-            usage.full_prompts_used += full_count
-        elif prompt_type == "full":
-            usage.full_prompts_used += prompt_count
+        # ── Claim the prompts: hold them, or spend them ──
+        #
+        # The only line in this function that decides what a user is billed.
+        # Held, each submission commits one and the rest come back at run end;
+        # spent, the whole queue is charged here whether or not any of it ever
+        # reaches Flow — which is the behaviour this change exists to end.
+        if METER_ON_SUBMISSION:
+            reserve_prompts(
+                user,
+                queue_id=queue_id or f"run-{now.timestamp():.0f}-{user.pk}",
+                mode=mode,
+                text_count=(text_count if text_count is not None
+                            else (0 if prompt_type == "full" else prompt_count)),
+                full_count=(full_count if full_count is not None
+                            else (prompt_count if prompt_type == "full" else 0)),
+            )
+            usage.save()
         else:
-            usage.text_prompts_used += prompt_count
-        usage.free_prompts_used += prompt_count
-        usage.total_prompts_used += prompt_count
-        usage.save()
+            mixed = text_count is not None and full_count is not None
+            # One number bills and records.
+            #
+            # The counters used to add `prompt_count` while the events below
+            # were created from `text_count + full_count`. A caller whose
+            # split did not add up to its own total would therefore charge
+            # one amount and record another, in the same transaction, with
+            # nothing to reconcile them afterwards. No caller does today —
+            # 271 production runs checked, none mismatched — which is
+            # precisely why it would have gone unnoticed the day one did.
+            charged = (text_count + full_count) if mixed else prompt_count
+            if mixed:
+                usage.text_prompts_used += text_count
+                usage.full_prompts_used += full_count
+            elif prompt_type == "full":
+                usage.full_prompts_used += prompt_count
+            else:
+                usage.text_prompts_used += prompt_count
+            usage.free_prompts_used += charged
+            usage.total_prompts_used += charged
+            usage.save()
 
         # ── Create "pending" per-prompt events ──
         # These are placeholders. v3.0 extensions will UPDATE them to "done"/"failed"
@@ -805,7 +974,27 @@ def consume_studio_run(user, node_count: int = 1, generate_count: int = None) ->
             usage.total_prompts_used += nodes_to_charge
             usage.save()
 
-            # Per-prompt events, mirroring consume_queue_run
+            # Per-prompt events, mirroring consume_queue_run.
+            #
+            # NOTE — these deliberately do NOT number what was charged, and
+            # the gap is recorded rather than closed.
+            #
+            # A free account is charged `node_count`: every node in the
+            # workflow, against the same daily allowance that gates Flow
+            # prompts. Only `generate_count` events are written, because only
+            # a generate node can ever produce a Flow media id, and counting
+            # a Gemini ask as "charged but never received" would slander the
+            # Flow pipeline for work that was never headed there.
+            #
+            # So a 5-node workflow with 2 generate nodes bills 5 and records
+            # 2, and DailyUsage.free_prompts_used runs ahead of the events by
+            # the difference — observed as a drift of 5 on 2026-09-13. Which
+            # of the two should move is a pricing decision, not a bug fix:
+            # billing per node is what FREE_STUDIO_DAILY_NODE_LIMIT implies,
+            # and changing either number changes what users are charged or
+            # what the dashboard claims. Until that is decided, the charge is
+            # at least stated here so the drift is explicable instead of
+            # looking like corruption.
             import uuid as _uuid
             batch_id = str(_uuid.uuid4())[:8]
             for i in range(max(1, generate_count or 1)):
@@ -820,6 +1009,10 @@ def consume_studio_run(user, node_count: int = 1, generate_count: int = None) ->
                         "status": "pending",
                         "batch_id": batch_id,
                         "seq": i,
+                        # What the account was actually billed for this run,
+                        # which is not the number of events beside it.
+                        "nodes_charged": nodes_to_charge,
+                        "generate_count": generate_count or 0,
                     },
                 )
 
