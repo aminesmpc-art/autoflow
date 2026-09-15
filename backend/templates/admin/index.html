@@ -287,6 +287,127 @@
     </div>
 </div>
 
+<!-- ── WHAT FLOW ACTUALLY RECEIVED ──
+     Three numbers instead of one overloaded one.
+
+     The figure beside them, "Reported", is the old measure: done + failed,
+     which the extension reports whether or not a prompt ever left it. A queue
+     that dies at prompt 1 marks twenty failed and all twenty land in it. The
+     two are shown together on purpose — while the gap is large the old number
+     is still what gets billed, and when it settles the switch is safe. -->
+<div class="af-section-title" style="margin-top: 2rem;"><span class="material-symbols-outlined" style="font-size: 18px;">receipt_long</span> Sent to Google Flow — Today <span class="af-live-dot" style="margin-left:auto;"></span></div>
+<div class="af-grid af-grid-4">
+    <div class="af-card accent-blue">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">send</span></div>
+                <span class="af-card-title">Sent to Flow</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ flow_receipt.sent|default:"0" }}</div>
+        <div class="af-card-highlight">Billable — Flow accepted it</div>
+        <div class="af-card-footer">One per media id Flow returned. Cannot exist for a prompt that never left the extension.</div>
+    </div>
+
+    <div class="af-card">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">check_circle</span></div>
+                <span class="af-card-title">Completed</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ flow_receipt.completed|default:"0" }}</div>
+        <div class="af-card-highlight">Of those, produced media</div>
+        <div class="af-card-footer">An outcome, not a second charge. A clip Flow accepted and then failed stays in Sent.</div>
+    </div>
+
+    <div class="af-card {% if flow_receipt.never_sent %}accent-gold{% endif %}">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">unpublished</span></div>
+                <span class="af-card-title">Never Sent</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ flow_receipt.never_sent_tracked|default:"0" }}</div>
+        <div class="af-card-highlight">Charged, never received</div>
+        <div class="af-card-footer">
+          Queued and billed, but Flow never saw it &mdash; the number that explains &ldquo;why does it say 20 when I got 14 videos&rdquo;.
+          {% if flow_receipt.coverage_pct < 100 %}
+            <br><strong>Counted only where it can be:</strong> {{ flow_receipt.coverage_pct }}% of today&rsquo;s charging comes from extensions that report.
+            The other {{ flow_receipt.untracked_charged }} charged {{ flow_receipt.untracked_charged|pluralize:"prompt,prompts" }} are on builds too old to say either way, so they are left out rather than counted as lost.
+          {% endif %}
+        </div>
+    </div>
+
+    <div class="af-card {% if flow_receipt.gap %}accent-red{% endif %}">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">compare_arrows</span></div>
+                <span class="af-card-title">Old vs New</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ flow_receipt.gap|default:"0" }}</div>
+        <div class="af-card-highlight">{{ flow_receipt.reported|default:"0" }} reported &middot; {{ flow_receipt.sent|default:"0" }} received</div>
+        <div class="af-card-footer">{% if flow_receipt.charged %}Charging on submission is ON.{% else %}Still charging up front — this number is being watched, not billed.{% endif %}</div>
+    </div>
+</div>
+
+<!-- ── CLIPPING ──
+     Counted off ClippingUsage, the charge ledger, rather than the daily
+     counter beside it: one row per job actually billed, unique on the job id.
+     Retries and limit-blocked attempts write nothing anywhere, so they are
+     named as unavailable instead of being shown as zero. -->
+<div class="af-section-title" style="margin-top: 2rem;"><span class="material-symbols-outlined" style="font-size: 18px;">content_cut</span> Clipping <span class="af-live-dot" style="margin-left:auto;"></span></div>
+<div class="af-grid af-grid-4">
+    <div class="af-card accent-blue">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">content_cut</span></div>
+                <span class="af-card-title">Clips Today</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ clipping.today|default:"0" }}</div>
+        <div class="af-card-highlight">Charged today</div>
+        <div class="af-card-footer">Daily cap is {{ clipping.free_limit }} on free, {{ clipping.pro_limit }} on Pro. Someone turned away at the cap is not recorded anywhere.</div>
+    </div>
+
+    <div class="af-card">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">calendar_month</span></div>
+                <span class="af-card-title">Last 7 Days</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ clipping.week|default:"0" }}</div>
+        <div class="af-card-highlight">{{ clipping.total|default:"0" }} all time</div>
+        <div class="af-card-footer">Every clipping job ever billed. The ledger goes back to the day the feature shipped.</div>
+    </div>
+
+    <div class="af-card">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">group</span></div>
+                <span class="af-card-title">People Clipping</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ clipping.users_total|default:"0" }}</div>
+        <div class="af-card-highlight">{{ clipping.users_week|default:"0" }} in the last 7 days</div>
+        <div class="af-card-footer">{% if clipping.top_email %}Most active: {{ clipping.top_email }} &middot; {{ clipping.top_count }} clip{{ clipping.top_count|pluralize }}.{% else %}Nobody has clipped yet.{% endif %}</div>
+    </div>
+
+    <div class="af-card {% if not clipping.ledger_matches_events %}accent-red{% endif %}">
+        <div class="af-card-header">
+            <div class="af-card-title-group">
+                <div class="af-card-icon"><span class="material-symbols-outlined">paid</span></div>
+                <span class="af-card-title">Charged</span>
+            </div>
+        </div>
+        <div class="af-card-metric">{{ clipping.total|default:"0" }}</div>
+        <div class="af-card-highlight">{% if clipping.ledger_matches_events %}{{ clipping.events|default:"0" }} events agree{% else %}{{ clipping.total }} ledger &middot; {{ clipping.events }} events &mdash; these should match{% endif %}</div>
+        <div class="af-card-footer">Retries are free and leave no row, so retried attempts cannot be counted here &mdash; only jobs that were actually billed.</div>
+    </div>
+</div>
+
 <!-- ── QUEUE RUNS BY MODE ── -->
 <div class="af-section-title"><span class="material-symbols-outlined" style="font-size: 18px;">play_circle</span> Queue Runs Today <span class="af-live-dot" style="margin-left:auto;"></span></div>
 <div class="af-mode-grid">
