@@ -284,7 +284,12 @@ class DailyUsageColumnTests(TestCase):
         self._receipt("other-queue")      # proves the extension is reporting
         html = str(self.admin.prompt_usage_bar(self.row))
         self.assertIn("unsent", html)
-        self.assertIn("1/", html)         # the one real receipt, not eight
+        # The one real receipt, not eight. Pinned on the headline element
+        # rather than on "1/": the "/50" now belongs to the BILLED figure
+        # beside it, because receipts over the allowance denominator is what
+        # made a row read "5/50" while 18 had been charged.
+        self.assertIn('color:#f8fafc;">1</span>', html)
+        self.assertNotIn('color:#f8fafc;">8</span>', html)
 
     def test_zero_receipts_before_tracking_is_not_read_as_zero_sent(self):
         """The ambiguity this resolves: on a row from before the endpoint
@@ -292,14 +297,15 @@ class DailyUsageColumnTests(TestCase):
         Reading it as zero would blank every historic row the day it ships."""
         self._charge(5, "done")
         html = str(self.admin.prompt_usage_bar(self.row))
-        self.assertIn("5/", html)
+        self.assertIn('color:#f8fafc;">5</span>', html)
 
     def test_receipts_win_when_they_exist(self):
         self._charge(7, "done")
         for i in range(3):
             self._receipt(f"m{i}")
         html = str(self.admin.prompt_usage_bar(self.row))
-        self.assertIn("3/", html)
+        self.assertIn('color:#f8fafc;">3</span>', html)
+        self.assertNotIn('color:#f8fafc;">7</span>', html)   # not the charged count
         self.assertIn("4 unsent", html)
 
     def test_a_retry_does_not_produce_a_negative_unsent(self):
