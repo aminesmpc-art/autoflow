@@ -49,7 +49,11 @@ import {
   savePromptHistory,
 } from '../shared/storage';
 import { login, loginWithGoogle, getGoogleConfig, register, logout, isLoggedIn, getProfile, getDailyUsage, checkCanGenerate, trackUsage, trackSubmission, getUpgradeTarget, consumeDownload, checkCanStartQueue, consumeQueueRun, releaseQueueReservation, ensureSession, claimReviewReward, getReviewRewardStatus, requestPasswordReset, confirmPasswordReset } from '../shared/api';
-import { applyLanguage, initLanguage } from './i18n';
+import { applyLanguage, initLanguage, t } from './i18n';
+
+/** t() with {name} placeholders filled in. */
+const tf = (key: string, vars: Record<string, string | number>): string =>
+  t(key).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
 
 // ================================================================
 // STATE
@@ -104,12 +108,12 @@ function updateStatusDot(status: 'disconnected' | 'connected' | 'running') {
   dot.classList.remove('connected', 'running');
   if (status === 'connected') {
     dot.classList.add('connected');
-    dot.title = 'Connected';
+    dot.title = t('header.connected');
   } else if (status === 'running') {
     dot.classList.add('running');
-    dot.title = 'Queue Running';
+    dot.title = t('header.running');
   } else {
-    dot.title = 'Disconnected';
+    dot.title = t('header.disconnected');
   }
 }
 
@@ -174,6 +178,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   initAccountTab();
   initStudioEntry();
   initTobyFlowUI();
+  initRunDock();
+  initJobSettingsLink();
   // Single source of truth for the displayed version
   const verEl = document.getElementById('af-version');
   if (verEl) verEl.textContent = `v${chrome.runtime.getManifest().version}`;
@@ -213,7 +219,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     openFlowBtn.addEventListener('click', async (e) => {
       e.preventDefault();
       await chrome.tabs.create({ url: 'https://labs.google/flow' });
-      showToast('Google Flow is opening — wait for it to load, then hit Run!', 'success');
+      showToast(t('toast.flowOpening'), 'success');
       const banner = document.getElementById('flow-tab-banner');
       if (banner) banner.style.display = 'none';
     });
@@ -302,8 +308,8 @@ function initTobyFlowUI() {
   // 3. Template card click -> open Studio or notify user
   $$('.tf-template-card').forEach(card => {
     card.addEventListener('click', () => {
-      const title = card.querySelector('.tf-card-title')?.textContent || 'Template';
-      showToast(`Opening ${title} in AutoFlow Studio...`, 'success');
+      const title = card.querySelector('.tf-card-title')?.textContent || '';
+      showToast(title ? tf('toast.openingTemplate', { name: title }) : t('toast.openingStudio'), 'success');
       chrome.runtime.sendMessage({ type: 'OPEN_STUDIO' });
     });
   });
@@ -360,7 +366,7 @@ function initTobyFlowUI() {
       if (result.ok) {
         await showLoggedInState();
         if (authModal) authModal.style.display = 'none';
-        showToast('Signed in successfully!', 'success');
+        showToast(t('toast.signedIn'), 'success');
       } else {
         if (msgEl) {
           msgEl.textContent = result.message;
@@ -447,9 +453,13 @@ function enforceAuthGate(loggedIn: boolean) {
 
 /** Hide image sections + mode cards when full-features limit is reached.
  *  Also respects the currently active mode card. */
+/** Set by enforceImageGate; read wherever image tools are shown again. */
+let _imageGateLimitReached = false;
+
 async function enforceImageGate() {
   const quota = await checkCanGenerate('full');
   const limitReached = !quota.allowed;
+  _imageGateLimitReached = limitReached;
 
   // Get current active mode
   const activeCard = document.querySelector('.af-mode-card.active') as HTMLElement;
@@ -468,7 +478,7 @@ async function enforceImageGate() {
   if (el('#framechain-section')) el('#framechain-section')!.style.display = showFramechain ? '' : 'none';
 
   // Hide/show per-prompt "+ Add images" buttons
-  $$('.af-add-img-btn').forEach(btn => {
+  $$('.af-btn-add-img').forEach(btn => {
     (btn as HTMLElement).style.display = limitReached || activeMode === 'text-to-video' ? 'none' : '';
   });
 
@@ -513,7 +523,7 @@ function reparsePrompts() {
 
   const count = state.parsedPrompts.length;
   $('#prompt-count').textContent = count > 0
-    ? `${count} prompt${count !== 1 ? 's' : ''}`
+    ? tf(count === 1 ? 'queue.prompt' : 'queue.prompts', { n: count })
     : '';
   $('#queue-actions').style.display = count > 0 ? 'block' : 'none';
 
@@ -580,6 +590,11 @@ function initVideoTab() {
         if (automapSection) automapSection.style.display = '';
         if (framechainSection) framechainSection.style.display = 'none';
       }
+
+      /* The prompt rows carry per-prompt image tools that depend on the mode,
+         so they are redrawn with it — otherwise switching to Text-to-Video
+         left every prompt offering "+ Add images". */
+      if (state.parsedPrompts.length) renderPromptList();
     });
   });
 
@@ -597,8 +612,11 @@ function initVideoTab() {
     });
   }
 
-  // Parse button
-  $('#btn-parse').addEventListener('click', () => {
+  /* No Parse button any more: the debounced reparse below already ran on
+     every edit, so the button only ever repeated it. Kept as an optional
+     hook so an older markup still works — unguarded, a missing button threw
+     here and took the rest of this tab's setup down with it. */
+  $('#btn-parse')?.addEventListener('click', () => {
     reparsePrompts();
   });
 
@@ -613,6 +631,29 @@ function initVideoTab() {
 
   // Add to Queue
   $('#btn-add-queue').addEventListener('click', addToQueue);
+
+  /* Run now: save the job to the queue, then start it — addToQueue's checks
+     and then runQueue's, exactly the path a Run press on the queue row takes,
+     so nothing about how a job runs changes. The job is still recorded in the
+     Queue tab. Disabled while it works: a double press would add two jobs. */
+  $('#btn-run-now')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try {
+      const before = state.lastAddedQueueId;
+      await addToQueue();
+      const added = state.lastAddedQueueId;
+      if (added && added !== before) await runQueue(added);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  /* "This job", kept in step with its controls. Every control inside it
+     fires a bubbling change — the mode cards dispatch one on the hidden
+     radios too — so one listener covers all of them. */
+  document.getElementById('job-settings')?.addEventListener('change', () => updateJobSummary());
 
 
 
@@ -629,23 +670,23 @@ function initVideoTab() {
 
   // Failed generations controls
   $('#btn-scan-failed').addEventListener('click', () => {
-    showToast('Scanning page for failed tiles...', 'info');
+    showToast(t('toast.scanningFailed'), 'info');
     sendToBackground({ type: 'SCAN_FAILED_TILES' });
   });
   $('#btn-copy-failed').addEventListener('click', () => {
     const textarea = $('#failed-prompts') as HTMLTextAreaElement;
     if (textarea.value) {
       navigator.clipboard.writeText(textarea.value).then(() => {
-        showToast('Failed prompts copied to clipboard!', 'success');
+        showToast(t('toast.failedCopied'), 'success');
       }).catch(() => {
         textarea.select();
         document.execCommand('copy');
-        showToast('Failed prompts copied!', 'success');
+        showToast(t('toast.failedCopied'), 'success');
       });
     }
   });
   $('#btn-retry-page').addEventListener('click', () => {
-    showToast('Retrying failed tiles on page...', 'info');
+    showToast(t('toast.retryingFailed'), 'info');
     sendToBackground({ type: 'RETRY_FAILED_TILES' });
   });
 
@@ -655,7 +696,7 @@ function initVideoTab() {
 
   sharedAddBtn.addEventListener('click', () => {
     if (state.sharedImages.length >= MAX_SHARED_IMAGES) {
-      showToast(`Maximum ${MAX_SHARED_IMAGES} shared reference images.`, 'warning');
+      showToast(tf('toast.maxShared', { n: MAX_SHARED_IMAGES }), 'warning');
       return;
     }
     sharedFileInput.click();
@@ -702,7 +743,7 @@ function initVideoTab() {
 
   automapBtn.addEventListener('click', () => {
     if (state.parsedPrompts.length === 0) {
-      showToast('Parse prompts first before auto-mapping images.', 'warning');
+      showToast(t('toast.writeFirstMap'), 'warning');
       return;
     }
     automapFileInput.click();
@@ -722,7 +763,7 @@ function initVideoTab() {
 
   framechainBtn.addEventListener('click', () => {
     if (state.parsedPrompts.length === 0) {
-      showToast('Parse prompts first before chaining frames.', 'warning');
+      showToast(t('toast.writeFirstChain'), 'warning');
       return;
     }
     framechainFileInput.click();
@@ -748,6 +789,12 @@ function renderPromptList() {
 
   const isFrames = creationType === 'frames';
   const maxImg = isFrames ? MAX_FRAMES_PER_PROMPT : MAX_IMAGES_PER_PROMPT;
+  /* Text-to-Video takes no images, and an account over its image limit
+     cannot add them, so neither gets the per-prompt image tools. The gate
+     meant to hide these but looked for .af-add-img-btn — the button has
+     always been .af-btn-add-img, so it never matched one. */
+  const activeMode = (document.querySelector('.af-mode-card.active') as HTMLElement | null)?.dataset.mode;
+  const noImageTools = !isFrames && (activeMode === 'text-to-video' || _imageGateLimitReached);
 
   state.parsedPrompts.forEach((node, idx) => {
     const text = node.text;
@@ -776,16 +823,16 @@ function renderPromptList() {
 
     row.innerHTML = `
       <div class="af-prompt-header" data-toggle>
-        ${isExtension ? `<span class="af-prompt-ext-icon">└─ Extend:</span>` : `<span class="af-prompt-num">#${idx + 1}</span>`}
+        ${isExtension ? `<span class="af-prompt-ext-icon">└─ ${t('prompt.extend')}</span>` : `<span class="af-prompt-num">#${idx + 1}</span>`}
         <span class="af-prompt-preview">${escapeHtml(preview)}</span>
-        <span class="af-status af-status-not-added">Not Added</span>
+        <span class="af-status af-status-not-added">${t('pstatus.notAdded')}</span>
       </div>
       <div class="af-prompt-full">${escapeHtml(text)}</div>
-      <div class="af-images-section" ${isExtension ? 'style="display:none"' : ''}>
+      <div class="af-images-section" ${isExtension || noImageTools ? 'style="display:none"' : ''}>
         <div class="af-img-thumbnails" data-prompt-idx="${idx}"></div>
         ${isFrames ? '' : `<span class="af-img-counter">${effectiveCount}/${maxImg}${extrasStr}</span>`}
-        ${isFrames || isExtension ? '' : `<button class="af-btn af-btn-add-img af-btn-sm" data-prompt-idx="${idx}">+ Add images</button>`}
-        ${!isFrames && !isExtension && imgCount > 0 ? `<button class="af-btn-copy-all" data-copy-from="${idx}" title="Copy these images to all other prompts">Copy to all</button>` : ''}
+        ${isFrames || isExtension ? '' : `<button class="af-btn af-btn-add-img af-btn-sm" data-prompt-idx="${idx}">${t('images.addImages')}</button>`}
+        ${!isFrames && !isExtension && imgCount > 0 ? `<button class="af-btn-copy-all" data-copy-from="${idx}" title="${t('tip.copyAll')}">${t('images.copyAll')}</button>` : ''}
         ${isFrames ? '' : `<input type="file" class="af-file-input" data-prompt-idx="${idx}" accept="image/*" multiple />`}
       </div>
     `;
@@ -803,7 +850,7 @@ function renderPromptList() {
       addBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (imgCount >= maxImg) {
-          showToast(`Maximum ${MAX_IMAGES_PER_PROMPT} reference images per prompt.`, 'warning');
+          showToast(tf('toast.maxPerPrompt', { n: MAX_IMAGES_PER_PROMPT }), 'warning');
           return;
         }
         fileInput.click();
@@ -1058,9 +1105,9 @@ async function addImagesToPrompt(promptIdx: number, files: File[]) {
 
     const filledCount = current.filter(Boolean).length;
     if (fileIdx === 0) {
-      showToast('Both frame slots are already filled. Remove one first.');
+      showToast(t('toast.framesFull'));
     } else if (fileIdx < files.length) {
-      showToast(`Only ${fileIdx} empty slot(s) available. ${files.length - fileIdx} image(s) skipped.`);
+      showToast(tf('toast.framesSkipped', { free: fileIdx, skipped: files.length - fileIdx }));
     }
 
     state.promptImages.set(promptIdx, current);
@@ -1072,13 +1119,13 @@ async function addImagesToPrompt(promptIdx: number, files: File[]) {
   const remaining = maxImg - filled.length;
 
   if (remaining <= 0) {
-    showToast(`Maximum ${MAX_IMAGES_PER_PROMPT} reference images per prompt.`);
+    showToast(tf('toast.maxPerPrompt', { n: MAX_IMAGES_PER_PROMPT }));
     return;
   }
 
   const toAdd = files.slice(0, remaining);
   if (files.length > remaining) {
-    showToast(`Only ${remaining} more image(s) allowed. Added first ${remaining}.`);
+    showToast(tf('toast.imagesCapped', { n: remaining }));
   }
 
   for (const file of toAdd) {
@@ -1124,13 +1171,13 @@ function removeImageFromPrompt(promptIdx: number, imgIdx: number) {
 async function addSharedImages(files: File[]) {
   const remaining = MAX_SHARED_IMAGES - state.sharedImages.length;
   if (remaining <= 0) {
-    showToast(`Maximum ${MAX_SHARED_IMAGES} shared reference images.`);
+    showToast(tf('toast.maxShared', { n: MAX_SHARED_IMAGES }));
     return;
   }
 
   const toAdd = files.slice(0, remaining);
   if (files.length > remaining) {
-    showToast(`Only ${remaining} more shared image(s) allowed. Added first ${remaining}.`);
+    showToast(tf('toast.imagesCapped', { n: remaining }));
   }
 
   for (const file of toAdd) {
@@ -1194,7 +1241,7 @@ function removeSharedImage(imgIdx: number) {
 function copyImagesToAllPrompts(fromIdx: number) {
   const source = state.promptImages.get(fromIdx) || [];
   if (source.length === 0) {
-    showToast('No images to copy.');
+    showToast(t('toast.noImagesToCopy'));
     return;
   }
 
@@ -1214,7 +1261,7 @@ function copyImagesToAllPrompts(fromIdx: number) {
   // Clear the per-prompt images since they're now shared
   state.promptImages.set(fromIdx, []);
 
-  showToast(`${added} image(s) moved to Shared Reference Images (applies to all prompts).`);
+  showToast(tf('toast.movedToShared', { images: countOf(added, 'lib.images') }));
   renderSharedImages();
   renderPromptList();
 }
@@ -1228,7 +1275,7 @@ function copyImagesToAllPrompts(fromIdx: number) {
 async function autoMapImagesToPrompts(files: File[]) {
   const promptCount = state.parsedPrompts.length;
   if (promptCount === 0) {
-    showToast('No prompts to map images to.');
+    showToast(t('toast.noPromptsMap'));
     return;
   }
 
@@ -1268,8 +1315,10 @@ async function autoMapImagesToPrompts(files: File[]) {
   }
 
   const skipped = files.length > promptCount ? files.length - promptCount : 0;
-  let msg = `Mapped ${mapped} image(s) to ${mapped} prompt(s).`;
-  if (skipped > 0) msg += ` ${skipped} extra image(s) ignored (only ${promptCount} prompts).`;
+  let msg = tf('toast.mapped', { images: countOf(mapped, 'lib.images') });
+  if (skipped > 0) {
+    msg += ' ' + tf('toast.mappedExtra', { images: countOf(skipped, 'lib.images'), prompts: countOf(promptCount, 'lib.prompts') });
+  }
   showToast(msg);
 }
 
@@ -1285,13 +1334,13 @@ async function autoMapImagesToPrompts(files: File[]) {
  */
 async function frameChainImagesToPrompts(files: File[]) {
   if (files.length < 2) {
-    showToast('Select at least 2 images to create a frame chain.');
+    showToast(t('toast.chainMin'));
     return;
   }
 
   const promptCount = state.parsedPrompts.length;
   if (promptCount === 0) {
-    showToast('No prompts to map frames to. Parse prompts first.');
+    showToast(t('toast.noPromptsChain'));
     return;
   }
 
@@ -1299,9 +1348,9 @@ async function frameChainImagesToPrompts(files: File[]) {
   const pairsToMap = Math.min(chainLength, promptCount);
 
   if (chainLength > promptCount) {
-    showToast(`You have ${files.length} images (${chainLength} pairs) but only ${promptCount} prompt(s). Only the first ${promptCount + 1} images will be used.`);
+    showToast(tf('toast.chainTooMany', { images: countOf(files.length, 'lib.images'), pairs: chainLength, prompts: countOf(promptCount, 'lib.prompts'), used: promptCount + 1 }));
   } else if (chainLength < promptCount) {
-    showToast(`You have ${files.length} images (${chainLength} pairs) but ${promptCount} prompt(s). Prompts ${chainLength + 1}–${promptCount} won't get frame images.`);
+    showToast(tf('toast.chainTooFew', { images: countOf(files.length, 'lib.images'), pairs: chainLength, prompts: countOf(promptCount, 'lib.prompts'), from: chainLength + 1, to: promptCount }));
   }
 
   // Pre-process all needed files (up to pairsToMap + 1 images)
@@ -1362,7 +1411,7 @@ async function frameChainImagesToPrompts(files: File[]) {
   // Render chain preview
   renderFrameChainPreview(processed, pairsToMap);
 
-  showToast(`Frame chain: ${mapped} prompt(s) mapped with overlapping Start/End frames from ${neededCount} images.`);
+  showToast(tf('toast.chainDone', { prompts: countOf(mapped, 'lib.prompts'), images: countOf(neededCount, 'lib.images') }));
 }
 
 /**
@@ -1460,7 +1509,8 @@ function renderCharacterImages() {
     container.appendChild(wrap);
   });
 
-  $('#char-img-counter').textContent = `${state.characterImages.length} character${state.characterImages.length !== 1 ? 's' : ''}`;
+  const nChars = state.characterImages.length;
+  $('#char-img-counter').textContent = tf(nChars === 1 ? 'images.charCount1' : 'images.charCount', { n: nChars });
 }
 
 function removeCharacterImage(imgIdx: number) {
@@ -1554,7 +1604,7 @@ function renderSharedThumbnailsInRow(row: HTMLElement) {
 
 async function addToQueue() {
   if (state.parsedPrompts.length === 0) {
-    showToast('No prompts to add. Write some prompts first!', 'warning');
+    showToast(t('toast.noPrompts'), 'warning');
     return;
   }
 
@@ -1570,21 +1620,21 @@ async function addToQueue() {
   if (!quota.allowed) {
     if (quota.limit === 0) {
       // Fail-closed: API couldn't be reached
-      showToast('Could not verify your usage. Check your connection and try again.', 'error');
+      showToast(t('toast.usageUnverified'), 'error');
     } else {
       /* The dialog, not a toast. This is the ceiling the most people reach,
          and it used to be announced by a warning that faded before it could
          be acted on. */
-      const kind = promptType === 'full' ? 'Full-Feature Prompt' : 'Text Prompt';
+      const kind = t(promptType === 'full' ? 'limit.fullPrompts' : 'limit.textPrompts');
       const waiting = state.parsedPrompts.length;
       void showLimitDialog({
         label: kind,
         used: quota.limit,
         limit: quota.limit,
         period: 'day',
-        unlocks: 'Unlimited prompts every day — text and full-feature, no daily caps.',
+        unlocks: t('limit.unlockPrompts'),
         blocked: waiting > 0
-          ? `${waiting} prompt${waiting === 1 ? ' is' : 's are'} blocked until tomorrow.`
+          ? (waiting === 1 ? t('limit.blocked1') : tf('limit.blocked', { n: waiting }))
           : undefined,
       });
     }
@@ -1592,7 +1642,7 @@ async function addToQueue() {
   }
 
   if (state.parsedPrompts.length > quota.remaining) {
-    showToast(`Only ${quota.remaining} ${promptType === 'full' ? 'full-feature' : 'text'} prompts remaining today. You have ${state.parsedPrompts.length}.`, 'warning');
+    showToast(tf(promptType === 'full' ? 'toast.quotaShortFull' : 'toast.quotaShortText', { left: quota.remaining, have: state.parsedPrompts.length }), 'warning');
     return;
   }
 
@@ -1658,16 +1708,19 @@ async function addToQueue() {
   await addQueue(queue);
   state.lastAddedQueueId = queueId;
 
-  showToast(`Queue "${queueName}" added! Will ${target === 'newProject' ? 'start a new project' : 'run in current project'}.`);
+  showToast(tf(target === 'newProject' ? 'toast.queueAddedNew' : 'toast.queueAddedCurrent', { name: queueName }));
 
   // Update prompt statuses visually
   $$('.af-status').forEach(badge => {
     badge.className = 'af-status af-status-queued';
-    badge.textContent = 'Queued';
+    badge.textContent = t('qstatus.queued');
   });
 
-  // Automatically switch to Queues tab
-  (document.querySelector('[data-tab="queues"]') as HTMLElement)?.click();
+  /* No tab switch. This used to send you to the Queues tab, and pressing Run
+     there sent you back to Create to watch — three tab changes to start one
+     run. The job is in the queue (the tab badge counts it), and you stay
+     where you are. */
+  await refreshQueuesList();
 }
 
 
@@ -1691,9 +1744,15 @@ function initSettingsTab() {
     }, 300); // 300ms debounce
   }
 
-  // Attach auto-save to all settings controls
-  const settingsPanel = document.getElementById('panel-settings');
-  if (settingsPanel) {
+  /* Attach auto-save to all settings controls — in the Settings panel AND in
+     "This job" on the Create tab, where the generation settings now live.
+     Only the Settings panel was wired before, so moving the model, ratio and
+     duration controls without this would have left them looking editable and
+     saving nothing. */
+  const settingsRoots = ['panel-settings', 'job-settings']
+    .map((id) => document.getElementById(id))
+    .filter((el): el is HTMLElement => !!el);
+  for (const settingsPanel of settingsRoots) {
     // Dropdowns
     settingsPanel.querySelectorAll('select').forEach(el => el.addEventListener('change', autoSave));
     // Checkboxes & toggles
@@ -1720,7 +1779,7 @@ function initSettingsTab() {
   if (saveBtn) saveBtn.style.display = 'none';
 
   $('#btn-refresh-models').addEventListener('click', async () => {
-    showToast('Refreshing models from Flow...', 'info');
+    showToast(t('toast.refreshingModels'), 'info');
     const response = await sendToBackground({ type: 'REFRESH_MODELS' });
     if (response?.models && response.models.length > 0) {
       const select = $('#setting-model') as HTMLSelectElement;
@@ -1731,10 +1790,10 @@ function initSettingsTab() {
         opt.textContent = model;
         select.appendChild(opt);
       }
-      showToast(`Found ${response.models.length} models.`, 'success');
+      showToast(tf('toast.modelsFound', { n: response.models.length }), 'success');
       updateDurationOptions();
     } else {
-      showToast(response?.error || 'No models found. Make sure a Flow tab is open.', 'warning');
+      showToast(response?.error || t('toast.noModels'), 'warning');
     }
   });
 
@@ -1759,7 +1818,7 @@ function initSettingsTab() {
   // Configure folder link
   $('#btn-configure-folder').addEventListener('click', (e) => {
     e.preventDefault();
-    showToast('Downloads go to your browser\'s default download folder. Change it in chrome://settings/downloads.', 'info');
+    showToast(t('toast.downloadFolder'), 'info');
   });
 
   // Clear Flow Cache button
@@ -1767,13 +1826,13 @@ function initSettingsTab() {
     const response = await sendToBackground({ type: 'PING' });
     if (response) {
       // Reload the Flow tab to clear its cache
-      showToast('Clearing Flow cache... The Flow tab will reload.', 'info');
+      showToast(t('toast.clearingCache'), 'info');
       await sendToBackground({ type: 'STOP_QUEUE' });
       // Send a reload command via background
       chrome.runtime.sendMessage({ type: 'PING' }); // Re-establish connection
-      showToast('Flow cache cleared. Reload the Flow tab if needed.', 'success');
+      showToast(t('toast.cacheCleared'), 'success');
     } else {
-      showToast('No active Flow tab found. Open Flow first.', 'warning');
+      showToast(t('toast.noFlowTab'), 'warning');
     }
   });
 
@@ -1949,6 +2008,32 @@ async function loadSettings() {
   } finally {
     _restoringSettings = false; // Re-enable auto-save
   }
+  /* Restoring sets values without firing change events, so the summary
+     would otherwise show the markup defaults until the first edit. */
+  updateJobSummary();
+}
+
+/**
+ * "This job", in one line: what the next run will make, and how.
+ *
+ * Read back from the controls through readSettingsFromUI — the same function
+ * addToQueue saves — so the chips cannot describe a job other than the one
+ * that gets queued.
+ */
+function updateJobSummary() {
+  const el = document.getElementById('job-summary');
+  if (!el) return;
+  const s = readSettingsFromUI();
+  const isVideo = s.mediaType === 'video';
+  const ratio = isVideo ? (s.orientation === 'portrait' ? '9:16' : '16:9') : s.imageRatio;
+  const mode = ({ full: 'Full', flow: 'Flow', lite: 'Lite' } as Record<string, string>)[s.automationMode] || 'Flow';
+  const parts = isVideo
+    ? [s.model, ratio, s.duration, `×${s.generations}`, mode]
+    : [s.imageModel, ratio, `×${s.generations}`, mode];
+  el.innerHTML = parts
+    .filter(Boolean)
+    .map((p) => `<span class="af-chip">${escapeHtml(String(p))}</span>`)
+    .join('');
 }
 
 function readSettingsFromUI(): QueueSettings {
@@ -2029,24 +2114,43 @@ function initQueuesTab() {
 function formatTimeAgo(ts: number): string {
   const diff = Date.now() - ts;
   const sec = Math.floor(diff / 1000);
-  if (sec < 60) return 'just now';
+  if (sec < 60) return t('time.justNow');
   const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
+  if (min < 60) return tf('time.minutes', { n: min });
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return tf('time.hours', { n: hr });
   const d = Math.floor(hr / 24);
-  return `${d}d ago`;
+  return tf('time.days', { n: d });
+}
+
+/** "1 video" / "3 videos" in the panel's language: key + "1" is the singular. */
+function countOf(n: number, key: string): string {
+  return tf(n === 1 ? `${key}1` : key, { n });
+}
+
+/** A prompt's status as the words the panel shows for it. */
+function promptStatusLabel(status: string): string {
+  const key: Record<string, string> = {
+    'not-added': 'pstatus.notAdded', queued: 'qstatus.queued', running: 'qstatus.running',
+    submitted: 'qstatus.submitted', done: 'qstatus.done', failed: 'qstatus.failed',
+    waiting: 'qstatus.waiting', skipped: 'pstatus.skipped',
+  };
+  return key[status] ? t(key[status]) : status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 function queueStatusConfig(status: string) {
   switch (status) {
-    case 'running': return { label: 'Running', cls: 'running', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>` };
-    case 'paused': return { label: 'Paused', cls: 'paused', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>` };
-    case 'completed': return { label: 'Completed', cls: 'completed', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` };
-    case 'stopped': return { label: 'Stopped', cls: 'stopped', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>` };
-    default: return { label: 'Pending', cls: 'pending', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>` };
+    case 'running': return { label: t('qstatus.running'), cls: 'running', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>` };
+    case 'paused': return { label: t('qstatus.paused'), cls: 'paused', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>` };
+    case 'completed': return { label: t('qstatus.completed'), cls: 'completed', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` };
+    case 'stopped': return { label: t('qstatus.stopped'), cls: 'stopped', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>` };
+    default: return { label: t('qstatus.pending'), cls: 'pending', icon: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>` };
   }
 }
+
+/** Queue rows you have opened. refreshQueuesList rebuilds every row on each
+    update, so without this a row would snap shut under you mid-run. */
+const _openQueueRows = new Set<string>();
 
 async function refreshQueuesList() {
   console.log('[AutoFlow] Running NEW refreshQueuesList logic with Active/History split');
@@ -2072,7 +2176,11 @@ async function refreshQueuesList() {
           <line x1="3" y1="9" x2="21" y2="9"/>
           <line x1="9" y1="21" x2="9" y2="9"/>
         </svg>
-        <p>No queues yet.<br/>Add prompts in the Create tab.</p>
+        <p class="af-empty-title">${t('queues.empty')}</p>
+        <ol class="af-empty-steps">
+          <li>${t('queues.emptyStep1')}</li>
+          <li>${t('queues.emptyStep2')}</li>
+        </ol>
       </div>`;
     return;
   }
@@ -2092,201 +2200,151 @@ async function refreshQueuesList() {
 
   const renderCard = (queue: QueueObject, idx: number) => {
     const card = document.createElement('div');
-    card.className = 'af-q-card';
+    /* One line per job, opening in place.
+     *
+     * The old card repeated a settings table, a Full/Flow/Lite picker with
+     * emoji and descriptions, and four stat tiles for every queue: about
+     * 380px each, two queues to a screen. Every control is still here, under
+     * the line, and keeps its class and data-action — so the handlers below
+     * are the ones that were always attached, unchanged. */
+    const isOpen = _openQueueRows.has(queue.id);
+    card.className = `af-q-card af-q-row${isOpen ? ' is-open' : ''}`;
     card.dataset.queueId = queue.id;
 
     const total = queue.prompts.length;
     const doneCount = queue.prompts.filter(p => p.status === 'done').length;
     const failedCount = queue.prompts.filter(p => p.status === 'failed').length;
     const pendingCount = total - doneCount - failedCount;
-    const progressPct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+    const donePct = total > 0 ? (doneCount / total) * 100 : 0;
+    const failPct = total > 0 ? (failedCount / total) * 100 : 0;
     const st = queueStatusConfig(queue.status);
-
-    const targetLabel = queue.runTarget === 'newProject' ? '+ New Project' :
-      queue.runTarget === 'currentProject' ? 'Current Project' : 'Not set';
-    const targetIcon = queue.runTarget === 'newProject'
-      ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
-      : queue.runTarget === 'currentProject'
-        ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`
-        : `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" opacity="0.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg>`;
-
     const timeAgo = formatTimeAgo(queue.updatedAt || queue.createdAt);
 
     const s = queue.settings;
     const isVideo = s.mediaType === 'video';
-    const autoDownload = isVideo ? s.autoDownloadVideos : s.autoDownloadImages;
-    const downloadRes = isVideo ? s.videoResolution : s.imageResolution;
     const modelDisplay = isVideo ? s.model : s.imageModel;
+    const ratio = isVideo ? (s.orientation === 'portrait' ? '9:16' : '16:9') : s.imageRatio;
+    const runMode = s.automationMode || 'flow';
+    const modeLabel = ({ full: 'Full', flow: 'Flow', lite: 'Lite' } as Record<string, string>)[runMode] || 'Flow';
+    const summary = [modelDisplay, ratio, isVideo ? (s.duration ?? '8s') : '', `×${s.generations}`, modeLabel]
+      .filter(Boolean).join(' · ');
+    const targetLabel = queue.runTarget === 'newProject' ? t('queue.runsNew')
+      : queue.runTarget === 'currentProject' ? t('queue.runsCurrent') : '';
+
+    const STATUS_WORD: Record<string, string> = {
+      done: t('qstatus.done'), failed: t('qstatus.failed'), running: t('qstatus.running'),
+      submitted: t('qstatus.submitted'), queued: t('qstatus.queued'), 'not-added': t('qstatus.waiting'),
+    };
+    const SHOWN = 6;
+    const promptRows = queue.prompts.slice(0, SHOWN).map((p, i) => `
+      <li class="af-q-prompt">
+        <span class="af-q-prompt__num">#${i + 1}</span>
+        <span class="af-q-prompt__text" title="${escapeHtml(p.text)}">${escapeHtml(p.text)}</span>
+        <span class="af-q-prompt__st af-q-prompt__st--${escapeHtml(p.status)}">${STATUS_WORD[p.status] || escapeHtml(p.status)}</span>
+      </li>`).join('');
+    const more = total > SHOWN
+      ? `<li class="af-q-prompt af-q-prompt--more">${escapeHtml(tf('queue.more', { n: total - SHOWN }))}</li>` : '';
+
+    const opt = (value: string, label: string, current: unknown) =>
+      `<option value="${value}" ${String(current) === value ? 'selected' : ''}>${label}</option>`;
+    const detailId = `qd-${escapeHtml(queue.id)}`;
 
     card.innerHTML = `
-      <div class="af-q-status-bar af-q-status-${st.cls}"></div>
-      <div class="af-q-body">
-        <div class="af-q-top">
-          <div class="af-q-title-row">
-            <span class="af-q-name">${escapeHtml(queue.name)}</span>
-            <span class="af-q-badge af-q-badge-${st.cls}">${st.icon} ${st.label}</span>
+      <div class="af-q-row__head">
+        <button class="af-q-row__toggle" aria-expanded="${isOpen}" aria-controls="${detailId}">
+          <span class="af-q-row__dot af-q-status-${st.cls}" aria-hidden="true"></span>
+          <span class="af-q-row__main">
+            <span class="af-q-row__title">
+              <span class="af-q-name">${escapeHtml(queue.name)}</span>
+              <span class="af-q-row__count">${escapeHtml(tf(total === 1 ? 'queue.prompt' : 'queue.prompts', { n: total }))}</span>
+            </span>
+            <span class="af-q-row__sub">${escapeHtml(summary)}</span>
+          </span>
+          <span class="af-q-badge af-q-badge-${st.cls}">${st.label}</span>
+        </button>
+        <button class="af-q-run-btn" data-action="run" title="${escapeHtml(tf('queue.runName', { name: queue.name }))}">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+          ${escapeHtml(t('queue.run'))}
+        </button>
+      </div>
+      <div class="af-q-row__bar" aria-hidden="true">
+        <span class="af-q-row__bar-done" style="width:${donePct}%"></span>
+        <span class="af-q-row__bar-fail" style="width:${failPct}%"></span>
+      </div>
+      <div class="af-q-row__detail" id="${detailId}">
+        <p class="af-q-row__facts">${escapeHtml(tf('queue.facts', { done: doneCount, failed: failedCount, left: pendingCount, ago: timeAgo }))}${targetLabel ? ` · ${escapeHtml(targetLabel)}` : ''}</p>
+        <ul class="af-q-prompts">${promptRows}${more}</ul>
 
-          </div>
-          <div class="af-q-time">${timeAgo}</div>
+        <div class="af-q-edit">
+          <label class="af-q-field">
+            <span class="af-q-field__label">${escapeHtml(t('job.model'))}</span>
+            <select class="af-q-select" data-action="update-setting" data-key="${isVideo ? 'model' : 'imageModel'}">
+              ${isVideo
+                ? opt('Omni 1.1 Flash', 'Omni 1.1 Flash', canonicalModel(s.model))
+                  + opt('Veo 3.1 - Lite', 'Veo 3.1 - Lite', s.model)
+                  + opt('Veo 3.1 - Fast', 'Veo 3.1 - Fast', s.model)
+                  + opt('Veo 3.1 - Quality', 'Veo 3.1 - Quality', s.model)
+                  + opt('Veo 3.1 - Lite [Lower Priority]', 'Veo 3.1 - Lite [LP]', s.model)
+                : opt('Nano Banana Pro', 'Nano Banana Pro', s.imageModel)
+                  + opt('Nano Banana 2', 'Nano Banana 2', s.imageModel)
+                  + opt('Imagen 4', 'Imagen 4', s.imageModel)}
+            </select>
+          </label>
+          <label class="af-q-field">
+            <span class="af-q-field__label">${escapeHtml(t('job.ratio'))}</span>
+            <select class="af-q-select" data-action="update-setting" data-key="${isVideo ? 'orientation' : 'imageRatio'}">
+              ${isVideo
+                ? opt('landscape', t('ratio.landscape'), s.orientation) + opt('portrait', t('ratio.portrait'), s.orientation)
+                : ['16:9', '4:3', '1:1', '3:4', '9:16'].map((r) => opt(r, r, s.imageRatio)).join('')}
+            </select>
+          </label>
+          <label class="af-q-field">
+            <span class="af-q-field__label">${escapeHtml(t('queue.perPrompt'))}</span>
+            <select class="af-q-select" data-action="update-setting" data-key="generations">
+              ${[1, 2, 3, 4].map((n) => opt(String(n), `×${n}`, s.generations)).join('')}
+            </select>
+          </label>
+          ${isVideo ? `
+          <label class="af-q-field">
+            <span class="af-q-field__label">${escapeHtml(t('job.duration'))}</span>
+            <select class="af-q-select" data-action="update-setting" data-key="duration">
+              ${['4s', '6s', '8s'].map((d) => opt(d, d, s.duration ?? '8s')).join('')}
+              ${canonicalModel(s.model) === 'Omni 1.1 Flash' ? opt('10s', '10s', s.duration ?? '8s') : ''}
+            </select>
+          </label>` : ''}
         </div>
 
-        <!-- Settings Grid -->
-        <div class="af-q-settings">
-          <div class="af-q-settings-group">
-            <div class="af-q-settings-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Generation</div>
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Media</span>
-              <span class="af-q-setting-val">${escapeHtml(s.mediaType ?? 'video')}</span>
-            </div>
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Type</span>
-              <span class="af-q-setting-val">${escapeHtml(s.creationType ?? 'ingredients')}</span>
-            </div>
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Model</span>
-              <select class="af-q-select af-q-setting-val" data-action="update-setting" data-key="${isVideo ? 'model' : 'imageModel'}">
-                ${isVideo ? `
-                  <option value="Omni 1.1 Flash" ${canonicalModel(s.model) === 'Omni 1.1 Flash' ? 'selected' : ''}>Omni 1.1 Flash</option>
-                  <option value="Veo 3.1 - Lite" ${s.model === 'Veo 3.1 - Lite' ? 'selected' : ''}>Veo 3.1 - Lite</option>
-                  <option value="Veo 3.1 - Fast" ${s.model === 'Veo 3.1 - Fast' ? 'selected' : ''}>Veo 3.1 - Fast</option>
-                  <option value="Veo 3.1 - Quality" ${s.model === 'Veo 3.1 - Quality' ? 'selected' : ''}>Veo 3.1 - Quality</option>
-                  <option value="Veo 3.1 - Lite [Lower Priority]" ${s.model === 'Veo 3.1 - Lite [Lower Priority]' ? 'selected' : ''}>Veo 3.1 - Lite [LP]</option>
-                ` : `
-                  <option value="Nano Banana Pro" ${s.imageModel === 'Nano Banana Pro' ? 'selected' : ''}>Nano Banana Pro</option>
-                  <option value="Nano Banana 2" ${s.imageModel === 'Nano Banana 2' ? 'selected' : ''}>Nano Banana 2</option>
-                  <option value="Imagen 4" ${s.imageModel === 'Imagen 4' ? 'selected' : ''}>Imagen 4</option>
-                `}
-              </select>
-            </div>
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">${isVideo ? 'Orientation' : 'Ratio'}</span>
-              <select class="af-q-select af-q-setting-val" data-action="update-setting" data-key="${isVideo ? 'orientation' : 'imageRatio'}">
-                ${isVideo ? `
-                  <option value="landscape" ${s.orientation === 'landscape' ? 'selected' : ''}>Landscape (16:9)</option>
-                  <option value="portrait" ${s.orientation === 'portrait' ? 'selected' : ''}>Portrait (9:16)</option>
-                ` : `
-                  <option value="16:9" ${s.imageRatio === '16:9' ? 'selected' : ''}>16:9</option>
-                  <option value="4:3" ${s.imageRatio === '4:3' ? 'selected' : ''}>4:3</option>
-                  <option value="1:1" ${s.imageRatio === '1:1' ? 'selected' : ''}>1:1</option>
-                  <option value="3:4" ${s.imageRatio === '3:4' ? 'selected' : ''}>3:4</option>
-                  <option value="9:16" ${s.imageRatio === '9:16' ? 'selected' : ''}>9:16</option>
-                `}
-              </select>
-            </div>
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Generations</span>
-              <select class="af-q-select af-q-setting-val" data-action="update-setting" data-key="generations">
-                <option value="1" ${s.generations === 1 ? 'selected' : ''}>&times;1</option>
-                <option value="2" ${s.generations === 2 ? 'selected' : ''}>&times;2</option>
-                <option value="3" ${s.generations === 3 ? 'selected' : ''}>&times;3</option>
-                <option value="4" ${s.generations === 4 ? 'selected' : ''}>&times;4</option>
-              </select>
-            </div>
-            ${isVideo ? `
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Duration</span>
-              <select class="af-q-select af-q-setting-val" data-action="update-setting" data-key="duration">
-                <option value="4s" ${(s.duration ?? '8s') === '4s' ? 'selected' : ''}>4s</option>
-                <option value="6s" ${(s.duration ?? '8s') === '6s' ? 'selected' : ''}>6s</option>
-                <option value="8s" ${(s.duration ?? '8s') === '8s' ? 'selected' : ''}>8s</option>
-                ${canonicalModel(s.model) === 'Omni 1.1 Flash' ? `<option value="10s" ${(s.duration ?? '8s') === '10s' ? 'selected' : ''}>10s</option>` : ''}
-              </select>
-            </div>` : ''}
-            ${isVideo ? `
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Voice</span>
-              <span class="af-q-setting-val">${escapeHtml(s.voiceIngredient && s.voiceIngredient !== 'none' ? s.voiceIngredient : 'None')}</span>
-            </div>` : ''}
-          </div>
-
-          <div class="af-q-settings-group">
-            <div class="af-q-settings-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Timing</div>
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Wait</span>
-              <span class="af-q-setting-val">${s.waitMinSec}s – ${s.waitMaxSec}s</span>
-            </div>
-            <div class="af-q-setting-row">
-              <span class="af-q-setting-key">Typing Mode</span>
-              <span class="af-q-setting-val">${s.typingMode ? `<span class="af-q-on">ON</span> &times;${s.typingSpeedMultiplier}` : '<span class="af-q-off">OFF</span>'}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Mode Selector -->
-        <div class="af-q-mode-section" data-queue-id="${queue.id}">
-          <button class="af-q-mode-card${s.automationMode === 'full' ? ' active' : ''}" data-auto-mode="full">
-            <span class="af-q-mode-card-icon">🚀</span>
-            <span class="af-q-mode-card-label">Full</span>
-            <span class="af-q-mode-card-desc">Creates project, fills all fields automatically</span>
-          </button>
-          <button class="af-q-mode-card${s.automationMode === 'flow' || !s.automationMode ? ' active' : ''}" data-auto-mode="flow">
-            <span class="af-q-mode-card-icon">🔄</span>
-            <span class="af-q-mode-card-label">Flow</span>
-            <span class="af-q-mode-card-desc">Runs inside your current Flow session</span>
-          </button>
-          <button class="af-q-mode-card${s.automationMode === 'lite' ? ' active' : ''}" data-auto-mode="lite">
-            <span class="af-q-mode-card-icon">⚡</span>
-            <span class="af-q-mode-card-label">Lite</span>
-            <span class="af-q-mode-card-desc">Paste prompt only, you handle the rest</span>
-          </button>
-        </div>
-
-        <div class="af-q-progress-row">
-          <div class="af-q-progress-track">
-            <div class="af-q-progress-fill af-q-progress-${st.cls}" style="width:${progressPct}%"></div>
-            ${failedCount > 0 ? `<div class="af-q-progress-fill af-q-progress-fail" style="width:${Math.round((failedCount / total) * 100)}%;left:${progressPct}%"></div>` : ''}
-          </div>
-          <span class="af-q-progress-label">${progressPct}%</span>
-        </div>
-
-        <div class="af-q-stats">
-          <div class="af-q-stat af-q-stat-total">
-            <span class="af-q-stat-icon">📋</span>
-            <span class="af-q-stat-num">${total}</span>
-            <span class="af-q-stat-label">Prompts</span>
-          </div>
-          <div class="af-q-stat af-q-stat-done">
-            <span class="af-q-stat-icon">✅</span>
-            <span class="af-q-stat-num">${doneCount}</span>
-            <span class="af-q-stat-label">Done</span>
-          </div>
-          <div class="af-q-stat af-q-stat-fail">
-            <span class="af-q-stat-icon">❌</span>
-            <span class="af-q-stat-num">${failedCount}</span>
-            <span class="af-q-stat-label">Failed</span>
-          </div>
-          <div class="af-q-stat af-q-stat-pending">
-            <span class="af-q-stat-icon">⏳</span>
-            <span class="af-q-stat-num">${pendingCount}</span>
-            <span class="af-q-stat-label">Pending</span>
-          </div>
+        <div class="af-q-mode-section" data-queue-id="${escapeHtml(queue.id)}" role="radiogroup" aria-label="${t('job.runMode')}">
+          <button class="af-q-mode-card${runMode === 'full' ? ' active' : ''}" data-auto-mode="full" title="${t('tip.runFull')}">Full</button>
+          <button class="af-q-mode-card${runMode === 'flow' ? ' active' : ''}" data-auto-mode="flow" title="${t('tip.runFlow')}">Flow</button>
+          <button class="af-q-mode-card${runMode === 'lite' ? ' active' : ''}" data-auto-mode="lite" title="${t('tip.runLite')}">Lite</button>
         </div>
 
         <div class="af-q-actions">
-          <div class="af-q-actions-left">
-            <button class="af-q-act-btn" data-action="up" ${idx === 0 ? 'disabled' : ''} title="Move up">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
-            </button>
-            <button class="af-q-act-btn" data-action="down" ${idx === queues.length - 1 ? 'disabled' : ''} title="Move down">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            <button class="af-q-act-btn" data-action="sync-settings" title="Sync with current Settings" style="margin-left: 8px;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>
-            </button>
-          </div>
-        <div class="af-q-actions-right">
-            <button class="af-q-act-btn af-q-act-delete" data-action="delete" title="Delete queue">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-            </button>
-
-            <button class="af-q-run-btn" data-action="run">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-              Run
-            </button>
-          </div>
+          <button class="af-q-act-btn" data-action="up" ${idx === 0 ? 'disabled' : ''} title="${escapeHtml(t('queue.moveUp'))}" aria-label="${escapeHtml(t('queue.moveUp'))}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>
+          </button>
+          <button class="af-q-act-btn" data-action="down" ${idx === queues.length - 1 ? 'disabled' : ''} title="${escapeHtml(t('queue.moveDown'))}" aria-label="${escapeHtml(t('queue.moveDown'))}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <button class="af-q-act-btn af-q-act-text" data-action="sync-settings" title="${escapeHtml(t('queue.useCurrentTip'))}">${escapeHtml(t('queue.useCurrent'))}</button>
+          <span class="af-q-actions__gap"></span>
+          <button class="af-q-act-btn af-q-act-delete" data-action="delete" title="${escapeHtml(t('queue.delete'))}" aria-label="${escapeHtml(t('queue.delete'))}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          </button>
         </div>
       </div>
     `;
+
+    // Open and close the row in place, and remember it across re-renders.
+    const toggleBtn = card.querySelector('.af-q-row__toggle') as HTMLButtonElement;
+    toggleBtn.addEventListener('click', () => {
+      const open = !card.classList.contains('is-open');
+      card.classList.toggle('is-open', open);
+      toggleBtn.setAttribute('aria-expanded', String(open));
+      if (open) _openQueueRows.add(queue.id);
+      else _openQueueRows.delete(queue.id);
+    });
 
     // Inline Settings Edit (dropdowns)
     card.querySelectorAll('.af-q-select[data-action="update-setting"]').forEach(select => {
@@ -2344,14 +2402,14 @@ async function refreshQueuesList() {
       if (idxToUpdate !== -1) {
         queuesToSave[idxToUpdate] = queue;
         await saveAllQueues(queuesToSave);
-        showToast(`Settings synced for "${queue.name}"!`, 'success');
+        showToast(tf('toast.settingsSynced', { name: queue.name }), 'success');
         await refreshQueuesList();
       }
     });
     card.querySelector('[data-action="delete"]')?.addEventListener('click', async () => {
-      if (!confirm(`Delete queue "${queue.name}"?`)) return;
+      if (!confirm(tf('queue.confirmDelete', { name: queue.name }))) return;
       await deleteQueue(queue.id);
-      showToast(`Queue "${queue.name}" deleted.`, 'success');
+      showToast(tf('toast.queueDeleted', { name: queue.name }), 'success');
       await refreshQueuesList();
     });
     // Run button (first queue only)
@@ -2383,23 +2441,23 @@ async function refreshQueuesList() {
         </div>
       </div>
       <div class="af-q-compact-stats">
-        <span class="af-q-stat-badge">${doneCount}/${total} done</span>
-        ${failedCount > 0 ? `<span class="af-q-stat-badge fail">${failedCount} fail</span>` : ''}
+        <span class="af-q-stat-badge">${tf('queue.doneOf', { done: doneCount, total })}</span>
+        ${failedCount > 0 ? `<span class="af-q-stat-badge fail">${tf('lib.failed', { n: failedCount })}</span>` : ''}
       </div>
       <div class="af-q-compact-actions">
-        <button class="af-q-act-btn af-q-act-delete" data-action="delete" title="Delete queue">
+        <button class="af-q-act-btn af-q-act-delete" data-action="delete" title="${t('queue.delete')}" aria-label="${t('queue.delete')}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
         </button>
-        <button class="af-q-act-btn" data-action="run" title="Run Again">
+        <button class="af-q-act-btn" data-action="run" title="${t('queue.runAgain')}" aria-label="${t('queue.runAgain')}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         </button>
       </div>
     `;
 
     card.querySelector('[data-action="delete"]')?.addEventListener('click', async () => {
-      if (!confirm(`Delete queue "${queue.name}"?`)) return;
+      if (!confirm(tf('queue.confirmDelete', { name: queue.name }))) return;
       await deleteQueue(queue.id);
-      showToast(`Queue "${queue.name}" deleted.`, 'success');
+      showToast(tf('toast.queueDeleted', { name: queue.name }), 'success');
       await refreshQueuesList();
     });
 
@@ -2414,7 +2472,8 @@ async function refreshQueuesList() {
     const activeHeader = document.createElement('h3');
     activeHeader.className = 'af-section-heading';
     activeHeader.style.margin = '0 0 12px 0';
-    activeHeader.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Active Queues';
+    activeHeader.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ';
+    activeHeader.append(t('queues.active'));
     container.appendChild(activeHeader);
     
     activeQueues.forEach(item => {
@@ -2432,7 +2491,8 @@ async function refreshQueuesList() {
     const historyHeader = document.createElement('h3');
     historyHeader.className = 'af-section-heading';
     historyHeader.style.margin = '0 0 12px 0';
-    historyHeader.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg> History';
+    historyHeader.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg> ';
+    historyHeader.append(t('queues.history'));
     container.appendChild(historyHeader);
     
     historyQueues.forEach(item => {
@@ -2452,7 +2512,7 @@ async function moveQueue(fromIdx: number, toIdx: number) {
 
 async function runQueue(queueId: string) {
   if (state.isRunning) {
-    showToast('Another queue is already running. Stop it first.', 'warning');
+    showToast(t('toast.alreadyRunning'), 'warning');
     return;
   }
 
@@ -2462,7 +2522,7 @@ async function runQueue(queueId: string) {
   // Get queue to count prompts and check quota
   const queue = await getQueueById(queueId);
   if (!queue) {
-    showToast('Queue not found. It may have been deleted.', 'error');
+    showToast(t('toast.queueMissing'), 'error');
     state.isRunning = false;
     return;
   }
@@ -2514,13 +2574,13 @@ async function runQueue(queueId: string) {
 
   if (!quota.allowed) {
     void showLimitDialog({
-      label: promptType === 'full' ? 'Full-Feature Prompt' : 'Text Prompt',
+      label: t(promptType === 'full' ? 'limit.fullPrompts' : 'limit.textPrompts'),
       used: quota.limit,
       limit: quota.limit,
       period: 'day',
-      unlocks: 'Unlimited prompts every day — text and full-feature, no daily caps.',
+      unlocks: t('limit.unlockPrompts'),
       blocked: pendingCount > 0
-        ? `${pendingCount} queued prompt${pendingCount === 1 ? ' is' : 's are'} blocked until tomorrow.`
+        ? (pendingCount === 1 ? t('limit.blockedQueued1') : tf('limit.blockedQueued', { n: pendingCount }))
         : undefined,
     });
     state.isRunning = false;
@@ -2528,7 +2588,7 @@ async function runQueue(queueId: string) {
   }
 
   if (pendingCount > quota.remaining) {
-    showToast(`Only ${quota.remaining} prompts remaining. Queue has ${pendingCount} pending.`, 'warning');
+    showToast(tf('toast.quotaShortQueue', { left: quota.remaining, pending: pendingCount }), 'warning');
     state.isRunning = false;
     return;
   }
@@ -2537,7 +2597,7 @@ async function runQueue(queueId: string) {
   // If current mode is exhausted, auto-downgrade: full → flow → lite
   let mode = (queue.settings?.automationMode || 'flow') as 'lite' | 'flow' | 'full';
   const fallbackOrder: Array<'lite' | 'flow' | 'full'> = ['full', 'flow', 'lite'];
-  const modeLabels: Record<string, string> = { full: '🚀 Full', flow: '🔄 Flow', lite: '⚡ Lite' };
+  const modeLabels: Record<string, string> = { full: 'Full', flow: 'Flow', lite: 'Lite' };
   const originalMode = mode;
   let runCheck = await checkCanStartQueue(mode);
 
@@ -2573,7 +2633,7 @@ async function runQueue(queueId: string) {
       await saveAllQueues(queuesToSave);
     }
 
-    showToast(`${modeLabels[originalMode]} limit reached → switched to ${modeLabels[mode]}`, 'warning');
+    showToast(tf('toast.modeFallback', { from: modeLabels[originalMode], to: modeLabels[mode] }), 'warning');
   }
 
   // Consume the queue run server-side BEFORE starting (with per-type counts for mixed queues)
@@ -2591,7 +2651,7 @@ async function runQueue(queueId: string) {
   _trackedPromptUsage.clear();
 
   // Credits are consumed per-prompt when they actually complete (in handlePromptStatusUpdate).
-  showToast(`Starting queue in ${modeLabels[mode]}... (${consumeResult.remaining} run(s) left)`, 'info');
+  showToast(tf('toast.starting', { mode: modeLabels[mode], left: consumeResult.remaining }), 'info');
 
   // Get the tab the sidepanel is attached to — this is the project tab the user has open
   let currentTabId: number | undefined;
@@ -2622,8 +2682,9 @@ async function runQueue(queueId: string) {
   const flowBanner = document.getElementById('flow-tab-banner');
   if (flowBanner) flowBanner.style.display = 'none';
 
-  // Switch to Video tab and show monitor
-  (document.querySelector('[data-tab="video"]') as HTMLElement)?.click();
+  /* No tab switch: the run dock appears on whatever tab you are on, and the
+     full monitor opens from it. This used to force you to the Create tab,
+     because that is where the monitor was. */
   showRunMonitor(queueId);
 }
 
@@ -2665,7 +2726,6 @@ async function showLimitDialog(opts: {
 
   const modeLabel = opts.label;
   const result = { used: opts.used, limit: opts.limit };
-  const periodLabel = opts.period === 'month' ? 'this month' : 'today';
 
   const { url: upgradeUrl, email: upgradeEmail } = await getUpgradeTarget();
 
@@ -2689,10 +2749,12 @@ async function showLimitDialog(opts: {
         <h3 style="
           margin:0 0 8px;color:#f1f5f9;font-size:17px;font-weight:700;
           letter-spacing:-0.3px;
-        ">${modeLabel} Limit Reached</h3>
+        ">${escapeHtml(tf('limit.title', { what: modeLabel }))}</h3>
         <p style="
           color:#94a3b8;font-size:13px;line-height:1.5;margin:0 0 16px;
-        ">You've used <span style="color:#f1f5f9;font-weight:600;">${result.used}/${result.limit}</span> ${periodLabel}.</p>
+        ">${tf(opts.period === 'month' ? 'limit.usedMonth' : 'limit.usedToday', {
+          count: `<span style="color:#f1f5f9;font-weight:600;">${result.used}/${result.limit}</span>`,
+        })}</p>
         ${opts.blocked ? `<p style="
           color:#fca5a5;font-size:13px;line-height:1.5;margin:-8px 0 16px;font-weight:600;
         ">${opts.blocked}</p>` : ''}
@@ -2702,7 +2764,7 @@ async function showLimitDialog(opts: {
           border-radius:10px;padding:12px;margin-bottom:18px;
         ">
           <div style="color:#a5b4fc;font-size:12px;font-weight:600;margin-bottom:6px;">
-            ✨ Upgrade to Pro
+            ✨ ${t('account.upgradePro')}
           </div>
           <div style="color:#cbd5e1;font-size:12px;line-height:1.4;">
             ${opts.unlocks}
@@ -2716,19 +2778,19 @@ async function showLimitDialog(opts: {
           text-decoration:none;text-align:center;
           box-shadow:0 4px 15px rgba(99,102,241,0.3);
           transition:transform 0.15s,box-shadow 0.15s;
-        ">Upgrade to Pro — ${PRO_PRICE_LABEL} →</a>
+        ">${t('account.upgradePro')} — ${PRO_PRICE_LABEL}</a>
         <button id="af-limit-free-pro-btn" style="
           display:block;width:100%;margin-top:8px;padding:10px;
           background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);
           border-radius:10px;color:#fbbf24;font-size:13px;font-weight:600;cursor:pointer;
           transition:background 0.15s;
-        ">⭐ Get Free Pro — Leave a Review</button>
+        ">⭐ ${t('account.freePro')}</button>
         <button id="af-limit-dismiss-btn" style="
           display:block;width:100%;margin-top:6px;padding:10px;
           background:transparent;border:1px solid rgba(148,163,184,0.2);
           border-radius:10px;color:#94a3b8;font-size:13px;cursor:pointer;
           transition:background 0.15s;
-        ">Maybe Later</button>
+        ">${t('limit.later')}</button>
       </div>
     </div>
   `;
@@ -2743,7 +2805,7 @@ async function showLimitDialog(opts: {
     if (!upgradeEmail) {
       ev.preventDefault();
       dialog.remove();
-      showToast('Sign in first so your Pro activates automatically', 'error', 5000);
+      showToast(t('toast.signInFirst'), 'error', 5000);
       (document.querySelector('[data-tab="account"]') as HTMLElement | null)?.click();
       return;
     }
@@ -2777,11 +2839,11 @@ function showQueueLimitDialog(
 ) {
   const modeLabels: Record<string, string> = { lite: '⚡ Lite', flow: '🔄 Flow', full: '🚀 Full' };
   return showLimitDialog({
-    label: `${modeLabels[mode] || mode} Run`,
+    label: tf('limit.runs', { mode: modeLabels[mode] || mode }),
     used: result.used,
     limit: result.limit,
     period: result.period,
-    unlocks: 'Unlimited runs in all modes — Lite, Flow & Full. No daily caps.',
+    unlocks: t('limit.unlockRuns'),
   });
 }
 
@@ -2795,7 +2857,10 @@ async function showRunMonitor(queueId: string) {
   if (!queue) return;
 
   $('#run-monitor').style.display = 'block';
+  const nameEl = document.getElementById('monitor-queue-name');
+  if (nameEl) nameEl.textContent = queue.name;
   $('#monitor-progress').textContent = `0 / ${queue.prompts.length}`;
+  $('#monitor-status-text').textContent = t('mstatus.starting');
   ($('#btn-pause') as HTMLButtonElement).disabled = false;
   ($('#btn-resume') as HTMLButtonElement).disabled = true;
   _monitorStartTime = Date.now();
@@ -2810,8 +2875,8 @@ async function showRunMonitor(queueId: string) {
   const badge = document.getElementById('monitor-mode-badge');
   if (badge) {
     const mode = (queue.settings as any)?.automationMode || 'flow';
-    const labels: Record<string, string> = { flow: '⚡ Flow', full: '🚀 Full', lite: '🎯 Lite' };
-    badge.textContent = labels[mode] || '⚡ Flow';
+    const labels: Record<string, string> = { flow: 'Flow', full: 'Full', lite: 'Lite' };
+    badge.textContent = labels[mode] || 'Flow';
   }
 
   // API Sniffer badge
@@ -2840,6 +2905,17 @@ let _currentMediaType: 'video' | 'image' = 'video';
 function getMediaLabel(plural = false): string {
   const base = _currentMediaType === 'image' ? 'image' : 'video';
   return plural ? base + 's' : base;
+}
+
+/**
+ * The monitor's status mark, as a state rather than an emoji: the
+ * stylesheet draws a dot in the state's colour (and pulses it while work is
+ * under way). The emoji this replaced — 🎉 ⚠️ ⏹️ ⏸️ ⏳ 🎬 — rendered
+ * differently on every system and could not take the palette.
+ */
+function setStatusState(el: Element, state: 'done' | 'warn' | 'stopped' | 'paused' | 'working' | 'waiting') {
+  el.textContent = '';
+  (el as HTMLElement).dataset.state = state;
 }
 
 /** Update progress bar, scores, ETA, status, and mini prompt list */
@@ -2904,7 +2980,7 @@ function updateMonitorSteps(queue: QueueObject) {
     if (scoreRow && divider) {
       const submittedItem = document.createElement('span');
       submittedItem.className = 'af-score-item af-score--submitted';
-      submittedItem.innerHTML = '📤 <span id="monitor-submitted-count">0</span>';
+      submittedItem.innerHTML = `<span id="monitor-submitted-count">0</span> <span data-i18n="monitor.sent">${t('monitor.sent')}</span>`;
       scoreRow.insertBefore(submittedItem, divider);
       submittedBadge = document.getElementById('monitor-submitted-count');
     }
@@ -2933,14 +3009,14 @@ function updateMonitorSteps(queue: QueueObject) {
     const perPrompt = elapsed / finished;
     const remaining = (total - finished) * perPrompt;
     if (remaining < 60) {
-      etaEl.textContent = `⏱️ ~${Math.ceil(remaining)}s left`;
+      etaEl.textContent = tf('eta.secLeft', { n: Math.ceil(remaining) });
     } else {
-      etaEl.textContent = `⏱️ ~${Math.ceil(remaining / 60)} min left`;
+      etaEl.textContent = tf('eta.minLeft', { n: Math.ceil(remaining / 60) });
     }
   } else if (etaEl) {
     if (finished >= total && total > 0) {
       const elapsed = Math.round((Date.now() - _monitorStartTime) / 1000);
-      etaEl.textContent = elapsed < 60 ? `⏱️ ${elapsed}s total` : `⏱️ ${Math.round(elapsed / 60)} min total`;
+      etaEl.textContent = elapsed < 60 ? tf('eta.secTotal', { n: elapsed }) : tf('eta.minTotal', { n: Math.round(elapsed / 60) });
     } else {
       etaEl.textContent = '';
     }
@@ -2952,28 +3028,34 @@ function updateMonitorSteps(queue: QueueObject) {
   if (statusIcon && statusText) {
     const currentIdx = queue.prompts.findIndex(p => p.status === 'running');
     if (queue.status === 'completed' && failed === 0) {
-      statusIcon.textContent = '🎉';
-      statusText.textContent = done === 1 ? `Your ${getMediaLabel()} is ready!` : `All ${done} ${getMediaLabel(true)} are ready!`;
+      setStatusState(statusIcon, 'done');
+      const images = _currentMediaType === 'image';
+      statusText.textContent = done === 1
+        ? t(images ? 'mstatus.readyImage' : 'mstatus.readyVideo')
+        : tf(images ? 'mstatus.readyImages' : 'mstatus.readyVideos', { n: done });
     } else if (queue.status === 'completed' && failed > 0) {
-      statusIcon.textContent = '⚠️';
-      statusText.textContent = `${done} done, ${failed} failed — check results`;
+      setStatusState(statusIcon, 'warn');
+      statusText.textContent = tf('mstatus.doneFailed', { done, failed });
     } else if (queue.status === 'stopped') {
-      statusIcon.textContent = '⏹️';
-      statusText.textContent = 'Queue stopped';
+      setStatusState(statusIcon, 'stopped');
+      statusText.textContent = t('mstatus.stopped');
     } else if (queue.status === 'paused') {
-      statusIcon.textContent = '⏸️';
-      statusText.textContent = 'Paused — click Resume to continue';
+      setStatusState(statusIcon, 'paused');
+      statusText.textContent = t('mstatus.paused');
     } else if (currentIdx >= 0) {
-      statusIcon.textContent = '⏳';
+      setStatusState(statusIcon, 'working');
       const text = queue.prompts[currentIdx].text;
       const short = text.length > 45 ? text.substring(0, 45) + '...' : text;
-      statusText.textContent = `Creating #${currentIdx + 1}: ${short}`;
+      statusText.textContent = tf('mstatus.creating', { n: currentIdx + 1, text: short });
     } else if (submitted > 0) {
-      statusIcon.textContent = '🎬';
-      statusText.textContent = `Waiting for ${submitted} ${submitted > 1 ? getMediaLabel(true) : getMediaLabel()} to finish...`;
+      setStatusState(statusIcon, 'waiting');
+      const images = _currentMediaType === 'image';
+      statusText.textContent = submitted === 1
+        ? t(images ? 'mstatus.waitImage' : 'mstatus.waitVideo')
+        : tf(images ? 'mstatus.waitImages' : 'mstatus.waitVideos', { n: submitted });
     } else {
-      statusIcon.textContent = '⏳';
-      statusText.textContent = 'Starting...';
+      setStatusState(statusIcon, 'working');
+      statusText.textContent = t('mstatus.starting');
     }
   }
 
@@ -2984,39 +3066,37 @@ function updateMonitorSteps(queue: QueueObject) {
       let icon = '○';
       let cls = '';
       let errorTag = '';
-      if (p.status === 'done') { icon = '✅'; cls = 'af-mini-prompt--done'; }
-      else if (p.status === 'submitted') { icon = '📤'; cls = 'af-mini-prompt--submitted'; }
+      if (p.status === 'done') { icon = ''; cls = 'af-mini-prompt--done'; }
+      else if (p.status === 'submitted') { icon = ''; cls = 'af-mini-prompt--submitted'; }
       else if (p.status === 'queued') {
         const isRetry = (p.attempts || 0) > 0;
         if (isRetry) {
-          icon = '🔄';
+          icon = '';
           cls = 'af-mini-prompt--queued';
           const isFullMode = (queue.settings as any)?.automationMode === 'full';
-          const titleStr = isFullMode 
-            ? "This prompt's generation was cancelled or failed. It is queued to be retried/regenerated automatically in-place."
-            : "This prompt's generation was cancelled or failed. It is queued to be retried/regenerated automatically after page reload recovery.";
-          errorTag = `<span class="af-mini-error af-status-queued" style="border:none" title="${titleStr}">Queued Retry</span>`;
+          const titleStr = t(isFullMode ? 'mini.retryInPlace' : 'mini.retryAfterReload');
+          errorTag = `<span class="af-mini-error af-status-queued" style="border:none" title="${escapeHtml(titleStr)}">${t('mini.queuedRetry')}</span>`;
         } else {
-          icon = '○';
+          icon = '';
           cls = '';
           errorTag = '';
         }
       }
       else if (p.status === 'failed') {
-        icon = '❌'; cls = 'af-mini-prompt--failed';
+        icon = ''; cls = 'af-mini-prompt--failed';
         // Show compact error reason
         if (p.error) {
           let shortErr = p.error;
           if (shortErr.startsWith('API:')) shortErr = shortErr.replace('API:', '').trim();
-          if (shortErr.includes('Safety') || shortErr.includes('SAFETY')) shortErr = '🛡️ Safety';
-          else if (shortErr.includes('Quota') || shortErr.includes('QUOTA')) shortErr = '💳 Quota';
-          else if (shortErr.includes('Server') || shortErr.includes('SERVER')) shortErr = '🔧 Server';
-          else if (shortErr.includes('Cancel') || shortErr.includes('CANCEL')) shortErr = '🚫 Cancelled';
+          if (shortErr.includes('Safety') || shortErr.includes('SAFETY')) shortErr = t('err.safety');
+          else if (shortErr.includes('Quota') || shortErr.includes('QUOTA')) shortErr = t('err.quota');
+          else if (shortErr.includes('Server') || shortErr.includes('SERVER')) shortErr = t('err.server');
+          else if (shortErr.includes('Cancel') || shortErr.includes('CANCEL')) shortErr = t('err.cancelled');
           else if (shortErr.length > 25) shortErr = shortErr.substring(0, 25) + '…';
           errorTag = `<span class="af-mini-error" title="${escapeHtml(p.error)}">${escapeHtml(shortErr)}</span>`;
         }
       }
-      else if (p.status === 'running') { icon = '<span class="af-mini-spinner">⏳</span>'; cls = 'af-mini-prompt--running'; }
+      else if (p.status === 'running') { icon = ''; cls = 'af-mini-prompt--running'; }
 
       const text = p.text.length > 40 ? p.text.substring(0, 40) + '...' : p.text;
       return `<div class="af-mini-prompt ${cls}">
@@ -3058,7 +3138,7 @@ let librarySearch = '';
 function initLibraryTab() {
   $('#btn-scan').addEventListener('click', async () => {
     if (state.isRunning) {
-      showToast('Pause the running queue before scanning.', 'warning');
+      showToast(t('toast.pauseFirst'), 'warning');
       return;
     }
 
@@ -3067,22 +3147,22 @@ function initLibraryTab() {
     // Pre-check: verify extension can talk to the Flow tab
     const pingResult = await sendToBackground({ type: 'PING' });
     if (pingResult?.error) {
-      showToast(`Cannot reach Flow tab. Open a Flow project first.`, 'error');
+      showToast(t('toast.cantReachFlow'), 'error');
       return;
     }
 
-    showToast('Scanning project...', 'info');
+    showToast(t('toast.scanning'), 'info');
     const response = await sendToBackground({ type: 'SCAN_LIBRARY' });
     if (response?.error) {
-      showToast(`Scan error: ${response.error}`, 'error');
+      showToast(tf('toast.scanError', { error: response.error }), 'error');
       return;
     }
     state.scannedAssets = response?.assets || [];
     if (state.scannedAssets.length === 0) {
-      showToast('No assets found. Make sure you\'re on a Flow project page with generated content.', 'warning');
+      showToast(t('toast.noAssets'), 'warning');
     } else {
       const prompts = new Set(state.scannedAssets.map(a => a.groupId)).size;
-      showToast(`Found ${state.scannedAssets.length} asset(s) across ${prompts} prompt(s).`, 'success');
+      showToast(tf('toast.assetsFound', { assets: countOf(state.scannedAssets.length, 'lib.assets'), prompts: countOf(prompts, 'lib.prompts') }), 'success');
     }
     // Sort by prompt order so results match the user's prompt list
     const sortSelect = $('#library-sort') as HTMLSelectElement;
@@ -3142,13 +3222,13 @@ function initLibraryTab() {
   $('#btn-save-prompt-order').addEventListener('click', async () => {
     const text = promptOrderInput.value.trim();
     if (!text) {
-      showToast('Please paste your prompt list first.');
+      showToast(t('toast.pasteOrderFirst'));
       return;
     }
     // Parse: split by blank lines (double newline) to get individual prompts
     const prompts = text.split(/\n\s*\n/).map(p => p.trim()).filter(p => p.length > 0);
     if (prompts.length === 0) {
-      showToast('No prompts found. Separate prompts with blank lines.');
+      showToast(t('toast.noPromptsFound'));
       return;
     }
     // Save as a manual history entry
@@ -3159,7 +3239,7 @@ function initLibraryTab() {
       prompts: prompts.map((p, i) => ({ index: i, text: p })),
     });
     promptOrderModal.style.display = 'none';
-    showToast(`Saved prompt order (${prompts.length} prompts). Re-scan to apply.`);
+    showToast(tf('toast.orderSaved', { prompts: countOf(prompts.length, 'lib.prompts') }));
   });
 
   $('#btn-download-selected').addEventListener('click', () => downloadSelectedAssets());
@@ -3168,7 +3248,7 @@ function initLibraryTab() {
   $('#btn-retry-selected').addEventListener('click', async () => {
     const selected = state.scannedAssets.filter(a => a.selected);
     if (selected.length === 0) {
-      showToast('No assets selected.');
+      showToast(t('toast.noSelection'));
       return;
     }
 
@@ -3177,17 +3257,17 @@ function initLibraryTab() {
     const promptType = hasImages ? 'full' : 'text';
     const quota = await checkCanGenerate(promptType as 'text' | 'full');
     if (!quota.allowed) {
-      showToast('⭐ Daily limit reached. Upgrade to Pro for unlimited retries!');
+      showToast(t('toast.retryLimit'));
       return;
     }
     if (selected.length > quota.remaining) {
-      showToast(`Only ${quota.remaining} retries remaining today. Selected ${selected.length}.`);
+      showToast(tf('toast.retryQuotaShort', { left: quota.remaining, selected: selected.length }));
       return;
     }
 
     // Consume usage for retries
     await trackUsage(selected.length, promptType as 'text' | 'full');
-    showToast(`Retrying ${selected.length} asset(s)...`);
+    showToast(tf('toast.retrying', { assets: countOf(selected.length, 'lib.assets') }));
 
     let succeeded = 0;
     let failed = 0;
@@ -3216,26 +3296,26 @@ function initLibraryTab() {
         await new Promise(r => setTimeout(r, 3000));
       }
     }
-    showToast(`Retry complete: ${succeeded} succeeded, ${failed} failed. Please click Scan Library when they finish generating.`);
+    showToast(tf('toast.retryDone', { ok: succeeded, failed }));
   });
 
   // ── Upscale selected assets (no download) ──
   $('#btn-upscale-selected').addEventListener('click', async () => {
     const selected = state.scannedAssets.filter(a => a.selected);
     if (selected.length === 0) {
-      showToast('No assets selected.');
+      showToast(t('toast.noSelection'));
       return;
     }
 
     // Upscale is Pro-only
     const profile = await getProfile();
     if (!profile || !profile.is_pro_active) {
-      showToast('⭐ Upscaling is a Pro feature. Upgrade to unlock!');
+      showToast(t('toast.upscalePro'));
       return;
     }
 
     const resolution = ($('#setting-video-resolution') as HTMLSelectElement).value || '1080p Upscaled';
-    showToast(`Upscaling ${selected.length} video(s) to ${resolution}...`);
+    showToast(tf('toast.upscaling', { videos: countOf(selected.length, 'lib.videos'), res: resolution }));
 
     const response = await chrome.runtime.sendMessage({
       type: 'UPSCALE_SELECTED',
@@ -3249,7 +3329,7 @@ function initLibraryTab() {
     });
 
     if (response) {
-      showToast(`Upscale done: ${response.triggered} triggered, ${response.failed} failed.`);
+      showToast(tf('toast.upscaleDone', { ok: response.triggered, failed: response.failed }));
     }
   });
 }
@@ -3398,7 +3478,7 @@ function renderLibrary() {
   grid.innerHTML = '';
 
   if (state.scannedAssets.length === 0) {
-    grid.innerHTML = '<p class="af-empty">No assets found. Click Scan to search.</p>';
+    grid.innerHTML = `<p class="af-empty">${t('library.empty')}</p>`;
     $('#scan-status').style.display = 'none';
     $('#library-filter').style.display = 'none';
     $('#library-controls').style.display = 'none';
@@ -3414,7 +3494,7 @@ function renderLibrary() {
   const sortedGroups = getSortedGroups(filtered);
 
   if (sortedGroups.length === 0) {
-    grid.innerHTML = `<p class="af-empty">No ${librarySearch ? 'matching' : libraryFilter === 'image' ? 'photos' : 'videos'} found.</p>`;
+    grid.innerHTML = `<p class="af-empty">${t(librarySearch ? 'lib.noMatch' : libraryFilter === 'image' ? 'lib.noPhotos' : 'lib.noVideos')}</p>`;
     return;
   }
 
@@ -3429,14 +3509,15 @@ function renderLibrary() {
     const iCount = assets.filter(a => a.mediaType === 'image').length;
     const failedCount = assets.filter(a => a.tileState === 'failed').length;
     const genCount = assets.filter(a => a.tileState === 'generating').length;
-    let mediaLabel = '';
-    if (vCount > 0) mediaLabel += `${vCount} video${vCount > 1 ? 's' : ''}`;
-    if (iCount > 0) mediaLabel += `${mediaLabel ? ', ' : ''}${iCount} image${iCount > 1 ? 's' : ''}`;
+    const mediaLabel = [
+      vCount > 0 ? tf(vCount === 1 ? 'lib.videos1' : 'lib.videos', { n: vCount }) : '',
+      iCount > 0 ? tf(iCount === 1 ? 'lib.images1' : 'lib.images', { n: iCount }) : '',
+    ].filter(Boolean).join(', ');
 
     // State badges
     let stateBadges = '';
-    if (failedCount > 0) stateBadges += `<span class="af-lib-badge af-lib-badge-failed">${failedCount} failed</span>`;
-    if (genCount > 0) stateBadges += `<span class="af-lib-badge af-lib-badge-gen">generating</span>`;
+    if (failedCount > 0) stateBadges += `<span class="af-lib-badge af-lib-badge-failed">${tf('lib.failed', { n: failedCount })}</span>`;
+    if (genCount > 0) stateBadges += `<span class="af-lib-badge af-lib-badge-gen">${t('lib.generating')}</span>`;
 
     const groupEl = document.createElement('div');
     groupEl.className = 'af-lib-group';
@@ -3444,7 +3525,7 @@ function renderLibrary() {
 
     // Retry indicator
     const retryCount = assets.filter(a => a.isRetry).length;
-    const retryBadge = retryCount > 0 ? `<span class="af-lib-badge af-lib-badge-retry">${retryCount} retr${retryCount > 1 ? 'ies' : 'y'}</span>` : '';
+    const retryBadge = retryCount > 0 ? `<span class="af-lib-badge af-lib-badge-retry">${tf(retryCount === 1 ? 'lib.retries1' : 'lib.retries', { n: retryCount })}</span>` : '';
 
     // Model name badge (use first asset's model, they should all be the same for a group)
     const modelName = firstAsset.modelName || '';
@@ -3458,10 +3539,10 @@ function renderLibrary() {
     const header = document.createElement('div');
     header.className = 'af-lib-group-header';
     header.innerHTML = `
-      <span class="af-lib-group-num" style="cursor:pointer" title="Click to select/deselect all">
+      <span class="af-lib-group-num" style="cursor:pointer" title="${t('tip.groupSelect')}">
         ${promptNum}
       </span>
-      <div class="af-lib-group-info" style="cursor:pointer" title="Click to show/hide full prompt">
+      <div class="af-lib-group-info" style="cursor:pointer" title="${t('tip.groupToggle')}">
         <span class="af-lib-group-label">${escapeHtml(promptLabel.length > 80 ? promptLabel.slice(0, 80) + '…' : promptLabel)}</span>
         <div class="af-lib-group-meta">
           ${modelBadge}
@@ -3518,15 +3599,15 @@ function renderLibrary() {
       // Tile state badge on the card
       let stateBadge = '';
       if (asset.tileState === 'failed') {
-        stateBadge = '<span class="af-lib-state-badge af-lib-state-failed">Failed</span>';
+        stateBadge = `<span class="af-lib-state-badge af-lib-state-failed">${t('qstatus.failed')}</span>`;
       } else if (asset.tileState === 'generating') {
-        stateBadge = '<span class="af-lib-state-badge af-lib-state-gen">Generating…</span>';
+        stateBadge = `<span class="af-lib-state-badge af-lib-state-gen">${t('lib.generating')}</span>`;
       }
 
       if (asset.mediaType === 'video') {
         card.innerHTML = `
           <input type="checkbox" class="af-lib-check" ${asset.selected ? 'checked' : ''} />
-          <button class="af-lib-retry-btn" title="Retry — regenerate this video">
+          <button class="af-lib-retry-btn" title="${t('tip.retryVideo')}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
           </button>
           ${genBadge}
@@ -3591,7 +3672,7 @@ function renderLibrary() {
               videoUrl = live.url;
               (asset as any).videoSrc = videoUrl;
             } else {
-              showToast(live?.error || 'This tile has no video to play yet', 'warning');
+              showToast(live?.error || t('toast.noVideoYet'), 'warning');
               playOverlay.innerHTML = `<svg width="36" height="36" viewBox="0 0 24 24" fill="white" opacity="0.9"><path d="M8 5v14l11-7z"/></svg>`;
               return;
             }
@@ -3646,7 +3727,7 @@ function renderLibrary() {
             });
           } catch (err: any) {
             console.error('[AutoFlow] Video fetch failed:', err);
-            showToast('Could not load video — opening in Flow...');
+            showToast(t('toast.videoLoadFailed'));
             playOverlay.innerHTML = `<svg width="36" height="36" viewBox="0 0 24 24" fill="white" opacity="0.9"><path d="M8 5v14l11-7z"/></svg>`;
             // Fallback: open on Flow page
             sendToBackground({ type: 'PREVIEW_ASSET', payload: { locator: asset.locator } });
@@ -3656,7 +3737,7 @@ function renderLibrary() {
       } else {
         card.innerHTML = `
           <input type="checkbox" class="af-lib-check" ${asset.selected ? 'checked' : ''} />
-          <button class="af-lib-retry-btn" title="Retry — regenerate this image">
+          <button class="af-lib-retry-btn" title="${t('tip.retryImage')}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
           </button>
           ${genBadge}
@@ -3706,7 +3787,7 @@ function renderLibrary() {
           e.stopPropagation();
           retryBtn.disabled = true;
           retryBtn.classList.add('spinning');
-          showToast(`Retrying prompt #${promptNum}…`);
+          showToast(tf('toast.retryingPrompt', { n: promptNum }));
 
           const response = await sendToBackground({
             type: 'RETRY_SINGLE_TILE',
@@ -3722,12 +3803,12 @@ function renderLibrary() {
           if (response?.success) {
             const method = response.method || '';
             if (method.includes('failed')) {
-              showToast(`Retrying this single ${getMediaLabel()} in place. Please re-scan when finished.`);
+              showToast(t(asset.mediaType === 'image' ? 'toast.retryOneImage' : 'toast.retryOneVideo'));
             } else {
-              showToast(`Generating a new batch of 4 ${getMediaLabel(true)}. Please re-scan when finished.`);
+              showToast(t(asset.mediaType === 'image' ? 'toast.retryBatchImages' : 'toast.retryBatchVideos'));
             }
           } else {
-            showToast(response?.error || 'Retry failed. Make sure you are on a Flow project page.');
+            showToast(response?.error || t('toast.retryFailed'));
           }
         });
       }
@@ -3749,10 +3830,14 @@ function updateLibraryCounters() {
   const prompts = new Set(state.scannedAssets.map(a => a.groupId)).size;
   const failed = state.scannedAssets.filter(a => a.tileState === 'failed').length;
 
-  let foundText = `${prompts} prompts · ${total} assets (${videos} 🎬 ${images} 🖼)`;
-  if (failed > 0) foundText += ` · ${failed} ❌`;
+  /* Words, not 🎬 🖼 ❌ and pipes — the same rule as the rest of the panel. */
+  const count = (n: number, key: string) => tf(n === 1 ? `${key}1` : key, { n });
+  const kinds = [videos ? count(videos, 'lib.videos') : '', images ? count(images, 'lib.images') : '']
+    .filter(Boolean).join(', ');
+  let foundText = `${count(prompts, 'lib.prompts')} · ${count(total, 'lib.assets')}${kinds ? ` (${kinds})` : ''}`;
+  if (failed > 0) foundText += ` · ${tf('lib.failed', { n: failed })}`;
   $('#scan-found').textContent = foundText;
-  $('#scan-selected').textContent = `Showing: ${filtered} | Selected: ${selected}`;
+  $('#scan-selected').textContent = tf('lib.showing', { n: filtered, s: selected });
 }
 
 // ================================================================
@@ -4129,9 +4214,10 @@ function handleQueueStatusUpdate(queue: QueueObject) {
 
   if (queue.status === 'completed' || queue.status === 'stopped') {
     state.isRunning = false;
+    _syncRunDock();  // Running → Finished, now rather than on the next DOM change
     stopKeepalivePort();  // Release service worker keepalive
     updateStatusDot('connected');
-    showToast(`Queue "${queue.name}" ${queue.status}.`);
+    showToast(tf(queue.status === 'completed' ? 'toast.queueCompleted' : 'toast.queueStopped', { name: queue.name }));
 
     /* Hand back what this run never sent.
      *
@@ -4184,7 +4270,7 @@ function handlePhaseUpdate(data: { phase: string; detail: string }) {
  */
 function handleFakeCancelAlert(data: { promptIndex: number; attempt: number }) {
   showToast(
-    `🛡️ Don't panic! Google showed "cancelled" for prompt #${data.promptIndex} — this is a known Google bug, NOT a real error. AutoFlow is auto-retrying right now. Your video will be fine!`,
+    tf('toast.fakeCancel', { n: data.promptIndex }),
     'success',
     8000  // Stay visible for 8 seconds so user actually reads it
   );
@@ -4196,7 +4282,7 @@ function handleFakeCancelAlert(data: { promptIndex: number; attempt: number }) {
  */
 function handleUnusualActivityAlert(data: { promptIndex: number }) {
   showToast(
-    `⚠️ Google detected unusual activity at prompt #${data.promptIndex}. AutoFlow is pausing for 5 minutes to cool down — your queue will auto-resume. No action needed!`,
+    tf('toast.unusualActivity', { n: data.promptIndex }),
     'warning',
     15000  // Stay visible for 15 seconds — this is important
   );
@@ -4394,8 +4480,7 @@ function updatePromptStatuses(queue: QueueObject) {
       const badge = rows[idx].querySelector('.af-status');
       if (badge) {
         badge.className = `af-status af-status-${prompt.status}`;
-        badge.textContent = prompt.status === 'not-added' ? 'Not Added' :
-          prompt.status.charAt(0).toUpperCase() + prompt.status.slice(1);
+        badge.textContent = promptStatusLabel(prompt.status);
       }
       // Show error if failed
       let errEl = rows[idx].querySelector('.af-prompt-error');
@@ -4479,13 +4564,144 @@ function handleRunLockChanged(payload: { locked: boolean }) {
   }
 }
 
+// ================================================================
+// RUN DOCK + MONITOR SHEET
+// ================================================================
+
+/** Re-reads the monitor into the dock. Replaced by initRunDock. */
+let _syncRunDock: () => void = () => {};
+
+/**
+ * The run dock, and the sheet the full monitor lives in.
+ *
+ * ── Why the dock reads the monitor instead of being updated ──
+ *
+ * A dozen handlers update #run-monitor as a run goes: progress, counts, ETA,
+ * status text, pause and resume state. The dock could have been added to
+ * each of them, and would then have drifted from the monitor the first time
+ * one was missed. Instead it observes the monitor and copies what it shows,
+ * so there is one account of the run and the dock is a view of it.
+ *
+ * Its controls press the monitor's own buttons for the same reason: one
+ * handler per action, whichever button you used.
+ */
+function initRunDock() {
+  const dock = document.getElementById('af-run-dock');
+  const sheet = document.getElementById('af-monitor-sheet');
+  const monitor = document.getElementById('run-monitor');
+  const openBtn = document.getElementById('af-run-dock-open');
+  if (!dock || !sheet || !monitor || !openBtn) return;
+
+  const manual = document.getElementById('manual-intervention');
+  const failedSection = document.getElementById('failed-section');
+  const text = (id: string) => (document.getElementById(id)?.textContent || '').trim();
+  const shown = (el: HTMLElement | null) => !!el && el.style.display !== 'none';
+
+  const setOpen = (open: boolean) => {
+    sheet.hidden = !open;
+    openBtn.setAttribute('aria-expanded', String(open));
+    document.body.classList.toggle('af-sheet-open', open);
+  };
+  openBtn.addEventListener('click', () => setOpen(sheet.hidden));
+  sheet.querySelectorAll('[data-close-sheet]').forEach((el) => el.addEventListener('click', () => setOpen(false)));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !sheet.hidden) setOpen(false);
+  });
+
+  const press = (id: string) => (document.getElementById(id) as HTMLButtonElement | null)?.click();
+  document.getElementById('af-dock-pause')?.addEventListener('click', () => press('btn-pause'));
+  document.getElementById('af-dock-resume')?.addEventListener('click', () => press('btn-resume'));
+  document.getElementById('af-dock-stop')?.addEventListener('click', () => press('btn-stop'));
+  /* A finished run stays on screen until you close it — the counts are the
+     result, and they should not vanish the moment the last prompt lands.
+     showRunMonitor shows the monitor again for the next run. */
+  document.getElementById('af-dock-dismiss')?.addEventListener('click', () => {
+    setOpen(false);
+    monitor.style.display = 'none';
+  });
+
+  const sync = () => {
+    if (!shown(monitor)) {
+      dock.hidden = true;
+      if (!sheet.hidden) setOpen(false);
+      return;
+    }
+    dock.hidden = false;
+
+    const running = state.isRunning;
+    const resume = document.getElementById('btn-resume') as HTMLButtonElement | null;
+    const paused = running && !!resume && !resume.disabled;
+    /* The failed-prompt editor waits on you, with a countdown that skips
+       everything when it runs out: that needs you as much as a manual step. */
+    const editing = shown(failedSection) && !!failedSection?.classList.contains('af-failed-batch-active');
+    const attention = shown(manual) || editing;
+    const failed = parseInt(text('monitor-failed-count') || '0', 10) || 0;
+    const pct = text('monitor-percent') || '0%';
+    const progress = text('monitor-progress');
+    const eta = text('monitor-eta');
+
+    const word = attention ? t('dock.needsYou')
+      : paused ? t('dock.paused')
+      : running ? t('dock.running')
+      : t('dock.finished');
+    const queueName = text('monitor-queue-name');
+    const title = queueName ? `${word} · ${queueName}` : word;
+    const detail = attention
+      ? (shown(manual) ? text('manual-msg') : t('dock.reviewFailed'))
+      : [running ? text('monitor-status-text') : '', progress, eta, failed ? tf('dock.failed', { n: failed }) : '']
+        .filter(Boolean).join(' · ');
+
+    (document.getElementById('af-run-dock-title') as HTMLElement).textContent = title;
+    (document.getElementById('af-run-dock-sub') as HTMLElement).textContent = detail;
+    (document.getElementById('af-run-dock-pct') as HTMLElement).textContent = pct;
+    const fill = document.getElementById('af-run-dock-fill');
+    if (fill) fill.style.width = /%$/.test(pct) ? pct : '0%';
+
+    dock.classList.toggle('is-paused', paused);
+    dock.classList.toggle('is-done', !running);
+    dock.classList.toggle('is-attention', attention);
+    (document.getElementById('af-dock-pause') as HTMLElement).hidden = !running || paused;
+    (document.getElementById('af-dock-resume') as HTMLElement).hidden = !paused;
+    (document.getElementById('af-dock-stop') as HTMLElement).hidden = !running;
+    (document.getElementById('af-dock-dismiss') as HTMLElement).hidden = running;
+
+    /* Something needs a decision: bring the monitor up rather than wait for
+       the user to notice a word change in a thin bar. */
+    if (attention && sheet.hidden) setOpen(true);
+  };
+  _syncRunDock = sync;
+
+  const watch = { subtree: true, childList: true, characterData: true, attributes: true,
+    attributeFilter: ['style', 'disabled', 'class'] };
+  const observer = new MutationObserver(() => sync());
+  observer.observe(monitor, watch);
+  if (manual) observer.observe(manual, watch);
+  if (failedSection) observer.observe(failedSection, { attributes: true, attributeFilter: ['style', 'class'] });
+  sync();
+}
+
+/** Settings' pointer to the job settings: open Create, and open "This job". */
+function initJobSettingsLink() {
+  document.getElementById('btn-goto-job-settings')?.addEventListener('click', () => {
+    (document.querySelector('[data-tab="video"]') as HTMLElement | null)?.click();
+    const job = document.getElementById('job-settings') as HTMLDetailsElement | null;
+    if (!job) return;
+    job.open = true;
+    job.scrollIntoView({ block: 'nearest' });
+  });
+}
+
 function updateRunLockUI(locked: boolean) {
+  /* The run lock is the moment a run starts or ends for good, and the dock
+     reads state.isRunning; nothing in the monitor changes at that instant
+     for its observer to see. */
+  queueMicrotask(() => _syncRunDock());
   // Disable/enable all Run buttons in queue cards
   const runButtons = $$('[data-action="run"]') as NodeListOf<HTMLButtonElement>;
   runButtons.forEach(btn => {
     if (locked) {
       btn.disabled = true;
-      btn.title = 'A queue is already running';
+      btn.title = t('queue.alreadyRunning');
     } else {
       // Re-enable only if the queue has a run target set
       const card = btn.closest('.af-q-card');
@@ -4508,7 +4724,7 @@ function updateRunLockUI(locked: boolean) {
 // ================================================================
 
 function handleQueueSummary(payload: { queueName: string; totalPrompts: number; done: number; failed: number; skipped: number }) {
-  const msg = `${payload.queueName}: ${payload.done} done, ${payload.failed} failed, ${payload.skipped} skipped (of ${payload.totalPrompts})`;
+  const msg = tf('toast.summary', { name: payload.queueName, done: payload.done, failed: payload.failed, skipped: payload.skipped, total: payload.totalPrompts });
   showToast(msg, payload.failed > 0 ? 'warning' : 'success', 6000);
 
   // Auto-show failed section if there are failures
@@ -4530,7 +4746,7 @@ function handleQueueSummary(payload: { queueName: string; totalPrompts: number; 
 async function downloadSelectedAssets(): Promise<void> {
   const selected = state.scannedAssets.filter(a => a.selected);
   if (selected.length === 0) {
-    showToast('No assets selected.', 'warning');
+    showToast(t('toast.noSelection'), 'warning');
     return;
   }
 
@@ -4538,17 +4754,17 @@ async function downloadSelectedAssets(): Promise<void> {
   const dlQuota = await consumeDownload(selected.length);
   if (!dlQuota.allowed) {
     void showLimitDialog({
-      label: 'Download',
+      label: t('limit.downloads'),
       used: dlQuota.limit,
       limit: dlQuota.limit,
       period: 'day',
-      unlocks: 'Unlimited downloads every day, at full resolution.',
-      blocked: `${selected.length} file${selected.length === 1 ? '' : 's'} still waiting to download.`,
+      unlocks: t('limit.unlockDownloads'),
+      blocked: selected.length === 1 ? t('limit.blockedFiles1') : tf('limit.blockedFiles', { n: selected.length }),
     });
     return;
   }
 
-  showToast(`Downloading ${selected.length} file(s)...`);
+  showToast(tf('toast.downloading', { files: countOf(selected.length, 'lib.files') }));
   // Get the current resolution setting based on media type
   const hasVideo = selected.some(a => a.mediaType === 'video');
   const resolution = hasVideo
@@ -4581,16 +4797,16 @@ async function downloadSelectedAssets(): Promise<void> {
     },
   });
   if (response?.downloaded) {
-    showToast(`Downloaded ${response.downloaded.length} file(s).`, 'success');
+    showToast(tf('toast.downloaded', { files: countOf(response.downloaded.length, 'lib.files') }), 'success');
   } else if (response?.error) {
-    showToast(`Download error: ${response.error}`, 'error');
+    showToast(tf('toast.downloadError', { error: response.error }), 'error');
   }
 }
 
 async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownload?: boolean; afterReload?: boolean }) {
   const autoDownload = payload?.autoDownload ?? false;
   const afterReload = payload?.afterReload ?? false;
-  showToast(`Queue complete — auto-scanning library${autoDownload ? ' + downloading' : ''}...`, 'info');
+  showToast(t(autoDownload ? 'toast.autoScanDownload' : 'toast.autoScan'), 'info');
 
   // Switch to Library tab
   const libraryTab = document.querySelector('[data-tab="library"]') as HTMLElement;
@@ -4603,7 +4819,7 @@ async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownloa
      Google has since fixed. So the usual wait is short: the page is already
      loaded, and only the last tile is still settling. */
   if (afterReload) {
-    showToast('Page reloading — waiting for it to finish...', 'info');
+    showToast(t('toast.pageReloading'), 'info');
     await new Promise(r => setTimeout(r, 8000));
   } else {
     await new Promise(r => setTimeout(r, 1500));
@@ -4620,23 +4836,23 @@ async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownloa
 
     if (attempt < maxRetries) {
       console.log(`[AutoFlow] Scan attempt ${attempt} failed, retrying in 3s...`, response?.error);
-      showToast(`Scan attempt ${attempt} failed — retrying...`, 'info');
+      showToast(tf('toast.scanRetry', { n: attempt }), 'info');
       await new Promise(r => setTimeout(r, 3000));
     }
   }
 
   if (response?.error) {
-    showToast(`Auto-scan error: ${response.error}`, 'error');
+    showToast(tf('toast.autoScanError', { error: response.error }), 'error');
     return;
   }
   state.scannedAssets = response?.assets || [];
   if (state.scannedAssets.length === 0) {
-    showToast('Auto-scan: no assets found in library.', 'warning');
+    showToast(t('toast.autoScanNone'), 'warning');
     return;
   }
 
   const prompts = new Set(state.scannedAssets.map(a => a.groupId)).size;
-  showToast(`Auto-scan: found ${state.scannedAssets.length} asset(s) across ${prompts} prompt(s).`, 'success');
+  showToast(tf('toast.autoScanFound', { assets: countOf(state.scannedAssets.length, 'lib.assets'), prompts: countOf(prompts, 'lib.prompts') }), 'success');
 
   // Auto-set sort to "By prompt #" so videos match the queue's prompt order
   const sortSelect = $('#library-sort') as HTMLSelectElement;
@@ -4659,7 +4875,7 @@ async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownloa
       : state.scannedAssets.filter(a => a.mediaType === 'image');
 
     if (wanted.length === 0) {
-      showToast('Auto-download: nothing to download.', 'info');
+      showToast(t('toast.autoDlNothing'), 'info');
       return;
     }
 
@@ -4668,8 +4884,8 @@ async function handleAutoScanLibrary(payload?: { queueName?: string; autoDownloa
     renderLibrary();
 
     // Call download directly — don't rely on the UI button
-    const kind = videos.length > 0 ? 'video' : 'image';
-    showToast(`Auto-downloading ${wanted.length} ${kind}(s) in prompt order...`, 'info');
+    const items = countOf(wanted.length, videos.length > 0 ? 'lib.videos' : 'lib.images');
+    showToast(tf('toast.autoDownloading', { items }), 'info');
     await downloadSelectedAssets();
   }
 }
@@ -4691,13 +4907,13 @@ function handleFailedTilesResult(payload: { failedPrompts: Array<{ promptIndex: 
 
   if (payload.failedCount === 0) {
     section.style.display = 'none';
-    showToast('No failed generations found on page.', 'success');
+    showToast(t('toast.noFailed'), 'success');
     return;
   }
 
   // Show the section
   section.style.display = 'block';
-  countBadge.textContent = `${payload.failedCount} failed`;
+  countBadge.textContent = tf('failed.count', { n: payload.failedCount });
 
   // Build text with error reasons so users see WHY each prompt failed.
   // Format: "#N — [error reason]\n[prompt text]"
@@ -4719,7 +4935,7 @@ function handleFailedTilesResult(payload: { failedPrompts: Array<{ promptIndex: 
   copyBtn.disabled = false;
   retryBtn.disabled = false;
 
-  showToast(`${payload.failedCount} failed generation(s) — check "Failed" section for details.`, 'warning', 5000);
+  showToast(tf('toast.failedFound', { n: payload.failedCount }), 'warning', 5000);
 }
 
 function showFailedSection() {
@@ -4804,7 +5020,13 @@ function updateCreationTypeVisibility(creationType: CreationType) {
   const automapSection = $('#automap-section');
   const framechainSection = $('#framechain-section');
 
-  if (!hasPrompts) {
+  /* Text-to-Video takes no images, but it maps to creationType
+     'ingredients' — so the moment prompts were typed, this showed three
+     image cards that mode cannot use. It also overrode the image gate:
+     enforceImageGate hid them for an account over its limit, and the next
+     parse showed them again. Both now win here. */
+  const activeMode = (document.querySelector('.af-mode-card.active') as HTMLElement | null)?.dataset.mode;
+  if (!hasPrompts || activeMode === 'text-to-video' || _imageGateLimitReached) {
     // Hide all when no prompts parsed
     if (sharedSection) sharedSection.style.display = 'none';
     if (charSection) charSection.style.display = 'none';
@@ -5024,7 +5246,7 @@ function initAccountTab() {
 
     const result = await confirmPasswordReset(resetEmail, code, newPassword);
     if (result.ok) {
-      showToast('Password reset successful! Sign in now.', 'success');
+      showToast(t('toast.passwordReset'), 'success');
       formForgotConfirm.style.display = 'none';
       formLogin.style.display = 'flex';
       // Pre-fill email in login
@@ -5083,7 +5305,7 @@ function initAccountTab() {
     const originalHtml = googleBtn.innerHTML;
 
     googleBtn.disabled = true;
-    googleText.textContent = 'Connecting Google...';
+    googleText.textContent = t('account.connectingGoogle');
     hideMessage('login-message');
     hideMessage('register-message');
 
@@ -5291,7 +5513,7 @@ function initAccountTab() {
     // arrives with an email that has no AutoFlow account to attach to, and it
     // sits unprocessed until they happen to register with the same address.
     if (!email) {
-      showToast('Sign in first so your Pro activates automatically', 'error', 5000);
+      showToast(t('toast.signInFirst'), 'error', 5000);
       const accountTab = document.querySelector('[data-tab="account"]') as HTMLElement | null;
       accountTab?.click();
       $('#account-logged-out')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -5300,7 +5522,7 @@ function initAccountTab() {
 
     // Checkout is prefilled with this address, so no warning dialog is needed —
     // just say which account is getting the upgrade.
-    showToast(`Checkout opened for ${email}`, 'info', 5000);
+    showToast(tf('toast.checkoutOpened', { email }), 'info', 5000);
     window.open(url, '_blank');
   });
 
@@ -5388,7 +5610,7 @@ async function showLoggedInState() {
       const upgradeCta = document.getElementById('upgrade-cta');
       if (upgradeCta) upgradeCta.style.display = 'none';
     } else {
-      badge.textContent = 'Free';
+      badge.textContent = t('plan.free');
       badge.className = 'af-plan-badge';
       if (footerPlanBadge) footerPlanBadge.textContent = 'Free Plan';
       // Show upgrade CTA for Free users
@@ -5404,7 +5626,7 @@ async function showLoggedInState() {
       console.warn('[AutoFlow] Session expired — redirecting to login');
       await logout();
       showLoggedOutState();
-      showToast('Session expired — please log in again.', 'warning');
+      showToast(t('toast.sessionExpired'), 'warning');
       return;
     }
 
@@ -5429,7 +5651,7 @@ async function showLoggedInState() {
           const upgradeCta = document.getElementById('upgrade-cta');
           if (upgradeCta) upgradeCta.style.display = 'none';
         } else {
-          badge.textContent = 'Free';
+          badge.textContent = t('plan.free');
           badge.className = 'af-plan-badge';
           if (footerPlanBadge) footerPlanBadge.textContent = 'Free Plan';
           const upgradeCta = document.getElementById('upgrade-cta');
@@ -5446,7 +5668,7 @@ async function showLoggedInState() {
           topAvatar.textContent = af_cached_profile.email[0].toUpperCase();
         }
         const badge = $('#account-plan-badge') as HTMLElement;
-        badge.textContent = 'Offline';
+        badge.textContent = t('plan.offline');
         badge.className = 'af-plan-badge';
       }
     }
@@ -5503,7 +5725,7 @@ async function updateUsageDisplay() {
       textEl.textContent = `${used} / ∞`;
       barEl.style.width = '0%';
       barEl.classList.remove('warning', 'full');
-      hintEl.textContent = 'Unlimited';
+      hintEl.textContent = t('usage.unlimited');
       return;
     }
 
@@ -5514,12 +5736,10 @@ async function updateUsageDisplay() {
     barEl.classList.remove('warning', 'full');
     if (pct >= 100) {
       barEl.classList.add('full');
-      hintEl.textContent = 'Limit reached!';
-    } else if (pct >= 75) {
-      barEl.classList.add('warning');
-      hintEl.textContent = `${remaining} remaining today`;
+      hintEl.textContent = t('usage.limitReached');
     } else {
-      hintEl.textContent = `${remaining} remaining today`;
+      if (pct >= 75) barEl.classList.add('warning');
+      hintEl.textContent = tf('usage.leftToday', { n: remaining });
     }
   }
 
@@ -5535,20 +5755,18 @@ async function updateUsageDisplay() {
   const footerQuotaText = $('#tf-footer-quota-text');
   if (footerQuotaText) {
     if (usage.is_pro) {
-      footerQuotaText.textContent = 'Unlimited';
+      footerQuotaText.textContent = t('usage.unlimited');
     } else {
       footerQuotaText.textContent = `${usage.full_remaining} / ${usage.full_limit}`;
     }
   }
 
-  // Fix hint text for daily Full mode
+  // Full runs are counted per month, not per day
   const fullrunHint = $(`#account-fullrun-usage-hint`) as HTMLElement;
-  if (fullrunHint && !usage.is_pro) {
-    if (usage.full_monthly_remaining <= 0) {
-      fullrunHint.textContent = 'Limit reached!';
-    } else {
-      fullrunHint.textContent = `${usage.full_monthly_remaining} remaining today`;
-    }
+  if (fullrunHint && !usage.is_pro && usage.full_monthly_limit < 999) {
+    fullrunHint.textContent = usage.full_monthly_remaining <= 0
+      ? t('usage.limitReached')
+      : tf('usage.leftMonth', { n: usage.full_monthly_remaining });
   }
 }
 
@@ -5727,15 +5945,15 @@ function showRepromptDialog(promptText: string, error: string) {
     <div class="af-reprompt-dialog">
       <div class="af-reprompt-header">
         <span class="af-reprompt-icon">⚠️</span>
-        <span class="af-reprompt-title">Prompt Failed — Edit & Retry?</span>
+        <span class="af-reprompt-title">${t('reprompt.title')}</span>
       </div>
       <div class="af-reprompt-error">${escapeHtml(error)}</div>
       <textarea class="af-reprompt-input" id="af-reprompt-text" rows="4">${escapeHtml(promptText)}</textarea>
       <div class="af-reprompt-footer">
-        <span class="af-reprompt-countdown" id="af-reprompt-countdown">Auto-skip in ${remaining}s</span>
+        <span class="af-reprompt-countdown" id="af-reprompt-countdown">${tf('failed.autoSkip', { n: remaining })}</span>
         <div class="af-reprompt-actions">
-          <button class="af-btn af-btn-ghost" id="af-reprompt-skip">Skip</button>
-          <button class="af-btn af-btn-primary" id="af-reprompt-submit">Submit Fix</button>
+          <button class="af-btn af-btn-ghost" id="af-reprompt-skip">${t('monitor.skip')}</button>
+          <button class="af-btn af-btn-primary" id="af-reprompt-submit">${t('reprompt.submit')}</button>
         </div>
       </div>
     </div>
@@ -5749,7 +5967,7 @@ function showRepromptDialog(promptText: string, error: string) {
   const countdownEl = document.getElementById('af-reprompt-countdown')!;
   _repromptTimer = setInterval(() => {
     remaining--;
-    countdownEl.textContent = `Auto-skip in ${remaining}s`;
+    countdownEl.textContent = tf('failed.autoSkip', { n: remaining });
     if (remaining <= 0) {
       closeRepromptDialog(true);
     }
@@ -5763,7 +5981,7 @@ function showRepromptDialog(promptText: string, error: string) {
   document.getElementById('af-reprompt-submit')!.addEventListener('click', () => {
     const newText = (document.getElementById('af-reprompt-text') as HTMLTextAreaElement).value.trim();
     if (!newText) {
-      showToast('Prompt cannot be empty!', 'error');
+      showToast(t('toast.promptEmpty'), 'error');
       return;
     }
     closeRepromptDialog(false, newText);
@@ -5830,7 +6048,7 @@ function showBatchRepromptPanel(failedPrompts: BatchFailedPrompt[], noTimeout = 
   // Show section, switch to cards mode
   section.style.display = 'block';
   section.classList.add('af-failed-batch-active');
-  countBadge.textContent = `${failedPrompts.length} failed`;
+  countBadge.textContent = tf('failed.count', { n: failedPrompts.length });
   textarea.style.display = 'none'; // hide old textarea
   cardsContainer.style.display = 'flex';
   batchFooter.style.display = 'flex';
@@ -5850,12 +6068,12 @@ function showBatchRepromptPanel(failedPrompts: BatchFailedPrompt[], noTimeout = 
       <div class="af-fpc-header">
         <span class="af-fpc-badge">#${fp.promptIndex + 1}</span>
         <span class="af-fpc-error">${escapeHtml(fp.error)}</span>
-        <label class="af-fpc-skip-toggle" title="Skip this prompt">
+        <label class="af-fpc-skip-toggle" title="${t('failed.skipThis')}">
           <input type="checkbox" class="af-fpc-skip-cb" data-fpc-idx="${i}" />
-          <span class="af-fpc-skip-label">Skip</span>
+          <span class="af-fpc-skip-label">${t('monitor.skip')}</span>
         </label>
       </div>
-      ${fp.hasImages ? '<div class="af-fpc-img-tag">🖼️ Has character image</div>' : ''}
+      ${fp.hasImages ? `<div class="af-fpc-img-tag">${t('failed.hasImage')}</div>` : ''}
       <textarea class="af-fpc-textarea" data-fpc-idx="${i}" rows="3">${escapeHtml(fp.text)}</textarea>
     </div>
   `).join('');
@@ -5911,7 +6129,7 @@ function showBatchRepromptPanel(failedPrompts: BatchFailedPrompt[], noTimeout = 
       const text = ta?.value.trim() || fp.text;
 
       if (!skip && !text) {
-        showToast(`Prompt #${fp.promptIndex + 1} is empty!`, 'error');
+        showToast(tf('toast.promptNEmpty', { n: fp.promptIndex + 1 }), 'error');
         return;
       }
       results.push({ promptIndex: fp.promptIndex, text, skip });
@@ -5921,10 +6139,10 @@ function showBatchRepromptPanel(failedPrompts: BatchFailedPrompt[], noTimeout = 
     closeBatchRepromptPanel(false, results);
   });
 
-  // Switch to Create tab and scroll to the section
-  const createTab = document.querySelector('[data-tab="video"]') as HTMLElement;
-  if (createTab) createTab.click();
-  setTimeout(() => section.scrollIntoView({ behavior: 'smooth', block: 'center' }), 200);
+  // The editor is in the run monitor sheet, which the dock opens when it
+  // sees it (initRunDock). Bring it into view there.
+  _syncRunDock();
+  setTimeout(() => section.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
 }
 
 function formatCountdown(seconds: number): string {
@@ -5981,7 +6199,7 @@ async function showChainScheduleModal(triggerQueue: QueueObject) {
   const availableQueues = allQueues.filter(q => q.prompts.length > 0).reverse();
 
   if (availableQueues.length === 0) {
-    showToast('No queues available to schedule.', 'warning');
+    showToast(t('toast.noQueuesSchedule'), 'warning');
     return;
   }
 
@@ -6145,7 +6363,7 @@ async function showChainScheduleModal(triggerQueue: QueueObject) {
     const selectedIds = Array.from(checkboxes).map(cb => cb.value);
 
     if (selectedIds.length === 0) {
-      showToast('Select at least one queue.', 'warning');
+      showToast(t('toast.selectQueue'), 'warning');
       return;
     }
 
@@ -6153,13 +6371,13 @@ async function showChainScheduleModal(triggerQueue: QueueObject) {
     const selectedTime = new Date(input.value).getTime();
 
     if (isNaN(selectedTime)) {
-      showToast('Please select a valid date and time.', 'warning');
+      showToast(t('toast.badDate'), 'warning');
       return;
     }
 
     // Allow "Now" (within 5 seconds is fine)
     if (selectedTime <= Date.now() - 5_000) {
-      showToast('Scheduled time must not be in the past.', 'warning');
+      showToast(t('toast.pastDate'), 'warning');
       return;
     }
 
@@ -6180,10 +6398,10 @@ async function showChainScheduleModal(triggerQueue: QueueObject) {
       const timeStr = new Date(selectedTime).toLocaleString([], {
         month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
       });
-      showToast(`\ud83d\udd50 ${selectedIds.length} queue${selectedIds.length > 1 ? 's' : ''} scheduled for ${timeStr}`, 'success');
+      showToast(tf('toast.scheduled', { queues: countOf(selectedIds.length, 'lib.queues'), time: timeStr }), 'success');
       await refreshQueuesList();
     } else {
-      showToast(result?.error || 'Failed to schedule chain.', 'error');
+      showToast(result?.error || t('toast.scheduleFailed'), 'error');
     }
   });
 }
@@ -6223,14 +6441,14 @@ function showResumePrompt(payload: { queueName: string; remaining: number; curre
     banner.classList.remove('af-resume-visible');
     setTimeout(() => banner.remove(), 300);
     sendToBackground({ type: 'DISCARD_INTERRUPTED_QUEUE', payload: {} }).catch(() => {});
-    showToast('Interrupted queue discarded.', 'info');
+    showToast(t('toast.interruptedDiscarded'), 'info');
   });
 
   document.getElementById('af-resume-continue')!.addEventListener('click', () => {
     banner.classList.remove('af-resume-visible');
     setTimeout(() => banner.remove(), 300);
     sendToBackground({ type: 'RESUME_QUEUE_CONFIRMED', payload: {} }).catch(() => {});
-    showToast(`Resuming "${payload.queueName}" from prompt #${payload.currentIndex + 1}...`, 'success');
+    showToast(tf('toast.resuming', { name: payload.queueName, n: payload.currentIndex + 1 }), 'success');
   });
 }
 
@@ -6246,11 +6464,11 @@ function handleRecoveryResult(payload: {
 }) {
   // Show recovery summary
   if (payload.recovered > 0 && payload.trulyFailed === 0) {
-    showToast(`✅ Recovery: All ${payload.recovered} "failed" prompt(s) were actually fine!`, 'success');
+    showToast(tf('toast.recoveryAllFine', { n: payload.recovered }), 'success');
   } else if (payload.recovered > 0) {
-    showToast(`🔄 Recovery: ${payload.recovered} recovered, ${payload.trulyFailed} truly failed`, 'info');
+    showToast(tf('toast.recoveryMixed', { ok: payload.recovered, failed: payload.trulyFailed }), 'info');
   } else if (payload.trulyFailed > 0) {
-    showToast(`⚠️ ${payload.trulyFailed} prompt(s) truly failed — edit & retry below`, 'error');
+    showToast(tf('toast.recoveryFailed', { n: payload.trulyFailed }), 'error');
   }
 
   // Show re-prompt dialog for each truly failed prompt
@@ -6275,25 +6493,25 @@ function handleApiStatusChanged(status: boolean | 'active' | 'waiting' | 'fallba
 
   if (status === true || status === 'active') {
     badge.className = 'af-api-badge af-api-badge--active';
-    badge.textContent = '🟢 API Active';
-    badge.title = 'API connection is active. Capturing generation responses directly.';
+    badge.textContent = t('api.active');
+    badge.title = t('api.activeTip');
   } else if (status === 'fallback') {
     badge.className = 'af-api-badge af-api-badge--fallback';
-    badge.textContent = '🔍 DOM Fallback';
-    badge.title = 'API check failed or stale. Scanning visual elements in Google Flow DOM instead.';
+    badge.textContent = t('api.fallback');
+    badge.title = t('api.fallbackTip');
   } else if (status === 'checking') {
     badge.className = 'af-api-badge af-api-badge--checking';
-    badge.textContent = '⏳ API Checking...';
-    badge.title = 'Running API connection check...';
+    badge.textContent = t('api.checking');
+    badge.title = t('api.checkingTip');
   } else if (_currentMediaType === 'image') {
     // Images use Google's Service Worker for API calls (invisible to our interceptor).
     // DOM detection handles everything — show a reassuring badge.
     badge.className = 'af-api-badge af-api-badge--active';
-    badge.textContent = '🟢 DOM Mode';
-    badge.title = 'Image mode — using visual tile detection (fast & reliable).';
+    badge.textContent = t('api.domMode');
+    badge.title = t('api.domTip');
   } else {
     badge.className = 'af-api-badge af-api-badge--waiting';
-    badge.textContent = '⏳ API Passive';
-    badge.title = 'Waiting for API credentials/response interception. Generate or check status to activate.';
+    badge.textContent = t('api.waiting');
+    badge.title = t('api.waitingTip');
   }
 }

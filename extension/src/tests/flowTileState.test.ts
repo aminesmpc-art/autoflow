@@ -241,7 +241,7 @@ describe('playing an asset from the Library', () => {
   it('still falls back to Flow if the fetch itself fails', () => {
     /* A signed URL expires. If it has, opening in Flow is better than a dead
        player — that branch stays. */
-    expect(SIDE).toMatch(/Could not load video/);
+    expect(SIDE).toMatch(/toast\.videoLoadFailed/);
     expect(SIDE).toMatch(/FOCUS_FLOW_TAB/);
   });
 

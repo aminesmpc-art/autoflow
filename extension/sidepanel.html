@@ -13,27 +13,27 @@
   <!-- ═══════════════════ FIRST-RUN DISCLOSURE ═══════════════════ -->
   <div id="af-first-run" class="af-first-run" style="display:none;">
     <div class="af-first-run-content af-card">
-      <h3 class="af-first-run-title">Welcome to AutoFlow</h3>
-      <p class="af-first-run-subtitle">Automate video generation on Google Flow</p>
+      <h3 class="af-first-run-title" data-i18n="welcome.title">Welcome to AutoFlow</h3>
+      <p class="af-first-run-subtitle" data-i18n="welcome.subtitle">Automate video generation on Google Flow</p>
 
       <div class="af-first-run-steps">
         <div class="af-first-run-step">
           <span class="af-first-run-step-num">1</span>
-          <span class="af-first-run-step-text"><strong>Open Google Flow</strong> Go to <em>labs.google/flow</em> and open or create a project.</span>
+          <span class="af-first-run-step-text"><strong data-i18n="welcome.step1.title">Open Google Flow</strong> <span data-i18n="welcome.step1.text">Go to labs.google/flow and open or create a project.</span></span>
         </div>
         <div class="af-first-run-step">
           <span class="af-first-run-step-num">2</span>
-          <span class="af-first-run-step-text"><strong>Write your prompts</strong> Switch to the <em>Create</em> tab and paste your video prompts.</span>
+          <span class="af-first-run-step-text"><strong data-i18n="welcome.step2.title">Write your prompts</strong> <span data-i18n="welcome.step2.text">Paste them on the Create tab, one per block.</span></span>
         </div>
         <div class="af-first-run-step">
           <span class="af-first-run-step-num">3</span>
-          <span class="af-first-run-step-text"><strong>Add to Queue &amp; Run</strong> AutoFlow handles the rest — automatic generation, retries, and downloads.</span>
+          <span class="af-first-run-step-text"><strong data-i18n="welcome.step3.title">Run</strong> <span data-i18n="welcome.step3.text">Press Run now. AutoFlow handles the rest: generation, retries and downloads.</span></span>
         </div>
       </div>
 
-      <p class="af-first-run-note">Third-party tool — not affiliated with Google. All data stored locally in your browser.</p>
+      <p class="af-first-run-note" data-i18n="privacy.firstRun">Third-party tool, not affiliated with Google. Your prompts and settings stay in your browser; your account and usage counts are kept by AutoFlow.</p>
 
-      <button id="btn-dismiss-first-run" class="af-btn af-btn-primary af-btn-full">Let’s Go →</button>
+      <button id="btn-dismiss-first-run" class="af-btn af-btn-primary af-btn-full" data-i18n="welcome.go">Let’s go →</button>
     </div>
   </div>
 
@@ -58,17 +58,25 @@
                to v5.13.0 while the manifest said 4.2 -->
           <span class="af-version" id="af-version"></span>
         </div>
-        <span class="af-logo-tagline">AI Video Engine</span>
+        <span class="af-logo-tagline" data-i18n="header.tagline">AI Video Engine</span>
       </div>
       <span id="af-status-dot" class="af-status-dot" title="Disconnected"></span>
     </div>
-    <div style="display: flex; align-items: center; gap: 8px;">
-      <button id="btn-open-studio" class="af-header-pro-btn" style="background: linear-gradient(135deg, #f97316 0%, #ef4444 100%); display: flex; align-items: center; gap: 4px;" title="Open AutoFlow Studio — Visual Workflow Builder">⚡ Studio</button>
-      <button id="btn-header-ultra-family" class="af-header-pro-btn" style="display:none; background: linear-gradient(135deg, #10b981 0%, #059669 100%);" title="Join Ultra Family">🚀 Ultra Family</button>
-      <button id="btn-header-get-pro-free" class="af-header-pro-btn" style="display:none;" title="Get 1 Month Pro for Free">⭐ Free Pro</button>
-      <div class="af-disclaimer-mini" title="Third-party tool. Not affiliated with Google.">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-      </div>
+    <!-- Settings and Account are header buttons, not tabs: neither is a place
+         you go during a run. They keep class="af-tab" and data-tab, so the
+         existing switcher, sign-in lock and "sign in" pulse drive them
+         unchanged. The two offers and the support button live in Account. -->
+    <div class="af-header-actions">
+      <button id="btn-open-studio" class="af-hbtn af-hbtn--studio" title="Open AutoFlow Studio, the visual workflow builder" data-i18n-title="header.studio">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="6" r="2.4"/><circle cx="5" cy="18" r="2.4"/><circle cx="19" cy="12" r="2.4"/><path d="M7.4 6.9 16.6 11.1"/><path d="M7.4 17.1 16.6 12.9"/></svg>
+        <span>Studio</span>
+      </button>
+      <button class="af-tab af-hbtn" data-tab="settings" data-requires-auth aria-selected="false" aria-label="Settings" title="Settings" data-i18n-title="tab.settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <button class="af-tab af-hbtn af-hbtn--account active" data-tab="account" aria-selected="true" aria-label="Account" title="Account" data-i18n-title="tab.account">
+        <span id="tf-top-avatar-initial" class="af-hbtn__avatar">?</span>
+      </button>
     </div>
   </header>
 
@@ -79,12 +87,6 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
       </span>
       <span class="af-tab-label" data-i18n="tab.create">Create</span>
-    </button>
-    <button class="af-tab" role="tab" data-tab="settings" data-requires-auth aria-selected="false">
-      <span class="af-tab-icon">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      </span>
-      <span class="af-tab-label" data-i18n="tab.settings">Settings</span>
     </button>
     <button class="af-tab" role="tab" data-tab="queues" data-requires-auth aria-selected="false">
       <span class="af-tab-icon">
@@ -99,107 +101,80 @@
       </span>
       <span class="af-tab-label" data-i18n="tab.library">Library</span>
     </button>
-    <button class="af-tab active" role="tab" data-tab="account" aria-selected="true">
-      <span class="af-tab-icon">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      </span>
-      <span class="af-tab-label" data-i18n="tab.account">Account</span>
-    </button>
   </nav>
 
   <!-- ═══════════════════ TAB A: CREATE ═══════════════════ -->
   <section class="af-panel" id="panel-video" role="tabpanel">
 
-    <!-- ── Mode Selection Grid ── -->
-    <div class="af-mode-grid">
-      <button class="af-mode-card" data-mode="create-image" title="Generate images from text">
+    <!-- ── What to make ──
+         One row, not a 2x2 grid of large cards. Class and data-mode are
+         unchanged: initVideoTab reads both. Each card's description moved into
+         its tooltip, where it no longer has to compete with the label. -->
+    <div class="af-mode-grid af-mode-seg" role="radiogroup" aria-label="What to make" data-i18n-aria="create.whatToMake">
+      <button class="af-mode-card" data-mode="create-image" role="radio" title="AI images from text" data-i18n-title="mode.createImage.desc">
         <span class="af-mode-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
         </span>
         <span class="af-mode-label" data-i18n="mode.createImage">Create Image</span>
-        <span class="af-mode-desc" data-i18n="mode.createImage.desc">AI images from text</span>
       </button>
-      <button class="af-mode-card active" data-mode="text-to-video" title="Generate video from text only">
+      <button class="af-mode-card active" data-mode="text-to-video" role="radio" title="Video from prompts" data-i18n-title="mode.textToVideo.desc">
         <span class="af-mode-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
         </span>
         <span class="af-mode-label" data-i18n="mode.textToVideo">Text-to-Video</span>
-        <span class="af-mode-desc" data-i18n="mode.textToVideo.desc">Video from prompts</span>
       </button>
-      <button class="af-mode-card" data-mode="frame-to-video" title="Generate video using Start/End frames">
+      <button class="af-mode-card" data-mode="frame-to-video" role="radio" title="Start → End frames" data-i18n-title="mode.frameToVideo.desc">
         <span class="af-mode-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
         </span>
         <span class="af-mode-label" data-i18n="mode.frameToVideo">Frame-to-Video</span>
-        <span class="af-mode-desc" data-i18n="mode.frameToVideo.desc">Start → End frames</span>
       </button>
-      <button class="af-mode-card" data-mode="ingredients" title="Generate video with reference images">
+      <button class="af-mode-card" data-mode="ingredients" role="radio" title="Video + ref images" data-i18n-title="mode.ingredients.desc">
         <span class="af-mode-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         </span>
         <span class="af-mode-label" data-i18n="mode.ingredients">Image + Text</span>
-        <span class="af-mode-desc" data-i18n="mode.ingredients.desc">Combine images with prompts</span>
       </button>
     </div>
 
-    <!-- ── Studio promo ──
-         Deliberately NOT inside .af-mode-grid: those cards pick a queue mode,
-         Studio opens a separate window. Collapses to a slim row once opened. -->
-    <button id="studio-promo" class="af-studio-promo" title="Open AutoFlow Studio — Visual Workflow Builder">
-      <span class="af-studio-promo__icon">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="5" cy="6" r="2.4"/><circle cx="5" cy="18" r="2.4"/><circle cx="19" cy="12" r="2.4"/>
-          <path d="M7.4 6.9 16.6 11.1"/><path d="M7.4 17.1 16.6 12.9"/>
-        </svg>
-      </span>
-      <span class="af-studio-promo__text">
-        <span class="af-studio-promo__title">
-          AutoFlow Studio
-          <span class="af-studio-promo__badge">NEW</span>
-        </span>
-        <span class="af-studio-promo__desc">Chain prompts, images and generations on a visual canvas</span>
-      </span>
-      <span class="af-studio-promo__cta" aria-hidden="true">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="m12 5 7 7-7 7"/></svg>
-      </span>
-    </button>
-
-    <div class="af-section af-card">
-      <label class="af-label" for="prompt-input">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        <span data-i18n="prompts.label">Prompts</span>
-        <span class="af-help-icon" title="Paste your prompts here. Separate each prompt with a blank line. Each block becomes one video generation task in your queue.">?</span>
-      </label>
-      <p class="af-hint" data-i18n="prompts.hint">One prompt per block. Separate with a blank line.</p>
+    <div class="af-section af-card af-prompts">
+      <div class="af-prompts__head">
+        <label class="af-label" for="prompt-input">
+          <span data-i18n="prompts.label">Prompts</span>
+        </label>
+        <!-- Filled as you type: reparsePrompts runs 600ms after the last
+             keystroke, so a separate Parse step had nothing left to do. -->
+        <span id="prompt-count" class="af-badge" aria-live="polite"></span>
+      </div>
       <textarea
         id="prompt-input"
+        data-i18n-placeholder="prompts.placeholder"
         class="af-textarea"
         rows="6"
         placeholder="A cinematic shot of a golden retriever running through a sunlit meadow...&#10;&#10;A drone flyover of a futuristic city at sunset, neon lights reflecting off glass buildings...&#10;&#10;Close-up of a chef plating an elegant dessert, shallow depth of field..."
       ></textarea>
-      <div class="af-row">
-        <button id="btn-parse" class="af-btn af-btn-secondary">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-          <span data-i18n="prompts.parse">Parse Prompts</span>
-        </button>
-        <span id="prompt-count" class="af-badge">0 prompts</span>
-      </div>
+      <p class="af-hint" data-i18n="prompts.hint">One prompt per block. Separate with a blank line.</p>
     </div>
 
+    <!-- ── Images ──
+         The four image tools, together. initVideoTab still shows only the
+         ones the chosen mode can use; this wrapper just keeps them in one
+         place instead of four separate cards down the page. -->
+    <div class="af-images" id="images-group">
     <!-- Shared Reference Images -->
     <div id="shared-images-section" class="af-section af-shared-images af-card" style="display:none;">
       <div class="af-shared-header">
         <h3 class="af-subtitle">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-          Shared Reference Images
-          <span class="af-help-icon" title="These images are automatically attached to EVERY prompt in your batch. Useful for consistent style or branding across all generations.">?</span>
+          <span data-i18n="images.shared">Shared Reference Images</span>
+          <span class="af-help-icon" title="These images are attached to every prompt in the batch. Useful for a consistent style or branding across all generations." data-i18n-title="tip.shared">?</span>
         </h3>
-        <span class="af-hint">Attached to every prompt automatically.</span>
+        <span class="af-hint" data-i18n="images.shared.hint">Attached to every prompt automatically.</span>
       </div>
       <div class="af-shared-images-row">
         <div id="shared-img-thumbnails" class="af-img-thumbnails"></div>
         <span id="shared-img-counter" class="af-img-counter">0/3</span>
-        <button id="btn-add-shared-img" class="af-btn af-btn-secondary af-btn-sm">+ Add</button>
+        <button id="btn-add-shared-img" class="af-btn af-btn-secondary af-btn-sm" data-i18n="btn.add">+ Add</button>
         <input type="file" id="shared-file-input" class="af-file-input" accept="image/*" multiple />
       </div>
     </div>
@@ -211,14 +186,14 @@
           <span class="af-character-icon">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           </span>
-          <h3 class="af-subtitle">Character Images <span class="af-help-icon" title="Upload images of characters. AutoFlow auto-matches them to prompts by name. E.g., if a prompt mentions 'Alice', the image named 'Alice.jpg' is attached.">?</span></h3>
+          <h3 class="af-subtitle"><span data-i18n="images.character">Character Images</span> <span class="af-help-icon" title="Upload images of characters and AutoFlow matches them to prompts by name. If a prompt mentions Alice, the image named Alice.jpg is attached." data-i18n-title="tip.character">?</span></h3>
         </div>
-        <span class="af-hint">Auto-match images by character name in prompts.</span>
+        <span class="af-hint" data-i18n="images.character.hint">Auto-match images by character name in prompts.</span>
       </div>
       <div class="af-character-images-row">
         <div id="char-img-thumbnails" class="af-img-thumbnails"></div>
-        <span id="char-img-counter" class="af-img-counter">0 characters</span>
-        <button id="btn-add-char-img" class="af-btn af-btn-secondary af-btn-sm">+ Add</button>
+        <span id="char-img-counter" class="af-img-counter"></span>
+        <button id="btn-add-char-img" class="af-btn af-btn-secondary af-btn-sm" data-i18n="btn.add">+ Add</button>
         <input type="file" id="char-file-input" class="af-file-input" accept="image/*" multiple />
       </div>
     </div>
@@ -230,14 +205,14 @@
           <span class="af-automap-icon">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
           </span>
-          <h3 class="af-subtitle">Map Images to Prompts <span class="af-help-icon" title="Upload N images and they map 1-to-1 with your prompts. Image 1 goes to prompt 1, image 2 goes to prompt 2, and so on.">?</span></h3>
+          <h3 class="af-subtitle"><span data-i18n="images.map">Map Images to Prompts</span> <span class="af-help-icon" title="Upload N images and they map one to one with your prompts: image 1 goes to prompt 1, image 2 to prompt 2, and so on." data-i18n-title="tip.map">?</span></h3>
         </div>
-        <span class="af-hint">Image 1 → prompt 1, image 2 → prompt 2, etc.</span>
+        <span class="af-hint" data-i18n="images.map.hint">Image 1 → prompt 1, image 2 → prompt 2, etc.</span>
       </div>
       <div class="af-automap-row">
         <button id="btn-automap" class="af-btn af-btn-secondary af-btn-sm">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          Upload &amp; Map
+          <span data-i18n="images.uploadMap">Upload &amp; Map</span>
         </button>
         <input type="file" id="automap-file-input" class="af-file-input" accept="image/*" multiple />
       </div>
@@ -250,38 +225,927 @@
           <span class="af-framechain-icon">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
           </span>
-          <h3 class="af-subtitle">Frame Chain <span class="af-help-icon" title="Upload N images to create N-1 video prompts. Each video uses consecutive images as start and end frames, creating a seamless chain.">?</span></h3>
+          <h3 class="af-subtitle"><span data-i18n="images.frameChain">Frame Chain</span> <span class="af-help-icon" title="Upload N images to create N−1 video prompts. Each video uses two consecutive images as its start and end frames, making one seamless chain." data-i18n-title="tip.frameChain">?</span></h3>
         </div>
-        <span class="af-hint">Select N images → creates N−1 prompts. Each prompt's end frame becomes the next prompt's start frame.</span>
+        <span class="af-hint" data-i18n="images.frameChain.hint">Select N images → creates N−1 prompts. Each prompt's end frame becomes the next prompt's start frame.</span>
       </div>
       <div id="framechain-preview" class="af-framechain-preview" style="display:none;"></div>
       <div class="af-framechain-row">
         <button id="btn-framechain" class="af-btn af-btn-secondary af-btn-sm">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="20" rx="2" ry="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/></svg>
-          Upload &amp; Chain Frames
+          <span data-i18n="images.uploadChain">Upload &amp; Chain Frames</span>
         </button>
         <input type="file" id="framechain-file-input" class="af-file-input" accept="image/*" multiple />
       </div>
     </div>
+    </div>
+
+    <!-- ── This job ──
+         The settings that decide what gets generated, on the job itself
+         instead of on another tab. They are the same controls the Settings
+         tab used to hold — same ids, same names — so loadSettings,
+         readSettingsFromUI and the auto-save find them unchanged; initSettingsTab
+         now wires this container as well as the Settings panel. What you set
+         here is what the next job uses, and it is remembered for the one after. -->
+    <details class="af-job af-card" id="job-settings">
+      <summary class="af-job__summary">
+        <span class="af-job__label" data-i18n="job.label">This job</span>
+        <span id="job-summary" class="af-job__chips" aria-live="polite"></span>
+        <span class="af-job__edit" aria-hidden="true" data-i18n="job.edit">Edit</span>
+      </summary>
+      <div class="af-job__body">
+
+        <!-- Hidden radios for mode card sync (keep for backward compat) -->
+        <div style="display:none;">
+          <input type="radio" name="mediaType" value="video" checked />
+          <input type="radio" name="mediaType" value="image" />
+          <input type="radio" name="creationType" value="ingredients" checked />
+          <input type="radio" name="creationType" value="frames" />
+        </div>
+
+        <div id="video-model-section" class="af-setting-row">
+          <label class="af-setting-label" for="setting-model" data-i18n="job.model">Model</label>
+          <div class="af-setting-control">
+            <select id="setting-model" class="af-select">
+              <option value="Omni Flash">Omni Flash</option>
+              <option value="Veo 3.1 - Lite">Veo 3.1 - Lite</option>
+              <option value="Veo 3.1 - Fast">Veo 3.1 - Fast</option>
+              <option value="Veo 3.1 - Quality">Veo 3.1 - Quality</option>
+              <option value="Veo 3.1 - Lite [Lower Priority]">Veo 3.1 - Lite [LP]</option>
+            </select>
+            <button id="btn-refresh-models" class="af-btn af-btn-sm af-btn-icon" title="Refresh models from Flow" aria-label="Refresh models from Flow" data-i18n-title="tip.refreshModels">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div id="video-orientation-section" class="af-setting-row">
+          <label class="af-setting-label" for="setting-orientation" data-i18n="job.ratio">Ratio</label>
+          <select id="setting-orientation" class="af-select">
+            <option value="landscape" data-i18n="ratio.landscape">Landscape (16:9)</option>
+            <option value="portrait" data-i18n="ratio.portrait">Portrait (9:16)</option>
+          </select>
+          <!-- Hidden radios for orientation compat -->
+          <div style="display:none;">
+            <input type="radio" name="orientation" value="landscape" checked />
+            <input type="radio" name="orientation" value="portrait" />
+          </div>
+        </div>
+
+        <div class="af-setting-row">
+          <label class="af-setting-label" for="setting-generations" data-i18n="job.perPrompt">Results per prompt</label>
+          <select id="setting-generations" class="af-select af-select-sm">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+        </div>
+
+        <div id="video-duration-section" class="af-setting-row">
+          <label class="af-setting-label" for="setting-duration" data-i18n="job.duration">Duration</label>
+          <select id="setting-duration" class="af-select af-select-sm">
+            <option value="4s">4s</option>
+            <option value="6s">6s</option>
+            <option value="8s" selected>8s</option>
+          </select>
+        </div>
+
+        <div id="voice-section" class="af-setting-row">
+          <label class="af-setting-label" for="setting-voice" title="Needs a character image attached for the voice to work." data-i18n-title="tip.voice" data-i18n="job.voice">Voice</label>
+          <select id="setting-voice" class="af-select">
+            <option value="none" data-i18n="voice.none">None (silent)</option>
+            <option value="Achernar" data-i18n="voice.Achernar">Achernar ♀ soft, high</option>
+            <option value="Achird" data-i18n="voice.Achird">Achird ♂ friendly, mid</option>
+            <option value="Algenib" data-i18n="voice.Algenib">Algenib ♂ gravelly, low</option>
+            <option value="Algieba" data-i18n="voice.Algieba">Algieba ♂ easy-going, mid-low</option>
+            <option value="Alnilam" data-i18n="voice.Alnilam">Alnilam ♂ firm, mid-low</option>
+            <option value="Aoede" data-i18n="voice.Aoede">Aoede ♀ breezy, mid</option>
+            <option value="Autonoe" data-i18n="voice.Autonoe">Autonoe ♀ bright, mid</option>
+            <option value="Callirrhoe" data-i18n="voice.Callirrhoe">Callirrhoe ♀ easy-going, mid</option>
+            <option value="Charon" data-i18n="voice.Charon">Charon ♂ informative, low</option>
+            <option value="Despina" data-i18n="voice.Despina">Despina ♀ smooth, mid</option>
+            <option value="Enceladus" data-i18n="voice.Enceladus">Enceladus ♂ breathy, low</option>
+            <option value="Erinome" data-i18n="voice.Erinome">Erinome ♀ clear, mid</option>
+            <option value="Fenrir" data-i18n="voice.Fenrir">Fenrir ♂ excitable, young</option>
+            <option value="Gacrux" data-i18n="voice.Gacrux">Gacrux ♀ mature, mid</option>
+            <option value="Iapetus" data-i18n="voice.Iapetus">Iapetus ♂ clear, mid-low</option>
+            <option value="Kore" data-i18n="voice.Kore">Kore ♀ firm, mid</option>
+            <option value="Laomedeia" data-i18n="voice.Laomedeia">Laomedeia ♀ upbeat, mid-high</option>
+            <option value="Leda" data-i18n="voice.Leda">Leda ♀ youthful, mid-high</option>
+            <option value="Orus" data-i18n="voice.Orus">Orus ♂ firm, mid-low</option>
+            <option value="Puck" data-i18n="voice.Puck">Puck ♂ upbeat, mid</option>
+            <option value="Pulcherrima" data-i18n="voice.Pulcherrima">Pulcherrima ⚥ forward, mid-high</option>
+            <option value="Rasalgethi" data-i18n="voice.Rasalgethi">Rasalgethi ♂ informative, mid</option>
+            <option value="Sadachbia" data-i18n="voice.Sadachbia">Sadachbia ♂ lively, low</option>
+            <option value="Sadaltager" data-i18n="voice.Sadaltager">Sadaltager ♂ knowledgeable, mid</option>
+            <option value="Schedar" data-i18n="voice.Schedar">Schedar ♂ even, mid-low</option>
+            <option value="Sulafat" data-i18n="voice.Sulafat">Sulafat ♀ warm, mid</option>
+            <option value="Umbriel" data-i18n="voice.Umbriel">Umbriel ♂ smooth, low</option>
+            <option value="Vindemiatrix" data-i18n="voice.Vindemiatrix">Vindemiatrix ♀ gentle, mid</option>
+            <option value="Zephyr" data-i18n="voice.Zephyr">Zephyr ♀ bright, mid-high</option>
+            <option value="Zubenelgenubi" data-i18n="voice.Zubenelgenubi">Zubenelgenubi ♂ casual, mid-low</option>
+          </select>
+        </div>
+
+        <!-- Image-specific settings -->
+        <div id="image-settings-section" style="display:none;">
+          <div class="af-setting-row">
+            <label class="af-setting-label" for="setting-image-model" data-i18n="job.model">Model</label>
+            <select id="setting-image-model" class="af-select">
+              <option value="Nano Banana Pro">Nano Banana Pro (Default)</option>
+              <option value="Nano Banana 2">Nano Banana 2</option>
+              <option value="Imagen 4">Imagen 4</option>
+            </select>
+          </div>
+          <div class="af-setting-row">
+            <label class="af-setting-label" for="setting-image-ratio" data-i18n="job.ratio">Ratio</label>
+            <select id="setting-image-ratio" class="af-select">
+              <option value="16:9" data-i18n="ratio.landscape">Landscape (16:9)</option>
+              <option value="4:3" data-i18n="ratio.standard">Standard (4:3)</option>
+              <option value="1:1" data-i18n="ratio.square">Square (1:1)</option>
+              <option value="3:4" data-i18n="ratio.portrait34">Portrait (3:4)</option>
+              <option value="9:16" data-i18n="ratio.tall">Tall portrait (9:16)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Run mode. These used class="af-mode-card", the same class as the
+             Create mode cards above — so initVideoTab wired them too, and
+             picking Full in Settings deselected your Create mode and switched
+             the panel into image-upload mode. Their own class ends that. -->
+        <div class="af-setting-row af-setting-row--stack">
+          <span class="af-setting-label" id="run-mode-label" data-i18n="job.runMode">Run mode</span>
+          <div class="af-auto-seg" role="radiogroup" aria-labelledby="run-mode-label">
+            <label class="af-auto-opt" title="Creates the project and fills every field, then downloads." data-i18n-title="tip.runFull">
+              <input type="radio" name="automationMode" value="full" />
+              <span class="af-auto-opt__name">Full</span>
+              <span class="af-auto-opt__desc" data-i18n="job.full.desc">Hands-off</span>
+            </label>
+            <label class="af-auto-opt" title="Runs inside the Flow project you have open, retrying failures at the end." data-i18n-title="tip.runFlow">
+              <input type="radio" name="automationMode" value="flow" checked />
+              <span class="af-auto-opt__name">Flow</span>
+              <span class="af-auto-opt__desc" data-i18n="job.flow.desc">Your project</span>
+            </label>
+            <label class="af-auto-opt" title="Pastes and submits each prompt. No waiting, no retries, no downloads." data-i18n-title="tip.runLite">
+              <input type="radio" name="automationMode" value="lite" />
+              <span class="af-auto-opt__name">Lite</span>
+              <span class="af-auto-opt__desc" data-i18n="job.lite.desc">Just submit</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="af-setting-row">
+          <label class="af-setting-label" for="setting-stop-error" title="On: the run pauses when a generation fails. Off: it skips the failure and carries on." data-i18n-title="tip.stopOnError" data-i18n="job.stopOnError">Stop on error</label>
+          <label class="af-toggle">
+            <input type="checkbox" id="setting-stop-error" />
+            <span class="af-toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+    </details>
 
     <!-- Parsed prompt rows -->
     <div id="prompt-list" class="af-prompt-list"></div>
 
-    <!-- Add to Queue -->
-    <div class="af-section" id="queue-actions" style="display:none;">
-      <button id="btn-add-queue" class="af-btn af-btn-primary af-btn-full af-btn-glow">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        <span data-i18n="prompts.addQueue">Add to Queue</span>
+    <!-- ── Actions ──
+         Pinned to the bottom of the tab. Neither button switches tabs any
+         more: Add to queue stays here, and Run now saves the job to the queue
+         and starts it, with the run dock showing progress from then on.
+         #queue-actions is shown and hidden by reparsePrompts, as before. -->
+    <div class="af-section af-actionbar" id="queue-actions" style="display:none;">
+      <div class="af-actionbar__inner">
+        <button id="btn-add-queue" class="af-btn af-btn-secondary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span data-i18n="prompts.addQueue">Add to Queue</span>
+        </button>
+        <button id="btn-run-now" class="af-btn af-btn-primary">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+          <span data-i18n="actions.runNow">Run now</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ TAB B: SETTINGS ═══════════════════ -->
+  <section class="af-panel" id="panel-settings" role="tabpanel">
+
+    <!-- Model, ratio, duration, results per prompt, voice, run mode and stop
+         on error moved to "This job" on the Create tab. They belong to a job,
+         and a run should never depend on a tab you are not looking at. -->
+    <div class="af-settings-note af-card">
+      <p data-i18n="settings.jobNote">Model, ratio, duration and run mode are set on each job, under “This job” on the Create tab, and remembered for the next one.</p>
+      <button type="button" id="btn-goto-job-settings" class="af-btn af-btn-sm af-btn-secondary" data-i18n="settings.openJob">Open job settings</button>
+    </div>
+
+    <!-- ── Timing ── -->
+    <div class="af-settings-group af-card">
+      <h3 class="af-section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span data-i18n="settings.timing">Timing</span>
+      </h3>
+
+      <div class="af-setting-row">
+        <label class="af-setting-label">
+          <span data-i18n="settings.waitTime">Wait time (sec)</span>
+          <span class="af-help-icon" title="Delay between prompts. AutoFlow doesn't wait for the video to finish; it starts the next upload right after this delay." data-i18n-title="tip.wait">?</span>
+        </label>
+        <div class="af-range-inputs">
+          <input type="number" id="setting-wait-min" class="af-input af-input-sm" min="0" max="120" step="1" value="10" />
+          <span class="af-range-to">–</span>
+          <input type="number" id="setting-wait-max" class="af-input af-input-sm" min="0" max="120" step="1" value="20" />
+        </div>
+      </div>
+
+      <div class="af-setting-row">
+        <label class="af-setting-label">
+          <span data-i18n="settings.humanTyping">Human-like typing</span>
+          <span class="af-help-icon" title="Types like a person instead of pasting the text at once. Slower, but helps avoid detection." data-i18n-title="tip.typing">?</span>
+          <span class="af-hint-tag" data-i18n="tag.beta">beta</span>
+        </label>
+        <label class="af-toggle">
+          <input type="checkbox" id="setting-typing-mode" />
+          <span class="af-toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="af-setting-row" id="typing-speed-row">
+        <label class="af-setting-label" data-i18n="settings.typingSpeed">Typing speed</label>
+        <div class="af-slider-group">
+          <input type="range" id="setting-typing-speed-slider" class="af-slider" min="0.25" max="3.0" step="0.05" value="1.0" />
+          <span id="typing-speed-display" class="af-slider-value">1.00x</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Download Settings ── -->
+    <div class="af-settings-group af-card">
+      <h3 class="af-section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span data-i18n="settings.download">Downloads</span>
+      </h3>
+
+      <div class="af-setting-row">
+        <label class="af-setting-label"><span data-i18n="settings.autoDownloadVideos">Auto-download videos</span> <span class="af-help-icon" title="Downloads finished videos without a click. Turn off “Ask where to save” in your browser settings." data-i18n-title="tip.autoDl">?</span></label>
+        <div class="af-row-inline">
+          <label class="af-toggle">
+            <input type="checkbox" id="setting-auto-dl-videos" />
+            <span class="af-toggle-slider"></span>
+          </label>
+          <a href="#" id="btn-configure-folder" class="af-link" data-i18n="settings.configure">Configure</a>
+        </div>
+      </div>
+
+      <div class="af-setting-row">
+        <label class="af-setting-label"><span data-i18n="settings.videoResolution">Video Resolution</span> <span class="af-help-icon" title="720p is faster with smaller files. 1080p and 4K are upscaled by Google: slower, but higher quality." data-i18n-title="tip.resolution">?</span></label>
+        <select id="setting-video-resolution" class="af-select af-select-sm">
+          <option value="Original (720p)">720p</option>
+          <option value="1080p Upscaled">1080p</option>
+          <option value="4K">4K</option>
+        </select>
+      </div>
+
+      <div class="af-setting-row">
+        <label class="af-setting-label" data-i18n="settings.autoDownloadImages">Auto-download images</label>
+        <div class="af-row-inline">
+          <label class="af-toggle">
+            <input type="checkbox" id="setting-auto-dl-images" />
+            <span class="af-toggle-slider"></span>
+          </label>
+          <select id="setting-image-resolution" class="af-select af-select-sm">
+            <option value="1K">1K</option>
+            <option value="2K">2K</option>
+            <option value="4K">4K</option>
+          </select>
+        </div>
+      </div>
+
+      <p class="af-tip">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span data-i18n="settings.downloadTip">Turn off “Ask where to save” in your browser settings for smooth downloads.</span>
+      </p>
+    </div>
+
+    <!-- ── Notifications ── -->
+    <div class="af-settings-group af-card">
+      <h3 class="af-section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span data-i18n="settings.notifications">Notifications</span>
+      </h3>
+
+      <div class="af-setting-row">
+        <label class="af-setting-label"><span data-i18n="settings.showNotifications">Show notifications</span> <span class="af-help-icon" title="Get a browser notification when your queue finishes or stops. Useful when you switch to another tab." data-i18n-title="tip.notify">?</span></label>
+        <label class="af-toggle">
+          <input type="checkbox" id="setting-notifications" checked />
+          <span class="af-toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="af-setting-row" style="margin-bottom:0;">
+        <label class="af-setting-label"><span data-i18n="settings.notificationSound">Notification sound</span> <span class="af-help-icon" title="Play a sound when a notification appears." data-i18n-title="tip.sound">?</span></label>
+        <label class="af-toggle">
+          <input type="checkbox" id="setting-notification-sound" checked />
+          <span class="af-toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- ── Interface ── -->
+    <div class="af-settings-group af-card">
+      <h3 class="af-section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        <span data-i18n="settings.interface">Interface</span>
+      </h3>
+
+      <div class="af-setting-row">
+        <label class="af-setting-label" data-i18n="settings.language">Language</label>
+        <select id="setting-language" class="af-select af-select-sm">
+          <option value="English">English</option>
+          <option value="Arabic">العربية</option>
+          <option value="French">Français</option>
+          <option value="Spanish">Español</option>
+        </select>
+      </div>
+
+      <p class="af-tip">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span><span data-i18n="settings.flowLangs">AutoFlow supports Google Flow in:</span> <strong data-i18n="settings.flowLangsList">English, French, Spanish, Portuguese, German, Italian, Dutch, Turkish, Russian, Japanese, Korean, Chinese and Arabic</strong></span>
+      </p>
+    </div>
+
+    <!-- Rarely needed, so folded: diagnostics, maintenance and data. -->
+    <details class="af-advanced">
+      <summary class="af-advanced__summary" data-i18n="settings.advanced">Advanced</summary>
+    <!-- ── LLM Diagnostics & Verification ── -->
+    <div class="af-settings-group af-card">
+      <h3 class="af-section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        <span data-i18n="settings.llm">LLM AI Diagnostics</span>
+      </h3>
+
+      <div class="af-setting-row">
+        <label class="af-setting-label"><span data-i18n="settings.llmEnable">Enable LLM Diagnostics</span> <span class="af-help-icon" title="Uses Chrome's built-in AI (Gemini Nano) or the Gemini API to classify errors and check generation state." data-i18n-title="tip.llm">?</span></label>
+        <label class="af-toggle">
+          <input type="checkbox" id="setting-llm-enabled" />
+          <span class="af-toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="af-setting-block" id="llm-details-container" style="display:none; margin-top:10px;">
+        <div class="af-setting-row" style="margin-bottom:8px; display:block;">
+          <label class="af-setting-label" style="font-size:11px; margin-bottom:4px; display:block;" data-i18n="settings.geminiModel">Gemini model</label>
+          <select id="setting-llm-model" class="af-select" style="width:100%;">
+            <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash (Legacy)</option>
+          </select>
+        </div>
+
+        <label class="af-label" for="setting-llm-api-key" style="font-size:11px; margin-bottom:4px; display:block;" data-i18n="settings.geminiKey">Gemini API key (optional fallback)</label>
+        <div style="display:flex; gap:6px;">
+          <input type="password" id="setting-llm-api-key" class="af-input" style="flex:1; font-size:11px; padding:6px 8px;" placeholder="AIzaSy..." />
+          <button id="btn-test-llm-conn" class="af-btn af-btn-secondary af-btn-sm" style="padding:0 10px; font-size:11px;" data-i18n="settings.test">Test</button>
+        </div>
+        <div id="test-llm-conn-status" style="margin-top:4px; font-size:11px; font-weight:500;"></div>
+        <p class="af-hint" style="margin-top:4px; font-size:11px; line-height:1.4;" data-i18n="settings.geminiKeyHint">If Chrome's built-in AI is unavailable, this key is used instead. Get a free key from Google AI Studio.</p>
+      </div>
+    </div>
+
+    <!-- ── Maintenance ── -->
+    <div class="af-settings-group af-card">
+      <h3 class="af-section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4"/></svg>
+        <span data-i18n="settings.maintenance">Maintenance</span>
+      </h3>
+
+      <button id="btn-clear-cache" class="af-btn af-btn-danger af-btn-full">
+        <span data-i18n="settings.clearCache">Clear Flow Cache</span>
+      </button>
+      <p class="af-hint af-mt-sm"><span data-i18n="settings.clearCacheWhen">Use when generation stalls or the page gets slow.</span> <span class="af-help-icon" title="Clears Google Flow's cache in your browser. This can fix stuck generations, loading errors or slowness. Your queues and settings are not affected." data-i18n-title="tip.clearCache">?</span></p>
+    </div>
+
+    <div class="af-section">
+      <button id="btn-save-settings" class="af-btn af-btn-primary af-btn-full af-btn-glow">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        Save Settings
       </button>
     </div>
 
+    <!-- ── Data & Privacy ── -->
+    <div class="af-settings-group af-card">
+      <h3 class="af-section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span data-i18n="privacy.title">Data &amp; Privacy</span>
+      </h3>
+
+      <!-- What this said before was not true: "No data is sent to external
+           servers" and "No account or login is required", in an extension
+           that requires sign-in and checks usage against its own server on
+           every run. Each line below was checked against the code:
+           shared/api.ts for what reaches AutoFlow's servers (no request
+           carries prompt text or images), content/llmHelper.ts and the
+           CALL_LLM handler for what the optional diagnostics send. -->
+      <div class="af-privacy-info">
+        <p class="af-privacy-head" data-i18n="privacy.local.head">Stays in your browser</p>
+        <ul class="af-privacy-list">
+          <li data-i18n="privacy.local.prompts">Your prompts, queues and settings</li>
+          <li data-i18n="privacy.local.images">Reference images you add. They go to Google Flow when a run uses them, never to AutoFlow's servers.</li>
+        </ul>
+
+        <p class="af-privacy-head" data-i18n="privacy.server.head">Sent to AutoFlow's servers</p>
+        <ul class="af-privacy-list">
+          <li data-i18n="privacy.server.account">Your account: email address, and your password or Google sign-in</li>
+          <li data-i18n="privacy.server.usage">Usage counts for your plan's limits: how many prompts and runs, their mode and outcome, and Flow's ID for each generation. Not your prompt text or images.</li>
+        </ul>
+
+        <p class="af-privacy-head" data-i18n="privacy.google.head">Sent to Google</p>
+        <ul class="af-privacy-list">
+          <li data-i18n="privacy.google.flow">Your prompts and images, when AutoFlow submits them in your Google Flow tab, under your Google account</li>
+          <li data-i18n="privacy.google.llm">Only if you turn on LLM Diagnostics: Flow's error and tile status text, which can include a prompt, sent to Google's Gemini API with your own key</li>
+        </ul>
+      </div>
+
+      <div class="af-separator"></div>
+
+      <div class="af-about-links">
+        <a href="https://auto-flow.studio/privacy" target="_blank" class="af-link" data-i18n="about.privacy">Privacy Policy</a>
+        <span class="af-link-sep">·</span>
+        <a href="https://auto-flow.studio/terms" target="_blank" class="af-link" data-i18n="about.terms">Terms of Service</a>
+        <span class="af-link-sep">·</span>
+        <a href="mailto:support@auto-flow.studio" class="af-link" data-i18n="about.support">Support</a>
+      </div>
+    </div>
+
+    </details>
+
+    <div class="af-disclaimer">
+      <span data-i18n="about.disclaimer1">AutoFlow is a third-party productivity tool.</span><br/>
+      <span data-i18n="about.disclaimer2">Not affiliated with or endorsed by Google.</span><br/>
+      <span data-i18n="about.disclaimer3">Runs only on supported Google Flow pages.</span>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ TAB C: MANAGE QUEUES ═══════════════════ -->
+  <section class="af-panel" id="panel-queues" role="tabpanel">
+    <div class="af-section">
+      <div class="af-section-header-row">
+        <h3 class="af-subtitle">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          <span data-i18n="queues.title">Queues</span>
+          <span class="af-help-icon" title="Your generation queues. Each one holds prompts with their settings. Press Run to process a queue." data-i18n-title="tip.queues">?</span>
+        </h3>
+      </div>
+
+      <!-- Flow Tab Guidance Banner -->
+      <div id="flow-tab-banner" class="af-flow-banner" style="display:none;">
+        <span class="af-flow-banner-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>
+        <div class="af-flow-banner-text">
+          <strong data-i18n="banner.flowRequired">Google Flow tab required</strong>
+          <span data-i18n="banner.flowText">Open a Flow project first, then come back and press Run.</span>
+          <a id="btn-open-flow" class="af-flow-banner-link" href="#" data-i18n="banner.openFlow">Open Google Flow →</a>
+        </div>
+      </div>
+
+      <div id="queue-list" class="af-queue-list">
+        <div class="af-empty">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <line x1="3" y1="9" x2="21" y2="9"/>
+            <line x1="9" y1="21" x2="9" y2="9"/>
+          </svg>
+          <p class="af-empty-title" data-i18n="queues.empty">No queues yet</p>
+          <!-- A real list: the order is the point, so the numbers are the
+               list's own rather than keycap emoji. -->
+          <ol class="af-empty-steps">
+            <li data-i18n="queues.emptyStep1">Write your prompts on the Create tab</li>
+            <li data-i18n="queues.emptyStep2">Press Run now, or Add to Queue to run later</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ TAB D: LIBRARY / SCAN OUTPUTS ═══════════════════ -->
+  <section class="af-panel" id="panel-library" role="tabpanel">
+    <div class="af-section">
+      <h3 class="af-subtitle">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span data-i18n="library.title">Library</span>
+        <span class="af-help-icon" title="Scan your Google Flow project to see everything it generated, then filter, select and download in the resolution you want." data-i18n-title="tip.library">?</span>
+      </h3>
+      <button id="btn-scan" class="af-btn af-btn-primary af-btn-full">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span data-i18n="library.scan">Scan Project</span>
+      </button>
+      <div id="scan-status" class="af-mt af-scan-status" style="display:none;">
+        <span id="scan-found"></span>
+        <span class="af-scan-divider">|</span>
+        <span id="scan-selected"></span>
+      </div>
+    </div>
+
+    <!-- Filter & Sort -->
+    <div id="library-filter" class="af-row af-mt af-lib-toolbar" style="display:none;">
+      <div class="af-filter-pills">
+        <button class="af-btn af-btn-sm af-btn-primary" data-lib-filter="all" data-i18n="library.all">All</button>
+        <button class="af-btn af-btn-sm" data-lib-filter="image" data-i18n="library.photos">Photos</button>
+        <button class="af-btn af-btn-sm" data-lib-filter="video" data-i18n="library.videos">Videos</button>
+      </div>
+      <input id="library-search" class="af-input af-search-input" type="text" placeholder="Search prompts…" data-i18n-placeholder="library.search" />
+      <select id="library-sort" class="af-select af-select-sm">
+        <option value="newest" data-i18n="sort.newest">Newest first</option>
+        <option value="oldest" data-i18n="sort.oldest">Oldest first</option>
+        <option value="status" data-i18n="sort.status">By status</option>
+        <option value="type" data-i18n="sort.type">Videos first</option>
+        <option value="most-gens" data-i18n="sort.mostGens">Most generations</option>
+        <option value="prompt-num" data-i18n="sort.promptNum">By prompt #</option>
+      </select>
+    </div>
+
+    <div id="library-controls" class="af-row af-mt" style="display:none;">
+      <button id="btn-select-all" class="af-btn af-btn-sm" data-i18n="library.selectAll">Select All</button>
+      <button id="btn-clear-sel" class="af-btn af-btn-sm" data-i18n="library.clearSel">Clear</button>
+      <button id="btn-download-selected" class="af-btn af-btn-primary af-btn-sm">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span data-i18n="library.download">Download</span>
+      </button>
+      <button id="btn-upscale-selected" class="af-btn af-btn-sm" title="Upscale the selected videos without downloading them" data-i18n-title="tip.upscale">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 11 12 6 7 11"/><line x1="12" y1="18" x2="12" y2="6"/></svg>
+        <span data-i18n="library.upscale">Upscale</span> <span class="af-hint-tag" data-i18n="tag.beta">beta</span>
+      </button>
+      <button id="btn-retry-selected" class="af-btn af-btn-sm" title="Generate the selected assets again with the same prompt" data-i18n-title="tip.retry">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+        <span data-i18n="library.retrySelected">Retry</span> <span class="af-hint-tag" data-i18n="tag.beta">beta</span>
+      </button>
+      <button id="btn-set-prompt-order" class="af-btn af-btn-sm" title="Set the prompt order so the Library sorts correctly" data-i18n-title="tip.setOrder">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        <span data-i18n="library.setOrder">Set Order</span>
+      </button>
+    </div>
+
+    <!-- Prompt Order Modal -->
+    <div id="prompt-order-modal" class="af-card" style="display:none; margin-top:8px;">
+      <label class="af-label" style="font-size:11px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        <span data-i18n="library.orderPaste">Paste your prompt list (one per line)</span>
+      </label>
+      <textarea id="prompt-order-input" class="af-textarea" rows="6" data-i18n-placeholder="library.orderExample" placeholder="Prompt 1 text here...
+
+Prompt 2 text here...
+
+Prompt 3 text here..."></textarea>
+      <div class="af-row af-mt" style="gap:6px;">
+        <button id="btn-save-prompt-order" class="af-btn af-btn-primary af-btn-sm" data-i18n="library.saveOrder">Save Order</button>
+        <button id="btn-cancel-prompt-order" class="af-btn af-btn-sm" data-i18n="general.cancel">Cancel</button>
+      </div>
+    </div>
+
+    <div id="library-grid" class="af-library-grid"></div>
+  </section>
+
+  <!-- ═══════════════════ TAB E: ACCOUNT ═══════════════════ -->
+  <section class="af-panel active" id="panel-account" role="tabpanel">
+
+    <!-- ── STATE 1: Logged OUT ── -->
+    <div id="account-logged-out">
+      <div class="af-section af-card af-account-card">
+        <div class="af-account-header">
+          <div class="af-account-avatar">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <h3 class="af-account-title" data-i18n="welcome.title">Welcome to AutoFlow</h3>
+          <p class="af-hint" data-i18n="account.signInHint">Sign in to track usage and unlock features</p>
+        </div>
+
+        <!-- Toggle: Login / Register -->
+        <div class="af-auth-toggle">
+          <button id="btn-show-login" class="af-auth-toggle-btn active" data-i18n="account.signIn">Sign In</button>
+          <button id="btn-show-register" class="af-auth-toggle-btn" data-i18n="account.createAccount">Create Account</button>
+        </div>
+
+        <!-- Login Form -->
+        <form id="form-login" class="af-auth-form">
+          <div class="af-form-group">
+            <label for="login-email" class="af-form-label" data-i18n="account.email">Email</label>
+            <input type="email" id="login-email" class="af-input" placeholder="you@example.com" required autocomplete="email" />
+          </div>
+          <div class="af-form-group">
+            <label for="login-password" class="af-form-label" data-i18n="account.password">Password</label>
+            <input type="password" id="login-password" class="af-input" placeholder="••••••••" required autocomplete="current-password" />
+            <div style="text-align: right; margin-top: 6px;">
+              <a href="#" id="link-forgot-password" style="font-size: 11px; color: #06b6d4; text-decoration: none; font-weight: 500;" data-i18n="account.forgot">Forgot password?</a>
+            </div>
+          </div>
+          <div id="login-message" class="af-auth-message" style="display:none;"></div>
+          <button type="submit" id="btn-login-submit" class="af-btn af-btn-primary af-btn-full" data-i18n="account.btnSignIn">Sign In</button>
+        </form>
+
+        <!-- Register Form -->
+        <form id="form-register" class="af-auth-form" style="display:none;">
+          <div class="af-form-group">
+            <label for="register-email" class="af-form-label" data-i18n="account.email">Email</label>
+            <input type="email" id="register-email" class="af-input" placeholder="you@example.com" required autocomplete="email" />
+            <p class="af-hint" style="margin-top:6px; font-size:11px; color:#fbbf24; line-height:1.4;">
+              <strong data-i18n="account.whopTitle">Bought Pro on Whop?</strong> <span data-i18n="account.whopText">Use the same email you used on Whop so your Pro activates automatically.</span>
+            </p>
+          </div>
+          <div class="af-form-group">
+            <label for="register-password" class="af-form-label" data-i18n="account.password">Password</label>
+            <input type="password" id="register-password" class="af-input" placeholder="Minimum 8 characters" data-i18n-placeholder="account.minChars" required minlength="8" autocomplete="new-password" />
+          </div>
+          <div id="register-message" class="af-auth-message" style="display:none;"></div>
+          <button type="submit" id="btn-register-submit" class="af-btn af-btn-primary af-btn-full" data-i18n="account.btnCreate">Create Account</button>
+        </form>
+
+        <!-- Forgot Password: Step 1 (Request Code) -->
+        <form id="form-forgot-request" class="af-auth-form" style="display:none;">
+          <div class="af-form-group">
+            <label for="forgot-email" class="af-form-label" data-i18n="account.email">Email</label>
+            <input type="email" id="forgot-email" class="af-input" placeholder="you@example.com" required autocomplete="email" />
+          </div>
+          <div id="forgot-request-message" class="af-auth-message" style="display:none;"></div>
+          <button type="submit" id="btn-forgot-request-submit" class="af-btn af-btn-primary af-btn-full" data-i18n="account.sendCode">Send reset code</button>
+          <div style="text-align: center; margin-top: 12px;">
+            <a href="#" id="link-back-to-login" style="font-size: 12px; color: #94a3b8; text-decoration: none;" data-i18n="account.backToLogin">Back to Login</a>
+          </div>
+        </form>
+
+        <!-- Forgot Password: Step 2 (Verify Code & Reset Password) -->
+        <form id="form-forgot-confirm" class="af-auth-form" style="display:none;">
+          <div class="af-form-group">
+            <label for="forgot-code" class="af-form-label" data-i18n="account.code6">6-digit code</label>
+            <input type="text" id="forgot-code" class="af-input" placeholder="e.g. 123456" required minlength="6" maxlength="6" style="text-align: center; font-size: 16px; letter-spacing: 4px;" />
+          </div>
+          <div class="af-form-group">
+            <label for="forgot-new-password" class="af-form-label" data-i18n="account.newPassword">New password</label>
+            <input type="password" id="forgot-new-password" class="af-input" placeholder="Minimum 8 characters" data-i18n-placeholder="account.minChars" required minlength="8" />
+          </div>
+          <div class="af-form-group">
+            <label for="forgot-confirm-password" class="af-form-label" data-i18n="account.confirmPassword">Confirm password</label>
+            <input type="password" id="forgot-confirm-password" class="af-input" placeholder="Confirm new password" data-i18n-placeholder="account.confirmNew" required minlength="8" />
+          </div>
+          <div id="forgot-confirm-message" class="af-auth-message" style="display:none;"></div>
+          <button type="submit" id="btn-forgot-confirm-submit" class="af-btn af-btn-primary af-btn-full" data-i18n="account.resetPassword">Reset password</button>
+          <div style="text-align: center; margin-top: 12px;">
+            <a href="#" id="link-back-to-request" style="font-size: 12px; color: #94a3b8; text-decoration: none;" data-i18n="account.resendCode">Resend code</a>
+          </div>
+        </form>
+
+
+        <div class="af-auth-divider">
+          <span data-i18n="general.or">or</span>
+        </div>
+
+        <button type="button" id="btn-google-auth" class="af-btn af-btn-google af-btn-full">
+          <svg class="google-icon" viewBox="0 0 24 24" width="18" height="18">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-4.53 6.16-4.53z"/>
+          </svg>
+          <span id="google-auth-text" data-i18n="account.google">Continue with Google</span>
+        </button>
+
+      </div>
+    </div>
+
+    <!-- ── STATE 2: Verification Pending ── -->
+    <div id="account-verify-pending" style="display:none;">
+      <div class="af-section af-card af-account-card">
+        <div class="af-verify-pending">
+          <div class="af-verify-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22 6 12 13 2 6"/></svg></div>
+          <h3 class="af-account-title" data-i18n="account.checkEmail">Check your email</h3>
+          <p class="af-verify-desc"><span data-i18n="account.verifyHint">We sent a verification email to</span><br><strong id="verify-pending-email"></strong></p>
+          <p class="af-hint" style="margin-top:12px;" data-i18n="account.verifyClick">Click the link in the email to activate your account. Check your spam folder too!</p>
+          <div class="af-verify-actions">
+            <button id="btn-resend-verify" class="af-btn af-btn-secondary af-btn-full" data-i18n="account.resendVerify">Resend Verification Email</button>
+            <button id="btn-back-to-login" class="af-btn af-btn-ghost af-btn-full" style="margin-top:8px;" data-i18n="account.backToLogin">Back to Login</button>
+          </div>
+          <div id="resend-message" class="af-auth-message" style="display:none; margin-top:10px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── STATE 3: Logged IN ── -->
+    <div id="account-logged-in" style="display:none;">
+      <div class="af-section af-card af-account-card">
+
+        <!-- Profile Header -->
+        <div class="af-account-header">
+          <div class="af-avatar-ring">
+            <div class="af-account-avatar af-account-avatar-active">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+          </div>
+          <div class="af-account-info">
+            <h3 id="account-email" class="af-account-title">user@example.com</h3>
+            <span id="account-plan-badge" class="af-plan-badge">Free</span>
+          </div>
+        </div>
+
+        <!-- Usage Gauges -->
+        <div class="af-usage-section">
+          <div class="af-usage-grid">
+            <!-- Text-to-Video -->
+            <div class="af-usage-card">
+              <div class="af-usage-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="14" y2="17"/></svg></div>
+              <div class="af-usage-info">
+                <span class="af-usage-label" data-i18n="mode.textToVideo">Text-to-Video</span>
+                <span id="account-text-usage-text" class="af-usage-count">0 / 100</span>
+              </div>
+              <div class="af-usage-bar-bg">
+                <div id="account-text-usage-bar" class="af-usage-bar" style="width: 0%;"></div>
+              </div>
+              <p id="account-text-usage-hint" class="af-usage-hint"></p>
+            </div>
+
+            <!-- Full Features -->
+            <div class="af-usage-card">
+              <div class="af-usage-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+              <div class="af-usage-info">
+                <span class="af-usage-label" data-i18n="account.fullFeatures">Full Features</span>
+                <span id="account-full-usage-text" class="af-usage-count">0 / 20</span>
+              </div>
+              <div class="af-usage-bar-bg">
+                <div id="account-full-usage-bar" class="af-usage-bar" style="width: 0%;"></div>
+              </div>
+              <p id="account-full-usage-hint" class="af-usage-hint"></p>
+            </div>
+          </div>
+
+          <!-- Queue Run Limits -->
+          <div class="af-usage-divider">
+            <span class="af-usage-divider-text" data-i18n="account.queueRuns">Queue runs</span>
+          </div>
+          <div class="af-usage-grid af-usage-grid-3">
+            <!-- Lite Runs -->
+            <div class="af-usage-card af-usage-card-compact">
+              <div class="af-usage-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+              <div class="af-usage-info">
+                <span class="af-usage-label">Lite</span>
+                <span id="account-lite-usage-text" class="af-usage-count">0 / 3</span>
+              </div>
+              <div class="af-usage-bar-bg">
+                <div id="account-lite-usage-bar" class="af-usage-bar af-usage-bar-lite" style="width: 0%;"></div>
+              </div>
+              <p id="account-lite-usage-hint" class="af-usage-hint"></p>
+            </div>
+
+            <!-- Flow Runs -->
+            <div class="af-usage-card af-usage-card-compact">
+              <div class="af-usage-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
+              <div class="af-usage-info">
+                <span class="af-usage-label">Flow</span>
+                <span id="account-flow-usage-text" class="af-usage-count">0 / 6</span>
+              </div>
+              <div class="af-usage-bar-bg">
+                <div id="account-flow-usage-bar" class="af-usage-bar af-usage-bar-flow" style="width: 0%;"></div>
+              </div>
+              <p id="account-flow-usage-hint" class="af-usage-hint"></p>
+            </div>
+
+            <!-- Full Runs (monthly) -->
+            <div class="af-usage-card af-usage-card-compact">
+              <div class="af-usage-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></div>
+              <div class="af-usage-info">
+                <span class="af-usage-label">Full</span>
+                <span id="account-fullrun-usage-text" class="af-usage-count">0 / 2</span>
+              </div>
+              <div class="af-usage-bar-bg">
+                <div id="account-fullrun-usage-bar" class="af-usage-bar af-usage-bar-fullrun" style="width: 0%;"></div>
+              </div>
+              <p id="account-fullrun-usage-hint" class="af-usage-hint"></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Review Reward CTA (hidden if not applicable) -->
+        <div id="review-reward-cta" class="af-upgrade-cta" style="display:none;">
+          <div class="af-upgrade-card" style="text-align: center;">
+            <div class="af-upgrade-sparkle" style="font-size: 24px; letter-spacing: 2px;">⭐⭐⭐⭐⭐</div>
+            <h3 class="af-upgrade-title" style="font-size: 16px;" data-i18n="account.freePro">Get 1 month of Pro free</h3>
+            <p class="af-upgrade-text" id="review-reward-desc-tab" style="margin-bottom: 16px;" data-i18n="review.descTab">Leave a 5-star review and a comment, then enter your Chrome display name below so we can verify it.</p>
+            <a href="https://chromewebstore.google.com/detail/autoflow-%E2%80%93-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc/reviews" target="_blank" rel="noopener noreferrer" id="btn-leave-review-tab" class="af-btn-upgrade" style="text-decoration:none; text-align:center;">
+              <span class="af-upgrade-btn-icon" aria-hidden="true">⭐</span> <span data-i18n="account.leaveReview">Leave a review</span>
+            </a>
+            <div id="claim-review-group-tab" style="display:none; margin-top:16px; flex-direction:column; gap:10px; background: rgba(15, 19, 32, 0.6); padding: 14px; border-radius: 12px; border: 1px solid rgba(99, 102, 241, 0.2); box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+              <label style="font-size:11px; font-weight:600; color: var(--text-dim); text-align: left; text-transform: uppercase; letter-spacing: 0.5px;" data-i18n="review.nameLabel">Chrome display name</label>
+              <div style="position:relative;">
+                <input type="text" id="reviewer-name-tab" class="af-input" placeholder="e.g. John Doe" data-i18n-placeholder="review.egName" style="padding-left: 34px; width: 100%; box-sizing: border-box;" />
+                <svg style="position:absolute; left:12px; top:12px; color:var(--accent);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </div>
+              <button id="btn-claim-review-tab" class="af-btn af-btn-primary af-btn-glow" style="width: 100%; justify-content: center;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span data-i18n="review.submit">Submit claim</span>
+              </button>
+            </div>
+            <p id="review-status-msg-tab" class="af-review-status" style="display:none; font-size: 12px; margin-top: 12px;"></p>
+          </div>
+        </div>
+
+        <!-- Upgrade CTA (hidden for Pro users) -->
+        <div id="upgrade-cta" class="af-upgrade-cta" style="display:none;">
+          <div class="af-upgrade-card">
+            <div class="af-upgrade-sparkle"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></div>
+            <p class="af-upgrade-title" data-i18n="upgrade.title">Go unlimited</p>
+            <p class="af-upgrade-text" data-i18n="upgrade.text">Unlimited prompts, all image modes, and priority support</p>
+            <button id="btn-upgrade-pro" class="af-btn af-btn-upgrade">
+              <span class="af-upgrade-btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
+              <span data-i18n="upgrade.button">Upgrade to Pro — $9.99/mo</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- These two were header buttons. Same ids, so the code that shows
+             and hides them still does; their new class sets how they look. -->
+        <div class="af-account-offers">
+          <button id="btn-header-ultra-family" class="af-account-row af-account-row--offer" style="display:none;" title="Join Ultra Family" data-i18n-title="tip.ultra">
+            <span class="af-account-row__label">Ultra Family</span>
+            <span class="af-account-row__hint" data-i18n="account.join">Join</span>
+          </button>
+          <button id="btn-header-get-pro-free" class="af-account-row af-account-row--offer" style="display:none;" title="Get 1 month of Pro free" data-i18n-title="account.freePro">
+            <span class="af-account-row__label" data-i18n="account.freePro">Get 1 month of Pro free</span>
+            <span class="af-account-row__hint" data-i18n="account.leaveReview">Leave a review</span>
+          </button>
+        </div>
+
+        <!-- Actions -->
+        <div class="af-account-actions">
+          <button id="btn-refresh-usage" class="af-btn af-btn-ghost af-btn-full">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            <span data-i18n="account.refreshUsage">Refresh Usage</span>
+          </button>
+          <button id="btn-logout" class="af-btn-signout" data-i18n="account.signOut">Sign Out</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Support, for everyone: it floated over the whole panel before, and
+         would now sit on top of the run dock. Below all three account states
+         so it is reachable signed in or out. -->
+    <button id="btn-whatsapp-support" class="af-account-row af-account-row--support" title="Chat with support on WhatsApp" data-i18n-title="tip.whatsapp">
+      <span class="af-account-row__label" data-i18n="account.support">Help and support</span>
+      <span class="af-account-row__hint">WhatsApp</span>
+    </button>
+  </section>
+
+  <!-- ═══════════════════ RUN MONITOR (moved) ═══════════════════
+       Everything below was at the bottom of the Create tab, under the prompt
+       list, and a run started from Queues switched you back there to see it.
+       It now lives in a sheet that opens from the run dock, on any tab. Ids
+       are unchanged, so every function that updates the monitor still does. -->
+
+  <!-- The run dock: one line, on every tab, while a run is on screen. It
+       reads the monitor below rather than being updated separately (see
+       initRunDock), so it cannot disagree with it. -->
+  <div id="af-run-dock" class="af-run-dock" hidden>
+    <button id="af-run-dock-open" class="af-run-dock__main" aria-controls="af-monitor-sheet" aria-expanded="false">
+      <span class="af-run-dock__pulse" aria-hidden="true"></span>
+      <span class="af-run-dock__text">
+        <span id="af-run-dock-title" class="af-run-dock__title"></span>
+        <span id="af-run-dock-sub" class="af-run-dock__sub"></span>
+      </span>
+      <span id="af-run-dock-pct" class="af-run-dock__pct">0%</span>
+    </button>
+    <div class="af-run-dock__ctl">
+      <button id="af-dock-pause" class="af-icon-btn" title="Pause" aria-label="Pause" data-i18n-title="monitor.pause">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+      </button>
+      <button id="af-dock-resume" class="af-icon-btn" title="Resume" aria-label="Resume" data-i18n-title="monitor.resume" hidden>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+      </button>
+      <button id="af-dock-stop" class="af-icon-btn af-icon-btn--danger" title="Stop" aria-label="Stop" data-i18n-title="monitor.stop">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+      </button>
+      <button id="af-dock-dismiss" class="af-icon-btn" title="Close" aria-label="Close the finished run" data-i18n-title="dock.closeRun" hidden>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="af-run-dock__bar" aria-hidden="true"><span id="af-run-dock-fill"></span></div>
+  </div>
+
+  <!-- The monitor sheet: opens from the dock over whatever tab is showing. -->
+  <div id="af-monitor-sheet" class="af-sheet" hidden>
+    <div class="af-sheet__scrim" data-close-sheet></div>
+    <div class="af-sheet__panel" role="dialog" aria-labelledby="af-sheet-title">
+      <div class="af-sheet__head">
+        <h2 id="af-sheet-title" class="af-sheet__title" data-i18n="dock.monitor">Run monitor</h2>
+        <button class="af-icon-btn" data-close-sheet aria-label="Close the monitor" data-i18n-aria="tip.closeMonitor">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="af-sheet__body">
     <!-- Run Monitor -->
     <div class="af-section af-monitor af-card" id="run-monitor" style="display:none;">
       <h3 class="af-subtitle af-monitor-title">
         <span class="af-pulse-dot"></span>
         <span data-i18n="monitor.title">Running</span>
+        <!-- Written by showRunMonitor and handleQueueStatusUpdate. The update
+             code has set this all along; the element was never in the page. -->
+        <span id="monitor-queue-name" class="af-monitor-queue"></span>
         <span id="monitor-mode-badge" class="af-mode-badge"></span>
-        <span id="monitor-api-badge" class="af-api-badge af-api-badge--waiting" style="display:none;">⏳ API Connecting</span>
+        <span id="monitor-api-badge" class="af-api-badge af-api-badge--waiting" style="display:none;"></span>
       </h3>
 
       <!-- Progress Bar -->
@@ -294,8 +1158,8 @@
 
       <!-- Score Row: done / failed / total + ETA -->
       <div class="af-monitor-score">
-        <span class="af-score-item af-score--done"><span id="monitor-done-count">0</span> ✅</span>
-        <span class="af-score-item af-score--failed"><span id="monitor-failed-count">0</span> ❌</span>
+        <span class="af-score-item af-score--done"><span id="monitor-done-count">0</span> <span data-i18n="monitor.done">done</span></span>
+        <span class="af-score-item af-score--failed"><span id="monitor-failed-count">0</span> <span data-i18n="monitor.failed">failed</span></span>
         <span class="af-score-divider">·</span>
         <span class="af-score-item" id="monitor-progress">0 / 0</span>
         <span class="af-score-eta" id="monitor-eta"></span>
@@ -303,8 +1167,8 @@
 
       <!-- Status Message -->
       <div class="af-monitor-status" id="monitor-status-msg">
-        <span class="af-status-icon">⏳</span>
-        <span id="monitor-status-text">Starting...</span>
+        <span class="af-status-icon" data-state="working"></span>
+        <span id="monitor-status-text"></span>
       </div>
 
       <!-- Mini Prompt List -->
@@ -336,7 +1200,7 @@
       </div>
       <!-- Activity Feed -->
       <div class="af-activity-header">
-        <span class="af-activity-label">Activity</span>
+        <span class="af-activity-label" data-i18n="monitor.activity">Activity</span>
       </div>
       <div id="monitor-logs" class="af-logs"></div>
     </div>
@@ -346,36 +1210,36 @@
       <div class="af-failed-header">
         <h3 class="af-subtitle">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Failed Generations
+          <span data-i18n="failed.title">Failed Generations</span>
         </h3>
         <div class="af-failed-header-right">
           <span id="af-failed-countdown" class="af-failed-countdown" style="display:none;"></span>
-          <span id="failed-count" class="af-badge af-badge-danger">0 failed</span>
+          <span id="failed-count" class="af-badge af-badge-danger"></span>
         </div>
       </div>
       <div class="af-failed-actions">
         <button id="btn-scan-failed" class="af-btn af-btn-sm af-btn-secondary">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          Scan Page
+          <span data-i18n="failed.scanPage">Scan Page</span>
         </button>
         <button id="btn-copy-failed" class="af-btn af-btn-sm af-btn-secondary" disabled>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          Copy Prompts
+          <span data-i18n="failed.copyPrompts">Copy Prompts</span>
         </button>
         <button id="btn-retry-page" class="af-btn af-btn-sm af-btn-primary" disabled>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          Retry All
+          <span data-i18n="failed.retryAll">Retry All</span>
         </button>
       </div>
       <!-- Default: readonly textarea for scan results -->
-      <textarea id="failed-prompts" class="af-textarea af-failed-textarea" readonly rows="5" placeholder="Failed prompt texts will appear here after scanning..."></textarea>
+      <textarea id="failed-prompts" class="af-textarea af-failed-textarea" readonly rows="5" placeholder="Failed prompt texts will appear here after scanning…" data-i18n-placeholder="failed.placeholder"></textarea>
       <!-- Batch edit: individual prompt cards (shown during batch reprompt) -->
       <div id="failed-prompt-cards" class="af-failed-cards" style="display:none;"></div>
       <!-- Batch footer: submit/skip buttons (shown during batch reprompt) -->
       <div id="failed-batch-footer" class="af-failed-batch-footer" style="display:none;">
-        <button id="btn-failed-skip-all" class="af-btn af-btn-sm af-btn-ghost">Skip All</button>
+        <button id="btn-failed-skip-all" class="af-btn af-btn-sm af-btn-ghost" data-i18n="failed.skipAll">Skip all</button>
         <button id="btn-failed-submit" class="af-btn af-btn-sm af-btn-primary">
-          Submit &amp; Retry <span id="af-failed-submit-count"></span>
+          <span data-i18n="failed.submitRetry">Submit and retry</span> <span id="af-failed-submit-count"></span>
         </button>
       </div>
     </div>
@@ -383,819 +1247,12 @@
     <!-- Manual Intervention Banner -->
     <div id="manual-intervention" class="af-banner af-banner-warn" style="display:none;">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-      <p id="manual-msg">Manual intervention required.</p>
-      <button id="btn-manual-resume" class="af-btn af-btn-sm">Resume</button>
+      <p id="manual-msg" data-i18n="failed.manualIntervention">Manual intervention required.</p>
+      <button id="btn-manual-resume" class="af-btn af-btn-sm" data-i18n="monitor.resume">Resume</button>
     </div>
-  </section>
-
-  <!-- ═══════════════════ TAB B: SETTINGS ═══════════════════ -->
-  <section class="af-panel" id="panel-settings" role="tabpanel">
-
-    <!-- ── General Settings ── -->
-    <div class="af-settings-group af-card">
-      <h3 class="af-section-heading">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <span data-i18n="settings.generation">General Settings</span>
-      </h3>
-
-      <!-- Hidden radios for mode card sync (keep for backward compat) -->
-      <div style="display:none;">
-        <input type="radio" name="mediaType" value="video" checked />
-        <input type="radio" name="mediaType" value="image" />
-        <input type="radio" name="creationType" value="ingredients" checked />
-        <input type="radio" name="creationType" value="frames" />
-      </div>
-
-      <div id="video-model-section" class="af-setting-row">
-        <label class="af-setting-label">Video Model <span class="af-help-icon" title="Choose which AI model generates your videos. 'Fast' models are quicker but slightly lower quality. 'Quality' models take longer but produce better results.">?</span></label>
-        <div class="af-setting-control">
-          <select id="setting-model" class="af-select">
-            <option value="Omni Flash">Omni Flash</option>
-            <option value="Veo 3.1 - Lite">Veo 3.1 - Lite</option>
-            <option value="Veo 3.1 - Fast">Veo 3.1 - Fast</option>
-            <option value="Veo 3.1 - Quality">Veo 3.1 - Quality</option>
-            <option value="Veo 3.1 - Lite [Lower Priority]">Veo 3.1 - Lite [LP]</option>
-          </select>
-          <button id="btn-refresh-models" class="af-btn af-btn-sm af-btn-icon" title="Refresh models from Flow UI">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          </button>
-        </div>
-      </div>
-
-      <div id="video-orientation-section" class="af-setting-row">
-        <label class="af-setting-label">Video Ratio <span class="af-help-icon" title="Landscape (16:9) for YouTube/desktop. Portrait (9:16) for TikTok/Reels/Shorts.">?</span></label>
-        <select id="setting-orientation" class="af-select">
-          <option value="landscape">Landscape (16:9)</option>
-          <option value="portrait">Portrait (9:16)</option>
-        </select>
-        <!-- Hidden radios for orientation compat -->
-        <div style="display:none;">
-          <input type="radio" name="orientation" value="landscape" checked />
-          <input type="radio" name="orientation" value="portrait" />
-        </div>
-      </div>
-
-      <div class="af-setting-row">
-        <label class="af-setting-label">Videos per task <span class="af-help-icon" title="How many video variations to generate for each prompt. More = more options but uses more quota.">?</span></label>
-        <select id="setting-generations" class="af-select af-select-sm">
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
-          <option value="4">4</option>
-        </select>
-      </div>
-
-      <div id="video-duration-section" class="af-setting-row">
-        <label class="af-setting-label">Video Duration <span class="af-help-icon" title="Length of each generated video clip. Longer durations use more quota.">?</span></label>
-        <select id="setting-duration" class="af-select af-select-sm">
-          <option value="4s">4s</option>
-          <option value="6s">6s</option>
-          <option value="8s" selected>8s</option>
-        </select>
-      </div>
-
-      <div id="voice-section" class="af-setting-row">
-        <label class="af-setting-label">Voice 
-          <span class="af-help-icon" title="Assign an AI voice to your video. You must also attach a character image for the voice to work.">?</span>
-          <span class="af-hint-tag">new</span>
-        </label>
-        <select id="setting-voice" class="af-select">
-          <option value="none">None (silent)</option>
-          <option value="Achernar">Achernar ♀ soft, high</option>
-          <option value="Achird">Achird ♂ friendly, mid</option>
-          <option value="Algenib">Algenib ♂ gravelly, low</option>
-          <option value="Algieba">Algieba ♂ easy-going, mid-low</option>
-          <option value="Alnilam">Alnilam ♂ firm, mid-low</option>
-          <option value="Aoede">Aoede ♀ breezy, mid</option>
-          <option value="Autonoe">Autonoe ♀ bright, mid</option>
-          <option value="Callirrhoe">Callirrhoe ♀ easy-going, mid</option>
-          <option value="Charon">Charon ♂ informative, low</option>
-          <option value="Despina">Despina ♀ smooth, mid</option>
-          <option value="Enceladus">Enceladus ♂ breathy, low</option>
-          <option value="Erinome">Erinome ♀ clear, mid</option>
-          <option value="Fenrir">Fenrir ♂ excitable, young</option>
-          <option value="Gacrux">Gacrux ♀ mature, mid</option>
-          <option value="Iapetus">Iapetus ♂ clear, mid-low</option>
-          <option value="Kore">Kore ♀ firm, mid</option>
-          <option value="Laomedeia">Laomedeia ♀ upbeat, mid-high</option>
-          <option value="Leda">Leda ♀ youthful, mid-high</option>
-          <option value="Orus">Orus ♂ firm, mid-low</option>
-          <option value="Puck">Puck ♂ upbeat, mid</option>
-          <option value="Pulcherrima">Pulcherrima ⚥ forward, mid-high</option>
-          <option value="Rasalgethi">Rasalgethi ♂ informative, mid</option>
-          <option value="Sadachbia">Sadachbia ♂ lively, low</option>
-          <option value="Sadaltager">Sadaltager ♂ knowledgeable, mid</option>
-          <option value="Schedar">Schedar ♂ even, mid-low</option>
-          <option value="Sulafat">Sulafat ♀ warm, mid</option>
-          <option value="Umbriel">Umbriel ♂ smooth, low</option>
-          <option value="Vindemiatrix">Vindemiatrix ♀ gentle, mid</option>
-          <option value="Zephyr">Zephyr ♀ bright, mid-high</option>
-          <option value="Zubenelgenubi">Zubenelgenubi ♂ casual, mid-low</option>
-        </select>
-      </div>
-
-      <!-- Image-specific settings -->
-      <div id="image-settings-section" style="display:none;">
-        <div class="af-setting-row">
-          <label class="af-setting-label">Image Model</label>
-          <select id="setting-image-model" class="af-select">
-            <option value="Nano Banana Pro">Nano Banana Pro (Default)</option>
-            <option value="Nano Banana 2">Nano Banana 2</option>
-            <option value="Imagen 4">Imagen 4</option>
-          </select>
-        </div>
-        <div class="af-setting-row">
-          <label class="af-setting-label">Image Ratio</label>
-          <select id="setting-image-ratio" class="af-select">
-            <option value="16:9">Landscape (16:9)</option>
-            <option value="4:3">Standard (4:3)</option>
-            <option value="1:1">Square (1:1)</option>
-            <option value="3:4">Portrait (3:4)</option>
-            <option value="9:16">Tall Portrait (9:16)</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="af-setting-row" style="margin-bottom:0;">
-        <label class="af-setting-label">Stop on error <span class="af-help-icon" title="If ON, the queue pauses when a generation fails. If OFF, it skips the failure and continues to the next prompt.">?</span></label>
-        <label class="af-toggle">
-          <input type="checkbox" id="setting-stop-error" />
-          <span class="af-toggle-slider"></span>
-        </label>
       </div>
     </div>
-
-    <!-- ── Automation Mode ── -->
-    <div class="af-settings-group af-card">
-      <h3 class="af-section-heading">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        <span>Automation Mode</span>
-      </h3>
-      <div class="af-mode-selector">
-        <label class="af-mode-option" title="Generate → Wait → Download → Next. Full automation with auto-download.">
-          <input type="radio" name="automationMode" value="full" />
-          <div class="af-mode-card" data-mode="full">
-            <span class="af-mode-icon">🚀</span>
-            <span class="af-mode-name">Full</span>
-            <span class="af-mode-desc">Auto-download</span>
-          </div>
-        </label>
-        <label class="af-mode-option" title="Generate → Next → Retry failed at end. Standard automation flow.">
-          <input type="radio" name="automationMode" value="flow" checked />
-          <div class="af-mode-card" data-mode="flow">
-            <span class="af-mode-icon">⚡</span>
-            <span class="af-mode-name">Flow</span>
-            <span class="af-mode-desc">Standard</span>
-          </div>
-        </label>
-        <label class="af-mode-option" title="Generate → Next. No waiting, no retries, no download.">
-          <input type="radio" name="automationMode" value="lite" />
-          <div class="af-mode-card" data-mode="lite">
-            <span class="af-mode-icon">🎯</span>
-            <span class="af-mode-name">Lite</span>
-            <span class="af-mode-desc">Just submit</span>
-          </div>
-        </label>
-      </div>
-    </div>
-
-    <!-- ── Timing ── -->
-    <div class="af-settings-group af-card">
-      <h3 class="af-section-heading">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        <span data-i18n="settings.timing">Timing</span>
-      </h3>
-
-      <div class="af-setting-row">
-        <label class="af-setting-label">
-          Wait time (sec)
-          <span class="af-help-icon" title="Delay between prompts. AutoFlow doesn’t wait for the video to finish — it starts the next upload immediately after this delay.">?</span>
-        </label>
-        <div class="af-range-inputs">
-          <input type="number" id="setting-wait-min" class="af-input af-input-sm" min="0" max="120" step="1" value="10" />
-          <span class="af-range-to">–</span>
-          <input type="number" id="setting-wait-max" class="af-input af-input-sm" min="0" max="120" step="1" value="20" />
-        </div>
-      </div>
-
-      <div class="af-setting-row">
-        <label class="af-setting-label">
-          Human-like Typing
-          <span class="af-help-icon" title="Simulates human typing instead of pasting text instantly. Slower but helps avoid detection.">?</span>
-          <span class="af-hint-tag">beta</span>
-        </label>
-        <label class="af-toggle">
-          <input type="checkbox" id="setting-typing-mode" />
-          <span class="af-toggle-slider"></span>
-        </label>
-      </div>
-
-      <div class="af-setting-row" id="typing-speed-row">
-        <label class="af-setting-label">Typing speed</label>
-        <div class="af-slider-group">
-          <input type="range" id="setting-typing-speed-slider" class="af-slider" min="0.25" max="3.0" step="0.05" value="1.0" />
-          <span id="typing-speed-display" class="af-slider-value">1.00x</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- ── Download Settings ── -->
-    <div class="af-settings-group af-card">
-      <h3 class="af-section-heading">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        <span data-i18n="settings.download">Downloads</span>
-      </h3>
-
-      <div class="af-setting-row">
-        <label class="af-setting-label">Auto-download videos <span class="af-help-icon" title="Automatically download completed videos without clicking. Make sure to disable 'Ask where to save' in your browser settings.">?</span></label>
-        <div class="af-row-inline">
-          <label class="af-toggle">
-            <input type="checkbox" id="setting-auto-dl-videos" />
-            <span class="af-toggle-slider"></span>
-          </label>
-          <a href="#" id="btn-configure-folder" class="af-link">Configure</a>
-        </div>
-      </div>
-
-      <div class="af-setting-row">
-        <label class="af-setting-label">Video Resolution <span class="af-help-icon" title="720p = faster, smaller files. 1080p/4K = upscaled by Google, slower but higher quality.">?</span></label>
-        <select id="setting-video-resolution" class="af-select af-select-sm">
-          <option value="Original (720p)">720p</option>
-          <option value="1080p Upscaled">1080p</option>
-          <option value="4K">4K</option>
-        </select>
-      </div>
-
-      <div class="af-setting-row">
-        <label class="af-setting-label">Auto-download images</label>
-        <div class="af-row-inline">
-          <label class="af-toggle">
-            <input type="checkbox" id="setting-auto-dl-images" />
-            <span class="af-toggle-slider"></span>
-          </label>
-          <select id="setting-image-resolution" class="af-select af-select-sm">
-            <option value="1K">1K</option>
-            <option value="2K">2K</option>
-            <option value="4K">4K</option>
-          </select>
-        </div>
-      </div>
-
-      <p class="af-tip">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-        Disable 'Ask where to save' in browser settings for seamless downloads.
-      </p>
-    </div>
-
-    <!-- ── Notifications ── -->
-    <div class="af-settings-group af-card">
-      <h3 class="af-section-heading">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-        <span>Notifications</span>
-      </h3>
-
-      <div class="af-setting-row">
-        <label class="af-setting-label">Show notifications <span class="af-help-icon" title="Get a browser notification when your queue finishes or stops. Useful when you switch to another tab.">?</span></label>
-        <label class="af-toggle">
-          <input type="checkbox" id="setting-notifications" checked />
-          <span class="af-toggle-slider"></span>
-        </label>
-      </div>
-
-      <div class="af-setting-row" style="margin-bottom:0;">
-        <label class="af-setting-label">Notification sound <span class="af-help-icon" title="Play a sound when a notification appears.">?</span></label>
-        <label class="af-toggle">
-          <input type="checkbox" id="setting-notification-sound" checked />
-          <span class="af-toggle-slider"></span>
-        </label>
-      </div>
-    </div>
-
-    <!-- ── Interface ── -->
-    <div class="af-settings-group af-card">
-      <h3 class="af-section-heading">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-        <span data-i18n="settings.interface">Interface</span>
-      </h3>
-
-      <div class="af-setting-row">
-        <label class="af-setting-label" data-i18n="settings.language">Language</label>
-        <select id="setting-language" class="af-select af-select-sm">
-          <option value="English">English</option>
-          <option value="Arabic">العربية</option>
-          <option value="French">Français</option>
-          <option value="Spanish">Español</option>
-        </select>
-      </div>
-
-      <p class="af-tip">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-        AutoFlow supports Google Flow in: <strong>English, French, Spanish, Portuguese, German, Italian, Dutch, Turkish, Russian, Japanese, Korean, Chinese &amp; Arabic</strong>.
-      </p>
-    </div>
-
-    <!-- ── Notifications ── -->
-    <div class="af-settings-group af-card">
-      <h3 class="af-section-heading">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-        <span>Notifications</span>
-      </h3>
-
-      <div class="af-setting-row">
-        <label class="af-setting-label">Queue alerts <span class="af-help-icon" title="Show a Chrome notification when a queue finishes or stops. Works even if the browser is in the background.">?</span></label>
-        <label class="af-toggle">
-          <input type="checkbox" id="setting-notifications" checked />
-          <span class="af-toggle-slider"></span>
-        </label>
-      </div>
-
-      <div class="af-setting-row" style="margin-bottom:0;">
-        <label class="af-setting-label">Sound alert <span class="af-help-icon" title="Play a short chime when a queue completes. Useful when you're working in another tab.">?</span></label>
-        <label class="af-toggle">
-          <input type="checkbox" id="setting-notification-sound" />
-          <span class="af-toggle-slider"></span>
-        </label>
-      </div>
-    </div>
-
-    <!-- ── LLM Diagnostics & Verification ── -->
-    <div class="af-settings-group af-card">
-      <h3 class="af-section-heading">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-        <span>LLM AI Diagnostics</span>
-      </h3>
-
-      <div class="af-setting-row">
-        <label class="af-setting-label">Enable LLM Diagnostics <span class="af-help-icon" title="Uses Gemini Nano (local built-in AI) or Cloud Gemini API to handle error classifications and state verification intelligently.">?</span></label>
-        <label class="af-toggle">
-          <input type="checkbox" id="setting-llm-enabled" />
-          <span class="af-toggle-slider"></span>
-        </label>
-      </div>
-
-      <div class="af-setting-block" id="llm-details-container" style="display:none; margin-top:10px;">
-        <div class="af-setting-row" style="margin-bottom:8px; display:block;">
-          <label class="af-setting-label" style="font-size:11px; margin-bottom:4px; display:block;">Gemini Model</label>
-          <select id="setting-llm-model" class="af-select" style="width:100%;">
-            <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-            <option value="gemini-1.5-flash">Gemini 1.5 Flash (Legacy)</option>
-          </select>
-        </div>
-
-        <label class="af-label" for="setting-llm-api-key" style="font-size:11px; margin-bottom:4px; display:block;">
-          Gemini API Key (Optional Fallback)
-        </label>
-        <div style="display:flex; gap:6px;">
-          <input type="password" id="setting-llm-api-key" class="af-input" style="flex:1; font-size:11px; padding:6px 8px;" placeholder="AIzaSy..." />
-          <button id="btn-test-llm-conn" class="af-btn af-btn-secondary af-btn-sm" style="padding:0 10px; font-size:11px;">Test</button>
-        </div>
-        <div id="test-llm-conn-status" style="margin-top:4px; font-size:11px; font-weight:500;"></div>
-        <p class="af-hint" style="margin-top:4px; font-size:10px; line-height:1.3;">
-          If Chrome's local AI is unavailable, we use this API Key. Get a free API Key from Google AI Studio.
-        </p>
-      </div>
-    </div>
-
-    <!-- ── Maintenance ── -->
-    <div class="af-settings-group af-card">
-      <h3 class="af-section-heading">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4"/></svg>
-        <span data-i18n="settings.maintenance">Maintenance</span>
-      </h3>
-
-      <button id="btn-clear-cache" class="af-btn af-btn-danger af-btn-full">
-        <span data-i18n="settings.clearCache">Clear Flow Cache</span>
-      </button>
-      <p class="af-hint af-mt-sm">Use when generation stalls or the page gets slow. <span class="af-help-icon" title="Clears Google Flow's internal browser cache. This can fix stuck generations, loading errors, or slow performance. Your queues and settings are NOT affected.">?</span></p>
-    </div>
-
-    <div class="af-section">
-      <button id="btn-save-settings" class="af-btn af-btn-primary af-btn-full af-btn-glow">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-        Save Settings
-      </button>
-    </div>
-
-    <!-- ── Data & Privacy ── -->
-    <div class="af-settings-group af-card">
-      <h3 class="af-section-heading">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        Data &amp; Privacy
-      </h3>
-
-      <div class="af-privacy-info">
-        <p class="af-hint">AutoFlow stores all data locally in your browser:</p>
-        <ul class="af-privacy-list">
-          <li>Prompts and queues are saved in local browser storage</li>
-          <li>Settings and preferences are stored locally</li>
-          <li>Reference images are stored in browser memory</li>
-          <li>No data is sent to external servers</li>
-          <li>No account or login is required</li>
-        </ul>
-      </div>
-
-      <div class="af-separator"></div>
-
-      <div class="af-about-links">
-        <a href="https://auto-flow.studio/privacy" target="_blank" class="af-link">Privacy Policy</a>
-        <span class="af-link-sep">·</span>
-        <a href="https://auto-flow.studio/terms" target="_blank" class="af-link">Terms of Service</a>
-        <span class="af-link-sep">·</span>
-        <a href="mailto:support@auto-flow.studio" class="af-link">Support</a>
-      </div>
-    </div>
-
-    <div class="af-disclaimer">
-      AutoFlow is a third-party productivity tool.<br/>
-      Not affiliated with or endorsed by Google.<br/>
-      Runs only on supported Google Flow pages.
-    </div>
-  </section>
-
-  <!-- ═══════════════════ TAB C: MANAGE QUEUES ═══════════════════ -->
-  <section class="af-panel" id="panel-queues" role="tabpanel">
-    <div class="af-section">
-      <div class="af-section-header-row">
-        <h3 class="af-subtitle">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-          <span data-i18n="queues.title">Queues</span>
-          <span class="af-help-icon" title="Your video generation queues. Each queue contains prompts with their settings. Click 'Run' to start processing a queue automatically.">?</span>
-        </h3>
-      </div>
-
-      <!-- Flow Tab Guidance Banner -->
-      <div id="flow-tab-banner" class="af-flow-banner" style="display:none;">
-        <span class="af-flow-banner-icon">🔗</span>
-        <div class="af-flow-banner-text">
-          <strong>Google Flow tab required</strong>
-          Open a Flow project first, then come back and hit Run.
-          <a id="btn-open-flow" class="af-flow-banner-link" href="#">Open Google Flow →</a>
-        </div>
-      </div>
-
-      <div id="queue-list" class="af-queue-list">
-        <div class="af-empty">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.2">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-            <line x1="3" y1="9" x2="21" y2="9"/>
-            <line x1="9" y1="21" x2="9" y2="9"/>
-          </svg>
-          <p class="af-empty-title" data-i18n="queues.empty">No queues yet</p>
-          <p class="af-empty-steps">
-            <span>1️⃣ Go to <strong>Create</strong> tab</span>
-            <span>2️⃣ Paste your prompts</span>
-            <span>3️⃣ Click <strong>Add to Queue</strong></span>
-            <span>4️⃣ Come back here and hit <strong>Run</strong></span>
-          </p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ═══════════════════ TAB D: LIBRARY / SCAN OUTPUTS ═══════════════════ -->
-  <section class="af-panel" id="panel-library" role="tabpanel">
-    <div class="af-section">
-      <h3 class="af-subtitle">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        <span data-i18n="library.title">Library</span>
-        <span class="af-help-icon" title="Scan your Google Flow project to see all generated videos. You can filter, select, and batch download them in different resolutions.">?</span>
-      </h3>
-      <button id="btn-scan" class="af-btn af-btn-primary af-btn-full">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <span data-i18n="library.scan">Scan Project</span>
-      </button>
-      <div id="scan-status" class="af-mt af-scan-status" style="display:none;">
-        <span id="scan-found">Found: 0</span>
-        <span class="af-scan-divider">|</span>
-        <span id="scan-selected">Selected: 0</span>
-      </div>
-    </div>
-
-    <!-- Filter & Sort -->
-    <div id="library-filter" class="af-row af-mt af-lib-toolbar" style="display:none;">
-      <div class="af-filter-pills">
-        <button class="af-btn af-btn-sm af-btn-primary" data-lib-filter="all">All</button>
-        <button class="af-btn af-btn-sm" data-lib-filter="image">Photos</button>
-        <button class="af-btn af-btn-sm" data-lib-filter="video">Videos</button>
-      </div>
-      <input id="library-search" class="af-input af-search-input" type="text" placeholder="Search prompts…" />
-      <select id="library-sort" class="af-select af-select-sm">
-        <option value="newest">Newest first</option>
-        <option value="oldest">Oldest first</option>
-        <option value="status">By status</option>
-        <option value="type">Videos first</option>
-        <option value="most-gens">Most generations</option>
-        <option value="prompt-num">By prompt #</option>
-      </select>
-    </div>
-
-    <div id="library-controls" class="af-row af-mt" style="display:none;">
-      <button id="btn-select-all" class="af-btn af-btn-sm">Select All</button>
-      <button id="btn-clear-sel" class="af-btn af-btn-sm">Clear</button>
-      <button id="btn-download-selected" class="af-btn af-btn-primary af-btn-sm">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Download
-      </button>
-      <button id="btn-upscale-selected" class="af-btn af-btn-sm" title="Upscale selected videos without downloading">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 11 12 6 7 11"/><line x1="12" y1="18" x2="12" y2="6"/></svg>
-        Upscale <span class="af-hint-tag">beta</span>
-      </button>
-      <button id="btn-retry-selected" class="af-btn af-btn-sm" title="Reuse prompt and generate again for selected assets">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-        Retry <span class="af-hint-tag">beta</span>
-      </button>
-      <button id="btn-set-prompt-order" class="af-btn af-btn-sm" title="Set prompt order for correct library sorting">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-        Set Order
-      </button>
-    </div>
-
-    <!-- Prompt Order Modal -->
-    <div id="prompt-order-modal" class="af-card" style="display:none; margin-top:8px;">
-      <label class="af-label" style="font-size:11px;">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-        Paste your prompt list (one per line)
-      </label>
-      <textarea id="prompt-order-input" class="af-textarea" rows="6" placeholder="Prompt 1 text here...
-
-Prompt 2 text here...
-
-Prompt 3 text here..."></textarea>
-      <div class="af-row af-mt" style="gap:6px;">
-        <button id="btn-save-prompt-order" class="af-btn af-btn-primary af-btn-sm">Save Order</button>
-        <button id="btn-cancel-prompt-order" class="af-btn af-btn-sm">Cancel</button>
-      </div>
-    </div>
-
-    <div id="library-grid" class="af-library-grid"></div>
-  </section>
-
-  <!-- ═══════════════════ TAB E: ACCOUNT ═══════════════════ -->
-  <section class="af-panel active" id="panel-account" role="tabpanel">
-
-    <!-- ── STATE 1: Logged OUT ── -->
-    <div id="account-logged-out">
-      <div class="af-section af-card af-account-card">
-        <div class="af-account-header">
-          <div class="af-account-avatar">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          </div>
-          <h3 class="af-account-title">Welcome to AutoFlow</h3>
-          <p class="af-hint">Sign in to track usage & unlock features</p>
-        </div>
-
-        <!-- Toggle: Login / Register -->
-        <div class="af-auth-toggle">
-          <button id="btn-show-login" class="af-auth-toggle-btn active" data-i18n="account.signIn">Sign In</button>
-          <button id="btn-show-register" class="af-auth-toggle-btn" data-i18n="account.createAccount">Create Account</button>
-        </div>
-
-        <!-- Login Form -->
-        <form id="form-login" class="af-auth-form">
-          <div class="af-form-group">
-            <label for="login-email" class="af-form-label" data-i18n="account.email">Email</label>
-            <input type="email" id="login-email" class="af-input" placeholder="you@example.com" required autocomplete="email" />
-          </div>
-          <div class="af-form-group">
-            <label for="login-password" class="af-form-label" data-i18n="account.password">Password</label>
-            <input type="password" id="login-password" class="af-input" placeholder="••••••••" required autocomplete="current-password" />
-            <div style="text-align: right; margin-top: 6px;">
-              <a href="#" id="link-forgot-password" style="font-size: 11px; color: #06b6d4; text-decoration: none; font-weight: 500;">Forgot password?</a>
-            </div>
-          </div>
-          <div id="login-message" class="af-auth-message" style="display:none;"></div>
-          <button type="submit" id="btn-login-submit" class="af-btn af-btn-primary af-btn-full" data-i18n="account.btnSignIn">Sign In</button>
-        </form>
-
-        <!-- Register Form -->
-        <form id="form-register" class="af-auth-form" style="display:none;">
-          <div class="af-form-group">
-            <label for="register-email" class="af-form-label" data-i18n="account.email">Email</label>
-            <input type="email" id="register-email" class="af-input" placeholder="you@example.com" required autocomplete="email" />
-            <p class="af-hint" style="margin-top:6px; font-size:10px; color:#f59e0b; line-height:1.4;">
-              <strong>⚠️ Bought Pro on Whop?</strong> Use the <strong>same email</strong> you used on Whop so your Pro activates automatically.
-            </p>
-          </div>
-          <div class="af-form-group">
-            <label for="register-password" class="af-form-label" data-i18n="account.password">Password</label>
-            <input type="password" id="register-password" class="af-input" placeholder="Minimum 8 characters" required minlength="8" autocomplete="new-password" />
-          </div>
-          <div id="register-message" class="af-auth-message" style="display:none;"></div>
-          <button type="submit" id="btn-register-submit" class="af-btn af-btn-primary af-btn-full" data-i18n="account.btnCreate">Create Account</button>
-        </form>
-
-        <!-- Forgot Password: Step 1 (Request Code) -->
-        <form id="form-forgot-request" class="af-auth-form" style="display:none;">
-          <div class="af-form-group">
-            <label for="forgot-email" class="af-form-label" data-i18n="account.email">Email</label>
-            <input type="email" id="forgot-email" class="af-input" placeholder="you@example.com" required autocomplete="email" />
-          </div>
-          <div id="forgot-request-message" class="af-auth-message" style="display:none;"></div>
-          <button type="submit" id="btn-forgot-request-submit" class="af-btn af-btn-primary af-btn-full">Send Reset Code</button>
-          <div style="text-align: center; margin-top: 12px;">
-            <a href="#" id="link-back-to-login" style="font-size: 12px; color: #94a3b8; text-decoration: none;">← Back to Login</a>
-          </div>
-        </form>
-
-        <!-- Forgot Password: Step 2 (Verify Code & Reset Password) -->
-        <form id="form-forgot-confirm" class="af-auth-form" style="display:none;">
-          <div class="af-form-group">
-            <label for="forgot-code" class="af-form-label">6-Digit Code</label>
-            <input type="text" id="forgot-code" class="af-input" placeholder="e.g. 123456" required minlength="6" maxlength="6" style="text-align: center; font-size: 16px; letter-spacing: 4px;" />
-          </div>
-          <div class="af-form-group">
-            <label for="forgot-new-password" class="af-form-label">New Password</label>
-            <input type="password" id="forgot-new-password" class="af-input" placeholder="Minimum 8 characters" required minlength="8" />
-          </div>
-          <div class="af-form-group">
-            <label for="forgot-confirm-password" class="af-form-label">Confirm Password</label>
-            <input type="password" id="forgot-confirm-password" class="af-input" placeholder="Confirm new password" required minlength="8" />
-          </div>
-          <div id="forgot-confirm-message" class="af-auth-message" style="display:none;"></div>
-          <button type="submit" id="btn-forgot-confirm-submit" class="af-btn af-btn-primary af-btn-full">Reset Password</button>
-          <div style="text-align: center; margin-top: 12px;">
-            <a href="#" id="link-back-to-request" style="font-size: 12px; color: #94a3b8; text-decoration: none;">← Resend Code</a>
-          </div>
-        </form>
-
-
-        <div class="af-auth-divider">
-          <span>or</span>
-        </div>
-
-        <button type="button" id="btn-google-auth" class="af-btn af-btn-google af-btn-full">
-          <svg class="google-icon" viewBox="0 0 24 24" width="18" height="18">
-            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z"/>
-            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-4.53 6.16-4.53z"/>
-          </svg>
-          <span id="google-auth-text">Continue with Google</span>
-        </button>
-
-      </div>
-    </div>
-
-    <!-- ── STATE 2: Verification Pending ── -->
-    <div id="account-verify-pending" style="display:none;">
-      <div class="af-section af-card af-account-card">
-        <div class="af-verify-pending">
-          <div class="af-verify-icon">📧</div>
-          <h3 class="af-account-title">Check Your Email</h3>
-          <p class="af-verify-desc">We sent a verification link to<br><strong id="verify-pending-email">your email</strong></p>
-          <p class="af-hint" style="margin-top:12px;">Click the link in the email to activate your account. Check your spam folder too!</p>
-          <div class="af-verify-actions">
-            <button id="btn-resend-verify" class="af-btn af-btn-secondary af-btn-full" data-i18n="account.resendVerify">Resend Verification Email</button>
-            <button id="btn-back-to-login" class="af-btn af-btn-ghost af-btn-full" style="margin-top:8px;" data-i18n="account.backToLogin">← Back to Sign In</button>
-          </div>
-          <div id="resend-message" class="af-auth-message" style="display:none; margin-top:10px;"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ── STATE 3: Logged IN ── -->
-    <div id="account-logged-in" style="display:none;">
-      <div class="af-section af-card af-account-card">
-
-        <!-- Profile Header -->
-        <div class="af-account-header">
-          <div class="af-avatar-ring">
-            <div class="af-account-avatar af-account-avatar-active">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            </div>
-          </div>
-          <div class="af-account-info">
-            <h3 id="account-email" class="af-account-title">user@example.com</h3>
-            <span id="account-plan-badge" class="af-plan-badge">Free</span>
-          </div>
-        </div>
-
-        <!-- Usage Gauges -->
-        <div class="af-usage-section">
-          <div class="af-usage-grid">
-            <!-- Text-to-Video -->
-            <div class="af-usage-card">
-              <div class="af-usage-icon">📝</div>
-              <div class="af-usage-info">
-                <span class="af-usage-label">Text-to-Video</span>
-                <span id="account-text-usage-text" class="af-usage-count">0 / 100</span>
-              </div>
-              <div class="af-usage-bar-bg">
-                <div id="account-text-usage-bar" class="af-usage-bar" style="width: 0%;"></div>
-              </div>
-              <p id="account-text-usage-hint" class="af-usage-hint">100 remaining today</p>
-            </div>
-
-            <!-- Full Features -->
-            <div class="af-usage-card">
-              <div class="af-usage-icon">🖼️</div>
-              <div class="af-usage-info">
-                <span class="af-usage-label">Full Features</span>
-                <span id="account-full-usage-text" class="af-usage-count">0 / 20</span>
-              </div>
-              <div class="af-usage-bar-bg">
-                <div id="account-full-usage-bar" class="af-usage-bar" style="width: 0%;"></div>
-              </div>
-              <p id="account-full-usage-hint" class="af-usage-hint">20 remaining today</p>
-            </div>
-          </div>
-
-          <!-- Queue Run Limits -->
-          <div class="af-usage-divider">
-            <span class="af-usage-divider-text">Queue Runs</span>
-          </div>
-          <div class="af-usage-grid af-usage-grid-3">
-            <!-- Lite Runs -->
-            <div class="af-usage-card af-usage-card-compact">
-              <div class="af-usage-icon">⚡</div>
-              <div class="af-usage-info">
-                <span class="af-usage-label">Lite</span>
-                <span id="account-lite-usage-text" class="af-usage-count">0 / 3</span>
-              </div>
-              <div class="af-usage-bar-bg">
-                <div id="account-lite-usage-bar" class="af-usage-bar af-usage-bar-lite" style="width: 0%;"></div>
-              </div>
-              <p id="account-lite-usage-hint" class="af-usage-hint">3 left today</p>
-            </div>
-
-            <!-- Flow Runs -->
-            <div class="af-usage-card af-usage-card-compact">
-              <div class="af-usage-icon">🔄</div>
-              <div class="af-usage-info">
-                <span class="af-usage-label">Flow</span>
-                <span id="account-flow-usage-text" class="af-usage-count">0 / 6</span>
-              </div>
-              <div class="af-usage-bar-bg">
-                <div id="account-flow-usage-bar" class="af-usage-bar af-usage-bar-flow" style="width: 0%;"></div>
-              </div>
-              <p id="account-flow-usage-hint" class="af-usage-hint">6 left today</p>
-            </div>
-
-            <!-- Full Runs (monthly) -->
-            <div class="af-usage-card af-usage-card-compact">
-              <div class="af-usage-icon">🚀</div>
-              <div class="af-usage-info">
-                <span class="af-usage-label">Full</span>
-                <span id="account-fullrun-usage-text" class="af-usage-count">0 / 2</span>
-              </div>
-              <div class="af-usage-bar-bg">
-                <div id="account-fullrun-usage-bar" class="af-usage-bar af-usage-bar-fullrun" style="width: 0%;"></div>
-              </div>
-              <p id="account-fullrun-usage-hint" class="af-usage-hint">2 left this month</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Review Reward CTA (hidden if not applicable) -->
-        <div id="review-reward-cta" class="af-upgrade-cta" style="display:none;">
-          <div class="af-upgrade-card" style="text-align: center;">
-            <div class="af-upgrade-sparkle" style="font-size: 24px; letter-spacing: 2px;">⭐⭐⭐⭐⭐</div>
-            <h3 class="af-upgrade-title" style="font-size: 16px;">Get 1 Month Pro — Free!</h3>
-            <p class="af-upgrade-text" id="review-reward-desc-tab" style="margin-bottom: 16px;">Leave a 5-star review and a comment, then enter your Chrome Display Name below so we can verify it.</p>
-            <a href="https://chromewebstore.google.com/detail/autoflow-%E2%80%93-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc/reviews" target="_blank" rel="noopener noreferrer" id="btn-leave-review-tab" class="af-btn-upgrade" style="text-decoration:none; text-align:center;">
-              <span class="af-upgrade-btn-icon">⭐</span> Leave a Review
-            </a>
-            <div id="claim-review-group-tab" style="display:none; margin-top:16px; flex-direction:column; gap:10px; background: rgba(15, 19, 32, 0.6); padding: 14px; border-radius: 12px; border: 1px solid rgba(99, 102, 241, 0.2); box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-              <label style="font-size:11px; font-weight:600; color: var(--text-dim); text-align: left; text-transform: uppercase; letter-spacing: 0.5px;">Chrome Display Name</label>
-              <div style="position:relative;">
-                <input type="text" id="reviewer-name-tab" class="af-input" placeholder="e.g. John Doe" style="padding-left: 34px; width: 100%; box-sizing: border-box;" />
-                <svg style="position:absolute; left:12px; top:12px; color:var(--accent);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              </div>
-              <button id="btn-claim-review-tab" class="af-btn af-btn-primary af-btn-glow" style="width: 100%; justify-content: center;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                Submit Claim
-              </button>
-            </div>
-            <p id="review-status-msg-tab" class="af-review-status" style="display:none; font-size: 12px; margin-top: 12px;"></p>
-          </div>
-        </div>
-
-        <!-- Upgrade CTA (hidden for Pro users) -->
-        <div id="upgrade-cta" class="af-upgrade-cta" style="display:none;">
-          <div class="af-upgrade-card">
-            <div class="af-upgrade-sparkle">✨</div>
-            <p class="af-upgrade-title">Go Unlimited</p>
-            <p class="af-upgrade-text">Unlimited prompts, all image modes, and priority support</p>
-            <button id="btn-upgrade-pro" class="af-btn af-btn-upgrade">
-              <span class="af-upgrade-btn-icon">⚡</span>
-              Upgrade to Pro — $9.99/mo
-            </button>
-          </div>
-        </div>
-
-        <!-- Actions -->
-        <div class="af-account-actions">
-          <button id="btn-refresh-usage" class="af-btn af-btn-ghost af-btn-full">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-            <span data-i18n="account.refreshUsage">Refresh Usage</span>
-          </button>
-          <button id="btn-logout" class="af-btn-signout" data-i18n="account.signOut">Sign Out</button>
-        </div>
-      </div>
-    </div>
-  </section>
+  </div>
 
   <!-- ═══════════════════ TOAST ═══════════════════ -->
   <div id="toast" class="af-toast" style="display:none;">
@@ -1210,31 +1267,24 @@ Prompt 3 text here..."></textarea>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </div>
       <div class="af-review-stars" style="font-size:28px; margin-bottom:8px;">⭐⭐⭐⭐⭐</div>
-      <h3 class="af-review-title" style="font-size:18px;">Get 1 Month Pro — Free!</h3>
-      <p class="af-review-text" style="font-size:13px; margin-bottom:16px;">We noticed you just finished a batch. Support AutoFlow by leaving a 5-star review and a comment on the Chrome Web Store. Enter your Chrome Display Name below so we can verify it, and we'll upgrade your account to Pro for 30 days automatically!</p>
+      <h3 class="af-review-title" style="font-size:18px;" data-i18n="account.freePro">Get 1 month of Pro free</h3>
+      <p class="af-review-text" style="font-size:13px; margin-bottom:16px;" data-i18n="review.descModal">You just finished a batch. Support AutoFlow with a 5-star review and a comment on the Chrome Web Store, then enter your Chrome display name below. Once we verify it, your account gets Pro for 30 days.</p>
       
-      <a href="https://chromewebstore.google.com/detail/autoflow-%E2%80%93-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc/reviews" target="_blank" rel="noopener noreferrer" id="btn-leave-review-modal" class="af-btn af-btn-review" style="text-decoration:none; text-align:center; padding:12px;">⭐ Leave a 5-Star Review</a>
+      <a href="https://chromewebstore.google.com/detail/autoflow-%E2%80%93-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc/reviews" target="_blank" rel="noopener noreferrer" id="btn-leave-review-modal" class="af-btn af-btn-review" style="text-decoration:none; text-align:center; padding:12px;"><span aria-hidden="true">⭐</span> <span data-i18n="review.leave">Leave a 5-star review</span></a>
       <div id="claim-review-group-modal" style="display:none; margin-top:16px; flex-direction:column; gap:10px; background: rgba(15, 19, 32, 0.6); padding: 14px; border-radius: 12px; border: 1px solid rgba(99, 102, 241, 0.2); box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: left;">
-        <label style="font-size:11px; font-weight:600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">Chrome Display Name</label>
+        <label style="font-size:11px; font-weight:600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;" data-i18n="review.nameLabel">Chrome display name</label>
         <div style="position:relative;">
-          <input type="text" id="reviewer-name-modal" class="af-input" placeholder="e.g. John Doe" style="padding-left: 34px; width: 100%; box-sizing: border-box;" />
+          <input type="text" id="reviewer-name-modal" class="af-input" placeholder="e.g. John Doe" data-i18n-placeholder="review.egName" style="padding-left: 34px; width: 100%; box-sizing: border-box;" />
           <svg style="position:absolute; left:12px; top:12px; color:var(--accent);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         </div>
         <button id="btn-claim-review-modal" class="af-btn af-btn-primary af-btn-glow" style="width: 100%; justify-content: center;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-          Submit Claim
+          <span data-i18n="review.submit">Submit claim</span>
         </button>
       </div>
       <p id="review-status-msg-modal" class="af-review-status" style="display:none;"></p>
     </div>
   </div>
-
-  <!-- ═══════════════════ WHATSAPP SUPPORT ═══════════════════ -->
-  <button id="btn-whatsapp-support" class="af-whatsapp-fab" title="Chat with Support">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff">
-      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-    </svg>
-  </button>
 
   <script src="sidepanel.js"></script>
 </body>

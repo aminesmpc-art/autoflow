@@ -55,8 +55,8 @@ describe('every daily ceiling opens the dialog', () => {
      no way to do it. */
   const CEILINGS: Array<[string, string]> = [
     ['adding prompts to the queue', "label: kind,"],
-    ['starting a run with the day spent', "label: promptType === 'full' ? 'Full-Feature Prompt' : 'Text Prompt',"],
-    ['downloading', "label: 'Download',"],
+    ['starting a run with the day spent', "label: t(promptType === 'full' ? 'limit.fullPrompts' : 'limit.textPrompts'),"],
+    ['downloading', "label: t('limit.downloads'),"],
   ];
 
   for (const [where, marker] of CEILINGS) {
@@ -93,16 +93,19 @@ describe('the dialog makes the case', () => {
   it('says what is blocked right now, when the caller can count it', () => {
     expect(dialogBody()).toContain('opts.blocked');
     // And the callers actually pass it — a number, not a word.
-    expect(CODE).toMatch(/blocked:[\s\S]{0,120}\$\{waiting\}/);
-    expect(CODE).toMatch(/blocked:[\s\S]{0,120}\$\{pendingCount\}/);
-    expect(CODE).toMatch(/blocked:[\s\S]{0,160}\$\{selected\.length\}/);
+    expect(CODE).toMatch(/blocked:[\s\S]{0,160}\{ n: waiting \}/);
+    expect(CODE).toMatch(/blocked:[\s\S]{0,160}\{ n: pendingCount \}/);
+    expect(CODE).toMatch(/blocked:[\s\S]{0,160}\{ n: selected\.length \}/);
   });
 
   it('describes what Pro unlocks in each ceiling\'s own terms', () => {
     expect(dialogBody()).toContain('${opts.unlocks}');
     // Downloads must not be sold as "unlimited runs in all modes".
-    const at = CODE.indexOf("label: 'Download',");
-    expect(CODE.slice(at, at + 400)).toContain('Unlimited downloads');
+    const at = CODE.indexOf("label: t('limit.downloads'),");
+    expect(CODE.slice(at, at + 400)).toContain("t('limit.unlockDownloads')");
+    // And the words behind that key are about downloads.
+    const I18N = readFileSync(join(__dirname, '..', 'sidepanel', 'i18n.ts'), 'utf8');
+    expect(I18N).toMatch(/'limit\.unlockDownloads': "Unlimited downloads/);
   });
 
   it('keeps the free route in, so the ask is not only money', () => {

@@ -44,16 +44,21 @@
   --info:          #38bdf8;
   --info-bg:       rgba(56, 189, 248, 0.10);
 
-  /* Text */
-  --text-primary:   #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted:     #475569;
-  --text-dim:       #334155;
+  /* Text — remapped in the v9 visual pass to the same values as the --af-*
+     layer at the end of this file. The old muted and dim greys were
+     #475569 (2.5:1 on this navy) and #334155 (1.7:1): 68 rules used them,
+     and every one of those rules drew text below the 4.5:1 minimum. Dim now
+     equals muted — nothing that is meant to be read may be dimmer. */
+  --text-primary:   #eef0fb;
+  --text-secondary: #b7bcd9;
+  --text-muted:     #8f96b8;
+  --text-dim:       #8f96b8;
 
-  /* Borders */
-  --border:        rgba(148, 163, 184, 0.06);
-  --border-hover:  rgba(148, 163, 184, 0.14);
-  --border-accent: rgba(129, 140, 248, 0.25);
+  /* Borders — at 6% alpha a card edge was invisible, so every card looked
+     like floating text. Solid, from the same line colours as --af-line. */
+  --border:        #222b4d;
+  --border-hover:  #2f3a63;
+  --border-accent: rgba(129, 140, 248, 0.45);
 
   /* Spacing scale (4px grid) */
   --sp-1: 4px;
@@ -69,9 +74,9 @@
   --radius-xs:   6px;
   --radius-sm:   10px;
   --radius:      14px;
-  --radius-lg:   18px;
-  --radius-xl:   22px;
-  --radius-pill: 100px;
+  --radius-lg:   14px;
+  --radius-xl:   14px;
+  --radius-pill: 999px;
 
   /* Shadows — multi-layer depth system */
   --shadow-sm:  0 1px 2px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.4);
@@ -178,7 +183,7 @@ body {
   content: '';
   position: absolute;
   inset: -2px;
-  border-radius: 12px;
+  border-radius: 14px;
   background: conic-gradient(from 0deg, transparent, rgba(129, 140, 248, 0.4), transparent, rgba(167, 139, 250, 0.3), transparent);
   z-index: -1;
   opacity: 0;
@@ -217,7 +222,7 @@ body {
 }
 
 .af-logo-tagline {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 500;
   letter-spacing: 1.5px;
   text-transform: uppercase;
@@ -226,7 +231,7 @@ body {
 }
 
 .af-version {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--text-muted);
   background: rgba(99, 102, 241, 0.1);
   padding: 1px 6px;
@@ -269,7 +274,7 @@ body {
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   color: white;
   background: var(--accent-dim);
@@ -305,7 +310,7 @@ body {
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   border-radius: 10px;
@@ -399,7 +404,7 @@ body {
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
-  border-radius: 16px;
+  border-radius: 14px;
   padding: 18px;
   transition: all 0.35s var(--ease);
   box-shadow: var(--shadow-glass);
@@ -412,7 +417,7 @@ body {
   right: 0;
   height: 1px;
   background: linear-gradient(90deg, transparent 10%, rgba(255, 255, 255, 0.08) 50%, transparent 90%);
-  border-radius: 16px 16px 0 0;
+  border-radius: 14px 14px 0 0;
   pointer-events: none;
 }
 .af-card:hover {
@@ -450,7 +455,7 @@ body {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 8px;
@@ -459,7 +464,7 @@ body {
 .af-subtitle svg { color: var(--accent); flex-shrink: 0; opacity: 0.85; }
 
 .af-hint {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-muted);
   line-height: 1.45;
   margin-bottom: 8px;
@@ -537,7 +542,7 @@ body {
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
   letter-spacing: 0.03em;
   padding: 10px 18px;
-  border-radius: 12px;
+  border-radius: 14px;
 }
 .af-btn-primary::before {
   content: '';
@@ -617,7 +622,7 @@ body {
   gap: 6px;
   padding: 10px 8px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 8px);
+  border-radius: var(--radius-sm, 10px);
   background: var(--bg-card, rgba(14, 18, 38, 0.78));
   color: var(--text-secondary);
   font-size: 13px;
@@ -696,7 +701,7 @@ body {
   gap: 3px;
   padding: 10px 6px 8px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -724,7 +729,7 @@ body {
 }
 
 .af-q-mode-card-desc {
-  font-size: 9.5px;
+  font-size: 11px;
   font-weight: 400;
   opacity: 0.7;
   line-height: 1.3;
@@ -934,7 +939,7 @@ body {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 10px 12px;
   cursor: pointer;
   transition: all 0.25s var(--ease);
@@ -957,7 +962,7 @@ body {
   gap: 8px;
 }
 .af-prompt-num {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: #fff;
   background: var(--gradient);
@@ -969,7 +974,7 @@ body {
   text-align: center;
 }
 .af-prompt-ext-icon {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--accent-dim);
   font-family: monospace;
@@ -1010,7 +1015,7 @@ body {
 
 /* ── Status badges ── */
 .af-status {
-  font-size: 9px;
+  font-size: 11px;
   padding: 2px 8px;
   border-radius: var(--radius-pill);
   font-weight: 700;
@@ -1067,7 +1072,7 @@ body {
   color: #fff;
   border: none;
   border-radius: 50%;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1;
   cursor: pointer;
   display: flex;
@@ -1090,7 +1095,7 @@ body {
   gap: 2px;
 }
 .af-frame-slot-label {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -1157,7 +1162,7 @@ body {
 }
 .af-btn-copy-all {
   padding: 3px 8px;
-  font-size: 10px;
+  font-size: 11px;
   background: var(--bg-secondary);
   color: var(--text-muted);
   border: 1px solid var(--border);
@@ -1261,7 +1266,7 @@ body {
   font-size: 12px;
 }
 .af-framechain-label {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1354,7 +1359,7 @@ body {
   letter-spacing: 0.02em;
 }
 .af-mode-desc {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-secondary);
   margin-top: 2px;
 }
@@ -1369,7 +1374,7 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  font-size: 8px;
+  font-size: 11px;
   background: rgba(0, 0, 0, 0.75);
   color: #fff;
   text-align: center;
@@ -1389,7 +1394,7 @@ body {
   position: absolute;
   bottom: 1px;
   left: 1px;
-  font-size: 7px;
+  font-size: 11px;
   font-weight: 800;
   padding: 1px 4px;
   border-radius: 3px;
@@ -1428,7 +1433,7 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 16px;
+  border-radius: 14px;
   box-shadow: inset 0 0 40px rgba(34, 211, 238, 0.03);
   pointer-events: none;
 }
@@ -1475,7 +1480,7 @@ body {
   padding: 0 2px;
 }
 .af-activity-label {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.8px;
@@ -1505,7 +1510,7 @@ body {
   align-items: flex-start;
   gap: 8px;
   padding: 5px 12px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.4;
   transition: background 0.15s ease;
   animation: activityFadeIn 0.3s ease;
@@ -1537,7 +1542,7 @@ body {
 }
 .af-activity-time {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   opacity: 0.5;
   font-variant-numeric: tabular-nums;
@@ -1681,7 +1686,7 @@ body {
   text-overflow: ellipsis;
 }
 .af-q-time {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
   flex-shrink: 0;
@@ -1694,7 +1699,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1730,7 +1735,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--text-secondary);
   background: var(--bg-input);
@@ -1764,7 +1769,7 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 .af-q-settings-title {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.6px;
@@ -1787,13 +1792,13 @@ body {
   gap: 6px;
 }
 .af-q-setting-key {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
   flex-shrink: 0;
 }
 .af-q-setting-val {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
   text-align: right;
@@ -1844,7 +1849,7 @@ body {
 /* ON / OFF pills */
 .af-q-on {
   display: inline-block;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   padding: 1px 5px;
   border-radius: var(--radius-pill);
@@ -1854,7 +1859,7 @@ body {
 }
 .af-q-off {
   display: inline-block;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   padding: 1px 5px;
   border-radius: var(--radius-pill);
@@ -1899,7 +1904,7 @@ body {
 .af-q-progress-pending   { background: var(--text-muted); }
 .af-q-progress-fail      { background: var(--danger); opacity: 0.6; }
 .af-q-progress-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--text-secondary);
   min-width: 28px;
@@ -1955,7 +1960,7 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .af-q-stat-label {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -2297,7 +2302,7 @@ body {
   color: var(--text-muted);
 }
 .af-lib-label {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   margin-top: 4px;
   white-space: nowrap;
@@ -2332,10 +2337,10 @@ body {
 .af-lib-badge {
   display: inline-flex;
   align-items: center;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   padding: 1px 6px;
-  border-radius: 9999px;
+  border-radius: 999px;
   line-height: 1.4;
   flex-shrink: 0;
 }
@@ -2354,7 +2359,7 @@ body {
 .af-lib-badge-model {
   background: rgba(45, 212, 191, 0.12);
   color: #2dd4bf;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 500;
   max-width: 150px;
   overflow: hidden;
@@ -2377,7 +2382,7 @@ body {
   flex-wrap: wrap;
 }
 .af-lib-group-date {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
   opacity: 0.8;
@@ -2434,7 +2439,7 @@ body {
   bottom: 6px;
   left: 6px;
   z-index: 2;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   padding: 1px 5px;
   border-radius: var(--radius-xs);
@@ -2561,7 +2566,7 @@ body {
 
 /* ── Disclaimer ── */
 .af-disclaimer {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   text-align: center;
   margin-top: 20px;
@@ -2589,7 +2594,7 @@ body {
   position: absolute;
   left: 0;
   color: var(--success);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .af-about-links {
@@ -2611,7 +2616,7 @@ body {
 }
 .af-link-sep {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 /* ── Hidden file input ── */
@@ -2707,7 +2712,7 @@ body {
   gap: 6px;
 }
 .af-hint-tag {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--accent);
   font-weight: 600;
   background: rgba(99, 102, 241, 0.1);
@@ -2728,7 +2733,7 @@ body {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   cursor: help;
   flex-shrink: 0;
@@ -2897,7 +2902,7 @@ body {
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   color: #fff;
   background: var(--gradient);
@@ -2923,7 +2928,7 @@ body {
   position: absolute;
   inset: -4px;
   background: var(--gradient);
-  border-radius: 12px;
+  border-radius: 14px;
   opacity: 0.2;
   filter: blur(8px);
   z-index: -1;
@@ -3162,7 +3167,7 @@ body {
   color: var(--text-primary);
   display: block;
   margin-bottom: 2px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .af-flow-banner-link {
   display: inline-flex;
@@ -3494,7 +3499,7 @@ body {
   color: var(--text-primary);
 }
 .af-first-run-note {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   margin-top: 12px;
   margin-bottom: 16px;
@@ -3626,9 +3631,9 @@ button:focus-visible {
   display: inline-flex;
   align-items: center;
   padding: 2px 10px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  border-radius: 20px;
+  border-radius: 14px;
   letter-spacing: 0.8px;
   text-transform: uppercase;
   background: rgba(100, 116, 139, 0.15);
@@ -3657,7 +3662,7 @@ button:focus-visible {
 .af-usage-card {
   background: rgba(8, 12, 24, 0.65);
   border: 1px solid var(--glass-border);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 14px 12px 10px;
   text-align: center;
   transition: all 0.25s ease;
@@ -3687,7 +3692,7 @@ button:focus-visible {
 }
 
 .af-usage-label {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   font-weight: 500;
   text-transform: uppercase;
@@ -3743,7 +3748,7 @@ button:focus-visible {
 }
 
 .af-usage-hint {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   margin-top: 6px;
   opacity: 0.7;
@@ -3764,7 +3769,7 @@ button:focus-visible {
   background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.15), transparent);
 }
 .af-usage-divider-text {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1.2px;
@@ -3815,7 +3820,7 @@ button:focus-visible {
 .af-upgrade-card {
   position: relative;
   padding: 22px 18px;
-  border-radius: 16px;
+  border-radius: 14px;
   background: linear-gradient(145deg, rgba(99, 102, 241, 0.08), rgba(34, 211, 238, 0.04), rgba(167, 139, 250, 0.06));
   border: 1px solid rgba(99, 102, 241, 0.15);
   overflow: hidden;
@@ -3826,7 +3831,7 @@ button:focus-visible {
   content: '';
   position: absolute;
   inset: -1px;
-  border-radius: 17px;
+  border-radius: 14px;
   padding: 1px;
   background: conic-gradient(from 0deg, rgba(99, 102, 241, 0.5), rgba(34, 211, 238, 0.3), rgba(167, 139, 250, 0.5), rgba(99, 102, 241, 0.3), rgba(34, 211, 238, 0.4), rgba(99, 102, 241, 0.5));
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -3872,7 +3877,7 @@ button:focus-visible {
   font-weight: 700;
   color: #fff;
   border: none;
-  border-radius: 12px;
+  border-radius: 14px;
   cursor: pointer;
   background: linear-gradient(135deg, #6366f1, #818cf8, #22d3ee);
   background-size: 200% 200%;
@@ -3972,7 +3977,7 @@ button:focus-visible {
 /* Auth Toggle */
 .af-auth-toggle {
   display: flex;
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--bg-input);
   border: 1px solid var(--border);
   overflow: hidden;
@@ -4027,7 +4032,7 @@ button:focus-visible {
   width: 100%;
   padding: 12px 14px;
   font-size: 13px;
-  border-radius: 8px;
+  border-radius: 10px;
   box-sizing: border-box;
 }
 
@@ -4045,7 +4050,7 @@ button:focus-visible {
 .af-auth-message {
   font-size: 12px;
   padding: 10px 14px;
-  border-radius: 8px;
+  border-radius: 10px;
   text-align: left;
   line-height: 1.5;
   animation: fadeSlideIn 0.2s ease;
@@ -4120,7 +4125,7 @@ button:focus-visible {
     radial-gradient(120% 140% at 0% 0%, rgba(249, 115, 22, 0.20) 0%, transparent 60%),
     rgba(20, 12, 8, 0.55);
   border: 1px solid rgba(249, 115, 22, 0.35);
-  border-radius: 16px;
+  border-radius: 14px;
   cursor: pointer;
   text-align: left;
   color: var(--text-primary);
@@ -4142,7 +4147,7 @@ button:focus-visible {
   place-items: center;
   width: 38px;
   height: 38px;
-  border-radius: 11px;
+  border-radius: 10px;
   background: linear-gradient(135deg, #f97316 0%, #ef4444 100%);
   color: #fff;
   box-shadow: 0 4px 14px rgba(249, 115, 22, 0.4);
@@ -4159,7 +4164,7 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 700;
   color: #fff;
 }
@@ -4168,7 +4173,7 @@ button:focus-visible {
   border-radius: 4px;
   background: rgba(249, 115, 22, 0.22);
   color: #fdba74;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.6px;
 }
@@ -4191,11 +4196,11 @@ button:focus-visible {
   padding: 9px 12px;
   gap: 9px;
 }
-.af-studio-promo.is-compact .af-studio-promo__icon { width: 28px; height: 28px; border-radius: 9px; }
+.af-studio-promo.is-compact .af-studio-promo__icon { width: 28px; height: 28px; border-radius: 10px; }
 .af-studio-promo.is-compact .af-studio-promo__icon svg { width: 15px; height: 15px; }
 .af-studio-promo.is-compact .af-studio-promo__desc,
 .af-studio-promo.is-compact .af-studio-promo__badge { display: none; }
-.af-studio-promo.is-compact .af-studio-promo__title { font-size: 12.5px; }
+.af-studio-promo.is-compact .af-studio-promo__title { font-size: 13px; }
 
 .af-rtl .af-studio-promo { direction: rtl; text-align: right; }
 .af-rtl .af-studio-promo__cta { transform: scaleX(-1); }
@@ -4210,7 +4215,7 @@ button:focus-visible {
   padding: 20px 10px 16px;
   background: rgba(8, 12, 24, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 16px;
+  border-radius: 14px;
   cursor: pointer;
   transition: all 0.35s var(--ease);
   color: var(--text-muted);
@@ -4261,7 +4266,7 @@ button:focus-visible {
   justify-content: center;
   width: 46px;
   height: 46px;
-  border-radius: 13px;
+  border-radius: 14px;
   background: rgba(99, 102, 241, 0.06);
   color: var(--text-muted);
   transition: all 0.4s var(--spring);
@@ -4287,7 +4292,7 @@ button:focus-visible {
 }
 
 .af-mode-label {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.02em;
   text-align: center;
@@ -4301,7 +4306,7 @@ button:focus-visible {
 }
 
 .af-mode-desc {
-  font-size: 9.5px;
+  font-size: 11px;
   color: var(--text-muted);
   opacity: 0.55;
   line-height: 1.25;
@@ -4418,7 +4423,7 @@ button:focus-visible {
 }
 .af-q-compact .af-q-time {
   margin-left: 0;
-  font-size: 9px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 .af-q-compact-stats {
@@ -4429,7 +4434,7 @@ button:focus-visible {
   flex-shrink: 0;
 }
 .af-q-stat-badge {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
   padding: 2px 6px;
   border-radius: 10px;
@@ -4466,9 +4471,9 @@ button:focus-visible {
   color: #fef08a;
   border: 1px solid rgba(250, 204, 21, 0.4);
   font-weight: 700;
-  font-size: 10px;
+  font-size: 11px;
   padding: 3px 8px;
-  border-radius: 12px;
+  border-radius: 14px;
   cursor: pointer;
   transition: all 0.2s var(--ease);
   box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
@@ -4501,7 +4506,7 @@ button:focus-visible {
   max-width: 420px;
   background: var(--card-bg, #1e1e2e);
   border: 1px solid var(--border, #333);
-  border-radius: 16px;
+  border-radius: 14px;
   padding: 20px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   transform: translateY(20px);
@@ -4520,7 +4525,7 @@ button:focus-visible {
   font-size: 22px;
 }
 .af-reprompt-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--text-primary, #fff);
 }
@@ -4528,7 +4533,7 @@ button:focus-visible {
   font-size: 11px;
   color: #f87171;
   background: rgba(248, 113, 113, 0.1);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 8px 10px;
   margin-bottom: 12px;
   line-height: 1.4;
@@ -4587,7 +4592,7 @@ button:focus-visible {
   background: rgba(245, 158, 11, 0.1);
   color: #f59e0b;
   padding: 2px 7px;
-  border-radius: 5px;
+  border-radius: 6px;
   font-family: 'JetBrains Mono', monospace, system-ui;
 }
 .af-failed-cards {
@@ -4602,7 +4607,7 @@ button:focus-visible {
 .af-fpc {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 8px;
   transition: opacity 0.25s ease, border-color 0.25s ease;
 }
@@ -4620,7 +4625,7 @@ button:focus-visible {
   margin-bottom: 5px;
 }
 .af-fpc-badge {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: #f59e0b;
   background: rgba(245, 158, 11, 0.12);
@@ -4629,7 +4634,7 @@ button:focus-visible {
   flex-shrink: 0;
 }
 .af-fpc-error {
-  font-size: 10px;
+  font-size: 11px;
   color: #f87171;
   flex: 1;
   overflow: hidden;
@@ -4650,12 +4655,12 @@ button:focus-visible {
   cursor: pointer;
 }
 .af-fpc-skip-label {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-secondary, #888);
   user-select: none;
 }
 .af-fpc-img-tag {
-  font-size: 10px;
+  font-size: 11px;
   color: #60a5fa;
   margin-bottom: 4px;
 }
@@ -4694,7 +4699,7 @@ button:focus-visible {
 .af-resume-banner {
   background: linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(59, 130, 246, 0.15));
   border: 1px solid rgba(168, 85, 247, 0.3);
-  border-radius: 12px;
+  border-radius: 14px;
   margin: 8px 12px;
   padding: 12px 14px;
   opacity: 0;
@@ -4750,14 +4755,14 @@ button:focus-visible {
 .af-progress-bar {
   flex: 1;
   height: 10px;
-  border-radius: 5px;
+  border-radius: 6px;
   background: rgba(255,255,255,0.04);
   overflow: hidden;
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 .af-progress-fill {
   height: 100%;
-  border-radius: 5px;
+  border-radius: 6px;
   background: linear-gradient(90deg, #6366f1, #818cf8, #22d3ee, #34d399);
   background-size: 200% 100%;
   animation: progressGradientMove 4s ease infinite;
@@ -4795,10 +4800,10 @@ button:focus-visible {
 
 /* ── Mode Badge ── */
 .af-mode-badge {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius: 14px;
   background: rgba(99, 102, 241, 0.12);
   color: #818cf8;
   margin-left: auto;
@@ -4827,7 +4832,7 @@ button:focus-visible {
 }
 .af-score-eta {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted, #64748b);
   font-weight: 500;
 }
@@ -4838,7 +4843,7 @@ button:focus-visible {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 10px;
   background: rgba(99, 102, 241, 0.05);
   border: 1px solid rgba(99, 102, 241, 0.1);
   margin: 4px 0;
@@ -4883,7 +4888,7 @@ button:focus-visible {
   color: #fca5a5;
 }
 .af-mini-icon { font-size: 11px; flex-shrink: 0; width: 16px; text-align: center; }
-.af-mini-num { font-size: 9px; font-weight: 700; color: var(--text-muted, #64748b); min-width: 16px; }
+.af-mini-num { font-size: 11px; font-weight: 700; color: var(--text-muted, #64748b); min-width: 16px; }
 .af-mini-text {
   flex: 1; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -4904,7 +4909,7 @@ button:focus-visible {
 
 /* ── Per-Prompt Error Tag ── */
 .af-mini-error {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 4px;
@@ -4925,10 +4930,10 @@ button:focus-visible {
 /* ── Credits Badge ── */
 .af-score-credits {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   padding: 1px 7px;
-  border-radius: 8px;
+  border-radius: 10px;
   background: rgba(99, 102, 241, 0.08);
   color: #818cf8;
   border: 1px solid rgba(99, 102, 241, 0.15);
@@ -5021,7 +5026,7 @@ button:focus-visible {
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
@@ -5075,7 +5080,7 @@ button:focus-visible {
   color: #38bdf8;
   background: rgba(56, 189, 248, 0.08);
   border: 1px solid rgba(56, 189, 248, 0.2);
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
@@ -5097,12 +5102,12 @@ button:focus-visible {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: #38bdf8;
   background: rgba(56, 189, 248, 0.1);
   border: 1px solid rgba(56, 189, 248, 0.2);
-  border-radius: 100px;
+  border-radius: 999px;
   animation: schedulePulse 3s ease-in-out infinite;
   white-space: nowrap;
 }
@@ -5147,7 +5152,7 @@ button:focus-visible {
   max-width: 320px;
   background: linear-gradient(135deg, rgba(14, 18, 38, 0.95), rgba(20, 26, 50, 0.98));
   border: 1px solid rgba(56, 189, 248, 0.2);
-  border-radius: 16px;
+  border-radius: 14px;
   padding: 24px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5), 0 0 32px rgba(56, 189, 248, 0.08);
   transform: translateY(20px) scale(0.95);
@@ -5218,11 +5223,11 @@ button:focus-visible {
   gap: 8px;
   margin-top: 14px;
   padding: 8px 12px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--warning);
   background: rgba(245, 158, 11, 0.06);
   border: 1px solid rgba(245, 158, 11, 0.15);
-  border-radius: 8px;
+  border-radius: 10px;
   line-height: 1.4;
 }
 .af-schedule-warning svg {
@@ -5271,7 +5276,7 @@ button:focus-visible {
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   transition: background 0.15s ease;
   user-select: none;
@@ -5298,7 +5303,7 @@ button:focus-visible {
 }
 
 .af-chain-queue-count {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -5308,7 +5313,7 @@ button:focus-visible {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: #38bdf8;
   background: rgba(56, 189, 248, 0.06);
   border: 1px solid rgba(56, 189, 248, 0.12);
@@ -5334,7 +5339,7 @@ button:focus-visible {
 
 /* Chain status badges */
 .af-chain-status {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
   padding: 2px 6px;
@@ -5374,7 +5379,7 @@ button:focus-visible {
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 100px;
+  border-radius: 999px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -5397,7 +5402,7 @@ button:focus-visible {
   border-radius: 50%;
   background: linear-gradient(135deg, #0ea5e9, #38bdf8);
   color: #fff;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -5407,10 +5412,10 @@ button:focus-visible {
 
 /* API Sniffer status badge */
 .af-api-badge {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   padding: 2px 8px;
-  border-radius: 20px;
+  border-radius: 14px;
   margin-left: 8px;
   display: inline-flex;
   align-items: center;
@@ -5507,7 +5512,7 @@ button:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-primary);
   font-weight: 600;
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 10px 18px;
   transition: all var(--duration) var(--ease);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
@@ -5530,586 +5535,1435 @@ button:focus-visible {
   flex-shrink: 0;
 }
 
+/* The "TobyFlow" section (584 lines, a second :root with a lime palette)
+   was removed in the v9 visual pass: every rule in it styled a .tf-
+   class, and no .tf- element exists in the page or is created by the
+   script. */
+
 /* ============================================================
-   TobyFlow-Inspired Modern Interface Redesign (2026)
+   PANEL RETHINK — structure (v9)
+
+   The panel reorganised around the job: three tabs, Settings and Account
+   in the header, "This job" on Create, one-line queue rows, and a run dock
+   that stays on screen on every tab while a run is showing.
+
+   Built on its own token layer, in AutoFlow's colours — deep navy, indigo
+   and violet for the app, cyan for anything live. Every text colour below
+   was computed against the surface it sits on; nothing under 4.5:1:
+
+     --af-text    #eef0fb  17.9:1 on --af-bg   16.6:1 on --af-surface
+     --af-text-2  #b7bcd9  10.6:1              9.8:1
+     --af-text-3  #8f96b8   6.8:1              6.3:1   5.8:1 on --af-surface-2
+     --af-accent  #818cf8   6.6:1              6.1:1
+     --af-live    #22d3ee  10.9:1             10.1:1
+     white on the primary fill (#5b5ce8 → #7a4fe0): 5.1:1 → 5.2:1
+
+   Logical properties throughout (inline/block, not left/right), so the
+   Arabic layout mirrors without a second set of rules.
    ============================================================ */
 
 :root {
-  --tf-lime: #b5f602;
-  --tf-lime-dim: rgba(181, 246, 2, 0.15);
-  --tf-lime-border: rgba(181, 246, 2, 0.35);
-  --tf-bg-main: #141416;
-  --tf-bg-card: #202024;
-  --tf-bg-card-hover: #2a2a30;
-  --tf-bg-input: #1a1a1e;
-  --tf-border: rgba(255, 255, 255, 0.07);
-  --tf-border-active: rgba(255, 255, 255, 0.16);
-  --tf-text-gold: #fbbf24;
+  --af-bg:        #070b18;
+  --af-surface:   #0e1428;
+  --af-surface-2: #151c36;
+  --af-surface-3: #1d2546;
+  --af-line:      #222b4d;
+  --af-line-2:    #2f3a63;
+
+  --af-text:   #eef0fb;
+  --af-text-2: #b7bcd9;
+  --af-text-3: #8f96b8;
+
+  --af-accent:      #818cf8;
+  --af-accent-2:    #a78bfa;
+  --af-accent-soft: rgba(129, 140, 248, 0.14);
+  --af-fill:        linear-gradient(135deg, #5b5ce8 0%, #7a4fe0 100%);
+  --af-on-fill:     #ffffff;
+
+  --af-live:      #22d3ee;
+  --af-live-soft: rgba(34, 211, 238, 0.12);
+  --af-ok:        #4ade80;
+  --af-ok-soft:   rgba(74, 222, 128, 0.12);
+  --af-warn:      #fbbf24;
+  --af-warn-soft: rgba(251, 191, 36, 0.12);
+  --af-bad:       #f87171;
+  --af-bad-soft:  rgba(248, 113, 113, 0.12);
+
+  --af-r-sm: 6px;
+  --af-r:    10px;
+  --af-r-lg: 14px;
+
+  --af-fs-xs: 11px;
+  --af-fs-sm: 12px;
+  --af-fs:    13px;
+  --af-fs-md: 14px;
+
+  --af-header-h: 52px;
+  --af-dock-h:   64px;
 }
 
-/* Toby Header Toolbar */
-.tf-top-bar {
+/* `hidden` must win. Author display rules outrank the browser's own
+   [hidden] { display: none }, which is how a panel once rendered every tab
+   at once; the dock and its buttons toggle `hidden` and depend on this. */
+[hidden] { display: none !important; }
+
+/* ── Header ─────────────────────────────────────────────────────────── */
+
+.af-header {
+  height: var(--af-header-h);
+  padding-block: 0;
+  padding-inline: 12px;
+  gap: 10px;
+}
+.af-header .af-logo { min-width: 0; }
+.af-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+/* The two header tabs carry .af-tab so the switcher drives them; these
+   rules undo the tab-bar look (flex: 1, the underline) for them. */
+.af-header .af-hbtn {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--af-line);
+  border-radius: 10px;
+  background: var(--af-surface);
+  color: var(--af-text-2);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.af-header .af-hbtn::after,
+.af-header .af-hbtn::before { display: none; }
+.af-header .af-hbtn:hover { color: var(--af-text); border-color: var(--af-line-2); }
+.af-header .af-hbtn.active {
+  color: var(--af-text);
+  border-color: var(--af-accent);
+  background: var(--af-accent-soft);
+}
+.af-header .af-hbtn:focus-visible { outline: 2px solid var(--af-accent); outline-offset: 2px; }
+
+.af-header .af-hbtn--studio {
+  width: auto;
+  display: inline-flex;
+  gap: 6px;
+  padding-inline: 10px;
+  font-size: var(--af-fs-sm);
+  font-weight: 600;
+  color: var(--af-accent);
+  border-color: transparent;
+  background: var(--af-accent-soft);
+}
+.af-header .af-hbtn--studio:hover { color: var(--af-text); background: rgba(129, 140, 248, 0.22); }
+
+.af-header .af-hbtn--account { border-radius: 50%; }
+.af-hbtn__avatar {
+  font-size: var(--af-fs-sm);
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+/* The tab bar sat at a hard-coded 54px under a header of whatever height
+   it happened to be. One variable now sets both. */
+.af-tabs { top: var(--af-header-h); }
+
+/* ── What to make ───────────────────────────────────────────────────── */
+
+.af-mode-grid.af-mode-seg {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  margin-block: 0 12px;
+  border: 1px solid var(--af-line);
+  border-radius: 14px;
+  background: var(--af-surface);
+}
+.af-mode-seg .af-mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 52px;
+  padding: 7px 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--af-text-2);
+  box-shadow: none;
+  transform: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.af-mode-seg .af-mode-card:hover { background: var(--af-surface-2); color: var(--af-text); }
+.af-mode-seg .af-mode-card.active {
+  background: var(--af-accent-soft);
+  border-color: rgba(129, 140, 248, 0.45);
+  color: var(--af-text);
+  box-shadow: none;
+  transform: none;
+}
+.af-mode-seg .af-mode-card:focus-visible { outline: 2px solid var(--af-accent); outline-offset: 1px; }
+.af-mode-seg .af-mode-icon {
+  display: grid;
+  place-items: center;
+  width: auto;
+  height: auto;
+  margin: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  color: inherit;
+}
+/* Matched to `.af-mode-card.active .af-mode-icon`, which is one class more
+   specific than the rule above and paints a 46px gradient tile with a glow,
+   a scale and an animation behind a 16px icon — a purple blob, measured. */
+.af-mode-seg .af-mode-card.active .af-mode-icon {
+  background: none;
+  box-shadow: none;
+  transform: none;
+  animation: none;
+  color: var(--af-accent);
+}
+.af-mode-seg .af-mode-label {
+  font-size: var(--af-fs-xs);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  text-wrap: balance;
+  color: inherit;
+  opacity: 1;
+}
+
+/* ── Prompts ────────────────────────────────────────────────────────── */
+
+.af-prompts__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  background: #121214;
-  border-bottom: 1px solid var(--tf-border);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.tf-brand {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  font-size: 15px;
-  font-weight: 700;
-  color: #ffffff;
-  letter-spacing: -0.3px;
+  margin-block-end: 8px;
+}
+.af-prompts__head .af-label { margin: 0; }
+#prompt-count:empty { display: none; }
+.af-prompts .af-hint {
+  margin-block: 8px 0;
+  font-size: var(--af-fs-xs);
+  color: var(--af-text-3);
 }
 
-.tf-brand-icon {
-  width: 24px;
-  height: 24px;
-  background: var(--tf-lime);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #000;
-  box-shadow: 0 0 12px rgba(181, 246, 2, 0.4);
-}
+/* ── This job ───────────────────────────────────────────────────────── */
 
-.tf-top-actions {
+.af-job { padding: 0; overflow: hidden; }
+.af-job__summary {
   display: flex;
   align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+.af-job__summary::-webkit-details-marker { display: none; }
+.af-job__summary:focus-visible { outline: 2px solid var(--af-accent); outline-offset: -2px; border-radius: var(--af-r); }
+.af-job__label {
+  flex: none;
+  font-size: var(--af-fs-sm);
+  font-weight: 600;
+  color: var(--af-text);
+}
+.af-job__chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
-
-.tf-action-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
+/* Chips and the row summary hold Latin model names, ratios and "×2". In the
+   Arabic layout the bidi algorithm reorders them — "×1" rendered as "1×" —
+   so they keep their own left-to-right order inside a right-to-left panel. */
+.af-chip {
+  direction: ltr;
+  unicode-bidi: isolate;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: #9ea3b0;
-  border-radius: 6px;
-  cursor: pointer;
-  position: relative;
-  transition: all 0.2s ease;
-}
-
-.tf-action-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #ffffff;
-}
-
-.tf-notification-dot {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 6px;
-  height: 6px;
-  background: #ef4444;
-  border-radius: 50%;
-}
-
-.tf-avatar-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: #3b82f6;
-  color: #fff;
-  font-weight: 700;
-  font-size: 11px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1.5px solid #141416;
-  cursor: pointer;
-  position: relative;
-}
-
-.tf-avatar-dot {
-  position: absolute;
-  bottom: -1px;
-  right: -1px;
-  width: 7px;
-  height: 7px;
-  background: #22c55e;
-  border-radius: 50%;
-  border: 1.5px solid #141416;
-}
-
-/* Session / Date Selector Bar */
-.tf-session-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 14px;
-  background: #18181c;
-  border-bottom: 1px solid var(--tf-border);
-}
-
-.tf-session-picker {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 5px 10px;
-  border-radius: 8px;
-  font-size: 12px;
-  color: #d1d5db;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.tf-session-picker:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
-}
-
-.tf-add-session-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #9ca3af;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.tf-add-session-btn:hover {
-  background: rgba(255, 255, 255, 0.09);
-  color: #ffffff;
-}
-
-/* Main Navigation Tabs */
-.tf-main-nav {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 6px 10px;
-  background: #141416;
-  border-bottom: 1px solid var(--tf-border);
-  overflow-x: auto;
-}
-
-.tf-nav-tab {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 7px 11px;
-  border: none;
-  background: transparent;
-  color: #8b909f;
-  font-size: 12px;
+  height: 22px;
+  padding-inline: 8px;
+  border-radius: var(--af-r-sm);
+  background: var(--af-surface-2);
+  color: var(--af-text-2);
+  font-size: var(--af-fs-xs);
   font-weight: 500;
-  border-radius: 6px;
-  cursor: pointer;
   white-space: nowrap;
-  transition: all 0.2s ease;
-  position: relative;
 }
-
-.tf-nav-tab:hover {
-  color: #d1d5db;
-}
-
-.tf-nav-tab.active {
-  color: var(--tf-lime);
+.af-job__edit {
+  flex: none;
+  font-size: var(--af-fs-sm);
   font-weight: 600;
+  color: var(--af-accent);
 }
-
-.tf-nav-tab.active::after {
-  content: '';
-  position: absolute;
-  bottom: -6px;
-  left: 10%;
-  right: 10%;
-  height: 2px;
-  background: var(--tf-lime);
-  border-radius: 2px;
-  box-shadow: 0 0 8px var(--tf-lime);
-}
-
-/* Secondary Navigation Pills */
-.tf-sub-nav {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 14px;
-}
-
-.tf-sub-pill {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 11px;
-  border-radius: 8px;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: #8b909f;
-  background: transparent;
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.tf-sub-pill:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.tf-sub-pill.active {
-  color: #ffffff;
-  background: #25252a;
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-/* Search & Category Filter Bar */
-.tf-search-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 14px 10px;
-}
-
-.tf-search-input-wrap {
-  flex: 1;
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.tf-search-icon {
-  position: absolute;
-  left: 10px;
-  color: #6b7280;
-  pointer-events: none;
-}
-
-.tf-search-input {
-  width: 100%;
-  padding: 7px 10px 7px 32px;
-  background: var(--tf-bg-input);
-  border: 1px solid var(--tf-border);
-  border-radius: 8px;
-  color: #ffffff;
-  font-size: 12px;
-  outline: none;
-  transition: all 0.2s ease;
-}
-
-.tf-search-input:focus {
-  border-color: rgba(255, 255, 255, 0.2);
-  background: #222227;
-}
-
-.tf-category-select {
-  padding: 7px 10px;
-  background: var(--tf-bg-input);
-  border: 1px solid var(--tf-border);
-  border-radius: 8px;
-  color: #9ca3af;
-  font-size: 11.5px;
-  outline: none;
-  cursor: pointer;
-}
-
-/* 2-Column Template Cards Grid */
-.tf-template-grid {
+.af-job[open] .af-job__edit { color: var(--af-text-2); }
+.af-job__body {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 10px;
-  padding: 0 14px 14px;
+  padding: 12px 14px 14px;
+  border-block-start: 1px solid var(--af-line);
 }
-
-.tf-template-card {
-  background: var(--tf-bg-card);
-  border: 1px solid var(--tf-border);
-  border-radius: 12px;
-  overflow: hidden;
-  display: flex;
+.af-job__body .af-setting-row { margin: 0; }
+.af-setting-row--stack {
   flex-direction: column;
-  transition: all 0.25s ease;
-  cursor: pointer;
+  align-items: stretch;
+  gap: 8px;
 }
 
-.tf-template-card:hover {
-  background: var(--tf-bg-card-hover);
-  border-color: var(--tf-border-active);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
-}
-
-.tf-card-thumb-wrap {
-  width: 100%;
-  height: 110px;
-  position: relative;
-  background: #111;
-  overflow: hidden;
-}
-
-.tf-card-thumb {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s ease;
-}
-
-.tf-template-card:hover .tf-card-thumb {
-  transform: scale(1.04);
-}
-
-.tf-card-body {
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
+.af-auto-seg {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
+.af-auto-opt {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--af-line);
+  border-radius: var(--af-r);
+  background: var(--af-surface-2);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.af-auto-opt input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.af-auto-opt__name { font-size: var(--af-fs); font-weight: 600; color: var(--af-text); }
+.af-auto-opt__desc { font-size: var(--af-fs-xs); color: var(--af-text-3); }
+.af-auto-opt:hover { border-color: var(--af-line-2); }
+.af-auto-opt:has(input:checked) {
+  border-color: var(--af-accent);
+  background: var(--af-accent-soft);
+}
+.af-auto-opt:has(input:checked) .af-auto-opt__desc { color: var(--af-text-2); }
+.af-auto-opt:has(input:focus-visible) { outline: 2px solid var(--af-accent); outline-offset: 2px; }
 
-.tf-card-title {
-  font-size: 12px;
+/* ── Actions, pinned ────────────────────────────────────────────────── */
+
+#queue-actions.af-actionbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  margin-block: 14px -20px;
+  margin-inline: -14px;
+  padding: 12px 14px 14px;
+  background: linear-gradient(to top, var(--af-bg) 72%, rgba(7, 11, 24, 0));
+}
+.af-actionbar__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 8px;
+}
+#queue-actions .af-btn {
+  justify-content: center;
+  height: 40px;
+  margin: 0;
+  font-size: var(--af-fs);
   font-weight: 600;
-  color: #ffffff;
+  border-radius: var(--af-r);
+}
+#queue-actions .af-btn-secondary {
+  background: var(--af-surface-2);
+  border: 1px solid var(--af-line-2);
+  color: var(--af-text);
+  box-shadow: none;
+}
+#queue-actions .af-btn-primary {
+  background: var(--af-fill);
+  border: 0;
+  color: var(--af-on-fill);
+}
+#queue-actions .af-btn:disabled { opacity: 0.6; cursor: progress; }
+
+/* ── Run dock ───────────────────────────────────────────────────────── */
+
+.af-run-dock {
+  position: fixed;
+  inset-inline: 8px;
+  bottom: 8px;
+  z-index: 200;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 11px 10px;
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  border-radius: var(--af-r-lg);
+  background: var(--af-surface);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.af-run-dock.is-paused { border-color: rgba(251, 191, 36, 0.5); }
+.af-run-dock.is-done { border-color: rgba(74, 222, 128, 0.45); }
+.af-run-dock.is-attention { border-color: var(--af-warn); }
+
+.af-run-dock__main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  border-radius: var(--af-r-sm);
+}
+.af-run-dock__main:focus-visible { outline: 2px solid var(--af-accent); }
+.af-run-dock__pulse {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--af-live);
+  box-shadow: 0 0 0 4px var(--af-live-soft);
+}
+.af-run-dock.is-paused .af-run-dock__pulse { background: var(--af-warn); box-shadow: 0 0 0 4px var(--af-warn-soft); }
+.af-run-dock.is-done .af-run-dock__pulse { background: var(--af-ok); box-shadow: 0 0 0 4px var(--af-ok-soft); }
+.af-run-dock.is-attention .af-run-dock__pulse { background: var(--af-warn); box-shadow: 0 0 0 4px var(--af-warn-soft); }
+@media (prefers-reduced-motion: no-preference) {
+  .af-run-dock:not(.is-done):not(.is-paused) .af-run-dock__pulse { animation: af-dock-pulse 1.6s ease-in-out infinite; }
+}
+@keyframes af-dock-pulse { 50% { box-shadow: 0 0 0 7px rgba(34, 211, 238, 0); } }
+
+.af-run-dock__text { display: grid; min-width: 0; flex: 1; }
+.af-run-dock__title {
+  font-size: var(--af-fs);
+  font-weight: 600;
+  color: var(--af-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.3;
 }
-
-.tf-card-tags {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
+.af-run-dock__sub {
+  font-size: var(--af-fs-xs);
+  color: var(--af-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-
-.tf-card-badge {
-  font-size: 9.5px;
-  font-weight: 500;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #9ca3af;
-}
-
-.tf-card-nodes-badge {
-  font-size: 9.5px;
-  font-weight: 500;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(181, 246, 2, 0.08);
-  color: var(--tf-lime);
-}
-
-.tf-card-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 2px;
-  font-size: 10px;
-  color: #6b7280;
-}
-
-.tf-card-users {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.tf-card-stars {
-  color: var(--tf-text-gold);
+.af-run-dock__pct {
+  flex: none;
+  font-size: var(--af-fs-sm);
   font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 2px;
+  font-variant-numeric: tabular-nums;
+  color: var(--af-live);
 }
-
-.tf-load-more-btn {
-  width: calc(100% - 28px);
-  margin: 0 14px 16px;
-  padding: 9px;
-  background: #1a1a1e;
-  border: 1px solid var(--tf-border);
-  border-radius: 10px;
-  color: #d1d5db;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: center;
-  transition: all 0.2s ease;
-}
-
-.tf-load-more-btn:hover {
-  background: #232328;
-  border-color: rgba(255, 255, 255, 0.15);
-  color: #ffffff;
-}
-
-/* Bottom Quota Footer Bar */
-.tf-footer-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: #101012;
-  border-top: 1px solid var(--tf-border);
-  position: sticky;
+.af-run-dock.is-done .af-run-dock__pct { color: var(--af-ok); }
+.af-run-dock__ctl { display: flex; gap: 4px; }
+.af-run-dock__bar {
+  position: absolute;
+  inset-inline: 0;
   bottom: 0;
-  z-index: 90;
+  height: 3px;
+  background: var(--af-surface-3);
 }
-
-.tf-footer-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.af-run-dock__bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--af-live);
+  transition: width 0.4s ease;
 }
+.af-run-dock.is-done .af-run-dock__bar span { background: var(--af-ok); }
 
-.tf-trial-pill {
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #9ca3af;
-  font-size: 10.5px;
-  font-weight: 600;
-}
-
-.tf-register-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: 14px;
-  background: transparent;
-  border: 1px solid var(--tf-text-gold);
-  color: var(--tf-text-gold);
-  font-size: 11px;
-  font-weight: 600;
+.af-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--af-line);
+  border-radius: 10px;
+  background: var(--af-surface-2);
+  color: var(--af-text);
   cursor: pointer;
-  transition: all 0.2s ease;
 }
+.af-icon-btn:hover { border-color: var(--af-line-2); }
+.af-icon-btn:focus-visible { outline: 2px solid var(--af-accent); outline-offset: 1px; }
+.af-icon-btn--danger { color: var(--af-bad); }
 
-.tf-register-btn:hover {
-  background: rgba(251, 191, 36, 0.1);
-  transform: translateY(-1px);
+/* Room for the dock, so it never covers the end of a tab. The pinned
+   action bar rides above it. */
+body:has(#af-run-dock:not([hidden])) .af-panel.active { padding-block-end: calc(var(--af-dock-h) + 28px); }
+body:has(#af-run-dock:not([hidden])) #queue-actions.af-actionbar { bottom: calc(var(--af-dock-h) + 8px); }
+
+/* ── Monitor sheet ──────────────────────────────────────────────────── */
+
+.af-sheet { position: fixed; inset: 0; z-index: 300; }
+.af-sheet__scrim { position: absolute; inset: 0; background: rgba(3, 5, 12, 0.6); }
+.af-sheet__panel {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  max-height: calc(100vh - var(--af-header-h) - 12px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px 14px 0 0;
+  border-block-start: 1px solid var(--af-line-2);
+  background: var(--af-bg);
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
 }
+@media (prefers-reduced-motion: no-preference) {
+  .af-sheet:not([hidden]) .af-sheet__panel { animation: af-sheet-in 0.22s ease-out; }
+}
+@keyframes af-sheet-in { from { transform: translateY(24px); opacity: 0; } }
+.af-sheet__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-block-end: 1px solid var(--af-line);
+}
+.af-sheet__title { margin: 0; font-size: var(--af-fs-md); font-weight: 600; color: var(--af-text); }
+.af-sheet__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 16px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.af-sheet__body > .af-section { margin: 0; }
+.af-monitor-queue {
+  font-size: var(--af-fs-sm);
+  font-weight: 600;
+  color: var(--af-text-2);
+}
+.af-monitor-queue:empty { display: none; }
 
-.tf-footer-right {
+/* ── Queue rows ─────────────────────────────────────────────────────── */
+
+.af-q-card.af-q-row {
+  display: block;
+  position: relative;
+  padding: 0;
+  margin-block-end: 8px;
+  border: 1px solid var(--af-line);
+  border-radius: var(--af-r-lg);
+  background: var(--af-surface);
+  box-shadow: none;
+  overflow: hidden;
+  transform: none;
+}
+.af-q-card.af-q-row:hover { border-color: var(--af-line-2); transform: none; box-shadow: none; }
+.af-q-card.af-q-row.is-open { border-color: rgba(129, 140, 248, 0.45); }
+
+.af-q-row__head { display: flex; align-items: center; gap: 6px; padding: 10px 10px 10px 4px; }
+.af-q-row__toggle {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 10.5px;
-  color: #8b909f;
-}
-
-.tf-counter-item {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.tf-watermark-status {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  color: #6b7280;
-}
-
-/* Sign In / Register Modal Drawer */
-.tf-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(8px);
-  z-index: 999;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  animation: fadeIn 0.2s ease;
-}
-
-.tf-modal-overlay.active {
-  display: flex;
-}
-
-.tf-modal-content {
-  width: 100%;
-  max-width: 360px;
-  background: #18181c;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.tf-modal-close {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
-  border: none;
-  color: #9ca3af;
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: start;
   cursor: pointer;
+  border-radius: var(--af-r-sm);
+}
+.af-q-row__toggle:focus-visible { outline: 2px solid var(--af-accent); }
+.af-q-row__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--af-text-3); }
+.af-q-row__dot.af-q-status-running { background: var(--af-live); }
+.af-q-row__dot.af-q-status-paused { background: var(--af-warn); }
+.af-q-row__dot.af-q-status-completed { background: var(--af-ok); }
+.af-q-row__dot.af-q-status-stopped { background: var(--af-bad); }
+.af-q-row__main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.af-q-row__title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.af-q-row .af-q-name {
+  font-size: var(--af-fs);
+  font-weight: 600;
+  color: var(--af-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.af-q-row__count { flex: none; font-size: var(--af-fs-xs); color: var(--af-text-3); }
+.af-q-row__sub {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-size: var(--af-fs-xs);
+  color: var(--af-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[dir="rtl"] .af-q-row__sub { text-align: right; }
+
+.af-q-row .af-q-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding-inline: 7px;
+  border: 0;
+  border-radius: var(--af-r-sm);
+  font-size: var(--af-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  background: var(--af-surface-2);
+  color: var(--af-text-2);
+  box-shadow: none;
+}
+.af-q-row .af-q-badge-running { background: var(--af-live-soft); color: var(--af-live); }
+.af-q-row .af-q-badge-paused { background: var(--af-warn-soft); color: var(--af-warn); }
+.af-q-row .af-q-badge-completed { background: var(--af-ok-soft); color: var(--af-ok); }
+.af-q-row .af-q-badge-stopped { background: var(--af-bad-soft); color: var(--af-bad); }
+
+.af-q-row .af-q-run-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding-inline: 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--af-fill);
+  color: var(--af-on-fill);
+  font-size: var(--af-fs-sm);
+  font-weight: 600;
+  box-shadow: none;
+  cursor: pointer;
+}
+.af-q-row .af-q-run-btn:disabled { background: var(--af-surface-3); color: var(--af-text-3); cursor: not-allowed; }
+.af-q-row .af-q-run-btn:focus-visible { outline: 2px solid var(--af-accent); outline-offset: 2px; }
+
+.af-q-row__bar { display: flex; height: 3px; background: var(--af-surface-3); }
+.af-q-row__bar-done { background: var(--af-ok); }
+.af-q-row__bar-fail { background: var(--af-bad); }
+
+.af-q-row .af-q-row__detail { display: none; }
+/* minmax(0, 1fr), not the implicit auto column: an auto column sizes to its
+   widest unbreakable child, and a prompt kept on one line is exactly that —
+   measured, it stretched the detail to twice the card and clipped Ratio,
+   Duration and two of the three run modes off the right edge. */
+.af-q-row.is-open .af-q-row__detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  border-block-start: 1px solid var(--af-line);
+}
+.af-q-row__facts { margin: 0; font-size: var(--af-fs-xs); color: var(--af-text-2); }
+
+.af-q-prompts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.af-q-prompt {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 14px;
+  gap: 8px;
+  padding-block: 6px;
+  border-block-end: 1px solid var(--af-line);
+  font-size: var(--af-fs-sm);
+}
+.af-q-prompt:last-child { border-block-end: 0; }
+.af-q-prompt__num { flex: none; width: 26px; font-size: var(--af-fs-xs); color: var(--af-text-3); font-variant-numeric: tabular-nums; }
+.af-q-prompt__text { flex: 1; min-width: 0; color: var(--af-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.af-q-prompt__st {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: var(--af-fs-xs);
+  font-weight: 600;
+  background: var(--af-surface-2);
+  color: var(--af-text-2);
+}
+.af-q-prompt__st--done { background: var(--af-ok-soft); color: var(--af-ok); }
+.af-q-prompt__st--failed { background: var(--af-bad-soft); color: var(--af-bad); }
+.af-q-prompt__st--running,
+.af-q-prompt__st--submitted { background: var(--af-live-soft); color: var(--af-live); }
+.af-q-prompt--more { color: var(--af-text-3); font-size: var(--af-fs-xs); }
+
+.af-q-edit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.af-q-field { display: grid; gap: 4px; min-width: 0; }
+.af-q-field__label { font-size: var(--af-fs-xs); color: var(--af-text-3); }
+.af-q-row .af-q-select {
+  width: 100%;
+  height: 32px;
+  padding-inline: 8px;
+  border: 1px solid var(--af-line-2);
+  border-radius: 10px;
+  background: var(--af-surface-2);
+  color: var(--af-text);
+  font-size: var(--af-fs-sm);
+  text-align: start;
 }
 
-.tf-modal-close:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+.af-q-row .af-q-mode-section {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 3px;
+  margin: 0;
+  border: 1px solid var(--af-line);
+  border-radius: var(--af-r);
+  background: var(--af-bg);
 }
-
-.tf-auth-header {
+.af-q-row .af-q-mode-card {
+  display: block;
+  min-height: 0;
+  padding: 7px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--af-text-2);
+  font-size: var(--af-fs-sm);
+  font-weight: 600;
   text-align: center;
+  box-shadow: none;
+  transform: none;
+  cursor: pointer;
+}
+.af-q-row .af-q-mode-card:hover { color: var(--af-text); }
+.af-q-row .af-q-mode-card.active { background: var(--af-accent-soft); color: var(--af-text); box-shadow: inset 0 0 0 1px rgba(129, 140, 248, 0.45); }
+.af-q-row .af-q-mode-card:focus-visible { outline: 2px solid var(--af-accent); }
+
+.af-q-row .af-q-actions {
   display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
+.af-q-actions__gap { flex: 1; }
+.af-q-row .af-q-act-btn {
+  display: inline-grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--af-line);
+  border-radius: 10px;
+  background: var(--af-surface-2);
+  color: var(--af-text-2);
+  cursor: pointer;
+}
+.af-q-row .af-q-act-btn:hover:not(:disabled) { color: var(--af-text); border-color: var(--af-line-2); }
+.af-q-row .af-q-act-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* width: auto undoes the old fixed 30px on .af-q-act-btn, which left this
+   label spilling over the button beside it. */
+.af-q-row .af-q-act-text { width: auto; padding-inline: 10px; font-size: var(--af-fs-xs); font-weight: 600; white-space: nowrap; }
+.af-q-row .af-q-act-delete:hover:not(:disabled) { color: var(--af-bad); border-color: rgba(248, 113, 113, 0.45); }
 
-.tf-auth-logo {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--tf-lime);
+/* ── Account: offers and support ────────────────────────────────────── */
+
+/* The group adds no box of its own: each offer spaces itself, so when the
+   code hides both there is nothing left over. */
+.af-account-offers { display: contents; }
+.af-account-offers .af-account-row { margin-block-start: 8px; }
+.af-account-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: #000;
-  box-shadow: 0 0 16px rgba(181, 246, 2, 0.4);
-  margin-bottom: 4px;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--af-line);
+  border-radius: var(--af-r);
+  background: var(--af-surface-2);
+  color: var(--af-text);
+  font-size: var(--af-fs);
+  font-weight: 500;
+  text-align: start;
+  cursor: pointer;
 }
+.af-account-row:hover { border-color: var(--af-line-2); }
+.af-account-row:focus-visible { outline: 2px solid var(--af-accent); outline-offset: 2px; }
+.af-account-row__hint { flex: none; font-size: var(--af-fs-xs); color: var(--af-text-3); }
+.af-account-row--offer { border-color: rgba(129, 140, 248, 0.35); background: var(--af-accent-soft); }
+.af-account-row--offer .af-account-row__hint { color: var(--af-accent); }
+.af-account-row--support { margin-block-start: 12px; }
 
-.tf-auth-title {
-  font-size: 18px;
+/* ── Settings: the pointer, and Advanced ────────────────────────────── */
+
+.af-settings-note {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  margin-block-end: 12px;
+}
+.af-settings-note p { margin: 0; font-size: var(--af-fs); color: var(--af-text-2); line-height: 1.5; }
+.af-settings-note strong { color: var(--af-text); }
+.af-advanced { margin-block: 4px 12px; }
+.af-advanced__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 4px;
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--af-fs-sm);
+  font-weight: 600;
+  color: var(--af-text-2);
+}
+.af-advanced__summary::-webkit-details-marker { display: none; }
+.af-advanced__summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-inline-start: auto;
+  border-inline-end: 2px solid currentColor;
+  border-block-end: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+.af-advanced[open] > .af-advanced__summary::after { transform: rotate(-135deg); }
+.af-advanced__summary:focus-visible { outline: 2px solid var(--af-accent); border-radius: 6px; }
+
+/* ============================================================
+   VISUAL PASS — the older components, onto the same system (v9)
+
+   Everything above this section that predates the rethink: cards, buttons,
+   inputs, headings, the monitor, the account tiles, the prompt and history
+   rows. Same tokens as the structure section, and three rules throughout:
+
+   - One card. A card is a surface, a 1px line and a 14px corner. The old
+     cards each added their own glass blur, glow shadow, top gradient bar or
+     hover lift, which is what made the panel read as dated rather than dark.
+   - One accent job each. Indigo/violet is the app talking (primary buttons,
+     selection, focus); cyan is something live; green/amber/red are states.
+   - No decoration standing in for information: headings lose their
+     gradient underlines, buttons their shine sweeps, statuses their emoji.
+
+   Selectors repeat the specificity of the rules they replace (several of
+   those are defined two or three times in this file), so the order of this
+   section is what decides, not an arms race of !important.
+   ============================================================ */
+
+/* ── Cards ──────────────────────────────────────────────────────────── */
+
+.af-card {
+  background: var(--af-surface);
+  border: 1px solid var(--af-line);
+  border-radius: var(--af-r-lg);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.af-card::before,
+.af-card::after { display: none; }
+.af-card:hover { transform: none; box-shadow: none; border-color: var(--af-line); }
+
+/* ── Section headings ───────────────────────────────────────────────── */
+
+.af-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-block-end: 12px;
+  padding-block-end: 0;
+  border-block-end: 0;
+  font-size: var(--af-fs-md);
+  font-weight: 600;
+  color: var(--af-text);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.af-section-heading::after,
+.af-section-heading::before { display: none; }
+.af-section-heading svg { color: var(--af-text-3); flex: none; }
+
+/* In the queue list the headings are dividers between groups, so they read
+   as labels, not titles. The panel's own "Queues" heading repeated the tab. */
+#panel-queues > .af-section > .af-section-header-row { display: none; }
+#queue-list > .af-section-heading {
+  margin: 4px 2px 8px !important;
+  font-size: var(--af-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--af-text-3);
+}
+#queue-list > .af-section-heading svg { display: none; }
+#queue-list > .af-separator { display: none; }
+#queue-list > .af-section-heading:not(:first-child) { margin-block-start: 18px !important; }
+
+.af-subtitle { color: var(--af-text); }
+
+.af-help-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--af-line-2);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--af-text-3);
+  font-size: var(--af-fs-xs);
+  font-weight: 600;
+  line-height: 1;
+  cursor: help;
+}
+.af-help-icon:hover { color: var(--af-text); border-color: var(--af-text-3); }
+
+.af-hint { color: var(--af-text-3); }
+
+/* ── Tabs ───────────────────────────────────────────────────────────── */
+
+.af-tabs { background: var(--af-bg); border-block-end: 1px solid var(--af-line); box-shadow: none; }
+.af-tabs .af-tab { color: var(--af-text-2); font-size: var(--af-fs-sm); border-radius: var(--af-r); }
+.af-tabs .af-tab:hover { color: var(--af-text); background: var(--af-surface); }
+.af-tabs .af-tab.active {
+  color: var(--af-text);
+  background: var(--af-surface-2);
+  box-shadow: inset 0 0 0 1px var(--af-line-2);
+}
+/* One indicator: the filled pill. The underline under it said the same. */
+.af-tabs .af-tab::after,
+.af-tabs .af-tab::before,
+.af-tabs .af-tab.active::after,
+.af-tabs .af-tab.active::before { display: none; }
+.af-tabs .af-tab:focus-visible { outline: 2px solid var(--af-accent); outline-offset: 1px; }
+.af-tab-badge {
+  background: var(--af-accent);
+  color: #0b0d24;
+  font-size: var(--af-fs-xs);
   font-weight: 700;
-  color: #ffffff;
+  box-shadow: none;
 }
 
-.tf-auth-subtitle {
+.af-header {
+  background: var(--af-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-block-end: 1px solid var(--af-line);
+  box-shadow: none;
+}
+.af-logo-tagline { color: var(--af-text-3); letter-spacing: 0.08em; }
+.af-version { color: var(--af-text-3); background: var(--af-surface-2); border: 0; }
+
+/* ── Buttons ────────────────────────────────────────────────────────── */
+
+.af-btn {
+  border-radius: var(--af-r);
+  font-weight: 600;
+  box-shadow: none;
+  transform: none;
+}
+.af-btn:hover { transform: none; }
+.af-btn:focus-visible { outline: 2px solid var(--af-accent); outline-offset: 2px; }
+.af-btn::before,
+.af-btn::after { display: none; }
+.af-btn.af-btn-primary {
+  background: var(--af-fill);
+  color: var(--af-on-fill);
+  border: 0;
+  box-shadow: none;
+}
+.af-btn.af-btn-primary:hover { filter: brightness(1.08); box-shadow: none; transform: none; }
+.af-btn.af-btn-primary::before,
+.af-btn.af-btn-primary::after,
+.af-btn.af-btn-primary:hover::before,
+.af-btn.af-btn-primary:hover::after { display: none; }
+.af-btn.af-btn-glow,
+.af-btn.af-btn-glow:hover { box-shadow: none; animation: none; }
+.af-btn.af-btn-secondary {
+  background: var(--af-surface-2);
+  border: 1px solid var(--af-line-2);
+  color: var(--af-text);
+}
+.af-btn.af-btn-secondary:hover { border-color: var(--af-text-3); background: var(--af-surface-3); }
+.af-btn.af-btn-ghost { background: transparent; border: 1px solid var(--af-line); color: var(--af-text-2); }
+.af-btn.af-btn-ghost:hover { color: var(--af-text); border-color: var(--af-line-2); }
+.af-btn.af-btn-danger { background: var(--af-bad-soft); border: 1px solid rgba(248, 113, 113, 0.35); color: var(--af-bad); }
+.af-btn.af-btn-danger:hover { background: rgba(248, 113, 113, 0.2); }
+.af-btn:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+
+/* ── Inputs ─────────────────────────────────────────────────────────── */
+
+.af-select,
+.af-input,
+.af-textarea,
+.af-panel input[type="number"],
+.af-panel input[type="text"],
+.af-panel input[type="email"],
+.af-panel input[type="password"] {
+  /* background-color, not the background shorthand: the shorthand also
+     resets background-image, which is where the selects draw their chevron.
+     Measured: every dropdown lost its arrow. */
+  background-color: var(--af-bg);
+  border: 1px solid var(--af-line-2);
+  border-radius: var(--af-r);
+  color: var(--af-text);
+  box-shadow: none;
+}
+.af-select:hover,
+.af-input:hover,
+.af-textarea:hover { border-color: var(--af-text-3); }
+.af-select:focus,
+.af-input:focus,
+.af-textarea:focus,
+.af-panel input:focus {
+  outline: none;
+  border-color: var(--af-accent);
+  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
+}
+.af-textarea::placeholder,
+.af-input::placeholder { color: var(--af-text-3); opacity: 1; }
+.af-select { min-height: 32px; }
+/* Sized to the longest language name it offers ("Español", "العربية"), not
+   to a fixed box: at the old width "English" rendered as "Englist". */
+#setting-language { width: auto; min-width: 120px; }
+/* The resolution menus were a fixed 70px with 20px of it reserved for the
+   chevron, which left "1080p" no room. */
+#setting-video-resolution,
+#setting-image-resolution { width: auto; min-width: 88px; padding-inline-end: 28px; }
+/* ── Library toolbar ──
+   Filters on their own line; search and sort share the next. All three on
+   one line at 400px left the sort menu reading "By pro", and giving it room
+   squeezed the search box to "Searc". */
+.af-lib-toolbar { flex-wrap: wrap; gap: 8px; }
+.af-lib-toolbar .af-filter-pills { flex: 1 0 100%; display: flex; gap: 6px; }
+#library-search { flex: 1 1 140px; min-width: 0; }
+#library-sort { width: auto; min-width: 128px; flex: none; padding-inline-end: 28px; }
+
+/* The counters: a middle dot between them, like every other summary line,
+   instead of a hard-coded pipe. */
+.af-scan-status { color: var(--af-text-2); font-size: var(--af-fs-sm); }
+.af-scan-divider { display: none; }
+#scan-found:not(:empty)::after { content: " · "; }
+
+/* Signed out: avatar and title on the first line, the hint under them.
+   Three across at 400px cut the title to "Welcome to A…". The signed-in
+   email keeps its ellipsis — an address can be any length. */
+#account-logged-out .af-account-header { flex-wrap: wrap; row-gap: 6px; border-block-end-color: var(--af-line); }
+#account-logged-out .af-account-title { flex: 1 1 auto; max-width: none; white-space: normal; }
+#account-logged-out .af-account-header > .af-hint { flex: 1 0 100%; margin: 0; text-align: start; }
+
+/* White on 80% red over a thumbnail measured 3.7:1. Solid, dark text: 6.8:1. */
+/* Counters and status lines that are still English-only: in the Arabic
+   layout the bidi algorithm reordered their numbers — the monitor read
+   "2 / 0" for 0 of 2, and "3 prompts" became "prompts … 3". plaintext lets
+   each line take its direction from its own first letter. */
+#monitor-progress,
+#scan-found,
+#scan-selected,
+.af-run-dock__sub,
+#monitor-status-text { unicode-bidi: plaintext; }
+
+/* The failed tile was faded to 0.75, which faded its own "Failed" badge to
+   4.4:1. The red border and the badge already say it failed. */
+.af-lib-card.af-lib-card-failed { opacity: 1; }
+.af-lib-state-badge.af-lib-state-failed {
+  background: var(--af-bad);
+  color: #2a0707;
+  backdrop-filter: none;
+}
+
+/* Native checkboxes and radios take the accent instead of the browser's
+   white — the Library's tile checkboxes were the last bright-white things
+   on a dark panel. */
+.af-panel input[type="checkbox"],
+.af-panel input[type="radio"],
+#af-monitor-sheet input[type="checkbox"] { accent-color: var(--af-accent); }
+
+.af-toggle-slider { background: var(--af-surface-3); border: 1px solid var(--af-line-2); box-shadow: none; }
+.af-toggle input:checked + .af-toggle-slider { background: var(--af-accent); border-color: var(--af-accent); box-shadow: none; }
+.af-toggle input:focus-visible + .af-toggle-slider { outline: 2px solid var(--af-accent); outline-offset: 2px; }
+
+.af-hint-tag {
+  padding: 1px 6px;
+  border-radius: var(--af-r-sm);
+  background: var(--af-accent-soft);
+  color: var(--af-accent);
+  font-size: var(--af-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.af-badge {
+  background: var(--af-accent-soft);
+  color: var(--af-accent);
+  border: 0;
+  border-radius: 999px;
+  font-size: var(--af-fs-xs);
+  font-weight: 600;
+  box-shadow: none;
+}
+
+/* ── Settings ───────────────────────────────────────────────────────── */
+
+.af-settings-group { padding: 14px; margin-block-end: 12px; }
+.af-setting-label { color: var(--af-text-2); font-size: var(--af-fs); }
+.af-disclaimer {
+  opacity: 1;
+  color: var(--af-text-3);
+  font-size: var(--af-fs-xs);
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* ── Prompt rows (Create) ───────────────────────────────────────────── */
+
+.af-prompt-row {
+  background: var(--af-surface);
+  border: 1px solid var(--af-line);
+  border-radius: var(--af-r);
+  box-shadow: none;
+}
+.af-prompt-row:hover { border-color: var(--af-line-2); transform: none; box-shadow: none; }
+.af-prompt-num {
+  background: var(--af-surface-2);
+  color: var(--af-text-2);
+  box-shadow: none;
+  font-size: var(--af-fs-xs);
+  font-weight: 600;
+}
+.af-prompt-preview { color: var(--af-text-2); }
+.af-status {
+  padding: 2px 7px;
+  border-radius: var(--af-r-sm);
+  font-size: var(--af-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  border: 0;
+}
+.af-status-not-added { background: var(--af-surface-2); color: var(--af-text-3); }
+.af-status.af-status-queued { background: var(--af-accent-soft); color: var(--af-accent); }
+
+/* ── History rows (Queues) ──────────────────────────────────────────── */
+
+.af-q-compact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-block-end: 8px;
+  background: var(--af-surface);
+  border: 1px solid var(--af-line);
+  border-radius: var(--af-r-lg);
+  box-shadow: none;
+  opacity: 1;
+}
+.af-q-compact:hover { border-color: var(--af-line-2); transform: none; }
+.af-q-compact .af-q-name { color: var(--af-text); font-size: var(--af-fs); font-weight: 600; }
+.af-q-compact .af-q-time { color: var(--af-text-3); font-size: var(--af-fs-xs); }
+.af-q-compact .af-q-status-dot { color: var(--af-ok); }
+.af-q-stat-badge {
+  padding: 2px 7px;
+  border-radius: var(--af-r-sm);
+  background: var(--af-ok-soft);
+  color: var(--af-ok);
+  font-size: var(--af-fs-xs);
+  font-weight: 600;
+  border: 0;
+}
+.af-q-stat-badge.fail { background: var(--af-bad-soft); color: var(--af-bad); }
+.af-q-compact .af-q-act-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--af-line);
+  border-radius: var(--af-r);
+  background: var(--af-surface-2);
+  color: var(--af-text-2);
+}
+.af-q-compact .af-q-act-btn:hover { color: var(--af-text); border-color: var(--af-line-2); }
+
+.af-empty { color: var(--af-text-3); }
+.af-empty-title { color: var(--af-text-2); font-weight: 600; }
+.af-empty-steps {
+  display: grid;
+  gap: 6px;
+  margin: 10px auto 0;
+  padding-inline-start: 20px;
+  max-width: 260px;
+  text-align: start;
+  color: var(--af-text-2);
+  font-size: var(--af-fs-sm);
+}
+.af-empty-steps strong { color: var(--af-text); }
+
+.af-flow-banner {
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: var(--af-warn-soft);
+  border-radius: var(--af-r);
+  color: var(--af-text-2);
+}
+.af-flow-banner-icon { color: var(--af-warn); display: grid; place-items: center; }
+
+/* ── The monitor, inside its sheet ──────────────────────────────────── */
+
+/* The sheet is the container now; a card inside it is a box in a box. */
+#af-monitor-sheet .af-monitor,
+#af-monitor-sheet #run-monitor {
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+#af-monitor-sheet .af-monitor::before,
+#af-monitor-sheet .af-monitor::after { display: none; }
+#af-monitor-sheet .af-monitor-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-block-end: 12px;
+  font-size: var(--af-fs-md);
+}
+/* The sheet's own header already says "Run monitor". */
+#af-monitor-sheet .af-monitor-title > [data-i18n="monitor.title"] { display: none; }
+#af-monitor-sheet .af-monitor-queue { color: var(--af-text); font-size: var(--af-fs-md); margin-inline-end: auto; }
+#af-monitor-sheet .af-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--af-live);
+  box-shadow: 0 0 0 4px var(--af-live-soft);
+  animation: none;
+}
+
+.af-mode-badge,
+.af-api-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--af-r-sm);
+  background: var(--af-surface-2);
+  color: var(--af-text-2);
+  font-size: var(--af-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: none;
+  animation: none;
+}
+.af-mode-badge { background: var(--af-accent-soft); color: var(--af-accent); }
+.af-api-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.af-api-badge--active { background: var(--af-ok-soft); color: var(--af-ok); }
+.af-api-badge--fallback,
+.af-api-badge--waiting,
+.af-api-badge--checking { background: var(--af-warn-soft); color: var(--af-warn); }
+
+#af-monitor-sheet .af-progress-wrap { display: flex; align-items: center; gap: 10px; margin-block-end: 10px; }
+#af-monitor-sheet .af-progress-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--af-surface-3);
+  box-shadow: none;
+  overflow: hidden;
+}
+#af-monitor-sheet .af-progress-fill { background: var(--af-live); box-shadow: none; border-radius: 999px; }
+#af-monitor-sheet .af-progress-fill::after { display: none; }
+#af-monitor-sheet .af-progress-percent {
+  color: var(--af-live);
+  font-size: var(--af-fs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.af-monitor-score {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-block-end: 12px;
+  color: var(--af-text-2);
+  font-size: var(--af-fs-sm);
+}
+.af-score-item { color: var(--af-text-2); font-variant-numeric: tabular-nums; }
+.af-score-item > span:first-child { font-weight: 700; }
+.af-score--done > span:first-child { color: var(--af-ok); }
+.af-score--failed > span:first-child { color: var(--af-bad); }
+.af-score--submitted > span:first-child { color: var(--af-live); }
+.af-score-divider { display: none; }
+.af-score-eta { color: var(--af-text-3); margin-inline-start: auto; }
+
+.af-monitor-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-block-end: 10px;
+  border: 1px solid var(--af-line);
+  border-radius: var(--af-r);
+  background: var(--af-surface);
+  color: var(--af-text);
+  font-size: var(--af-fs);
+}
+.af-status-icon {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  font-size: 0;
+  background: var(--af-live);
+}
+.af-status-icon[data-state="done"] { background: var(--af-ok); }
+.af-status-icon[data-state="warn"] { background: var(--af-warn); }
+.af-status-icon[data-state="stopped"] { background: var(--af-bad); }
+.af-status-icon[data-state="paused"] { background: var(--af-warn); }
+@media (prefers-reduced-motion: no-preference) {
+  .af-status-icon[data-state="working"],
+  .af-status-icon[data-state="waiting"] { animation: af-dock-pulse 1.6s ease-in-out infinite; box-shadow: 0 0 0 4px var(--af-live-soft); }
+}
+
+.af-mini-prompts { display: grid; margin-block-end: 12px; }
+.af-mini-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-block: 6px;
+  border-block-end: 1px solid var(--af-line);
+  color: var(--af-text-2);
+  font-size: var(--af-fs-sm);
+}
+.af-mini-prompt:last-child { border-block-end: 0; }
+.af-mini-icon {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--af-text-3);
+  font-size: 0;
+}
+.af-mini-prompt--done .af-mini-icon { background: var(--af-ok); border-color: var(--af-ok); }
+.af-mini-prompt--failed .af-mini-icon { background: var(--af-bad); border-color: var(--af-bad); }
+.af-mini-prompt--submitted .af-mini-icon,
+.af-mini-prompt--running .af-mini-icon { background: var(--af-live); border-color: var(--af-live); }
+.af-mini-prompt--queued .af-mini-icon { border-color: var(--af-warn); }
+.af-mini-error {
+  margin-inline-start: auto;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--af-bad-soft);
+  color: var(--af-bad);
+  font-size: var(--af-fs-xs);
+  font-weight: 600;
+}
+
+.af-monitor-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-block-end: 14px; }
+.af-monitor-controls .af-btn { height: 32px; padding-inline: 12px; }
+
+.af-activity-header { margin-block-end: 6px; }
+.af-activity-label {
+  opacity: 1; /* a legacy rule faded it to 0.6 — 3.1:1, measured */
+  color: var(--af-text-3);
+  font-size: var(--af-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.af-logs {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--af-line);
+  border-radius: var(--af-r);
+  background: #050811;
+  color: var(--af-text-2);
+  font: 11px/1.6 ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+.af-failed-section { border-color: rgba(248, 113, 113, 0.35); }
+.af-banner.af-banner-warn {
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: var(--af-warn-soft);
+  color: var(--af-text);
+  border-radius: var(--af-r);
+}
+
+/* ── Account ────────────────────────────────────────────────────────── */
+
+.af-usage-card {
+  background: var(--af-bg);
+  border: 1px solid var(--af-line);
+  border-radius: var(--af-r);
+  box-shadow: none;
+}
+.af-usage-card:hover { transform: none; box-shadow: none; border-color: var(--af-line-2); }
+.af-usage-icon {
+  display: grid;
+  place-items: center;
+  color: var(--af-accent);
+  font-size: 0;
+  background: none;
+  box-shadow: none;
+}
+.af-usage-label { color: var(--af-text-3); letter-spacing: 0.04em; }
+.af-usage-count { color: var(--af-text); font-variant-numeric: tabular-nums; }
+.af-usage-hint { color: var(--af-text-3); opacity: 1; }
+.af-usage-bar-bg { background: var(--af-surface-3); }
+.af-usage-bar { background: var(--af-accent); box-shadow: none; }
+.af-usage-divider-text { color: var(--af-text-3); }
+.af-btn-signout { color: var(--af-text-2); opacity: 1; }
+.af-btn-signout:hover { color: var(--af-bad); }
+.af-plan-badge { box-shadow: none; }
+.af-avatar-ring { box-shadow: none; background: var(--af-line-2); }
+.af-upgrade-sparkle { color: var(--af-accent-2); font-size: 0; display: grid; place-items: center; }
+.af-upgrade-btn-icon { display: inline-grid; place-items: center; }
+
+/* ── Toast ──────────────────────────────────────────────────────────── */
+
+.af-toast {
+  background: var(--af-surface-2);
+  border: 1px solid var(--af-line-2);
+  border-radius: var(--af-r);
+  color: var(--af-text);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* Above the run dock, never on it. */
+body:has(#af-run-dock:not([hidden])) .af-toast { bottom: calc(var(--af-dock-h) + 20px); }
+
+/* ── Data & Privacy: grouped by where the data goes ─────────────────── */
+/* A tick said "fine" next to "sent to AutoFlow's servers"; these are facts,
+   so they get a plain dot, on the start side in either direction. */
+.af-privacy-head {
+  margin: 12px 0 0;
   font-size: 12px;
-  color: #9ca3af;
+  font-weight: 600;
+  color: var(--af-text-2);
 }
-
-
+.af-privacy-head:first-child { margin-top: 0; }
+.af-privacy-list { margin-top: 4px; }
+.af-privacy-list li {
+  padding-left: 0;
+  padding-inline-start: 14px;
+  line-height: 1.5;
+}
+.af-privacy-list li::before {
+  content: '';
+  left: auto;
+  inset-inline-start: 2px;
+  top: calc(3px + 0.75em - 2px);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--af-text-3);
+}

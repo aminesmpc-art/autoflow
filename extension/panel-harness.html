@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AutoFlow panel harness</title>
+  <!-- The REAL panel: dist/sidepanel.html, dist/sidepanel.css and
+       dist/sidepanel.js, run inside iframes against a stubbed `chrome`.
+
+       A chrome-extension:// page cannot be opened for inspection, and three
+       redesigns of these surfaces were done by reading CSS and were wrong.
+       This renders what ships, at the widths a side panel actually takes,
+       with queues shaped like real ones — so a design is judged on pixels.
+
+       Dev-only. webpack's CopyPlugin lists its files explicitly, so this
+       never reaches dist/ or the store zip.
+
+       Serve extension/ and open /panel-harness.html
+         ?w=380,600            widths
+         ?v=video,queues       tabs (video = Create)
+         &tall=1               full-length frames, for auditing a whole view -->
+  <style>
+    body { margin: 0; background: #0b0b0e; font: 12px ui-monospace, monospace; color: #8a8a94; }
+    .h { display: flex; gap: 20px; padding: 20px; align-items: flex-start; flex-wrap: wrap; }
+    .col { flex: 0 0 auto; }
+    .note { margin-bottom: 6px; text-transform: uppercase; letter-spacing: .6px; }
+    iframe { display: block; border: 1px solid #26262c; border-radius: 10px; background: #000; }
+  </style>
+</head>
+<body>
+<div class="h" id="h">loading…</div>
+
+<script type="module">
+const q = new URLSearchParams(location.search);
+const WIDTHS = (q.get('w') || '380,600').split(',').map(Number);
+const VIEWS = (q.get('v') || 'video,queues,settings,library').split(',');
+const TALL = q.get('tall') === '1';
+const bust = () => '?v=' + Date.now();
+
+const shipped = await (await fetch('dist/sidepanel.html' + bust())).text();
+
+/* Everything the panel reads from chrome.*, answered locally. Written as a
+   function and serialised into each frame, so it runs before sidepanel.js. */
+function stub() {
+  /* Every uncaught error and rejection in the frame, readable from outside
+     as frame.contentWindow.__errors. A panel whose init throws halfway still
+     paints its first half, and looks fine in a screenshot. */
+  window.__errors = [];
+  addEventListener('error', (e) => window.__errors.push(String(e.message || e)));
+  addEventListener('unhandledrejection', (e) => window.__errors.push('rejection: ' + String((e.reason && e.reason.message) || e.reason)));
+  const now = Date.now();
+  const SETTINGS = {
+    mediaType: 'video', creationType: 'ingredients', model: 'Veo 3.1 - Fast',
+    orientation: 'landscape', generations: 1, duration: '8s', voiceIngredient: 'none',
+    stopOnError: false, automationMode: 'flow', waitMinSec: 15, waitMaxSec: 30,
+    typingMode: false, typingSpeedMultiplier: 1, autoDownloadVideos: false,
+    videoResolution: 'Original (720p)', autoDownloadImages: false, imageResolution: '4K',
+    imageModel: 'Nano Banana Pro', imageRatio: '16:9', language: 'English',
+    showNotifications: true, notificationSound: false, autoDownload: true,
+    waitBetweenPromptsSec: 2, inputMethod: 'paste', typingCharsPerSecond: 25,
+  };
+  const P = (i, text, status = 'queued', extra = {}) => ({
+    id: `p${i}-${Math.random().toString(36).slice(2, 7)}`, index: i, text, images: [],
+    status, attempts: status === 'failed' ? 3 : status === 'done' ? 1 : 0, outputFiles: [], ...extra,
+  });
+  const Q = (id, name, prompts, status, extra = {}) => ({
+    id, name, prompts, settings: { ...SETTINGS, ...(extra.settings || {}) },
+    runTarget: 'currentProject', status, currentPromptIndex: 0,
+    createdAt: now - (extra.ago || 60_000), updatedAt: now - (extra.ago || 60_000),
+  });
+  /* Real-world prompt text: the layout has to survive what people paste. */
+  const LONG = 'Photorealistic raw documentary, first-person chest-mounted viewpoint, '
+    + 'ultra-wide 14mm-equivalent lens, desaturated wet greens and earth tones. '
+    + 'The protagonist\'s dirt-caked left palm catches a drop at lower right.';
+  const SEED = {
+    /* &auth=0 renders the signed-out panel: no tokens, so the sign-in gate
+       locks the tabs and Account shows its login form. */
+    ...(window.__auth === '0' ? {} : { autoflow_auth_tokens: { access: 'harness', refresh: 'harness' } }),
+    af_first_run_seen: true,
+    af_cached_profile: { email: 'you@example.com' },
+    autoflow_settings: SETTINGS,
+    autoflow_queue_counter: 10,
+    /* &lang=Arabic|French|Spanish — the UI language, as the panel stores it.
+       Arabic also flips the whole panel to right-to-left. */
+    autoflow_ui_lang: window.__lang || 'English',
+    autoflow_queues: [
+      Q('q9', 'AUTOFLOW9', [P(0, 'lokas'), P(1, 'bose')], 'pending', { ago: 5_000 }),
+      Q('q8', 'AUTOFLOW8', [
+        P(0, LONG, 'done'), P(1, 'A drone flyover of a futuristic city at sunset, neon lights', 'done'),
+        P(2, 'Close-up of a chef plating an elegant dessert', 'failed', { error: 'Safety blocked' }),
+        P(3, 'A golden retriever running through a sunlit meadow', 'done'),
+        P(4, 'Macro shot of rain on a leaf', 'queued'), P(5, 'Timelapse of clouds over mountains', 'queued'),
+      ], 'paused', { ago: 3_600_000, settings: { orientation: 'portrait', automationMode: 'full', generations: 2 } }),
+      Q('q7', 'AUTOFLOW7', Array.from({ length: 12 }, (_, i) => P(i, `Product shot ${i + 1} on white, soft light`, 'done')),
+        'completed', { ago: 86_400_000, settings: { mediaType: 'image' } }),
+    ],
+  };
+  const store = JSON.parse(JSON.stringify(SEED));
+  const pick = (keys) => {
+    if (keys == null) return { ...store };
+    if (typeof keys === 'string') keys = [keys];
+    if (Array.isArray(keys)) { const o = {}; for (const k of keys) if (k in store) o[k] = store[k]; return o; }
+    const o = {}; for (const [k, d] of Object.entries(keys)) o[k] = k in store ? store[k] : d; return o;
+  };
+  const later = (cb, v) => { if (typeof cb === 'function') { setTimeout(() => cb(v)); return undefined; } return Promise.resolve(v); };
+  const area = {
+    get: (k, cb) => later(cb, pick(k)),
+    set: (items, cb) => { Object.assign(store, JSON.parse(JSON.stringify(items))); return later(cb); },
+    remove: (k, cb) => { [].concat(k).forEach((x) => delete store[x]); return later(cb); },
+  };
+  const evt = () => ({ addListener() {}, removeListener() {}, hasListener: () => false });
+  /* A scanned project for the Library: three prompts, videos and a still,
+     one failed tile. Thumbnails are inline gradients — nothing is fetched. */
+  const thumb = (h) => 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">`
+    + `<stop offset="0" stop-color="hsl(${h},55%,42%)"/><stop offset="1" stop-color="hsl(${h + 40},60%,18%)"/></linearGradient></defs>`
+    + `<rect width="160" height="90" fill="url(#g)"/></svg>`);
+  const PROMPTS_SCANNED = ['A golden retriever running through a sunlit meadow',
+    'A drone flyover of a futuristic city at sunset, neon lights reflecting off glass',
+    'Close-up of a chef plating an elegant dessert'];
+  const ASSETS = [];
+  PROMPTS_SCANNED.forEach((label, p) => {
+    const kinds = p === 2 ? ['image', 'video'] : ['video', 'video'];
+    kinds.forEach((mediaType, g) => {
+      const i = ASSETS.length;
+      ASSETS.push({
+        index: i, tileId: `tile-${i}`, label, thumbnailUrl: thumb(200 + i * 25),
+        videoSrc: mediaType === 'video' ? `https://example.invalid/${i}.mp4` : '', locator: `[data-tile-id="tile-${i}"]`,
+        selected: false, mediaType, tileState: (p === 1 && g === 1) ? 'failed' : 'completed',
+        promptLabel: label, groupIndex: p, groupId: `g${p}`, generationNum: g + 1, totalInGroup: kinds.length,
+        promptNumber: p + 1, isRetry: false, modelName: mediaType === 'video' ? 'Veo 3.1 - Fast' : 'Nano Banana Pro',
+        createdAt: 'Created Sep 28, 2026',
+      });
+    });
+  });
+  const reply = (m) => {
+    switch (m && m.type) {
+      case 'PING': return { type: 'PONG', pong: true, ok: true };
+      case 'CHECK_API_AVAILABILITY': return { available: true, ok: true };
+      case 'SCAN_LIBRARY': return { assets: JSON.parse(JSON.stringify(ASSETS)) };
+      default: return { success: true, ok: true };
+    }
+  };
+  window.chrome = {
+    runtime: {
+      id: 'harness', lastError: undefined,
+      getManifest: () => ({ version: '8.4', name: 'AutoFlow' }),
+      getURL: (p) => '/dist/' + String(p).replace(/^\//, ''),
+      sendMessage: (m, cb) => later(typeof cb === 'function' ? cb : undefined, reply(m)),
+      connect: () => ({ postMessage() {}, disconnect() {}, onDisconnect: evt(), onMessage: evt() }),
+      onMessage: evt(), onConnect: evt(),
+    },
+    storage: { local: area, session: area, onChanged: evt() },
+    tabs: {
+      query: (qq, cb) => later(cb, [{ id: 1, active: true, url: 'https://labs.google/fx/tools/flow/project/demo' }]),
+      create: () => Promise.resolve({}), update: () => Promise.resolve({}),
+      sendMessage: () => Promise.resolve({}), onUpdated: evt(), onActivated: evt(),
+    },
+    identity: { getRedirectURL: () => 'https://harness.invalid/', launchWebAuthFlow: () => Promise.reject(new Error('harness')) },
+    i18n: { getMessage: () => '' },
+  };
+
+  /* The account API, answered with a Pro profile. Nothing leaves the page. */
+  const realFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    const u = String((input && input.url) || input);
+    if (/^https:\/\//.test(u) && !/fonts\.(googleapis|gstatic)\.com/.test(u)) {
+      const path = new URL(u).pathname;
+      let body = {};
+      if (path.includes('/auth/me')) body = { user: { email: 'you@example.com' }, profile: { plan_type: 'pro', is_pro_active: true } };
+      else if (path.includes('/entitlements')) body = { is_pro_active: true, text_used_today: 14, text_daily_limit: 999, text_remaining_today: 985 };
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
+    return realFetch(input, init);
+  };
+
+  /* Open the requested tab, and HOLD it through start-up. Stopping at the
+     first successful click lost the race: the panel's own init, finishing
+     after the sign-in check, selects its default tab again — so Queues and
+     Library measured as Create. Six seconds of re-asserting outlasts it. */
+  addEventListener('load', () => {
+    const want = window.__view;
+    if (!want) return;
+    let n = 0;
+    const t = setInterval(() => {
+      const tab = document.querySelector(`[data-tab="${want}"]`);
+      if (tab && tab.getAttribute('aria-selected') !== 'true') tab.click();
+      if (++n > 40) clearInterval(t);
+    }, 150);
+  });
+}
+
+/* &still=1: the panel at rest. Entrance animations start at opacity 0, and
+   a frame that is off-screen in this page may never run them — which read as
+   every piece of text at 1:1 contrast on the first measurement pass. Zero
+   duration jumps each animation to its end, which is the state a user sees. */
+const STILL = q.get('still') === '1'
+  ? '<style>*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;'
+    + 'transition:none!important}</style>'
+  : '';
+
+function frameHtml(view) {
+  const inject = `<base href="/dist/"><script>window.__lang=${JSON.stringify(q.get('lang') || 'English')};`
+    + `window.__auth=${JSON.stringify(q.get('auth') || '1')};<\/script>`
+    + `<script>(${stub.toString()})();<\/script>`
+    + `<script>window.__view=${JSON.stringify(view)};<\/script>` + STILL;
+  return shipped
+    .replace(/<head>/i, '<head>' + inject)
+    .replace('href="sidepanel.css"', `href="sidepanel.css${bust()}"`)
+    .replace('src="sidepanel.js"', `src="sidepanel.js${bust()}"`);
+}
+
+/* window.__measure(i) — the yardstick, for the frame at index i.
+   Measured, not eyeballed: effective contrast of every visible text node
+   (translucent backgrounds composited, opacity applied), the font sizes in
+   use, where the main action sits against the fold, and how many distinct
+   radii / fills / shadows the view spends. Run it before and after a change
+   and compare. */
+window.__measure = async function (i = 0, rootSelector = '') {
+  const f = document.querySelectorAll('iframe')[i];
+  const d = f.contentDocument, w = f.contentWindow, H = f.clientHeight;
+  /* Make sure the frame is on the tab it was opened for before reading it.
+     The first pass read Queues and Library as Create: measured mid-start-up,
+     before the panel had settled on the requested tab. */
+  const tab = d.querySelector(`[data-tab="${f.dataset.view}"]`);
+  if (tab && tab.getAttribute('aria-selected') !== 'true') {
+    tab.click();
+    await new Promise((r) => setTimeout(r, 700));
+  }
+  const parse = (c) => { const m = String(c).match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(',').map(parseFloat); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+  const lum = ({ r, g, b }) => { const c = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * c(r) + 0.7152 * c(g) + 0.0722 * c(b); };
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+  const blend = (t, u) => ({ r: t.r * t.a + u.r * (1 - t.a), g: t.g * t.a + u.g * (1 - t.a), b: t.b * t.a + u.b * (1 - t.a), a: 1 });
+  const bgOf = (el) => { const chain = []; for (let e = el; e && e.nodeType === 1; e = e.parentElement) chain.push(e); let bg = { r: 0, g: 0, b: 0, a: 1 }; for (const e of chain.reverse()) { const c = parse(w.getComputedStyle(e).backgroundColor); if (c && c.a > 0) bg = blend(c, bg); } return bg; };
+  /* rootSelector measures something outside the tabs — '#af-monitor-sheet'
+     for the run monitor, '#af-run-dock' for the dock. */
+  const panel = (rootSelector && d.querySelector(rootSelector)) || d.querySelector('.af-panel.active') || d.body;
+  const texts = [];
+  const tw = d.createTreeWalker(panel, NodeFilter.SHOW_TEXT); let n;
+  while ((n = tw.nextNode())) {
+    const t = n.textContent.trim(); if (!t) continue;
+    const el = n.parentElement, cs = w.getComputedStyle(el), r = el.getBoundingClientRect();
+    if (!r.width || !r.height || cs.visibility === 'hidden') continue;
+    let hid = false, op = 1;
+    for (let e = el; e && e.nodeType === 1; e = e.parentElement) { const s = w.getComputedStyle(e); if (s.display === 'none') hid = true; op *= parseFloat(s.opacity); }
+    if (hid) continue;
+    const fg = parse(cs.color), bg = bgOf(el);
+    /* Who drew it: the element and its parent, by class, so a failure points
+       at the rule to change rather than just the words. */
+    const who = (e) => e ? e.tagName.toLowerCase() + (typeof e.className === 'string' && e.className.trim()
+      ? '.' + e.className.trim().split(/\s+/).slice(0, 2).join('.') : '') : '';
+    texts.push({ t: t.replace(/\s+/g, ' ').slice(0, 36), size: parseFloat(cs.fontSize), c: +ratio(blend({ ...fg, a: fg.a * op }, bg), bg).toFixed(2),
+      el: `${who(el)} < ${who(el.parentElement)}` });
+  }
+  const sizes = {}; texts.forEach((x) => { sizes[x.size] = (sizes[x.size] || 0) + 1; });
+  const low = texts.filter((x) => x.c < 4.5).sort((a, b) => a.c - b.c);
+  const radii = new Set(), fills = new Set(), shadows = new Set();
+  panel.querySelectorAll('*').forEach((e) => { if (!e.getBoundingClientRect().width) return; const cs = w.getComputedStyle(e); if (cs.borderRadius !== '0px') radii.add(cs.borderRadius); if (cs.backgroundColor !== 'rgba(0, 0, 0, 0)') fills.add(cs.backgroundColor); if (cs.boxShadow !== 'none') shadows.add(cs.boxShadow); });
+  const hiddenShown = Array.from(d.querySelectorAll('[hidden]')).filter((e) => w.getComputedStyle(e).display !== 'none').length;
+  return {
+    view: f.dataset.view, width: +f.dataset.width, frameH: H,
+    chromeH: Math.round((d.querySelector('.af-header')?.getBoundingClientRect().height || 0) + (d.querySelector('.af-tabs')?.getBoundingClientRect().height || 0)),
+    contentH: Math.round(Math.max(panel.scrollHeight, panel.getBoundingClientRect().height)),
+    textNodes: texts.length, fontSizes: sizes, distinctSizes: Object.keys(sizes).length, smallest: Math.min(...texts.map((x) => x.size)),
+    under4_5: low.length, under3: low.filter((x) => x.c < 3).length,
+    worst: low.slice(0, 10).map((x) => `${x.c}:1 · ${x.size}px · "${x.t}"`),
+    /* Every failure, grouped by the element that drew it. */
+    failingBy: Object.entries(low.reduce((m, x) => { (m[x.el] = m[x.el] || []).push(`${x.c}:1 ${x.size}px "${x.t.slice(0, 18)}"`); return m; }, {}))
+      .map(([el, xs]) => `${el} ×${xs.length} — ${xs[0]}`),
+    tinyText: texts.filter((x) => x.size < 11).length,
+    distinctRadii: radii.size, distinctFills: fills.size, distinctShadows: shadows.size,
+    hiddenButDisplayed: hiddenShown,
+  };
+};
+
+const LABEL = { video: 'create', queues: 'queues', settings: 'settings', library: 'library', account: 'account' };
+const root = document.getElementById('h');
+root.textContent = '';
+for (const view of VIEWS) {
+  for (const w of WIDTHS) {
+    const col = document.createElement('div');
+    col.className = 'col';
+    col.innerHTML = `<div class="note">${w}px · ${LABEL[view] || view}</div>`;
+    const f = document.createElement('iframe');
+    f.width = String(w);
+    f.height = String(TALL ? 2600 : 860);
+    f.dataset.view = view;
+    f.dataset.width = String(w);
+    f.srcdoc = frameHtml(view);
+    col.appendChild(f);
+    root.appendChild(col);
+  }
+}
+</script>
+</body>
+</html>
