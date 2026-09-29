@@ -232,7 +232,7 @@ export default function ExtractorPage() {
       if (limitRes.ok) {
         const limitData = await limitRes.json();
         if (!limitData.allowed) {
-          throw new Error(`You have reached your limit of ${limitData.limit} extractions per ${limitData.period}. ${!limitData.is_pro ? "Upgrade to Pro to unlock 20 extractions per day!" : "Please try again tomorrow."}`);
+          throw new Error(`You have reached your limit of ${limitData.limit} extraction${limitData.limit === 1 ? "" : "s"} per ${limitData.period}. ${!limitData.is_pro ? "Upgrade to Pro for 20 extractions per day, or come back tomorrow." : "Please try again tomorrow."}`);
         }
       }
 
@@ -1397,7 +1397,7 @@ export default function ExtractorPage() {
                 <p className="text-secondary" style={{ fontSize: "1.1rem" }}>Everything you need to know about the AI Video Prompt Extractor.</p>
               </div>
               {[
-                { q: "Is the AI Video Prompt Extractor free to use?", a: "Yes! You get 3 free extractions per day on the free plan. Need more? Upgrade to Pro for 20 extractions per day. No credit card required to start." },
+                { q: "Is the AI Video Prompt Extractor free to use?", a: "Yes! The free plan includes 1 extraction per day, and opening the ones you've saved is always free. Need more? Upgrade to Pro for 20 extractions per day. No credit card required to start." },
                 { q: "What video formats are supported?", a: "We support MP4, MOV, and WebM video files up to 500MB. You can also paste a direct link from YouTube, TikTok, Instagram, or X — we'll download and analyze it for you." },
                 { q: "Which AI video generators does it work with?", a: "Our extractor works with videos made by any AI tool — including Runway Gen-3, OpenAI Sora, Kling AI, Luma Dream Machine, Pika Labs, Google Veo, Minimax, and more. It can also analyze traditional footage to generate AI-ready prompts." },
                 { q: "How accurate are the extracted prompts?", a: "Our vision AI analyzes every frame to identify artistic style, lighting, camera angles, character details, and motion patterns. While no extraction is 100% identical to the original, our prompts consistently produce visually similar results when used with the same AI tools." },
@@ -1449,7 +1449,7 @@ export default function ExtractorPage() {
               "@context": "https://schema.org",
               "@type": "FAQPage",
               mainEntity: [
-                { "@type": "Question", name: "Is the AI Video Prompt Extractor free to use?", acceptedAnswer: { "@type": "Answer", text: "Yes! You get 3 free extractions per day on the free plan. Upgrade to Pro for 20 extractions per day." } },
+                { "@type": "Question", name: "Is the AI Video Prompt Extractor free to use?", acceptedAnswer: { "@type": "Answer", text: "Yes! The free plan includes 1 extraction per day. Upgrade to Pro for 20 extractions per day." } },
                 { "@type": "Question", name: "What video formats are supported?", acceptedAnswer: { "@type": "Answer", text: "We support MP4, MOV, and WebM video files up to 500MB. You can also paste a link from YouTube, TikTok, Instagram, or X." } },
                 { "@type": "Question", name: "Which AI video generators does it work with?", acceptedAnswer: { "@type": "Answer", text: "Our extractor works with videos from Runway Gen-3, OpenAI Sora, Kling AI, Luma Dream Machine, Pika Labs, Google Veo, Minimax, and more." } },
                 { "@type": "Question", name: "How accurate are the extracted prompts?", acceptedAnswer: { "@type": "Answer", text: "Our vision AI analyzes every frame to identify style, lighting, camera angles, and motion patterns. Prompts consistently produce visually similar results." } },
