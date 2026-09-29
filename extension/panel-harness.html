@@ -17,7 +17,8 @@
        Serve extension/ and open /panel-harness.html
          ?w=380,600            widths
          ?v=video,queues       tabs (video = Create)
-         &tall=1               full-length frames, for auditing a whole view -->
+         &tall=1               full-length frames, for auditing a whole view
+         &plan=free&used=38    a free account that has used 38 of 50 prompts -->
   <style>
     body { margin: 0; background: #0b0b0e; font: 12px ui-monospace, monospace; color: #8a8a94; }
     .h { display: flex; gap: 20px; padding: 20px; align-items: flex-start; flex-wrap: wrap; }
@@ -159,15 +160,24 @@ function stub() {
     i18n: { getMessage: () => '' },
   };
 
-  /* The account API, answered with a Pro profile. Nothing leaves the page. */
+  /* The account API, answered with a Pro profile — or, with ?plan=free, a
+     free one that has used ?used= of its 50 text prompts. Nothing leaves
+     the page. */
+  const FREE = window.__plan === 'free';
+  const USED = Math.max(0, Math.min(50, Number(window.__used) || 0));
   const realFetch = window.fetch.bind(window);
   window.fetch = (input, init) => {
     const u = String((input && input.url) || input);
     if (/^https:\/\//.test(u) && !/fonts\.(googleapis|gstatic)\.com/.test(u)) {
       const path = new URL(u).pathname;
       let body = {};
-      if (path.includes('/auth/me')) body = { user: { email: 'you@example.com' }, profile: { plan_type: 'pro', is_pro_active: true } };
-      else if (path.includes('/entitlements')) body = { is_pro_active: true, text_used_today: 14, text_daily_limit: 999, text_remaining_today: 985 };
+      if (path.includes('/auth/me')) body = { user: { email: 'you@example.com' }, profile: FREE ? { plan_type: 'free', is_pro_active: false } : { plan_type: 'pro', is_pro_active: true } };
+      else if (path.includes('/entitlements')) body = FREE
+        ? { is_pro_active: false, text_used_today: USED, text_daily_limit: 50, text_remaining_today: 50 - USED,
+            full_used_today: 5, full_daily_limit: 20, full_remaining_today: 15,
+            flow_runs_today: 2, flow_daily_limit: 5, flow_remaining_today: 3 }
+        : { is_pro_active: true, text_used_today: 14, text_daily_limit: 999, text_remaining_today: 985 };
+      else if (path.includes('/review-status')) body = { status: 'none' };
       return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }
     return realFetch(input, init);
@@ -200,7 +210,8 @@ const STILL = q.get('still') === '1'
 
 function frameHtml(view) {
   const inject = `<base href="/dist/"><script>window.__lang=${JSON.stringify(q.get('lang') || 'English')};`
-    + `window.__auth=${JSON.stringify(q.get('auth') || '1')};<\/script>`
+    + `window.__auth=${JSON.stringify(q.get('auth') || '1')};`
+    + `window.__plan=${JSON.stringify(q.get('plan') || 'pro')};window.__used=${JSON.stringify(q.get('used') || '12')};<\/script>`
     + `<script>(${stub.toString()})();<\/script>`
     + `<script>window.__view=${JSON.stringify(view)};<\/script>` + STILL;
   return shipped

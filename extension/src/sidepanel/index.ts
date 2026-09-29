@@ -180,6 +180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initTobyFlowUI();
   initRunDock();
   initJobSettingsLink();
+  initPlanStrip();
   // Single source of truth for the displayed version
   const verEl = document.getElementById('af-version');
   if (verEl) verEl.textContent = `v${chrome.runtime.getManifest().version}`;
@@ -192,6 +193,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (langSelect) {
     langSelect.addEventListener('change', () => {
       applyLanguage(langSelect.value);
+      void redrawForLanguage();
     });
   }
   await enforceImageGate(); // Run gate immediately after settings to prevent section flash
@@ -358,7 +360,7 @@ function initTobyFlowUI() {
     if (!email || !password) return;
 
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Signing in…';
+    submitBtn.textContent = t('busy.signingIn');
     if (msgEl) msgEl.style.display = 'none';
 
     try {
@@ -376,14 +378,14 @@ function initTobyFlowUI() {
       }
     } catch {
       if (msgEl) {
-        msgEl.textContent = 'Sign in failed. Please try again.';
+        msgEl.textContent = t('form.somethingWrong');
         msgEl.className = 'af-auth-message error';
         msgEl.style.display = 'block';
       }
     }
 
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Sign In';
+    submitBtn.textContent = t('account.btnSignIn');
   });
 
   // 7. Google Auth inside Modal
@@ -1575,7 +1577,7 @@ function renderAutoMatchedThumbnails(row: HTMLElement, autoMatched: { meta: Imag
     const charName = getCharacterName(img.meta.filename);
     const wrap = document.createElement('div');
     wrap.className = 'af-img-thumb-wrap af-thumb-auto';
-    wrap.title = `Auto-matched: ${charName}`;
+    wrap.title = tf('tip.autoMatched', { name: charName });
     wrap.innerHTML = `
       <img class="af-img-thumb" src="${img.objectUrl}" alt="${escapeHtml(charName)}" />
       <span class="af-thumb-badge af-badge-char">C</span>
@@ -1593,7 +1595,7 @@ function renderSharedThumbnailsInRow(row: HTMLElement) {
   for (const img of state.sharedImages) {
     const wrap = document.createElement('div');
     wrap.className = 'af-img-thumb-wrap af-thumb-shared';
-    wrap.title = `Shared: ${img.meta.filename}`;
+    wrap.title = tf('tip.sharedImage', { name: img.meta.filename });
     wrap.innerHTML = `
       <img class="af-img-thumb" src="${img.objectUrl}" alt="${escapeHtml(img.meta.filename)}" />
       <span class="af-thumb-badge af-badge-shared">S</span>
@@ -1884,14 +1886,14 @@ function initSettingsTab() {
       
       if (!apiKey) {
         if (statusSpan) {
-          statusSpan.textContent = '❌ Please enter an API key';
+          statusSpan.textContent = t('llm.enterKey');
           statusSpan.style.color = 'var(--text-error, #f44336)';
         }
         return;
       }
       
       if (statusSpan) {
-        statusSpan.textContent = '⏳ Testing connection...';
+        statusSpan.textContent = t('llm.testing');
         statusSpan.style.color = 'var(--text-muted, #888)';
       }
       testBtn.setAttribute('disabled', 'true');
@@ -1903,16 +1905,16 @@ function initSettingsTab() {
         });
         if (statusSpan) {
           if (response?.success) {
-            statusSpan.textContent = '✓ Success!';
+            statusSpan.textContent = t('llm.ok');
             statusSpan.style.color = 'var(--text-success, #4caf50)';
           } else {
-            statusSpan.textContent = `❌ Failed: ${response?.error || 'Unknown error'}`;
+            statusSpan.textContent = tf('llm.failed', { error: response?.error || t('err.unknown') });
             statusSpan.style.color = 'var(--text-error, #f44336)';
           }
         }
       } catch (err: any) {
         if (statusSpan) {
-          statusSpan.textContent = `❌ Error: ${err.message || err}`;
+          statusSpan.textContent = tf('err.generic', { error: err.message || err });
           statusSpan.style.color = 'var(--text-error, #f44336)';
         }
       } finally {
@@ -2805,8 +2807,7 @@ async function showLimitDialog(opts: {
     if (!upgradeEmail) {
       ev.preventDefault();
       dialog.remove();
-      showToast(t('toast.signInFirst'), 'error', 5000);
-      (document.querySelector('[data-tab="account"]') as HTMLElement | null)?.click();
+      void startCheckout();
       return;
     }
     setTimeout(() => dialog.remove(), 500);
@@ -4218,6 +4219,7 @@ function handleQueueStatusUpdate(queue: QueueObject) {
     stopKeepalivePort();  // Release service worker keepalive
     updateStatusDot('connected');
     showToast(tf(queue.status === 'completed' ? 'toast.queueCompleted' : 'toast.queueStopped', { name: queue.name }));
+    void updateUsageDisplay();  // the run spent prompts: the strip and Account catch up
 
     /* Hand back what this run never sent.
      *
@@ -4377,7 +4379,7 @@ function handlePromptStatusUpdate(data: { queue: QueueObject; promptIndex: numbe
     const creditsEl = document.getElementById('monitor-credits');
     if (creditsEl) {
       creditsEl.textContent = `💎 ${data.credits.toLocaleString()}`;
-      creditsEl.title = `Remaining Flow credits: ${data.credits.toLocaleString()}`;
+      creditsEl.title = tf('tip.credits', { n: data.credits.toLocaleString() });
     }
   }
 
@@ -4490,7 +4492,7 @@ function updatePromptStatuses(queue: QueueObject) {
           errEl.className = 'af-prompt-error';
           rows[idx].appendChild(errEl);
         }
-        errEl.textContent = `Error: ${prompt.error}`;
+        errEl.textContent = tf('err.generic', { error: prompt.error });
       } else if (errEl) {
         errEl.remove();
       }
@@ -5208,7 +5210,7 @@ function initAccountTab() {
     if (!email) return;
 
     btn.disabled = true;
-    btn.textContent = 'Sending…';
+    btn.textContent = t('busy.sending');
     hideMessage('forgot-request-message');
 
     const result = await requestPasswordReset(email);
@@ -5223,7 +5225,7 @@ function initAccountTab() {
     }
 
     btn.disabled = false;
-    btn.textContent = 'Send Reset Code';
+    btn.textContent = t('account.sendCode');
   });
 
   formForgotConfirm?.addEventListener('submit', async (e) => {
@@ -5236,12 +5238,12 @@ function initAccountTab() {
     if (!code || !newPassword || !confirmPassword) return;
 
     if (newPassword !== confirmPassword) {
-      showMessage('forgot-confirm-message', 'Passwords do not match.', 'error');
+      showMessage('forgot-confirm-message', t('form.passwordsMismatch'), 'error');
       return;
     }
 
     btn.disabled = true;
-    btn.textContent = 'Resetting…';
+    btn.textContent = t('busy.resetting');
     hideMessage('forgot-confirm-message');
 
     const result = await confirmPasswordReset(resetEmail, code, newPassword);
@@ -5252,13 +5254,13 @@ function initAccountTab() {
       // Pre-fill email in login
       ($('#login-email') as HTMLInputElement).value = resetEmail;
       hideMessage('login-message');
-      showMessage('login-message', 'Password reset successfully! Sign in below.', 'success');
+      showMessage('login-message', t('form.resetDone'), 'success');
     } else {
       showMessage('forgot-confirm-message', result.message, 'error');
     }
 
     btn.disabled = false;
-    btn.textContent = 'Reset Password';
+    btn.textContent = t('account.resetPassword');
   });
 
 
@@ -5270,18 +5272,19 @@ function initAccountTab() {
     const submitBtn = $('#btn-login-submit') as HTMLButtonElement;
 
     if (!email || !password) {
-      showMessage('login-message', 'Please enter email and password.', 'error');
+      showMessage('login-message', t('form.enterEmailPassword'), 'error');
       return;
     }
 
     hideMessage('login-message');
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Signing in…';
+    submitBtn.textContent = t('busy.signingIn');
 
     try {
       const result = await login(email, password);
       if (result.ok) {
         await showLoggedInState();
+        await resumePendingCheckout();
       } else {
         if (result.message.toLowerCase().includes('verify')) {
           pendingEmail = email;
@@ -5291,11 +5294,11 @@ function initAccountTab() {
         }
       }
     } catch (err) {
-      showMessage('login-message', 'Something went wrong. Please try again.', 'error');
+      showMessage('login-message', t('form.somethingWrong'), 'error');
     }
 
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Sign In';
+    submitBtn.textContent = t('account.btnSignIn');
   });
 
   // ── Google Sign-In ──
@@ -5361,6 +5364,7 @@ function initAccountTab() {
             const result = await loginWithGoogle(idToken);
             if (result.ok) {
               await showLoggedInState();
+              await resumePendingCheckout();
             } else {
               showMessage('login-message', result.message, 'error');
             }
@@ -5388,7 +5392,7 @@ function initAccountTab() {
 
     hideMessage('register-message');
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Creating…';
+    submitBtn.textContent = t('busy.creating');
 
     const result = await register(email, password);
 
@@ -5400,14 +5404,14 @@ function initAccountTab() {
     }
 
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Create Account';
+    submitBtn.textContent = t('account.btnCreate');
   });
 
   // ── Resend verification ──
   $('#btn-resend-verify')?.addEventListener('click', async () => {
     const btn = $('#btn-resend-verify') as HTMLButtonElement;
     btn.disabled = true;
-    btn.textContent = 'Sending…';
+    btn.textContent = t('busy.sending');
     hideMessage('resend-message');
 
     try {
@@ -5417,13 +5421,13 @@ function initAccountTab() {
         body: JSON.stringify({ email: pendingEmail }),
       });
       const data = await res.json();
-      showMessage('resend-message', data.message || 'Verification email sent!', 'success');
+      showMessage('resend-message', data.message || t('form.verifySent'), 'success');
     } catch {
-      showMessage('resend-message', 'Could not send email. Try again later.', 'error');
+      showMessage('resend-message', t('form.sendFailed'), 'error');
     }
 
     btn.disabled = false;
-    btn.textContent = 'Resend Verification Email';
+    btn.textContent = t('account.resendVerify');
   });
 
   // ── Back to login ──
@@ -5431,7 +5435,7 @@ function initAccountTab() {
     showLoggedOutState();
     // Pre-fill email
     ($('#login-email') as HTMLInputElement).value = pendingEmail;
-    showMessage('login-message', 'Verified your email? Sign in below.', 'info');
+    showMessage('login-message', t('form.verifiedSignIn'), 'info');
   });
 
   // ── Logout ──
@@ -5496,7 +5500,7 @@ function initAccountTab() {
   $('#btn-refresh-usage')?.addEventListener('click', async () => {
     const btn = $('#btn-refresh-usage') as HTMLButtonElement;
     const originalText = btn.innerHTML;
-    btn.innerHTML = 'Refreshing...';
+    btn.textContent = t('busy.refreshing');
     btn.disabled = true;
     
     await showLoggedInState();
@@ -5506,25 +5510,11 @@ function initAccountTab() {
   });
 
   // ── Upgrade to Pro button ──
-  $('#btn-upgrade-pro')?.addEventListener('click', async () => {
-    const { url, email } = await getUpgradeTarget();
-
-    // Paying while signed out is how subscriptions get stranded: the webhook
-    // arrives with an email that has no AutoFlow account to attach to, and it
-    // sits unprocessed until they happen to register with the same address.
-    if (!email) {
-      showToast(t('toast.signInFirst'), 'error', 5000);
-      const accountTab = document.querySelector('[data-tab="account"]') as HTMLElement | null;
-      accountTab?.click();
-      $('#account-logged-out')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
-
-    // Checkout is prefilled with this address, so no warning dialog is needed —
-    // just say which account is getting the upgrade.
-    showToast(tf('toast.checkoutOpened', { email }), 'info', 5000);
-    window.open(url, '_blank');
-  });
+  // Paying while signed out is how subscriptions get stranded: the webhook
+  // arrives with an email that has no AutoFlow account to attach to, and it
+  // sits unprocessed until they happen to register with the same address.
+  // startCheckout sends them to sign in first, then carries on to checkout.
+  $('#btn-upgrade-pro')?.addEventListener('click', () => { void startCheckout(); });
 
 
   // ── Wire up review reward buttons ──
@@ -5696,6 +5686,7 @@ function showLoggedOutState() {
   // Hide Ultra Family button when logged out
   const ultraBtn = document.getElementById('btn-header-ultra-family');
   if (ultraBtn) ultraBtn.style.display = 'none';
+  renderPlanStrip(null);
 
   // Lock all tabs, switch to Account
   enforceAuthGate(false);
@@ -5709,8 +5700,9 @@ async function updateUsageDisplay() {
     // Show 'offline' hint on both bars
     const textHint = $('#account-text-usage-hint') as HTMLElement;
     const fullHint = $('#account-full-usage-hint') as HTMLElement;
-    if (textHint) textHint.textContent = 'Could not load usage — check connection';
-    if (fullHint) fullHint.textContent = 'Could not load usage — check connection';
+    if (textHint) textHint.textContent = t('usage.offline');
+    if (fullHint) fullHint.textContent = t('usage.offline');
+    renderPlanStrip(null);
     return;
   }
 
@@ -5750,6 +5742,7 @@ async function updateUsageDisplay() {
   updateBar('lite', usage.lite_used, usage.lite_limit, usage.lite_remaining, usage.is_pro);
   updateBar('flow', usage.flow_used, usage.flow_limit, usage.flow_remaining, usage.is_pro);
   updateBar('fullrun', usage.full_monthly_used, usage.full_monthly_limit, usage.full_monthly_remaining, usage.is_pro);
+  renderPlanStrip(usage);
 
   // Update bottom footer quota bar
   const footerQuotaText = $('#tf-footer-quota-text');
@@ -5776,15 +5769,118 @@ async function updateUsageDisplay() {
 
 /** Check review reward status and update UI (tab CTA + header button).
  *  Only shows when user has hit their daily limit — not always visible. */
+// ================================================================
+// PLAN STRIP AND CHECKOUT
+// ================================================================
+
+/** An Upgrade pressed while signed out waits this long for the sign-in. */
+const PENDING_CHECKOUT_KEY = 'af_pending_checkout';
+const PENDING_CHECKOUT_TTL_MS = 15 * 60 * 1000;
+
+function initPlanStrip() {
+  const price = document.querySelector('#af-plan-strip .af-plan-strip__price');
+  if (price) price.textContent = PRO_PRICE_LABEL;
+  document.getElementById('af-plan-strip-upgrade')?.addEventListener('click', () => { void startCheckout(); });
+  document.getElementById('af-plan-strip-free')?.addEventListener('click', () => {
+    (document.querySelector('[data-tab="account"]') as HTMLElement | null)?.click();
+    document.getElementById('review-reward-cta')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+}
+
+/**
+ * The line under the tabs for a free account. Text prompts are the number
+ * shown: they are the ceiling most free accounts reach (1,088 of the 1,413
+ * who hit one — see upgradePrompt.test.ts). The tooltip carries the rest.
+ */
+function renderPlanStrip(usage: Awaited<ReturnType<typeof getDailyUsage>>) {
+  const strip = document.getElementById('af-plan-strip');
+  if (!strip) return;
+  if (!usage || usage.is_pro) {
+    strip.hidden = true;
+    return;
+  }
+  const limit = Math.max(0, usage.text_limit);
+  const left = Math.max(0, Math.min(limit, usage.text_remaining));
+  const out = limit > 0 && left === 0;
+  const low = !out && limit > 0 && (limit - left) / limit >= 0.75;
+
+  const usageEl = document.getElementById('af-plan-strip-usage');
+  if (usageEl) usageEl.textContent = out ? t('strip.out') : tf('strip.left', { left, limit });
+  strip.title = tf('strip.tip', {
+    text: `${usage.text_used}/${usage.text_limit}`,
+    full: `${usage.full_used}/${usage.full_limit}`,
+    flow: `${usage.flow_used}/${usage.flow_limit}`,
+  });
+  const fill = document.getElementById('af-plan-strip-fill');
+  if (fill) fill.style.width = limit > 0 ? `${((limit - left) / limit) * 100}%` : '0%';
+  strip.classList.toggle('is-low', low);
+  strip.classList.toggle('is-out', out);
+  strip.hidden = false;
+}
+
+/** The review offer, in Account and on the strip, always together. */
+function setFreeProOffer(show: boolean) {
+  const accountBtn = document.getElementById('btn-header-get-pro-free');
+  if (accountBtn) accountBtn.style.display = show ? '' : 'none';
+  const stripBtn = document.getElementById('af-plan-strip-free');
+  if (stripBtn) stripBtn.hidden = !show;
+}
+
+/**
+ * Every Upgrade button ends here. Checkout is locked to the signed-in
+ * account's email, so a signed-out buyer signs in first — and the intent is
+ * kept, so the sign-in carries straight on to checkout instead of leaving
+ * them to find the button again (resumePendingCheckout).
+ */
+async function startCheckout() {
+  const { url, email } = await getUpgradeTarget();
+  if (!email) {
+    await chrome.storage.local.set({ [PENDING_CHECKOUT_KEY]: Date.now() });
+    showToast(t('toast.signInFirst'), 'info', 6000);
+    (document.querySelector('[data-tab="account"]') as HTMLElement | null)?.click();
+    $('#account-logged-out')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  showToast(tf('toast.checkoutOpened', { email }), 'info', 5000);
+  window.open(url, '_blank');
+}
+
+/**
+ * After a sign-in, open the checkout that a signed-out Upgrade asked for.
+ * Only after an actual sign-in, never on a plain panel load, and only
+ * within PENDING_CHECKOUT_TTL_MS. A tab rather than window.open: the click
+ * that asked for it is long past by the time sign-in returns.
+ */
+async function resumePendingCheckout() {
+  const stored = await chrome.storage.local.get(PENDING_CHECKOUT_KEY);
+  const at = stored?.[PENDING_CHECKOUT_KEY];
+  if (!at) return;
+  await chrome.storage.local.remove(PENDING_CHECKOUT_KEY);
+  if (Date.now() - Number(at) > PENDING_CHECKOUT_TTL_MS || _isProUser) return;
+  const { url, email } = await getUpgradeTarget();
+  if (!email) return;
+  showToast(tf('toast.checkoutOpened', { email }), 'info', 5000);
+  chrome.tabs.create({ url });
+}
+
+/** Draw again what the panel writes itself, in the language just chosen. */
+async function redrawForLanguage() {
+  if (!state.isRunning && state.parsedPrompts.length > 0) renderPromptList();
+  renderCharacterImages();
+  updateJobSummary();
+  if (state.scannedAssets.length > 0) renderLibrary();
+  await refreshQueuesList();
+  if (await isLoggedIn()) await updateUsageDisplay();
+}
+
 async function checkAndShowReviewReward(isPro: boolean) {
   const ctaEl = document.getElementById('review-reward-cta');
-  const headerBtn = document.getElementById('btn-header-get-pro-free');
   if (!ctaEl) return;
 
   // Pro users never see the reward CTA
   if (isPro) {
     ctaEl.style.display = 'none';
-    if (headerBtn) headerBtn.style.display = 'none';
+    setFreeProOffer(false);
     return;
   }
 
@@ -5800,39 +5896,39 @@ async function checkAndShowReviewReward(isPro: boolean) {
     // No claim yet — only show CTA if they hit their limit
     if (hitLimit) {
       ctaEl.style.display = '';
-      if (headerBtn) headerBtn.style.display = '';
+      setFreeProOffer(true);
     } else {
       ctaEl.style.display = 'none';
-      if (headerBtn) headerBtn.style.display = 'none';
+      setFreeProOffer(false);
     }
     const statusTab = document.getElementById('review-status-msg-tab');
     if (statusTab) statusTab.style.display = 'none';
   } else if (result.status === 'pending') {
     // Already claimed — always show status
     ctaEl.style.display = '';
-    if (headerBtn) headerBtn.style.display = 'none';
+    setFreeProOffer(false);
     const statusTab = document.getElementById('review-status-msg-tab');
     if (statusTab) {
       statusTab.style.display = '';
-      statusTab.innerHTML = '⏳ <strong>Under review</strong> — we\'ll verify your review and upgrade you shortly!';
+      statusTab.textContent = t('review.underReview');
       statusTab.style.color = '#f59e0b';
     }
     const claimGroup = document.getElementById('claim-review-group-tab');
     if (claimGroup) claimGroup.style.display = 'none';
   } else if (result.status === 'approved') {
     ctaEl.style.display = '';
-    if (headerBtn) headerBtn.style.display = 'none';
+    setFreeProOffer(false);
     const statusTab = document.getElementById('review-status-msg-tab');
     if (statusTab) {
       statusTab.style.display = '';
-      statusTab.innerHTML = '✅ <strong>Approved!</strong> Your Pro access is active. Thank you!';
+      statusTab.textContent = t('review.approved');
       statusTab.style.color = '#10b981';
     }
     const claimGroup = document.getElementById('claim-review-group-tab');
     if (claimGroup) claimGroup.style.display = 'none';
   } else if (result.status === 'rejected') {
     ctaEl.style.display = 'none';
-    if (headerBtn) headerBtn.style.display = 'none';
+    setFreeProOffer(false);
   }
 }
 
@@ -5845,22 +5941,22 @@ async function submitReviewClaim(nameInputId: string, statusMsgId: string) {
   const name = nameInput.value.trim();
   if (!name) {
     statusMsg.style.display = '';
-    statusMsg.innerHTML = '⚠️ Please enter your Chrome display name.';
+    statusMsg.textContent = t('review.enterName');
     statusMsg.style.color = '#f59e0b';
     return;
   }
 
   statusMsg.style.display = '';
-  statusMsg.innerHTML = '⏳ Submitting...';
+  statusMsg.textContent = t('busy.sending');
   statusMsg.style.color = 'var(--text-dim)';
 
   const result = await claimReviewReward(name);
 
   if (result.status === 'ineligible') {
-    statusMsg.innerHTML = `❌ ${result.message || 'Not eligible yet. Keep generating!'}`;
+    statusMsg.textContent = result.message || t('review.notEligible');
     statusMsg.style.color = '#ef4444';
   } else if (result.status === 'pending') {
-    statusMsg.innerHTML = '✅ <strong>Submitted!</strong> We\'ll verify your review and upgrade you shortly.';
+    statusMsg.textContent = t('review.submitted');
     statusMsg.style.color = '#10b981';
     // Hide the claim group
     const claimGroupTab = document.getElementById('claim-review-group-tab');
@@ -5868,7 +5964,7 @@ async function submitReviewClaim(nameInputId: string, statusMsgId: string) {
     const claimGroupModal = document.getElementById('claim-review-group-modal');
     if (claimGroupModal) claimGroupModal.style.display = 'none';
   } else {
-    statusMsg.innerHTML = `Status: ${result.status}. ${result.message || ''}`;
+    statusMsg.textContent = tf('review.status', { status: result.status, message: result.message || '' });
     statusMsg.style.color = 'var(--text-dim)';
   }
 }

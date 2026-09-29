@@ -6967,3 +6967,101 @@ body:has(#af-run-dock:not([hidden])) .af-toast { bottom: calc(var(--af-dock-h) +
   border-radius: 50%;
   background: var(--af-text-3);
 }
+
+/* ── Plan strip ─────────────────────────────────────────────────────── */
+/* One line under the tabs for a free account: what is left today and the
+   way up. It scrolls with the page rather than sticking, so it costs no
+   room once you are working. The meter along its foot fills as the day's
+   prompts are used. */
+.af-plan-strip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 5px 16px 7px;
+  background: var(--af-surface);
+  border-block-end: 1px solid var(--af-line);
+  font-size: var(--af-fs-sm);
+  container-type: inline-size;
+}
+body:has(#panel-account.active) .af-plan-strip,
+body:has(#panel-settings.active) .af-plan-strip { display: none; }
+.af-plan-strip__plan {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--af-surface-3);
+  color: var(--af-text-2);
+  font-size: var(--af-fs-xs);
+  font-weight: 600;
+}
+.af-plan-strip__usage {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--af-text-2);
+  font-variant-numeric: tabular-nums;
+}
+/* At the narrowest panel the count and the price need the room more than
+   the word "Free" does — the Upgrade button already says which plan this is.
+   "Gratuit" and "Gratis" are what tipped it, measured at 360px. */
+@container (max-width: 350px) {
+  .af-plan-strip__plan { display: none; }
+}
+/* At the limit the line has more to say ("Daily limit reached", the free
+   offer, the price) and the plan word the least. */
+.af-plan-strip.is-out .af-plan-strip__plan,
+.af-plan-strip:has(.af-plan-strip__free:not([hidden])) .af-plan-strip__plan { display: none; }
+.af-plan-strip.is-low .af-plan-strip__usage { color: var(--af-warn); }
+.af-plan-strip.is-out .af-plan-strip__usage { color: var(--af-bad); font-weight: 600; }
+.af-plan-strip__free {
+  flex: none;
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  color: var(--af-warn);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.af-plan-strip__free:hover { text-decoration: underline; }
+.af-plan-strip__upgrade {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: var(--af-r-sm);
+  background: var(--af-fill);
+  color: var(--af-on-fill);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.af-plan-strip__upgrade:hover { filter: brightness(1.1); }
+.af-plan-strip__price { font-weight: 500; font-variant-numeric: tabular-nums; }
+.af-plan-strip__free:focus-visible,
+.af-plan-strip__upgrade:focus-visible { outline: 2px solid var(--af-accent); outline-offset: 2px; }
+.af-plan-strip__meter {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  height: 2px;
+}
+.af-plan-strip__meter > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--af-accent);
+  transition: width 0.3s ease;
+}
+.af-plan-strip.is-low .af-plan-strip__meter > span { background: var(--af-warn); }
+.af-plan-strip.is-out .af-plan-strip__meter > span { background: var(--af-bad); }
+@media (prefers-reduced-motion: reduce) {
+  .af-plan-strip__meter > span { transition: none; }
+}

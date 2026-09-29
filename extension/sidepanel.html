@@ -103,6 +103,22 @@
     </button>
   </nav>
 
+  <!-- Plan strip: a free account's allowance and the way up, under the tabs
+       where the work happens. The old header showed the two offers on every
+       tab; the redesign moved them into Account, where only people already
+       looking at their plan saw them. Hidden for Pro, signed out, and on the
+       Account and Settings pages. Filled by renderPlanStrip(). -->
+  <div id="af-plan-strip" class="af-plan-strip" hidden>
+    <span class="af-plan-strip__plan" data-i18n="plan.free">Free</span>
+    <span id="af-plan-strip-usage" class="af-plan-strip__usage"></span>
+    <button id="af-plan-strip-free" class="af-plan-strip__free" type="button" data-i18n="strip.freePro" hidden>Get Pro free</button>
+    <button id="af-plan-strip-upgrade" class="af-plan-strip__upgrade" type="button" title="Unlimited prompts, all image modes, and priority support" data-i18n-title="upgrade.text">
+      <span data-i18n="strip.upgrade">Upgrade</span>
+      <span class="af-plan-strip__price"></span>
+    </button>
+    <span class="af-plan-strip__meter" aria-hidden="true"><span id="af-plan-strip-fill"></span></span>
+  </div>
+
   <!-- ═══════════════════ TAB A: CREATE ═══════════════════ -->
   <section class="af-panel" id="panel-video" role="tabpanel">
 
