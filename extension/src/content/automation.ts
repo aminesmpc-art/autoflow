@@ -4476,8 +4476,20 @@ private async detectAndReportFailures(): Promise<void> {
     idx: number,
     candidates: FlowGenerationStatus[],
   ): FlowGenerationStatus | null {
-    if (candidates.length === 0) return null;
-
+    /* The binding first, and BEFORE the empty-candidates return.
+     *
+     * findBoundMediaIds is the interceptor saying "this exact request carried
+     * this exact prompt text" — the most authoritative answer there is, and
+     * it needs no candidate list to be useful. It used to sit after
+     * `if (candidates.length === 0) return null`, so whenever getNewSubmissions()
+     * happened to come back empty the binding was thrown away unread and the
+     * prompt finished with no media id.
+     *
+     * Empty is not rare. getNewSubmissions() only returns what has entered the
+     * status cache SINCE onBeforeSubmit, and Flow only refreshes that cache
+     * while it is actively polling — so a prompt that settles during a quiet
+     * moment, or in a tab Chrome has backgrounded, routinely asks at a point
+     * where nothing new has landed yet. The binding was already there. */
     const bound = findBoundMediaIds(prompt.text);
     if (bound.length) {
       const exact = candidates.find((c) => bound.includes(c.mediaId));
@@ -4488,7 +4500,15 @@ private async detectAndReportFailures(): Promise<void> {
         const cached = getCachedStatus(id);
         if (cached) return cached;
       }
+      /* Bound, and nothing cached under it yet. The ID alone is enough for
+         the one thing this is for — saying which generation was ours — so
+         report it rather than nothing. Fields the cache would have filled
+         stay empty, which every caller already tolerates: they read .mediaId
+         and treat the rest as advisory. */
+      return { mediaId: bound[0], promptText: prompt.text } as FlowGenerationStatus;
     }
+
+    if (candidates.length === 0) return null;
 
     const needle = prompt.text.trim().toLowerCase().slice(0, 30);
     if (needle.length > 10) {
@@ -5587,7 +5607,44 @@ private async detectAndReportFailures(): Promise<void> {
     }).catch(() => { });
   }
 
+  /**
+   * Last chance to say which generation this prompt was.
+   *
+   * A receipt exists only where a media id does, and a media id is captured in
+   * four places — all of which need the interceptor to have bound the
+   * generation at that moment. A prompt reaches `done` from TWENTY-THREE
+   * places, most of them DOM verification that needs no id at all.
+   *
+   * Those two preconditions are not the same, and the gap between them is
+   * visible in production: an account with twelve prompts settled done or
+   * failed and five receipts. The other seven were charged up front, finished
+   * correctly, and are counted as "charged, never received" — blaming the Flow
+   * pipeline for a bookkeeping miss on our side.
+   *
+   * Reading the cache once more here closes most of it. No network: this is
+   * the same chooser the capture sites use, over data the interceptor has
+   * already relayed, so it costs a map lookup and cannot fail a generation.
+   */
+  private bindMediaIdIfMissing(idx: number): void {
+    const prompt = this.queue?.prompts[idx];
+    if (!prompt || prompt.mediaId) return;
+    try {
+      const picked = this.pickGenerationFor(prompt, idx, getNewSubmissions());
+      if (picked?.mediaId) {
+        prompt.mediaId = picked.mediaId;
+        this.log('info',
+          `Prompt #${idx + 1}: bound mediaId ${picked.mediaId.slice(-8)} as it settled — `
+          + 'it would have gone unreported otherwise');
+      }
+    } catch { /* never let bookkeeping break a run */ }
+  }
+
   private updatePromptStatus(idx: number, status: string, error?: string, outputFiles?: string[]): void {
+    /* Before the message is built, because the id it carries is read below.
+       Terminal states only: a prompt still running has every later chance to
+       bind one, and guessing early is how the wrong generation gets claimed. */
+    if (status === 'done' || status === 'failed') this.bindMediaIdIfMissing(idx);
+
     if (this.queue) {
       this.queue.prompts[idx].status = status as any;
       if (error !== undefined) this.queue.prompts[idx].error = error;

@@ -279,11 +279,18 @@ describe('the interceptor, which alone sees a request beside its own reply', () 
 describe('choosing which generation is the prompt\'s', () => {
   const chooser = /private pickGenerationFor\([\s\S]*?\n  \}/.exec(ENGINE)?.[0] || '';
 
-  it('exists as one rule, not four copies', () => {
+  it('exists as one rule, not five copies', () => {
     expect(chooser).not.toBe('');
-    /* One definition, four call sites: the submit-time capture, the late
-       poll, the active-refresh retry, and the post-retry recapture. */
-    expect((ENGINE.match(/pickGenerationFor\(/g) || []).length).toBe(5);
+    /* One definition, five call sites: the submit-time capture, the late
+       poll, the active-refresh retry, the post-retry recapture, and the
+       last-chance bind as a prompt settles — see bindMediaIdIfMissing, which
+       exists because a prompt reaches `done` from 23 places and only these
+       capture an id. The count is here to catch the rule being COPIED; a new
+       caller of the one rule is the opposite of that, and is why this is 6
+       rather than 5 now. */
+    expect((ENGINE.match(/pickGenerationFor\(/g) || []).length).toBe(6);
+    /* The half that actually matters: still exactly one definition. */
+    expect((ENGINE.match(/private pickGenerationFor\(/g) || []).length).toBe(1);
   });
 
   it('prefers the interceptor binding above everything', () => {

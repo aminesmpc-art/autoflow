@@ -37,6 +37,200 @@ def _event_prompt_counts(date_filter):
     return total, text, full
 
 
+def _flow_receipt_counts(date_filter):
+    """The three numbers, taken from evidence rather than from intent.
+
+    ── Why the existing figures cannot answer this ───────────────────────
+
+    `_event_prompt_counts` above calls done+failed "actually sent to Flow".
+    It is the best approximation that was available, and it is wrong in the
+    one direction that matters: `trackUsage` reports `failed` for a prompt
+    whether or not it ever left the extension. A queue that dies at prompt 1
+    marks all twenty failed, and all twenty land in "sent to Flow".
+
+    A PROMPT_SUBMITTED event cannot be created that way. It exists only when
+    the interceptor read a media id out of Flow's own response, so it is
+    proof of receipt rather than a report of intent.
+
+    Returns (sent, completed, never_sent):
+
+      sent        billable — Flow received it, and Google charged for it
+      completed   of those, how many produced media. An outcome, not a
+                  second charge: a clip Flow accepted and then failed stays
+                  in `sent`.
+      never_sent  charged at queue start and never received. The number
+                  nobody can currently see, and the reason the dashboard
+                  says 20 when the user got 14 videos.
+    """
+    from apps.usage.models import UsageEvent
+    from django.db.models import Sum
+
+    sent_qs = UsageEvent.objects.filter(
+        event_type=UsageEvent.EventType.PROMPT_SUBMITTED, **date_filter,
+    )
+    sent = sent_qs.count()
+    completed = sent_qs.filter(metadata__outcome="done").count()
+
+    # Everything the old path charged for, at any status — that IS the charge,
+    # because consume_queue_run takes it up front and ConsumePromptView only
+    # relabels the rows afterwards.
+    charged = UsageEvent.objects.filter(
+        event_type=UsageEvent.EventType.CONSUME_PROMPT, **date_filter,
+    ).aggregate(s=Sum("prompt_count"))["s"] or 0
+
+    # Clamped at zero on purpose. During the dual-write period the two paths
+    # can disagree in either direction — an extension older than the endpoint
+    # charges without ever reporting a submission — and a negative "never
+    # sent" would read as a data bug rather than as the skew it is.
+    never_sent = max(0, charged - sent)
+    return sent, completed, never_sent
+
+
+def _flow_receipt_coverage(date_filter):
+    """How much of the charging is even observable yet.
+
+    ── The number this exists to qualify ─────────────────────────────────
+
+    `never_sent` above is `charged - sent`, and those two are counted over
+    different populations. `charged` is every account. `sent` is only the
+    accounts whose extension carries the reporting code — which, while the
+    build rolls out, is a small minority of them.
+
+    So the card read "Charged, never received: 2,846" on a day when 83% of
+    the charged volume came from accounts that CANNOT report and never could.
+    That is not "Flow never saw it". It is "we were not listening". Stating
+    the first when the truth is the second is the kind of wrong number this
+    whole feature was built to get rid of, so it has to be qualified rather
+    than displayed bare.
+
+    An extension version would answer this exactly, but the client sends a
+    hard-coded `X-AutoFlow-Version` of 5.1 that the backend never reads, so
+    it cannot. Having ever produced a receipt is the honest proxy: an account
+    that reported once is running code that reports.
+
+    Returns a dict:
+
+      tracked_charged    charged by accounts that DO report
+      untracked_charged  charged by accounts that cannot
+      coverage_pct       share of charging that is observable at all
+      never_sent_tracked charged-but-not-received, among those accounts only
+                         — the only version of this number that means what
+                         the card says it means
+    """
+    from django.db.models import Sum
+
+    from apps.usage.models import UsageEvent
+
+    # Bounded by WHEN each account started reporting, not merely whether it
+    # ever did.
+    #
+    # "Has a receipt at any point" makes this figure retroactive: an account
+    # that updates today joins the cohort for every past day too, and
+    # yesterday's coverage silently rises although nothing about yesterday
+    # changed. Observed doing exactly that — 2026-09-11 read 17% when measured
+    # on the day and 80% two days later. Worse than cosmetic: those accounts
+    # were on a silent build back then, so their old charging gets counted as
+    # observable and inflates never_sent_tracked for days already past.
+    #
+    # An account counts for a given day only if it had already reported by
+    # then, which is the same rule _sent_to_flow applies per row.
+    day = date_filter.get("created_at__date")
+    reporters = UsageEvent.objects.filter(
+        event_type=UsageEvent.EventType.PROMPT_SUBMITTED,
+    )
+    if day is not None:
+        reporters = reporters.filter(created_at__date__lte=day)
+    reporters = reporters.values("user_id")
+
+    def _charged(**extra):
+        return UsageEvent.objects.filter(
+            event_type=UsageEvent.EventType.CONSUME_PROMPT, **date_filter, **extra
+        ).aggregate(s=Sum("prompt_count"))["s"] or 0
+
+    total = _charged()
+    tracked = _charged(user_id__in=reporters)
+    sent = UsageEvent.objects.filter(
+        event_type=UsageEvent.EventType.PROMPT_SUBMITTED, **date_filter,
+    ).count()
+
+    return {
+        "tracked_charged": tracked,
+        "untracked_charged": max(0, total - tracked),
+        "coverage_pct": round(100 * tracked / total) if total else 0,
+        # Clamped for the same reason as never_sent: a retry is a second
+        # generation with its own media id and its own charge from Google,
+        # so a busy day can legitimately report more than the up-front
+        # charge counted, and a negative here would read as a data bug.
+        "never_sent_tracked": max(0, tracked - sent),
+    }
+
+
+def _clipping_counts(today):
+    """Clipping jobs, read off the charge ledger rather than a counter.
+
+    `ClippingUsage` is the authoritative row: exactly one per job that was
+    actually charged, held unique on (user, idempotency_key). Counting it
+    rather than `DailyUsage.clipping_jobs_used` means the figure cannot drift
+    from what was billed — the counter is incremented beside the row, so if
+    the two ever disagree the row is the one that was paid for.
+
+    ── What is NOT here, and why ─────────────────────────────────────────
+
+    Retries and limit-blocked attempts leave no trace. `reserve_clipping_job`
+    returns `charged=False` for both and writes nothing at all: no row, no
+    event, no counter change. That is correct for billing — a retry with the
+    same job id must be free — but it means "how often did people retry" and
+    "how often did someone hit the daily cap" cannot be answered from stored
+    data. Showing a zero for either would be a lie, so neither is shown; the
+    card says so instead of implying the answer is none.
+
+    `events` is here as an integrity check, not as a second metric. One
+    CLIPPING_JOB_STARTED is written in the same transaction as each ledger
+    row, so the two counts must match. A divergence means a write path was
+    added that skipped one of them.
+    """
+    from datetime import timedelta
+
+    from django.db.models import Count
+
+    from apps.usage.models import ClippingUsage, UsageEvent
+    from apps.usage.services import (
+        FREE_CLIPPING_DAILY_LIMIT,
+        PRO_CLIPPING_DAILY_LIMIT,
+    )
+
+    week_start = today - timedelta(days=6)
+    rows = ClippingUsage.objects.all()
+    week_rows = rows.filter(date__gte=week_start)
+
+    total = rows.count()
+    events = UsageEvent.objects.filter(
+        event_type=UsageEvent.EventType.CLIPPING_JOB_STARTED,
+    ).count()
+
+    top = (
+        rows.values("user__email")
+        .annotate(n=Count("id"))
+        .order_by("-n")
+        .first()
+    ) or {}
+
+    return {
+        "today": rows.filter(date=today).count(),
+        "week": week_rows.count(),
+        "total": total,
+        "users_week": week_rows.values("user").distinct().count(),
+        "users_total": rows.values("user").distinct().count(),
+        "events": events,
+        # True is the healthy state; the template only speaks up when it is not.
+        "ledger_matches_events": total == events,
+        "top_email": top.get("user__email") or "",
+        "top_count": top.get("n") or 0,
+        "free_limit": FREE_CLIPPING_DAILY_LIMIT,
+        "pro_limit": PRO_CLIPPING_DAILY_LIMIT,
+    }
+
+
 def dashboard_callback(request, context):
     """Provide chart data, KPI metrics, funnels, and analytics for the dashboard."""
     from apps.plans.models import Profile
@@ -83,7 +277,28 @@ def dashboard_callback(request, context):
     today_pending = today_events_qs.filter(
         metadata__status="pending"
     ).aggregate(s=Sum("prompt_count"))["s"] or 0
-    today_submitted = today_done + today_failed  # actually sent to Flow
+    # The old approximation. Kept, and kept honest about what it is: a prompt
+    # the extension reported an outcome for, which it does whether or not the
+    # prompt ever left the extension.
+    today_reported = today_done + today_failed
+    today_submitted = today_reported
+    submission_rate = round((today_submitted / today_total * 100) if today_total > 0 else 0)
+
+    # ── What Flow actually received ──
+    #
+    # Written alongside the number above rather than replacing it. Switching
+    # in one step would drop every chart overnight with no way to tell the fix
+    # from a regression, so both run on the same days until they can be
+    # compared on real traffic.
+    flow_sent, flow_completed, flow_never_sent = _flow_receipt_counts(
+        {"created_at__date": today}
+    )
+    # How far apart the two are. This is the whole point of the dual-write
+    # period: while it is large the old number is still the one being billed,
+    # and when it settles the switch is safe to make.
+    receipt_gap = today_reported - flow_sent
+    # How much of today's charging the receipts can speak for at all.
+    flow_coverage = _flow_receipt_coverage({"created_at__date": today})
     submission_rate = round((today_submitted / today_total * 100) if today_total > 0 else 0)
 
     # Downloads from events (real downloads, not pre-consumed)
@@ -640,6 +855,29 @@ def dashboard_callback(request, context):
             "total_charged": today_total,
             "rate": submission_rate,
         },
+        # ── What Flow received, from the media-id evidence ──
+        #
+        # Three numbers instead of one overloaded one. The third is the one
+        # nothing in the system could answer before: it is what turns "why does
+        # it say 20 when I got 14 videos" into a self-answering screen.
+        "flow_receipt": {
+            "sent": flow_sent,                 # billable
+            "completed": flow_completed,       # an outcome, not a second charge
+            "never_sent": flow_never_sent,     # charged, never received
+            # Side by side with the old figure while both are written.
+            "reported": today_reported,
+            "gap": receipt_gap,
+            "charged": False,
+            # Everything below qualifies the three numbers above. While the
+            # reporting build is still rolling out, `never_sent` counts the
+            # whole fleet against receipts only a fraction of it can send.
+            **flow_coverage,
+        },
+        # ── Clipping ──
+        #
+        # Counted off the charge ledger. Two of these numbers are deliberately
+        # absent rather than zero — see _clipping_counts.
+        "clipping": _clipping_counts(today),
         # Chart data
         "usage_chart": json.dumps({
             "labels": chart_labels,
