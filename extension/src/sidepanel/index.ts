@@ -181,6 +181,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   initRunDock();
   initJobSettingsLink();
   initPlanStrip();
+  const modeGrid = document.querySelector('.af-mode-grid');
+  if (modeGrid) {
+    new MutationObserver(() => updateModeHelp())
+      .observe(modeGrid, { subtree: true, attributes: true, attributeFilter: ['class'] });
+  }
+  updateModeHelp();
   // Single source of truth for the displayed version
   const verEl = document.getElementById('af-version');
   if (verEl) verEl.textContent = `v${chrome.runtime.getManifest().version}`;
@@ -442,7 +448,7 @@ function enforceAuthGate(loggedIn: boolean) {
       tab.removeAttribute('title');
     } else {
       tab.classList.add('af-tab-locked');
-      tab.setAttribute('title', 'Sign in to unlock');
+      tab.setAttribute('title', t('tab.locked'));
     }
   });
 
@@ -527,7 +533,11 @@ function reparsePrompts() {
   $('#prompt-count').textContent = count > 0
     ? tf(count === 1 ? 'queue.prompt' : 'queue.prompts', { n: count })
     : '';
-  $('#queue-actions').style.display = count > 0 ? 'block' : 'none';
+  const actions = $('#queue-actions');
+  actions.classList.toggle('is-empty', count === 0);
+  (['#btn-add-queue', '#btn-run-now'] as const).forEach((id) => {
+    ($(id) as HTMLButtonElement).disabled = count === 0;
+  });
 
   renderPromptList();
 }
@@ -797,6 +807,9 @@ function renderPromptList() {
      always been .af-btn-add-img, so it never matched one. */
   const activeMode = (document.querySelector('.af-mode-card.active') as HTMLElement | null)?.dataset.mode;
   const noImageTools = !isFrames && (activeMode === 'text-to-video' || _imageGateLimitReached);
+  // The rows exist to attach images per prompt. Where there is nothing to
+  // attach they only repeated the text box, each marked "Not added".
+  container.hidden = noImageTools;
 
   state.parsedPrompts.forEach((node, idx) => {
     const text = node.text;
@@ -827,7 +840,7 @@ function renderPromptList() {
       <div class="af-prompt-header" data-toggle>
         ${isExtension ? `<span class="af-prompt-ext-icon">└─ ${t('prompt.extend')}</span>` : `<span class="af-prompt-num">#${idx + 1}</span>`}
         <span class="af-prompt-preview">${escapeHtml(preview)}</span>
-        <span class="af-status af-status-not-added">${t('pstatus.notAdded')}</span>
+        <span class="af-status af-status-not-added"></span>
       </div>
       <div class="af-prompt-full">${escapeHtml(text)}</div>
       <div class="af-images-section" ${isExtension || noImageTools ? 'style="display:none"' : ''}>
@@ -1715,7 +1728,7 @@ async function addToQueue() {
   // Update prompt statuses visually
   $$('.af-status').forEach(badge => {
     badge.className = 'af-status af-status-queued';
-    badge.textContent = t('qstatus.queued');
+    badge.textContent = t('pstatus.waiting');
   });
 
   /* No tab switch. This used to send you to the Queues tab, and pressing Run
@@ -2029,13 +2042,41 @@ function updateJobSummary() {
   const isVideo = s.mediaType === 'video';
   const ratio = isVideo ? (s.orientation === 'portrait' ? '9:16' : '16:9') : s.imageRatio;
   const mode = ({ full: 'Full', flow: 'Flow', lite: 'Lite' } as Record<string, string>)[s.automationMode] || 'Flow';
+  const perPrompt = tf('job.perPromptChip', { n: s.generations });
+  const modeChip = tf('job.modeChip', { mode });
   const parts = isVideo
-    ? [s.model, ratio, s.duration, `×${s.generations}`, mode]
-    : [s.imageModel, ratio, `×${s.generations}`, mode];
+    ? [s.model, ratio, s.duration, perPrompt, modeChip]
+    : [s.imageModel, ratio, perPrompt, modeChip];
   el.innerHTML = parts
     .filter(Boolean)
     .map((p) => `<span class="af-chip">${escapeHtml(String(p))}</span>`)
     .join('');
+  updateRunModeHelp();
+}
+
+/** The run modes, in the sentences their tooltips already had. */
+const RUN_MODE_HELP: Record<string, string> = { full: 'tip.runFull', flow: 'tip.runFlow', lite: 'tip.runLite' };
+
+/** The chosen run mode, in a sentence, under Full / Flow / Lite. */
+function updateRunModeHelp() {
+  const el = document.getElementById('run-mode-help');
+  if (!el) return;
+  const mode = (document.querySelector('input[name="automationMode"]:checked') as HTMLInputElement | null)?.value || 'flow';
+  el.textContent = t(RUN_MODE_HELP[mode] || 'tip.runFlow');
+}
+
+/** The chosen Create mode, in a sentence, under the four cards. */
+const MODE_HELP: Record<string, string> = {
+  'create-image': 'mode.createImage.long',
+  'text-to-video': 'mode.textToVideo.long',
+  'frame-to-video': 'mode.frameToVideo.long',
+  ingredients: 'mode.ingredients.long',
+};
+function updateModeHelp() {
+  const el = document.getElementById('mode-help');
+  if (!el) return;
+  const mode = (document.querySelector('.af-mode-card.active') as HTMLElement | null)?.dataset.mode || 'text-to-video';
+  el.textContent = t(MODE_HELP[mode] || 'mode.textToVideo.long');
 }
 
 function readSettingsFromUI(): QueueSettings {
@@ -2132,10 +2173,13 @@ function countOf(n: number, key: string): string {
 
 /** A prompt's status as the words the panel shows for it. */
 function promptStatusLabel(status: string): string {
+  /* One set of words for a prompt, wherever it is shown: Waiting, Sending,
+     Generating, Done, Failed. A prompt not yet in a queue shows none. */
+  if (status === 'not-added') return '';
   const key: Record<string, string> = {
-    'not-added': 'pstatus.notAdded', queued: 'qstatus.queued', running: 'qstatus.running',
-    submitted: 'qstatus.submitted', done: 'qstatus.done', failed: 'qstatus.failed',
-    waiting: 'qstatus.waiting', skipped: 'pstatus.skipped',
+    queued: 'pstatus.waiting', waiting: 'pstatus.waiting', running: 'pstatus.sending',
+    submitted: 'pstatus.generating', done: 'pstatus.done', failed: 'pstatus.failed',
+    skipped: 'pstatus.skipped',
   };
   return key[status] ? t(key[status]) : status.charAt(0).toUpperCase() + status.slice(1);
 }
@@ -2228,21 +2272,21 @@ async function refreshQueuesList() {
     const ratio = isVideo ? (s.orientation === 'portrait' ? '9:16' : '16:9') : s.imageRatio;
     const runMode = s.automationMode || 'flow';
     const modeLabel = ({ full: 'Full', flow: 'Flow', lite: 'Lite' } as Record<string, string>)[runMode] || 'Flow';
-    const summary = [modelDisplay, ratio, isVideo ? (s.duration ?? '8s') : '', `×${s.generations}`, modeLabel]
+    const summary = [modelDisplay, ratio, isVideo ? (s.duration ?? '8s') : '',
+      tf('job.perPromptChip', { n: s.generations }), tf('job.modeChip', { mode: modeLabel })]
       .filter(Boolean).join(' · ');
+    /* "AUTOFLOW9" says nothing about what is in it; its first prompt does. */
+    const firstPrompt = (queue.prompts[0]?.text || '').replace(/\s+/g, ' ').trim();
     const targetLabel = queue.runTarget === 'newProject' ? t('queue.runsNew')
       : queue.runTarget === 'currentProject' ? t('queue.runsCurrent') : '';
 
-    const STATUS_WORD: Record<string, string> = {
-      done: t('qstatus.done'), failed: t('qstatus.failed'), running: t('qstatus.running'),
-      submitted: t('qstatus.submitted'), queued: t('qstatus.queued'), 'not-added': t('qstatus.waiting'),
-    };
+    const STATUS_WORD = (status: string) => promptStatusLabel(status) || t('pstatus.waiting');
     const SHOWN = 6;
     const promptRows = queue.prompts.slice(0, SHOWN).map((p, i) => `
       <li class="af-q-prompt">
         <span class="af-q-prompt__num">#${i + 1}</span>
         <span class="af-q-prompt__text" title="${escapeHtml(p.text)}">${escapeHtml(p.text)}</span>
-        <span class="af-q-prompt__st af-q-prompt__st--${escapeHtml(p.status)}">${STATUS_WORD[p.status] || escapeHtml(p.status)}</span>
+        <span class="af-q-prompt__st af-q-prompt__st--${escapeHtml(p.status)}">${escapeHtml(STATUS_WORD(p.status))}</span>
       </li>`).join('');
     const more = total > SHOWN
       ? `<li class="af-q-prompt af-q-prompt--more">${escapeHtml(tf('queue.more', { n: total - SHOWN }))}</li>` : '';
@@ -2260,7 +2304,7 @@ async function refreshQueuesList() {
               <span class="af-q-name">${escapeHtml(queue.name)}</span>
               <span class="af-q-row__count">${escapeHtml(tf(total === 1 ? 'queue.prompt' : 'queue.prompts', { n: total }))}</span>
             </span>
-            <span class="af-q-row__sub">${escapeHtml(summary)}</span>
+            <span class="af-q-row__first" title="${escapeHtml(firstPrompt)}">${escapeHtml(firstPrompt)}</span>
           </span>
           <span class="af-q-badge af-q-badge-${st.cls}">${st.label}</span>
         </button>
@@ -2274,7 +2318,13 @@ async function refreshQueuesList() {
         <span class="af-q-row__bar-fail" style="width:${failPct}%"></span>
       </div>
       <div class="af-q-row__detail" id="${detailId}">
-        <p class="af-q-row__facts">${escapeHtml(tf('queue.facts', { done: doneCount, failed: failedCount, left: pendingCount, ago: timeAgo }))}${targetLabel ? ` · ${escapeHtml(targetLabel)}` : ''}</p>
+        <div class="af-q-stats">
+          <span class="af-q-stat af-q-stat--done"><b>${doneCount}</b> ${escapeHtml(t('monitor.done'))}</span>
+          <span class="af-q-stat af-q-stat--failed"><b>${failedCount}</b> ${escapeHtml(t('monitor.failed'))}</span>
+          <span class="af-q-stat"><b>${pendingCount}</b> ${escapeHtml(t('queue.toGo'))}</span>
+        </div>
+        <p class="af-q-row__facts">${targetLabel ? `${escapeHtml(targetLabel.charAt(0).toUpperCase() + targetLabel.slice(1))} · ` : ''}${escapeHtml(tf('queue.updated', { ago: timeAgo }))}</p>
+        <p class="af-q-row__sub">${escapeHtml(summary)}</p>
         <ul class="af-q-prompts">${promptRows}${more}</ul>
 
         <div class="af-q-edit">
@@ -2321,6 +2371,7 @@ async function refreshQueuesList() {
           <button class="af-q-mode-card${runMode === 'flow' ? ' active' : ''}" data-auto-mode="flow" title="${t('tip.runFlow')}">Flow</button>
           <button class="af-q-mode-card${runMode === 'lite' ? ' active' : ''}" data-auto-mode="lite" title="${t('tip.runLite')}">Lite</button>
         </div>
+        <p class="af-help-line af-q-mode-help">${escapeHtml(t(RUN_MODE_HELP[runMode] || 'tip.runFlow'))}</p>
 
         <div class="af-q-actions">
           <button class="af-q-act-btn" data-action="up" ${idx === 0 ? 'disabled' : ''} title="${escapeHtml(t('queue.moveUp'))}" aria-label="${escapeHtml(t('queue.moveUp'))}">
@@ -2375,6 +2426,8 @@ async function refreshQueuesList() {
         // Update visual state
         card.querySelectorAll('.af-q-mode-card').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+        const help = card.querySelector('.af-q-mode-help');
+        if (help) help.textContent = t(RUN_MODE_HELP[mode] || 'tip.runFlow');
         // Save to queue
         (queue.settings as any).automationMode = mode;
         queue.updatedAt = Date.now();
@@ -2450,8 +2503,9 @@ async function refreshQueuesList() {
         <button class="af-q-act-btn af-q-act-delete" data-action="delete" title="${t('queue.delete')}" aria-label="${t('queue.delete')}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
         </button>
-        <button class="af-q-act-btn" data-action="run" title="${t('queue.runAgain')}" aria-label="${t('queue.runAgain')}">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <button class="af-q-act-btn af-q-act-text af-q-again" data-action="run" title="${t('queue.runAgain')}">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+          ${escapeHtml(t('queue.runAgain'))}
         </button>
       </div>
     `;
@@ -2981,6 +3035,8 @@ function updateMonitorSteps(queue: QueueObject) {
     if (scoreRow && divider) {
       const submittedItem = document.createElement('span');
       submittedItem.className = 'af-score-item af-score--submitted';
+      submittedItem.title = t('tip.scoreGenerating');
+      submittedItem.setAttribute('data-i18n-title', 'tip.scoreGenerating');
       submittedItem.innerHTML = `<span id="monitor-submitted-count">0</span> <span data-i18n="monitor.sent">${t('monitor.sent')}</span>`;
       scoreRow.insertBefore(submittedItem, divider);
       submittedBadge = document.getElementById('monitor-submitted-count');
@@ -3594,7 +3650,7 @@ function renderLibrary() {
 
       // Generation badge (e.g., "1/3")
       const genBadge = totalInGroup > 1
-        ? `<span class="af-lib-gen-badge">${asset.generationNum}/${totalInGroup}</span>`
+        ? `<span class="af-lib-gen-badge" title="${escapeHtml(tf('lib.takeOf', { n: asset.generationNum, total: totalInGroup }))}">${asset.generationNum}/${totalInGroup}</span>`
         : '';
 
       // Tile state badge on the card
@@ -3833,12 +3889,19 @@ function updateLibraryCounters() {
 
   /* Words, not 🎬 🖼 ❌ and pipes — the same rule as the rest of the panel. */
   const count = (n: number, key: string) => tf(n === 1 ? `${key}1` : key, { n });
-  const kinds = [videos ? count(videos, 'lib.videos') : '', images ? count(images, 'lib.images') : '']
-    .filter(Boolean).join(', ');
-  let foundText = `${count(prompts, 'lib.prompts')} · ${count(total, 'lib.assets')}${kinds ? ` (${kinds})` : ''}`;
-  if (failed > 0) foundText += ` · ${tf('lib.failed', { n: failed })}`;
-  $('#scan-found').textContent = foundText;
-  $('#scan-selected').textContent = tf('lib.showing', { n: filtered, s: selected });
+  const chips = [
+    count(prompts, 'lib.prompts'),
+    videos ? count(videos, 'lib.videos') : '',
+    images ? count(images, 'lib.images') : '',
+  ].filter(Boolean).map((c) => `<span class="af-chip">${escapeHtml(c)}</span>`);
+  if (failed > 0) chips.push(`<span class="af-chip af-chip--bad">${escapeHtml(tf('lib.failed', { n: failed }))}</span>`);
+  $('#scan-found').innerHTML = chips.join('');
+  // "Showing" only says something when a filter or search hides some.
+  $('#scan-selected').textContent = filtered < total ? tf('lib.shownOf', { n: filtered, total }) : '';
+  const controls = document.getElementById('library-controls');
+  controls?.classList.toggle('has-selection', selected > 0);
+  const selCount = document.getElementById('lib-selected-count');
+  if (selCount) selCount.textContent = tf('lib.selectedN', { n: selected });
 }
 
 // ================================================================
@@ -5865,6 +5928,7 @@ async function resumePendingCheckout() {
 
 /** Draw again what the panel writes itself, in the language just chosen. */
 async function redrawForLanguage() {
+  updateModeHelp();
   if (!state.isRunning && state.parsedPrompts.length > 0) renderPromptList();
   renderCharacterImages();
   updateJobSummary();
