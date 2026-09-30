@@ -11,6 +11,7 @@ export interface TranslationSet {
 
 const translations: Record<Lang, TranslationSet> = {
   en: {
+    'mode.lockedTip': "Today's prompts with images are used up. Tap to see your options.",
     // Explanations, one word per idea
     'mode.createImage.long': "Makes images from your prompts. Add reference images to guide the look.",
     'mode.textToVideo.long': "Makes one video from each prompt. No images needed.",
@@ -183,7 +184,7 @@ const translations: Record<Lang, TranslationSet> = {
     'lib.queues1': "{n} queue",
     'limit.title': "{what}: limit reached",
     'limit.textPrompts': "Text prompts",
-    'limit.fullPrompts': "Full-feature prompts",
+    'limit.fullPrompts': "Prompts with images",
     'limit.runs': "{mode} runs",
     'limit.downloads': "Downloads",
     'limit.usedToday': "You've used {count} today.",
@@ -635,6 +636,7 @@ const translations: Record<Lang, TranslationSet> = {
   },
 
   ar: {
+    'mode.lockedTip': "استُهلكت نصوص الصور لهذا اليوم. اضغط لمعرفة الخيارات.",
     // Explanations, one word per idea
     'mode.createImage.long': "ينشئ صوراً من نصوصك. أضف صوراً مرجعية لتوجيه الشكل.",
     'mode.textToVideo.long': "ينشئ فيديو من كل نص. لا حاجة إلى صور.",
@@ -807,7 +809,7 @@ const translations: Record<Lang, TranslationSet> = {
     'lib.queues1': "قائمة واحدة",
     'limit.title': "{what}: تم بلوغ الحد",
     'limit.textPrompts': "النصوص النصية",
-    'limit.fullPrompts': "نصوص الميزات الكاملة",
+    'limit.fullPrompts': "النصوص مع الصور",
     'limit.runs': "مرات تشغيل {mode}",
     'limit.downloads': "التنزيلات",
     'limit.usedToday': "استخدمت {count} اليوم.",
@@ -1259,6 +1261,7 @@ const translations: Record<Lang, TranslationSet> = {
   },
 
   fr: {
+    'mode.lockedTip': "Les prompts avec images du jour sont épuisés. Touchez pour voir les options.",
     // Explanations, one word per idea
     'mode.createImage.long': "Crée des images à partir de vos prompts. Ajoutez des images de référence pour guider le rendu.",
     'mode.textToVideo.long': "Crée une vidéo par prompt. Aucune image nécessaire.",
@@ -1431,7 +1434,7 @@ const translations: Record<Lang, TranslationSet> = {
     'lib.queues1': "{n} file",
     'limit.title': "{what} : limite atteinte",
     'limit.textPrompts': "Prompts texte",
-    'limit.fullPrompts': "Prompts complets",
+    'limit.fullPrompts': "Prompts avec images",
     'limit.runs': "Exécutions {mode}",
     'limit.downloads': "Téléchargements",
     'limit.usedToday': "Vous avez utilisé {count} aujourd'hui.",
@@ -1883,6 +1886,7 @@ const translations: Record<Lang, TranslationSet> = {
   },
 
   es: {
+    'mode.lockedTip': "Ya usaste los prompts con imágenes de hoy. Toca para ver tus opciones.",
     // Explanations, one word per idea
     'mode.createImage.long': "Crea imágenes a partir de tus prompts. Añade imágenes de referencia para guiar el estilo.",
     'mode.textToVideo.long': "Crea un video por cada prompt. No necesitas imágenes.",
@@ -2055,7 +2059,7 @@ const translations: Record<Lang, TranslationSet> = {
     'lib.queues1': "{n} cola",
     'limit.title': "{what}: límite alcanzado",
     'limit.textPrompts': "Prompts de texto",
-    'limit.fullPrompts': "Prompts completos",
+    'limit.fullPrompts': "Prompts con imágenes",
     'limit.runs': "Ejecuciones {mode}",
     'limit.downloads': "Descargas",
     'limit.usedToday': "Has usado {count} hoy.",

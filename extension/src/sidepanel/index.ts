@@ -466,7 +466,11 @@ let _imageGateLimitReached = false;
 
 async function enforceImageGate() {
   const quota = await checkCanGenerate('full');
-  const limitReached = !quota.allowed;
+  /* limit 0 is the check failing, not the allowance running out:
+     checkCanGenerate fails closed on an expired login or a network blip. An
+     unknown allowance changes nothing here — the check at Run still blocks —
+     where it used to hide two modes as if they had been removed. */
+  const limitReached = !quota.allowed && quota.limit > 0;
   _imageGateLimitReached = limitReached;
 
   // Get current active mode
@@ -490,23 +494,37 @@ async function enforceImageGate() {
     (btn as HTMLElement).style.display = limitReached || activeMode === 'text-to-video' ? 'none' : '';
   });
 
-  // Hide Frame-to-Video and Ingredients mode cards when limit reached
-  const frameCard = document.querySelector('.af-mode-card[data-mode="frame-to-video"]') as HTMLElement;
-  const ingredCard = document.querySelector('.af-mode-card[data-mode="ingredients"]') as HTMLElement;
+  /* The two modes that need images stay on screen when today's image
+     prompts are spent: locked, and a tap says why and what unlocks them
+     (the mode click handler opens the limit dialog). They used to vanish,
+     which read as the modes having been removed. */
+  const frameCard = document.querySelector('.af-mode-card[data-mode="frame-to-video"]') as HTMLElement | null;
+  const ingredCard = document.querySelector('.af-mode-card[data-mode="ingredients"]') as HTMLElement | null;
+  [frameCard, ingredCard].forEach((card) => {
+    if (!card) return;
+    card.style.display = '';
+    card.classList.toggle('is-locked', limitReached);
+    card.setAttribute('aria-disabled', String(limitReached));
+    const tipKey = card.getAttribute('data-i18n-title');
+    card.title = limitReached ? t('mode.lockedTip') : (tipKey ? t(tipKey) : card.title);
+  });
 
-  if (limitReached) {
-    if (frameCard) frameCard.style.display = 'none';
-    if (ingredCard) ingredCard.style.display = 'none';
-
-    // If user was on a hidden card, switch to text-to-video
-    if (activeMode === 'frame-to-video' || activeMode === 'ingredients') {
-      const textVideoCard = document.querySelector('.af-mode-card[data-mode="text-to-video"]') as HTMLElement;
-      if (textVideoCard) textVideoCard.click();
-    }
-  } else {
-    if (frameCard) frameCard.style.display = '';
-    if (ingredCard) ingredCard.style.display = '';
+  // On a locked mode already: move to one that still works.
+  if (limitReached && (activeMode === 'frame-to-video' || activeMode === 'ingredients')) {
+    (document.querySelector('.af-mode-card[data-mode="text-to-video"]') as HTMLElement | null)?.click();
   }
+}
+
+/** A locked mode, tapped: the same dialog as every other daily ceiling. */
+async function showImageLimitDialog() {
+  const usage = await getDailyUsage();
+  void showLimitDialog({
+    label: t('limit.fullPrompts'),
+    used: usage?.full_used ?? 0,
+    limit: usage?.full_limit ?? 0,
+    period: 'day',
+    unlocks: t('limit.unlockPrompts'),
+  });
 }
 
 // ================================================================
@@ -547,6 +565,11 @@ function initVideoTab() {
   const modeCards = document.querySelectorAll('.af-mode-card');
   modeCards.forEach(card => {
     card.addEventListener('click', () => {
+      // Locked (today's image prompts spent): explain, don't switch.
+      if (card.classList.contains('is-locked')) {
+        void showImageLimitDialog();
+        return;
+      }
       // Update active state
       modeCards.forEach(c => c.classList.remove('active'));
       card.classList.add('active');
@@ -5929,6 +5952,7 @@ async function resumePendingCheckout() {
 /** Draw again what the panel writes itself, in the language just chosen. */
 async function redrawForLanguage() {
   updateModeHelp();
+  void enforceImageGate();
   if (!state.isRunning && state.parsedPrompts.length > 0) renderPromptList();
   renderCharacterImages();
   updateJobSummary();

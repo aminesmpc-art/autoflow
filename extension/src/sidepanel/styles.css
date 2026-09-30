@@ -7155,3 +7155,19 @@ body:has(#panel-settings.active) .af-plan-strip { display: none; }
    queue, and the counts below already say how it is going. */
 #monitor-api-badge { display: none !important; }
 .af-score-item[title] { cursor: help; }
+
+/* A mode locked for today (image prompts spent): still there, with a small
+   lock, and a tap opens the limit dialog rather than switching to it. */
+.af-mode-seg .af-mode-card.is-locked { position: relative; color: var(--af-text-2); }
+.af-mode-seg .af-mode-card.is-locked .af-mode-icon { opacity: 0.6; }
+.af-mode-seg .af-mode-card.is-locked::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+  width: 11px;
+  height: 11px;
+  background: var(--af-warn);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='4' y='11' width='16' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4' fill='none' stroke='%23000' stroke-width='2.5'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='4' y='11' width='16' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4' fill='none' stroke='%23000' stroke-width='2.5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
