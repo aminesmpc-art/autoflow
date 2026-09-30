@@ -144,7 +144,7 @@ function stub() {
   window.chrome = {
     runtime: {
       id: 'harness', lastError: undefined,
-      getManifest: () => ({ version: '9.0', name: 'AutoFlow' }),
+      getManifest: () => ({ version: '9.1', name: 'AutoFlow' }),
       getURL: (p) => '/dist/' + String(p).replace(/^\//, ''),
       sendMessage: (m, cb) => later(typeof cb === 'function' ? cb : undefined, reply(m)),
       connect: () => ({ postMessage() {}, disconnect() {}, onDisconnect: evt(), onMessage: evt() }),
