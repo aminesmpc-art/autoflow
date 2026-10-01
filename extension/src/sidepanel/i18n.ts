@@ -11,7 +11,9 @@ export interface TranslationSet {
 
 const translations: Record<Lang, TranslationSet> = {
   en: {
-    'mode.lockedTip': "Today's prompts with images are used up. Tap to see your options.",
+    'usage.allPrompts': "All prompts",
+    'toast.checkoutOffline': "Couldn't reach AutoFlow to open checkout. Check your connection and try again.",
+    'mode.lockedTip': "You've reached today's limit for this mode. Tap to see your options.",
     // Explanations, one word per idea
     'mode.createImage.long': "Makes images from your prompts. Add reference images to guide the look.",
     'mode.textToVideo.long': "Makes one video from each prompt. No images needed.",
@@ -42,7 +44,7 @@ const translations: Record<Lang, TranslationSet> = {
     'strip.out': "Daily limit reached",
     'strip.upgrade': "Upgrade",
     'strip.freePro': "Get Pro free",
-    'strip.tip': "Today: text prompts {text}, prompts with images {full}, Flow runs {flow}",
+    'strip.tip': "Today: all prompts {text}, prompts with images {full}, Flow runs {flow}",
     'busy.signingIn': "Signing in…",
     'busy.sending': "Sending…",
     'busy.resetting': "Resetting…",
@@ -183,7 +185,7 @@ const translations: Record<Lang, TranslationSet> = {
     'lib.queues': "{n} queues",
     'lib.queues1': "{n} queue",
     'limit.title': "{what}: limit reached",
-    'limit.textPrompts': "Text prompts",
+    'limit.textPrompts': "Prompts",
     'limit.fullPrompts': "Prompts with images",
     'limit.runs': "{mode} runs",
     'limit.downloads': "Downloads",
@@ -636,7 +638,9 @@ const translations: Record<Lang, TranslationSet> = {
   },
 
   ar: {
-    'mode.lockedTip': "استُهلكت نصوص الصور لهذا اليوم. اضغط لمعرفة الخيارات.",
+    'usage.allPrompts': "كل النصوص",
+    'toast.checkoutOffline': "تعذّر الاتصال بـ AutoFlow لفتح صفحة الدفع. تحقق من اتصالك وأعد المحاولة.",
+    'mode.lockedTip': "بلغت حد اليوم لهذا الوضع. اضغط لمعرفة الخيارات.",
     // Explanations, one word per idea
     'mode.createImage.long': "ينشئ صوراً من نصوصك. أضف صوراً مرجعية لتوجيه الشكل.",
     'mode.textToVideo.long': "ينشئ فيديو من كل نص. لا حاجة إلى صور.",
@@ -667,7 +671,7 @@ const translations: Record<Lang, TranslationSet> = {
     'strip.out': "تم بلوغ الحد اليومي",
     'strip.upgrade': "ترقية",
     'strip.freePro': "Pro مجاناً",
-    'strip.tip': "اليوم: النصوص النصية {text}، النصوص مع الصور {full}، مرات تشغيل Flow {flow}",
+    'strip.tip': "اليوم: كل النصوص {text}، النصوص مع الصور {full}، مرات تشغيل Flow {flow}",
     'busy.signingIn': "جارٍ تسجيل الدخول…",
     'busy.sending': "جارٍ الإرسال…",
     'busy.resetting': "جارٍ إعادة التعيين…",
@@ -808,7 +812,7 @@ const translations: Record<Lang, TranslationSet> = {
     'lib.queues': "{n} قوائم",
     'lib.queues1': "قائمة واحدة",
     'limit.title': "{what}: تم بلوغ الحد",
-    'limit.textPrompts': "النصوص النصية",
+    'limit.textPrompts': "النصوص",
     'limit.fullPrompts': "النصوص مع الصور",
     'limit.runs': "مرات تشغيل {mode}",
     'limit.downloads': "التنزيلات",
@@ -1261,7 +1265,9 @@ const translations: Record<Lang, TranslationSet> = {
   },
 
   fr: {
-    'mode.lockedTip': "Les prompts avec images du jour sont épuisés. Touchez pour voir les options.",
+    'usage.allPrompts': "Tous les prompts",
+    'toast.checkoutOffline': "Impossible de joindre AutoFlow pour ouvrir le paiement. Vérifiez votre connexion et réessayez.",
+    'mode.lockedTip': "Vous avez atteint la limite du jour pour ce mode. Touchez pour voir les options.",
     // Explanations, one word per idea
     'mode.createImage.long': "Crée des images à partir de vos prompts. Ajoutez des images de référence pour guider le rendu.",
     'mode.textToVideo.long': "Crée une vidéo par prompt. Aucune image nécessaire.",
@@ -1292,7 +1298,7 @@ const translations: Record<Lang, TranslationSet> = {
     'strip.out': "Limite du jour atteinte",
     'strip.upgrade': "Pro",
     'strip.freePro': "Pro gratuit",
-    'strip.tip': "Aujourd'hui : prompts texte {text}, prompts avec images {full}, exécutions Flow {flow}",
+    'strip.tip': "Aujourd'hui : tous les prompts {text}, prompts avec images {full}, exécutions Flow {flow}",
     'busy.signingIn': "Connexion…",
     'busy.sending': "Envoi…",
     'busy.resetting': "Réinitialisation…",
@@ -1433,7 +1439,7 @@ const translations: Record<Lang, TranslationSet> = {
     'lib.queues': "{n} files",
     'lib.queues1': "{n} file",
     'limit.title': "{what} : limite atteinte",
-    'limit.textPrompts': "Prompts texte",
+    'limit.textPrompts': "Prompts",
     'limit.fullPrompts': "Prompts avec images",
     'limit.runs': "Exécutions {mode}",
     'limit.downloads': "Téléchargements",
@@ -1886,7 +1892,9 @@ const translations: Record<Lang, TranslationSet> = {
   },
 
   es: {
-    'mode.lockedTip': "Ya usaste los prompts con imágenes de hoy. Toca para ver tus opciones.",
+    'usage.allPrompts': "Todos los prompts",
+    'toast.checkoutOffline': "No se pudo contactar con AutoFlow para abrir el pago. Revisa tu conexión e inténtalo de nuevo.",
+    'mode.lockedTip': "Llegaste al límite de hoy para este modo. Toca para ver tus opciones.",
     // Explanations, one word per idea
     'mode.createImage.long': "Crea imágenes a partir de tus prompts. Añade imágenes de referencia para guiar el estilo.",
     'mode.textToVideo.long': "Crea un video por cada prompt. No necesitas imágenes.",
@@ -1917,7 +1925,7 @@ const translations: Record<Lang, TranslationSet> = {
     'strip.out': "Límite alcanzado",
     'strip.upgrade': "Mejorar",
     'strip.freePro': "Pro gratis",
-    'strip.tip': "Hoy: prompts de texto {text}, prompts con imágenes {full}, ejecuciones Flow {flow}",
+    'strip.tip': "Hoy: todos los prompts {text}, prompts con imágenes {full}, ejecuciones Flow {flow}",
     'busy.signingIn': "Iniciando sesión…",
     'busy.sending': "Enviando…",
     'busy.resetting': "Restableciendo…",
@@ -2058,7 +2066,7 @@ const translations: Record<Lang, TranslationSet> = {
     'lib.queues': "{n} colas",
     'lib.queues1': "{n} cola",
     'limit.title': "{what}: límite alcanzado",
-    'limit.textPrompts': "Prompts de texto",
+    'limit.textPrompts': "Prompts",
     'limit.fullPrompts': "Prompts con imágenes",
     'limit.runs': "Ejecuciones {mode}",
     'limit.downloads': "Descargas",

@@ -518,10 +518,14 @@ async function enforceImageGate() {
 /** A locked mode, tapped: the same dialog as every other daily ceiling. */
 async function showImageLimitDialog() {
   const usage = await getDailyUsage();
+  /* Every prompt counts toward the text limit, so running out of that locks
+     these modes too — and the dialog then has to show those numbers, not
+     the image ones ("5/20 used" while 50 of 50 prompts were). */
+  const textSpent = !!usage && usage.text_remaining <= 0;
   void showLimitDialog({
-    label: t('limit.fullPrompts'),
-    used: usage?.full_used ?? 0,
-    limit: usage?.full_limit ?? 0,
+    label: t(textSpent ? 'limit.textPrompts' : 'limit.fullPrompts'),
+    used: (textSpent ? usage?.text_limit : usage?.full_used) ?? 0,
+    limit: (textSpent ? usage?.text_limit : usage?.full_limit) ?? 0,
     period: 'day',
     unlocks: t('limit.unlockPrompts'),
   });
@@ -551,13 +555,28 @@ function reparsePrompts() {
   $('#prompt-count').textContent = count > 0
     ? tf(count === 1 ? 'queue.prompt' : 'queue.prompts', { n: count })
     : '';
-  const actions = $('#queue-actions');
-  actions.classList.toggle('is-empty', count === 0);
-  (['#btn-add-queue', '#btn-run-now'] as const).forEach((id) => {
-    ($(id) as HTMLButtonElement).disabled = count === 0;
-  });
+  syncActionButtons();
 
   renderPromptList();
+}
+
+/**
+ * Whether Add to Queue and Run now can be pressed, decided in one place.
+ * Both need a prompt. Run now also needs no run in progress: pressed during
+ * one, it added the prompts as a new queue and then refused to start it
+ * ("Another queue is running"), leaving a queue nobody asked for. Add to
+ * Queue stays available, for lining up the next one.
+ */
+function syncActionButtons(running: boolean = state.isRunning) {
+  const count = state.parsedPrompts.length;
+  document.getElementById('queue-actions')?.classList.toggle('is-empty', count === 0);
+  const add = document.getElementById('btn-add-queue') as HTMLButtonElement | null;
+  const run = document.getElementById('btn-run-now') as HTMLButtonElement | null;
+  if (add) add.disabled = count === 0;
+  if (run) {
+    run.disabled = count === 0 || running;
+    run.title = count > 0 && running ? t('queue.alreadyRunning') : '';
+  }
 }
 
 function initVideoTab() {
@@ -681,7 +700,7 @@ function initVideoTab() {
       const added = state.lastAddedQueueId;
       if (added && added !== before) await runQueue(added);
     } finally {
-      btn.disabled = false;
+      syncActionButtons();
     }
   });
 
@@ -3200,6 +3219,7 @@ async function loadActiveQueueState() {
     const queue = queues.find(q => q.id === activeId);
     if (queue && (queue.status === 'running' || queue.status === 'paused')) {
       state.isRunning = true;
+      syncActionButtons();  // opened mid-run: Run now waits for this one
       state.activeQueueId = activeId;
       startKeepalivePort();  // Restore keepalive if queue was already running
       showRunMonitor(activeId);
@@ -4302,6 +4322,7 @@ function handleQueueStatusUpdate(queue: QueueObject) {
   if (queue.status === 'completed' || queue.status === 'stopped') {
     state.isRunning = false;
     _syncRunDock();  // Running → Finished, now rather than on the next DOM change
+    syncActionButtons();  // Run now works again, without waiting for the lock message
     stopKeepalivePort();  // Release service worker keepalive
     updateStatusDot('connected');
     showToast(tf(queue.status === 'completed' ? 'toast.queueCompleted' : 'toast.queueStopped', { name: queue.name }));
@@ -4784,6 +4805,7 @@ function updateRunLockUI(locked: boolean) {
      reads state.isRunning; nothing in the monitor changes at that instant
      for its observer to see. */
   queueMicrotask(() => _syncRunDock());
+  syncActionButtons(locked);
   // Disable/enable all Run buttons in queue cards
   const runButtons = $$('[data-action="run"]') as NodeListOf<HTMLButtonElement>;
   runButtons.forEach(btn => {
@@ -5578,6 +5600,8 @@ function initAccountTab() {
     // Reset counters
     const sharedCounter = $('#shared-img-count');
     if (sharedCounter) sharedCounter.textContent = '0/3';
+    // The box is empty now: the prompt count and the two buttons follow it.
+    reparsePrompts();
 
     showLoggedOutState();
   });
@@ -5821,7 +5845,12 @@ async function updateUsageDisplay() {
     }
   }
 
-  updateBar('text', usage.text_used, usage.text_limit, usage.text_remaining, usage.is_pro);
+  /* The free daily limit counts every prompt (free_prompts_used on the
+     server), but text_used_today counts text-only ones — so this card read
+     "10 / 50" beside "30 left" for someone who had made 10 of each. Used is
+     what the limit has spent: limit minus remaining. */
+  const allUsed = usage.is_pro ? usage.text_used : Math.max(0, usage.text_limit - usage.text_remaining);
+  updateBar('text', allUsed, usage.text_limit, usage.text_remaining, usage.is_pro);
   updateBar('full', usage.full_used, usage.full_limit, usage.full_remaining, usage.is_pro);
 
   // Queue run bars
@@ -5893,7 +5922,7 @@ function renderPlanStrip(usage: Awaited<ReturnType<typeof getDailyUsage>>) {
   const usageEl = document.getElementById('af-plan-strip-usage');
   if (usageEl) usageEl.textContent = out ? t('strip.out') : tf('strip.left', { left, limit });
   strip.title = tf('strip.tip', {
-    text: `${usage.text_used}/${usage.text_limit}`,
+    text: `${limit - left}/${usage.text_limit}`,
     full: `${usage.full_used}/${usage.full_limit}`,
     flow: `${usage.flow_used}/${usage.flow_limit}`,
   });
@@ -5921,9 +5950,17 @@ function setFreeProOffer(show: boolean) {
 async function startCheckout() {
   const { url, email } = await getUpgradeTarget();
   if (!email) {
+    /* Still holding a login, so the profile simply did not load: that is a
+       connection problem, and "sign in first" would send them to a form
+       they cannot see (the panel is showing the signed-in account). */
+    if (await isLoggedIn()) {
+      showToast(t('toast.checkoutOffline'), 'error', 6000);
+      return;
+    }
     await chrome.storage.local.set({ [PENDING_CHECKOUT_KEY]: Date.now() });
     showToast(t('toast.signInFirst'), 'info', 6000);
-    (document.querySelector('[data-tab="account"]') as HTMLElement | null)?.click();
+    // The login may have lapsed while the panel still shows the account.
+    showLoggedOutState();
     $('#account-logged-out')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }

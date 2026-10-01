@@ -174,7 +174,28 @@ async function apiFetch(
   return response;
 }
 
+/* One renewal at a time, and no sign-out over a renewal that already worked.
+ *
+ * The server rotates refresh tokens and blacklists the old one
+ * (ROTATE_REFRESH_TOKENS + BLACKLIST_AFTER_ROTATION). When the panel opens
+ * after the 60-minute access token has lapsed, several requests 401 at once,
+ * and each used to renew on its own with the same refresh token: the first
+ * succeeded and rotated it, the rest were refused — and every refusal cleared
+ * the tokens, including the fresh pair the first had just stored. Being away
+ * an hour signed you out, and until you signed in again usage, Run and the
+ * image modes all failed. Production logs show the pair: two
+ * /api/auth/refresh 401s two milliseconds apart.
+ */
+let _renewal: Promise<boolean> | null = null;
+
 async function refreshAccessToken(refreshToken: string): Promise<boolean> {
+  if (!_renewal) {
+    _renewal = renewTokens(refreshToken).finally(() => { _renewal = null; });
+  }
+  return _renewal;
+}
+
+async function renewTokens(refreshToken: string): Promise<boolean> {
   try {
     const res = await apiFetchRaw(`/api/auth/refresh`, {
       method: 'POST',
@@ -183,6 +204,11 @@ async function refreshAccessToken(refreshToken: string): Promise<boolean> {
     });
 
     if (!res.ok) {
+      /* Refused. If the stored pair has changed since it was read, another
+         context — the service worker, another panel — renewed first, and
+         this refusal is only the server retiring the token it replaced. */
+      const now = await getStoredTokens();
+      if (now?.access && now.refresh && now.refresh !== refreshToken) return true;
       await clearTokens();
       // Broadcast session expired so the UI can react (show login screen)
       broadcastSessionExpired();
@@ -197,8 +223,9 @@ async function refreshAccessToken(refreshToken: string): Promise<boolean> {
     });
     return true;
   } catch {
-    await clearTokens();
-    broadcastSessionExpired();
+    /* A network failure says nothing about the session. This cleared the
+       tokens too, so a Wi-Fi blip signed you out. Keep them: this call fails,
+       and the next one tries again. */
     return false;
   }
 }
