@@ -4,10 +4,14 @@ Updated October 2, 2026. **The separate $5 Motion subscription is superseded.** 
 
 ## Access and limits
 
-- Sign in with the same AutoFlow account that already has Pro. The extensions keep separate login sessions, but use the same server account.
-- Active Pro: **3 accepted Motion jobs per UTC day and 12 per UTC calendar month**. Both limits apply. Free, inactive and expired accounts cannot generate.
-- A source-video job includes all its pieces. It is charged at admission, not on successful provider completion; no automatic refund for provider failure.
-- Retries send the same saved UUID and SHA-256 fingerprint. They do not use another Motion allowance, even at a limit, but still require active Pro.
+Updated October 2, 2026, at the owner's request: **Free 3 a day, Pro unlimited.**
+
+- Any active AutoFlow account can use Motion. The extensions keep separate login sessions, but use the same server account.
+- Free (including expired or cancelled Pro): **3 accepted Motion jobs per UTC day**. No monthly limit.
+- Active Pro: **unlimited**. The entitlement reports `accessPlan: "pro"` with `daily.limit` and `daily.remaining` as `null`.
+- Inactive accounts (email not verified) cannot generate: `account_inactive`, 403.
+- A job is one press of Generate: a source video and its settings, all its pieces together. It is charged at admission, not on successful provider completion; no automatic refund for provider failure.
+- Retries send the same saved UUID and SHA-256 fingerprint. They never use another job, even at the free limit.
 - New source/settings require a new job. Motion's job ledger is separate from Studio's usage counters; shared Studio usage hooks are disabled in the standalone build.
 - Legacy separate-Motion membership records are preserved, but are not an entitlement source and do not grant Pro or Motion access.
 
@@ -25,16 +29,16 @@ The already-created separate Whop Motion offering/webhook is not deleted automat
 
 ## API
 
-`GET /api/motion/entitlements` uses the existing JWT and returns `product: "motion"`, `accessPlan: "pro"`, `active`, `allowed`, `reason`, and `daily`/`monthly` allowances with UTC reset timestamps.
+`GET /api/motion/entitlements` uses the existing JWT and returns `product: "motion"`, `accessPlan` (`"free"` or `"pro"`), `active`, `allowed`, `reason`, and `daily`/`monthly` allowances with UTC reset timestamps. A `limit` or `remaining` of `null` means no limit.
 
 `POST /api/usage/motion-run` takes `{ "jobId": "<UUID>", "fingerprint": "<64 lowercase hex SHA-256>" }` using that same JWT:
 
 - 201: new accepted job; `runId`, `duplicate: false`.
 - 200: same existing job; same `runId`, `duplicate: true`.
-- 400: malformed identity; 401: unauthenticated; 403: `pro_subscription_required`.
+- 400: malformed identity; 401: unauthenticated; 403: `account_inactive`.
 - 409: job/fingerprint conflict; 429: daily or monthly limit; 503: feature disabled.
 
-Admission responses include `accessPlan: "pro"`. The new extension rejects the old separate-plan contract. A successful admission can leave zero remaining quota; do not apply a second new-job quota gate to that admitted job. JWT identity, not an email in the payload, selects the account. PostgreSQL serializes concurrent admissions by locking the user row.
+Admission responses include `accessPlan` (`"free"` or `"pro"`); the extension rejects any other value, including the old separate-plan contract. A 429 `motion_daily_limit` is the free allowance used up for the UTC day. A successful admission can leave zero remaining quota; do not apply a second new-job quota gate to that admitted job. JWT identity, not an email in the payload, selects the account. PostgreSQL serializes concurrent admissions by locking the user row.
 
 This is server-side accounting for an official client, not tamper-proof provider execution: a modified browser extension could bypass its own client gate.
 

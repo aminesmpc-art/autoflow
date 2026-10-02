@@ -20,7 +20,8 @@ from .tests import CONFIG, FINGERPRINT
 class ConcurrentMotionUsageTests(TransactionTestCase):
     def setUp(self):
         self.user = CustomUser.objects.create_user("buyer@example.com", is_active=True)
-        Profile.objects.create(user=self.user, plan_type="pro", is_pro_active=True)
+        # Free, because only Free has a limit for simultaneous jobs to race past.
+        Profile.objects.create(user=self.user, plan_type="free")
 
     def requests(self, jobs):
         barrier = Barrier(len(jobs))
