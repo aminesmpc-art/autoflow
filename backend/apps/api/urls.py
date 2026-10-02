@@ -2,6 +2,7 @@
 from django.urls import path
 
 from . import views
+from apps.motion import views as motion_views
 from apps.workflows import community_views, views as workflow_views
 
 urlpatterns = [
@@ -21,6 +22,8 @@ urlpatterns = [
 
     # Entitlements
     path("entitlements", views.EntitlementsView.as_view(), name="entitlements"),
+    path("motion/entitlements", motion_views.MotionEntitlementView.as_view(), name="motion-entitlements"),
+    path("usage/motion-run", motion_views.MotionRunView.as_view(), name="usage-motion-run"),
     # Studio workflow templates — served so that adding one no longer needs a
     # Chrome Web Store review. See apps/workflows/models.py.
     path("templates", workflow_views.TemplateListView.as_view(), name="templates-list"),
@@ -53,6 +56,7 @@ urlpatterns = [
 
     # Webhooks
     path("webhooks/whop", views.WhopWebhookView.as_view(), name="webhooks-whop"),
+    path("webhooks/whop-motion", motion_views.MotionWebhookView.as_view(), name="webhooks-whop-motion"),
 
     # Health
     path("health", views.HealthView.as_view(), name="health"),
