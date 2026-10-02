@@ -88,7 +88,9 @@ class MotionBillingTests(TestCase):
     def test_legacy_motion_purchase_does_not_unlock_pro_included_motion(self):
         self.assertEqual(self.post_event().status_code, 200)
         self.assertTrue(MotionMembership.objects.get(pk="mem_motion").active)
-        self.assertFalse(entitlement(self.user)["active"])
+        # Every account may use Motion now; what a legacy Motion event must
+        # never do is make it unlimited.
+        self.assertEqual(entitlement(self.user)["accessPlan"], "free")
         self.profile.refresh_from_db()
         self.assertFalse(self.profile.is_pro_active)
         self.assertEqual(self.profile.plan_type, "free")
@@ -152,7 +154,8 @@ class MotionBillingTests(TestCase):
         self.assertFalse(entitlement(user)["active"])
         user.is_active = True
         user.save()
-        self.assertFalse(entitlement(user)["active"])
+        # Active, so on the free allowance — and not provisioned Pro.
+        self.assertEqual(entitlement(user)["accessPlan"], "free")
 
     def test_older_activation_cannot_undo_deactivation(self):
         process(
@@ -174,7 +177,9 @@ class MotionBillingTests(TestCase):
         process(event("membership.deactivated"))
         process(event(updated_at=(NOW + timedelta(days=1)).isoformat()))
         self.assertTrue(MotionMembership.objects.get(pk="mem_motion").active)
-        self.assertFalse(entitlement(self.user)["active"])
+        # Every account may use Motion now; what a legacy Motion event must
+        # never do is make it unlimited.
+        self.assertEqual(entitlement(self.user)["accessPlan"], "free")
 
     def test_old_membership_cancellation_does_not_cancel_new_membership(self):
         process(event())
@@ -185,7 +190,9 @@ class MotionBillingTests(TestCase):
     def test_payment_events_never_grant_access(self):
         for kind in ("payment.succeeded", "payment.failed"):
             process(event(kind))
-        self.assertFalse(entitlement(self.user)["active"])
+        # Every account may use Motion now; what a legacy Motion event must
+        # never do is make it unlimited.
+        self.assertEqual(entitlement(self.user)["accessPlan"], "free")
 
     def test_payment_failure_and_scheduled_cancellation_preserve_access(self):
         process(event())
@@ -238,7 +245,7 @@ class MotionBillingTests(TestCase):
         ):
             with self.subTest(config=config), override_settings(**config):
                 self.assertEqual(self.post_event().status_code, 503)
-                self.assertFalse(entitlement(self.user)["allowed"])
+                self.assertEqual(entitlement(self.user)["accessPlan"], "free")
 
     def test_webhook_can_receive_before_launch_flag_enabled(self):
         with override_settings(MOTION_BILLING_ENABLED=False):
@@ -248,23 +255,32 @@ class MotionBillingTests(TestCase):
 
 @override_settings(**CONFIG)
 class MotionUsageTests(TestCase):
+    """Free: 3 jobs a UTC day. Pro: unlimited. A retry is never counted again."""
+
     def setUp(self):
         self.user = CustomUser.objects.create_user("buyer@example.com", is_active=True)
-        self.profile = Profile.objects.create(user=self.user, plan_type="pro", is_pro_active=True)
+        self.profile = Profile.objects.create(user=self.user, plan_type="free")
         self.client = APIClient()
+
+    def make_pro(self):
+        self.profile.plan_type = "pro"
+        self.profile.is_pro_active = True
+        self.profile.save()
 
     def reserve(self, job=None, fingerprint=FINGERPRINT):
         return reserve_run(self.user, job or uuid.uuid4(), fingerprint)
 
-    def test_three_daily_then_reject_fourth(self):
+    def test_free_three_daily_then_reject_fourth(self):
         for _ in range(3):
             self.assertEqual(self.reserve()[1], 201)
         result, status = self.reserve()
         self.assertEqual((status, result["reason"]), (429, "motion_daily_limit"))
+        self.assertEqual(result["accessPlan"], "free")
+        self.assertEqual(result["daily"]["remaining"], 0)
         self.assertEqual(MotionRun.objects.count(), 3)
 
-    def test_monthly_limit_across_days(self):
-        for day in range(4):
+    def test_free_has_no_monthly_limit(self):
+        for day in range(5):
             with patch(
                 "apps.motion.services.timezone.now",
                 return_value=NOW + timedelta(days=day),
@@ -272,10 +288,23 @@ class MotionUsageTests(TestCase):
                 for _ in range(3):
                     self.assertEqual(self.reserve()[1], 201)
         with patch(
-            "apps.motion.services.timezone.now", return_value=NOW + timedelta(days=4)
+            "apps.motion.services.timezone.now", return_value=NOW + timedelta(days=5)
         ):
-            result, status = self.reserve()
-            self.assertEqual((status, result["reason"]), (429, "motion_monthly_limit"))
+            self.assertEqual(self.reserve()[1], 201)
+            snapshot = entitlement(self.user)
+        self.assertIsNone(snapshot["monthly"]["limit"])
+        self.assertEqual(snapshot["monthly"]["used"], 16)
+
+    def test_pro_is_unlimited(self):
+        self.make_pro()
+        for _ in range(10):
+            self.assertEqual(self.reserve()[1], 201)
+        snapshot = entitlement(self.user)
+        self.assertEqual(snapshot["accessPlan"], "pro")
+        self.assertTrue(snapshot["allowed"])
+        self.assertIsNone(snapshot["daily"]["limit"])
+        self.assertIsNone(snapshot["daily"]["remaining"])
+        self.assertEqual(snapshot["daily"]["used"], 10)
 
     def test_retry_after_limit_is_free_and_changed_job_conflicts(self):
         job = uuid.uuid4()
@@ -289,12 +318,19 @@ class MotionUsageTests(TestCase):
         self.assertEqual(self.reserve(job, "b" * 64)[1], 409)
         self.assertEqual(MotionRun.objects.count(), 3)
 
-    def test_cancelled_subscription_cannot_replay_old_job(self):
+    def test_cancelled_pro_falls_back_to_the_free_allowance(self):
+        self.make_pro()
         job = uuid.uuid4()
         self.reserve(job)
+        for _ in range(4):
+            self.reserve()
         self.profile.is_pro_active = False
         self.profile.save()
-        self.assertEqual(self.reserve(job)[1], 403)
+        # The job already admitted is still a free retry...
+        self.assertEqual(self.reserve(job)[1], 200)
+        # ...but five jobs today is past the free allowance for anything new.
+        result, status = self.reserve()
+        self.assertEqual((status, result["reason"], result["accessPlan"]), (429, "motion_daily_limit", "free"))
 
     def test_utc_day_and_year_month_reset(self):
         end_year = datetime(2026, 12, 31, 23, 59, tzinfo=dt_timezone.utc)
@@ -319,24 +355,26 @@ class MotionUsageTests(TestCase):
 
     @override_settings(WHOP_MOTION_WEBHOOK_SECRET="", WHOP_MOTION_PRODUCT_ID="", WHOP_MOTION_PLAN_ID="", WHOP_STUDIO_PRODUCT_IDS=[])
     def test_existing_pro_unlocks_motion_without_separate_plan_configuration(self):
+        self.make_pro()
         self.assertFalse(MotionMembership.objects.exists())
         self.assertEqual(self.reserve()[1], 201)
         self.assertEqual(entitlement(self.user)["accessPlan"], "pro")
 
-    def test_free_expired_and_inactive_accounts_are_denied(self):
-        self.profile.plan_type = "free"
-        self.profile.save()
-        self.assertEqual(self.reserve()[1], 403)
-        self.profile.plan_type = "pro"
+    def test_free_and_expired_pro_get_the_free_allowance_inactive_is_denied(self):
+        self.assertEqual(self.reserve()[1], 201)
+        self.assertEqual(entitlement(self.user)["accessPlan"], "free")
+        self.make_pro()
         self.profile.pro_expires_at = NOW - timedelta(days=1)
         self.profile.save()
         with patch("apps.motion.services.timezone.now", return_value=NOW):
-            self.assertEqual(self.reserve()[1], 403)
+            result, status = self.reserve()
+        self.assertEqual((status, result["accessPlan"]), (201, "free"))
         self.profile.refresh_from_db()
         self.assertFalse(self.profile.is_pro_active)
         self.user.is_active = False
         self.user.save()
-        self.assertEqual(self.reserve()[1], 403)
+        result, status = self.reserve()
+        self.assertEqual((status, result["reason"]), (403, "account_inactive"))
 
     @override_settings(MOTION_BILLING_ENABLED=False)
     def test_feature_flag_still_blocks_generation(self):
@@ -344,11 +382,14 @@ class MotionUsageTests(TestCase):
 
     @override_settings(WHOP_MOTION_WEBHOOK_SECRET="", WHOP_MOTION_PRODUCT_ID="", WHOP_MOTION_PLAN_ID="", WHOP_STUDIO_PRODUCT_IDS=[])
     def test_motion_flag_does_not_disable_existing_pro_webhook(self):
+        self.make_pro()
         receipt = WebhookEvent.objects.create(provider="whop", event_type="membership.deactivated", raw_payload=event("membership.deactivated", product={"id": "prod_studio"}, plan={"id": "plan_studio"}))
         process_whop_webhook(receipt)
         self.profile.refresh_from_db()
         self.assertFalse(self.profile.is_pro_active)
-        self.assertEqual(self.reserve()[1], 403)
+        # Pro is gone, so Motion is back to the free allowance — not blocked.
+        result, status = self.reserve()
+        self.assertEqual((status, result["accessPlan"]), (201, "free"))
 
     def test_motion_does_not_touch_studio_counters(self):
         from apps.usage.models import DailyUsage, MonthlyUsage
@@ -386,8 +427,16 @@ class MotionUsageTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["accessPlan"], "free")
         self.assertEqual(response.data["daily"]["remaining"], 2)
         self.assertEqual(response["Cache-Control"], "no-store")
+        # Pro reads as unlimited: no limit and nothing remaining to count.
+        self.make_pro()
+        response = self.client.get("/api/motion/entitlements")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["accessPlan"], "pro")
+        self.assertIsNone(response.data["daily"]["limit"])
+        self.assertIsNone(response.data["daily"]["remaining"])
 
 
 class SignatureTests(TestCase):

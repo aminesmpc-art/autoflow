@@ -1,4 +1,8 @@
-"""Motion access through existing Pro, with a separate atomic job allowance."""
+"""Motion for every active AutoFlow account: Free has a daily job allowance, Pro has none.
+
+One job is one press of Generate — a source video and its settings, however
+many pieces it is cut into. A retry of an admitted job is never counted again.
+"""
 
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
@@ -12,8 +16,7 @@ from apps.users.models import CustomUser
 
 from .models import MotionRun
 
-DAILY_LIMIT = 3
-MONTHLY_LIMIT = 12
+FREE_DAILY_LIMIT = 3
 
 
 def entitlement(user, now=None) -> dict:
@@ -25,44 +28,40 @@ def entitlement(user, now=None) -> dict:
     daily = runs.filter(date=today).count()
     monthly = runs.filter(date__gte=month_start, date__lt=next_month).count()
     enabled = settings.MOTION_BILLING_ENABLED
-    profile = Profile.objects.filter(user=user).first() if enabled and user.is_active else None
-    active = bool(
-        enabled
-        and user.is_active
-        and profile
-        and profile.is_pro
-    )
+    profile = Profile.objects.filter(user=user).first() if user.is_active else None
+    pro = bool(profile and profile.is_pro)
+    # None is "no limit": Pro is unlimited, and nobody has a monthly limit.
+    limit = None if pro else FREE_DAILY_LIMIT
+    active = bool(enabled and user.is_active)
     reason = (
         "motion_unavailable"
         if not enabled
-        else "pro_subscription_required"
-        if not active
-        else "motion_monthly_limit"
-        if monthly >= MONTHLY_LIMIT
+        else "account_inactive"
+        if not user.is_active
         else "motion_daily_limit"
-        if daily >= DAILY_LIMIT
+        if limit is not None and daily >= limit
         else None
     )
     return {
         "product": "motion",
-        "accessPlan": "pro",
+        "accessPlan": "pro" if pro else "free",
         "active": active,
         "allowed": reason is None,
         "reason": reason,
         "timezone": "UTC",
-        "resetPolicy": "calendar_month",
+        "resetPolicy": "utc_day",
         "daily": {
-            "limit": DAILY_LIMIT,
+            "limit": limit,
             "used": daily,
-            "remaining": max(0, DAILY_LIMIT - daily),
+            "remaining": None if limit is None else max(0, limit - daily),
             "resetsAt": datetime.combine(
                 today + timedelta(days=1), datetime.min.time(), dt_timezone.utc
             ).isoformat(),
         },
         "monthly": {
-            "limit": MONTHLY_LIMIT,
+            "limit": None,
             "used": monthly,
-            "remaining": max(0, MONTHLY_LIMIT - monthly),
+            "remaining": None,
             "resetsAt": datetime.combine(
                 next_month, datetime.min.time(), dt_timezone.utc
             ).isoformat(),

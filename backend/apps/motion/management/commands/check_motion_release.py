@@ -30,7 +30,7 @@ class Command(BaseCommand):
         check(not settings.DEBUG, "DEBUG disabled")
         check(connection.vendor == "postgresql", "PostgreSQL for atomic job admission")
         check(bool(settings.WHOP_WEBHOOK_SECRET), "Existing Pro webhook secret configured")
-        self.stdout.write("[INFO] Motion uses existing Pro; no separate Motion product or webhook is required")
+        self.stdout.write("[INFO] Motion: Free accounts get 3 jobs a UTC day, Pro is unlimited; no separate Motion product or webhook is required")
         if options["require_enabled"]:
             check(settings.MOTION_BILLING_ENABLED, "Motion billing enabled")
         else:
