@@ -54,6 +54,27 @@ const MEDIA_WORDS = [
 export interface DebugUploadResult {
   ok: boolean;
   error?: string;
+  /**
+   * What each file was ACTUALLY written to disk as, in the order given.
+   *
+   * Flow shows an uploaded asset under its file name, and the caller then has
+   * to find it again by that name. Asking for a name is not the same as
+   * getting one: onDeterminingFilename can miss — an MV3 service worker is
+   * free to restart between the download starting and the event firing, and
+   * the queue it depends on lives in memory — and when it misses, Chrome falls
+   * back to its own localised default. On a French profile that is:
+   *
+   *   téléchargement (7)      téléchargement (8)
+   *
+   * which is exactly what a library showed while the run searched for
+   * "Motion-Control-1-part1-of-2" and reported nothing matching. Both were
+   * true; they were the same two files under different names.
+   *
+   * So the name is reported rather than assumed. The caller searches for what
+   * was written, and the pretty-name machinery becomes an improvement instead
+   * of a dependency.
+   */
+  names?: string[];
 }
 
 const TEMP_DIR = 'autoflow-omni-temp';
@@ -96,7 +117,7 @@ if (typeof chrome !== 'undefined' && chrome.downloads?.onDeterminingFilename) {
 export async function saveToDisk(
   dataUrl: string,
   filename: string,
-): Promise<{ path: string; downloadId: number } | { error: string }> {
+): Promise<{ path: string; downloadId: number; name: string } | { error: string }> {
   try {
     /* Queued immediately before the download that will consume it. */
     wantedNames.push(`${TEMP_DIR}/${filename}`);
@@ -125,15 +146,26 @@ export async function saveToDisk(
 
     /* Read back what Chrome actually used. The whole reason this function
        grew a listener is that the requested name was silently not applied,
-       and a silent mismatch here is the same bug wearing a different hat. */
-    const got = path.split(/[\/]/).pop() || '';
+       and a silent mismatch here is the same bug wearing a different hat.
+     *
+       Split on BOTH separators. chrome.downloads.search returns an absolute
+       path, and on Windows that is
+
+         C:\Users\…\Downloads\autoflow-omni-temp\Motion-Control-1-part1-of-2.mp4
+
+       so a character class of just [/] matches nothing and pop() hands back
+       the entire path. Harmless while this only fed a console warning; the
+       moment the caller started SEARCHING Flow's library with it, the picker
+       was asked for "C:\Users\HP PROBOOK\Downloads\…" and answered, quite
+       correctly, "No assets found." */
+    const got = (path.split(/[\\/]/).pop() || '').trim();
     if (got && got !== filename) {
       console.warn(
         `[AutoFlow] asked for "${filename}" on disk, Chrome wrote "${got}" — `
         + 'Flow will show the name it was written under.',
       );
     }
-    return { path, downloadId };
+    return { path, downloadId, name: got || filename };
   } catch (e: any) {
     return { error: `save to disk failed: ${e?.message || e}` };
   }
@@ -484,41 +516,124 @@ export async function uploadToFlow(
   tabId: number,
   files: Array<{ dataUrl: string; filename: string }>,
 ): Promise<DebugUploadResult> {
-  const saved: Array<{ path: string; downloadId: number }> = [];
+  const saved: Array<{ path: string; downloadId: number; name: string }> = [];
 
   /* Whatever the last run could not clean up, before this one adds more. */
   const swept = await sweepTempFiles();
   if (swept) console.log(`[AutoFlow] swept ${swept} leftover temp file(s)`);
 
   try {
+    /* ── Step 0: Bring the Flow tab to the front ──────────────────────────
+     *
+     * Not cosmetic. Everything above this ran in another tab — Motion Control
+     * spends a minute or more talking to Gemini — so Flow has been in the
+     * background throughout, and Chrome throttles background tabs and discards
+     * them outright under memory pressure. A discarded tab answers a message
+     * with a blank page:
+     *
+     *   Buttons on the page: ⚡ Open Studio
+     *
+     * one button, and it is our own injected one. Activating the tab is what
+     * makes Chrome restore and repaint it, and it gives the repaint foreground
+     * priority instead of the throttled background timers that made it slow
+     * enough to miss in the first place. Waiting is the recovery; this is the
+     * part that stops it happening.
+     *
+     * Best effort: a tab that cannot be activated is still worth trying to
+     * drive, and the attempts below will report what they actually find. */
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      await chrome.tabs.update(tabId, { active: true });
+      if (tab.windowId != null) {
+        await chrome.windows.update(tab.windowId, { focused: true });
+      }
+      /* A discarded tab starts its reload the moment it is activated, so this
+         is the one place a flat wait is right — there is nothing to poll yet
+         on this side of the message port. The content script does the real
+         waiting once it can answer. */
+      await new Promise((r) => setTimeout(r, 600));
+    } catch { /* not focusable; the attempts below will say what they found */ }
+
     /* ── Step 1: Have the content script open the upload dialog ── */
     const prepareDialog = async (): Promise<any> => {
       return chrome.tabs.sendMessage(tabId, { type: 'PREPARE_VIDEO_UPLOAD' });
     };
 
-    let prepResult: any;
-    try {
-      prepResult = await prepareDialog();
-    } catch (e: any) {
-      const msg = e?.message || String(e);
-      /* "Receiving end does not exist" = content script not loaded.
-         This happens after extension reload — existing tabs still have the
-         old (dead) content script. Reload the tab to inject the new one. */
-      if (/receiving end|could not establish/i.test(msg)) {
+    /* ── Three goes, not one ──────────────────────────────────────────────
+     *
+     * The first attempt lands at the worst possible moment. Motion Control
+     * spends a minute or more in a Gemini conversation before it reaches here,
+     * and by then Chrome has backgrounded the Flow tab — often discarded it —
+     * so the page it comes back to is blank or still repainting:
+     *
+     *   02:01:42  Piece 2: Ensures seamless continuity…
+     *   02:01:42  Uploading 2 piece(s) to Flow
+     *   02:01:44  The upload failed: the Videos tab is not where it was.
+     *             Buttons on the page: ⚡ Open Studio
+     *
+     * Two seconds, one try, and the cut plus the whole director pass thrown
+     * away over a tab that had not finished painting. openMediaDialog now
+     * waits for the toolbar itself; this is the layer above it, for what
+     * waiting cannot fix — a tab that needs reloading, or a content script
+     * that died with the last extension reload.
+     *
+     * Escalating on purpose: wait, wait longer, then reload the tab and wait
+     * for it properly. Reloading first would be heavy-handed for a page that
+     * was merely a second late.
+     */
+    const PREPARE_ATTEMPTS = 3;
+    let prepResult: any = null;
+    let lastWhy = '';
+
+    for (let attempt = 1; attempt <= PREPARE_ATTEMPTS; attempt++) {
+      try {
+        prepResult = await prepareDialog();
+        if (!prepResult?.error) break;
+        lastWhy = String(prepResult.error);
+      } catch (e: any) {
+        const msg = e?.message || String(e);
+        /* "Receiving end does not exist" = content script not loaded. This
+           happens after an extension reload — existing tabs still hold the old
+           dead script — and it is fixed by reloading the tab, not by waiting,
+           so it does not wait for its turn in the schedule below. */
+        if (/receiving end|could not establish/i.test(msg)) {
+          try {
+            await chrome.tabs.reload(tabId);
+            await waitForContentScript(tabId, 25_000);
+            prepResult = await prepareDialog();
+            if (!prepResult?.error) break;
+            lastWhy = String(prepResult.error);
+          } catch (retryErr: any) {
+            lastWhy = `After reload: ${retryErr?.message || retryErr}`;
+          }
+        } else {
+          lastWhy = `Content script error: ${msg}`;
+        }
+      }
+
+      if (attempt === PREPARE_ATTEMPTS) break;
+      console.log(
+        `[AutoFlow] the picker did not open (${lastWhy}) — attempt ${attempt} of `
+        + `${PREPARE_ATTEMPTS}, trying again.`,
+      );
+      if (attempt === PREPARE_ATTEMPTS - 1) {
+        /* Last resort before giving up. A wedged or discarded tab is the one
+           thing more waiting cannot substitute for. */
         try {
           await chrome.tabs.reload(tabId);
           await waitForContentScript(tabId, 25_000);
-          prepResult = await prepareDialog();
-        } catch (retryErr: any) {
-          return { ok: false, error: `After reload: ${retryErr?.message || retryErr}` };
-        }
+        } catch { /* the final attempt reports whatever it then finds */ }
       } else {
-        return { ok: false, error: `Content script error: ${msg}` };
+        await new Promise((r) => setTimeout(r, 2000));
       }
     }
 
-    if (prepResult?.error) {
-      return { ok: false, error: `Flow dialog: ${prepResult.error}` };
+    if (!prepResult || prepResult.error) {
+      return {
+        ok: false,
+        error: `Flow dialog: ${lastWhy || 'the picker did not open'} `
+          + `(tried ${PREPARE_ATTEMPTS} times, reloading the tab in between)`,
+      };
     }
     /* We only check that the dialog opened. Coordinates are fetched fresh
        inside uploadViaFileChooser after the debugger attaches. */
@@ -534,6 +649,25 @@ export async function uploadToFlow(
       }
       saved.push(result);
     }
+
+    /* ── Step 2.5: Arm the rights-consent watcher ─────────────────────────
+     *
+     * Flow shows "Rights to use this video" before the FIRST upload and will
+     * not take the file until it is answered. It is not an error and nothing
+     * here would report it as one: CDP satisfies the file chooser, the upload
+     * looks like it worked, and then nothing appears in the library — the
+     * attach afterwards says "No assets found", which is true and useless.
+     *
+     * Armed BEFORE the chooser rather than checked after it, because whether
+     * Flow raises the dialog on the Upload press or once the bytes are handed
+     * over is not established, and a watcher spanning both is cheaper than
+     * finding out the hard way. The content script polls; this does not await
+     * it, so a tab that never shows the dialog costs nothing.
+     *
+     * Never fatal. An upload that would have worked must still work when this
+     * message cannot be delivered. */
+    chrome.tabs.sendMessage(tabId, { type: 'WATCH_RIGHTS_DIALOG', ms: 45_000 })
+      .catch(() => { /* no content script, or the tab went away; the upload reports for itself */ });
 
     /* ── Step 3: Intercept file chooser and provide files ── */
     const paths = saved.map((s) => s.path);
@@ -558,7 +692,9 @@ export async function uploadToFlow(
       }, 60_000);
     }
 
-    return result;
+    /* The names go back with the result, in the order the files came in, so
+       the caller searches Flow's library for what is actually in it. */
+    return { ...result, names: saved.map((f) => f.name) };
   } catch (e: any) {
     /* If we failed, clean up immediately — no upload is in progress */
     for (const s of saved) {

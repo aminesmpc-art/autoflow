@@ -36,6 +36,7 @@ const EMITS: Record<string, 'text' | 'picture' | 'video'> = {
 const ACCEPTS: Record<string, Array<'text' | 'picture' | 'video'>> = {
   text: ['text'],
   image_ref: ['picture'],
+  place_ref: ['picture'],
   frame_start: ['picture'],
   frame_end: ['picture'],
   // Extend continues an actual clip. A still of one is not the same thing,
@@ -52,6 +53,7 @@ const HUMAN: Record<string, string> = {
 const PORT_NAME: Record<string, string> = {
   text: 'the prompt input',
   image_ref: 'the reference input',
+  place_ref: 'the place image input',
   frame_start: 'the start frame',
   frame_end: 'the end frame',
   video: 'the clip input',

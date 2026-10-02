@@ -102,7 +102,10 @@ describe('the voice list', () => {
     const at = html.indexOf('id="setting-voice"');
     expect(at).toBeGreaterThan(-1);
     const block = html.slice(at, html.indexOf('</select>', at));
-    const shipped = Array.from(block.matchAll(/<option value="([A-Z][a-z]+)">/g))
+    /* Any attributes after the value: the panel's options carry data-i18n
+       since it was translated, and a pattern that stopped at `">` read zero
+       voices out of a list of thirty. */
+    const shipped = Array.from(block.matchAll(/<option value="([A-Z][a-z]+)"[^>]*>/g))
       .map((m) => m[1]);
     expect(shipped.length).toBeGreaterThan(25);
     const ours = new Set(FLOW_VOICES.map((v) => v.id));

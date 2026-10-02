@@ -65,6 +65,60 @@ export function openSource(file: Blob): Input {
 }
 
 /**
+ * A generated cutaway, ready for the frame loop to draw.
+ *
+ * VideoSampleSink.getSample(t) returns the last frame at or before t, which is
+ * exactly the right answer for compositing: between two frames of a 24fps
+ * cutaway the one already on screen is what a player would be showing.
+ *
+ * Two things this deliberately does NOT do. It does not decode the cutaway up
+ * front into an array of bitmaps — a two-second cutaway is fifty frames of
+ * full-size RGBA and there can be several per clip, which is tens of megabytes
+ * held for the length of an encode to save a seek the sink already caches. And
+ * it does not throw: a cutaway that will not decode returns null frames, the
+ * loop paints the speaker instead, and the clip survives with one fewer edit.
+ */
+export async function openCutaway(
+  bytes: Blob,
+  atSec: number,
+  seconds: number,
+): Promise<import('./overlay').Cutaway | null> {
+  try {
+    const input = openSource(bytes);
+    const track = await input.getPrimaryVideoTrack();
+    if (!track) return null;
+
+    const { VideoSampleSink } = await import('mediabunny');
+    const sink = new VideoSampleSink(track);
+
+    /* Held so a frame is not decoded twice when two output frames land inside
+       one cutaway frame, which at 30fps out and 24fps in is most of them. */
+    let last: { at: number; sample: any } | null = null;
+
+    return {
+      atSec,
+      seconds,
+      async frameAt(sec: number) {
+        try {
+          const want = Math.max(0, sec);
+          if (last && Math.abs(last.at - want) < 1e-3) return last.sample;
+          const sample = await sink.getSample(want);
+          if (!sample) return null;
+          last?.sample?.close?.();
+          last = { at: want, sample };
+          return sample as unknown as CanvasImageSource;
+        } catch {
+          /* One unreadable frame is one frame of speaker, not a failed clip. */
+          return null;
+        }
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * What we are dealing with, before committing to anything expensive.
  *
  * `decodable` is asked rather than assumed. A source can be a perfectly valid

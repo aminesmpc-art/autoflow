@@ -62,8 +62,9 @@ jest.mock('../studio/engine/bridge', () => {
   };
 });
 
-import { runner } from '../studio/engine/WorkflowRunner';
+import { runner, WorkflowRunner } from '../studio/engine/WorkflowRunner';
 import { useStudioStore } from '../studio/store';
+import * as vault from '../studio/clip/vault';
 
 const P1 = 'One fixed medium-wide camera inside a tall pink lounge as the blonde designer in '
   + 'a red tracksuit walks in carrying glowing floor rails and lays them across the boards.';
@@ -113,6 +114,90 @@ beforeEach(() => {
   sent.length = 0;
   replies = [];
   useStudioStore.setState({ nodes: [], edges: [] } as any);
+});
+
+describe('Chief production gate end to end', () => {
+  const setup = () => {
+    const { nodes, edges } = workflow();
+    nodes.push({ id: 'chief', type: 'chief', position: { x: 100, y: 0 }, data: { type: 'chief', platform: 'chatgpt' } });
+    nodes.push({ id: 'story2', type: 'story', position: { x: 200, y: 300 }, data: { type: 'story', platform: 'chatgpt', mediaType: 'text', structure: 'hook' } });
+    edges[0].target = 'chief';
+    edges.find(e => e.target === 'clipB')!.source = 'story2';
+    edges.push(...['story', 'story2'].map(id => ({ id: `chief-${id}`, source: 'chief', target: id, sourceHandle: 'text', targetHandle: 'text' })));
+    useStudioStore.setState({ nodes, edges } as any);
+    return { nodes, edges };
+  };
+  const plan = () => JSON.stringify({
+    story: 'One room, two halves.', cast: [], world: 'Tall pink lounge.', look: '3D cartoon.',
+    structure: 'hook', cameraProgression: 'fixed', audioMode: 'cinematic',
+    directors: [{ directorId: 'story', brief: 'Enter and lay glowing floor rails.' }, { directorId: 'story2', brief: 'Finish the lounge with panels and couch.' }],
+    contracts: [
+      { targetId: 'clipA', opening: 'Empty lounge', action: 'Lay rails', ending: 'Lit floor', voiceover: '', continuesFrom: null },
+      { targetId: 'clipB', opening: 'Lit floor', action: 'Add couch', ending: 'Furnished lounge', voiceover: '', continuesFrom: 'clipA' },
+    ],
+  });
+  const single = (prompt: string) => JSON.stringify({ story: 'One room.', anchor: 'pink lounge', shots: [{ n: 1, title: 'Lounge', prompt }] });
+
+  it('prepares both Directors and reviews before sending any media', async () => {
+    const media = new Map<string, Blob>();
+    const save = jest.spyOn(vault, 'saveMedia').mockImplementation(async (key, blob) => { media.set(key, blob); });
+    const load = jest.spyOn(vault, 'loadMedia').mockImplementation(async key => media.get(key));
+    const { nodes, edges } = setup();
+    replies = [plan(), single(P1), single(P2), '{"approved":true,"issues":[]}'];
+    const instance = new WorkflowRunner();
+    await instance.run(nodes, edges);
+    expect(chatTurns()).toHaveLength(4);
+    expect(sent.slice(0, 4).every(s => s.config.mediaType === 'text')).toBe(true);
+    expect(promptSentTo('clipA')).toBe(P1);
+    expect(promptSentTo('clipB')).toBe(P2);
+    const checkpoint = useStudioStore.getState().nodes.find(n => n.id === 'chief')!.data.chiefCheckpoint as any;
+    expect(checkpoint.approved).toBe(true);
+    // A new runner has no in-memory prompt cache, just the saved node snapshot.
+    sent.length = 0;
+    await new WorkflowRunner().run(useStudioStore.getState().nodes, edges);
+    expect(chatTurns()).toHaveLength(0);
+    expect(sent).toHaveLength(0);
+    useStudioStore.getState().updateNodeData('clipB', { voice: 'Kore' });
+    await new WorkflowRunner().run(useStudioStore.getState().nodes, edges);
+    expect(sent.map(s => s.nodeId)).toEqual(['clipB']);
+    const retry = instance.planRetry(['clipA'], useStudioStore.getState().nodes, edges);
+    expect([...retry]).toEqual(expect.arrayContaining(['chief', 'story', 'story2']));
+    save.mockRestore();
+    load.mockRestore();
+  });
+
+  it('blocks every media node after three malformed reviews', async () => {
+    const { nodes, edges } = setup();
+    replies = [plan(), single(P1), single(P2), '{}', '{}', '{}'];
+    await new WorkflowRunner().run(nodes, edges);
+    expect(sent.every(s => s.config.mediaType === 'text')).toBe(true);
+    expect(useStudioStore.getState().nodes.find(n => n.id === 'chief')!.data.errorMessage).toMatch(/Malformed Chief review/);
+  });
+
+  it('repairs the conflicting Director without rewriting the other group', async () => {
+    const { nodes, edges } = setup();
+    const repaired = P1 + ' The blue door stays closed.';
+    replies = [plan(), single(P1), single(P2),
+      '{"approved":false,"issues":[{"targetId":"clipA","problem":"Keep the blue door closed"}]}',
+      single(repaired), '{"approved":true,"issues":[]}'];
+    await new WorkflowRunner().run(nodes, edges);
+    expect(chatTurns().map(s => s.nodeId)).toEqual(['chief', 'story', 'story2', 'chief', 'story', 'chief']);
+    expect(promptSentTo('clipA')).toBe(repaired);
+    expect(promptSentTo('clipB')).toBe(P2);
+    expect(sent.slice(0, 6).every(s => s.config.mediaType === 'text')).toBe(true);
+  });
+
+  it('invalidates a saved plan when the brief changes', async () => {
+    const { nodes, edges } = setup();
+    replies = [plan(), single(P1), single(P2), '{"approved":true,"issues":[]}'];
+    await new WorkflowRunner().run(nodes, edges);
+    useStudioStore.getState().updateNodeData('idea', { text: 'A different lounge story' });
+    sent.length = 0;
+    replies = [plan(), single(P1), single(P2), '{"approved":true,"issues":[]}'];
+    await new WorkflowRunner().run(useStudioStore.getState().nodes, edges);
+    expect(chatTurns()).toHaveLength(4);
+    expect(chatTurns()[0].config.prompt).toContain('A different lounge story');
+  });
 });
 
 describe('a Story node run end to end', () => {
@@ -194,7 +279,11 @@ describe('a Story node run end to end', () => {
     useStudioStore.setState({ nodes, edges } as any);
     await runner.run(nodes, edges);
 
-    expect(chatTurns()).toHaveLength(3);
+    /* Two, not three. All three replies are identical, so the second one
+       proves the repair is not working: the same code on the same words means
+       the writer is being asked for something the checker forbids, and a third
+       ask buys nothing but another bill. Stopping there is the point. */
+    expect(chatTurns()).toHaveLength(2);
     expect(sent.some((s) => s.nodeId === 'clipA')).toBe(false);
     expect(sent.some((s) => s.nodeId === 'clipB')).toBe(false);
     const story = useStudioStore.getState().nodes.find((n) => n.id === 'story');
@@ -206,6 +295,11 @@ describe('a Story node run end to end', () => {
     expect(message).toMatch(/Still wrong: Part 2 \(/);
     expect(message).toMatch(/meta/);
     expect(message).toMatch(/Nothing was run/);
+    /* And it says which failure this was. Three attempts on a prompt that
+       never moved is a rule to change, not a writer to re-ask. */
+    expect(message).toMatch(/2 attempts/);
+    expect(message).toMatch(/came back unchanged after being asked twice/);
+    expect(message).toMatch(/a rule to change, not a prompt to rewrite/);
   });
 
   it('refuses to run wired to nothing rather than asking for a plan for no one', async () => {

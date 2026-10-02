@@ -565,8 +565,8 @@ async def enforce_extraction_limit(authorization: Optional[str]) -> None:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
-                f"You have reached your limit of {state.get('limit')} extractions "
-                f"per {state.get('period')}."
+                f"You have reached your limit of {state.get('limit')} "
+                f"extraction{'' if state.get('limit') == 1 else 's'} per {state.get('period')}."
             ),
         )
 

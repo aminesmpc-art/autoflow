@@ -56,6 +56,11 @@ export default async function sitemap() {
 
   // English-only blog posts
   const blogPosts = [
+    /* Was missing entirely until 2026-09-10 — a featured post that the
+       sitemap never advertised. This list is hand-kept and drifts from
+       blog/content.js; check both when adding a post. */
+    { slug: '/blog/how-to-download-google-flow-veo-videos-4k', lastmod: '2026-06-20' },
+    { slug: '/blog/how-to-make-money-clipping-videos', lastmod: '2026-09-10' },
     { slug: '/blog/how-to-batch-generate-ai-videos-google-flow', lastmod: '2026-05-10' },
     { slug: '/blog/best-prompts-ai-video-generation', lastmod: '2026-05-12' },
     { slug: '/blog/google-flow-tips-avoid-failed-generations', lastmod: '2026-05-14' },

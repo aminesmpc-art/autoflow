@@ -152,7 +152,7 @@ describe('composeAskPrompt', () => {
 describe('published presets', () => {
   it('replaces the bundled set when the payload has one', () => {
     setAskPresets([{ id: 'x', name: 'X', hint: 'h', brief: 'do {{subject}}' }]);
-    expect(getAskPresets()).toHaveLength(1);
+    expect(getAskPresets().map((preset) => preset.id)).toEqual(['x', 'place_environment']);
     expect(composeAskPrompt('x', 'a cat', false)).toBe('do a cat');
   });
 

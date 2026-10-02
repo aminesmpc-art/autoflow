@@ -172,18 +172,52 @@ describe('reopening one to change it', () => {
        and every reopened build began opening a new chat next to the one the
        panel had just navigated back to. Carrying the plan and starting a chat
        are different decisions; only the first belongs to resumeFrom. */
-    expect(body).toMatch(/newChat: at\.threadOpen \? 'never' : 'auto'/);
+    /* Still keyed on threadOpen, with a retry guard beside it: a correction
+       round must never open a chat of its own, whatever the first round did. */
+    expect(body).toMatch(/newChat: attempt > 0 \|\| at\.threadOpen \? 'never' : 'auto'/);
   });
 
-  it('only carries the plan when the conversation is not live', () => {
+  it('only carries the plan when the model does not already have it', () => {
     /* A plan the model just wrote is already in the thread — sending it again
-       wastes tokens, pushes the user's question down, and teaches the model
-       to echo the blob. Only a reopened build with no live thread needs it. */
+       wastes tokens, pushes the user's question down, and teaches the model to
+       echo the blob.
+
+       "Never paste into a live thread" was the first answer and it was too
+       blunt: the displayed plan is NOT always the model's last answer. A repair
+       pass can keep an earlier round, and the canvas can be edited between
+       turns — in both cases the model would go on to edit a version nobody is
+       looking at. "Always paste" fixed that and cost the whole plan on every
+       edit, in a thread that usually already had it.
+
+       So the check is on the question that actually decides it: has the plan
+       drifted from what the model itself last handed over? */
     const fn = SRC.slice(SRC.indexOf('async function refineBuild'));
-    expect(fn.slice(0, fn.indexOf('\n  } catch'))).toMatch(
-      /const needsPlan = at\.resumeFrom && !at\.threadOpen/);
-    expect(fn.slice(0, fn.indexOf('\n  } catch'))).toMatch(
-      /const carry = needsPlan[\s\S]{0,900}: '';/);
+    const body = fn.slice(0, fn.indexOf('\n  } catch'));
+    expect(body).toMatch(/planKey\(at\.plan\) === planKey\(at\.modelPlan\)/);
+    expect(body).toMatch(/const needsPlan = !modelHasIt/);
+    expect(body).toMatch(/const carry = needsPlan[\s\S]{0,900}: '';/);
+  });
+
+  it('compares the two plans independently of key order', () => {
+    /* The displayed plan is re-serialised on its way through the panel and
+       comes back with its keys sorted, so a raw JSON.stringify comparison
+       would differ every time and paste the plan on every edit — which is the
+       behaviour this exists to stop. */
+    expect(SRC).toMatch(/function planKey\(/);
+    expect(SRC).toMatch(/Object\.keys\(v\)\.sort\(\)/);
+  });
+
+  it('records what the model handed over, so drift can be seen', () => {
+    /* On the first build and on every later change alike, or the next edit
+       has nothing to compare against and pastes the plan needlessly. */
+    expect(SRC).toMatch(/modelPlan: best\.plan,/);
+    expect(SRC).toMatch(/modelPlan: plan,/);
+  });
+
+  it('tells the model which of the two situations it is in', () => {
+    /* Sending nothing is only safe if the request says so; otherwise "apply
+       that edit" has no antecedent in a long thread. */
+    expect(SRC).toMatch(/the plan already in this conversation/);
   });
 
   it('stops carrying it once the change lands', () => {
@@ -238,7 +272,7 @@ describe('continuing the conversation, rather than one beside it', () => {
      the Gemini conversation and then started a new chat next to it. */
 
   it('asks whether a thread is open, not whether the plan travelled', () => {
-    expect(SRC).toMatch(/newChat: at\.threadOpen \? 'never' : 'auto'/);
+    expect(SRC).toMatch(/newChat: attempt > 0 \|\| at\.threadOpen \? 'never' : 'auto'/);
     /* Comments stripped first. The line this replaces is quoted in the one
        explaining why it went, and a check that cannot tell the two apart
        would fail on its own documentation. */
@@ -251,7 +285,10 @@ describe('continuing the conversation, rather than one beside it', () => {
        loaded, and a model with the plan twice loses a few hundred tokens
        while a model with neither cannot help at all. But it only travels
        when the thread is NOT live — otherwise the model already has it. */
-    expect(SRC).toMatch(/const needsPlan = at\.resumeFrom && !at\.threadOpen/);
+    /* The reopened case still carries it: a tab that opened is not proof the
+       thread loaded, and a model with the plan twice loses a few hundred
+       tokens while a model with neither cannot help at all. */
+    expect(SRC).toMatch(/at\.resumeFrom && !at\.threadOpen/);
     expect(SRC).toMatch(/const carry = needsPlan/);
     /* The plan first; the template only for a build stored before plans were
        kept, where it is better than nothing and is labelled as not the shape
@@ -572,5 +609,43 @@ describe('a conversation id outlives the conversation', () => {
   it('shows that reason in the panel instead of a generic line', () => {
     const fn = SRC.slice(SRC.indexOf('async function reopenBuild'));
     expect(fn.slice(0, fn.indexOf('\n}'))).toMatch(/buildSays\('info', String\(res\?\.error/);
+  });
+});
+
+describe('what an edit costs in a conversation that already has it', () => {
+  /* Reported as: "why he sand back the hooooool work flow he need to send
+     just the user recwist". Two separate things were being repeated on every
+     edit, and only one of them was the plan.
+
+     The other was the production skills — a couple of thousand words of brief
+     that refinePlan prepended unconditionally. In a live thread the model was
+     handed them with the build a moment earlier, so every edit re-read them
+     and pushed the user's actual request to the bottom. */
+
+  const REFINE = readSrc(__dirname, '..', 'studio', 'builder', 'refine.ts');
+
+  it('can be asked to leave the skills behind', () => {
+    expect(REFINE).toMatch(/carrySkills = true/);
+    expect(REFINE).toMatch(/carrySkills \? `\$\{productionSkills\(\)\}/);
+  });
+
+  it('defaults to sending them, so an unaware caller stays safe', () => {
+    /* A model with the brief twice loses tokens; one without it edits by
+       guesswork. The safe default is the expensive one. */
+    expect(REFINE).toMatch(/carrySkills = true/);
+  });
+
+  it('sends them exactly when the plan is sent', () => {
+    /* Both are things the model was given with the build. If it still has one
+       it has the other, so one flag decides both. */
+    const fn = SRC.slice(SRC.indexOf('async function refineBuild'));
+    expect(fn.slice(0, fn.indexOf('\n  } catch'))).toMatch(/\}, needsPlan\);/);
+  });
+
+  it('counts a reopened build with a live thread as already having it', () => {
+    /* The panel navigated back to the conversation that wrote the plan, so
+       the model has it. Only when the thread really came back — a tab that
+       opened is not a thread that loaded. */
+    expect(SRC).toMatch(/\.\.\.\(live \? \{ modelPlan: b\.plan \} : \{\}\)/);
   });
 });

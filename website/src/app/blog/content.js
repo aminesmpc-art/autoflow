@@ -142,6 +142,19 @@ export const posts = [
     readTime: "11 min read",
     featured: true,
   },
+  {
+    slug: "how-to-make-money-clipping-videos",
+    title: "How to Make Money Clipping Videos in 2026 (Real Rates)",
+    description:
+      "What clippers actually earn: advertised rates are $1-5 per 1,000 views, tracked payouts blend to $0.39. The four ways clippers get paid, the honest math, and how to post enough to clear it.",
+    date: "2026-09-10",
+    updated: "2026-09-10",
+    category: "Guide",
+    tags: ["make-money", "clipping", "twitch", "tiktok", "youtube-shorts", "side-hustle"],
+    image: "/og-image.png",
+    readTime: "10 min read",
+    featured: true,
+  },
 ];
 
 /** Get all posts, newest first */

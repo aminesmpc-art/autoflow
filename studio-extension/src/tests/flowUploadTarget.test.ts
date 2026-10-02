@@ -316,3 +316,83 @@ describe('the project media page, as it was reported', () => {
     expect(opened.ok).toBe(true);
   });
 });
+
+describe('a browser that lies about its viewport', () => {
+  /* Flow's own popovers land in the wrong place in MultiLogin — floating off
+     to the edge, half clipped — because it spoofs screen size and device pixel
+     ratio as part of the fingerprint, and a floating element positions itself
+     from exactly those numbers.
+
+     Most of the adapter does not care: getBoundingClientRect and CDP's
+     dispatchMouseEvent share the renderer's coordinate space, so a click at
+     the rect's centre lands on the element even when both disagree with what
+     the user sees. The exception was the composer's "+", which REQUIRED the
+     button to be in the bottom half of the window and so found nothing when
+     innerHeight did not describe the painted area. */
+
+  function composer(top: number): void {
+    document.body.innerHTML = `
+      <button id="create"><i class="google-symbols">add_2</i>Create</button>
+      <button id="plus"><i class="google-symbols">add</i></button>
+      <button id="addmedia"><i class="google-symbols">add</i>Add Media</button>
+      <div id="tabs"><div id="videos" role="tab"><i class="google-symbols">videocam</i>Videos</div></div>
+      <div id="revealed"></div>`;
+    const box = (el: Element, w: number, t: number) => {
+      (el as HTMLElement).getBoundingClientRect = () =>
+        ({ width: w, height: 32, left: 10, top: t, right: 10 + w, bottom: t + 32 }) as DOMRect;
+    };
+    box(document.getElementById('create')!, 90, 700);
+    box(document.getElementById('plus')!, 32, top);
+    box(document.getElementById('addmedia')!, 120, 40);
+    box(document.getElementById('tabs')!, 300, 300);
+    box(document.getElementById('videos')!, 90, 300);
+    document.getElementById('videos')!.addEventListener('click', () => {
+      const slot = document.getElementById('revealed') as HTMLElement;
+      slot.innerHTML = '<button id="up"><i class="google-symbols">upload</i>Upload media</button>';
+      box(slot.firstElementChild!, 140, 400);
+    });
+  }
+
+  it('presses the + even when it reports as being high on the page', async () => {
+    /* The regression: top 100 against an innerHeight of 768 is the top half,
+       which the old filter refused outright. */
+    composer(100);
+    const pressed: string[] = [];
+    document.addEventListener('click', (e) => {
+      pressed.push((e.target as HTMLElement).id || '');
+    }, true);
+
+    await openMediaDialog({ doc: document, step: 0 });
+    expect(pressed).toContain('plus');
+  });
+
+  it('still never presses Add Media, which is a different button', () => {
+    /* The exact label is what separates them: the + reads "add" while Add
+       Media reads "addAdd Media", because the ligature runs into the label.
+       That is the check doing the real work — position never was. */
+    composer(700);
+    const label = (id: string) =>
+      (document.getElementById(id)!.textContent || '').trim();
+    expect(label('plus')).toBe('add');
+    expect(label('addmedia')).toBe('addAdd Media');
+  });
+
+  it('prefers the lower one when the page really does have two', async () => {
+    composer(700);
+    const extra = document.createElement('button');
+    extra.id = 'decoy';
+    extra.innerHTML = '<i class="google-symbols">add</i>';
+    extra.getBoundingClientRect = () =>
+      ({ width: 32, height: 32, left: 10, top: 20, right: 42, bottom: 52 }) as DOMRect;
+    document.body.prepend(extra);
+
+    const pressed: string[] = [];
+    document.addEventListener('click', (e) => {
+      pressed.push((e.target as HTMLElement).id || '');
+    }, true);
+
+    await openMediaDialog({ doc: document, step: 0 });
+    expect(pressed).toContain('plus');
+    expect(pressed).not.toContain('decoy');
+  });
+});

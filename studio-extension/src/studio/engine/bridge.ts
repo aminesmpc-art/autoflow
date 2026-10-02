@@ -12,6 +12,19 @@ export interface NodeExecutionConfig {
      content/flow/uploadVideo.ts — so the clipper puts it there once by hand
      and this finds it again every time. */
   styleReference?: string;
+  /**
+   * Is the generation pointless without it?
+   *
+   * For a cutaway the reference is an improvement: losing it costs a plainer
+   * shot, so the attach is best-effort and a failure is logged and stepped
+   * over. For a Motion Control piece the video IS the job — it is the motion
+   * being transferred — and generating without it does not produce a worse
+   * version of the clip, it produces a completely unrelated one from the
+   * prompt alone, at full cost, with nothing on the node saying so.
+   *
+   * So the caller declares which kind it has, and this one fails instead.
+   */
+  styleReferenceRequired?: boolean;
   prompt: string;
   model: string;
   /** 'text' asks ChatGPT for a written answer instead of an image — the reply
@@ -83,10 +96,35 @@ export interface NodeExecutionConfig {
    * empty chat. See askAgent, and shouldTidy in content/gemini/tidy.ts.
    */
   deleteWhenDone?: boolean;
+  /**
+   * The conversation this turn must be typed into.
+   *
+   * `newChat: 'never'` says only "do not START one" — it types into whatever
+   * happens to be on screen, which is the conversation the LAST node used.
+   * That is right for the agent loop, where one node takes every turn in a
+   * row, and wrong for everything else: the Chief plans in its own chat, three
+   * Directors then open three more, and the Chief's review turn would land in
+   * the third Director's.
+   *
+   * So a node that means to continue its own thread names it. The adapter must
+   * either put the page in that conversation or fail the turn — answering the
+   * wrong chat is worse than not answering, because the reply looks fine.
+   */
+  resumeConversation?: string;
 }
 
 export interface NodeResult {
   tileId: string;
+  /**
+   * Flow's own id for the generation, when one was bound.
+   *
+   * Distinct from tileId, which names a DOM node in the grid: this is the id
+   * the interceptor read out of Flow's own response, so it is proof Flow
+   * received the prompt. It is what the queue extension reports as a
+   * submission, and Studio's Flow nodes report the same thing off the same
+   * evidence — otherwise the two products count one resource two ways.
+   */
+  mediaId?: string;
   imageUrl?: string;
   videoUrl?: string;
   thumbnailUrl?: string;
@@ -102,6 +140,15 @@ export interface NodeResult {
   referenceUrl?: string;
   /** ChatGPT's written reply, when the node asked for text rather than media. */
   text?: string;
+  /**
+   * Where this turn's conversation lives, so the node can come back to it.
+   *
+   * Absent means the adapter cannot say — an older content script, or a site
+   * that does not put the thread in its address bar. The runner treats that as
+   * "not resumable" and sends the full context next time rather than a
+   * follow-up that assumes a memory it cannot reach.
+   */
+  conversationPath?: string;
 }
 
 type MessageHandler = (msg: any) => void;

@@ -621,6 +621,51 @@ export async function getDailyUsage(): Promise<DailyUsageResponse | null> {
   }
 }
 
+/**
+ * Report that ONE generation reached Flow and Flow accepted it.
+ *
+ * The same event the queue extension reports, off the same evidence — a media
+ * id the interceptor read out of Flow's own response. Studio has to emit it
+ * too, or the two products count one resource two different ways: this runner
+ * reports every node through trackUsage(1,'text'), so a Gemini ask, a Grok
+ * extend and an Omni clip all land in one bucket, and a Studio Flow
+ * generation was invisible in the number meant to be billable.
+ *
+ * A chat node never gets a media id, so it cannot land here at all — which is
+ * correct. It is a different resource.
+ *
+ * Fire-and-forget: metering must never fail a generation already paid for.
+ */
+export async function trackSubmission(input: {
+  mediaId: string;
+  queueId: string;
+  promptIndex: number;
+  promptType: 'text' | 'full';
+  mode?: string;
+  outcome?: 'done' | 'failed';
+}): Promise<boolean> {
+  if (!input.mediaId) return false;
+  try {
+    const res = await apiFetch('/api/usage/submitted', {
+      method: 'POST',
+      body: JSON.stringify({
+        media_id: input.mediaId,
+        queue_id: input.queueId,
+        prompt_index: input.promptIndex,
+        prompt_type: input.promptType,
+        mode: input.mode || '',
+        outcome: input.outcome || '',
+      }),
+    });
+    /* Expected from a backend that predates the endpoint. Not worth a console
+       error on every generation. */
+    if (res.status === 404) return false;
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function trackUsage(promptCount: number = 1, promptType: 'text' | 'full' = 'text', promptStatus: 'done' | 'failed' = 'done'): Promise<boolean> {
   try {
     const res = await apiFetch('/api/usage/consume', {

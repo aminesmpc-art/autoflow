@@ -1,0 +1,5 @@
+# Packaged builds. Binary artefacts rebuilt from source — studio-extension
+# already ignores its own; this keeps the two consistent.
+autoflow-v*.zip
+autoflow-store.zip
+autoflow-extension.zip

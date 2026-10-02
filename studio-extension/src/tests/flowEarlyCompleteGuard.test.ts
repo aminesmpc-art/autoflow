@@ -16,7 +16,13 @@ describe('Flow Early Completion Guard & Video Resolution', () => {
   });
 
   it('rejects video completion under 10 seconds without API confirmation', () => {
-    expect(SRC).toMatch(/else if \(state === 'completed' && isVideoNode && wait < 10 && apiState !== 'completed'\) \{[\s\S]*?state = 'generating';/);
+    /* Now demands CONFIRMATION rather than the absence of an objection.
+       `apiState !== 'completed'` let any completed status satisfy the guard,
+       including one matched on prompt text alone — which, on a re-run of the
+       same shot, is the PREVIOUS generation reporting that it had finished.
+       apiConfirmsCompleted is set only from this generation's own media id on
+       a fresh cache. See observeGeneration and flowObservation.test.ts. */
+    expect(SRC).toMatch(/else if \(state === 'completed' && isVideoNode && wait < 10 && !apiConfirmsCompleted\) \{[\s\S]*?state = 'generating';/);
   });
 
   it('falls back to resolving mediaUrl from API mediaId or detail view video', () => {

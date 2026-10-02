@@ -126,7 +126,9 @@ describe('the dialog it needs is opened by code that already worked', () => {
       path.resolve(__dirname, '../content/flow/index.ts'), 'utf8',
     );
     expect(flow).toMatch(/case 'PREPARE_VIDEO_UPLOAD'/);
-    expect(flow).toMatch(/openMediaDialog\(\)/);
+    /* With a log, so the wait for a discarded tab to repaint is visible in
+       Diagnostics rather than being thirty silent seconds. */
+    expect(flow).toMatch(/openMediaDialog\(\{ log: logLine \}\)/);
   });
 
   it('by reusing the library picker\'s opener rather than new selectors', () => {
@@ -140,7 +142,7 @@ describe('the dialog it needs is opened by code that already worked', () => {
     /* attachFromLibrary must call it, not keep its own copy. */
     const attach = /export async function attachFromLibrary\([\s\S]*?\n\}/.exec(picker);
     expect(attach).not.toBeNull();
-    expect((attach as RegExpExecArray)[0]).toMatch(/openMediaDialog\(deps\)/);
+    expect((attach as RegExpExecArray)[0]).toMatch(/openMediaDialog\(\{ \.\.\.deps, need: .library. \}\)/);
   });
 });
 

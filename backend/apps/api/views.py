@@ -1066,23 +1066,16 @@ def extraction_limit_state(user) -> dict:
     is_pro = profile.is_pro if profile else False
     now = timezone.now()
 
-    if is_pro:
-        # PRO: 20 per day
-        count = SavedExtraction.objects.filter(
-            user=user,
-            created_at__year=now.year,
-            created_at__month=now.month,
-            created_at__day=now.day,
-        ).count()
-        limit, period = 20, "day"
-    else:
-        # FREE: 4 per month
-        count = SavedExtraction.objects.filter(
-            user=user,
-            created_at__year=now.year,
-            created_at__month=now.month,
-        ).count()
-        limit, period = 4, "month"
+    # FREE: 1 per day (was 4 per month). PRO: 20 per day. The day is UTC.
+    # Only a new analysis creates a SavedExtraction, so reopening one already
+    # saved costs nothing.
+    limit, period = (20 if is_pro else 1), "day"
+    count = SavedExtraction.objects.filter(
+        user=user,
+        created_at__year=now.year,
+        created_at__month=now.month,
+        created_at__day=now.day,
+    ).count()
 
     return {
         "allowed": count < limit,
@@ -1122,8 +1115,8 @@ class SavedExtractionsView(APIView):
             return Response(
                 {
                     "detail": (
-                        f"You have reached your limit of {state['limit']} extractions "
-                        f"per {state['period']}."
+                        f"You have reached your limit of {state['limit']} "
+                        f"extraction{'' if state['limit'] == 1 else 's'} per {state['period']}."
                     ),
                     **state,
                 },

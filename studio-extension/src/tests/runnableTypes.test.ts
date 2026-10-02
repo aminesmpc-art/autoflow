@@ -21,7 +21,13 @@ const read = (p: string) => readFileSync(join(__dirname, '..', p), 'utf8');
 
 describe('the runnable list', () => {
   it('contains every type that executes, and nothing that only carries data', () => {
-    expect([...RUNNABLE_NODE_TYPES].sort()).toEqual(['agent', 'clip', 'cut', 'extend', 'generate', 'story']);
+    /* motion joined the list when Motion Control was added — a node that cuts a
+       source into Omni-sized pieces, has each one directed, and builds a
+       generate node per piece. It executes, so it belongs here; leaving it out
+       is precisely the bug in this file's header, and it happened again: the
+       node was wired up correctly and Run said "Add a node to run". */
+    expect([...RUNNABLE_NODE_TYPES].sort())
+      .toEqual(['agent', 'chief', 'clip', 'cut', 'extend', 'generate', 'motion', 'story']);
     for (const t of ['prompt', 'image', 'frame']) {
       expect(isRunnableType(t)).toBe(false);
     }

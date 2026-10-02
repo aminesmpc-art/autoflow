@@ -136,7 +136,11 @@ describe('the runner banks shots rather than rounds', () => {
   );
 
   it('accepts a shot only when nothing blocking is wrong with it', () => {
-    expect(RUNNER).toMatch(/if \(blockingProblems\(mine\)\.length\) \{[\s\S]{0,120}unresolved\.set/);
+    /* The window is wide because the branch now also fingerprints the shot's
+       problems before filing them, so the loop can tell a slow repair from
+       one that is not happening. What is asserted is unchanged: blocking
+       means unresolved. */
+    expect(RUNNER).toMatch(/if \(blockingProblems\(mine\)\.length\) \{[\s\S]{0,600}unresolved\.set/);
     expect(RUNNER).toMatch(/accepted\.set\(i, sh\)/);
   });
 

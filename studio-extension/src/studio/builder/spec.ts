@@ -34,6 +34,8 @@
    states it, so the other three do not have to guess.
    ============================================================ */
 
+import { productionSkills } from './productionSkills';
+
 /** Platforms a built workflow may name, and what each is actually for. */
 const PLATFORM_NOTES = [
   '- "flow"    Google Flow (Veo / Omni). The premier platform for video generation.',
@@ -122,12 +124,27 @@ export const NODE_MANUAL = `THE NODES, AND WHAT EACH IS FOR
                     If your step just needs words written before the shot, it is a
                     generate/text step, not an agent.
 
+  chief     THE DIRECTOR CHIEF (ONE BIBLE, SEVERAL DIRECTORS)
+            A top-level creative orchestrator for large workflows. It reads the full
+            brief once, creates the shared cast/world/look/rules, and delegates one
+            bounded assignment to every directly connected Director.
+            Takes:  One full story brief in "prompt" or via one T input.
+            Emits:  A locked global story bible plus a different assignment for each
+                    connected "story" step. Never connect it directly to Generate.
+            Fields:
+              - platform: "chatgpt" | "gemini" | "grok" | "claude" | "zai"
+            When:   Use for more than about eight generated assets, or whenever the
+                    plan needs two or three Directors. Split the assets into coherent
+                    groups of roughly four to six per Director. Every Director must
+                    take this Chief in "inputs" and must not repeat the full prompt.
+
   story     THE DIRECTOR (ONE WRITER FOR ALL SHOTS)
             Called "Director" everywhere a person sees it. The type string stays
             "story" — that is what every saved workflow holds — so write
             "type": "story" even though the node is named Director on the canvas.
-            An orchestrator node that writes synchronized prompts for every connected
-            shot in a single AI pass.
+            An orchestrator node that writes synchronized prompts for its connected
+            shots in a single AI pass. A Director connected to a Chief inherits and
+            locks the Chief's cast, world, look, pacing and production rules.
             Takes:  An optional story brief/idea in "prompt" or via T input.
             Emits:  Tailored prompts fed directly to downstream Generate nodes.
             Fields:
@@ -161,8 +178,8 @@ export const NODE_MANUAL = `THE NODES, AND WHAT EACH IS FOR
               "dialogue" only when someone actually speaks on camera; "ambient"
                 for a piece with sound but no lines; "none" for silence.
             When:   Use whenever building a multi-shot story, episodic series, or
-                    reusable story template where one director should coordinate
-                    all scene prompts at runtime.
+                    reusable story template. One Director can own a small piece;
+                    use one Chief above two or three Directors for a large piece.
 
 HOW THEY GO TOGETHER
 
@@ -343,11 +360,12 @@ the same few shapes in their own words. What they say, and what it is here:
 
   A brief that describes a SYSTEM for writing prompts — a character to keep
   identical, a camera to hold, a style to repeat across N shots — is asking
-  for a story director, not for N prompts you write out here. Build the
-  director, set its cast/world/look/structure/camera/rules from the brief,
-  list it in the "inputs" of every shot, and leave those shots without a
-  "prompt". That is what makes the shots agree; writing them yourself is what
-  makes eleven strangers.
+  for runtime direction, not for N prompts you write out here. For up to about
+  eight assets, build one story Director, list it in every shot's "inputs", and
+  leave those shots without a "prompt". For more, build one Chief containing
+  the full brief, connect it to two or three story Directors, and assign each
+  shot to one child Director. That is what makes the groups agree without one
+      oversized model reply; writing every shot yourself is what makes eleven strangers.
 
   "back-mounted camera", "POV rig", "harness or housing visible", "action cam"
       cameraProgression "mountedPOV".
@@ -395,6 +413,8 @@ Reply with ONE JSON object and nothing else. No commentary before or after.
 
 ${NODE_MANUAL}
 
+${productionSkills()}
+
 THE SHAPE
 
 {
@@ -418,6 +438,14 @@ A step:
 
   { "id": "unique_id", "type": "frame", "label": "Ends on",
     "inputs": ["the video step this frame comes from"] }
+
+  {
+    "id": "unique_id",
+    "type": "chief",
+    "platform": "chatgpt" | "gemini" | "grok" | "claude" | "zai",
+    "label": "Director Chief",
+    "prompt": "the complete story premise or production brief"
+  }
 
   {
     "id": "unique_id",
@@ -477,6 +505,14 @@ RULES
   becomes a node of its own.
 - Prefer the director whenever the piece is more than about three shots that
   have to look like one piece. That is most of them.
+- For up to about eight generated assets, use one Director. For a larger plan,
+  use ONE Chief feeding TWO OR THREE Directors, then divide the generated assets
+  into coherent ordered groups. Each Director lists only the Chief in its
+  "inputs" and each generated asset lists only its assigned Director as the text
+  input. Do not wire the Chief directly to generated assets. Do not duplicate the
+  full brief on child Directors: the Chief passes a tailored brief to each one.
+- A Chief must control every Director in that workflow. Never create multiple
+  independent Directors with repeated copies of the same production brief.
 - "frame" takes exactly one video step, and nothing else.
 - "startFrame"/"endFrame" are flow only, are used together, and replace
   "inputs" for that step. Do not pass two pictures in "inputs" hoping for a

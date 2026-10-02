@@ -1030,6 +1030,54 @@ export const FLOW_STRINGS = {
     '错误',                // ZH
     'خطأ',                // AR
   ],
+
+  /* ── The rights consent, shown once before the first upload ─────────────
+   *
+   * "Rights to use this video" — Flow puts this in front of the FIRST upload
+   * of a session and will not ingest the file until it is answered. It sits
+   * over the media dialog, so the upload does not fail: it simply stops, with
+   * the file chooser already satisfied and nothing arriving in the library.
+   *
+   * Three buttons: Cancel, "I agree, do not show again", "I agree". The middle
+   * one is the one worth pressing — the other agreement comes back on the next
+   * upload and stops it again.
+   *
+   * ── English only, deliberately ────────────────────────────────────────
+   *
+   * Every other key in this file was filled in by opening Flow in that
+   * language and reading the button (see the instructions at the top). These
+   * three have only been READ in English, and a guessed translation here is
+   * worse than a missing one: `matchesFlowText` uses `includes`, so a wrong
+   * guess can match a neighbouring button in a dialog whose other choice is
+   * Cancel. A missing language means the dialog stays up and is clicked by
+   * hand once, exactly as it is today.
+   *
+   * To add one: open Flow with that browser language, upload a video, and copy
+   * the three labels verbatim. */
+  rightsDismissForever: [
+    'i agree, do not show again',   // EN
+    'agree, do not show again',     // EN, in case the pronoun is dropped
+  ],
+  rightsAgree: [
+    'i agree',                      // EN
+  ],
+  /* Never pressed. Present so the agree match can be checked against it —
+     "agree" is a substring of nothing here, but a future translation might
+     collide, and the guard costs one comparison. */
+  rightsDecline: [
+    'cancel',                       // EN
+    'annuler',                      // FR
+    'cancelar',                     // ES / PT
+    'abbrechen',                    // DE
+    'annulla',                      // IT
+    'annuleren',                    // NL
+    'iptal',                        // TR
+    'отмена',                       // RU
+    'キャンセル',                    // JA
+    '취소',                          // KO
+    '取消',                          // ZH
+    'إلغاء',                        // AR
+  ],
 } as const;
 
 /**
@@ -1060,7 +1108,17 @@ export function placeholderSelector(key: keyof typeof FLOW_STRINGS): string {
  * for search inputs in all known languages.
  */
 export function searchInputSelector(): string {
-  return '#add-menu-input, ' +
+  /* input.search-input first: it is a class, so it holds in every language.
+     The Angular picker renders
+  
+       <div class="search-input-container">
+         <mat-icon class="search-icon">search</mat-icon>
+         <input class="search-input" aria-label="Search assets" placeholder="Search assets">
+  
+     and the wording under it is translated — this user's interface is in
+     French — so the label and placeholder tiers below only work when the
+     translation happens to be one FLOW_STRINGS knows. */
+  return 'input.search-input, #add-menu-input, ' +
     FLOW_STRINGS.search
       .flatMap(t => [
         `input[aria-label*="${t}"]`,

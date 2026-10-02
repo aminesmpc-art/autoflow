@@ -10,7 +10,7 @@ import { scanProjectForVideos, previewAsset, retrySingleTile, downloadAssetByMen
 import { sleep, findModelSelectorTrigger, findMenuItem, simulateClick } from './selectors';
 import { DOM_SETTLE_MS } from '../shared/constants';
 import { getRunningQueue, clearRunningQueue } from '../shared/storage';
-import { initApiHelper, isApiAvailable } from './apiHelper';
+import { initApiHelper, isApiAvailable, isInterceptorAlive, armPreviewCapture, takeCapturedMediaUrl } from './apiHelper';
 import { matchesFlowText } from './flowStrings';
 import { registerStudioImage, releaseStudioImages } from './studioImages';
 import { pickReferenceStill } from './studioFrames';
@@ -19,7 +19,6 @@ import { pickReferenceStill } from './studioFrames';
 let engine: AutomationEngine | null = null;
 
 // أ¢â€‌â‚¬أ¢â€‌â‚¬ Recovery cancellation flag أ¢â€‌â‚¬أ¢â€‌â‚¬
-let recoveryCancelled = false;
 
 // أ¢â€‌â‚¬أ¢â€‌â‚¬ Anti-throttle: periodic self-ping via service worker roundtrip أ¢â€‌â‚¬أ¢â€‌â‚¬
 // When Chrome throttles background tabs, setTimeout delays balloon.
@@ -215,327 +214,23 @@ if (!(window as any).__autoflow_injected) {
     const { queue, currentIndex, recoveryMode, baselineTileCount } = saved;
 
     if (recoveryMode) {
-      // أ¢â€‌â‚¬أ¢â€‌â‚¬ RECOVERY MODE: Page was reloaded to clear fake "cancelled" tiles أ¢â€‌â‚¬أ¢â€‌â‚¬
-      // The ONLY source of truth is: does a completed video exist on the page for each prompt?
-      // We DON'T trust the prompt.status from before the reload أ¢â‚¬â€‌ tile IDs are stale after refresh.
-      recoveryCancelled = false;
-      console.log(`[AutoFlow] Recovery mode: scanning page for "${queue.name}"...`);
-      sendPhaseUpdate('scanning', 'Recovery: Waiting for page to load...');
-
-      // Load recovery metadata from chrome.storage.local
-      let hardFailedIndices: number[] = [];
-      try {
-        const storageData = await new Promise<any>((resolve) => {
-          chrome.storage.local.get(['autoflow_hard_failed_indices'], resolve);
-        });
-        hardFailedIndices = storageData?.autoflow_hard_failed_indices || [];
-        console.log(`[AutoFlow] Loaded hard-failed indices:`, hardFailedIndices);
-      } catch (err: any) {
-        console.warn('[AutoFlow] Failed to load hard-failed indices:', err);
-      }
-
-      // Wait for Flow to fully load (reduced from 6s أ¢â‚¬â€‌ fake cancels resolve fast)
-      await sleep(4000);
-      if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
-
-      // Import tile scanning tools أ¢â‚¬â€‌ including scroll collector for virtualized lists
-      const { findAssetCards, getTileState, isVisible, findPromptInput, findOutputScroller, scrollAndCollectAllTileStates } = await import('./selectors');
-
-      // Check if we're on a project page (has prompt input) vs homepage
-      let onProjectPage = false;
-      for (let wait = 0; wait < 15; wait++) {
-        const promptInput = findPromptInput();
-        const tiles = findAssetCards().filter(el => isVisible(el));
-        if (promptInput || tiles.length > 0) {
-          onProjectPage = true;
-          break;
-        }
-        console.log(`[AutoFlow] Recovery: waiting for project page to load... (${(wait + 1) * 1.5}s)`);
-        sendPhaseUpdate('scanning', `Recovery: Waiting for project page... (${wait + 1}/15)`);
-        await sleep(1500);
-        if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
-      }
-
-      if (!onProjectPage) {
-        console.log('[AutoFlow] Recovery: not on a project page after 30s. Clearing queue.');
-        await clearRunningQueue();
-        return;
-      }
-
-      // Wait for tiles to appear (up to 20s)
-      let tilesFound = 0;
-      for (let wait = 0; wait < 8; wait++) {
-        tilesFound = findAssetCards().filter(el => isVisible(el)).length;
-        if (tilesFound > 0) break;
-        console.log(`[AutoFlow] Recovery: waiting for tiles... (${(wait + 1) * 1.5}s)`);
-        sendPhaseUpdate('scanning', `Recovery: Waiting for tiles... (${wait + 1}/8)`);
-        await sleep(1500);
-        if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
-      }
-
-      if (tilesFound === 0) {
-        console.log('[AutoFlow] Recovery: no tiles found. Clearing queue.');
-        await clearRunningQueue();
-        return;
-      }
-
-      // Wait for any still-generating tiles to settle (up to 5 min)
-      console.log(`[AutoFlow] Recovery: ${tilesFound} tile(s) found. Waiting for generating tiles to settle...`);
-      sendPhaseUpdate('scanning', 'Recovery: Waiting for generating tiles to settle...');
-      for (let elapsed = 0; elapsed < 300; elapsed += 15) {
-        if (recoveryCancelled) { console.log('[AutoFlow] Recovery cancelled by user.'); await clearRunningQueue(); return; }
-        const cards = findAssetCards().filter(el => isVisible(el));
-        const generating = cards.filter(el => getTileState(el) === 'generating').length;
-        const completed = cards.filter(el => getTileState(el) === 'completed').length;
-        const failed = cards.filter(el => getTileState(el) === 'failed').length;
-
-        if (generating === 0) {
-          console.log(`[AutoFlow] Recovery: tiles settled أ¢â‚¬â€‌ ${completed} completed, ${failed} failed (visible)`);
-          break;
-        }
-        console.log(`[AutoFlow] Recovery: waiting... generating: ${generating}, completed: ${completed}, failed: ${failed}, elapsed: ${elapsed}s`);
-        sendPhaseUpdate('scanning', `Recovery: Settling... generating: ${generating}, completed: ${completed}`);
-        await sleep(8000);
-      }
-
-      // أ¢â€‌â‚¬أ¢â€‌â‚¬ CORE LOGIC: Scroll through the ENTIRE virtualized grid أ¢â€‌â‚¬أ¢â€‌â‚¬
-      // Flow uses Virtuoso which REMOVES off-screen tiles from the DOM.
-      // We MUST scroll through all positions to see every tile.
-      console.log('[AutoFlow] Recovery: scrolling through entire grid to collect ALL tile texts...');
-      sendPhaseUpdate('checking', 'Recovery: Scrolling grid to verify all tiles...');
-
-      // Use scrollAndCollectAllTileStates to get every tile's state and text
-      const allTileStates = await scrollAndCollectAllTileStates();
-      // Map all tile texts to prevent marking generating/failed-but-present tiles as "missing"
-      const completedTileTexts = allTileStates
-        .map(t => t.text.toLowerCase());
-
-      // Also get full page text as final fallback
-      const pageText = document.body.innerText.toLowerCase();
-
-      const totalCompleted = allTileStates.filter(t => t.state === 'completed').length;
-      const totalFailed = allTileStates.filter(t => t.state === 'failed').length;
-
-      // Count how many prompts were actually submitted (not skipped/not-added)
-      const submittedPrompts = queue.prompts.filter(p =>
-        p.status !== 'not-added' && p.status !== 'queued'
-      );
-      console.log(`[AutoFlow] Recovery: found ${allTileStates.length} total tiles (${totalCompleted} completed, ${totalFailed} failed), collected text from ${completedTileTexts.length} completed tiles, ${submittedPrompts.length} prompts were submitted`);
-
-      let recovered = 0;
-      const trulyFailedPrompts: typeof queue.prompts = [];
-
-      // أ¢â€‌â‚¬أ¢â€‌â‚¬ SMART STRATEGY: Count-first, then text-match أ¢â€‌â‚¬أ¢â€‌â‚¬
-      // Subtract baseline tiles (from BEFORE the queue started) to avoid
-      // counting old tiles from previous queues as "completed" for this queue.
-      const baseline = baselineTileCount || 0;
-      const effectiveCompleted = Math.max(0, totalCompleted - baseline);
-      console.log(`[AutoFlow] Recovery: ${totalCompleted} total completed - ${baseline} baseline = ${effectiveCompleted} effective completed for this queue`);
-
-      if (effectiveCompleted >= submittedPrompts.length) {
-        console.log(`[AutoFlow] Recovery: أ¢إ“â€¦ ${effectiveCompleted} effective completed >= ${submittedPrompts.length} submitted أ¢â‚¬â€‌ ALL DONE (baseline-adjusted count)`);
-        for (let i = 0; i < queue.prompts.length; i++) {
-          const p = queue.prompts[i];
-          if (p.status !== 'not-added') {
-            if (p.status === 'failed') recovered++;
-            p.status = 'done';
-            p.error = undefined;
-            sendPromptStatusUpdate(queue.id, i, 'done', undefined, p.mediaId);
-          }
-        }
-      } else {
-        // Not enough completed tiles أ¢â‚¬â€‌ need to find which specific prompts are missing.
-        // Use multi-fragment fuzzy matching for better accuracy.
-        console.log(`[AutoFlow] Recovery: ${totalCompleted} completed but ${submittedPrompts.length} submitted أ¢â‚¬â€‌ using fuzzy match to find missing...`);
-        sendPhaseUpdate('checking', 'Recovery: Matching prompt texts against tiles...');
-
-        // Track which tile texts have been "consumed" to avoid double-matching
-        const consumedTileIndices = new Set<number>();
-
-        /**
-         * Fuzzy match: try multiple text fragments from start, middle, and end
-         * of the prompt against each tile text. Google Flow often truncates
-         * the prompt or reformats it, so a single 40-char slice fails.
-         */
-        function fuzzyMatchPrompt(promptText: string, tileTexts: string[]): number {
-          const clean = promptText.trim().toLowerCase();
-          if (clean.length < 4) return -1;
-
-          // Generate search fragments from different parts of the prompt
-          const fragments: string[] = [];
-          // Start fragment (first 25 chars أ¢â‚¬â€‌ most reliable)
-          fragments.push(clean.slice(0, Math.min(25, clean.length)));
-          // Middle fragment
-          if (clean.length > 60) {
-            const mid = Math.floor(clean.length / 2) - 12;
-            fragments.push(clean.slice(mid, mid + 25));
-          }
-          // Unique keywords: pick the longest word (likely the most unique identifier)
-          const words = clean.split(/\s+/).filter(w => w.length > 5);
-          if (words.length > 0) {
-            words.sort((a, b) => b.length - a.length);
-            fragments.push(words[0]); // longest word
-            if (words.length > 2) fragments.push(words[2]); // third longest
-          }
-
-          // Try matching each fragment against unconsumed tiles
-          for (let ti = 0; ti < tileTexts.length; ti++) {
-            if (consumedTileIndices.has(ti)) continue;
-            const tile = tileTexts[ti];
-            // Match if ANY 2+ fragments hit (reduces false positives)
-            let hits = 0;
-            for (const frag of fragments) {
-              if (tile.includes(frag)) hits++;
-            }
-            if (hits >= 2) return ti;
-            // Single hit with the start fragment is also OK (most reliable)
-            if (hits >= 1 && tile.includes(fragments[0])) return ti;
-          }
-
-          // Last resort: check page text with start fragment
-          if (pageText.includes(fragments[0])) return -2; // special: found on page but not in tile
-
-          return -1; // not found
-        }
-
-        for (let i = 0; i < queue.prompts.length; i++) {
-          const p = queue.prompts[i];
-          if (p.status === 'not-added' || p.status === 'queued') continue;
-
-          // If prompt has already hard-failed (reached 3 retries in Phase 1), preserve failed status and skip recovery
-          if (hardFailedIndices.includes(i)) {
-            p.status = 'failed';
-            p.error = 'Failed after 3 retry attempts';
-            console.log(`[AutoFlow] Recovery: prompt #${i + 1} is marked as hard-failed أ¢â‚¬â€‌ skipping rescue`);
-            sendPromptStatusUpdate(queue.id, i, 'failed', p.error);
-            continue;
-          }
-
-          // Very short prompts أ¢â‚¬â€‌ can't reliably match
-          if (p.text.trim().length < 4) {
-            console.log(`[AutoFlow] Recovery: prompt #${i + 1} too short, assuming done`);
-            p.status = 'done';
-            p.error = undefined;
-            recovered++;
-            sendPromptStatusUpdate(queue.id, i, 'done');
-            continue;
-          }
-
-          const matchIdx = fuzzyMatchPrompt(p.text, completedTileTexts);
-
-          if (matchIdx >= 0) {
-            // Found in a specific tile أ¢â‚¬â€‌ consume it so it's not double-matched
-            consumedTileIndices.add(matchIdx);
-            if (p.status === 'failed') {
-              recovered++;
-              console.log(`[AutoFlow] Recovery: prompt #${i + 1} أ¢إ“â€¦ FOUND in tile أ¢â‚¬â€‌ "${p.text.slice(0, 30)}..." أ¢â€ â€™ marking done`);
-            } else {
-              console.log(`[AutoFlow] Recovery: prompt #${i + 1} أ¢إ“â€¦ confirmed (${p.status})`);
-            }
-            p.status = 'done';
-            p.error = undefined;
-            sendPromptStatusUpdate(queue.id, i, 'done', undefined, p.mediaId);
-          } else if (matchIdx === -2) {
-            // Found on page text but not in a specific tile
-            if (p.status === 'failed') recovered++;
-            console.log(`[AutoFlow] Recovery: prompt #${i + 1} أ¢إ“â€¦ found on page text أ¢â‚¬â€‌ "${p.text.slice(0, 30)}..." أ¢â€ â€™ marking done`);
-            p.status = 'done';
-            p.error = undefined;
-            sendPromptStatusUpdate(queue.id, i, 'done', undefined, p.mediaId);
-          } else {
-            // NOT found anywhere أ¢â‚¬â€‌ truly failed (queued for regeneration)
-            p.status = 'queued';
-            p.attempts = 0;
-            p.error = undefined;
-            p.tileIds = [];
-            trulyFailedPrompts.push(p);
-            console.log(`[AutoFlow] Recovery: prompt #${i + 1} أ¢â€Œإ’ NOT FOUND أ¢â‚¬â€‌ "${p.text.slice(0, 30)}..." أ¢â€ â€™ will regenerate`);
-            sendPromptStatusUpdate(queue.id, i, 'queued');
-          }
-        }
-
-        // أ¢â€‌â‚¬أ¢â€‌â‚¬ SAFETY NET: Count-based correction أ¢â€‌â‚¬أ¢â€‌â‚¬
-        // Rescues false-positives where a prompt is incorrectly marked as failed
-        // because the text matcher failed to find its completed video tile.
-        // Exclude hard-failed prompts from expected missing count
-        const hardFailedCount = hardFailedIndices.filter((idx: number) => 
-          submittedPrompts.map(p => queue.prompts.indexOf(p)).includes(idx)
-        ).length;
-        const expectedMissing = Math.max(0, submittedPrompts.length - effectiveCompleted - hardFailedCount);
-        
-        if (trulyFailedPrompts.length > expectedMissing && expectedMissing >= 0) {
-          const excess = trulyFailedPrompts.length - expectedMissing;
-          console.log(`[AutoFlow] Recovery: text match says ${trulyFailedPrompts.length} missing but baseline-adjusted count says only ${expectedMissing} missing أ¢â‚¬â€‌ removing ${excess} false negatives`);
-          for (let x = 0; x < excess; x++) {
-            const rescued = trulyFailedPrompts.shift()!;
-            rescued.status = 'done';
-            rescued.error = undefined;
-            recovered++;
-            console.log(`[AutoFlow] Recovery: prompt "${rescued.text.slice(0, 25)}..." rescued by count-based safety net أ¢إ“â€¦`);
-            sendPromptStatusUpdate(queue.id, queue.prompts.indexOf(rescued), 'done', undefined, rescued.mediaId);
-          }
-        }
-      }
-
-      console.log(`[AutoFlow] Recovery complete: ${recovered} recovered from fake failures, ${trulyFailedPrompts.length} truly missing`);
-      sendPhaseUpdate('checking', `Recovery complete: ${recovered} recovered, ${trulyFailedPrompts.length} missing.`);
-      if (recoveryCancelled) {
-        console.log('[AutoFlow] Recovery cancelled by user.');
-        await clearRunningQueue();
-        await chrome.storage.local.remove(['autoflow_uploaded_assets', 'autoflow_hard_failed_indices']);
-        return;
-      }
-
-      // Clear the saved state
+      /* Legacy. A run used to end by reloading the page and coming back here
+         to "clear fake cancelled tiles" — Flow's own words for a state it no
+         longer has, and Google has since fixed the behaviour behind it. What
+         this branch did was rescan the grid and then call startQueue() to
+         regenerate whatever it could not find, i.e. re-prompt: the one thing
+         FLOW mode must not do, and FLOW was the only mode that reached it.
+         
+         Nothing writes recoveryMode any more. Reaching it means a queue saved
+         by an older version is still in storage, so the save is cleared
+         rather than acted on — regenerating prompts on a page the user just
+         opened, for a run they finished days ago, would be worse than doing
+         nothing. */
+      console.log('[AutoFlow] Discarding a saved recovery run from an older version.');
       await clearRunningQueue();
-      await chrome.storage.local.remove(['autoflow_uploaded_assets', 'autoflow_hard_failed_indices']);
-
-      // Notify sidepanel
-      await sleep(500);
       try {
-        chrome.runtime.sendMessage({
-          type: 'QUEUE_RECOVERY_RESULT',
-          payload: {
-            queueName: queue.name,
-            recovered,
-            trulyFailed: trulyFailedPrompts.length,
-            failedPrompts: []
-          }
-        }).catch(() => {});
-      } catch { /* ignore */ }
-
-      // Only restart the queue if there are truly missing prompts
-      if (trulyFailedPrompts.length > 0 && !recoveryCancelled) {
-        console.log(`[AutoFlow] Regenerating ${trulyFailedPrompts.length} truly missing prompt(s)...`);
-        sendPhaseUpdate('running', `Regenerating ${trulyFailedPrompts.length} missing prompt(s)...`);
-
-        // We update the original queue status and current index, then start it
-        queue.status = 'running';
-        queue.currentPromptIndex = 0;
-
-        await sleep(3000);
-        startQueue(queue, baselineTileCount);
-      } else {
-        console.log('[AutoFlow] All prompts found on page! No regeneration needed. أ¢إ“â€¦');
-        sendPhaseUpdate('checking', 'All prompts successfully verified and completed.');
-        try {
-          chrome.runtime.sendMessage({
-            type: 'QUEUE_STATUS_UPDATE',
-            payload: { queueId: queue.id, status: 'completed' }
-          }).catch(() => {});
-        } catch { /* ignore */ }
-
-        // Auto-scan library أ¢â‚¬â€‌ download ALL completed videos on the page
-        // This covers the recovered fake-cancelled videos too
-        await sleep(1000);
-        try {
-          chrome.runtime.sendMessage({
-            type: 'AUTO_SCAN_LIBRARY',
-            payload: { queueName: queue.name, autoDownload: !!(queue.settings as any)?.autoDownload },
-          }).catch(() => {});
-        } catch { /* ignore */ }
-      }
-
+        chrome.storage.local.remove(['autoflow_uploaded_assets', 'autoflow_hard_failed_indices']);
+      } catch { /* nothing to clean up */ }
       return;
     }
 
@@ -614,7 +309,6 @@ async function handleMessage(msg: Message): Promise<any> {
           payload: { status: 'stopped' }
         }).catch(() => {});
       }
-      recoveryCancelled = true;
       clearRunningQueue().catch(() => {});
       stopAntiThrottle();
       return { success: true };
@@ -643,7 +337,10 @@ async function handleMessage(msg: Message): Promise<any> {
       return { success: true };
 
     case 'CHECK_API_AVAILABILITY':
-      return { isAvailable: isApiAvailable() };
+      /* Either the pipe is open or data has arrived through it. The badge
+         asks this on every monitor render, so answering with cache
+         freshness alone reset it to "API Passive" between generations. */
+      return { isAvailable: isApiAvailable() || isInterceptorAlive() };
 
     case 'SCAN_FAILED_TILES':
       if (engine) {
@@ -667,6 +364,55 @@ async function handleMessage(msg: Message): Promise<any> {
 
     case 'UPSCALE_SELECTED':
       return upscaleSelected(msg.payload);
+
+    /**
+     * The URL the tile is holding right now.
+     *
+     * A tile carries its own video once Flow has rendered it:
+     *
+     *   <video preload="auto" src="https://flow.google.com/asb/AB-nOU…=mm,22,15">
+     *
+     * and that URL plays — it redirects to a signed googlevideo one. But it
+     * only exists after the tile renders, and a scan reads rows the moment
+     * they scroll past, so the row it recorded often had no video yet.
+     *
+     * Re-reading it now costs a lookup. The alternative was driving Flow's
+     * download menu to make it issue a URL, which downloads a video in order
+     * to show a preview — the right mechanism for getting a file, and the
+     * wrong one for looking at something.
+     */
+    case 'GET_TILE_VIDEO_SRC': {
+      const locator = msg.payload?.locator || '';
+      let present = false;
+      try { present = !!document.querySelector(locator); } catch { present = false; }
+      if (!present) return { error: 'That tile is no longer on the page — rescan the project' };
+
+      const url = await liveVideoSrc(locator);
+      return url ? { url } : { error: 'Flow did not attach a video to that tile' };
+    }
+
+    /* Drive Flow's own download menu so it issues a signed URL. The
+       service worker takes that URL off the download and cancels it, so
+       nothing is saved — see CAPTURE_ASSET_VIDEO_URL. */
+    case 'DOWNLOAD_ASSET_FOR_PREVIEW': {
+      /* Get a playable URL without writing a file.
+         Flow's download menu fetches the signed URL, wraps it in a blob and
+         saves that with an <a download>. The interceptor sees the fetch — the
+         only place the real URL appears — and swallows the anchor click, so
+         the panel gets something to play and nothing lands on disk. */
+      armPreviewCapture();
+      const ok = await downloadAssetByMenu(msg.payload.locator, msg.payload.resolution);
+      if (!ok) return { error: 'Could not reach the download menu for this asset' };
+
+      /* The fetch is already in flight by the time the menu click returns,
+         but not necessarily observed yet. */
+      for (let waited = 0; waited < 15000; waited += 200) {
+        const url = takeCapturedMediaUrl();
+        if (url) return { url };
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      return { error: 'Flow did not fetch a video for this asset' };
+    }
 
     case 'PREVIEW_ASSET':
       return previewAssetHandler(msg.payload);
@@ -749,20 +495,10 @@ async function startQueue(queue: QueueObject, baselineTileCount?: number): Promi
   startAntiThrottle();  // Fight tab throttling during automation
   // Don't await أ¢â‚¬â€‌ run in background so the message can respond
   (async () => {
-    try {
-      const storageData = await new Promise<any>((resolve) => {
-        chrome.storage.local.get(['autoflow_uploaded_assets'], resolve);
-      });
-      const uploadedAssetsList = storageData?.autoflow_uploaded_assets || [];
-      if (uploadedAssetsList.length > 0) {
-        for (const asset of uploadedAssetsList) {
-          (engine as any).uploadedAssets.add(asset);
-        }
-        console.log(`[AutoFlow] Restored ${uploadedAssetsList.length} uploaded assets into engine cache.`);
-      }
-    } catch (err: any) {
-      console.warn('[AutoFlow] Failed to restore uploaded assets:', err);
-    }
+    /* The engine's uploadedAssets used to be restored from storage here, so
+       it could survive the page reload a run ended with. Nothing writes that
+       key any more — the reload is gone, and within one run the engine holds
+       the set in memory, which is all it was ever for. */
 
     try {
       await engine.start(queue, baselineTileCount);
@@ -910,6 +646,61 @@ async function upscaleSelected(payload: {
   return { triggered, failed };
 }
 
+/**
+ * The video URL a tile is holding right now, waiting briefly for it.
+ *
+ * Flow renders a row's <video> when the row is on screen, and a scan reads
+ * rows as they scroll past — so the URL recorded at scan time is often empty
+ * for anything below the first screen. Reading it again when it is actually
+ * needed costs a lookup and gets the real thing.
+ */
+async function liveVideoSrc(locator: string, timeoutMs = 4000): Promise<string> {
+  let tile: Element | null = null;
+  try { tile = document.querySelector(locator); } catch { return ''; }
+  if (!tile) return '';
+
+  const read = () => {
+    const v = tile!.querySelector('video') as HTMLVideoElement | null;
+    return v ? (v.currentSrc || v.getAttribute('src') || '') : '';
+  };
+
+  const already = read();
+  if (already) return already;
+
+  /* Hover it. That is what makes Flow attach the video.
+   *
+   * Measured on a live project, on a tile that starts as a thumbnail:
+   *
+   *   before                  no <video>
+   *   after scrollIntoView    no <video>
+   *   after hover             <video> present, with its real URL
+   *
+   * Scrolling alone does nothing, which is why waiting for the element to
+   * appear simply timed out. Flow keeps the grid as still images and swaps in
+   * the video only for the tile under the pointer.
+   *
+   * The events are dispatched on the tile and on its inner container, because
+   * the listener sits on whichever of them Angular bound it to and that is not
+   * ours to know. */
+  try { tile.scrollIntoView({ block: 'center' }); } catch { /* not fatal */ }
+
+  const targets = [tile, tile.querySelector('.container'), tile.firstElementChild]
+    .filter(Boolean) as Element[];
+  for (const el of targets) {
+    for (const type of ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'mousemove']) {
+      const Ev = type.startsWith('pointer') ? PointerEvent : MouseEvent;
+      el.dispatchEvent(new Ev(type, { bubbles: true, cancelable: true, view: window }));
+    }
+  }
+
+  for (let waited = 0; waited < timeoutMs; waited += 150) {
+    const src = read();
+    if (src) return src;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return '';
+}
+
 async function downloadSelected(payload: {
   assets: Array<{
     locator: string;
@@ -930,6 +721,23 @@ async function downloadSelected(payload: {
   const resolutionLabel = payload.resolution || 'Original (720p)';
   const hasVideos = payload.assets.some(a => a.mediaType === 'video');
   const needsUpscale = hasVideos && !resolutionLabel.toLowerCase().includes('720p');
+
+  /* Say which route this is taking before taking it.
+   *
+   * There are three, and from the outside they all look like "download".
+   * The fast one fetches each tile's own URL. Anything other than 720p goes
+   * through Flow's menu to make it upscale first — which spends credits and
+   * can sit for fifteen minutes. And a tile with no URL of its own falls back
+   * to the menu too, which needs its locator to still match.
+   *
+   * A run that reported "Downloaded 0 file(s)" could have been any of those,
+   * so the reason is now on the record. */
+  const missingUrl = payload.assets.filter(a => a.mediaType === 'video' && !a.videoSrc).length;
+  console.log(
+    `[AutoFlow] Download: ${payload.assets.length} asset(s) at "${resolutionLabel}" · ` +
+    `${needsUpscale ? 'UPSCALE FIRST (menu, costs credits)' : 'direct URL where possible'} · ` +
+    `${missingUrl} video(s) have NO url of their own and must use the menu`,
+  );
 
   /**
    * Build a clean filename from asset metadata.
@@ -988,14 +796,72 @@ async function downloadSelected(payload: {
   }
 
   // أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯
-  // DOWNLOAD ALL ASSETS via Flow context menu with rename
-  // Always use menu-based download أ¢â‚¬â€‌ direct URL download is
-  // unreliable because videoSrc is often empty for tiles.
+  // DOWNLOAD ALL ASSETS
+  // The tile's own video URL first, and the context menu when there is no
+  // such URL or the user wants an upscale. Direct download used to be
+  // unreliable "because videoSrc is often empty for tiles" — it was, until
+  // the URL could be derived from the thumbnail token.
   // أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯أ¢â€¢ع¯
   console.log(`[AutoFlow] Downloading ${payload.assets.length} asset(s) via context menu with rename...`);
   for (const asset of payload.assets) {
     try {
       const filename = buildFilename(asset);
+      const assetResEarly = asset.mediaType === 'image' ? '1K' : resolutionLabel;
+
+      /* Fast path: fetch the file straight from the tile's own URL.
+         Flow serves it from the same /asb/ token as the thumbnail, and that
+         URL is itag 22 — the 720p original, which is exactly what "Original
+         (720p)" asks for. Taking it directly skips a hover, a menu, a
+         submenu and their settling delays for every asset, and never touches
+         the page. An upscale still has to go through the menu: 1080p and 4K
+         do not exist until Flow makes them. */
+      const wantsOriginal = /original|720/i.test(String(assetResEarly));
+
+      /* The scan may have read this row before Flow rendered its video. Ask
+         the page for the URL it is holding now, rather than going straight to
+         the menu — the menu is slower, needs the tile's locator to still
+         match, and on anything but the original resolution makes Flow upscale
+         first, which costs credits. */
+      /* Missing, or expired. A signed flow-content.google URL lasts about an
+         hour; a library scanned earlier and downloaded later is working from
+         one that has died. The /asb/ URLs carry no expiry and are left be. */
+      const cached = String((asset as any).videoSrc || '');
+      const expiredMatch = /[?&]Expires=(\d+)/.exec(cached);
+      const staleUrl = !!expiredMatch && Number(expiredMatch[1]) * 1000 <= Date.now();
+      if (staleUrl) {
+        console.log(`[AutoFlow] The saved URL for "${asset.promptLabel || 'asset'}" has expired; re-reading the tile`);
+        (asset as any).videoSrc = '';
+      }
+
+      if (asset.mediaType === 'video' && !(asset as any).videoSrc && wantsOriginal) {
+        const live = await liveVideoSrc(asset.locator);
+        if (live) {
+          (asset as any).videoSrc = live;
+          console.log(`[AutoFlow] Read the video URL off the page for "${asset.promptLabel || 'asset'}"`);
+        }
+      }
+
+      if (asset.mediaType === 'video' && (asset as any).videoSrc && wantsOriginal) {
+        /* No SET_DOWNLOAD_RENAME here: DOWNLOAD_FILE queues its own rename,
+           and queuing twice leaves a spare that lands on the next file. */
+        const direct: any = await chrome.runtime.sendMessage({
+          type: 'DOWNLOAD_FILE',
+          payload: { url: (asset as any).videoSrc, filename },
+        });
+        if (!direct?.error) {
+          results.push(filename);
+          console.log(`[AutoFlow] Downloaded direct: ${filename}`);
+          await sleep(300);
+          continue;
+        }
+        console.warn(`[AutoFlow] Direct download failed (${direct.error}); using the menu`);
+      } else if (asset.mediaType === 'video') {
+        console.warn(
+          `[AutoFlow] Not using the direct URL for "${asset.promptLabel || 'asset'}": ` +
+          `${(asset as any).videoSrc ? '' : 'no url on the tile'}` +
+          `${wantsOriginal ? '' : ` resolution is "${assetResEarly}", not the original`}`,
+        );
+      }
 
       // Queue the rename FIRST أ¢â‚¬â€‌ so onDeterminingFilename picks it up
       await chrome.runtime.sendMessage({
@@ -1008,6 +874,14 @@ async function downloadSelected(payload: {
       // Videos: use the user's preferred resolution setting
       const assetRes = asset.mediaType === 'image' ? '1K' : resolutionLabel;
       const ok = await downloadAssetByMenu(asset.locator, assetRes);
+      if (!ok) {
+        let hits = -1;
+        try { hits = document.querySelectorAll(asset.locator).length; } catch { hits = -2; }
+        console.warn(
+          `[AutoFlow] Menu download failed for "${asset.promptLabel || 'asset'}" — ` +
+          `its locator matched ${hits} tile(s): ${asset.locator}`,
+        );
+      }
       if (ok) {
         results.push(filename);
         console.log(`[AutoFlow] Download queued: ${filename}`);
@@ -1110,7 +984,8 @@ async function handleStudioExecuteNode(payload: any): Promise<any> {
       typingMode: false,
       typingSpeedMultiplier: 1.0,
       autoDownloadVideos: false,
-      videoResolution: '4K',
+      /* Matches DEFAULT_SETTINGS: 4K is disabled on plans without it. */
+      videoResolution: 'Original (720p)',
       autoDownloadImages: false,
       imageResolution: '4K',
       imageModel: isImage ? (config.model || 'Nano Banana Pro') : 'Nano Banana Pro',

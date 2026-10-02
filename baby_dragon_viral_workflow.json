@@ -1,0 +1,235 @@
+{
+  "id": "baby-dragon-viral",
+  "name": "Viral Baby Dragon: Sneak → Tongue Stuck → Flame Twist",
+  "description": "3-shot vertical comedy sequence: a tiny silver baby dragon steals peanut butter, gets its tongue stuck, and sneezes a flame roasting a marshmallow.",
+  "useCase": "Viral TikTok / Reels comedy creature formula with Last Frame handoffs",
+  "category": "Content",
+  "difficulty": "Medium",
+  "nodeCount": 10,
+  "thumbnail": "🐲",
+  "nodes": [
+    {
+      "id": "p_still",
+      "type": "prompt",
+      "position": { "x": 40, "y": 40 },
+      "data": {
+        "type": "prompt",
+        "label": "Dragon Anchor Prompt",
+        "text": "Authentic smartphone vertical photo of an adorable cat-sized eastern baby dragon perched on a clean white marble kitchen countertop. Shimmering iridescent silver-white scales, expressive wide emerald-green eyes, tiny translucent horns, and long delicate whiskers. Natural morning daylight streaming through a kitchen window, ultra-realistic CGI blending with live-action environment."
+      }
+    },
+    {
+      "id": "dragon_still",
+      "type": "generate",
+      "position": { "x": 520, "y": 40 },
+      "data": {
+        "type": "generate",
+        "label": "Dragon Anchor Still",
+        "platform": "flow",
+        "mediaType": "image",
+        "model": "Nano Banana Pro",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle"
+      }
+    },
+    {
+      "id": "p_shot1",
+      "type": "prompt",
+      "position": { "x": 520, "y": 360 },
+      "data": {
+        "type": "prompt",
+        "label": "Shot 1 — Kitchen Sneak",
+        "text": "Vertical 9:16, slightly shaky handheld smartphone POV camera. The same silver-white baby dragon with emerald eyes and long whiskers tiptoes playfully across the marble kitchen counter. It approaches an open glass jar of peanut butter, looks around cautiously, and dips its tiny claw into the jar."
+      }
+    },
+    {
+      "id": "shot1",
+      "type": "generate",
+      "position": { "x": 1000, "y": 360 },
+      "data": {
+        "type": "generate",
+        "label": "Shot 1 — The Sneak (6s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Omni Flash",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle"
+      }
+    },
+    {
+      "id": "handoff1",
+      "type": "frame",
+      "position": { "x": 1480, "y": 360 },
+      "data": {
+        "type": "frame",
+        "label": "Sneak End Frame",
+        "frameUrl": ""
+      }
+    },
+    {
+      "id": "p_shot2",
+      "type": "prompt",
+      "position": { "x": 1480, "y": 720 },
+      "data": {
+        "type": "prompt",
+        "label": "Shot 2 — Sticky Situation",
+        "text": "Continuing seamlessly from this exact frame: Handheld smartphone POV. The silver-white baby dragon licks the peanut butter off its claw, immediately getting its tongue hilariously stuck to the roof of its mouth. It opens its jaws wide, shaking its head vigorously and pawing at its snout in relatable, frantic cute distress."
+      }
+    },
+    {
+      "id": "shot2",
+      "type": "generate",
+      "position": { "x": 1960, "y": 720 },
+      "data": {
+        "type": "generate",
+        "label": "Shot 2 — Sticky Tongue (6s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Omni Flash",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle"
+      }
+    },
+    {
+      "id": "handoff2",
+      "type": "frame",
+      "position": { "x": 2440, "y": 720 },
+      "data": {
+        "type": "frame",
+        "label": "Sticky End Frame",
+        "frameUrl": ""
+      }
+    },
+    {
+      "id": "p_shot3",
+      "type": "prompt",
+      "position": { "x": 2440, "y": 1080 },
+      "data": {
+        "type": "prompt",
+        "label": "Shot 3 — Sneeze Twist",
+        "text": "Continuing from this exact frame: Handheld smartphone POV. The baby dragon hiccups violently and lets out a sudden tiny sneeze, shooting a brief burst of sparkling golden-cyan flame. The flame instantly roasts a white marshmallow sitting on a plate 6 inches away into a golden-brown toasted s'more. The dragon freezes in shock, ears perking up, turning its head slowly with wide guilty eyes staring straight into the camera lens."
+      }
+    },
+    {
+      "id": "shot3",
+      "type": "generate",
+      "position": { "x": 2920, "y": 1080 },
+      "data": {
+        "type": "generate",
+        "label": "Shot 3 — Flame Twist (6s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Omni Flash",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_p_still_dragon_still_t",
+      "source": "p_still",
+      "target": "dragon_still",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2.5 }
+    },
+    {
+      "id": "e_p_shot1_shot1_t",
+      "source": "p_shot1",
+      "target": "shot1",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2.5 }
+    },
+    {
+      "id": "e_dragon_still_shot1_i",
+      "source": "dragon_still",
+      "target": "shot1",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2.5 }
+    },
+    {
+      "id": "e_shot1_handoff1_i",
+      "source": "shot1",
+      "target": "handoff1",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2.5 }
+    },
+    {
+      "id": "e_p_shot2_shot2_t",
+      "source": "p_shot2",
+      "target": "shot2",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2.5 }
+    },
+    {
+      "id": "e_handoff1_shot2_i",
+      "source": "handoff1",
+      "target": "shot2",
+      "sourceHandle": "image",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2.5 }
+    },
+    {
+      "id": "e_shot2_handoff2_i",
+      "source": "shot2",
+      "target": "handoff2",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2.5 }
+    },
+    {
+      "id": "e_p_shot3_shot3_t",
+      "source": "p_shot3",
+      "target": "shot3",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2.5 }
+    },
+    {
+      "id": "e_handoff2_shot3_i",
+      "source": "handoff2",
+      "target": "shot3",
+      "sourceHandle": "image",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2.5 }
+    }
+  ],
+  "requiresNodeTypes": ["prompt", "generate", "frame"],
+  "requiresPlatforms": ["flow"],
+  "tier": "free"
+}

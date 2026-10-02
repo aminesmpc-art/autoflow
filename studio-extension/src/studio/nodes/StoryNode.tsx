@@ -41,6 +41,29 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
   const [activeTab, setActiveTab] = useState<'direct' | 'flow' | 'cast'>('direct');
 
   const story = readStory(d);
+  const chiefConnected = edges.some((edge) => edge.source === d.chiefId
+    && edge.target === id && edge.targetHandle === 'text');
+  const chiefControlled = chiefConnected && !!d.chiefLocked && !!d.chiefId;
+
+  /* Which part of the production this Director writes.
+     The Chief's assignments are sequential — each group opens where the last
+     one closed — and the order is taken from where the nodes sit on the
+     canvas, left to right. That makes dragging a node past its neighbour a
+     STORY edit, which is not a thing anybody would expect a drag to be. So the
+     position is shown: if the numbering is not what was intended, it is
+     visible before the run rather than inferable from the output. */
+  const chiefGroup = (() => {
+    if (!chiefControlled) return null;
+    const siblings = edges
+      .filter((e) => e.source === d.chiefId && e.targetHandle === 'text')
+      .map((e) => nodes.find((n) => n.id === e.target))
+      .filter((n): n is NonNullable<typeof n> => !!n
+        && (n.type === 'story' || (n.data as any)?.type === 'story'))
+      .sort((a, b) => ((a.position?.x || 0) - (b.position?.x || 0))
+        || ((a.position?.y || 0) - (b.position?.y || 0)));
+    const at = siblings.findIndex((n) => n.id === id);
+    return at === -1 || siblings.length < 2 ? null : { part: at + 1, of: siblings.length };
+  })();
   const targets = orderShotTargets(id, nodes as any, edges as any);
   const written: string[] = Array.isArray(d.shotTitles) ? d.shotTitles : [];
   /* The prompt each target received, in the targets' order. Kept beside the
@@ -60,8 +83,8 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
   return (
     <div className={`sn-wrap sn-wrap--kind-story ${selected ? 'sn-wrap--selected' : ''}`}>
       <div className="sn-actions">
-        <button className="sn-actions__btn" onClick={() => duplicateNode(id)} title="Duplicate node">⧉</button>
-        <button className="sn-actions__btn sn-actions__btn--danger" onClick={() => removeNode(id)} title="Delete node">🗑</button>
+        <button className="sn-actions__btn nodrag" onClick={() => duplicateNode(id)} title="Duplicate node" aria-label="Duplicate node"><Icon name="copy" /></button>
+        <button className="sn-actions__btn sn-actions__btn--danger nodrag" onClick={() => removeNode(id)} title="Delete node" aria-label="Delete node"><Icon name="trash" /></button>
       </div>
 
       <div className="sn sn--story">
@@ -70,42 +93,45 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
         </Handle>
 
         <div className="sn-bar">
-          <Icon name="agent" kind="agent" className="sn-label__icon" />
+          <Icon name="story" className="sn-label__icon" />
           <input
             className="sn-label__name nodrag"
             value={d.label || 'Director'}
             onChange={(e) => updateNodeData(id, { label: e.target.value })}
             placeholder="Director"
+            aria-label="Director node name"
           />
           <NodeInfoBadge type="story" />
           {d.status === 'running' ? (
             <span className="sn-count sn-count--running">{d.statusNote || 'Writing…'}</span>
           ) : (
             <span className="sn-story__badge">
-              {targets.length ? `🎬 ${targets.length} Shots` : 'Unwired'}
+              {targets.length ? `${targets.length} Shots` : 'No shots'}
             </span>
           )}
         </div>
 
+        <div className="sn-director__intro"><span>Creative direction</span><p>Shape the look, rhythm, and cast of your sequence.</p></div>
         {/* ── Connected Shot Sequencer Ribbon ── */}
         {targets.length === 0 ? (
-          <div className="sn-story__empty">
-            <strong>Not connected yet.</strong>
-            Connect the (T) dot on the right to video or image nodes to direct the sequence.
+          <div className="sn-director__empty">
+            <Icon name="nodes" />
+            <strong>Add shots to your sequence</strong>
+            <p>Connect the right <b>T</b> output to video or image nodes. The Director writes a prompt for each shot.</p>
           </div>
         ) : (
           <div className="sn-story__targets">
             <div className="sn-story__count">
-              <span>Connected Sequence Timeline</span>
+              <span>Shot sequence</span>
               <span className="sn-story__beats">{beatSummary(targets, story.beats)}</span>
             </div>
             <div className="sn-story__ribbon">
               {targets.map((t, i) => (
                 <div key={t.id} className="sn-story__item">
                   <span className="sn-story__n">{String(i + 1).padStart(2, '0')}</span>
-                  <span className="sn-story__name">{t.label || t.id}</span>
+                  <span className="sn-story__name" title={t.label || t.id}>{t.label || t.id}</span>
                   <span className="sn-story__chip">
-                    {t.media === 'video' ? '🎬 clip' : '🖼 still'}
+                    <Icon name={t.media === 'video' ? 'clip' : 'image'} />{t.media === 'video' ? 'clip' : 'still'}
                   </span>
                   {t.aspectRatio && (
                     <span className="sn-story__meta">{t.aspectRatio}</span>
@@ -129,6 +155,8 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                           type="button"
                           className="sn-story__done nodrag"
                           title={openShot === i ? 'Hide the prompt' : 'Show the prompt this shot got'}
+                          aria-label={`${openShot === i ? 'Hide' : 'Show'} prompt for ${t.label || `shot ${i + 1}`}`}
+                          aria-expanded={openShot === i}
                           onClick={() => setOpenShot(openShot === i ? null : i)}
                         >
                           {openShot === i ? '▾' : '✓'}
@@ -153,29 +181,50 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
         )}
 
         {/* ── Directorial Segmented Tabs ── */}
-        <div className="sn-story__tabs">
+        <div className="sn-story__tabs" role="group" aria-label="Director settings sections">
           <button
             type="button"
             className={`sn-story__tab nodrag ${activeTab === 'direct' ? 'sn-story__tab--active' : ''}`}
             onClick={() => setActiveTab('direct')}
+            aria-pressed={activeTab === 'direct'}
           >
-            🎬 Director
+            <Icon name="clip" /> Director
           </button>
           <button
             type="button"
             className={`sn-story__tab nodrag ${activeTab === 'flow' ? 'sn-story__tab--active' : ''}`}
             onClick={() => setActiveTab('flow')}
+            aria-pressed={activeTab === 'flow'}
           >
-            📐 Flow & Beats
+            <Icon name="motion" /> Flow & Beats
           </button>
           <button
             type="button"
             className={`sn-story__tab nodrag ${activeTab === 'cast' ? 'sn-story__tab--active' : ''}`}
             onClick={() => setActiveTab('cast')}
+            aria-pressed={activeTab === 'cast'}
           >
-            👥 Cast & World {story.cast.length > 0 && `(${story.cast.length})`}
+            <Icon name="chief" /> Cast & World {story.cast.length > 0 && `(${story.cast.length})`}
           </button>
         </div>
+
+        {chiefControlled && (
+          <div className="sn-story__note">
+            <strong>
+              Controlled by Director Chief
+              {chiefGroup ? ` — part ${chiefGroup.part} of ${chiefGroup.of}` : ''}.
+            </strong>{' '}
+            Cast, world, look, pacing, and production rules are inherited and locked.
+            This Director writes only its connected shots.
+            {chiefGroup && (
+              <>
+                {' '}The parts run left to right across the canvas, and each one opens
+                where the one before it closed — so moving this node past its
+                neighbour changes the order of the story.
+              </>
+            )}
+          </div>
+        )}
 
         {/* ── TAB 1: Director Settings ── */}
         {activeTab === 'direct' && (
@@ -186,6 +235,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 <select
                   className="sn-bar__sel nodrag"
                   value={d.platform || 'chatgpt'}
+                  aria-label="AI Engine"
                   onChange={(e) => updateNodeData(id, { platform: e.target.value })}
                 >
                   <option value="chatgpt">ChatGPT</option>
@@ -201,6 +251,8 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 <select
                   className="sn-bar__sel nodrag"
                   value={story.visualPreset || 'liveAction'}
+                  aria-label="Visual Style"
+                  disabled={chiefControlled}
                   onChange={(e) => set({ visualPreset: e.target.value as VisualPresetId })}
                 >
                   {VISUAL_PRESETS.map((x) => (
@@ -214,6 +266,8 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 <select
                   className="sn-bar__sel nodrag"
                   value={story.cameraProgression || 'dynamic'}
+                  aria-label="Camera Coverage"
+                  disabled={chiefControlled}
                   onChange={(e) => set({ cameraProgression: e.target.value as CameraProgressionId })}
                 >
                   {CAMERA_PROGRESSIONS.map((x) => (
@@ -227,6 +281,8 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 <select
                   className="sn-bar__sel nodrag"
                   value={story.audioMode || 'cinematic'}
+                  aria-label="Sound & Audio"
+                  disabled={chiefControlled}
                   onChange={(e) => set({ audioMode: e.target.value as AudioModeId })}
                 >
                   {AUDIO_MODES.map((x) => (
@@ -243,6 +299,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                   type="checkbox"
                   className="sn-story__check"
                   checked={!!story.timedBeats}
+                  disabled={chiefControlled}
                   onChange={(e) => set({ timedBeats: e.target.checked })}
                 />
                 <span>Timed beats — [00:00-00:02] pacing per clip</span>
@@ -263,6 +320,8 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
               <select
                 className="sn-bar__sel nodrag"
                 value={story.structure}
+                aria-label="Story Progression Arc"
+                disabled={chiefControlled}
                 onChange={(e) => set({ structure: e.target.value as StructureId })}
               >
                 {STRUCTURES.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
@@ -281,6 +340,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                       type="checkbox"
                       className="sn-story__check nodrag"
                       checked={story.rules.includes(r.id)}
+                      disabled={chiefControlled}
                       onChange={(e) => set({
                         rules: e.target.checked
                           ? [...story.rules, r.id]
@@ -299,9 +359,11 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 <input
                   className="sn-story__input sn-story__input--num nodrag"
                   type="number"
+                  aria-label="Beat count"
                   min={0}
                   max={40}
                   value={story.beats || ''}
+                  disabled={chiefControlled}
                   placeholder={String(beatsFor(targets))}
                   onChange={(e) => set({ beats: Number(e.target.value) || 0 })}
                 />
@@ -319,7 +381,9 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
         {activeTab === 'cast' && (
           <div className="sn-story__panel">
             <div className="sn-story__note">
-              Leave empty for AI auto-generation, or lock specific characters & world details.
+              {chiefControlled
+                ? 'Inherited from Director Chief for cross-Director consistency.'
+                : 'Leave empty for AI auto-generation, or lock specific characters & world details.'}
             </div>
 
             <div className="sn-story__section">
@@ -328,6 +392,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 <button
                   type="button"
                   className="sn-story__add nodrag"
+                  disabled={chiefControlled}
                   onClick={() => set({ cast: [...story.cast, { name: '', look: '', role: '' }] })}
                 >
                   + Add Character
@@ -342,19 +407,24 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                     <input
                       className="sn-story__input nodrag"
                       value={c.name}
+                      disabled={chiefControlled}
                       placeholder="Character Name"
+                      aria-label={`Character ${i + 1} name`}
                       onChange={(e) => setCast(i, { name: e.target.value })}
                     />
                     <input
                       className="sn-story__input nodrag"
                       value={c.role || ''}
+                      disabled={chiefControlled}
                       placeholder="Role / Position"
+                      aria-label={`Character ${i + 1} role`}
                       onChange={(e) => setCast(i, { role: e.target.value })}
                     />
                     <button
                       type="button"
                       className="sn-story__del nodrag"
                       aria-label="Remove"
+                      disabled={chiefControlled}
                       onClick={() => set({ cast: story.cast.filter((_, k) => k !== i) })}
                     >
                       ✕
@@ -364,6 +434,8 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                     className="sn-story__area nodrag"
                     rows={2}
                     value={c.look}
+                    aria-label={`Character ${i + 1} appearance`}
+                    disabled={chiefControlled}
                     placeholder="Physical appearance (repeated in prompts for consistency)"
                     onChange={(e) => setCast(i, { look: e.target.value })}
                   />
@@ -376,6 +448,8 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                   <select
                     className="sn-bar__sel nodrag"
                     value={c.voice || NO_VOICE}
+                    aria-label={`Character ${i + 1} voice`}
+                    disabled={chiefControlled}
                     onChange={(e) => setCast(i, { voice: e.target.value })}
                     title="The Flow voice this character speaks in"
                   >
@@ -404,6 +478,8 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 className="sn-story__area nodrag"
                 rows={2}
                 value={story.world}
+                aria-label="World and environment"
+                disabled={chiefControlled}
                 placeholder="Setting, atmosphere, and environmental context"
                 onChange={(e) => set({ world: e.target.value })}
               />
@@ -420,6 +496,8 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 className="sn-story__area nodrag"
                 rows={2}
                 value={story.avoid || ''}
+                aria-label="Must not appear"
+                disabled={chiefControlled}
                 placeholder="Things to keep out of every shot — text on screen, other people, modern cars"
                 onChange={(e) => set({ avoid: e.target.value })}
               />
@@ -431,6 +509,8 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 className="sn-story__area nodrag"
                 rows={2}
                 value={story.look}
+                aria-label="Custom look and lighting"
+                disabled={chiefControlled}
                 placeholder="Specific color palette, lighting rules, camera lens"
                 onChange={(e) => set({ look: e.target.value })}
               />
@@ -441,7 +521,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
         {d.errorMessage && (
           <div className="sn-story__error">
             <div className="sn-story__error-head">
-              <span className="sn-story__error-title">⚠️ Generation Notice</span>
+              <span className="sn-story__error-title"><Icon name="alert" /> Generation Notice</span>
               <button
                 type="button"
                 className="sn-story__retry-btn nodrag"
@@ -450,7 +530,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                 }}
                 title="Re-run the Director"
               >
-                ↻ Retry
+                <Icon name="retry" /> Retry
               </button>
             </div>
             <p className="sn-story__error-msg">{d.errorMessage}</p>

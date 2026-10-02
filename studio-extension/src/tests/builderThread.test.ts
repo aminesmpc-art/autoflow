@@ -87,7 +87,14 @@ describe('the builder keeps its conversation', () => {
 
 describe('the Story node already did this, and must keep doing it', () => {
   it('threads its own repair rounds', () => {
-    expect(runner).toMatch(/newChat: firstTurn \? 'auto' : 'never'/);
+    /* firstTurn may still RESET a conversation — but only where the node does
+       not already have one open under the plan in force. It used to decide
+       alone, and it is wrong about this every time the runner comes back to a
+       node: the Chief's review passes true on every round and a Director's
+       repair is a fresh story loop whose first ask is also true. Both meant a
+       new chat, and both then re-sent everything the model had just written. */
+    expect(runner).toMatch(
+      /newChat: firstTurn && !this\.continuesThread\(nodeId\) \? 'auto' : 'never'/);
     /* Matched loosely on purpose: this call spans lines, carries the
        reference stills, and now also has to know whether a settings turn
        already opened the conversation. What matters is that a fresh chat is

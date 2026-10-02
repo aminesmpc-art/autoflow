@@ -4,7 +4,10 @@ Two holes these cover:
   - every saved extraction was served publicly and put in the sitemap
   - the quota was checked in the browser but never on create
 """
+from datetime import timedelta
+
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -117,28 +120,56 @@ class ExtractionQuotaTests(APITestCase):
             "shots": [],
         }
 
-    def test_free_user_blocked_after_four_in_a_month(self):
-        for _ in range(4):
-            make_extraction(self.free)
+    def test_free_user_blocked_after_one_in_a_day(self):
+        make_extraction(self.free)
         self.client.force_authenticate(self.free)
 
         res = self.client.post(reverse("extractions-list"), self.payload, format="json")
 
         self.assertEqual(res.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
-        self.assertEqual(res.data["limit"], 4)
-        self.assertEqual(res.data["period"], "month")
+        self.assertEqual(res.data["limit"], 1)
+        self.assertEqual(res.data["period"], "day")
+        self.assertIn("limit of 1 extraction per day", res.data["detail"])
         # And nothing was written.
-        self.assertEqual(SavedExtraction.objects.filter(user=self.free).count(), 4)
+        self.assertEqual(SavedExtraction.objects.filter(user=self.free).count(), 1)
 
-    def test_free_user_allowed_under_the_limit(self):
-        for _ in range(3):
-            make_extraction(self.free)
+    def test_free_user_gets_one_a_day(self):
         self.client.force_authenticate(self.free)
 
         res = self.client.post(reverse("extractions-list"), self.payload, format="json")
 
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(SavedExtraction.objects.filter(user=self.free).count(), 4)
+        self.assertEqual(SavedExtraction.objects.filter(user=self.free).count(), 1)
+
+    def test_yesterdays_extraction_does_not_count(self):
+        """The allowance is per day: it comes back the next morning (UTC)."""
+        old = make_extraction(self.free)
+        SavedExtraction.objects.filter(pk=old.pk).update(
+            created_at=timezone.now() - timedelta(days=1)
+        )
+        self.client.force_authenticate(self.free)
+
+        check = self.client.get(reverse("extractions-check-limit"))
+        res = self.client.post(reverse("extractions-list"), self.payload, format="json")
+
+        self.assertEqual(check.data["used"], 0)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+    def test_reopening_saved_extractions_costs_nothing(self):
+        """Only a new analysis is counted. Opening what is already saved (the
+        site reads it from the list) never touches the allowance, even at the
+        limit."""
+        make_extraction(self.free)
+        self.client.force_authenticate(self.free)
+        before = self.client.get(reverse("extractions-check-limit")).data
+
+        listed = self.client.get(reverse("extractions-list"))
+        after = self.client.get(reverse("extractions-check-limit")).data
+
+        self.assertEqual(listed.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(listed.data), 1)
+        self.assertEqual(before["used"], 1)
+        self.assertEqual(after["used"], 1)
 
     def test_pro_user_gets_the_daily_allowance(self):
         for _ in range(4):
@@ -160,8 +191,7 @@ class ExtractionQuotaTests(APITestCase):
         self.assertEqual(res.data["period"], "day")
 
     def test_check_limit_and_create_agree(self):
-        for _ in range(4):
-            make_extraction(self.free)
+        make_extraction(self.free)
         self.client.force_authenticate(self.free)
 
         check = self.client.get(reverse("extractions-check-limit"))
@@ -179,8 +209,7 @@ class ExtractionQuotaTests(APITestCase):
         self.assertFalse(SavedExtraction.objects.get(pk=res.data["id"]).is_public)
 
     def test_quota_is_per_user(self):
-        for _ in range(4):
-            make_extraction(self.free)
+        make_extraction(self.free)
         other = make_user("fresh@example.com")
         self.client.force_authenticate(other)
 

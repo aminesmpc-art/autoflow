@@ -340,11 +340,24 @@ export const FLOW_STRINGS = {
       English substring path, same behavior as before this key existed. */
   frames: [
     'Frames',          // EN / DE
-    'Cadres',          // FR
+    /* 'Images' is what the French interface actually calls this tab — read
+       off the live composer, where the pair is "Ingrédients" and "Images".
+       'Cadres' below was a reasonable guess and is not what Flow shows, so
+       the Frames toggle could not be found on a French UI at all.
+
+       It collides with the English word for the OTHER toggle, which is why
+       findModeButton matches the literal label asked for first, then an
+       exact translation, and only then loosely. */
+    'Images',          // FR (the real Frames tab)
+    'Cadres',          // FR (alt)
     'Fotogramas',      // ES / PT
+    'Imágenes',        // ES (alt)
+    'Imagens',         // PT (alt)
     'Fotogrammi',      // IT
+    'Immagini',        // IT (alt)
     'Kareler',         // TR
     'Кадры',           // RU
+    'Изображения',     // RU (alt)
     'フレーム',        // JA
     '프레임',          // KO
     '帧',              // ZH

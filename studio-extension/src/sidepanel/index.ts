@@ -24,6 +24,7 @@ import { signInWithGoogle } from './googleSignIn';
 import { buildSpec, readBriefAsk } from '../studio/builder/spec';
 import { looksLikeBrief, readBriefReply, wordCount } from '../studio/builder/brief';
 import { readPlan, compilePlan, extractJson } from '../studio/builder/plan';
+import { refinePlan } from '../studio/builder/refine';
 import {
   checkPlan, repairPlanMessage, explainPlan, type PlanProblem,
 } from '../studio/builder/check';
@@ -76,6 +77,21 @@ function formatElapsed(ms: number): string {
 }
 
 function renderRun(s: Partial<RunSnapshot>): void {
+  /* Needs attention, shown whether or not a run is live: the case it exists
+     for is a worker that came back to find work outstanding, which is
+     precisely when `running` is false. */
+  const att = document.getElementById('run-attention');
+  const attText = att?.querySelector('.sp-attention__text') as HTMLElement | null;
+  if (att && attText) {
+    const msg = (s as any).needsAttention || '';
+    att.hidden = !msg;
+    if (msg) attText.textContent = msg;
+    const btn = document.getElementById('btn-open-attention');
+    /* No tab to raise — the worker says so by leaving the id null. Hiding the
+       button beats offering one that does nothing. */
+    if (btn) btn.hidden = typeof (s as any).attentionTabId !== 'number';
+  }
+
   const live = !!s.running;
   $('run-idle').hidden = live;
   $('run-live').hidden = !live;
@@ -378,9 +394,9 @@ function wire(): void {
         chatgpt: 'https://chatgpt.com/',
         gemini: 'https://gemini.google.com/app',
         grok: 'https://grok.com/imagine',
-        flow: 'https://labs.google/fx/tools/flow',
+        flow: 'https://flow.google.com/',
       } as Record<string, string>)[row.dataset.plat || 'flow']
-        || 'https://labs.google/fx/tools/flow';
+        || 'https://flow.google.com/';
       chrome.tabs.create({ url }).catch(() => {});
     });
   }
@@ -417,6 +433,24 @@ function wire(): void {
 
   $('btn-pause').addEventListener('click', () => control('pause'));
   $('btn-stop').addEventListener('click', () => control('stop'));
+
+  /* The only thing in background mode that raises a tab, and it happens
+     because the user asked. */
+  document.getElementById('btn-open-attention')?.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'PANEL_OPEN_ATTENTION_TAB' }).catch(() => {});
+  });
+
+  /* Background tabs (beta). Without this the flag could only be set from the
+     service-worker console, which is not a feature. */
+  const bgToggle = document.getElementById('opt-background-tabs') as HTMLInputElement | null;
+  if (bgToggle) {
+    chrome.storage.local.get(['af_background_tabs'])
+      .then((got) => { bgToggle.checked = got?.af_background_tabs === true; })
+      .catch(() => { /* unreadable settings read as off */ });
+    bgToggle.addEventListener('change', () => {
+      chrome.storage.local.set({ af_background_tabs: bgToggle.checked }).catch(() => {});
+    });
+  }
 
   const gbtn = document.getElementById('gate-google') as HTMLButtonElement | null;
   gbtn?.addEventListener('click', async () => {
@@ -827,8 +861,40 @@ interface PendingBuild {
    * way to tell them apart — measured at seven in forty-five minutes.
    */
   originId?: string;
+  /**
+   * The plan exactly as the model last handed it over.
+   *
+   * Kept beside `plan` so an edit can tell two situations apart that look
+   * identical from here:
+   *
+   *   the displayed plan IS the model's own last answer   — it still has it
+   *   the displayed plan has since drifted                — it does not
+   *
+   * The second happens after a repair pass keeps an earlier round, or when
+   * the canvas is changed between edits. Without this the panel could only
+   * choose between always pasting the whole plan back into a live chat, or
+   * never doing it and letting the model edit a version nobody is looking at.
+   */
+  modelPlan?: unknown;
 }
 let pendingBuild: PendingBuild | null = null;
+
+/**
+ * A comparison key for a plan, independent of key order.
+ *
+ * The displayed plan is re-serialised on its way through the panel and comes
+ * back with its keys sorted, so comparing raw JSON.stringify of the two would
+ * report a difference on every edit and paste the plan every time — which is
+ * the behaviour being fixed.
+ */
+function planKey(plan: unknown): string {
+  const walk = (v: any): any => {
+    if (v === null || typeof v !== 'object') return v;
+    if (Array.isArray(v)) return v.map(walk);
+    return Object.keys(v).sort().reduce((o: any, k) => { o[k] = walk(v[k]); return o; }, {});
+  };
+  try { return JSON.stringify(walk(plan)); } catch { return ''; }
+}
 
 /* ── Pictures of what you mean ──
    A sentence about "my product" is a great deal less use to a model than the
@@ -1210,6 +1276,11 @@ async function reopenBuild(b: PastBuild): Promise<void> {
        what it is. */
     resumeFrom: b.plan || b.template,
     plan: b.plan,
+    /* When the conversation actually came back, it is the one that wrote this
+       plan — so the model still has it, and the next edit can say "the plan
+       already in this conversation" instead of pasting it again. Only when
+       `live` is true: a tab that opened is not a thread that loaded. */
+    ...(live ? { modelPlan: b.plan } : {}),
     /* The other half of that sentence, which used to be inferred from
        resumeFrom and so was always wrong here. The plan travels either way;
        whether a conversation is open is a different fact. */
@@ -1434,7 +1505,7 @@ function setBuilding(on: boolean, activeKey?: string): void {
     go.disabled = on || !(document.getElementById('build-idea') as HTMLTextAreaElement | null)?.value.trim();
     go.classList.toggle('sp-ask__go--busy', on);
     const label = go.querySelector('.sp-ask__go-label');
-    if (label) label.textContent = on ? `${engineName(activeKey || chosenEngine())} is working…` : 'Make it';
+    if (label) label.textContent = on ? `${engineName(activeKey || chosenEngine())} is working…` : 'Build workflow';
   }
   const sel = document.getElementById('build-engine') as HTMLSelectElement | null;
   if (sel) sel.disabled = on;
@@ -1620,6 +1691,9 @@ async function autoBuild(key: string, name: string, idea: string, model = ''): P
         /* What the model wrote, kept beside what it compiled to. Only one of
            the two is safe to show it again. */
         plan: best.plan,
+        /* The same object, kept as "what the model gave us" so a later edit
+           can tell whether the canvas has drifted from it. */
+        modelPlan: best.plan,
         /* It was written in the chat that is open right now, so a change is
            the next thing said in it rather than a new subject. */
         threadOpen: true,
@@ -1663,14 +1737,28 @@ async function refineBuild(text: string): Promise<void> {
   showStages(true);
   stage('write', `Asking ${at.name} to change it…`);
 
-  /* Only paste the plan when the conversation is NOT live. When threadOpen
-     is true the model already has every message — the brief, the plan it
-     wrote, and every repair round — sitting above this turn. Sending the
-     whole JSON again wastes tokens, pushes the user's actual question down,
-     and teaches the model to echo the blob instead of answering the edit.
-     The plan only travels when the thread had to be reconstructed (reopened
-     from history with no live chat). */
-  const needsPlan = at.resumeFrom && !at.threadOpen;
+  /* Does the model already have the plan that is on screen?
+   *
+   * Two rules were in conflict here, and each was right about something.
+   *
+   * "Only paste when the conversation is not live" saved sending the whole
+   * plan back into a chat that had just written it — but it broke the case
+   * where the displayed plan is NOT what the model last said: after a repair
+   * pass keeps an earlier round, or when the canvas is edited between turns.
+   * The model then edits a version nobody is looking at.
+   *
+   * "Always paste" fixed that, and cost a full plan on every edit in a thread
+   * that usually already had it.
+   *
+   * So ask the question that actually decides it: has the plan drifted from
+   * the model's own last answer? If not, and the chat is still open, it has
+   * the thing already and is told to edit what is there. If it has drifted —
+   * or there is no live chat — it gets the version on screen. */
+  const modelHasIt = !!at.threadOpen
+    && !!at.plan && !!at.modelPlan
+    && planKey(at.plan) === planKey(at.modelPlan);
+
+  const needsPlan = !modelHasIt && (!!at.plan || (at.resumeFrom && !at.threadOpen));
   const carry = needsPlan
     ? (at.plan
       /* The plan, in the shape the reply is asked for. */
@@ -1685,44 +1773,33 @@ async function refineBuild(text: string): Promise<void> {
     : '';
 
   try {
-    const res: any = await chrome.runtime.sendMessage({
-      type: 'PANEL_BUILD', platform: at.platform, model: at.model,
-      images: IMAGE_CAPABLE.has(at.platform) ? refineImages : [],
-      /* Continue the conversation whenever there is one, and only then.
-         A tab that opened is not proof the thread loaded, so the plan still
-         travels when there is no live thread — but never when there is one. */
-      newChat: at.threadOpen ? 'never' : 'auto',
-      prompt: `${carry}${text.trim()}${aboutImages(IMAGE_CAPABLE.has(at.platform) ? refineImages.length : 0, 'edit')}`
-        /* "the plan you just wrote" is true after a fresh build and wrong in
-           a conversation reopened from last week, where it was written then. */
-        + `\n\nApply that to ${needsPlan ? 'that plan' : 'the plan already in this conversation'} `
-        + 'and send the complete JSON object again — the same shape, with everything '
-        + 'else unchanged. No prose around it, no code fence.',
-    });
-    if (!res || res.error) {
-      stage('write', res?.error || 'No reply.');
-      return;
-    }
-
-    /* Sent. Clearing here rather than on success, because they went whether
-       or not the reply was usable — leaving them would attach them twice. */
-    refineImages = [];
-    renderRefineRefs();
+    const request = `${carry}${text.trim()}${aboutImages(IMAGE_CAPABLE.has(at.platform) ? refineImages.length : 0, 'edit')}`
+      + `\n\nApply that edit to ${needsPlan ? 'that plan' : 'the plan already in this conversation'}`
+      + ' and send the complete workflow plan JSON with all steps. Preserve unaffected step IDs, prompts and settings. No prose or code fence.';
+    /* The skills travel only when the plan does. Both are things the model was
+       given with the build; in a live thread that has not drifted it has read
+       them already, and repeating them buries the actual request. */
+    const { plan, template } = await refinePlan(request, async (message, attempt) => {
+      if (attempt) stage('check', `Correcting the edited workflow (${attempt} of 2)…`);
+      const res: any = await chrome.runtime.sendMessage({
+        type: 'PANEL_BUILD', platform: at.platform, model: at.model,
+        images: attempt === 0 && IMAGE_CAPABLE.has(at.platform) ? refineImages : [],
+        newChat: attempt > 0 || at.threadOpen ? 'never' : 'auto',
+        prompt: message,
+      });
+      if (!res || res.error) throw new Error(res?.error || 'No reply.');
+      refineImages = [];
+      renderRefineRefs();
+      return String(res.text || '');
+    }, needsPlan);
 
     stage('check', 'Reading the change…');
-    const { plan, template, quality, problems } = evaluateReply(String(res.text || ''));
-    if (!plan || !template || problems.length) {
-      /* The plan on screen is still good. Saying so matters: silently keeping
-         it would look like the change was applied. */
-      stage('check', 'That came back unusable — keeping the plan you already have.');
-      return;
-    }
-
-    stage('ready', quality.length ? 'Changed — a few things worth knowing.' : 'Changed.');
+    stage('ready', 'Changed and checked.');
     /* resumeFrom cleared and threadOpen set: whatever the state a moment ago,
        a chat now exists that has just been sent this plan and answered it. */
     showPlan({
-      ...at, template, warnings: explainPlan(quality),
+      ...at, plan, template, warnings: [],
+      modelPlan: plan,
       resumeFrom: undefined, threadOpen: true,
     });
   } catch (e: any) {
@@ -1959,6 +2036,7 @@ function wireBuilder(): void {
     btn.addEventListener('click', () => {
       const text = btn.dataset.prompt || (btn.querySelector('.sp-idea__text') || btn).textContent || '';
       idea.value = text.trim();
+      idea.dispatchEvent(new Event('input', { bubbles: true }));
       chrome.storage.local.set({ af_build_idea: idea.value }).catch(() => {});
       idea.focus();
       idea.setSelectionRange(idea.value.length, idea.value.length);

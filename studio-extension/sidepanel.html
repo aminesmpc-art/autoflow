@@ -157,16 +157,19 @@
              before anything could happen, and none of them said which engines
              were even signed in. -->
         <div class="sp-ask">
-          <h2 class="sp-ask__q">What do you want to make?</h2>
+          <div class="sp-builder-heading"><span class="sp-ask__kicker">AI WORKFLOW BUILDER</span><span class="sp-builder-badge">Production skills</span></div>
+          <h2 class="sp-ask__q">Your idea. A connected workflow.</h2>
+          <p class="sp-builder-intro">Describe the story and the result you want. Review the shots before opening your canvas.</p>
 
           <!-- One object, not three. The box, the button and the engine line
                were separate elements floating on the page background, which is
                what made a finished layout read as an unstyled form. -->
           <div class="sp-composer" id="build-composer">
+            <label class="sp-builder-label" for="build-idea">Production brief</label>
             <textarea id="build-idea" class="sp-ask__box" rows="3"
-                      placeholder="A 3-shot vertical ad for cold brew coffee"></textarea>
+                      placeholder="What are we making? Include the scene count, visual style, duration and voiceover you want."></textarea>
             <button type="button" class="sp-prompt-clear" id="build-idea-clear"
-                    title="Clear" hidden>&#10005;</button>
+                    title="Clear" aria-label="Clear production brief" hidden>&#10005;</button>
 
             <!-- Pictures of what you mean. A sentence about "my product" is
                  a great deal less use to a model than the product. -->
@@ -190,16 +193,22 @@
 
             <input type="file" id="build-image-input" accept="image/*" multiple hidden />
               <div class="sp-ask__who">
-                <span class="sp-ask__who-text">using</span>
+                <span class="sp-ask__who-text">Planner</span>
                 <select id="build-engine" class="sp-ask__engine"
                         aria-label="Which AI writes it"></select>
                 <span class="sp-ask__who-hint" id="build-engine-hint"></span>
               </div>
               <button type="button" class="sp-ask__go" id="build-go-ai" disabled>
-                <span class="sp-ask__go-label">Make it</span>
+                <span class="sp-ask__go-label">Build workflow</span>
                 <kbd class="sp-key sp-key--on" id="build-go-key">&#8984;&#9166;</kbd>
               </button>
             </div>
+          </div>
+          <div class="sp-builder-starters" aria-label="Brief starters">
+            <span>Start with</span>
+            <button type="button" class="sp-idea" data-prompt="Create a 3-shot vertical product ad, 6 seconds per clip. Use a shared product reference, premium lighting and a clear final hero shot.">Product ad</button>
+            <button type="button" class="sp-idea" data-prompt="Create a 10-clip cartoon story, 4 seconds per clip, in 9:16. Use recurring fictional characters, one consistent environment, short English voiceovers and a humorous twist. Coordinate the Directors with a Chief.">Character story</button>
+            <button type="button" class="sp-idea" data-prompt="Create a 5-clip room transformation, 8 seconds per clip. Keep the camera fixed and the architecture consistent. Carry each finished state into the next shot.">Transformation</button>
           </div>
 
           <!-- What you have made before. Kept because a workflow is rarely
@@ -226,14 +235,14 @@
         <!-- What is happening, in what it means rather than what it does.
              Three stages, because each one has to tell you something new —
              a label that only names a phase resets nobody's patience. -->
-        <div id="build-stages" class="sp-stages" hidden>
+        <div id="build-stages" class="sp-stages" aria-live="polite" hidden>
           <div class="sp-stages__row" data-stage="write">
             <span class="sp-stages__dot"></span>
             <span class="sp-stages__name">Writing your shots</span>
           </div>
           <div class="sp-stages__row" data-stage="check">
             <span class="sp-stages__dot"></span>
-            <span class="sp-stages__name">Checking they will render</span>
+            <span class="sp-stages__name">Checking connections and prompts</span>
           </div>
           <div class="sp-stages__row" data-stage="ready">
             <span class="sp-stages__dot"></span>
@@ -248,6 +257,9 @@
              not what somebody deciding whether to spend four generations
              needs to read. -->
         <div id="build-plan" class="sp-plan" hidden>
+          <span class="sp-builder-label">WORKFLOW PREVIEW</span>
+          <h3 class="sp-builder-plan-title" id="build-plan-title">Your workflow</h3>
+          <p class="sp-builder-plan-desc" id="build-plan-desc"></p>
           <div class="sp-plan__what">
             <span class="sp-plan__size" id="build-plan-size"></span>
             <span class="sp-plan__cost" id="build-plan-cost"></span>
@@ -256,6 +268,7 @@
 
           <ol class="sp-plan__shots" id="build-plan-shots"></ol>
           <p class="sp-plan__helpers" id="build-plan-helpers" hidden></p>
+          <p class="sp-plan__helpers" id="build-plan-foot"></p>
 
           <div class="sp-plan__warn" id="build-plan-warn" hidden></div>
 
@@ -266,6 +279,7 @@
           <!-- A picture helps a change as much as it helps the first ask —
                "make the room look like this" is not a sentence. -->
           <div class="sp-shots sp-shots--refine" id="build-refine-refs" hidden></div>
+          <label class="sp-builder-label sp-builder-edit-label" for="build-refine">Fine-tune with AI</label>
           <div class="sp-plan__refine">
             <button type="button" class="sp-ask__clip" id="build-refine-image"
                     title="Show the AI what to change" aria-label="Show the AI what to change">
@@ -277,8 +291,8 @@
             </button>
             <input type="file" id="build-refine-image-input" accept="image/*" multiple hidden />
             <input type="text" class="sp-plan__ask" id="build-refine"
-                   placeholder="Change it — or attach a picture of what to change" />
-            <button type="button" class="sp-btn sp-btn--ghost" id="build-refine-go">Ask <kbd class="sp-key">&#9166;</kbd></button>
+                   placeholder="E.g. make the ending funnier…" />
+            <button type="button" class="sp-btn sp-btn--ghost" id="build-refine-go">Apply edit <kbd class="sp-key">&#9166;</kbd></button>
           </div>
         </div>
 
@@ -410,6 +424,27 @@
           </div>
 
           <div id="run-error" class="sp-error" hidden></div>
+
+          <!-- Hidden execution has stopped and only a person can move it on.
+               Raised by the worker, never by ordinary slowness: a banner that
+               appears for every slow node is one people learn to ignore. -->
+          <div id="run-attention" class="sp-attention" hidden>
+            <div class="sp-attention__text"></div>
+            <button id="btn-open-attention" class="sp-btn sp-btn--ghost" type="button">
+              <span>Open the tab</span>
+            </button>
+          </div>
+
+          <!-- Background Tabs (beta). Off by default. Without this the flag
+               could only be set from the service-worker console, which is not
+               a feature. -->
+          <label class="sp-toggle" for="opt-background-tabs">
+            <input type="checkbox" id="opt-background-tabs">
+            <span class="sp-toggle__text">
+              <strong>Background tabs (beta)</strong>
+              <small>Leave provider tabs where they are instead of bringing them forward. Flow, Gemini and Claude only — ChatGPT, Grok and Z.AI still need the tab in front.</small>
+            </span>
+          </label>
         </section>
 
         <!-- Platform Status Health Matrix -->

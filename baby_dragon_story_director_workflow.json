@@ -1,0 +1,184 @@
+{
+  "id": "baby-dragon-viral-director",
+  "name": "Viral Baby Dragon: AI Director Series Engine",
+  "description": "Upgraded Story Director workflow: type any 1-line situation, and the AI Director orchestrates character locking, smartphone POV camera coverage, native 3-layer sound design (ambience + foley + vocalizations), and Last Frame continuity across scenes.",
+  "useCase": "Viral TikTok / Reels creature comedy: generate unlimited consistent episodes from 1-line ideas",
+  "category": "Content",
+  "difficulty": "Easy",
+  "nodeCount": 6,
+  "thumbnail": "🐲",
+  "nodes": [
+    {
+      "id": "idea",
+      "type": "prompt",
+      "position": { "x": 40, "y": 200 },
+      "data": {
+        "type": "prompt",
+        "label": "Episode Brief / Idea",
+        "text": "The baby dragon sneaks across the kitchen counter to steal peanut butter from an open jar, gets its tongue hilariously stuck to the roof of its mouth, and accidentally sneezes a tiny burst of flame that perfectly roasts a marshmallow on a nearby plate."
+      }
+    },
+    {
+      "id": "story_director",
+      "type": "story",
+      "position": { "x": 520, "y": 200 },
+      "data": {
+        "type": "story",
+        "label": "Baby Dragon Director",
+        "platform": "chatgpt",
+        "mediaType": "text",
+        "structure": "hook",
+        "cameraProgression": "dynamic",
+        "audioMode": "cinematic",
+        "visualPreset": "smartphonePOV",
+        "cast": [
+          {
+            "name": "Baby Dragon",
+            "look": "Tiny cat-sized eastern baby dragon with shimmering iridescent silver-white scales, large expressive emerald-green eyes, tiny translucent horns, and long delicate whiskers. Playful, curious, ultra-realistic CGI creature blending seamlessly into real-world video.",
+            "role": "Lead mischievous creature"
+          }
+        ],
+        "world": "Modern sunlit kitchen with bright white marble countertops, stainless steel appliances, and large windows with morning sunlight.",
+        "look": "Authentic vertical 9:16 slightly shaky handheld smartphone POV, natural morning daylight, sharp realistic creature textures, TikTok/Reels comedy realism.",
+        "rules": ["samePerson", "cumulative", "inHand"],
+        "beats": 2,
+        "status": "idle"
+      }
+    },
+    {
+      "id": "ref_still",
+      "type": "generate",
+      "position": { "x": 1000, "y": 40 },
+      "data": {
+        "type": "generate",
+        "label": "Dragon Anchor Still",
+        "platform": "flow",
+        "mediaType": "image",
+        "model": "Nano Banana Pro",
+        "aspectRatio": "9:16",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle"
+      }
+    },
+    {
+      "id": "shot1",
+      "type": "generate",
+      "position": { "x": 1480, "y": 200 },
+      "data": {
+        "type": "generate",
+        "label": "Shot 1 — The Sneak (6s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Omni Flash",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle"
+      }
+    },
+    {
+      "id": "handoff",
+      "type": "frame",
+      "position": { "x": 1960, "y": 200 },
+      "data": {
+        "type": "frame",
+        "label": "Shot 1 Last Frame",
+        "frameUrl": ""
+      }
+    },
+    {
+      "id": "shot2",
+      "type": "generate",
+      "position": { "x": 2440, "y": 200 },
+      "data": {
+        "type": "generate",
+        "label": "Shot 2 — Sneeze & Twist (6s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Omni Flash",
+        "aspectRatio": "9:16",
+        "duration": "6s",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_idea_story_t",
+      "source": "idea",
+      "target": "story_director",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2.5 }
+    },
+    {
+      "id": "e_story_ref_t",
+      "source": "story_director",
+      "target": "ref_still",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2.5 }
+    },
+    {
+      "id": "e_story_shot1_t",
+      "source": "story_director",
+      "target": "shot1",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2.5 }
+    },
+    {
+      "id": "e_story_shot2_t",
+      "source": "story_director",
+      "target": "shot2",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2.5 }
+    },
+    {
+      "id": "e_ref_shot1_i",
+      "source": "ref_still",
+      "target": "shot1",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2.5 }
+    },
+    {
+      "id": "e_shot1_handoff_i",
+      "source": "shot1",
+      "target": "handoff",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2.5 }
+    },
+    {
+      "id": "e_handoff_shot2_i",
+      "source": "handoff",
+      "target": "shot2",
+      "sourceHandle": "image",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2.5 }
+    }
+  ],
+  "requiresNodeTypes": ["prompt", "story", "generate", "frame"],
+  "requiresPlatforms": ["chatgpt", "flow"],
+  "tier": "free"
+}

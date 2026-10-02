@@ -30,7 +30,7 @@ export interface PlanProblem {
     | 'noContinuity' | 'voiceOnFrames'
     | 'voiceWithoutImage' | 'unknownVoice' | 'voiceButSilent' | 'castVoiceUnused'
     | 'storyUnused' | 'uploadUnused' | 'lonelyStory' | 'tooManyReferences'
-    | 'orphanStill' | 'thinPrompt' | 'mixedAspect';
+    | 'orphanStill' | 'thinPrompt' | 'mixedAspect' | 'storyAndPrompts';
   /** What to tell the model, in its own terms. */
   detail: string;
 }
@@ -67,6 +67,10 @@ const HUMAN: Record<PlanProblem['code'], string> = {
   storyUnused:
     'The story director writes the prompts and nothing is set to use them, so the '
     + 'shots would be generated from whatever was typed instead.',
+  storyAndPrompts:
+    'The story director and the written-out prompts do the same job, and the shots are '
+    + 'set up to use the typed ones — so the director changes nothing, and those shots '
+    + 'never get the consistency it is there to give them.',
   uploadUnused: 'This asks you for a picture and then never uses it.',
   lonelyStory:
     'There is more than one story director. They cannot see each other’s answers, '
@@ -176,14 +180,19 @@ export function checkPlan(plan: Plan): PlanProblem[] {
   const used = (id: string) => (feeds.get(id) || []).length > 0;
   const textInputs = (s: PlanStep) => (s.inputs || [])
     .map((i) => byId.get(i))
-    .filter((d) => d && (d.type === 'story' || d.media === 'text'));
+    .filter((d) => d && (d.type === 'story' || d.type === 'chief' || d.media === 'text'));
   const imageInputs = (s: PlanStep) => (s.inputs || [])
     .map((i) => byId.get(i))
     .filter((d) => d && (d.type === 'image' || d.type === 'frame' || d.media === 'image'));
 
   const voiceNames = new Set(FLOW_VOICES.map((v) => v.id.toLowerCase()));
+  /* A step that produces a picture or a clip, and so is something a story
+     director could be writing for. An "image" step is a user upload and an
+     "agent" or text step writes rather than renders. */
+  const writesMedia = (s: PlanStep) =>
+    (s.type === 'generate' || s.type === 'extend') && s.media !== 'text';
+  const ownPrompt = (s: PlanStep) => !!String(s.prompt || '').trim();
   const story = steps.find((x) => x.type === 'story');
-  const castVoices = (story?.cast || []).filter((c: any) => c?.voice && c.voice !== NO_VOICE);
 
   for (const s of steps) {
     /* Deliberately NOT checked here: a step with no prompt and nothing
@@ -258,12 +267,22 @@ export function checkPlan(plan: Plan): PlanProblem[] {
        it, which is the failure the comment above warns about: a rule that
        fires on a workflow somebody already ships. A storyboard board is the
        same idea one step stronger, so it counts too. */
-    const anchorsOf = (st: PlanStep) => new Set(
-      (st.inputs || []).filter((i) => {
-        const d = byId.get(i);
-        return d && (d.type === 'image' || d.type === 'frame' || d.media === 'image');
-      }),
-    );
+    const anchorsOf = (st: PlanStep) => {
+      const anchors = new Set<string>();
+      const visit = (id: string) => {
+        if (anchors.has(id)) return;
+        const source = byId.get(id);
+        if (!source || !(source.type === 'image' || source.type === 'frame' || source.media === 'image')) return;
+        anchors.add(id);
+        /* A scene still may itself be locked to a master continuity board.
+           That board is the shared anchor even though each clip directly
+           receives a different scene still. Follow only image ancestry so
+           text orchestration never masquerades as visual continuity. */
+        for (const parent of source.inputs || []) visit(parent);
+      };
+      for (const id of st.inputs || []) visit(id);
+      return anchors;
+    };
     const perClip = clips.map(anchorsOf);
     const sharedAnchor = perClip.length > 0
       && Array.from(perClip[0]).some((id) => perClip.every((set) => set.has(id)));
@@ -286,13 +305,56 @@ export function checkPlan(plan: Plan): PlanProblem[] {
   }
 
   /* ── The story, and the voices on it ── */
-  if (story) {
+  for (const story of steps.filter(s => s.type === 'story')) {
+    const castVoices = (story.cast || []).filter((c: any) => c?.voice && c.voice !== NO_VOICE);
     if (!used(story.id)) {
+      /* Both halves of the repair, because half of it cannot be obeyed.
+       *
+       * This used to say only "list it in the inputs of every shot it should
+       * write". In the plan that produced the report, every shot already
+       * carried a prompt of its own — and compilePlan rejects a step with
+       * both a text input and a prompt, so doing as asked traded this problem
+       * for a structural one. The model did the sensible thing and changed
+       * nothing. Two rounds of that, and the workflow shipped with a director
+       * wired to nothing: it sat on the canvas reading "Unwired" while the
+       * shots it was meant to hold together were generated from twenty-three
+       * loose nodes, two per shot, agreeing about nothing.
+       *
+       * So the repair now names the other half, and names the escape: drop
+       * the director instead, if the written prompts are the ones wanted. */
+      const withOwn = steps.filter((s) => writesMedia(s) && ownPrompt(s));
+      const named = withOwn.slice(0, 6).map((s) => `"${s.id}"`).join(', ');
       out.push({
         step: story.id, code: 'storyUnused',
-        detail: 'is a story director that nothing takes its prompt from. List it in the '
-          + '"inputs" of every shot it should write.',
+        detail: 'is a story director that nothing takes its prompt from, so it would sit on '
+          + 'the canvas doing nothing. List it in the "inputs" of every shot it should write'
+          + (withOwn.length
+            ? `, AND delete the "prompt" field from ${withOwn.length === 1 ? 'that step' : 'those steps'}`
+              + ` (${named}${withOwn.length > 6 ? ', …' : ''}). A step cannot have both a text`
+              + ' input and its own prompt, so listing the director without removing them is'
+              + ' rejected. If the written prompts are the ones you want, delete the story'
+              + ' director instead. One or the other, never both.'
+            : '.'),
       });
+    } else {
+      /* The other face of the same fault: the director IS wired somewhere,
+         and some shots still write themselves. Those shots sit outside the
+         cast, world and look everything else shares, which is the one thing
+         a director is for. */
+      const bypassing = steps.filter(
+        (s) => writesMedia(s) && ownPrompt(s) && !(s.inputs || []).includes(story.id));
+      if (bypassing.length) {
+        out.push({
+          step: bypassing[0].id, code: 'storyAndPrompts',
+          detail: `${bypassing.length === 1
+            ? 'writes its own prompt'
+            : `writes its own prompt, and so do ${bypassing.length - 1} other step(s)`}`
+            + ', while a story director writes for the rest of the piece. Either list the'
+            + ' director in "inputs" and delete the "prompt" field, or take the director out'
+            + ' of the plan and let every shot carry its own. Mixing them means these shots'
+            + ' are outside the cast, world and look the others share.',
+        });
+      }
     }
     if (castVoices.length && story.audioMode === 'none') {
       out.push({
@@ -315,11 +377,16 @@ export function checkPlan(plan: Plan): PlanProblem[] {
       }
     }
     const lone = steps.filter((s) => s.type === 'story');
-    if (lone.length > 1) {
+    const chiefs = new Set(steps.filter((s) => s.type === 'chief').map((s) => s.id));
+    const allChiefControlled = lone.every(
+      (director) => (director.inputs || []).some((input) => chiefs.has(input)),
+    );
+    if (story === lone[0] && lone.length > 1 && !allChiefControlled) {
       out.push({
         step: '', code: 'lonelyStory',
         detail: `there are ${lone.length} story directors. One writes the whole piece in a `
-          + 'single reply, which is how the shots stay consistent — use one.',
+          + 'single reply, which is how the shots stay consistent — use one, or connect all '
+          + 'of them to one Director Chief.',
       });
     }
   }

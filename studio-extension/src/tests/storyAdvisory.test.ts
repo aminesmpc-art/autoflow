@@ -163,7 +163,10 @@ describe('the run does not stop for something that would have rendered', () => {
     expect(RUNNER).toMatch(/prompts came back usable from \$\{platform\}/);
     expect(RUNNER).toMatch(/Still wrong: \$\{detail\}/);
     const at = RUNNER.indexOf('if (!best) {');
-    const block = RUNNER.slice(at, at + 900);
+    /* Wider than it was: the dead end now also names the shots that came
+       back unchanged, which is a different failure from a writer that ran
+       out of attempts and is worth saying separately. */
+    const block = RUNNER.slice(at, at + 2400);
     expect(block).toMatch(/unresolved\.get\(i\)/);       // the codes that failed
     expect(block).toMatch(/targets\[i\]\.label/);        // named, not numbered
     expect(block).toMatch(/Nothing was run/);

@@ -261,6 +261,10 @@ export type MessageType =
   | 'SCAN_LIBRARY'
   | 'SCAN_RESULT'
   | 'PREVIEW_ASSET'
+  | 'CAPTURE_ASSET_VIDEO_URL'
+  | 'GET_TILE_VIDEO_SRC'
+  | 'FETCH_ASSET_VIDEO'
+  | 'DOWNLOAD_ASSET_FOR_PREVIEW'
   | 'FOCUS_FLOW_TAB'
   | 'DOWNLOAD_SELECTED'
   | 'REFRESH_MODELS'
@@ -325,6 +329,26 @@ export interface Message {
 /** Mapped status from Google Flow's mediaGenerationStatus enum. */
 export type FlowGenerationState = 'queued' | 'generating' | 'completed' | 'failed' | 'unknown';
 
+/**
+ * What a status record's media URL actually points at.
+ *
+ * The distinction exists because a record carries more than its own result.
+ * An image-to-video generation carries its input frames from the moment it is
+ * submitted, and every tile carries a grid thumbnail — so "there is a media
+ * URL in here" is not "the video is ready". A Frames run reported itself
+ * finished at 45% for exactly that reason.
+ *
+ *   video   flow-content.google/video/<id>  — a generated video
+ *   image   flow-content.google/image/<id>  — a generated image, OR an input
+ *                                             frame or ingredient
+ *   thumb   flow.google.com/asb/<token>     — the grid poster, never the file
+ *   legacy  media.getMediaUrlRedirect       — labs.google's kind-agnostic
+ *                                             redirect, which serves whatever
+ *                                             the media turned out to be
+ *   none    no media URL at all
+ */
+export type FlowMediaKind = 'video' | 'image' | 'thumb' | 'legacy' | 'none';
+
 /** Parsed generation status from Google Flow's API. */
 export interface FlowGenerationStatus {
   /** Media/generation UUID (e.g. "5e32aa45-0db9-4d25-a56d-332db6c42a24") */
@@ -351,13 +375,39 @@ export interface FlowGenerationStatus {
   createdAt: string;
   /** Remaining credits after this generation */
   remainingCredits?: number;
+  /**
+   * Where this generation's file actually lives, when the API said so.
+   *
+   * On labs.google a media URL could be built from the id:
+   * media.getMediaUrlRedirect?name=<mediaId>. On flow.google.com it cannot —
+   * the URLs are signed and carry an Expires parameter, so the only way to
+   * have one is to read it from the response that issued it.
+   */
+  mediaUrl?: string;
+  /**
+   * What that URL points at — see FlowMediaKind.
+   *
+   * A caller that wants a video must check this, not just `state`. The parser
+   * cannot: it does not know what the queue asked for, so it reports the kind
+   * and leaves the judgement to whoever does.
+   */
+  mediaKind?: FlowMediaKind;
+  /**
+   * Whether the media URL is signed under THIS record's own media id.
+   *
+   * False means the record carried somebody else's asset — an ingredient, a
+   * start frame — and nothing of its own.
+   */
+  ownMedia?: boolean;
 }
 
 // ── Default settings ──
 export const DEFAULT_SETTINGS: QueueSettings = {
   mediaType: 'video',
   creationType: 'ingredients',
-  model: 'Veo 3.1 - Quality',
+  /* Fast rather than Quality: it is the model these runs actually use, and a
+     default nobody wants is a setting everybody has to change. */
+  model: 'Veo 3.1 - Fast',
   orientation: 'landscape',
   generations: 1,
   duration: '8s',
@@ -373,7 +423,12 @@ export const DEFAULT_SETTINGS: QueueSettings = {
 
   // Download
   autoDownloadVideos: false,
-  videoResolution: '4K',
+  /* Original (720p), not 4K. 4K is an upscale that this account's plan does
+     not include — measured on the live download menu, that row is rendered
+     but disabled, so the old default asked for the one resolution that could
+     never be clicked. The picker falls back now, but a default that works
+     without falling back is better than one that needs rescuing. */
+  videoResolution: 'Original (720p)',
   autoDownloadImages: false,
   imageResolution: '4K',
 

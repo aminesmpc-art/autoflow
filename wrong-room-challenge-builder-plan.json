@@ -1,0 +1,461 @@
+{
+  "name": "Wrong Room Challenge — 10 × 4s",
+  "description": "Ten character-locked scene images become ten narrated four-second Flow clips in one fixed three-door cartoon world.",
+  "steps": [
+    {
+      "id": "director_chief",
+      "type": "chief",
+      "label": "Director Chief — Global Continuity",
+      "platform": "chatgpt",
+      "prompt": "Create a fast viral short called “The Wrong Room Challenge”. The story is ten separate four-second scenes, but it must read as one continuous event in the identical three-door studio. Characters already assigned to a room remain visibly inside it in all later scenes. Only poses, expressions, character positions and the selected doorway glow may change. Use one simple action per clip, a slight squash-and-stretch bounce, and a strong readable reaction by the end. The first frame must hook immediately; the tenth must hold as a clean final group tableau.\n\nFor each SCENE STILL, depict the exact opening composition of that numbered scene. Keep dialogue and sound out of the picture and do not render captions as image text. For each matching VIDEO CLIP, animate forward from that still and end on the stated reaction. End every video prompt with one Ambient noise sentence, one SFX sentence, and exactly one short attributed off-screen Narrator line in curly quotation marks. Keep that spoken line under ten words so it fits naturally inside four seconds.\n\nScene 1: Leo Azul stands in the centre foreground; Captain Riko points toward the Pixel Meadow. Required narrator words, bright delivery: First up, Leo. Which room will he get? SFX: short pointing whoosh.\n\nScene 2: Riko points unmistakably at the centre doorway; Leo leans back with surprised wide eyes. Required narrator words, confident delivery: Pixel room for Leo. He looks surprised! SFX: whoosh, then a light selection chime.\n\nScene 3: Leo walks through the centre doorway as green light blooms around him; Moss steps aside and welcomes him. Required narrator words, happy delivery: Leo enters the Pixel Meadow. Correct! SFX: soft footsteps and one bright ding.\n\nScene 4: Leo remains visible in the centre room; Gia Nova enters the foreground and Riko turns toward her, beginning to point left. Required narrator words, playful delivery: Gia is next. Riko already knows. SFX: quick entrance swish.\n\nScene 5: Gia smiles and crosses toward the blue Neon Arcade while Riko holds the left-pointing pose. Required narrator words, warm delivery: Gia chooses the Neon Arcade. Perfect! SFX: footsteps, blue shimmer and one ding.\n\nScene 6: Leo and Gia remain in their rooms; Turbo Jay bursts into the foreground with an energetic bounce as Riko points right. Required narrator words, excited delivery: Turbo Jay arrives at maximum energy! SFX: elastic boing and pointing whoosh.\n\nScene 7: the red Brick Bedroom glows; Turbo freezes, eyes huge, then throws both arms upward in delighted shock. Required narrator words, quick delivery: The Brick Bedroom? Turbo cannot believe it! SFX: red shimmer, crowd cheer and ding.\n\nScene 8: assigned contestants remain visible; Nico Block enters and pauses between the centre and right doors while Riko folds his arms and watches. Required narrator words, cautious delivery: Nico is last. Choose very carefully. SFX: low playful suspense pulse.\n\nScene 9: Nico moves into the WRONG Brick Bedroom instead of the matching Pixel Meadow; a red warning glow pulses around the right doorway as Riko plants one hand on his hip. Required narrator words, shouted delivery: Wait! Wrong room! Nico chose bricks! SFX: loud buzzer and crowd gasp.\n\nScene 10: final group hold—Leo in the Pixel Meadow, Gia in the Neon Arcade, Turbo in the Brick Bedroom, Nico half-stepping back out in confusion, and Riko centred like the leader with one raised eyebrow. Required narrator words, laughing delivery: Everyone is placed... except confused Nico! SFX: light crowd laughter and a final impact sting.\n\nReserve uncluttered top-centre space in every composition for the editor caption “CHOOSE THE WRONG ROOM = LOSE 😱”. Do not ask the image or video model to draw those letters; keeping the safe area clean makes the final overlay sharp and correctly spelled in the editor."
+    },
+    {
+      "id": "board_director",
+      "type": "story",
+      "label": "Continuity Board Director",
+      "platform": "chatgpt",
+      "cast": [
+        {
+          "name": "Captain Riko",
+          "look": "Original fictional adult football captain with warm brown skin, short swept black hair, a square friendly face, athletic realistic-human proportions and a slightly oversized cartoon head. Emerald-and-coral number 7 jersey with no badge or logo, black shorts and white trainers.",
+          "role": "Confident judge who stands between the doors and points to each choice"
+        },
+        {
+          "name": "Leo Azul",
+          "look": "Original fictional block-avatar athlete with a glossy cobalt rectangular body, rounded block limbs, a realistic friendly oval face, wavy dark-brown hair and a plain sky-blue-and-white striped sports top with no badge or logo.",
+          "role": "Friendly first contestant"
+        },
+        {
+          "name": "Gia Nova",
+          "look": "Original fictional block-avatar woman with a glossy violet rectangular body, a realistic heart-shaped face, long dark auburn ponytail, teal cropped jacket, purple trousers and white shoes, always poised and smiling.",
+          "role": "Confident second contestant"
+        },
+        {
+          "name": "Turbo Jay",
+          "look": "Original fictional block-avatar entertainer with a glossy orange rectangular body, a realistic expressive round face, short coiled black hair, lime hoodie, charcoal trousers and huge readable eyes.",
+          "role": "High-energy third contestant with exaggerated reactions"
+        },
+        {
+          "name": "Nico Block",
+          "look": "Original fictional pixel-block athlete with a turquoise cubic torso and limbs, a realistic narrow face, short curly dark hair, plum sports shirt and a playful confused expression.",
+          "role": "Final contestant who deliberately chooses the wrong room"
+        },
+        {
+          "name": "Moss the Builder",
+          "look": "Original fictional square-headed pixel-world guide with chestnut block hair, green shirt, tan pixel trousers and a calm neutral expression.",
+          "role": "Silent background guide who always remains visible inside the centre room"
+        }
+      ],
+      "world": "One bright colourful studio room seen from one fixed front-facing medium-wide camera. Three open doorways stand side-by-side and never change order or geometry. LEFT is the Neon Arcade: blue neon light, a clean gaming desk, monitor, keyboard, chair and abstract game posters with no readable brands. CENTRE is the Pixel Meadow: green pixel-textured walls, grass-and-earth cubes and Moss the Builder visible inside. RIGHT is the Brick Bedroom: red walls, an interlocking-brick bed, colourful brick toys and cosy decorations. The main floor is pale wood. Door frames, furniture, props, lighting direction and every background object stay in exactly the same place in all ten scenes.",
+      "look": "High-detail polished 3D cartoon animation with glossy toy-like materials, soft cinematic lighting, vibrant saturated colours, expressive faces and family-friendly comedy. Original fictional people only. Vertical 9:16. The fixed camera never pans, tilts, zooms, dollies, or changes lens, height, distance or angle.",
+      "structure": "free",
+      "rules": [
+        "fixedCamera",
+        "samePerson",
+        "cumulative"
+      ],
+      "beats": 10,
+      "cameraProgression": "fixed",
+      "audioMode": "none",
+      "visualPreset": "cgi3d",
+      "timedBeats": false,
+      "avoid": "recognisable public figures, celebrity likenesses, brand logos, trademarked game characters, readable poster brands, changing doorway order, changing room geometry, changing outfits, changing faces, extra characters, duplicated limbs, camera movement, cuts, split screens, photoreal live action, frightening imagery",
+      "inputs": [
+        "director_chief"
+      ]
+    },
+    {
+      "id": "director_1_5",
+      "type": "story",
+      "label": "Scene Director — 1 to 5",
+      "platform": "chatgpt",
+      "cast": [
+        {
+          "name": "Captain Riko",
+          "look": "Original fictional adult football captain with warm brown skin, short swept black hair, a square friendly face, athletic realistic-human proportions and a slightly oversized cartoon head. Emerald-and-coral number 7 jersey with no badge or logo, black shorts and white trainers.",
+          "role": "Confident judge who stands between the doors and points to each choice"
+        },
+        {
+          "name": "Leo Azul",
+          "look": "Original fictional block-avatar athlete with a glossy cobalt rectangular body, rounded block limbs, a realistic friendly oval face, wavy dark-brown hair and a plain sky-blue-and-white striped sports top with no badge or logo.",
+          "role": "Friendly first contestant"
+        },
+        {
+          "name": "Gia Nova",
+          "look": "Original fictional block-avatar woman with a glossy violet rectangular body, a realistic heart-shaped face, long dark auburn ponytail, teal cropped jacket, purple trousers and white shoes, always poised and smiling.",
+          "role": "Confident second contestant"
+        },
+        {
+          "name": "Turbo Jay",
+          "look": "Original fictional block-avatar entertainer with a glossy orange rectangular body, a realistic expressive round face, short coiled black hair, lime hoodie, charcoal trousers and huge readable eyes.",
+          "role": "High-energy third contestant with exaggerated reactions"
+        },
+        {
+          "name": "Nico Block",
+          "look": "Original fictional pixel-block athlete with a turquoise cubic torso and limbs, a realistic narrow face, short curly dark hair, plum sports shirt and a playful confused expression.",
+          "role": "Final contestant who deliberately chooses the wrong room"
+        },
+        {
+          "name": "Moss the Builder",
+          "look": "Original fictional square-headed pixel-world guide with chestnut block hair, green shirt, tan pixel trousers and a calm neutral expression.",
+          "role": "Silent background guide who always remains visible inside the centre room"
+        }
+      ],
+      "world": "One bright colourful studio room seen from one fixed front-facing medium-wide camera. Three open doorways stand side-by-side and never change order or geometry. LEFT is the Neon Arcade: blue neon light, a clean gaming desk, monitor, keyboard, chair and abstract game posters with no readable brands. CENTRE is the Pixel Meadow: green pixel-textured walls, grass-and-earth cubes and Moss the Builder visible inside. RIGHT is the Brick Bedroom: red walls, an interlocking-brick bed, colourful brick toys and cosy decorations. The main floor is pale wood. Door frames, furniture, props, lighting direction and every background object stay in exactly the same place in all ten scenes.",
+      "look": "High-detail polished 3D cartoon animation with glossy toy-like materials, soft cinematic lighting, vibrant saturated colours, expressive faces and family-friendly comedy. Original fictional people only. Vertical 9:16. The fixed camera never pans, tilts, zooms, dollies, or changes lens, height, distance or angle.",
+      "structure": "free",
+      "rules": [
+        "fixedCamera",
+        "samePerson",
+        "cumulative"
+      ],
+      "beats": 10,
+      "cameraProgression": "fixed",
+      "audioMode": "cinematic",
+      "visualPreset": "cgi3d",
+      "timedBeats": true,
+      "avoid": "recognisable public figures, celebrity likenesses, brand logos, trademarked game characters, readable poster brands, changing doorway order, changing room geometry, changing outfits, changing faces, extra characters, duplicated limbs, camera movement, cuts, split screens, photoreal live action, frightening imagery",
+      "inputs": [
+        "director_chief"
+      ]
+    },
+    {
+      "id": "director_6_10",
+      "type": "story",
+      "label": "Scene Director — 6 to 10",
+      "platform": "chatgpt",
+      "cast": [
+        {
+          "name": "Captain Riko",
+          "look": "Original fictional adult football captain with warm brown skin, short swept black hair, a square friendly face, athletic realistic-human proportions and a slightly oversized cartoon head. Emerald-and-coral number 7 jersey with no badge or logo, black shorts and white trainers.",
+          "role": "Confident judge who stands between the doors and points to each choice"
+        },
+        {
+          "name": "Leo Azul",
+          "look": "Original fictional block-avatar athlete with a glossy cobalt rectangular body, rounded block limbs, a realistic friendly oval face, wavy dark-brown hair and a plain sky-blue-and-white striped sports top with no badge or logo.",
+          "role": "Friendly first contestant"
+        },
+        {
+          "name": "Gia Nova",
+          "look": "Original fictional block-avatar woman with a glossy violet rectangular body, a realistic heart-shaped face, long dark auburn ponytail, teal cropped jacket, purple trousers and white shoes, always poised and smiling.",
+          "role": "Confident second contestant"
+        },
+        {
+          "name": "Turbo Jay",
+          "look": "Original fictional block-avatar entertainer with a glossy orange rectangular body, a realistic expressive round face, short coiled black hair, lime hoodie, charcoal trousers and huge readable eyes.",
+          "role": "High-energy third contestant with exaggerated reactions"
+        },
+        {
+          "name": "Nico Block",
+          "look": "Original fictional pixel-block athlete with a turquoise cubic torso and limbs, a realistic narrow face, short curly dark hair, plum sports shirt and a playful confused expression.",
+          "role": "Final contestant who deliberately chooses the wrong room"
+        },
+        {
+          "name": "Moss the Builder",
+          "look": "Original fictional square-headed pixel-world guide with chestnut block hair, green shirt, tan pixel trousers and a calm neutral expression.",
+          "role": "Silent background guide who always remains visible inside the centre room"
+        }
+      ],
+      "world": "One bright colourful studio room seen from one fixed front-facing medium-wide camera. Three open doorways stand side-by-side and never change order or geometry. LEFT is the Neon Arcade: blue neon light, a clean gaming desk, monitor, keyboard, chair and abstract game posters with no readable brands. CENTRE is the Pixel Meadow: green pixel-textured walls, grass-and-earth cubes and Moss the Builder visible inside. RIGHT is the Brick Bedroom: red walls, an interlocking-brick bed, colourful brick toys and cosy decorations. The main floor is pale wood. Door frames, furniture, props, lighting direction and every background object stay in exactly the same place in all ten scenes.",
+      "look": "High-detail polished 3D cartoon animation with glossy toy-like materials, soft cinematic lighting, vibrant saturated colours, expressive faces and family-friendly comedy. Original fictional people only. Vertical 9:16. The fixed camera never pans, tilts, zooms, dollies, or changes lens, height, distance or angle.",
+      "structure": "free",
+      "rules": [
+        "fixedCamera",
+        "samePerson",
+        "cumulative"
+      ],
+      "beats": 10,
+      "cameraProgression": "fixed",
+      "audioMode": "cinematic",
+      "visualPreset": "cgi3d",
+      "timedBeats": true,
+      "avoid": "recognisable public figures, celebrity likenesses, brand logos, trademarked game characters, readable poster brands, changing doorway order, changing room geometry, changing outfits, changing faces, extra characters, duplicated limbs, camera movement, cuts, split screens, photoreal live action, frightening imagery",
+      "inputs": [
+        "director_chief"
+      ]
+    },
+    {
+      "id": "continuity_board",
+      "type": "generate",
+      "label": "Master Continuity Board — 10 Panels",
+      "media": "image",
+      "platform": "chatgpt",
+      "model": "Nano Banana Pro",
+      "aspectRatio": "9:16",
+      "storyboardSheet": true,
+      "inputs": [
+        "board_director"
+      ]
+    },
+    {
+      "id": "scene_1",
+      "type": "generate",
+      "label": "Scene 1 Still — Leo Gets His Choice",
+      "media": "image",
+      "platform": "chatgpt",
+      "model": "Nano Banana Pro",
+      "aspectRatio": "9:16",
+      "inputs": [
+        "director_1_5",
+        "continuity_board"
+      ]
+    },
+    {
+      "id": "clip_1",
+      "type": "generate",
+      "label": "Clip 1 — Leo Gets His Choice (4s)",
+      "media": "video",
+      "platform": "flow",
+      "model": "Veo 3.1 - Fast",
+      "aspectRatio": "9:16",
+      "duration": "4s",
+      "inputs": [
+        "director_1_5",
+        "scene_1"
+      ]
+    },
+    {
+      "id": "scene_2",
+      "type": "generate",
+      "label": "Scene 2 Still — The Pixel Decision",
+      "media": "image",
+      "platform": "chatgpt",
+      "model": "Nano Banana Pro",
+      "aspectRatio": "9:16",
+      "inputs": [
+        "director_1_5",
+        "continuity_board"
+      ]
+    },
+    {
+      "id": "clip_2",
+      "type": "generate",
+      "label": "Clip 2 — The Pixel Decision (4s)",
+      "media": "video",
+      "platform": "flow",
+      "model": "Veo 3.1 - Fast",
+      "aspectRatio": "9:16",
+      "duration": "4s",
+      "inputs": [
+        "director_1_5",
+        "scene_2"
+      ]
+    },
+    {
+      "id": "scene_3",
+      "type": "generate",
+      "label": "Scene 3 Still — Leo Enters",
+      "media": "image",
+      "platform": "chatgpt",
+      "model": "Nano Banana Pro",
+      "aspectRatio": "9:16",
+      "inputs": [
+        "director_1_5",
+        "continuity_board"
+      ]
+    },
+    {
+      "id": "clip_3",
+      "type": "generate",
+      "label": "Clip 3 — Leo Enters (4s)",
+      "media": "video",
+      "platform": "flow",
+      "model": "Veo 3.1 - Fast",
+      "aspectRatio": "9:16",
+      "duration": "4s",
+      "inputs": [
+        "director_1_5",
+        "scene_3"
+      ]
+    },
+    {
+      "id": "scene_4",
+      "type": "generate",
+      "label": "Scene 4 Still — Gia Arrives",
+      "media": "image",
+      "platform": "chatgpt",
+      "model": "Nano Banana Pro",
+      "aspectRatio": "9:16",
+      "inputs": [
+        "director_1_5",
+        "continuity_board"
+      ]
+    },
+    {
+      "id": "clip_4",
+      "type": "generate",
+      "label": "Clip 4 — Gia Arrives (4s)",
+      "media": "video",
+      "platform": "flow",
+      "model": "Veo 3.1 - Fast",
+      "aspectRatio": "9:16",
+      "duration": "4s",
+      "inputs": [
+        "director_1_5",
+        "scene_4"
+      ]
+    },
+    {
+      "id": "scene_5",
+      "type": "generate",
+      "label": "Scene 5 Still — Gia Chooses Neon",
+      "media": "image",
+      "platform": "chatgpt",
+      "model": "Nano Banana Pro",
+      "aspectRatio": "9:16",
+      "inputs": [
+        "director_1_5",
+        "continuity_board"
+      ]
+    },
+    {
+      "id": "clip_5",
+      "type": "generate",
+      "label": "Clip 5 — Gia Chooses Neon (4s)",
+      "media": "video",
+      "platform": "flow",
+      "model": "Veo 3.1 - Fast",
+      "aspectRatio": "9:16",
+      "duration": "4s",
+      "inputs": [
+        "director_1_5",
+        "scene_5"
+      ]
+    },
+    {
+      "id": "scene_6",
+      "type": "generate",
+      "label": "Scene 6 Still — Turbo Jay Arrives",
+      "media": "image",
+      "platform": "chatgpt",
+      "model": "Nano Banana Pro",
+      "aspectRatio": "9:16",
+      "inputs": [
+        "director_6_10",
+        "continuity_board"
+      ]
+    },
+    {
+      "id": "clip_6",
+      "type": "generate",
+      "label": "Clip 6 — Turbo Jay Arrives (4s)",
+      "media": "video",
+      "platform": "flow",
+      "model": "Veo 3.1 - Fast",
+      "aspectRatio": "9:16",
+      "duration": "4s",
+      "inputs": [
+        "director_6_10",
+        "scene_6"
+      ]
+    },
+    {
+      "id": "scene_7",
+      "type": "generate",
+      "label": "Scene 7 Still — Turbo Reacts",
+      "media": "image",
+      "platform": "chatgpt",
+      "model": "Nano Banana Pro",
+      "aspectRatio": "9:16",
+      "inputs": [
+        "director_6_10",
+        "continuity_board"
+      ]
+    },
+    {
+      "id": "clip_7",
+      "type": "generate",
+      "label": "Clip 7 — Turbo Reacts (4s)",
+      "media": "video",
+      "platform": "flow",
+      "model": "Veo 3.1 - Fast",
+      "aspectRatio": "9:16",
+      "duration": "4s",
+      "inputs": [
+        "director_6_10",
+        "scene_7"
+      ]
+    },
+    {
+      "id": "scene_8",
+      "type": "generate",
+      "label": "Scene 8 Still — Nico Must Choose",
+      "media": "image",
+      "platform": "chatgpt",
+      "model": "Nano Banana Pro",
+      "aspectRatio": "9:16",
+      "inputs": [
+        "director_6_10",
+        "continuity_board"
+      ]
+    },
+    {
+      "id": "clip_8",
+      "type": "generate",
+      "label": "Clip 8 — Nico Must Choose (4s)",
+      "media": "video",
+      "platform": "flow",
+      "model": "Veo 3.1 - Fast",
+      "aspectRatio": "9:16",
+      "duration": "4s",
+      "inputs": [
+        "director_6_10",
+        "scene_8"
+      ]
+    },
+    {
+      "id": "scene_9",
+      "type": "generate",
+      "label": "Scene 9 Still — Wrong Room Twist",
+      "media": "image",
+      "platform": "chatgpt",
+      "model": "Nano Banana Pro",
+      "aspectRatio": "9:16",
+      "inputs": [
+        "director_6_10",
+        "continuity_board"
+      ]
+    },
+    {
+      "id": "clip_9",
+      "type": "generate",
+      "label": "Clip 9 — Wrong Room Twist (4s)",
+      "media": "video",
+      "platform": "flow",
+      "model": "Veo 3.1 - Fast",
+      "aspectRatio": "9:16",
+      "duration": "4s",
+      "inputs": [
+        "director_6_10",
+        "scene_9"
+      ]
+    },
+    {
+      "id": "scene_10",
+      "type": "generate",
+      "label": "Scene 10 Still — Final Group Hold",
+      "media": "image",
+      "platform": "chatgpt",
+      "model": "Nano Banana Pro",
+      "aspectRatio": "9:16",
+      "inputs": [
+        "director_6_10",
+        "continuity_board"
+      ]
+    },
+    {
+      "id": "clip_10",
+      "type": "generate",
+      "label": "Clip 10 — Final Group Hold (4s)",
+      "media": "video",
+      "platform": "flow",
+      "model": "Veo 3.1 - Fast",
+      "aspectRatio": "9:16",
+      "duration": "4s",
+      "inputs": [
+        "director_6_10",
+        "scene_10"
+      ]
+    }
+  ]
+}

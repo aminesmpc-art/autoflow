@@ -4,6 +4,8 @@
    size stop being readable at exactly the point somebody needs to change one. */
 
 .clip-tool {
+  --text-muted: #a1a1aa;
+  color-scheme: dark;
   /* The hero centres its text and the card sits inside it, so without this
      every field label and the filename come out centred — which reads as a
      poster rather than as a form you are meant to fill in. The drop zone sets
@@ -11,10 +13,10 @@
   text-align: left;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  background: var(--gradient-card), rgba(8, 8, 8, 0.9);
+  background: #101010;
   box-shadow: var(--shadow-card);
   padding: 32px;
-  max-width: 980px;
+  max-width: 1120px;
   margin: 0 auto;
 }
 
@@ -24,7 +26,7 @@
 
 .clip-tool-head {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
@@ -32,7 +34,7 @@
 }
 
 .clip-tool-head h2 {
-  font-size: 1.5rem;
+  font-size: clamp(1.3rem, 3vw, 1.7rem);
   margin: 0;
   letter-spacing: -0.02em;
 }
@@ -40,7 +42,7 @@
 .clip-tool-head p {
   margin: 6px 0 0;
   color: var(--text-secondary);
-  font-size: 0.95rem;
+  font-size: 0.875rem;
   line-height: 1.6;
 }
 
@@ -50,9 +52,8 @@
   border: 1px dashed rgba(255, 92, 0, 0.4);
   border-radius: var(--radius-lg);
   background: rgba(255, 92, 0, 0.03);
-  padding: 44px 24px;
+  padding: 32px 20px;
   text-align: center;
-  cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
@@ -62,7 +63,7 @@
   background: rgba(255, 92, 0, 0.08);
 }
 
-.clip-drop-icon { font-size: 2rem; display: block; margin-bottom: 10px; }
+.clip-drop-icon { display: block; margin: 0 auto 16px; color: var(--primary-light); }
 .clip-drop strong { display: block; font-size: 1.05rem; margin-bottom: 6px; }
 .clip-drop span.hint { color: var(--text-muted); font-size: 0.85rem; }
 
@@ -85,16 +86,15 @@
 
 .clip-options {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
   gap: 18px;
   margin: 24px 0;
 }
 
 .clip-field label {
   display: block;
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 0.85rem;
+  font-weight: 600;
   color: var(--text-muted);
   margin-bottom: 7px;
 }
@@ -138,7 +138,7 @@
   cursor: pointer;
 }
 
-.clip-check input { accent-color: var(--primary); width: 16px; height: 16px; }
+.clip-check input { accent-color: var(--primary); width: 18px; height: 18px; }
 
 /* ── The stage rail ───────────────────────────────────────────────── */
 
@@ -160,7 +160,8 @@
 .clip-stage.running { border-color: var(--primary); background: rgba(255, 92, 0, 0.07); }
 .clip-stage.done { color: var(--text-secondary); }
 .clip-stage.failed { border-color: var(--accent); background: rgba(229, 9, 20, 0.07); }
-.clip-stage.pending { opacity: 0.5; }
+.clip-stage.stopped { border-color: #69532b; color: #fcd9a0; }
+.clip-stage.pending { color: var(--text-muted); }
 
 .clip-log {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
@@ -175,7 +176,7 @@
 
 .clip-results {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
   gap: 22px;
   margin-top: 26px;
 }
@@ -200,6 +201,7 @@
 .clip-card-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 9px; flex: 1; }
 
 .clip-card-title {
+  overflow-wrap: anywhere;
   font-weight: 650;
   font-size: 0.95rem;
   line-height: 1.4;
@@ -230,6 +232,7 @@
 .clip-card-actions { margin-top: auto; display: flex; gap: 10px; flex-wrap: wrap; padding-top: 4px; }
 
 .clip-mini {
+  min-height: 44px;
   background: none;
   border: 1px solid var(--border);
   color: var(--text-secondary);
@@ -272,3 +275,83 @@
 .clip-note.info { border: 1px solid var(--border); background: rgba(255, 255, 255, 0.02); color: var(--text-secondary); }
 
 .clip-actions-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 26px; }
+
+/* Workspace navigation and source / output comparison. */
+.clip-eyebrow { display: block; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.14em; color: var(--primary-light); margin-bottom: 8px; }
+.clip-allowance { padding: 12px 16px; border: 1px solid var(--border); border-radius: 10px; background: #171717; flex-shrink: 0; }
+.clip-allowance > span { display: block; font-size: 0.6rem; letter-spacing: 0.12em; color: var(--text-secondary); }
+.clip-allowance strong { display: block; font-size: 0.875rem; margin: 3px 0; }
+.clip-allowance small { font-size: 0.7rem; color: var(--text-secondary); }
+.clip-stepper { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); list-style: none; padding: 0; margin: 0 0 28px; border-block: 1px solid var(--border); }
+.clip-stepper li { display: flex; align-items: center; gap: 10px; padding: 16px 6px; color: var(--text-secondary); font-size: 0.8rem; border-bottom: 2px solid transparent; }
+.clip-stepper li > span { display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0; border: 1px solid #383838; border-radius: 50%; font-size: 0.65rem; font-variant-numeric: tabular-nums; }
+.clip-stepper li.active { color: #fff; border-bottom-color: var(--primary); }
+.clip-stepper li.active > span { background: var(--primary); color: #111; border-color: var(--primary); font-weight: 700; }
+.clip-stepper li.complete > span { color: #6ee7b7; border-color: #315b49; }
+.clip-source-layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(240px, 1fr); gap: 24px; }
+.clip-source-panel, .clip-output-preview { min-width: 0; }
+.clip-section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.clip-section-title h3 { font-size: 1rem; font-weight: 600; margin: 0; }
+.clip-section-title > span { font-size: 0.65rem; color: var(--text-secondary); }
+.clip-section-title p { margin-top: 4px; color: var(--text-secondary); font-size: 0.83rem; }
+.clip-browse { display: flex; align-items: center; justify-content: center; gap: 30px; min-height: 44px; margin: 20px auto 12px; padding: 10px 20px; background: var(--primary); border: 1px solid var(--primary); border-radius: 7px; color: #111; font: inherit; font-size: 0.875rem; font-weight: 700; cursor: pointer; }
+.clip-browse:hover { background: var(--primary-light); }
+.clip-source-note { color: var(--text-secondary); font-size: 0.75rem; line-height: 1.6; margin-top: 14px; max-width: 54ch; }
+.clip-output-preview { padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: #151515; }
+.clip-preview-stage { display: flex; justify-content: center; align-items: center; height: 160px; }
+.clip-preview-frame { position: relative; max-width: 100%; flex-shrink: 0; border: 1px solid #505050; border-radius: 7px; overflow: hidden; background: #242424; }
+.clip-preview-frame-label { position: absolute; top: 8px; left: 8px; color: #c9c9ce; font-size: 0.55rem; z-index: 1; }
+.clip-preview-frame svg { position: absolute; inset: 0; width: 100%; height: 100%; padding: 25px 12px 0; stroke: #696969; stroke-width: 1.5; fill: #363636; }
+.clip-caption-sample { position: absolute; bottom: 15%; left: 5%; right: 5%; text-align: center; color: #fff; background: #080808e8; padding: 5px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; line-height: 1.3; }
+.clip-caption-sample em { font-style: normal; }
+.preset-bold .clip-caption-sample { text-transform: uppercase; font-weight: 900; }
+.preset-emphasis .clip-caption-sample em { color: #ffd86b; }
+.preset-karaoke .clip-caption-sample em { background: #ffd86b; color: #111; border-radius: 2px; }
+.preset-minimal .clip-caption-sample { font-size: 0.6rem; font-weight: 400; }
+.clip-preview-summary { text-align: center; font-size: 0.8rem; color: var(--text-secondary); margin-top: 14px; }
+.clip-preview-summary strong { color: #fff; }
+.clip-preview-disclaimer { text-align: center; font-size: 0.65rem; color: var(--text-secondary); margin-top: 4px; }
+.clip-settings-heading, .clip-results-heading { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--border); }
+.clip-format-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.clip-format-options button { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 10px 12px; background: #191919; border: 1px solid #383838; border-radius: 8px; color: var(--text-secondary); font: inherit; font-size: 0.75rem; text-align: left; cursor: pointer; }
+.clip-format-options button:hover { border-color: var(--primary-light); }
+.clip-format-options button[aria-pressed="true"] { border-color: var(--primary); color: #fff; background: #26190f; }
+.clip-format-icon { display: block; height: 20px; flex-shrink: 0; border: 1.5px solid currentColor; border-radius: 2px; }
+.clip-check { min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 7px; background: #181818; }
+.clip-start-row { padding: 20px; border: 1px solid var(--border); background: #181818; border-radius: 10px; }
+.clip-start-row .clip-log { flex: 1 1 240px; font-family: inherit; line-height: 1.65; }
+.clip-start-row .btn { flex-shrink: 0; }
+.clip-processing { margin-top: 28px; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: #151515; }
+.clip-live-label { color: var(--primary-light) !important; padding: 5px 9px; border: 1px solid #684021; border-radius: 5px; }
+.clip-stage { flex-wrap: wrap; }
+.clip-stage .took { overflow-wrap: anywhere; }
+.clip-card-media { position: relative; }
+.clip-rank { position: absolute; z-index: 1; top: 12px; left: 12px; padding: 3px 9px; background: #101010e6; border: 1px solid #505050; border-radius: 6px; font-size: 0.75rem; font-weight: 700; }
+.clip-tool :is(button, a, input, select, summary):focus-visible { outline: 2px solid var(--primary-light); outline-offset: 4px; }
+.clip-tool button:disabled { opacity: 0.5; cursor: not-allowed; }
+.clip-tool a:not(.btn) { text-decoration: underline; text-underline-offset: 3px; }
+.clip-loading { min-height: 240px; }
+
+@media (max-width: 720px) {
+  .clip-source-layout { grid-template-columns: 1fr; }
+  .clip-format-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .clip-stepper li { flex-direction: column; align-items: flex-start; gap: 8px; font-size: 0.7rem; padding: 12px 4px; }
+  .clip-output-preview { display: grid; grid-template-columns: 1fr 120px; column-gap: 16px; align-items: center; }
+  .clip-output-preview .clip-section-title { grid-column: 1; margin-bottom: 4px; }
+  .clip-preview-stage { grid-column: 2; grid-row: 1 / 4; height: 160px; }
+  .clip-preview-summary, .clip-preview-disclaimer { grid-column: 1; text-align: left; margin-top: 0; }
+  .clip-allowance { width: 100%; }
+  .clip-start-row { padding: 16px; }
+  .clip-start-row .btn { width: 100%; white-space: normal; }
+  .clip-processing { padding: 14px; }
+}
+
+@media (max-width: 380px) {
+  .clip-tool { padding: 16px; }
+  .clip-output-preview { grid-template-columns: 1fr 90px; padding: 12px; gap: 10px; }
+  .clip-format-options button { padding: 8px; gap: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clip-tool *, .clip-tool *::before, .clip-tool *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

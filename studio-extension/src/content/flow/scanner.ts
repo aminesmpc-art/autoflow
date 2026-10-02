@@ -18,6 +18,7 @@
 
 import { ScannedAsset, ScannedTileState, PromptHistoryEntry } from '../../types';
 import { getPromptHistory } from '../../shared/storage';
+import { isNewFlowGrid, readGrid } from './flowTiles';
 import { matchesFlowText, FLOW_STRINGS, isFlowErrorText } from './flowStrings';
 import {
   findAssetCards,
@@ -833,6 +834,19 @@ function enrichAndBuild(groups: TileGroup[], history: PromptHistoryEntry[]): Sca
 export async function scanProjectForVideos(): Promise<ScannedAsset[]> {
   console.log('[AutoFlow] Smart Scanner: starting Batch scan on', window.location.href);
 
+  /* The Angular Flow, which shares none of the anchors below.
+     Measured on a project showing eight generated videos: div[data-tile-id]
+     matched 0 and [data-index] matched 0, so the walk further down collected
+     nothing and the Library reported "No assets found" on a full page. That
+     site groups a prompt and its generations in div.batch-container, which is
+     the shape this scanner used to have to infer — see flowTiles.ts. */
+  if (isNewFlowGrid()) {
+    const tiles = readGrid();
+    console.log(`[AutoFlow] Smart Scanner: new Flow grid — ${tiles.length} tiles`);
+    const history = await getPromptHistory();
+    return enrichAndBuild(buildGroups(tiles as unknown as RawTile[]), history);
+  }
+
   // Save original view so we can restore it later
   const originalView = await getCurrentViewMode();
   console.log(`[AutoFlow] Smart Scanner: original view = ${originalView || 'unknown'}`);
@@ -1024,7 +1038,11 @@ export async function downloadAssetByMenu(locator: string, resolution?: string):
     const items = document.querySelectorAll('[role="menuitem"]');
     for (const item of items) {
       if (!isVisible(item)) continue;
-      const icons = item.querySelectorAll('i.google-symbols, i[class*="google-symbols"]');
+      /* mat-icon is included because the Angular Flow renders its ligatures
+         there rather than in an <i>. Measured on that site: the tile menu
+         holds 12 role="menuitem" entries and i.google-symbols matches none
+         of them, so this returned false on a menu that was open and correct. */
+      const icons = item.querySelectorAll('mat-icon, i.google-symbols, i[class*="google-symbols"]');
       for (const icon of icons) {
         if (icon.textContent?.trim().toLowerCase() === 'download') return true;
       }
@@ -1032,9 +1050,40 @@ export async function downloadAssetByMenu(locator: string, resolution?: string):
     return false;
   }
 
-  // Try each target until the correct context menu opens
   let contextMenuOpen = false;
-  for (const target of clickTargets) {
+
+  /* The new Flow opens this menu from a button, not a right-click. Its tile
+     carries three: Favorite, Reuse prompt, and More options — and More
+     options is the one holding Download. Tried first because right-clicking
+     that tile does not produce the menu at all, so every target below would
+     be attempted and fail before giving up. */
+  const moreOptions = Array.from(card.querySelectorAll('button')).find((b) => {
+    const icon = b.querySelector('mat-icon');
+    return icon && icon.textContent?.trim().toLowerCase() === 'more_vert';
+  });
+  if (moreOptions) {
+    if (document.querySelectorAll('[role="menuitem"]').length > 0) {
+      pressEscape();
+      await sleep(300);
+    }
+    /* Hover first, and go through the full pointer chain. These buttons live
+       in a hover overlay: measured live, a bare .click() on More options left
+       the menu closed, while hovering the tile and dispatching the chain
+       opened all 12 items. */
+    for (const type of ['pointerover', 'pointerenter', 'mouseover', 'mouseenter']) {
+      card.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+    }
+    await sleep(120);
+    simulateClick(moreOptions);
+    await sleep(600);
+    if (hasDownloadMenu()) {
+      contextMenuOpen = true;
+      console.log('[AutoFlow] Download menu opened via the More options button');
+    }
+  }
+
+  // Try each target until the correct context menu opens
+  for (const target of contextMenuOpen ? [] : clickTargets) {
     // Dismiss any previously opened (wrong) menu
     if (document.querySelectorAll('[role="menuitem"]').length > 0) {
       pressEscape();

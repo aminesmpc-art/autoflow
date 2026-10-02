@@ -18,6 +18,8 @@ import { CHAT_PLATFORMS } from '../engine/WorkflowRunner';
 import { FLOW_VOICES, NO_VOICE, voiceLabel, voiceBlockedReason } from '../flowVoices';
 import { GrokSettings } from './GrokSettings';
 import { NodeInfoBadge } from './NodeInfoBadge';
+import { AskBriefEditor } from '../components/AskBriefEditor';
+import { Icon } from '../components/Icon';
 
 type NodeStatus = 'idle' | 'running' | 'done' | 'error';
 type Platform = 'flow' | 'chatgpt' | 'gemini' | 'grok' | 'claude' | 'zai';
@@ -86,6 +88,8 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   const removeNode = useStudioStore((s) => s.removeNode);
   const duplicateNode = useStudioStore((s) => s.duplicateNode);
   const [zoomed, setZoomed] = useState(false);
+  const [presetSearch, setPresetSearch] = useState('');
+  const [resultCopyStatus, setResultCopyStatus] = useState('');
 
   const set = useCallback(
     (field: string, value: unknown) => updateNodeData(id, { [field]: value }),
@@ -185,7 +189,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
        they do and looked identical on screen. */
     <div className={`sn-wrap sn-wrap--kind-${
       platform === 'flow' ? 'flow' : platform === 'grok' ? 'grok' : 'chat'
-    } ${selected ? 'sn-wrap--selected' : ''}`}>
+    } ${isText ? 'sn-wrap--ask' : ''} ${selected ? 'sn-wrap--selected' : ''}`}>
       {/* ── Floating action bar (above the card) ── */}
       <div className="sn-actions">
         {preview && (
@@ -201,7 +205,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           empty space on an idle node and on top of the result once there was
           one. */}
       <div className="sn-label">
-        <span className="sn-label__icon" aria-hidden="true">{isText ? '💬' : isVideo ? '🎞' : '🖼'}</span>
+        {isText ? <Icon name="chat" kind="ask" className="sn-label__icon" /> : <span className="sn-label__icon" aria-hidden="true">{isVideo ? '🎞' : '🖼'}</span>}
         <span className="sn-label__text">
           {nodeData.label || (isText ? 'Ask AI' : 'Flow — Image/Video Generate')}
         </span>
@@ -270,8 +274,13 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           {/* A written prompt is the result here, so show it — it is the thing
               the next node will run, and worth reading before it does. */}
           {status === 'done' && isText && nodeData.resultText && (
-            <div className="sn-reply" title={nodeData.resultText}>
-              {nodeData.resultText}
+            <div className="sn-ask__result nodrag nowheel">
+              <div className="sn-ask__result-head"><strong>Written prompt</strong><span>{String(nodeData.resultText).length.toLocaleString()} characters</span></div>
+              <div className="sn-reply">{nodeData.resultText}</div>
+              <button type="button" onClick={async () => {
+                try { await navigator.clipboard.writeText(String(nodeData.resultText)); setResultCopyStatus('Copied'); }
+                catch { setResultCopyStatus('Copy unavailable—select the text instead.'); }
+              }}>Copy result</button><span role="status">{resultCopyStatus}</span>
             </div>
           )}
 
@@ -321,14 +330,14 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               {isText ? (
                 <div className="sn-craft-card">
                   <div className="sn-craft-card__head">
-                    <span className="sn-craft-card__badge">✨ AI Prompt Master</span>
-                    <span className="sn-craft-card__token">{"{{subject}}"}</span>
+                    <span className="sn-craft-card__badge">Prompt workspace</span>
+                    <Icon name="prompt" />
                   </div>
                   <div className="sn-craft-card__name">
                     {findPreset(nodeData.preset).name}
                   </div>
                   <small className="sn-craft-card__hint">
-                    {hasPrompt ? '● Ready — input prompt connected' : '○ Wire a prompt into (T), then Run'}
+                    {hasPrompt ? 'Connected brief + your instructions' : nodeData.askBrief || nodeData.placePromptNotes ? 'Local brief saved — press Run when ready' : 'Choose a preset and describe your idea below'}
                   </small>
                 </div>
               ) : (
@@ -341,6 +350,15 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                       ? 'Ready — press Run'
                       : 'Connect a prompt, then Run'}
                   </small>
+                  {/* A clip attached from Flow's library is otherwise invisible.
+                      It is not a wire and not a thumbnail — it is a filename the
+                      adapter looks up in the Videos tab at run time, so without
+                      this the node gives no sign it has a video at all. */}
+                  {!!nodeData.styleReference && (
+                    <small className="sn-media__ref" title={String(nodeData.styleReference)}>
+                      🎞 {String(nodeData.styleReference)} — from the Flow library
+                    </small>
+                  )}
                 </>
               )}
             </div>
@@ -440,6 +458,9 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
             </small>
           )}
 
+          {isText && <label className="sn-field sn-field--wide"><span className="sn-field__label">Find a preset</span>
+            <input className="sn-bar__sel nodrag" type="search" value={presetSearch} placeholder="Search places, characters, video…"
+              onChange={(e) => setPresetSearch(e.target.value)} /></label>}
           {isText && (
             <label className="sn-field sn-field--wide" title="Wraps what you type in a brief, so a few words produce a usable prompt">
               <span className="sn-field__label">Preset</span>
@@ -448,7 +469,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                 value={nodeData.preset || DEFAULT_PRESET_ID}
                 onChange={(e) => set('preset', e.target.value)}
               >
-                {getAskPresets().map((p) => (
+                {getAskPresets().filter((p) => p.id === (nodeData.preset || DEFAULT_PRESET_ID) || `${p.name} ${p.hint}`.toLowerCase().includes(presetSearch.toLowerCase())).map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>
@@ -460,8 +481,19 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           {isText && (
             <small className="sn-field__hint sn-field--wide">{findPreset(nodeData.preset).hint}</small>
           )}
+          {isText && nodeData.preset === 'place_environment' && (
+            <label className="sn-field sn-field--wide">
+              <span className="sn-field__label">Customize the place prompt</span>
+              <textarea className="sn-text nodrag nowheel" rows={5}
+                value={nodeData.placePromptNotes || ''}
+                placeholder={'Location: rooftop dance space\nStyle: realistic\nLighting: soft sunset\nCamera: eye-level, medium-wide\nKeep: clear floor, open center, no people'}
+                onChange={(e) => set('placePromptNotes', e.target.value)} />
+              <small className="sn-field__hint">These details are combined with your connected prompt. Output → image generation → Motion Control P. Use I separately for the character.</small>
+            </label>
+          )}
 
           {/* Flow exposes model/ratio/duration; the ChatGPT composer has none */}
+          {isText && <AskBriefEditor id={id} data={nodeData} hasImage={hasImageInput} />}
           {!isChatGPT && (
             <>
               {/* Model takes the full width — the names are long

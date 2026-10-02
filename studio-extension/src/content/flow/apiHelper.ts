@@ -20,7 +20,7 @@
      and automation.ts falls back to DOM → safe degradation
    ============================================================ */
 
-import { FlowGenerationStatus, FlowGenerationState } from '../../types';
+import { FlowGenerationStatus, FlowGenerationState, FlowMediaKind } from '../../types';
 
 // ── Global State Pattern for Extension Re-injections ──
 // Since content scripts can be re-evaluated when background workers wake up/restart,
@@ -34,8 +34,18 @@ interface GlobalApiState {
   lastCacheUpdate: number;
   queueStartTime: number;
   preSubmitSnapshot: Set<string>;
+  /** So the stale-failure warning is logged once, not per record. */
+  warnedAboutStaleFailure: boolean;
+  /** What this queue is generating, so a completion can be checked against it. */
+  expectMedia: 'video' | 'image';
+  /** So the input-media warning is logged once, not per record. */
+  warnedAboutInputMedia: boolean;
   lastInterceptorError: string | null;
   messageListenerRegistered: boolean;
+  /** When the MAIN-world interceptor last proved it is running, 0 if never. */
+  interceptorAliveAt: number;
+  /** Whether replaying Flow's own status call has ever succeeded here. */
+  lastReplayOk: boolean;
 }
 
 function getApiState(): GlobalApiState {
@@ -48,11 +58,37 @@ function getApiState(): GlobalApiState {
       lastCacheUpdate: 0,
       queueStartTime: 0,
       preSubmitSnapshot: new Set<string>(),
+      warnedAboutStaleFailure: false,
+      expectMedia: 'video',
+      warnedAboutInputMedia: false,
       lastInterceptorError: null,
+      interceptorAliveAt: 0,
+      /* Whether replaying Flow's own status call has ever worked here. It is
+         the captured request template, observed rather than inspected: the
+         replay fails when no template was captured. Distinct from the
+         interceptor being present — the script can be installed and still
+         have seen no status call to copy. */
+      lastReplayOk: false,
       messageListenerRegistered: false,
     };
   }
   return win.__af_api_state;
+}
+
+/**
+ * Whether media of this kind proves the thing the queue asked for exists.
+ *
+ * `legacy` satisfies both: labs.google's redirect is kind-agnostic and was
+ * only ever issued for a media that existed, so refusing it would break the
+ * old site for no gain. An unset kind satisfies both too — it means the
+ * status came from a path that predates this field (the tRPC parser, an older
+ * interceptor still resident in the tab), and treating silence as failure
+ * would stall those runs rather than correct them.
+ */
+export function kindSatisfies(kind: FlowMediaKind | undefined, want: 'video' | 'image'): boolean {
+  if (!kind) return true;
+  if (kind === 'legacy') return true;
+  return kind === want;
 }
 
 // ── Status mapping ──
@@ -166,6 +202,26 @@ function parseMediaEntry(entry: any, remainingCredits?: number): FlowGenerationS
   };
 }
 
+/**
+ * Record that fresh data landed, and announce the API the first time it does.
+ *
+ * Shared by both protocol branches. The announcement fires once, on the
+ * transition out of "nothing has ever arrived" — that edge is what the panel's
+ * badge reads, and it is the reason the badge sat on "API Passive": on
+ * flow.google.com nothing ever reached this function at all.
+ */
+function cacheUpdated(state: GlobalApiState): void {
+  const wasApiAvailable = state.lastCacheUpdate > 0;
+  state.lastCacheUpdate = Date.now();
+
+  if (!wasApiAvailable) {
+    chrome.runtime.sendMessage({
+      type: 'API_STATUS_CHANGED',
+      payload: { isApiAvailable: true },
+    }).catch(() => {});
+  }
+}
+
 // ── Initialization ──
 
 /**
@@ -188,6 +244,21 @@ export async function initApiHelper(): Promise<void> {
         state.lastInterceptorError = payload?.message || 'Unknown interceptor error';
       }
 
+      /* The interceptor reporting that it is running. Kept apart from the
+         status cache on purpose: this says the pipe is open, the cache says
+         data has come through it. Conflating them is what made an idle tab
+         indistinguishable from a broken one. */
+      if (type === 'INTERCEPTOR_ALIVE') {
+        const first = state.interceptorAliveAt === 0;
+        state.interceptorAliveAt = Date.now();
+        if (first) {
+          chrome.runtime.sendMessage({
+            type: 'API_STATUS_CHANGED',
+            payload: { isApiAvailable: 'active' },
+          }).catch(() => {});
+        }
+      }
+
       if (type === 'CAPTURED_REQUEST_INFO') {
         chrome.storage.local.set({ autoflow_captured_request: payload }).catch(() => {});
       }
@@ -202,15 +273,86 @@ export async function initApiHelper(): Promise<void> {
             state.statusCache.set(status.mediaId, status);
           }
         }
-        const wasApiAvailable = state.lastCacheUpdate > 0;
-        state.lastCacheUpdate = Date.now();
+        cacheUpdated(state);
+      }
 
-        if (!wasApiAvailable) {
-          chrome.runtime.sendMessage({
-            type: 'API_STATUS_CHANGED',
-            payload: { isApiAvailable: true }
-          }).catch(() => {});
+      /* The new site. flow.google.com's batchexecute payloads are positional
+         arrays with no field names, so the interceptor reads them where it
+         has the raw body and sends statuses already parsed, rather than
+         shipping an anonymous nested array here for parseMediaEntry — which
+         understands the old tRPC field names and nothing else. */
+      if (type === 'STATUS_UPDATE_V2' && Array.isArray(payload?.statuses)) {
+        for (const status of payload.statuses as FlowGenerationStatus[]) {
+          if (!status?.mediaId) continue;
+
+          /* This API does not state failures, so a 'failed' arriving here is
+             never true — it is an older interceptor still running in this
+             tab, scanning record text for FAIL / SAFETY / BLOCK / REJECT /
+             CANCEL and finding one of them in the user's own prompt.
+
+             A MAIN-world script only injects at document_start, so a Flow tab
+             that was open when the extension updated keeps the build it
+             started with, while everything else about the extension is new.
+             Nothing looks wrong and the badge still reads active.
+
+             Refused here, at the one door every reader comes through, rather
+             than at each place that acts on it. Failure is read from the
+             page, where it is stated plainly. */
+          if (status.state === 'failed') {
+            if (!state.warnedAboutStaleFailure) {
+              state.warnedAboutStaleFailure = true;
+              console.warn(
+                '[AutoFlow Studio] The interceptor in this tab reported an API failure, which this Flow never sends. '
+                + 'It is running old code — reload the Flow tab. Ignoring it and trusting the page.',
+              );
+            }
+            status.state = 'generating';
+            status.rawStatus = 'IGNORED_STALE_FAILURE';
+            status.failureReason = '';
+          }
+
+          /* A completion is only a completion if what arrived is the thing
+             this queue asked for.
+
+             A record references assets it did not produce. On a Frames run it
+             carries the two uploaded start/end frames from the moment it is
+             submitted, and those are ordinary signed image URLs — so a video
+             generation announced itself finished before it had rendered
+             anything, and the panel showed 1 ✅ / "All videos processed!"
+             over a tile still climbing through 45%.
+
+             Refused here for the same reason the stale failure above is: this
+             is the one door every reader comes through. There are twenty-odd
+             `state === 'completed'` sites in automation.ts and guarding them
+             one at a time is how the last three runs were lost. */
+          if (status.state === 'completed' && !kindSatisfies(status.mediaKind, state.expectMedia)) {
+            if (!state.warnedAboutInputMedia) {
+              state.warnedAboutInputMedia = true;
+              console.warn(
+                `[AutoFlow Studio] A generation reported itself complete carrying only ` +
+                `${status.mediaKind || 'no'} media, and this queue is making ` +
+                `${state.expectMedia}s. That is an input frame or a grid poster, ` +
+                `not the result — waiting for the real one.`,
+              );
+            }
+            status.state = 'generating';
+            status.rawStatus = status.mediaKind === 'thumb' ? 'THUMBNAIL_ONLY' : 'INPUT_MEDIA_ONLY';
+            /* Not a usable URL for this queue either — carrying it forward is
+               how an uploaded start frame got saved under a video's name. */
+            status.mediaUrl = '';
+          }
+
+          /* Do not let a later mention downgrade a finished generation.
+             Flow re-sends records across calls, and an ancestor listing can
+             describe a media more thinly than the call that completed it;
+             taking the newer one would put a done video back to generating
+             and the queue would wait on it again. */
+          const known = state.statusCache.get(status.mediaId);
+          if (known?.state === 'completed' && status.state !== 'completed') continue;
+
+          state.statusCache.set(status.mediaId, status);
         }
+        cacheUpdated(state);
       }
     });
   }
@@ -242,13 +384,18 @@ export async function initApiHelper(): Promise<void> {
  * Call when a new queue starts. Clears old cached data and marks
  * the start time so we can filter entries from the current queue.
  */
-export function onQueueStart(): void {
+export function onQueueStart(expectMedia: 'video' | 'image' = 'video'): void {
   const state = getApiState();
   state.statusCache.clear();
   state.cachedCredits = null;
   state.lastCacheUpdate = 0;
   state.queueStartTime = Date.now();
   state.preSubmitSnapshot.clear();
+  /* What a completion has to carry to count. Without it every record that
+     merely references an image — every Frames and every ingredient run —
+     reads as a finished video. */
+  state.expectMedia = expectMedia;
+  state.warnedAboutInputMedia = false;
 }
 
 /**
@@ -424,10 +571,86 @@ export function isCacheFresh(maxAgeMs = 15_000): boolean {
   return state.lastCacheUpdate > 0 && (Date.now() - state.lastCacheUpdate) < maxAgeMs;
 }
 
+/**
+ * The four things "is the API available?" was being asked to mean at once.
+ *
+ * isApiAvailable() is `lastCacheUpdate > 0` — "this page has received data at
+ * some point, ever". It is sticky and says nothing about whether the data is
+ * recent or whether it describes the generation being watched. Completion was
+ * being decided partly on it, and on an `apiState` that falls back to
+ * matching the PROMPT TEXT when a media id was never captured.
+ *
+ * Re-running the same shot is ordinary. It leaves an older entry in the cache
+ * carrying identical text and, by then, state 'completed'. Matching on that
+ * text says "this generation is finished" about a generation that finished
+ * ten minutes ago, which clears the early-completion guard and lets a stale
+ * tile be accepted as the new result — the exact failure step 3 names.
+ *
+ * So the signals are separated and each says only what it knows:
+ *
+ *   interceptorPresent  the MAIN-world script proved itself in this page
+ *   canRefresh          Flow's own status call can be replayed (no submitting)
+ *   fresh               the cache was written recently enough to be evidence
+ *   matched             status for THIS generation id — never a text guess
+ *
+ * `confirmsCompleted` is deliberately the strictest of them: id-matched AND
+ * fresh AND completed. Anything weaker may block a completion but must never
+ * grant one, because the cost of the two mistakes is not symmetric. Blocking
+ * wrongly costs a slower node; granting wrongly costs a generation the user
+ * pays for twice.
+ */
+export interface FlowObservation {
+  interceptorPresent: boolean;
+  canRefresh: boolean;
+  fresh: boolean;
+  matched: FlowGenerationStatus | null;
+  confirmsCompleted: boolean;
+  contradictsCompleted: boolean;
+}
+
+export function observeGeneration(
+  mediaId?: string,
+  promptText?: string,
+  maxAgeMs = 15_000,
+): FlowObservation {
+  const state = getApiState();
+  const fresh = isCacheFresh(maxAgeMs);
+  const matched = mediaId ? (state.statusCache.get(mediaId) || null) : null;
+
+  /* A text match is admissible as an objection and inadmissible as proof.
+     The asymmetry is the whole point: a wrong objection delays, a wrong
+     proof charges. */
+  const weak = !matched && promptText ? findStatusByPromptText(promptText) : null;
+  const either = matched || weak;
+
+  return {
+    interceptorPresent: state.interceptorAliveAt > 0,
+    canRefresh: state.lastReplayOk === true,
+    fresh,
+    matched,
+    confirmsCompleted: !!matched && fresh && matched.state === 'completed',
+    contradictsCompleted:
+      !!either && (either.state === 'generating' || either.state === 'queued'),
+  };
+}
+
 /** Check if the API has any data at all (interceptor is working). */
 export function isApiAvailable(): boolean {
   const state = getApiState();
   return state.lastCacheUpdate > 0;
+}
+
+/**
+ * Whether the MAIN-world interceptor has proved itself in this page.
+ *
+ * Deliberately sticky rather than time-windowed. Flow only talks to
+ * batchexecute when something is happening, so an idle project makes no calls
+ * for minutes at a time; ageing this out would report the interception as
+ * dead every time the user stopped working, which is the same false alarm
+ * this was added to remove.
+ */
+export function isInterceptorAlive(): boolean {
+  return getApiState().interceptorAliveAt > 0;
 }
 
 /** Get the last captured interceptor error. */
@@ -497,8 +720,13 @@ export async function activeStatusCheck(mediaIds?: string[]): Promise<boolean> {
       if (res?.error) {
         state.lastInterceptorError = res.error;
       }
+      /* Not merely "no news": a failed replay means there is no usable
+         request template, so observation cannot be recovered from here and
+         the caller must not read silence as progress. */
+      state.lastReplayOk = false;
       return false;
     }
+    state.lastReplayOk = true;
 
     // SUCCESS — but cache may not be updated yet (race condition).
     // The interceptor relays the API response via window.postMessage('STATUS_UPDATE'),

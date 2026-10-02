@@ -30,6 +30,9 @@
 console.log('[AutoFlow Grok] Content script loaded on', location.href);
 
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
+import { isVisible } from '../shared/visible';
+import { sleepOrDomChange } from '../shared/hiddenWait';
+import { insertIntoEditable } from '../shared/composerText';
 
 /* Bumped whenever this adapter's completion logic changes. A content
    script already injected into an open tab is NOT replaced when the
@@ -98,12 +101,7 @@ function logLine(line: string): void {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-function isVisible(el: Element): boolean {
-  const rect = el.getBoundingClientRect();
-  if (rect.width < 5 || rect.height < 5) return false;
-  const style = getComputedStyle(el);
-  return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-}
+
 
 /* Chrome throttles timers in background tabs, and the tab we open is
    deliberately in the background. A round-trip to the worker keeps this thread
@@ -928,10 +926,11 @@ function fillComposer(el: HTMLElement, text: string): boolean {
     /* fall through */
   }
 
-  // Fallback: the editor's own insertText path.
-  window.getSelection()?.selectAllChildren(el);
-  document.execCommand('insertText', false, text);
-  el.dispatchEvent(new InputEvent('input', { bubbles: true, data: text, inputType: 'insertText' }));
+  /* Fallback: the editor's own insertText path, then a synthetic paste.
+     execCommand needs the DOCUMENT focused rather than merely visible, so in
+     a background tab it inserts nothing and reports nothing. The caret work
+     above still matters for extend mode and is left alone. */
+  insertIntoEditable(el, text);
   return enough();
 }
 
@@ -1631,7 +1630,7 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
   let explained = false;
 
   while (Date.now() - startedAt < GENERATION_TIMEOUT_MS) {
-    await sleep(POLL_MS);
+    await sleepOrDomChange(POLL_MS);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
       nodeId,
@@ -1741,7 +1740,7 @@ async function trackVideoGeneration(nodeId: string, preexisting: Set<string>): P
   let stalled = 0;
 
   while (Date.now() - startedAt < GENERATION_TIMEOUT_MS) {
-    await sleep(POLL_MS);
+    await sleepOrDomChange(POLL_MS);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
       nodeId,
@@ -1900,7 +1899,7 @@ async function trackTextReply(
   let stableCount = 0;
 
   while (Date.now() - startedAt < TEXT_TIMEOUT_MS) {
-    await sleep(POLL_MS);
+    await sleepOrDomChange(POLL_MS);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
       nodeId,

@@ -38,7 +38,7 @@
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { bringTileIntoView } from '../content/flow/selectors';
+import { bringTileIntoView, findOutputScroller, scrollOutputToTop } from '../content/flow/selectors';
 
 const SRC = readFileSync(
   join(__dirname, '..', 'content', 'flow', 'index.ts'), 'utf8');
@@ -110,10 +110,45 @@ describe('bringing an off-screen tile back', () => {
   }, 10_000);
 });
 
+describe('Flow Angular CDK output scrolling', () => {
+  it('finds the viewport from the current virtual-scroll-container markup', () => {
+    document.body.innerHTML = '<cdk-virtual-scroll-viewport class="cdk-virtual-scroll-viewport">'
+      + '<div class="cdk-virtual-scroll-content-wrapper"><div class="virtual-scroll-container">'
+      + '<div class="virtual-item-container"><flow-grid-tile-container><img data-media-id="m1"></flow-grid-tile-container></div>'
+      + '</div></div></cdk-virtual-scroll-viewport>';
+    const viewport = document.querySelector('cdk-virtual-scroll-viewport') as HTMLElement;
+    expect(findOutputScroller()).toBe(viewport);
+  });
+
+  it('remounts the newest CDK rows by scrolling that viewport to zero', async () => {
+    document.body.innerHTML = '<cdk-virtual-scroll-viewport class="cdk-virtual-scroll-viewport">'
+      + '<div class="cdk-virtual-scroll-content-wrapper"><div class="virtual-scroll-container"></div></div>'
+      + '</cdk-virtual-scroll-viewport>';
+    const viewport = document.querySelector('cdk-virtual-scroll-viewport') as HTMLElement;
+    viewport.scrollTop = 900;
+    await scrollOutputToTop();
+    expect(viewport.scrollTop).toBe(0);
+  });
+
+  it('can discover the scroll chain from a new tile with no data-tile-id', () => {
+    document.body.innerHTML = '<section id="scroller"><div class="virtual-scroll-container">'
+      + '<flow-grid-tile-container><img data-media-id="m1"></flow-grid-tile-container>'
+      + '</div></section>';
+    const scroller = document.querySelector('#scroller') as HTMLElement;
+    Object.defineProperties(scroller, { scrollHeight: { value: 800 }, clientHeight: { value: 300 } });
+    expect(findOutputScroller()).toBe(scroller);
+  });
+});
+
 describe('the poller stops waiting for something waiting cannot fix', () => {
   it('brings a thumbnail-only tile back into view while it waits', () => {
+    /* Sliced to the END of the thumbnail-only branch, not to the first
+       "state = 'completed'". There are two of those now: the API short-circuit
+       — the service already holds a signed clip URL, so waiting for the grid
+       to mount a player is waiting for nothing — and the old give-up at the
+       end of the grace. The nudge sits between them. */
     const branch = SRC.slice(SRC.indexOf("if (state === 'thumbnail-only')"));
-    const body = branch.slice(0, branch.indexOf("state = 'completed';"));
+    const body = branch.slice(0, branch.indexOf('} else if (thumbnailOnlySince)'));
     expect(body).toMatch(/bringTileIntoView\(trackedTile\)/);
   });
 

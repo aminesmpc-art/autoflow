@@ -1,0 +1,377 @@
+{
+  "id": "adidas_gamecourt2_two_ads",
+  "name": "Adidas GameCourt 2 — unboxing 10s + on-court 20s",
+  "description": "Two separate ads from one director: a 10s unboxing and a 20s test-and-use, chained as 2x10s because a Flow clip tops out at 10s. One storyboard board plans all three clips, so the shoe, the hands and the light match across both films.",
+  "useCase": "Product ad",
+  "category": "Marketing",
+  "difficulty": "Medium",
+  "thumbnail": "👟",
+  "nodes": [
+    {
+      "id": "product_photo",
+      "type": "image",
+      "position": {
+        "x": 40,
+        "y": 60
+      },
+      "data": {
+        "type": "image",
+        "label": "Your shoe photo (upload)",
+        "imageName": "",
+        "imageData": "",
+        "assetPath": ""
+      }
+    },
+    {
+      "id": "idea",
+      "type": "prompt",
+      "position": {
+        "x": 40,
+        "y": 340
+      },
+      "data": {
+        "type": "prompt",
+        "label": "Brief",
+        "text": "Two short vertical ads for the adidas GameCourt 2 tennis shoe — white mesh upper, dark purple heel and laces, gold adidas logo on the tongue, grey three stripes, on a blue hard court. FILM ONE is a 10 second unboxing: the box opens, the shoe comes out, first close look. FILM TWO is 20 seconds of actually wearing and testing them on court: lacing up, a hard lateral cut, a sprint to the net. Same person, same hands, same shoe throughout both films."
+      }
+    },
+    {
+      "id": "director",
+      "type": "story",
+      "position": {
+        "x": 420,
+        "y": 200
+      },
+      "data": {
+        "type": "story",
+        "label": "GameCourt 2 Director",
+        "platform": "gemini",
+        "mediaType": "text",
+        "structure": "ugcAd",
+        "cameraProgression": "actionTracking",
+        "audioMode": "dialogue",
+        "visualPreset": "smartphonePOV",
+        "colorTemp": "daylight",
+        "lighting": "hero",
+        "rules": [
+          "samePerson",
+          "inHand"
+        ],
+        "timedBeats": true,
+        "avoid": "",
+        "cast": [
+          {
+            "name": "Player",
+            "role": "the buyer",
+            "look": "Early-twenties amateur tennis player, mid-brown skin, short dark hair, plain white tee and black shorts, thin silver ring on the right hand. Only the hands, legs and shoes are ever in frame — never the face."
+          }
+        ],
+        "world": "A blue acrylic hard court with a white baseline, bright overcast daylight, and for the unboxing a plain light-grey bench at the court edge with the box resting on it.",
+        "look": "Handheld phone video, natural daylight, slight sensor noise in the shadows, no colour grading, no lens flare."
+      }
+    },
+    {
+      "id": "board",
+      "type": "generate",
+      "position": {
+        "x": 860,
+        "y": 40
+      },
+      "data": {
+        "type": "generate",
+        "label": "Storyboard board",
+        "platform": "flow",
+        "mediaType": "image",
+        "model": "Nano Banana Pro",
+        "aspectRatio": "16:9",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "storyboardSheet": true
+      }
+    },
+    {
+      "id": "unbox",
+      "type": "generate",
+      "position": {
+        "x": 860,
+        "y": 300
+      },
+      "data": {
+        "type": "generate",
+        "label": "FILM 1 — Unboxing (10s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Omni Flash",
+        "aspectRatio": "9:16",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "duration": "10s"
+      }
+    },
+    {
+      "id": "test_a",
+      "type": "generate",
+      "position": {
+        "x": 860,
+        "y": 560
+      },
+      "data": {
+        "type": "generate",
+        "label": "FILM 2A — Lace up + first cut (10s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Omni Flash",
+        "aspectRatio": "9:16",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "duration": "10s"
+      }
+    },
+    {
+      "id": "handoff",
+      "type": "frame",
+      "position": {
+        "x": 1240,
+        "y": 560
+      },
+      "data": {
+        "type": "frame",
+        "label": "Last frame of 2A",
+        "frameUrl": ""
+      }
+    },
+    {
+      "id": "test_b",
+      "type": "generate",
+      "position": {
+        "x": 1560,
+        "y": 560
+      },
+      "data": {
+        "type": "generate",
+        "label": "FILM 2B — Sprint to the net (10s)",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Omni Flash",
+        "aspectRatio": "9:16",
+        "creationType": "ingredients",
+        "enabled": true,
+        "status": "idle",
+        "duration": "10s"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_idea_director_text",
+      "source": "idea",
+      "target": "director",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_product_photo_director_image",
+      "source": "product_photo",
+      "target": "director",
+      "sourceHandle": "image",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_board_text",
+      "source": "director",
+      "target": "board",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_unbox_text",
+      "source": "director",
+      "target": "unbox",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_test_a_text",
+      "source": "director",
+      "target": "test_a",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_director_test_b_text",
+      "source": "director",
+      "target": "test_b",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#8b5cf6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_product_photo_board_image",
+      "source": "product_photo",
+      "target": "board",
+      "sourceHandle": "image",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_product_photo_unbox_image",
+      "source": "product_photo",
+      "target": "unbox",
+      "sourceHandle": "image",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_product_photo_test_a_image",
+      "source": "product_photo",
+      "target": "test_a",
+      "sourceHandle": "image",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_product_photo_test_b_image",
+      "source": "product_photo",
+      "target": "test_b",
+      "sourceHandle": "image",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_board_unbox_result",
+      "source": "board",
+      "target": "unbox",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_board_test_a_result",
+      "source": "board",
+      "target": "test_a",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_board_test_b_result",
+      "source": "board",
+      "target": "test_b",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_test_a_handoff_result",
+      "source": "test_a",
+      "target": "handoff",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "e_handoff_test_b_image",
+      "source": "handoff",
+      "target": "test_b",
+      "sourceHandle": "image",
+      "targetHandle": "image_ref",
+      "type": "default",
+      "animated": true,
+      "style": {
+        "stroke": "#3b82f6",
+        "strokeWidth": 2.5
+      }
+    }
+  ],
+  "requiresNodeTypes": [
+    "image",
+    "prompt",
+    "story",
+    "generate",
+    "frame"
+  ],
+  "requiresPlatforms": [
+    "gemini",
+    "flow"
+  ],
+  "tier": "free",
+  "nodeCount": 8
+}
