@@ -41,6 +41,7 @@ LOCAL_APPS = [
     "apps.usage",
     "apps.rewards",
     "apps.webhooks",
+    "apps.motion",
     "apps.extractions",
     "apps.marketing",
     "apps.workflows",
@@ -342,6 +343,12 @@ FREE_STUDIO_MONTHLY_LIMIT = config("FREE_STUDIO_MONTHLY_LIMIT", default=10, cast
 
 # ── Whop ──
 WHOP_WEBHOOK_SECRET = config("WHOP_WEBHOOK_SECRET", default="")
+WHOP_MOTION_WEBHOOK_SECRET = config("WHOP_MOTION_WEBHOOK_SECRET", default="")
+WHOP_MOTION_PRODUCT_ID = config("WHOP_MOTION_PRODUCT_ID", default="")
+WHOP_MOTION_PLAN_ID = config("WHOP_MOTION_PLAN_ID", default="")
+WHOP_STUDIO_PRODUCT_IDS = config("WHOP_STUDIO_PRODUCT_IDS", default="", cast=Csv())
+# Feature rollout switch for Pro-included Motion job admission, not a separate plan.
+MOTION_BILLING_ENABLED = config("MOTION_BILLING_ENABLED", default=False, cast=bool)
 
 # ── Google OAuth ──
 GOOGLE_CLIENT_ID = config("GOOGLE_CLIENT_ID", default="")
