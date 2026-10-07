@@ -175,13 +175,16 @@ def _vertex_credentials():
     )
 
 
-def _open_source(video_path: str, say) -> tuple[Any, Any, Any, str]:
+def _open_source(video_path: str, say, prefix: str = "clips") -> tuple[Any, Any, Any, str]:
     """
     A client and a reference to the video the model can read.
 
     Two routes, the same two the analysis endpoint uses: Vertex with the file
     in Cloud Storage when a service account is configured, otherwise AI Studio
     with the Files API. Returns (client, source, cleanup, MIME type).
+
+    `prefix` is the folder in the bucket, so the prompt extractor's uploads
+    and clipping's are told apart in the bucket listing.
     """
     from google import genai
 
@@ -196,7 +199,7 @@ def _open_source(video_path: str, say) -> tuple[Any, Any, Any, str]:
             project=settings.gcp_project_id, credentials=credentials
         )
         bucket = client_gcs.bucket(settings.gcs_bucket_name)
-        blob_name = f"clips/{uuid.uuid4().hex}{Path(video_path).suffix.lower()}"
+        blob_name = f"{prefix}/{uuid.uuid4().hex}{Path(video_path).suffix.lower()}"
         blob = bucket.blob(blob_name)
         try:
             blob.upload_from_filename(video_path, content_type=mime)

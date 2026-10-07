@@ -19,6 +19,12 @@ services:
         value: global
       - key: CLIP_MODEL
         value: gemini-3.7-flash
+      - key: EXTRACT_MODEL
+        sync: false
+      - key: THUMBS_BUCKET_NAME
+        sync: false
+      - key: PUBLIC_URL
+        sync: false
       - key: JWT_SECRET_KEY
         sync: false
       - key: JWT_ALGORITHM
@@ -37,6 +43,8 @@ services:
         value: 1800
       - key: MAX_CONCURRENT_CLIP_JOBS
         value: 2
+      - key: MAX_CONCURRENT_EXTRACT_JOBS
+        value: 3
       - key: MAX_VIDEO_SIZE_MB
         value: 500
       - key: MAX_VIDEO_DURATION_SEC

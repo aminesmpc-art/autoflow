@@ -26,6 +26,18 @@ class Settings(BaseSettings):
     clip_location: str = "global"
     # Overridable without a deploy, for pinning to an older model in a hurry.
     clip_model: str = ""
+    # The same, for the prompt extractor. Empty follows clip_model, so one
+    # variable moves both unless the extractor needs pinning on its own.
+    extract_model: str = ""
+
+    # Shot thumbnails. They outlive the job — a saved extraction shows them
+    # for as long as it exists — so they get their own folder, and their own
+    # bucket if this one is ever given a lifecycle rule that empties it.
+    # Empty means gcs_bucket_name.
+    thumbs_bucket_name: str = ""
+    # The address thumbnails are served from, as the outside world sees this
+    # service. Empty derives it from each request's forwarded headers.
+    public_url: str = ""
 
     # Stripe
     stripe_secret_key: str = ""
@@ -52,6 +64,7 @@ class Settings(BaseSettings):
     job_state_ttl_sec: int = 24 * 60 * 60
     clip_job_stale_sec: int = 30 * 60
     max_concurrent_clip_jobs: int = 2
+    max_concurrent_extract_jobs: int = 3
 
     # Ceilings on /api/clip/ask, which charges no quota of its own.
     # Far above legitimate use: the heaviest run the website produces is 46
