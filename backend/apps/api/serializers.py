@@ -83,6 +83,9 @@ class SavedExtractionSerializer(serializers.ModelSerializer):
             "voiceover_text",
             "character_sheets",
             "shots",
+            "master_prompt",
+            "master_prompt_json",
+            "details",
             "is_public",
             "created_at",
         ]

@@ -187,3 +187,57 @@ class ExtractionQuotaTests(APITestCase):
         res = self.client.post(reverse("extractions-list"), self.payload, format="json")
 
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+
+class ExtractionShapeTests(APITestCase):
+    """What the upgraded extractor returns has to survive being saved.
+
+    The serializer lists its fields, so anything the extractor added and the
+    serializer did not name was dropped on save without an error — the master
+    prompt would have been shown once and gone from the history.
+    """
+
+    def setUp(self):
+        self.user = make_user("shape@example.com")
+        self.client.force_authenticate(self.user)
+
+    def test_new_fields_round_trip(self):
+        payload = {
+            "video_name": "v.mp4",
+            "video_concept": "c",
+            "voiceover_text": "t",
+            "character_sheets": [{"character_name": "Marco", "prompt": "sheet"}],
+            "shots": [{
+                "shot_id": 1, "time_range": "00:00.0 - 00:04.0",
+                "image_prompt": "a", "video_prompt": "b",
+                "start_sec": 0.0, "end_sec": 4.0, "characters": ["Marco"],
+                "camera": {"shot_size": "medium", "lens": "35mm", "movement": "dolly in"},
+                "dialogue": 'MARCO: "Service."', "sound": "sizzle",
+                "thumbnail_url": "https://x.example/api/videos/thumbs/abc/1.jpg",
+            }],
+            "master_prompt": "A chef plates a dish.",
+            "master_prompt_json": {"scene": "kitchen", "audio": {"music": ""}},
+            "details": {"aspect_ratio": "9:16", "thumbnails_id": "abc", "warnings": []},
+        }
+
+        created = self.client.post(reverse("extractions-list"), payload, format="json")
+        listed = self.client.get(reverse("extractions-list")).data[0]
+
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(listed["master_prompt"], "A chef plates a dish.")
+        self.assertEqual(listed["master_prompt_json"]["scene"], "kitchen")
+        self.assertEqual(listed["details"]["thumbnails_id"], "abc")
+        self.assertEqual(listed["shots"][0]["camera"]["lens"], "35mm")
+
+    def test_an_old_client_that_sends_none_of_them_still_saves(self):
+        res = self.client.post(
+            reverse("extractions-list"),
+            {"video_name": "v.mp4", "video_concept": "c", "voiceover_text": "t",
+             "character_sheets": [], "shots": []},
+            format="json",
+        )
+
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data["master_prompt"], "")
+        self.assertIsNone(res.data["master_prompt_json"])
+        self.assertEqual(res.data["details"], {})
