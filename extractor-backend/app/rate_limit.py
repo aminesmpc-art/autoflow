@@ -79,10 +79,15 @@ class AskRateLimiter:
     numbers is not worth a data structure.
     """
 
-    def __init__(self, namespace: str, windows: list[Window]):
+    def __init__(self, namespace: str, windows: list[Window], message: str | None = None):
         settings = get_settings()
         self._namespace = namespace
         self._windows = windows
+        # What a refused caller is told; {limit} and {window} are filled in.
+        self._message = message or (
+            "Too many model asks — {limit} per {window} is the ceiling. "
+            "A clipping run makes a handful; this is far past one."
+        )
         self._redis = None
         # {key: (count, expires_at)} — only used when there is no Redis.
         self._memory: dict[str, tuple[int, float]] = {}
@@ -142,10 +147,7 @@ class AskRateLimiter:
                 retry_after = window.seconds - int(now % window.seconds)
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=(
-                        f"Too many model asks — {window.limit} per {window.name} is the ceiling. "
-                        "A clipping run makes a handful; this is far past one."
-                    ),
+                    detail=self._message.format(limit=window.limit, window=window.name),
                     headers={"Retry-After": str(max(1, retry_after))},
                 )
 
@@ -168,7 +170,28 @@ def ask_limiter() -> AskRateLimiter:
     return _ask_limiter
 
 
+_refine_limiter: AskRateLimiter | None = None
+
+
+def refine_limiter() -> AskRateLimiter:
+    """The ceiling on extraction edits, which charge no quota of their own —
+    each one is a model call, and some re-watch the video."""
+    global _refine_limiter
+    if _refine_limiter is None:
+        settings = get_settings()
+        _refine_limiter = AskRateLimiter(
+            "extract-refine",
+            [
+                Window("minute", 60, settings.refine_per_minute),
+                Window("day", 24 * 60 * 60, settings.refine_per_day),
+            ],
+            message="Too many edits — {limit} per {window} is the ceiling. Wait a moment and try again.",
+        )
+    return _refine_limiter
+
+
 def reset_ask_limiter() -> None:
-    """Drop the built limiter. For tests that change the settings."""
-    global _ask_limiter
+    """Drop the built limiters. For tests that change the settings."""
+    global _ask_limiter, _refine_limiter
     _ask_limiter = None
+    _refine_limiter = None

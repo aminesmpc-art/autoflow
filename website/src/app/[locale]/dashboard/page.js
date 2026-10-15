@@ -4,6 +4,9 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import DownloadButtons from "../extractor/DownloadButtons";
+import BreakdownView from "../breakdown/BreakdownView";
+import { OPEN_KEY } from "../extractor/saved";
 
 export default function DashboardPage() {
   const { user, token, loading } = useAuth();
@@ -118,12 +121,15 @@ export default function DashboardPage() {
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
                       <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: "rgba(79, 70, 229, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", border: "1px solid rgba(79, 70, 229, 0.2)" }}>
-                        🎥
+                        {ex.kind === "breakdown" ? "🔍" : "🎥"}
                       </div>
                       <div>
                         <h3 style={{ margin: "0 0 4px 0", fontSize: "1.2rem", display: "flex", alignItems: "center", gap: "12px" }}>
                           {ex.video_name}
                           <span className="badge" style={{ fontSize: "0.75rem", background: "rgba(255,255,255,0.05)", border: "none" }}>{date}</span>
+                          {ex.kind === "breakdown" && (
+                            <span className="badge" style={{ fontSize: "0.75rem", background: "rgba(255, 92, 0, 0.12)", border: "none", color: "var(--primary)" }}>Why it works</span>
+                          )}
                         </h3>
                         <p className="text-secondary" style={{ margin: 0, fontSize: "0.9rem", maxWidth: "500px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                           {ex.video_concept || "No concept description."}
@@ -150,6 +156,37 @@ export default function DashboardPage() {
                   {/* Expanded Content */}
                   {isExpanded && (
                     <div style={{ padding: "32px", borderTop: "1px solid rgba(255,255,255,0.05)", background: "rgba(0,0,0,0.3)" }}>
+
+                      {/* A breakdown has no prompts; it is its own view. */}
+                      {ex.kind === "breakdown" && <BreakdownView breakdown={ex.breakdown} />}
+
+                      {ex.shots?.length > 0 && ex.kind !== "breakdown" && (
+                        <div style={{ marginBottom: "24px" }}>
+                          <button
+                            className="btn btn-primary"
+                            style={{ padding: "10px 20px", fontSize: "0.9rem", borderRadius: "100px" }}
+                            onClick={() => {
+                              // The extractor page picks this up and opens it ready to edit.
+                              try { sessionStorage.setItem(OPEN_KEY, JSON.stringify(ex)); } catch (e) { return; }
+                              router.push("/extractor?open=1");
+                            }}
+                          >
+                            ✨ Open &amp; refine with AI
+                          </button>
+                        </div>
+                      )}
+
+                      {ex.shots?.length > 0 && (
+                        <div style={{ marginBottom: "32px" }}>
+                          <h4 style={{ fontSize: "0.9rem", textTransform: "uppercase", color: "var(--text-secondary)", letterSpacing: "1px", marginBottom: "12px" }}>Download</h4>
+                          <DownloadButtons
+                            result={{ ...ex, source_fps: ex.details?.source_fps }}
+                            sourceName={ex.video_name}
+                            buttonClassName="btn btn-secondary"
+                            buttonStyle={{ padding: "8px 16px", fontSize: "0.85rem" }}
+                          />
+                        </div>
+                      )}
 
                       {ex.master_prompt && (
                         <div style={{ marginBottom: "32px" }}>

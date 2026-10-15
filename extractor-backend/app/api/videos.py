@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -40,16 +41,27 @@ from fastapi import (
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
-from app.api.clip import _open_source, clip_model
+from app.api.clip import _open_source, clip_model, model_client
 from app.auth import authenticated_user_id, security, verify_jwt
+from app.breakdown import break_down_video, pacing_from_cuts
+from app.clip_analysis import _generate_window
+from app.extraction import LONG_VIDEO_SEC, WINDOW_TIMEOUT_SEC, _video_part, sampling_fps
+from app.extraction import _config as _extraction_config
+from app.rate_limit import refine_limiter
+from app.refine import MAX_INSTRUCTION_CHARS, REFINE_VIDEO_MAX_SEC, RefineReply, apply_edits
+from app.refine import build_prompt as build_refine_prompt
+from app.refine import parse_reply as parse_refine_reply
 from app.config import get_settings
+from app.cuts import detect_cuts_quietly
 from app.extraction import (
     Extraction,
     ExtractionOptions,
     extract_video,
     resolve_section,
+    snap_to_cuts,
 )
 from app.job_store import JobStore
+from app.youtube import NotReadable, cover_url, watch_url, youtube_details, youtube_id
 from app.thumbnails import (
     JOB_ID,
     MAX_THUMBNAILS,
@@ -70,6 +82,14 @@ jobs = JobStore("extract-job")
 job_gate = asyncio.Semaphore(settings.max_concurrent_extract_jobs)
 
 
+# How long a finished reading waits for cut detection to catch up.
+CUTS_GRACE_SEC = 20.0
+# A breakdown's pacing needs every cut, so it waits longer.
+BREAKDOWN_CUTS_GRACE_SEC = 120.0
+
+MODES = {"prompts", "breakdown"}
+
+
 def extract_model() -> str:
     return settings.extract_model or clip_model()
 
@@ -88,6 +108,8 @@ class VideoJob(BaseModel):
 class AnalyzeUrlRequest(BaseModel):
     url: str
     options: Optional[ExtractionOptions] = None
+    # "prompts" (the extractor) or "breakdown" (why it works).
+    mode: str = "prompts"
 
 
 class JobStatusResponse(BaseModel):
@@ -152,6 +174,15 @@ def _check_length(probe: Optional[Probe]) -> Probe:
             detail=f"That video is longer than the {settings.max_video_duration_sec // 60}-minute limit.",
         )
     return probe
+
+
+def _check_mode(mode: Optional[str]) -> str:
+    mode = (mode or "prompts").strip().lower()
+    if mode not in MODES:
+        # Unlike an unknown option, an unknown mode cannot fall back: a
+        # breakdown and an extraction are different products.
+        raise HTTPException(status_code=400, detail=f"Unknown mode. Use one of: {', '.join(sorted(MODES))}.")
+    return mode
 
 
 def _parse_options(raw: Optional[str]) -> Optional[ExtractionOptions]:
@@ -229,8 +260,14 @@ async def process_video(
     probe: Optional[Probe] = None,
     owner_id: str = "",
     base_url: str = "",
+    mode: str = "prompts",
+    authorization: str = "",
 ) -> None:
-    """Watch the video and write the prompts. Always removes the file."""
+    """Watch the video and write the prompts — or, in "breakdown" mode, say
+    why it works. Always removes the file.
+
+    Its extractions were reserved before it was started; a failure gives
+    them back."""
 
     def say(line: str) -> None:
         jobs.update_job(job_id, step=line)
@@ -240,6 +277,8 @@ async def process_video(
         say(line[:1].upper() + line[1:] + "...")
 
     cleanup: Optional[Callable[[], None]] = None
+    cuts_task: Optional[asyncio.Task] = None
+    stop_cuts = threading.Event()
     try:
         probe = probe or _check_length(await asyncio.to_thread(probe_video, video_path))
         try:
@@ -250,39 +289,151 @@ async def process_video(
 
         async with job_gate:
             jobs.update_job(job_id, status="processing", step="Preparing video for AI...")
+            # Started first and awaited last: decoding for cuts is CPU work on
+            # the file already here, and everything until the reading comes
+            # back is waiting on the network.
+            cuts_task = asyncio.create_task(asyncio.to_thread(
+                detect_cuts_quietly,
+                video_path,
+                start_sec=section[0],
+                end_sec=section[1],
+                should_stop=stop_cuts.is_set,
+            ))
             client, source, cleanup, mime = await asyncio.to_thread(
                 _open_source, video_path, say_upload, "videos"
             )
-            result = await extract_video(
-                client,
-                source,
-                duration_sec=probe.duration_sec,
-                section=section,
-                options=options,
-                model=extract_model(),
-                source_mime_type=mime,
-                frame=describe_frame(probe.width, probe.height),
-                source_ratio=nearest_ratio(probe.width, probe.height),
-                on_progress=say,
-            )
+            if mode == "breakdown":
+                result = await break_down_video(
+                    client,
+                    source,
+                    duration_sec=probe.duration_sec,
+                    section=section,
+                    model=extract_model(),
+                    source_mime_type=mime,
+                    frame=describe_frame(probe.width, probe.height),
+                    on_progress=say,
+                )
+            else:
+                result = await extract_video(
+                    client,
+                    source,
+                    duration_sec=probe.duration_sec,
+                    section=section,
+                    options=options,
+                    model=extract_model(),
+                    source_mime_type=mime,
+                    frame=describe_frame(probe.width, probe.height),
+                    source_ratio=nearest_ratio(probe.width, probe.height),
+                    on_progress=say,
+                )
+
+        if mode == "breakdown":
+            say("Measuring the pacing...")
+            # Pacing is the one exact number in a breakdown, so it waits for
+            # the whole decode — and is left out, with a note, rather than
+            # computed from part of the video.
+            try:
+                cuts = await asyncio.wait_for(asyncio.shield(cuts_task), timeout=BREAKDOWN_CUTS_GRACE_SEC)
+                result.pacing = pacing_from_cuts(cuts, *section)
+            except asyncio.TimeoutError:
+                stop_cuts.set()
+                await cuts_task
+                result.warnings.append("Pacing was not measured: the video took too long to decode.")
+            cuts_task = None
+            jobs.update_job(job_id, status="completed", step="", result=result.model_dump())
+            return
+
+        say("Lining shots up with the cuts...")
+        try:
+            cuts = await asyncio.wait_for(asyncio.shield(cuts_task), timeout=CUTS_GRACE_SEC)
+        except asyncio.TimeoutError:
+            # A long video can take longer to decode than to read. Stop and
+            # use the cuts found so far; shots past that point keep the
+            # model's timing.
+            stop_cuts.set()
+            cuts = await cuts_task
+        cuts_task = None
+        result.shots, _moved = snap_to_cuts(result.shots, cuts)
+        result.source_fps = round(probe.fps, 3) if probe.fps else None
 
         say("Cutting shot thumbnails...")
         await attach_thumbnails(
             result, video_path, job_id=job_id, owner_id=owner_id, base_url=base_url
         )
+        # Kept for an hour so an edit can look at the video again; the
+        # sweeper deletes it after that. Only a Cloud Storage copy can be
+        # kept — an AI Studio upload is cleaned up now, and edits to it
+        # work from the text.
+        if isinstance(source, str) and source.startswith("gs://"):
+            kept = {"uri": source, "mime": mime, "expires_at": time.time() + settings.refine_video_ttl_sec}
+            jobs.update_job(job_id, kept_video=kept)
+            result.refine_until = kept["expires_at"]
+            cleanup = None
         jobs.update_job(job_id, status="completed", step="", result=result.model_dump())
 
     except HTTPException as exc:
         _fail(job_id, str(exc.detail))
+        await release_extraction(authorization, job_id)
     except Exception as exc:                                   # noqa: BLE001
         _fail(job_id, str(exc))
+        await release_extraction(authorization, job_id)
     finally:
+        # Before the file goes, always: deleting a video under a decoder that
+        # is still reading it turns a failed job into a crash in a thread.
+        if cuts_task is not None:
+            stop_cuts.set()
+            try:
+                await cuts_task
+            except Exception:                                  # noqa: BLE001
+                pass
         if cleanup:
             await asyncio.to_thread(cleanup)
         try:
             os.remove(video_path)
         except OSError:
             pass
+
+
+def ydl_options(temp_dir: str) -> dict[str, Any]:
+    """yt-dlp's settings: the browser headers, and the proxy and cookies from
+    the environment when they are set. Shared by the download and by the
+    details-only lookup a YouTube fallback makes, so both get past the same
+    walls the same way."""
+    ydl_opts: dict[str, Any] = {
+        "format": "best[ext=mp4]/best",
+        "outtmpl": os.path.join(temp_dir, "video.%(ext)s"),
+        "noplaylist": True,
+        "quiet": True,
+        "max_filesize": 100 * 1024 * 1024,  # 100MB limit
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+        },
+    }
+
+    # Route through a residential proxy if configured.
+    proxy_url = os.getenv("PROXY_URL")
+    if proxy_url:
+        proxy_url = proxy_url.strip("\"'")
+        # Accept a raw IP:PORT:USER:PASS as well as a URL.
+        if proxy_url.count(":") == 3 and not proxy_url.startswith("http"):
+            ip, port, user, password = proxy_url.split(":")
+            ydl_opts["proxy"] = f"http://{user}:{password}@{ip}:{port}"
+        else:
+            ydl_opts["proxy"] = proxy_url
+
+    # Cookies from the environment, past login walls and bot checks.
+    cookies_content = os.getenv("YT_DLP_COOKIES")
+    if cookies_content:
+        cookie_path = os.path.join(temp_dir, "cookies.txt")
+        with open(cookie_path, "w", encoding="utf-8") as f:
+            f.write(cookies_content)
+        ydl_opts["cookiefile"] = cookie_path
+    return ydl_opts
 
 
 async def download_video(url: str, temp_dir: str, say: Callable[[str], None]) -> str:
@@ -361,40 +512,7 @@ async def download_video(url: str, temp_dir: str, say: Callable[[str], None]) ->
 
         import yt_dlp
 
-        ydl_opts: dict[str, Any] = {
-            "format": "best[ext=mp4]/best",
-            "outtmpl": os.path.join(temp_dir, "video.%(ext)s"),
-            "noplaylist": True,
-            "quiet": True,
-            "max_filesize": 100 * 1024 * 1024,  # 100MB limit
-            "http_headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-                "Sec-Ch-Ua-Mobile": "?0",
-                "Sec-Ch-Ua-Platform": '"Windows"',
-            },
-        }
-
-        # Route through a residential proxy if configured.
-        proxy_url = os.getenv("PROXY_URL")
-        if proxy_url:
-            proxy_url = proxy_url.strip("\"'")
-            # Accept a raw IP:PORT:USER:PASS as well as a URL.
-            if proxy_url.count(":") == 3 and not proxy_url.startswith("http"):
-                ip, port, user, password = proxy_url.split(":")
-                ydl_opts["proxy"] = f"http://{user}:{password}@{ip}:{port}"
-            else:
-                ydl_opts["proxy"] = proxy_url
-
-        # Cookies from the environment, past login walls and bot checks.
-        cookies_content = os.getenv("YT_DLP_COOKIES")
-        if cookies_content:
-            cookie_path = os.path.join(temp_dir, "cookies.txt")
-            with open(cookie_path, "w", encoding="utf-8") as f:
-                f.write(cookies_content)
-            ydl_opts["cookiefile"] = cookie_path
+        ydl_opts = ydl_options(temp_dir)
 
         def _download() -> str:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -444,6 +562,103 @@ def friendly_download_error(url: str, err_msg: str) -> str:
     return err_msg
 
 
+YOUTUBE_BREAKDOWN_NOTE = (
+    "YouTube would not let the server download this video, so the AI watched it on "
+    "YouTube directly. Pacing is measured from the file itself, so this breakdown has "
+    "none; upload the video to get it."
+)
+YOUTUBE_NOTE = (
+    "YouTube would not let the server download this video, so the AI watched it on "
+    "YouTube directly. Shot thumbnails and cut-exact timings need the file itself, so "
+    "this extraction has neither; upload the video to get both."
+)
+
+
+async def process_youtube_link(
+    job_id: str,
+    video_id: str,
+    options: Optional[ExtractionOptions],
+    *,
+    temp_dir: str,
+    mode: str = "prompts",
+    authorization: str = "",
+) -> bool:
+    """
+    Extract from a YouTube link the model reads itself.
+
+    Returns False — leaving the job alone — only when the video's length
+    cannot be learned from YouTube, so the caller can report the download
+    error the person would otherwise have seen. Once the length is known
+    this owns the job's outcome, success or failure.
+    """
+    def say(line: str) -> None:
+        jobs.update_job(job_id, step=line)
+
+    say("YouTube blocked the download. Checking the video on YouTube instead...")
+    try:
+        details = await youtube_details(video_id, ydl_opts=ydl_options(temp_dir))
+    except NotReadable as exc:
+        _fail(job_id, str(exc))
+        return True
+    if details is None:
+        return False
+
+    if details.duration_sec > settings.max_video_duration_sec:
+        _fail(job_id, f"That video is longer than the {settings.max_video_duration_sec // 60}-minute limit.")
+        return True
+    try:
+        section = resolve_section(options, details.duration_sec)
+    except ValueError as exc:
+        _fail(job_id, str(exc))
+        return True
+    try:
+        await reserve_extraction(authorization, job_id, section[1] - section[0], mode)
+    except HTTPException as exc:
+        _fail(job_id, str(exc.detail))
+        return True
+
+    try:
+        async with job_gate:
+            say("AI is watching the video on YouTube...")
+            if mode == "breakdown":
+                result = await break_down_video(
+                    model_client(),
+                    watch_url(video_id),
+                    duration_sec=details.duration_sec,
+                    section=section,
+                    model=extract_model(),
+                    source_mime_type="video/mp4",
+                    on_progress=say,
+                )
+            else:
+                result = await extract_video(
+                    model_client(),
+                    watch_url(video_id),
+                    duration_sec=details.duration_sec,
+                    section=section,
+                    options=options,
+                    model=extract_model(),
+                    source_mime_type="video/mp4",
+                    on_progress=say,
+                )
+        result.read_from = "youtube"
+        result.cover_url = cover_url(video_id)
+        result.warnings.append(YOUTUBE_BREAKDOWN_NOTE if mode == "breakdown" else YOUTUBE_NOTE)
+        if mode != "breakdown":
+            kept = {"uri": watch_url(video_id), "mime": "video/mp4", "youtube": True,
+                    "expires_at": time.time() + settings.refine_video_ttl_sec}
+            jobs.update_job(job_id, kept_video=kept)
+            result.refine_until = kept["expires_at"]
+        jobs.update_job(job_id, status="completed", step="", result=result.model_dump())
+    except HTTPException as exc:
+        _fail(job_id, str(exc.detail))
+        await release_extraction(authorization, job_id)
+    except Exception as exc:                                   # noqa: BLE001
+        _fail(job_id, str(exc))
+        await release_extraction(authorization, job_id)
+    return True
+
+
 async def process_video_url(
     job_id: str,
     url: str,
@@ -451,8 +666,11 @@ async def process_video_url(
     *,
     owner_id: str = "",
     base_url: str = "",
+    mode: str = "prompts",
+    authorization: str = "",
 ) -> None:
-    """Download a linked video, then analyse it like an upload."""
+    """Download a linked video, then analyse it like an upload. Its
+    extractions are reserved once the download says how long it is."""
     temp_dir = tempfile.mkdtemp()
 
     def say(line: str) -> None:
@@ -463,21 +681,105 @@ async def process_video_url(
         try:
             video_path = await download_video(url, temp_dir, say)
         except Exception as exc:                               # noqa: BLE001
+            # A YouTube video the server may not download can still be read
+            # by the model from its link. Only if that cannot even start does
+            # the person hear about the download.
+            video_id = youtube_id(url)
+            if video_id and await process_youtube_link(
+                job_id, video_id, options, temp_dir=temp_dir, mode=mode, authorization=authorization,
+            ):
+                return
             _fail(job_id, friendly_download_error(url, str(exc)))
             return
 
         say("Video downloaded. Preparing for analysis...")
         try:
             probe = _check_length(await asyncio.to_thread(probe_video, video_path))
+            section = resolve_section(options, probe.duration_sec)
+            await reserve_extraction(authorization, job_id, section[1] - section[0], mode)
         except HTTPException as exc:
             _fail(job_id, str(exc.detail))
             return
+        except ValueError as exc:
+            _fail(job_id, str(exc))
+            return
 
         await process_video(
-            job_id, video_path, options, probe=probe, owner_id=owner_id, base_url=base_url
+            job_id, video_path, options,
+            probe=probe, owner_id=owner_id, base_url=base_url, mode=mode, authorization=authorization,
         )
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+QUOTA_UNREACHABLE = (
+    "Your extraction allowance could not be checked right now, so nothing was started. "
+    "Please try again in a moment."
+)
+
+
+async def reserve_extraction(authorization: str, job_id: str, seconds: float, kind: str) -> None:
+    """
+    Charge this job's extractions before any model work — every ten analysed
+    minutes is one (see apps/extractions/services.py in the Django tree).
+
+    Fails CLOSED, unlike the advisory check below: this is where the model
+    bill is incurred, and a reservation that could not be made is a job that
+    must not start. Idempotent on the job id, so a retry never charges twice.
+    """
+    if not settings.enforce_extraction_limits:
+        return
+    import httpx
+
+    response = None
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        for attempt in range(3):
+            try:
+                response = await client.post(
+                    f"{settings.django_api_url.rstrip('/')}/extractions/reserve",
+                    headers={"Authorization": authorization},
+                    json={"idempotency_key": job_id, "seconds": round(float(seconds), 2), "kind": kind},
+                )
+                break
+            except httpx.HTTPError:
+                if attempt < 2:
+                    await asyncio.sleep(0.25 * (2 ** attempt))
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=QUOTA_UNREACHABLE)
+    try:
+        body = response.json()
+    except ValueError:
+        body = {}
+    if response.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+        raise HTTPException(status_code=429, detail=body.get("detail") or "You have used your extractions for now.")
+    if response.status_code == status.HTTP_401_UNAUTHORIZED:
+        raise HTTPException(status_code=401, detail="Your session expired before the video was ready. Sign in and run it again.")
+    if response.status_code == status.HTTP_404_NOT_FOUND:
+        # A Django that predates reservations. Both deploy from main on the
+        # same merge and this one can come up first; refusing every job until
+        # Django catches up would be an outage. Its allowance is still
+        # counted the old way, when the result is saved.
+        return
+    if response.status_code not in (200, 201) or body.get("allowed") is not True:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=QUOTA_UNREACHABLE)
+
+
+async def release_extraction(authorization: str, job_id: str) -> None:
+    """Give a failed job's extractions back. Best effort: a release that does
+    not arrive costs the person one extraction, never the service a bill."""
+    if not settings.enforce_extraction_limits or not authorization:
+        return
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            await client.post(
+                f"{settings.django_api_url.rstrip('/')}/extractions/release",
+                headers={"Authorization": authorization},
+                json={"idempotency_key": job_id},
+            )
+    except Exception:                                          # noqa: BLE001
+        pass
 
 
 async def enforce_extraction_limit(authorization: Optional[str]) -> None:
@@ -533,6 +835,7 @@ async def analyze_video_url(
     """Analyze a video from URL (YouTube, TikTok, etc.). Returns a job ID for polling."""
     await enforce_extraction_limit(f"Bearer {credentials.credentials}")
 
+    mode = _check_mode(body.mode)
     url = body.url.strip()
     if not url.startswith(("http://", "https://")):
         raise HTTPException(
@@ -545,7 +848,8 @@ async def analyze_video_url(
     _new_job(job_id, owner_id)
     background_tasks.add_task(
         process_video_url, job_id, url, body.options,
-        owner_id=owner_id, base_url=public_base(request),
+        owner_id=owner_id, base_url=public_base(request), mode=mode,
+        authorization=f"Bearer {credentials.credentials}",
     )
 
     return VideoJob(
@@ -563,6 +867,7 @@ async def analyze_video(
     # Multipart can't carry a nested JSON body alongside the file, so options
     # arrive as a JSON string in a form field.
     options: Optional[str] = Form(default=None),
+    mode: Optional[str] = Form(default=None),
     user: dict = Depends(verify_jwt),
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
@@ -571,6 +876,7 @@ async def analyze_video(
     # Before reading the upload — no point accepting 500MB from someone who is
     # over quota.
     await enforce_extraction_limit(f"Bearer {credentials.credentials}")
+    mode = _check_mode(mode)
     parsed_options = _parse_options(options)
 
     content_type = (video.content_type or "").split(";", 1)[0].strip().lower()
@@ -603,21 +909,26 @@ async def analyze_video(
     # Measured here, before the job exists, so a file that is not really a
     # video, is too long, or does not contain the chosen section is refused
     # with a reason rather than accepted and failed a minute later.
+    job_id = uuid.uuid4().hex
+    authorization = f"Bearer {credentials.credentials}"
     try:
         probe = _check_length(await asyncio.to_thread(probe_video, handle.name))
-        resolve_section(parsed_options, probe.duration_sec)
+        section = resolve_section(parsed_options, probe.duration_sec)
+        # The length is known now, so the charge is too — reserved before the
+        # job exists, and a refusal reaches the person straight away.
+        await reserve_extraction(authorization, job_id, section[1] - section[0], mode)
     except (HTTPException, ValueError) as exc:
         os.remove(handle.name)
         if isinstance(exc, ValueError):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         raise
 
-    job_id = uuid.uuid4().hex
     owner_id = authenticated_user_id(user)
     _new_job(job_id, owner_id)
     background_tasks.add_task(
         process_video, job_id, handle.name, parsed_options,
-        probe=probe, owner_id=owner_id, base_url=public_base(request),
+        probe=probe, owner_id=owner_id, base_url=public_base(request), mode=mode,
+        authorization=authorization,
     )
 
     return VideoJob(
@@ -686,3 +997,231 @@ async def delete_thumbnails(job_id: str, user: dict = Depends(verify_jwt)):
     except NotOwner:
         raise HTTPException(status_code=404, detail="Not found")
     return {"deleted": deleted}
+
+
+# ============================================================================
+# Refining an extraction (see app/refine.py)
+# ============================================================================
+
+class RefineRequest(BaseModel):
+    instruction: str
+    # The version on screen. The page owns the versions — undo is going back
+    # to one it already has — so the server edits whatever it is sent.
+    extraction: dict
+    # The job it came from, so an edit within the hour can re-watch the video.
+    job_id: Optional[str] = None
+
+
+class RefineResponse(BaseModel):
+    extraction: dict
+    summary: str
+    used_video: bool
+
+
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def _kept_video(job_id: Optional[str], owner_id: str) -> Optional[dict]:
+    """The job's kept video, if it is this caller's and still within its hour."""
+    if not job_id or not JOB_ID.match(job_id):
+        return None
+    job = jobs.get(job_id)
+    if not job or job.get("owner_id") != owner_id:
+        return None
+    kept = job.get("kept_video")
+    if not kept or float(kept.get("expires_at", 0)) <= time.time():
+        return None
+    return kept
+
+
+def _download_kept(uri: str, folder: str) -> str:
+    """A kept Cloud Storage video, back on local disk to cut frames from."""
+    from google.cloud import storage
+
+    from app.api.clip import _vertex_credentials
+
+    bucket_name, _, name = uri.removeprefix("gs://").partition("/")
+    client = storage.Client(project=settings.gcp_project_id, credentials=_vertex_credentials())
+    path = os.path.join(folder, "kept" + Path(name).suffix)
+    client.bucket(bucket_name).blob(name).download_to_filename(path)
+    return path
+
+
+async def _frames_for(
+    shots: list, kept: dict, *, job_id: str, owner_id: str, thumbnails_id: str, base_url: str,
+) -> int:
+    """Frames for edited or added shots, cut from the kept video. Returns how
+    many were made. Names count up from 1000 so they never overwrite the
+    frames of the original shots, which earlier versions still show."""
+    folder = tempfile.mkdtemp()
+    try:
+        path = await asyncio.to_thread(_download_kept, kept["uri"], folder)
+        frames = await asyncio.to_thread(
+            grab_frames, path, [(s.start_sec + s.end_sec) / 2 for s in shots]
+        )
+        seq = int((jobs.get(job_id) or {}).get("thumb_seq", 0))
+        items = []
+        for shot, frame in zip(shots, frames):
+            if frame is not None:
+                items.append((str(1000 + seq), frame, shot))
+                seq += 1
+        jobs.update_job(job_id, thumb_seq=seq)
+        stored = set(await asyncio.to_thread(
+            thumb_store().put_many, thumbnails_id, owner_id, [(n, f) for n, f, _ in items]
+        ))
+        for name, _frame, shot in items:
+            if name in stored:
+                shot.thumbnail_url = f"{base_url}/api/videos/thumbs/{thumbnails_id}/{name}.jpg"
+        return len(stored)
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+@router.post("/refine", response_model=RefineResponse)
+async def refine_extraction(
+    body: RefineRequest,
+    request: Request,
+    user: dict = Depends(verify_jwt),
+):
+    """Apply one requested change to an extraction and return the new version.
+
+    Charges no quota; rate-limited instead (see app/rate_limit.py)."""
+    from google.genai import types
+
+    owner_id = authenticated_user_id(user)
+    refine_limiter().check(owner_id)
+
+    instruction = re.sub(r"\s+", " ", _CONTROL_CHARS.sub(" ", body.instruction or "")).strip()
+    if not instruction:
+        raise HTTPException(status_code=400, detail="Say what to change.")
+    if len(instruction) > MAX_INSTRUCTION_CHARS:
+        raise HTTPException(status_code=400, detail=f"Keep the request under {MAX_INSTRUCTION_CHARS} characters.")
+    if len(json.dumps(body.extraction)) > 2_000_000:
+        raise HTTPException(status_code=413, detail="That extraction is too large to edit.")
+    try:
+        current = Extraction.model_validate(body.extraction)
+    except Exception:
+        raise HTTPException(status_code=400, detail="That is not an extraction.")
+    if not current.shots:
+        raise HTTPException(status_code=400, detail="Only an extraction with shots can be edited.")
+
+    lo = current.section.start_sec if current.section else 0.0
+    hi = current.section.end_sec if current.section else current.duration_sec
+    if hi <= lo:
+        # Saved before durations were recorded: the last shot's end is the
+        # best bound there is, and an edit's timings are checked against it.
+        hi = max([s.end_sec or 0.0 for s in current.shots] + [lo + 1.0])
+        current.duration_sec = hi
+    span = max(0.0, hi - lo)
+    kept = _kept_video(body.job_id, owner_id)
+    use_video = kept is not None and 0 < span <= REFINE_VIDEO_MAX_SEC
+
+    client = model_client()
+    config = _extraction_config(types, RefineReply, max_tokens=32768, thinking="LOW", low_media=span > LONG_VIDEO_SEC)
+
+    async def ask(with_video: bool):
+        contents = []
+        if with_video:
+            # The video goes first: repeated edits then share a prefix, which
+            # the model's own cache can serve instead of re-reading it.
+            contents.append(_video_part(types, kept["uri"], (lo, hi), kept.get("mime", "video/mp4"), sampling_fps(span)))
+        contents.append(build_refine_prompt(
+            current, instruction, with_video=with_video, video_available=can_look and not with_video,
+        ))
+        return parse_refine_reply(await _generate_window(
+            client, model=extract_model(), contents=contents, config=config,
+            say=lambda _line: None, timeout=WINDOW_TIMEOUT_SEC,
+        ))
+
+    # The text first; the video only when the model says it has to look.
+    can_look = use_video
+    use_video = False
+    try:
+        reply = await ask(False)
+    except Exception as exc:                                   # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"The AI could not make that change: {exc}")
+    if can_look and reply.needs_video:
+        try:
+            reply = await ask(True)
+            use_video = True
+        except Exception:                                      # noqa: BLE001
+            # The kept copy may have just been swept. The text answer stands,
+            # and the person is told the video could not be checked.
+            reply.summary = (reply.summary + " " if reply.summary else "") + (
+                "The video could not be checked for this change."
+            )
+    updated, notes, needs_frame = apply_edits(current, reply)
+
+    framed = [s for s in needs_frame if s.start_sec is not None and s.end_sec is not None]
+    if framed:
+        can_cut = kept is not None and not kept.get("youtube") and str(kept.get("uri", "")).startswith("gs://")
+        if can_cut:
+            try:
+                thumbs_id = current.thumbnails_id or body.job_id
+                made = await _frames_for(
+                    framed, kept, job_id=body.job_id, owner_id=owner_id,
+                    thumbnails_id=thumbs_id, base_url=public_base(request),
+                )
+                if made:
+                    updated.thumbnails_id = thumbs_id
+                if made < len(framed):
+                    missing = len(framed) - made
+                    notes.append(f"{missing} changed shot{'s' if missing != 1 else ''} could not get a new frame.")
+            except Exception as exc:                           # noqa: BLE001
+                notes.append(f"Changed shots could not get new frames ({exc}).")
+        elif not (kept is not None and kept.get("youtube")):
+            # A YouTube reading never had frames, and already says so.
+            notes.append("Changed and added shots have no frame: the video is only kept for an hour after extracting.")
+    updated.warnings = notes
+    if kept is None:
+        updated.refine_until = None
+
+    edited = bool(reply.shot_edits or reply.sheet_edits or reply.master_prompt or reply.video_concept)
+    summary = reply.summary or ("Done." if edited else "Nothing was changed.")
+    if not use_video and any(e.action.strip().lower() == "insert" for e in reply.shot_edits):
+        summary += " The new timings are estimates: the video was not available to check them against."
+    return RefineResponse(extraction=updated.model_dump(), summary=summary, used_video=use_video)
+
+
+async def sweep_kept_videos() -> int:
+    """Delete kept videos past their hour. Returns how many went.
+
+    Lists the bucket rather than the jobs: a kept copy must go even if its job
+    record expired or the process restarted, and everything under videos/ is
+    either a job in progress (minutes old) or a kept copy."""
+    if not (settings.gcp_project_id and settings.gcp_credentials_json):
+        return 0
+    from datetime import timedelta
+
+    from google.cloud import storage
+
+    from app.api.clip import _vertex_credentials
+
+    def sweep() -> int:
+        client = storage.Client(project=settings.gcp_project_id, credentials=_vertex_credentials())
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.refine_video_ttl_sec + 300)
+        gone = 0
+        for blob in client.bucket(settings.gcs_bucket_name).list_blobs(prefix="videos/"):
+            if blob.time_created and blob.time_created < cutoff:
+                try:
+                    blob.delete()
+                    gone += 1
+                except Exception:                              # noqa: BLE001
+                    pass
+        return gone
+
+    return await asyncio.to_thread(sweep)
+
+
+async def sweep_forever(every_sec: float = 300.0) -> None:
+    import logging
+
+    log = logging.getLogger(__name__)
+    while True:
+        try:
+            gone = await sweep_kept_videos()
+            if gone:
+                log.info("swept %d kept videos past their hour", gone)
+        except Exception as exc:                               # noqa: BLE001
+            log.warning("kept-video sweep failed: %s", exc)
+        await asyncio.sleep(every_sec)

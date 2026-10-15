@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.api import videos, gallery, health, clip
+from app.api import videos, gallery, health, clip, imports
 
 
 settings = get_settings()
@@ -17,8 +17,17 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events."""
-    yield
+    """Startup and shutdown events.
+
+    Starts the sweeper that deletes videos kept for editing once their hour
+    is up (see app/api/videos.py)."""
+    import asyncio
+
+    sweeper = asyncio.create_task(videos.sweep_forever())
+    try:
+        yield
+    finally:
+        sweeper.cancel()
 
 
 app = FastAPI(
@@ -63,3 +72,4 @@ app.include_router(gallery.router, prefix="/api/gallery", tags=["Gallery"])
 # Reading a video for the Clipping node: one call instead of six chat
 # transcriptions, and timings that make the per-clip locating unnecessary.
 app.include_router(clip.router, prefix="/api/clip", tags=["Clip"])
+app.include_router(imports.router, prefix="/api/imports", tags=["Imports"])

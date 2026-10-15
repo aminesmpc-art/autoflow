@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import os
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -167,8 +168,13 @@ class TestAnalyze:
 
         assert stub_pipeline["prefix"] == "videos"
         assert stub_pipeline["existed"] is True
-        assert stub_pipeline["cleaned"] is True
+        # The cloud copy is kept for an hour so an edit can look again (the
+        # sweeper deletes it); the local file goes now, as always.
+        assert "cleaned" not in stub_pipeline
         assert not os.path.exists(stub_pipeline["path"])
+        kept = videos_api.jobs[job_id]["kept_video"]
+        assert kept["uri"] == "gs://bucket/v.mp4"
+        assert 3500 < kept["expires_at"] - time.time() <= 3600
         assert stub_pipeline["options"].creative_direction == "claymation"
         assert stub_pipeline["frame"] == "1080×1920, vertical 9:16"
         assert stub_pipeline["section"] == (0.0, 8.0)
@@ -181,6 +187,25 @@ class TestAnalyze:
         )
         assert shots[1]["thumbnail_url"] is None          # untimed, so no frame
         assert status["result"]["thumbnails_id"] == job_id
+
+    def test_shots_are_snapped_to_the_cuts_found_in_the_file(self, client, stub_pipeline, monkeypatch):
+        seen = {}
+
+        def _cuts(path, **kwargs):
+            seen.update(kwargs, existed=os.path.exists(path))
+            return [3.6]
+
+        monkeypatch.setattr(videos_api, "detect_cuts_quietly", _cuts)
+        monkeypatch.setattr(videos_api, "probe_video", lambda _p: Probe(8.0, 1920, 1080, fps=25.0))
+        job_id = client.post(
+            "/api/videos/analyze", files={"video": a_video()}, headers=auth("u1")
+        ).json()["job_id"]
+
+        result = client.get(f"/api/videos/status/{job_id}", headers=auth("u1")).json()["result"]
+        assert (result["shots"][0]["start_sec"], result["shots"][0]["end_sec"]) == (0.0, 3.6)
+        assert result["shots"][0]["time_range"] == "00:00.0 - 00:03.6"
+        assert result["source_fps"] == 25.0
+        assert seen["existed"] and (seen["start_sec"], seen["end_sec"]) == (0.0, 8.0)
 
     def test_malformed_options_fall_back_to_the_defaults(self, client, stub_pipeline):
         r = client.post(
