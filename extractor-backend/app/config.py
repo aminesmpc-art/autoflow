@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     max_concurrent_clip_jobs: int = 2
     max_concurrent_extract_jobs: int = 3
 
+    # Explicit download-only imports; no AI work or generation quota.
+    social_imports_enabled: bool = False
+    social_imports_per_hour: int = 10
+    max_concurrent_social_imports: int = 2
+
     # Ceilings on /api/clip/ask, which charges no quota of its own.
     # Far above legitimate use: the heaviest run the website produces is 46
     # asks (6 + 2N, twenty clips), spread over minutes of encoding. See

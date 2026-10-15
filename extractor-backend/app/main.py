@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.api import videos, gallery, health, clip
+from app.api import videos, gallery, health, clip, imports
 
 
 settings = get_settings()
@@ -72,3 +72,4 @@ app.include_router(gallery.router, prefix="/api/gallery", tags=["Gallery"])
 # Reading a video for the Clipping node: one call instead of six chat
 # transcriptions, and timings that make the per-clip locating unnecessary.
 app.include_router(clip.router, prefix="/api/clip", tags=["Clip"])
+app.include_router(imports.router, prefix="/api/imports", tags=["Imports"])
