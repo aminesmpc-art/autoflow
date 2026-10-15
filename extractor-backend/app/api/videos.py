@@ -754,6 +754,12 @@ async def reserve_extraction(authorization: str, job_id: str, seconds: float, ki
         raise HTTPException(status_code=429, detail=body.get("detail") or "You have used your extractions for now.")
     if response.status_code == status.HTTP_401_UNAUTHORIZED:
         raise HTTPException(status_code=401, detail="Your session expired before the video was ready. Sign in and run it again.")
+    if response.status_code == status.HTTP_404_NOT_FOUND:
+        # A Django that predates reservations. Both deploy from main on the
+        # same merge and this one can come up first; refusing every job until
+        # Django catches up would be an outage. Its allowance is still
+        # counted the old way, when the result is saved.
+        return
     if response.status_code not in (200, 201) or body.get("allowed") is not True:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=QUOTA_UNREACHABLE)
 

@@ -415,10 +415,12 @@ class WeightedAllowanceTests(APITestCase):
         self.client.force_authenticate(self.free)
         payload = {"video_name": "v", "video_concept": "c", "voiceover_text": "", "character_sheets": [], "shots": []}
 
-        paid = self.client.post(reverse("extractions-list"), {**payload, "job_id": "job-3"}, format="json")
+        # The fourth reservation used the last extraction; its result still saves.
+        for i in range(4):
+            res = self.client.post(reverse("extractions-list"), {**payload, "job_id": f"job-{i}"}, format="json")
+            self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        # A save with no job behind it — every charge is claimed — is refused.
         unpaid = self.client.post(reverse("extractions-list"), payload, format="json")
-
-        self.assertEqual(paid.status_code, status.HTTP_201_CREATED)
         self.assertEqual(unpaid.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
     def test_reservations_need_a_user_and_a_key(self):
@@ -427,3 +429,27 @@ class WeightedAllowanceTests(APITestCase):
             status.HTTP_401_UNAUTHORIZED,
         )
         self.assertEqual(self.reserve(self.pro, "", 30).status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_a_save_from_a_website_without_job_ids_claims_its_charge(self):
+        """The website deploys by hand and can lag the extractor: until it
+        sends job ids, its saves must not count a second time."""
+        self.reserve(self.pro, "job-old-site", 30)
+        self.client.force_authenticate(self.pro)
+        res = self.client.post(
+            reverse("extractions-list"),
+            {"video_name": "v", "video_concept": "c", "voiceover_text": "", "character_sheets": [], "shots": []},
+            format="json",
+        )
+
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(SavedExtraction.objects.get(user=self.pro).job_id, "job-old-site")
+        self.assertEqual(self.used(self.pro), 1)
+
+    def test_a_second_untagged_save_does_not_claim_the_same_charge(self):
+        self.reserve(self.pro, "job-1", 30)
+        self.client.force_authenticate(self.pro)
+        payload = {"video_name": "v", "video_concept": "c", "voiceover_text": "", "character_sheets": [], "shots": []}
+        self.client.post(reverse("extractions-list"), payload, format="json")
+        self.client.post(reverse("extractions-list"), payload, format="json")
+
+        self.assertEqual(self.used(self.pro), 2)   # one charged job + one save with no job behind it

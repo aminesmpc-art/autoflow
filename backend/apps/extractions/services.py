@@ -90,6 +90,36 @@ def reserve(user, *, key: str, seconds: float, kind: str, limit: int, since) -> 
         return _state(used + units, limit, units=units, allowed=True, charged=True)
 
 
+# How old a charge can be and still be the job an un-tagged save belongs to.
+# A result is saved the moment its job finishes; two hours covers the longest.
+CLAIM_WINDOW_SEC = 2 * 60 * 60
+
+
+def unclaimed_charge(user):
+    """The user's newest charge that no saved row has claimed yet, if recent.
+
+    For a save that arrives without a job id — from a website deployed before
+    reservations existed. Without this, its result would count once as the
+    reservation and again as a legacy save."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.extractions.models import ExtractionCharge, SavedExtraction
+
+    claimed = SavedExtraction.objects.filter(user=user).exclude(job_id="").values_list("job_id", flat=True)
+    return (
+        ExtractionCharge.objects.filter(
+            user=user,
+            refunded=False,
+            created_at__gte=timezone.now() - timedelta(seconds=CLAIM_WINDOW_SEC),
+        )
+        .exclude(idempotency_key__in=claimed)
+        .order_by("-created_at")
+        .first()
+    )
+
+
 def release(user, *, key: str) -> bool:
     """Give a failed job's extractions back. True if there was one to give."""
     from apps.extractions.models import ExtractionCharge

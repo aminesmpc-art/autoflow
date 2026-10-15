@@ -1175,7 +1175,16 @@ class SavedExtractionsView(APIView):
         # extraction of the day.
         from apps.extractions.models import ExtractionCharge
 
+        from apps.extractions.services import unclaimed_charge
+
         job_id = str(request.data.get("job_id") or "")
+        if not job_id:
+            # A website that predates reservations saves without the job id.
+            # Its job was still charged, by the extractor; claiming that
+            # charge here is what stops the result being counted twice while
+            # the website's deploy catches up with the extractor's.
+            charge = unclaimed_charge(request.user)
+            job_id = charge.idempotency_key if charge else ""
         paid = bool(job_id) and ExtractionCharge.objects.filter(
             user=request.user, idempotency_key=job_id, refunded=False
         ).exists()
@@ -1196,7 +1205,7 @@ class SavedExtractionsView(APIView):
         serializer.is_valid(raise_exception=True)
 
         # Save to database
-        serializer.save(user=request.user)
+        serializer.save(user=request.user, job_id=job_id)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 

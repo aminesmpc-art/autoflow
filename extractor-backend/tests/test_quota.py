@@ -98,6 +98,12 @@ class TestReserveCall:
         assert caught.value.status_code == 502
         assert len(sent) == 3                                  # retried before giving up
 
+    def test_a_django_without_reservations_is_not_an_outage(self, monkeypatch):
+        """Both services deploy from main on the same merge; the extractor can
+        be up first, and Django answers the new endpoint with 404 until it is."""
+        fake_django(monkeypatch, lambda url, body: answer(404, {"detail": "Not found."}))
+        asyncio.run(videos_api.reserve_extraction("Bearer t", "job1", 30.0, "prompts"))   # no raise
+
     def test_an_expired_session_says_so(self, monkeypatch):
         fake_django(monkeypatch, lambda url, body: answer(401, {"detail": "token expired"}))
         with pytest.raises(HTTPException) as caught:
