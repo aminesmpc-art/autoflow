@@ -41,7 +41,7 @@ from fastapi import (
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
-from app.api.clip import _open_source, clip_model
+from app.api.clip import _open_source, clip_model, model_client
 from app.auth import authenticated_user_id, security, verify_jwt
 from app.config import get_settings
 from app.cuts import detect_cuts_quietly
@@ -53,6 +53,7 @@ from app.extraction import (
     snap_to_cuts,
 )
 from app.job_store import JobStore
+from app.youtube import NotReadable, cover_url, watch_url, youtube_details, youtube_id
 from app.thumbnails import (
     JOB_ID,
     MAX_THUMBNAILS,
@@ -325,6 +326,48 @@ async def process_video(
             pass
 
 
+def ydl_options(temp_dir: str) -> dict[str, Any]:
+    """yt-dlp's settings: the browser headers, and the proxy and cookies from
+    the environment when they are set. Shared by the download and by the
+    details-only lookup a YouTube fallback makes, so both get past the same
+    walls the same way."""
+    ydl_opts: dict[str, Any] = {
+        "format": "best[ext=mp4]/best",
+        "outtmpl": os.path.join(temp_dir, "video.%(ext)s"),
+        "noplaylist": True,
+        "quiet": True,
+        "max_filesize": 100 * 1024 * 1024,  # 100MB limit
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+        },
+    }
+
+    # Route through a residential proxy if configured.
+    proxy_url = os.getenv("PROXY_URL")
+    if proxy_url:
+        proxy_url = proxy_url.strip("\"'")
+        # Accept a raw IP:PORT:USER:PASS as well as a URL.
+        if proxy_url.count(":") == 3 and not proxy_url.startswith("http"):
+            ip, port, user, password = proxy_url.split(":")
+            ydl_opts["proxy"] = f"http://{user}:{password}@{ip}:{port}"
+        else:
+            ydl_opts["proxy"] = proxy_url
+
+    # Cookies from the environment, past login walls and bot checks.
+    cookies_content = os.getenv("YT_DLP_COOKIES")
+    if cookies_content:
+        cookie_path = os.path.join(temp_dir, "cookies.txt")
+        with open(cookie_path, "w", encoding="utf-8") as f:
+            f.write(cookies_content)
+        ydl_opts["cookiefile"] = cookie_path
+    return ydl_opts
+
+
 async def download_video(url: str, temp_dir: str, say: Callable[[str], None]) -> str:
     """Fetch a linked video into temp_dir and return its path."""
     video_path = None
@@ -401,40 +444,7 @@ async def download_video(url: str, temp_dir: str, say: Callable[[str], None]) ->
 
         import yt_dlp
 
-        ydl_opts: dict[str, Any] = {
-            "format": "best[ext=mp4]/best",
-            "outtmpl": os.path.join(temp_dir, "video.%(ext)s"),
-            "noplaylist": True,
-            "quiet": True,
-            "max_filesize": 100 * 1024 * 1024,  # 100MB limit
-            "http_headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-                "Sec-Ch-Ua-Mobile": "?0",
-                "Sec-Ch-Ua-Platform": '"Windows"',
-            },
-        }
-
-        # Route through a residential proxy if configured.
-        proxy_url = os.getenv("PROXY_URL")
-        if proxy_url:
-            proxy_url = proxy_url.strip("\"'")
-            # Accept a raw IP:PORT:USER:PASS as well as a URL.
-            if proxy_url.count(":") == 3 and not proxy_url.startswith("http"):
-                ip, port, user, password = proxy_url.split(":")
-                ydl_opts["proxy"] = f"http://{user}:{password}@{ip}:{port}"
-            else:
-                ydl_opts["proxy"] = proxy_url
-
-        # Cookies from the environment, past login walls and bot checks.
-        cookies_content = os.getenv("YT_DLP_COOKIES")
-        if cookies_content:
-            cookie_path = os.path.join(temp_dir, "cookies.txt")
-            with open(cookie_path, "w", encoding="utf-8") as f:
-                f.write(cookies_content)
-            ydl_opts["cookiefile"] = cookie_path
+        ydl_opts = ydl_options(temp_dir)
 
         def _download() -> str:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -484,6 +494,73 @@ def friendly_download_error(url: str, err_msg: str) -> str:
     return err_msg
 
 
+YOUTUBE_NOTE = (
+    "YouTube would not let the server download this video, so the AI watched it on "
+    "YouTube directly. Shot thumbnails and cut-exact timings need the file itself, so "
+    "this extraction has neither; upload the video to get both."
+)
+
+
+async def process_youtube_link(
+    job_id: str,
+    video_id: str,
+    options: Optional[ExtractionOptions],
+    *,
+    temp_dir: str,
+) -> bool:
+    """
+    Extract from a YouTube link the model reads itself.
+
+    Returns False — leaving the job alone — only when the video's length
+    cannot be learned from YouTube, so the caller can report the download
+    error the person would otherwise have seen. Once the length is known
+    this owns the job's outcome, success or failure.
+    """
+    def say(line: str) -> None:
+        jobs.update_job(job_id, step=line)
+
+    say("YouTube blocked the download. Checking the video on YouTube instead...")
+    try:
+        details = await youtube_details(video_id, ydl_opts=ydl_options(temp_dir))
+    except NotReadable as exc:
+        _fail(job_id, str(exc))
+        return True
+    if details is None:
+        return False
+
+    if details.duration_sec > settings.max_video_duration_sec:
+        _fail(job_id, f"That video is longer than the {settings.max_video_duration_sec // 60}-minute limit.")
+        return True
+    try:
+        section = resolve_section(options, details.duration_sec)
+    except ValueError as exc:
+        _fail(job_id, str(exc))
+        return True
+
+    try:
+        async with job_gate:
+            say("AI is watching the video on YouTube...")
+            result = await extract_video(
+                model_client(),
+                watch_url(video_id),
+                duration_sec=details.duration_sec,
+                section=section,
+                options=options,
+                model=extract_model(),
+                source_mime_type="video/mp4",
+                on_progress=say,
+            )
+        result.read_from = "youtube"
+        result.cover_url = cover_url(video_id)
+        result.warnings.append(YOUTUBE_NOTE)
+        jobs.update_job(job_id, status="completed", step="", result=result.model_dump())
+    except HTTPException as exc:
+        _fail(job_id, str(exc.detail))
+    except Exception as exc:                                   # noqa: BLE001
+        _fail(job_id, str(exc))
+    return True
+
+
 async def process_video_url(
     job_id: str,
     url: str,
@@ -503,6 +580,14 @@ async def process_video_url(
         try:
             video_path = await download_video(url, temp_dir, say)
         except Exception as exc:                               # noqa: BLE001
+            # A YouTube video the server may not download can still be read
+            # by the model from its link. Only if that cannot even start does
+            # the person hear about the download.
+            video_id = youtube_id(url)
+            if video_id and await process_youtube_link(
+                job_id, video_id, options, temp_dir=temp_dir
+            ):
+                return
             _fail(job_id, friendly_download_error(url, str(exc)))
             return
 

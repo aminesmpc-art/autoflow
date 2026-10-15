@@ -1047,6 +1047,18 @@ export default function ExtractorPage() {
               <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "20px" }}>
                 <div className="terminal-text" style={{ fontSize: "1.5rem" }}>🎬 Video Concept & Style</div>
               </div>
+              {/* A reading straight from YouTube has no shot frames; its own
+                  cover stands in so the result still shows which video it is. */}
+              {result.cover_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={result.cover_url}
+                  alt="Video cover"
+                  loading="lazy"
+                  style={{ maxWidth: "240px", width: "100%", height: "auto", display: "block", marginBottom: "16px", border: "1px solid rgba(255, 92, 0, 0.4)" }}
+                  onError={(e) => { e.currentTarget.style.display = "none"; }}
+                />
+              )}
               <p className="terminal-text" style={{ fontSize: "1.1rem", color: "var(--text-secondary)", lineHeight: "1.8", textShadow: "none" }}>{result.video_concept}</p>
               {(result.section || result.aspect_ratio) && (
                 <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "16px" }}>
