@@ -523,6 +523,9 @@ export default function ExtractorPage() {
                   voiceover_text: data.result.voiceover_text || "",
                   character_sheets: data.result.character_sheets || [],
                   shots: data.result.shots || [],
+                  // The job this came from: its extractions were reserved when
+                  // it started, so saving it must not count them again.
+                  job_id: jobId,
                   ...savedExtras(data.result),
                 })
               });
@@ -883,6 +886,9 @@ export default function ExtractorPage() {
                     more closely. */}
                 <div style={{ marginTop: "20px" }}>
                   <span style={studioLabelStyle}>Analyze part of the video</span>
+                  <p className="terminal-text" style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "var(--text-muted)", textShadow: "none" }}>
+                    Long videos count as one extraction per 10 minutes analysed, so a section of a long video uses fewer.
+                  </p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "16px", marginTop: "6px" }}>
                     <label style={studioFieldStyle}>
                       <span style={{ ...studioLabelStyle, fontSize: "0.7rem" }}>From</span>

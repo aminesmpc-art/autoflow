@@ -48,7 +48,7 @@ export default function BreakdownPage() {
       const limit = await fetch(`${DJANGO_API_URL}/extractions/check-limit/`, { headers: { Authorization: `Bearer ${token}` } });
       if (limit.ok) {
         const l = await limit.json();
-        if (!l.allowed) throw new Error(`You have reached your limit of ${l.limit} per ${l.period}. A breakdown counts as one extraction.`);
+        if (!l.allowed) throw new Error(`You have used your ${l.limit} extractions for this ${l.period}. A breakdown counts as one per 10 minutes analysed.`);
       }
       const options = sectionOptions(times);
       let res;
@@ -107,6 +107,7 @@ export default function BreakdownPage() {
               shots: [],
               kind: "breakdown",
               breakdown: data.result,
+              job_id: jobId,
               details: {
                 duration_sec: data.result.duration_sec ?? null,
                 section: data.result.section || null,
@@ -145,7 +146,7 @@ export default function BreakdownPage() {
 
         {!user ? (
           <div className="cyber-panel" style={{ padding: "32px", textAlign: "center" }}>
-            <p style={{ marginBottom: "16px" }}>Sign in to break down a video. It counts as one extraction from your daily allowance.</p>
+            <p style={{ marginBottom: "16px" }}>Sign in to break down a video. It counts as an extraction from your allowance — one per 10 minutes analysed.</p>
             <Link href="/login" className="cyber-btn" style={{ padding: "12px 24px", display: "inline-block" }}>Sign in</Link>
           </div>
         ) : status === "done" ? (

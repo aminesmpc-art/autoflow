@@ -1053,38 +1053,31 @@ class PublicExtractionDetailView(APIView):
         return Response(serializer.data)
 
 
-def extraction_limit_state(user) -> dict:
-    """Current extraction quota for a user.
-
-    Shared by the pre-flight check and the create endpoint so the two can never
-    disagree — the browser check is advisory, and before this was shared the
-    create path enforced nothing at all.
-    """
-    from apps.extractions.models import SavedExtraction
+def extraction_period(user):
+    """The allowance and the moment its period began, for a user's plan."""
     from django.utils import timezone
 
     profile = getattr(user, "profile", None)
     is_pro = profile.is_pro if profile else False
     now = timezone.now()
-
     if is_pro:
         # PRO: 20 per day
-        count = SavedExtraction.objects.filter(
-            user=user,
-            created_at__year=now.year,
-            created_at__month=now.month,
-            created_at__day=now.day,
-        ).count()
-        limit, period = 20, "day"
-    else:
-        # FREE: 4 per month
-        count = SavedExtraction.objects.filter(
-            user=user,
-            created_at__year=now.year,
-            created_at__month=now.month,
-        ).count()
-        limit, period = 4, "month"
+        return is_pro, 20, "day", now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # FREE: 4 per month
+    return is_pro, 4, "month", now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
+
+def extraction_limit_state(user) -> dict:
+    """Current extraction quota for a user.
+
+    Shared by the pre-flight check, the create endpoint and the reservation, so
+    none of them can disagree. Counted in extractions weighted by length —
+    every ten analysed minutes is one; see apps/extractions/services.py.
+    """
+    from apps.extractions.services import SECONDS_PER_UNIT, units_used
+
+    is_pro, limit, period, since = extraction_period(user)
+    count = units_used(user, since)
     return {
         "allowed": count < limit,
         "used": count,
@@ -1092,7 +1085,66 @@ def extraction_limit_state(user) -> dict:
         "remaining": max(0, limit - count),
         "period": period,
         "is_pro": is_pro,
+        "minutes_per_extraction": SECONDS_PER_UNIT // 60,
     }
+
+
+class ReserveExtractionView(APIView):
+    """Charge a job before the extractor does any model work.
+
+    Called by the extractor, never by the browser, with the user's own token.
+    Idempotent on the job id, like the clipping reservation next to it.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from apps.extractions.services import reserve, units_for
+
+        key = request.data.get("idempotency_key")
+        if not isinstance(key, str) or not key.strip() or len(key) > 128:
+            return Response({"detail": "idempotency_key is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            seconds = float(request.data.get("seconds") or 0)
+        except (TypeError, ValueError):
+            return Response({"detail": "seconds must be a number."}, status=status.HTTP_400_BAD_REQUEST)
+        kind = request.data.get("kind") if request.data.get("kind") in {"prompts", "breakdown"} else "prompts"
+
+        is_pro, limit, period, since = extraction_period(request.user)
+        state = reserve(request.user, key=key.strip(), seconds=seconds, kind=kind, limit=limit, since=since)
+        state.update(period=period, is_pro=is_pro)
+        if not state["allowed"]:
+            units = units_for(seconds)
+            minutes = round(seconds / 60)
+            weight = (
+                f"This video is about {minutes} minutes, which counts as {units} extractions "
+                f"(one per 10 minutes analysed). "
+                if units > 1 else ""
+            )
+            left = state["remaining"]
+            state["detail"] = (
+                f"{weight}You have {left} extraction{'' if left == 1 else 's'} left this {period}. "
+                + ("Analyse a shorter section, or come back " + ("tomorrow." if period == "day" else "next month.")
+                   if units > 1 and left > 0 else
+                   ("Upgrade to Pro for 20 extractions a day." if not is_pro else "Please try again tomorrow."))
+            )
+            return Response(state, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        return Response(state, status=status.HTTP_201_CREATED if state["charged"] else status.HTTP_200_OK)
+
+
+class ReleaseExtractionView(APIView):
+    """Give a failed job's extractions back."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from apps.extractions.services import release
+
+        key = request.data.get("idempotency_key")
+        if not isinstance(key, str) or not key.strip():
+            return Response({"detail": "idempotency_key is required."}, status=status.HTTP_400_BAD_REQUEST)
+        released = release(request.user, key=key.strip())
+        return Response({"released": released, **extraction_limit_state(request.user)})
 
 
 class SavedExtractionCheckLimitView(APIView):
@@ -1118,8 +1170,17 @@ class SavedExtractionsView(APIView):
 
         # The browser calls check-limit before analysing, but that is advisory —
         # anything speaking to this endpoint directly could save without bound.
+        # A result whose job was charged by a reservation is already paid for,
+        # and saving it must never be refused — even when it used the last
+        # extraction of the day.
+        from apps.extractions.models import ExtractionCharge
+
+        job_id = str(request.data.get("job_id") or "")
+        paid = bool(job_id) and ExtractionCharge.objects.filter(
+            user=request.user, idempotency_key=job_id, refunded=False
+        ).exists()
         state = extraction_limit_state(request.user)
-        if not state["allowed"]:
+        if not paid and not state["allowed"]:
             return Response(
                 {
                     "detail": (

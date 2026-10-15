@@ -88,6 +88,7 @@ class SavedExtractionSerializer(serializers.ModelSerializer):
             "details",
             "kind",
             "breakdown",
+            "job_id",
             "is_public",
             "created_at",
         ]

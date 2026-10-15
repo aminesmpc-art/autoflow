@@ -340,3 +340,90 @@ class EditedVersionTests(APITestCase):
         self.ex.refresh_from_db()
         self.assertEqual(self.ex.kind, "prompts")
         self.assertEqual(self.ex.user, self.owner)
+
+
+class WeightedAllowanceTests(APITestCase):
+    """Every ten analysed minutes is one extraction, reserved before the work."""
+
+    def setUp(self):
+        self.free = make_user("weighted-free@example.com", is_pro=False)
+        self.pro = make_user("weighted-pro@example.com", is_pro=True)
+
+    def reserve(self, user, key, seconds, kind="prompts"):
+        self.client.force_authenticate(user)
+        return self.client.post(
+            reverse("extractions-reserve"),
+            {"idempotency_key": key, "seconds": seconds, "kind": kind},
+            format="json",
+        )
+
+    def used(self, user):
+        self.client.force_authenticate(user)
+        return self.client.get(reverse("extractions-check-limit")).data["used"]
+
+    def test_length_to_extractions(self):
+        from apps.extractions.services import units_for
+
+        self.assertEqual([units_for(s) for s in (8, 600, 601, 1500, 7200, None)], [1, 1, 2, 3, 12, 1])
+
+    def test_a_long_video_costs_more_and_a_retry_costs_nothing(self):
+        first = self.reserve(self.pro, "job-a", 25 * 60)
+        again = self.reserve(self.pro, "job-a", 25 * 60)
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(first.data["units"], 3)
+        self.assertEqual(again.status_code, status.HTTP_200_OK)
+        self.assertFalse(again.data["charged"])
+        self.assertEqual(self.used(self.pro), 3)
+
+    def test_a_video_too_long_for_what_is_left_is_refused_and_explained(self):
+        self.assertEqual(self.reserve(self.free, "a", 25 * 60).status_code, 201)   # 3 of 4
+        res = self.reserve(self.free, "b", 25 * 60)                                # needs 3, 1 left
+
+        self.assertEqual(res.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        self.assertIn("counts as 3 extractions", res.data["detail"])
+        self.assertIn("1 extraction left", res.data["detail"])
+        self.assertEqual(self.reserve(self.free, "c", 30).status_code, 201)        # a clip still fits
+        self.assertEqual(self.reserve(self.free, "d", 30).status_code, 429)
+        self.assertEqual(self.used(self.free), 4)
+
+    def test_a_failed_job_is_refunded(self):
+        self.reserve(self.pro, "job-f", 25 * 60)
+        self.client.force_authenticate(self.pro)
+        res = self.client.post(reverse("extractions-release"), {"idempotency_key": "job-f"}, format="json")
+
+        self.assertTrue(res.data["released"])
+        self.assertEqual(self.used(self.pro), 0)
+        self.assertEqual(self.reserve(self.pro, "job-f", 25 * 60).status_code, 201)   # re-run is charged again
+
+    def test_a_saved_result_of_a_charged_job_is_not_counted_twice(self):
+        self.reserve(self.pro, "job-s", 30)
+        self.client.force_authenticate(self.pro)
+        self.client.post(
+            reverse("extractions-list"),
+            {"video_name": "v", "video_concept": "c", "voiceover_text": "", "character_sheets": [],
+             "shots": [], "job_id": "job-s"},
+            format="json",
+        )
+        make_extraction(self.pro)   # a save from a client that predates reservations
+
+        self.assertEqual(self.used(self.pro), 2)
+
+    def test_saving_a_paid_result_is_never_refused_even_at_the_limit(self):
+        for i in range(4):
+            self.reserve(self.free, f"job-{i}", 30)
+        self.client.force_authenticate(self.free)
+        payload = {"video_name": "v", "video_concept": "c", "voiceover_text": "", "character_sheets": [], "shots": []}
+
+        paid = self.client.post(reverse("extractions-list"), {**payload, "job_id": "job-3"}, format="json")
+        unpaid = self.client.post(reverse("extractions-list"), payload, format="json")
+
+        self.assertEqual(paid.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(unpaid.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+    def test_reservations_need_a_user_and_a_key(self):
+        self.assertEqual(
+            self.client.post(reverse("extractions-reserve"), {"idempotency_key": "x", "seconds": 1}, format="json").status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+        self.assertEqual(self.reserve(self.pro, "", 30).status_code, status.HTTP_400_BAD_REQUEST)

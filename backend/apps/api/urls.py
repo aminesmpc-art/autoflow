@@ -65,6 +65,8 @@ urlpatterns = [
     path("extractions/public/", views.PublicExtractionsView.as_view(), name="extractions-public"),
     path("extractions/public/<int:pk>/", views.PublicExtractionDetailView.as_view(), name="extractions-public-detail"),
     path("extractions/check-limit/", views.SavedExtractionCheckLimitView.as_view(), name="extractions-check-limit"),
+    path("extractions/reserve", views.ReserveExtractionView.as_view(), name="extractions-reserve"),
+    path("extractions/release", views.ReleaseExtractionView.as_view(), name="extractions-release"),
     path("extractions/", views.SavedExtractionsView.as_view(), name="extractions-list"),
     path("extractions/<int:pk>/", views.SavedExtractionDetailView.as_view(), name="extractions-detail"),
 ]

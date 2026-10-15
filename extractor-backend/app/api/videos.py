@@ -261,9 +261,13 @@ async def process_video(
     owner_id: str = "",
     base_url: str = "",
     mode: str = "prompts",
+    authorization: str = "",
 ) -> None:
     """Watch the video and write the prompts — or, in "breakdown" mode, say
-    why it works. Always removes the file."""
+    why it works. Always removes the file.
+
+    Its extractions were reserved before it was started; a failure gives
+    them back."""
 
     def say(line: str) -> None:
         jobs.update_job(job_id, step=line)
@@ -369,8 +373,10 @@ async def process_video(
 
     except HTTPException as exc:
         _fail(job_id, str(exc.detail))
+        await release_extraction(authorization, job_id)
     except Exception as exc:                                   # noqa: BLE001
         _fail(job_id, str(exc))
+        await release_extraction(authorization, job_id)
     finally:
         # Before the file goes, always: deleting a video under a decoder that
         # is still reading it turns a failed job into a crash in a thread.
@@ -575,6 +581,7 @@ async def process_youtube_link(
     *,
     temp_dir: str,
     mode: str = "prompts",
+    authorization: str = "",
 ) -> bool:
     """
     Extract from a YouTube link the model reads itself.
@@ -603,6 +610,11 @@ async def process_youtube_link(
         section = resolve_section(options, details.duration_sec)
     except ValueError as exc:
         _fail(job_id, str(exc))
+        return True
+    try:
+        await reserve_extraction(authorization, job_id, section[1] - section[0], mode)
+    except HTTPException as exc:
+        _fail(job_id, str(exc.detail))
         return True
 
     try:
@@ -640,8 +652,10 @@ async def process_youtube_link(
         jobs.update_job(job_id, status="completed", step="", result=result.model_dump())
     except HTTPException as exc:
         _fail(job_id, str(exc.detail))
+        await release_extraction(authorization, job_id)
     except Exception as exc:                                   # noqa: BLE001
         _fail(job_id, str(exc))
+        await release_extraction(authorization, job_id)
     return True
 
 
@@ -653,8 +667,10 @@ async def process_video_url(
     owner_id: str = "",
     base_url: str = "",
     mode: str = "prompts",
+    authorization: str = "",
 ) -> None:
-    """Download a linked video, then analyse it like an upload."""
+    """Download a linked video, then analyse it like an upload. Its
+    extractions are reserved once the download says how long it is."""
     temp_dir = tempfile.mkdtemp()
 
     def say(line: str) -> None:
@@ -670,7 +686,7 @@ async def process_video_url(
             # the person hear about the download.
             video_id = youtube_id(url)
             if video_id and await process_youtube_link(
-                job_id, video_id, options, temp_dir=temp_dir, mode=mode
+                job_id, video_id, options, temp_dir=temp_dir, mode=mode, authorization=authorization,
             ):
                 return
             _fail(job_id, friendly_download_error(url, str(exc)))
@@ -679,16 +695,85 @@ async def process_video_url(
         say("Video downloaded. Preparing for analysis...")
         try:
             probe = _check_length(await asyncio.to_thread(probe_video, video_path))
+            section = resolve_section(options, probe.duration_sec)
+            await reserve_extraction(authorization, job_id, section[1] - section[0], mode)
         except HTTPException as exc:
             _fail(job_id, str(exc.detail))
+            return
+        except ValueError as exc:
+            _fail(job_id, str(exc))
             return
 
         await process_video(
             job_id, video_path, options,
-            probe=probe, owner_id=owner_id, base_url=base_url, mode=mode,
+            probe=probe, owner_id=owner_id, base_url=base_url, mode=mode, authorization=authorization,
         )
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+QUOTA_UNREACHABLE = (
+    "Your extraction allowance could not be checked right now, so nothing was started. "
+    "Please try again in a moment."
+)
+
+
+async def reserve_extraction(authorization: str, job_id: str, seconds: float, kind: str) -> None:
+    """
+    Charge this job's extractions before any model work — every ten analysed
+    minutes is one (see apps/extractions/services.py in the Django tree).
+
+    Fails CLOSED, unlike the advisory check below: this is where the model
+    bill is incurred, and a reservation that could not be made is a job that
+    must not start. Idempotent on the job id, so a retry never charges twice.
+    """
+    if not settings.enforce_extraction_limits:
+        return
+    import httpx
+
+    response = None
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        for attempt in range(3):
+            try:
+                response = await client.post(
+                    f"{settings.django_api_url.rstrip('/')}/extractions/reserve",
+                    headers={"Authorization": authorization},
+                    json={"idempotency_key": job_id, "seconds": round(float(seconds), 2), "kind": kind},
+                )
+                break
+            except httpx.HTTPError:
+                if attempt < 2:
+                    await asyncio.sleep(0.25 * (2 ** attempt))
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=QUOTA_UNREACHABLE)
+    try:
+        body = response.json()
+    except ValueError:
+        body = {}
+    if response.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+        raise HTTPException(status_code=429, detail=body.get("detail") or "You have used your extractions for now.")
+    if response.status_code == status.HTTP_401_UNAUTHORIZED:
+        raise HTTPException(status_code=401, detail="Your session expired before the video was ready. Sign in and run it again.")
+    if response.status_code not in (200, 201) or body.get("allowed") is not True:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=QUOTA_UNREACHABLE)
+
+
+async def release_extraction(authorization: str, job_id: str) -> None:
+    """Give a failed job's extractions back. Best effort: a release that does
+    not arrive costs the person one extraction, never the service a bill."""
+    if not settings.enforce_extraction_limits or not authorization:
+        return
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            await client.post(
+                f"{settings.django_api_url.rstrip('/')}/extractions/release",
+                headers={"Authorization": authorization},
+                json={"idempotency_key": job_id},
+            )
+    except Exception:                                          # noqa: BLE001
+        pass
 
 
 async def enforce_extraction_limit(authorization: Optional[str]) -> None:
@@ -758,6 +843,7 @@ async def analyze_video_url(
     background_tasks.add_task(
         process_video_url, job_id, url, body.options,
         owner_id=owner_id, base_url=public_base(request), mode=mode,
+        authorization=f"Bearer {credentials.credentials}",
     )
 
     return VideoJob(
@@ -817,21 +903,26 @@ async def analyze_video(
     # Measured here, before the job exists, so a file that is not really a
     # video, is too long, or does not contain the chosen section is refused
     # with a reason rather than accepted and failed a minute later.
+    job_id = uuid.uuid4().hex
+    authorization = f"Bearer {credentials.credentials}"
     try:
         probe = _check_length(await asyncio.to_thread(probe_video, handle.name))
-        resolve_section(parsed_options, probe.duration_sec)
+        section = resolve_section(parsed_options, probe.duration_sec)
+        # The length is known now, so the charge is too — reserved before the
+        # job exists, and a refusal reaches the person straight away.
+        await reserve_extraction(authorization, job_id, section[1] - section[0], mode)
     except (HTTPException, ValueError) as exc:
         os.remove(handle.name)
         if isinstance(exc, ValueError):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         raise
 
-    job_id = uuid.uuid4().hex
     owner_id = authenticated_user_id(user)
     _new_job(job_id, owner_id)
     background_tasks.add_task(
         process_video, job_id, handle.name, parsed_options,
         probe=probe, owner_id=owner_id, base_url=public_base(request), mode=mode,
+        authorization=authorization,
     )
 
     return VideoJob(
