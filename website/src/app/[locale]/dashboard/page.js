@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import DownloadButtons from "../extractor/DownloadButtons";
 
 export default function DashboardPage() {
   const { user, token, loading } = useAuth();
@@ -150,6 +151,18 @@ export default function DashboardPage() {
                   {/* Expanded Content */}
                   {isExpanded && (
                     <div style={{ padding: "32px", borderTop: "1px solid rgba(255,255,255,0.05)", background: "rgba(0,0,0,0.3)" }}>
+
+                      {ex.shots?.length > 0 && (
+                        <div style={{ marginBottom: "32px" }}>
+                          <h4 style={{ fontSize: "0.9rem", textTransform: "uppercase", color: "var(--text-secondary)", letterSpacing: "1px", marginBottom: "12px" }}>Download</h4>
+                          <DownloadButtons
+                            result={{ ...ex, source_fps: ex.details?.source_fps }}
+                            sourceName={ex.video_name}
+                            buttonClassName="btn btn-secondary"
+                            buttonStyle={{ padding: "8px 16px", fontSize: "0.85rem" }}
+                          />
+                        </div>
+                      )}
 
                       {ex.master_prompt && (
                         <div style={{ marginBottom: "32px" }}>

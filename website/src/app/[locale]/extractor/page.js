@@ -10,6 +10,7 @@ import {
   downloadStudioWorkflow,
 } from "./studioWorkflow";
 import { studioInstalled, sendToStudio, toBuildOptions } from "./studioBridge";
+import DownloadButtons from "./DownloadButtons";
 import StoreLink, { STORE_URLS } from "../../StoreLink";
 
 /* The one place the Studio listing is named, shared with every other install
@@ -122,6 +123,10 @@ function savedExtras(result) {
       warnings: result.warnings || [],
       thumbnails_id: result.thumbnails_id || null,
       model: result.model || "",
+      // The cut-list export counts frames at this rate.
+      source_fps: result.source_fps ?? null,
+      read_from: result.read_from || "file",
+      cover_url: result.cover_url || null,
     },
   };
 }
@@ -205,6 +210,25 @@ function ShotDetails({ shot }) {
         {shot.dialogue && <div style={{ color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>💬 {shot.dialogue}</div>}
         {shot.sound && <div>🔊 {shot.sound}</div>}
       </div>
+    </div>
+  );
+}
+
+/** The downloads, in this page's panel style. */
+function DownloadPanel({ result, sourceName }) {
+  return (
+    <div className="cyber-panel" style={{ marginTop: "60px", padding: "32px 48px" }}>
+      <h3 style={{ margin: "0 0 8px", fontSize: "1.4rem", color: "white", fontWeight: 700 }}>⬇ Download</h3>
+      <p className="terminal-text" style={{ margin: "0 0 20px", fontSize: "0.95rem", color: "var(--text-secondary)", textShadow: "none" }}>
+        Take this breakdown into other tools: a storyboard to share, a shot list for a spreadsheet,
+        subtitles from the dialogue, or a cut list your editor opens.
+      </p>
+      <DownloadButtons
+        result={result}
+        sourceName={sourceName}
+        buttonClassName="cyber-btn"
+        buttonStyle={{ padding: "12px 20px", fontSize: "0.9rem", background: "#000" }}
+      />
     </div>
   );
 }
@@ -1266,6 +1290,11 @@ export default function ExtractorPage() {
                   <p className="terminal-text" style={{ opacity: 0.5, padding: "20px", background: "rgba(255, 92, 0,0.05)", textShadow: "none" }}>No scene data found in this video.</p>
                 )}
               </div>
+            )}
+
+            {/* --- Downloads --- */}
+            {result.shots?.length > 0 && (
+              <DownloadPanel result={result} sourceName={mode === "upload" ? file?.name : videoUrl} />
             )}
 
             {/* --- Export for AutoFlow --- */}
