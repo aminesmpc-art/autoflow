@@ -58,6 +58,7 @@ class Probe:
     duration_sec: float
     width: int
     height: int
+    fps: float = 0.0
 
 
 def probe_video(video_path: str) -> Optional[Probe]:
@@ -79,6 +80,7 @@ def probe_video(video_path: str) -> Optional[Probe]:
             duration_sec=duration,
             width=int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0),
             height=int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0),
+            fps=fps,
         )
     finally:
         capture.release()

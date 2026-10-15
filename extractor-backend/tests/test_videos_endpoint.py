@@ -182,6 +182,25 @@ class TestAnalyze:
         assert shots[1]["thumbnail_url"] is None          # untimed, so no frame
         assert status["result"]["thumbnails_id"] == job_id
 
+    def test_shots_are_snapped_to_the_cuts_found_in_the_file(self, client, stub_pipeline, monkeypatch):
+        seen = {}
+
+        def _cuts(path, **kwargs):
+            seen.update(kwargs, existed=os.path.exists(path))
+            return [3.6]
+
+        monkeypatch.setattr(videos_api, "detect_cuts_quietly", _cuts)
+        monkeypatch.setattr(videos_api, "probe_video", lambda _p: Probe(8.0, 1920, 1080, fps=25.0))
+        job_id = client.post(
+            "/api/videos/analyze", files={"video": a_video()}, headers=auth("u1")
+        ).json()["job_id"]
+
+        result = client.get(f"/api/videos/status/{job_id}", headers=auth("u1")).json()["result"]
+        assert (result["shots"][0]["start_sec"], result["shots"][0]["end_sec"]) == (0.0, 3.6)
+        assert result["shots"][0]["time_range"] == "00:00.0 - 00:03.6"
+        assert result["source_fps"] == 25.0
+        assert seen["existed"] and (seen["start_sec"], seen["end_sec"]) == (0.0, 8.0)
+
     def test_malformed_options_fall_back_to_the_defaults(self, client, stub_pipeline):
         r = client.post(
             "/api/videos/analyze",

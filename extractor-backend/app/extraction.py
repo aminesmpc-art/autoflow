@@ -411,6 +411,15 @@ class Extraction(BaseModel):
     model: str = ""
     # Where this extraction's thumbnails live, so they can be deleted with it.
     thumbnails_id: Optional[str] = None
+    # The source's frame rate, which a cut list (EDL) is counted in. None when
+    # the server never had the file.
+    source_fps: Optional[float] = None
+    # "file" when the server had the video, "youtube" when YouTube refused the
+    # download and the model read the link itself. A youtube reading has no
+    # shot thumbnails and no cut-snapped timings: both need the file.
+    read_from: str = "file"
+    # A poster for a reading with no shot thumbnails — YouTube's own.
+    cover_url: Optional[str] = None
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -814,6 +823,68 @@ def order_shots(shots: list[Shot]) -> list[Shot]:
             else ""
         )
     return ordered
+
+
+# How far a model-reported boundary may move to land on a detected cut. The
+# model reads at one to three frames a second, so its boundaries are within
+# about half a second of the truth; a cut further away than this is a
+# different cut, not the one it meant.
+SNAP_TOLERANCE_SEC = 0.75
+
+
+def snap_to_cuts(
+    shots: list[Shot], cuts: list[float], *, tolerance: float = SNAP_TOLERANCE_SEC
+) -> tuple[list[Shot], int]:
+    """
+    Move each timed boundary onto the nearest detected cut within tolerance.
+
+    Returns the shots, re-ordered and renumbered, and how many moved. A
+    boundary with no cut near it — a dissolve, a fade, or a cut the detector
+    missed — keeps the model's timing. A move that would leave a shot shorter
+    than MIN_SHOT_SEC is not made: two boundaries snapping to one cut means
+    the model saw a shot that is not there, and that is not this function's
+    call to make.
+    """
+    if not cuts:
+        return shots, 0
+
+    import bisect
+
+    def nearest(t: float) -> Optional[float]:
+        i = bisect.bisect_left(cuts, t)
+        candidates = [cuts[j] for j in (i - 1, i) if 0 <= j < len(cuts)]
+        best = min(candidates, key=lambda c: abs(c - t), default=None)
+        return best if best is not None and abs(best - t) <= tolerance else None
+
+    # A boundary two neighbouring shots share is one cut, and moves for both
+    # at once; snapping each shot's ends on their own left slivers between
+    # them when only one side was near enough to move.
+    shared = lambda a, b: abs(a - b) <= 0.05
+    timed = [s for s in shots if s.start_sec is not None and s.end_sec is not None]
+    changed: set[int] = set()
+
+    for i, shot in enumerate(timed):
+        before = timed[i - 1] if i > 0 else None
+        if before is None or not shared(before.end_sec, shot.start_sec):
+            cut = nearest(shot.start_sec)
+            if cut is not None and shot.end_sec - cut >= MIN_SHOT_SEC and cut != shot.start_sec:
+                shot.start_sec = round(cut, 2)
+                changed.add(id(shot))
+
+        cut = nearest(shot.end_sec)
+        if cut is None or cut == shot.end_sec:
+            continue
+        after = timed[i + 1] if i + 1 < len(timed) and shared(shot.end_sec, timed[i + 1].start_sec) else None
+        if cut - shot.start_sec < MIN_SHOT_SEC or (after and after.end_sec - cut < MIN_SHOT_SEC):
+            continue
+        shot.end_sec = round(cut, 2)
+        changed.add(id(shot))
+        if after:
+            after.start_sec = round(cut, 2)
+            changed.add(id(after))
+
+    moved = len(changed)
+    return order_shots(shots), moved
 
 
 def _name_table(names: list[str], aliases: Optional[dict[str, str]] = None) -> dict[str, str]:

@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -43,11 +44,13 @@ from pydantic import BaseModel
 from app.api.clip import _open_source, clip_model
 from app.auth import authenticated_user_id, security, verify_jwt
 from app.config import get_settings
+from app.cuts import detect_cuts_quietly
 from app.extraction import (
     Extraction,
     ExtractionOptions,
     extract_video,
     resolve_section,
+    snap_to_cuts,
 )
 from app.job_store import JobStore
 from app.thumbnails import (
@@ -68,6 +71,10 @@ settings = get_settings()
 
 jobs = JobStore("extract-job")
 job_gate = asyncio.Semaphore(settings.max_concurrent_extract_jobs)
+
+
+# How long a finished reading waits for cut detection to catch up.
+CUTS_GRACE_SEC = 20.0
 
 
 def extract_model() -> str:
@@ -240,6 +247,8 @@ async def process_video(
         say(line[:1].upper() + line[1:] + "...")
 
     cleanup: Optional[Callable[[], None]] = None
+    cuts_task: Optional[asyncio.Task] = None
+    stop_cuts = threading.Event()
     try:
         probe = probe or _check_length(await asyncio.to_thread(probe_video, video_path))
         try:
@@ -250,6 +259,16 @@ async def process_video(
 
         async with job_gate:
             jobs.update_job(job_id, status="processing", step="Preparing video for AI...")
+            # Started first and awaited last: decoding for cuts is CPU work on
+            # the file already here, and everything until the reading comes
+            # back is waiting on the network.
+            cuts_task = asyncio.create_task(asyncio.to_thread(
+                detect_cuts_quietly,
+                video_path,
+                start_sec=section[0],
+                end_sec=section[1],
+                should_stop=stop_cuts.is_set,
+            ))
             client, source, cleanup, mime = await asyncio.to_thread(
                 _open_source, video_path, say_upload, "videos"
             )
@@ -266,6 +285,19 @@ async def process_video(
                 on_progress=say,
             )
 
+        say("Lining shots up with the cuts...")
+        try:
+            cuts = await asyncio.wait_for(asyncio.shield(cuts_task), timeout=CUTS_GRACE_SEC)
+        except asyncio.TimeoutError:
+            # A long video can take longer to decode than to read. Stop and
+            # use the cuts found so far; shots past that point keep the
+            # model's timing.
+            stop_cuts.set()
+            cuts = await cuts_task
+        cuts_task = None
+        result.shots, _moved = snap_to_cuts(result.shots, cuts)
+        result.source_fps = round(probe.fps, 3) if probe.fps else None
+
         say("Cutting shot thumbnails...")
         await attach_thumbnails(
             result, video_path, job_id=job_id, owner_id=owner_id, base_url=base_url
@@ -277,6 +309,14 @@ async def process_video(
     except Exception as exc:                                   # noqa: BLE001
         _fail(job_id, str(exc))
     finally:
+        # Before the file goes, always: deleting a video under a decoder that
+        # is still reading it turns a failed job into a crash in a thread.
+        if cuts_task is not None:
+            stop_cuts.set()
+            try:
+                await cuts_task
+            except Exception:                                  # noqa: BLE001
+                pass
         if cleanup:
             await asyncio.to_thread(cleanup)
         try:
