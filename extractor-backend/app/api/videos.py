@@ -44,6 +44,13 @@ from pydantic import BaseModel
 from app.api.clip import _open_source, clip_model, model_client
 from app.auth import authenticated_user_id, security, verify_jwt
 from app.breakdown import break_down_video, pacing_from_cuts
+from app.clip_analysis import _generate_window
+from app.extraction import LONG_VIDEO_SEC, WINDOW_TIMEOUT_SEC, _video_part, sampling_fps
+from app.extraction import _config as _extraction_config
+from app.rate_limit import refine_limiter
+from app.refine import MAX_INSTRUCTION_CHARS, REFINE_VIDEO_MAX_SEC, RefineReply, apply_edits
+from app.refine import build_prompt as build_refine_prompt
+from app.refine import parse_reply as parse_refine_reply
 from app.config import get_settings
 from app.cuts import detect_cuts_quietly
 from app.extraction import (
@@ -349,6 +356,15 @@ async def process_video(
         await attach_thumbnails(
             result, video_path, job_id=job_id, owner_id=owner_id, base_url=base_url
         )
+        # Kept for an hour so an edit can look at the video again; the
+        # sweeper deletes it after that. Only a Cloud Storage copy can be
+        # kept — an AI Studio upload is cleaned up now, and edits to it
+        # work from the text.
+        if isinstance(source, str) and source.startswith("gs://"):
+            kept = {"uri": source, "mime": mime, "expires_at": time.time() + settings.refine_video_ttl_sec}
+            jobs.update_job(job_id, kept_video=kept)
+            result.refine_until = kept["expires_at"]
+            cleanup = None
         jobs.update_job(job_id, status="completed", step="", result=result.model_dump())
 
     except HTTPException as exc:
@@ -616,6 +632,11 @@ async def process_youtube_link(
         result.read_from = "youtube"
         result.cover_url = cover_url(video_id)
         result.warnings.append(YOUTUBE_BREAKDOWN_NOTE if mode == "breakdown" else YOUTUBE_NOTE)
+        if mode != "breakdown":
+            kept = {"uri": watch_url(video_id), "mime": "video/mp4", "youtube": True,
+                    "expires_at": time.time() + settings.refine_video_ttl_sec}
+            jobs.update_job(job_id, kept_video=kept)
+            result.refine_until = kept["expires_at"]
         jobs.update_job(job_id, status="completed", step="", result=result.model_dump())
     except HTTPException as exc:
         _fail(job_id, str(exc.detail))
@@ -879,3 +900,231 @@ async def delete_thumbnails(job_id: str, user: dict = Depends(verify_jwt)):
     except NotOwner:
         raise HTTPException(status_code=404, detail="Not found")
     return {"deleted": deleted}
+
+
+# ============================================================================
+# Refining an extraction (see app/refine.py)
+# ============================================================================
+
+class RefineRequest(BaseModel):
+    instruction: str
+    # The version on screen. The page owns the versions — undo is going back
+    # to one it already has — so the server edits whatever it is sent.
+    extraction: dict
+    # The job it came from, so an edit within the hour can re-watch the video.
+    job_id: Optional[str] = None
+
+
+class RefineResponse(BaseModel):
+    extraction: dict
+    summary: str
+    used_video: bool
+
+
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def _kept_video(job_id: Optional[str], owner_id: str) -> Optional[dict]:
+    """The job's kept video, if it is this caller's and still within its hour."""
+    if not job_id or not JOB_ID.match(job_id):
+        return None
+    job = jobs.get(job_id)
+    if not job or job.get("owner_id") != owner_id:
+        return None
+    kept = job.get("kept_video")
+    if not kept or float(kept.get("expires_at", 0)) <= time.time():
+        return None
+    return kept
+
+
+def _download_kept(uri: str, folder: str) -> str:
+    """A kept Cloud Storage video, back on local disk to cut frames from."""
+    from google.cloud import storage
+
+    from app.api.clip import _vertex_credentials
+
+    bucket_name, _, name = uri.removeprefix("gs://").partition("/")
+    client = storage.Client(project=settings.gcp_project_id, credentials=_vertex_credentials())
+    path = os.path.join(folder, "kept" + Path(name).suffix)
+    client.bucket(bucket_name).blob(name).download_to_filename(path)
+    return path
+
+
+async def _frames_for(
+    shots: list, kept: dict, *, job_id: str, owner_id: str, thumbnails_id: str, base_url: str,
+) -> int:
+    """Frames for edited or added shots, cut from the kept video. Returns how
+    many were made. Names count up from 1000 so they never overwrite the
+    frames of the original shots, which earlier versions still show."""
+    folder = tempfile.mkdtemp()
+    try:
+        path = await asyncio.to_thread(_download_kept, kept["uri"], folder)
+        frames = await asyncio.to_thread(
+            grab_frames, path, [(s.start_sec + s.end_sec) / 2 for s in shots]
+        )
+        seq = int((jobs.get(job_id) or {}).get("thumb_seq", 0))
+        items = []
+        for shot, frame in zip(shots, frames):
+            if frame is not None:
+                items.append((str(1000 + seq), frame, shot))
+                seq += 1
+        jobs.update_job(job_id, thumb_seq=seq)
+        stored = set(await asyncio.to_thread(
+            thumb_store().put_many, thumbnails_id, owner_id, [(n, f) for n, f, _ in items]
+        ))
+        for name, _frame, shot in items:
+            if name in stored:
+                shot.thumbnail_url = f"{base_url}/api/videos/thumbs/{thumbnails_id}/{name}.jpg"
+        return len(stored)
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+@router.post("/refine", response_model=RefineResponse)
+async def refine_extraction(
+    body: RefineRequest,
+    request: Request,
+    user: dict = Depends(verify_jwt),
+):
+    """Apply one requested change to an extraction and return the new version.
+
+    Charges no quota; rate-limited instead (see app/rate_limit.py)."""
+    from google.genai import types
+
+    owner_id = authenticated_user_id(user)
+    refine_limiter().check(owner_id)
+
+    instruction = re.sub(r"\s+", " ", _CONTROL_CHARS.sub(" ", body.instruction or "")).strip()
+    if not instruction:
+        raise HTTPException(status_code=400, detail="Say what to change.")
+    if len(instruction) > MAX_INSTRUCTION_CHARS:
+        raise HTTPException(status_code=400, detail=f"Keep the request under {MAX_INSTRUCTION_CHARS} characters.")
+    if len(json.dumps(body.extraction)) > 2_000_000:
+        raise HTTPException(status_code=413, detail="That extraction is too large to edit.")
+    try:
+        current = Extraction.model_validate(body.extraction)
+    except Exception:
+        raise HTTPException(status_code=400, detail="That is not an extraction.")
+    if not current.shots:
+        raise HTTPException(status_code=400, detail="Only an extraction with shots can be edited.")
+
+    lo = current.section.start_sec if current.section else 0.0
+    hi = current.section.end_sec if current.section else current.duration_sec
+    if hi <= lo:
+        # Saved before durations were recorded: the last shot's end is the
+        # best bound there is, and an edit's timings are checked against it.
+        hi = max([s.end_sec or 0.0 for s in current.shots] + [lo + 1.0])
+        current.duration_sec = hi
+    span = max(0.0, hi - lo)
+    kept = _kept_video(body.job_id, owner_id)
+    use_video = kept is not None and 0 < span <= REFINE_VIDEO_MAX_SEC
+
+    client = model_client()
+    config = _extraction_config(types, RefineReply, max_tokens=32768, thinking="LOW", low_media=span > LONG_VIDEO_SEC)
+
+    async def ask(with_video: bool):
+        contents = []
+        if with_video:
+            # The video goes first: repeated edits then share a prefix, which
+            # the model's own cache can serve instead of re-reading it.
+            contents.append(_video_part(types, kept["uri"], (lo, hi), kept.get("mime", "video/mp4"), sampling_fps(span)))
+        contents.append(build_refine_prompt(
+            current, instruction, with_video=with_video, video_available=can_look and not with_video,
+        ))
+        return parse_refine_reply(await _generate_window(
+            client, model=extract_model(), contents=contents, config=config,
+            say=lambda _line: None, timeout=WINDOW_TIMEOUT_SEC,
+        ))
+
+    # The text first; the video only when the model says it has to look.
+    can_look = use_video
+    use_video = False
+    try:
+        reply = await ask(False)
+    except Exception as exc:                                   # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"The AI could not make that change: {exc}")
+    if can_look and reply.needs_video:
+        try:
+            reply = await ask(True)
+            use_video = True
+        except Exception:                                      # noqa: BLE001
+            # The kept copy may have just been swept. The text answer stands,
+            # and the person is told the video could not be checked.
+            reply.summary = (reply.summary + " " if reply.summary else "") + (
+                "The video could not be checked for this change."
+            )
+    updated, notes, needs_frame = apply_edits(current, reply)
+
+    framed = [s for s in needs_frame if s.start_sec is not None and s.end_sec is not None]
+    if framed:
+        can_cut = kept is not None and not kept.get("youtube") and str(kept.get("uri", "")).startswith("gs://")
+        if can_cut:
+            try:
+                thumbs_id = current.thumbnails_id or body.job_id
+                made = await _frames_for(
+                    framed, kept, job_id=body.job_id, owner_id=owner_id,
+                    thumbnails_id=thumbs_id, base_url=public_base(request),
+                )
+                if made:
+                    updated.thumbnails_id = thumbs_id
+                if made < len(framed):
+                    missing = len(framed) - made
+                    notes.append(f"{missing} changed shot{'s' if missing != 1 else ''} could not get a new frame.")
+            except Exception as exc:                           # noqa: BLE001
+                notes.append(f"Changed shots could not get new frames ({exc}).")
+        elif not (kept is not None and kept.get("youtube")):
+            # A YouTube reading never had frames, and already says so.
+            notes.append("Changed and added shots have no frame: the video is only kept for an hour after extracting.")
+    updated.warnings = notes
+    if kept is None:
+        updated.refine_until = None
+
+    edited = bool(reply.shot_edits or reply.sheet_edits or reply.master_prompt or reply.video_concept)
+    summary = reply.summary or ("Done." if edited else "Nothing was changed.")
+    if not use_video and any(e.action.strip().lower() == "insert" for e in reply.shot_edits):
+        summary += " The new timings are estimates: the video was not available to check them against."
+    return RefineResponse(extraction=updated.model_dump(), summary=summary, used_video=use_video)
+
+
+async def sweep_kept_videos() -> int:
+    """Delete kept videos past their hour. Returns how many went.
+
+    Lists the bucket rather than the jobs: a kept copy must go even if its job
+    record expired or the process restarted, and everything under videos/ is
+    either a job in progress (minutes old) or a kept copy."""
+    if not (settings.gcp_project_id and settings.gcp_credentials_json):
+        return 0
+    from datetime import timedelta
+
+    from google.cloud import storage
+
+    from app.api.clip import _vertex_credentials
+
+    def sweep() -> int:
+        client = storage.Client(project=settings.gcp_project_id, credentials=_vertex_credentials())
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.refine_video_ttl_sec + 300)
+        gone = 0
+        for blob in client.bucket(settings.gcs_bucket_name).list_blobs(prefix="videos/"):
+            if blob.time_created and blob.time_created < cutoff:
+                try:
+                    blob.delete()
+                    gone += 1
+                except Exception:                              # noqa: BLE001
+                    pass
+        return gone
+
+    return await asyncio.to_thread(sweep)
+
+
+async def sweep_forever(every_sec: float = 300.0) -> None:
+    import logging
+
+    log = logging.getLogger(__name__)
+    while True:
+        try:
+            gone = await sweep_kept_videos()
+            if gone:
+                log.info("swept %d kept videos past their hour", gone)
+        except Exception as exc:                               # noqa: BLE001
+            log.warning("kept-video sweep failed: %s", exc)
+        await asyncio.sleep(every_sec)

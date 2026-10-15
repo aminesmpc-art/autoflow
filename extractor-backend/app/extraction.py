@@ -420,6 +420,9 @@ class Extraction(BaseModel):
     read_from: str = "file"
     # A poster for a reading with no shot thumbnails — YouTube's own.
     cover_url: Optional[str] = None
+    # Until when (epoch seconds) an edit can look at the video again. None
+    # once it is gone, or when it was never kept.
+    refine_until: Optional[float] = None
 
 
 # ──────────────────────────────────────────────────────────────────────────

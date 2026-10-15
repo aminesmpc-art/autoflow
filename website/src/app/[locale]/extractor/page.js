@@ -12,6 +12,8 @@ import {
 import { studioInstalled, sendToStudio, toBuildOptions } from "./studioBridge";
 import DownloadButtons from "./DownloadButtons";
 import { clock, parseClock, sectionOptions, sectionProblem } from "./timeFields";
+import RefinePanel from "./RefinePanel";
+import { OPEN_KEY, asResult, savedExtras, savedVersion } from "./saved";
 import StoreLink, { STORE_URLS } from "../../StoreLink";
 
 /* The one place the Studio listing is named, shared with every other install
@@ -75,29 +77,6 @@ function buildExtractionOptions(o) {
   if (direction) body.creative_direction = direction;
   Object.assign(body, sectionOptions(o));
   return Object.keys(body).length ? body : null;
-}
-
-/* What a saved extraction keeps besides the original five fields. Django has
-   a column for the master prompt and one JSON bag for everything else, so the
-   next thing the engine reports does not need a migration to be kept. */
-function savedExtras(result) {
-  return {
-    master_prompt: result.master_prompt || "",
-    master_prompt_json: result.master_prompt_json || null,
-    details: {
-      characters_description: result.characters_description || "",
-      aspect_ratio: result.aspect_ratio || "",
-      duration_sec: result.duration_sec ?? null,
-      section: result.section || null,
-      warnings: result.warnings || [],
-      thumbnails_id: result.thumbnails_id || null,
-      model: result.model || "",
-      // The cut-list export counts frames at this rate.
-      source_fps: result.source_fps ?? null,
-      read_from: result.read_from || "file",
-      cover_url: result.cover_url || null,
-    },
-  };
 }
 
 /** A copy button that says it worked, the way the rest of this page does. */
@@ -225,6 +204,10 @@ export default function ExtractorPage() {
   const [showExtractOpts, setShowExtractOpts] = useState(false);
   const [masterView, setMasterView] = useState("text"); // text | json
   const [savedId, setSavedId] = useState(null);
+  /* Every edit is a version; Undo goes back one. The first is what the
+     engine returned. */
+  const [versions, setVersions] = useState([]);
+  const [refineLog, setRefineLog] = useState([]);
   const [isPublished, setIsPublished] = useState(false);
   const [publishBusy, setPublishBusy] = useState(false);
 
@@ -310,6 +293,60 @@ export default function ExtractorPage() {
      Django API and answers /api/videos with a 404. */
   const API_URL = process.env.NEXT_PUBLIC_EXTRACTOR_API_URL || "https://autoflow-extractor-production.up.railway.app/api/videos";
   const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.auto-flow.studio/api";
+
+  /* Each version is saved onto the same row: an edit never creates an
+     extraction, so it never counts toward the allowance. */
+  const persistVersion = (version) => {
+    if (!savedId || !token) return;
+    fetch(`${DJANGO_API_URL}/extractions/${savedId}/`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(savedVersion(version)),
+    }).catch(() => { /* the version is on screen; the next edit saves again */ });
+  };
+
+  const applyRefined = (next, entry) => {
+    setVersions((v) => [...v, next]);
+    setResult(next);
+    setRefineLog((l) => [...l, entry]);
+    persistVersion(next);
+  };
+
+  const undoRefine = () => {
+    if (versions.length < 2) return;
+    const back = versions[versions.length - 2];
+    setVersions(versions.slice(0, -1));
+    setResult(back);
+    // Mark the newest change that is still standing as undone.
+    setRefineLog((l) => {
+      const i = l.map((e) => !e.undone).lastIndexOf(true);
+      return i < 0 ? l : l.map((e, j) => (j === i ? { ...e, undone: true } : e));
+    });
+    persistVersion(back);
+  };
+
+  /* Opened from the dashboard: the saved extraction arrives through
+     sessionStorage and lands straight in the results view, ready to edit. */
+  useEffect(() => {
+    if (typeof window === "undefined" || !new URLSearchParams(window.location.search).has("open")) return;
+    try {
+      const raw = sessionStorage.getItem(OPEN_KEY);
+      sessionStorage.removeItem(OPEN_KEY);
+      if (!raw) return;
+      const row = JSON.parse(raw);
+      const opened = asResult(row);
+      setResult(opened);
+      setVersions([opened]);
+      setRefineLog([]);
+      setSavedId(row.id);
+      setIsPublished(!!row.is_public);
+      setSaveStatus("saved");
+      setStatus("completed");
+      window.history.replaceState(null, "", window.location.pathname);
+    } catch (e) {
+      /* nothing to open */
+    }
+  }, []);
 
   const handleDrop = useCallback((e) => {
     e.preventDefault();
@@ -462,6 +499,8 @@ export default function ExtractorPage() {
           if (data.status === "completed") {
             setStatus("completed");
             setResult(data.result);
+            setVersions([data.result]);
+            setRefineLog([]);
             clearInterval(interval);
             
             // Auto-save to Django
@@ -978,7 +1017,7 @@ export default function ExtractorPage() {
                   </span>
                 )}
               </div>
-              <button className="cyber-btn" style={{ padding: "12px 24px" }} onClick={() => { setStatus("idle"); setFile(null); setSavedId(null); setIsPublished(false); setStudioSent(false); }}>Extract Another</button>
+              <button className="cyber-btn" style={{ padding: "12px 24px" }} onClick={() => { setStatus("idle"); setFile(null); setSavedId(null); setIsPublished(false); setStudioSent(false); setVersions([]); setRefineLog([]); setJobId(null); }}>Extract Another</button>
             </div>
 
             {/* ── Privacy ──
@@ -1061,6 +1100,20 @@ export default function ExtractorPage() {
                   {result.warnings.map((w, i) => <li key={i}>{w}</li>)}
                 </ul>
               </div>
+            )}
+
+            {/* --- Refine by chat --- */}
+            {result.shots?.length > 0 && (token || user) && (
+              <RefinePanel
+                result={result}
+                jobId={jobId}
+                token={token || (typeof window !== "undefined" ? localStorage.getItem("access_token") : null)}
+                apiUrl={API_URL}
+                log={refineLog}
+                canUndo={versions.length > 1}
+                onResult={applyRefined}
+                onUndo={undoRefine}
+              />
             )}
 
             {/* --- Master prompt ---

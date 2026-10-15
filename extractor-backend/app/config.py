@@ -73,6 +73,14 @@ class Settings(BaseSettings):
     clip_ask_per_minute: int = 60
     clip_ask_per_day: int = 1000
 
+    # Refining an extraction by chat. Edits charge no quota, so they are
+    # rate-limited instead; and the video is kept this long after an
+    # extraction so an edit can look at it again — the user chose one hour,
+    # the smallest footprint, over a day.
+    refine_per_minute: int = 10
+    refine_per_day: int = 200
+    refine_video_ttl_sec: int = 60 * 60
+
     # Limits
     max_video_size_mb: int = 500
     max_video_duration_sec: int = 2 * 60 * 60

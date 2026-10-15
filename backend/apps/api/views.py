@@ -1153,11 +1153,19 @@ class SavedExtractionDetailView(APIView):
         except SavedExtraction.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
+    # What an owner may change after saving. Publishing, and the content an
+    # edit-by-chat rewrites. Never the user, the kind or the dates — and never
+    # a new row, so an edit does not count toward the daily allowance.
+    EDITABLE = (
+        "is_public", "video_concept", "voiceover_text", "character_sheets", "shots",
+        "master_prompt", "master_prompt_json", "details",
+    )
+
     def patch(self, request, pk):
-        """Publish or unpublish one's own extraction.
+        """Publish, unpublish, or save an edited version of one's own extraction.
 
         Scoped to request.user, so this can only ever change the caller's own
-        rows — publishing someone else's work is not addressable.
+        rows — publishing or editing someone else's work is not addressable.
         """
         from apps.extractions.models import SavedExtraction
         from .serializers import SavedExtractionSerializer
@@ -1167,12 +1175,17 @@ class SavedExtractionDetailView(APIView):
         except SavedExtraction.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        if "is_public" not in request.data:
+        changes = {k: request.data[k] for k in self.EDITABLE if k in request.data}
+        if not changes:
             return Response(
-                {"detail": "Nothing to update. Send is_public."},
+                {"detail": f"Nothing to update. Send one of: {', '.join(self.EDITABLE)}."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if "is_public" in changes:
+            changes["is_public"] = bool(changes["is_public"])
 
-        extraction.is_public = bool(request.data["is_public"])
-        extraction.save(update_fields=["is_public", "updated_at"])
+        serializer = SavedExtractionSerializer(extraction, data=changes, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        extraction.refresh_from_db()
         return Response(SavedExtractionSerializer(extraction).data)

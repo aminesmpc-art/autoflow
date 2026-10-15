@@ -17,8 +17,17 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events."""
-    yield
+    """Startup and shutdown events.
+
+    Starts the sweeper that deletes videos kept for editing once their hour
+    is up (see app/api/videos.py)."""
+    import asyncio
+
+    sweeper = asyncio.create_task(videos.sweep_forever())
+    try:
+        yield
+    finally:
+        sweeper.cancel()
 
 
 app = FastAPI(

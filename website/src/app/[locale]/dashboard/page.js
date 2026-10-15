@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import DownloadButtons from "../extractor/DownloadButtons";
 import BreakdownView from "../breakdown/BreakdownView";
+import { OPEN_KEY } from "../extractor/saved";
 
 export default function DashboardPage() {
   const { user, token, loading } = useAuth();
@@ -158,6 +159,22 @@ export default function DashboardPage() {
 
                       {/* A breakdown has no prompts; it is its own view. */}
                       {ex.kind === "breakdown" && <BreakdownView breakdown={ex.breakdown} />}
+
+                      {ex.shots?.length > 0 && ex.kind !== "breakdown" && (
+                        <div style={{ marginBottom: "24px" }}>
+                          <button
+                            className="btn btn-primary"
+                            style={{ padding: "10px 20px", fontSize: "0.9rem", borderRadius: "100px" }}
+                            onClick={() => {
+                              // The extractor page picks this up and opens it ready to edit.
+                              try { sessionStorage.setItem(OPEN_KEY, JSON.stringify(ex)); } catch (e) { return; }
+                              router.push("/extractor?open=1");
+                            }}
+                          >
+                            ✨ Open &amp; refine with AI
+                          </button>
+                        </div>
+                      )}
 
                       {ex.shots?.length > 0 && (
                         <div style={{ marginBottom: "32px" }}>

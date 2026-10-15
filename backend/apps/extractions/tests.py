@@ -92,7 +92,7 @@ class PublicGalleryPrivacyTests(APITestCase):
         ex.refresh_from_db()
         self.assertFalse(ex.is_public)
 
-    def test_patch_without_is_public_is_rejected(self):
+    def test_patch_with_nothing_editable_is_rejected(self):
         ex = make_extraction(self.owner)
         self.client.force_authenticate(self.owner)
 
@@ -297,3 +297,46 @@ class BreakdownKindTests(APITestCase):
         self.assertEqual(self.client.get(reverse("extractions-public")).data, [])
         res = self.client.get(reverse("extractions-public-detail", args=[pk]))
         self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class EditedVersionTests(APITestCase):
+    """Edit-by-chat saves a new version onto the same row."""
+
+    def setUp(self):
+        self.owner = make_user("editor@example.com")
+        self.other = make_user("someone@example.com")
+        self.ex = make_extraction(self.owner)
+
+    def patch(self, user, data):
+        self.client.force_authenticate(user)
+        return self.client.patch(reverse("extractions-detail", args=[self.ex.pk]), data, format="json")
+
+    def test_the_owner_saves_a_new_version_in_place(self):
+        shots = [{"shot_id": 1, "image_prompt": "golden hour", "video_prompt": "b"}]
+        res = self.patch(self.owner, {"shots": shots, "master_prompt": "At golden hour."})
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.ex.refresh_from_db()
+        self.assertEqual(self.ex.shots, shots)
+        self.assertEqual(self.ex.master_prompt, "At golden hour.")
+        self.assertEqual(SavedExtraction.objects.filter(user=self.owner).count(), 1)
+
+    def test_an_edit_does_not_count_toward_the_allowance(self):
+        self.client.force_authenticate(self.owner)
+        before = self.client.get(reverse("extractions-check-limit")).data["used"]
+        self.patch(self.owner, {"video_concept": "edited"})
+        after = self.client.get(reverse("extractions-check-limit")).data["used"]
+        self.assertEqual(before, after)
+
+    def test_nobody_else_can_edit_it(self):
+        res = self.patch(self.other, {"video_concept": "mine now"})
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+        self.ex.refresh_from_db()
+        self.assertEqual(self.ex.video_concept, "A concept")
+
+    def test_the_owner_kind_and_user_cannot_be_changed(self):
+        res = self.patch(self.owner, {"kind": "breakdown", "user": self.other.pk, "video_concept": "ok"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.ex.refresh_from_db()
+        self.assertEqual(self.ex.kind, "prompts")
+        self.assertEqual(self.ex.user, self.owner)
