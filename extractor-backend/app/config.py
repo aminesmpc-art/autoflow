@@ -66,12 +66,25 @@ class Settings(BaseSettings):
     max_concurrent_clip_jobs: int = 2
     max_concurrent_extract_jobs: int = 3
 
+    # Explicit download-only imports; no AI work or generation quota.
+    social_imports_enabled: bool = False
+    social_imports_per_hour: int = 10
+    max_concurrent_social_imports: int = 2
+
     # Ceilings on /api/clip/ask, which charges no quota of its own.
     # Far above legitimate use: the heaviest run the website produces is 46
     # asks (6 + 2N, twenty clips), spread over minutes of encoding. See
     # app/rate_limit.py for why this is a rate limit and not a quota.
     clip_ask_per_minute: int = 60
     clip_ask_per_day: int = 1000
+
+    # Refining an extraction by chat. Edits charge no quota, so they are
+    # rate-limited instead; and the video is kept this long after an
+    # extraction so an edit can look at it again — the user chose one hour,
+    # the smallest footprint, over a day.
+    refine_per_minute: int = 10
+    refine_per_day: int = 200
+    refine_video_ttl_sec: int = 60 * 60
 
     # Limits
     max_video_size_mb: int = 500

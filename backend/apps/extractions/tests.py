@@ -92,7 +92,7 @@ class PublicGalleryPrivacyTests(APITestCase):
         ex.refresh_from_db()
         self.assertFalse(ex.is_public)
 
-    def test_patch_without_is_public_is_rejected(self):
+    def test_patch_with_nothing_editable_is_rejected(self):
         ex = make_extraction(self.owner)
         self.client.force_authenticate(self.owner)
 
@@ -241,3 +241,215 @@ class ExtractionShapeTests(APITestCase):
         self.assertEqual(res.data["master_prompt"], "")
         self.assertIsNone(res.data["master_prompt_json"])
         self.assertEqual(res.data["details"], {})
+
+
+class BreakdownKindTests(APITestCase):
+    """A "why it works" breakdown is saved as its own kind of extraction."""
+
+    def setUp(self):
+        self.user = make_user("kinds@example.com", is_pro=True)
+        self.client.force_authenticate(self.user)
+
+    def save_breakdown(self):
+        return self.client.post(
+            reverse("extractions-list"),
+            {
+                "video_name": "ad.mp4",
+                "video_concept": "A UGC ad for running shoes.",
+                "voiceover_text": "",
+                "character_sheets": [],
+                "shots": [],
+                "kind": "breakdown",
+                "breakdown": {"hook": {"strength": 8}, "beats": [], "pacing": {"cut_count": 12}},
+            },
+            format="json",
+        )
+
+    def test_a_breakdown_round_trips(self):
+        res = self.save_breakdown()
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        saved = self.client.get(reverse("extractions-list")).data[0]
+        self.assertEqual(saved["kind"], "breakdown")
+        self.assertEqual(saved["breakdown"]["pacing"]["cut_count"], 12)
+
+    def test_prompts_is_the_default_kind(self):
+        self.assertEqual(make_extraction(self.user).kind, "prompts")
+
+    def test_an_unknown_kind_is_refused(self):
+        res = self.client.post(
+            reverse("extractions-list"),
+            {"video_name": "x", "video_concept": "", "voiceover_text": "", "character_sheets": [],
+             "shots": [], "kind": "poetry"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_a_breakdown_counts_toward_the_daily_allowance(self):
+        before = self.client.get(reverse("extractions-check-limit")).data["used"]
+        self.save_breakdown()
+        after = self.client.get(reverse("extractions-check-limit")).data["used"]
+        self.assertEqual(after, before + 1)
+
+    def test_the_public_gallery_never_lists_a_breakdown(self):
+        self.save_breakdown()
+        SavedExtraction.objects.filter(kind="breakdown").update(is_public=True)
+        pk = SavedExtraction.objects.get(kind="breakdown").pk
+        self.assertEqual(self.client.get(reverse("extractions-public")).data, [])
+        res = self.client.get(reverse("extractions-public-detail", args=[pk]))
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class EditedVersionTests(APITestCase):
+    """Edit-by-chat saves a new version onto the same row."""
+
+    def setUp(self):
+        self.owner = make_user("editor@example.com")
+        self.other = make_user("someone@example.com")
+        self.ex = make_extraction(self.owner)
+
+    def patch(self, user, data):
+        self.client.force_authenticate(user)
+        return self.client.patch(reverse("extractions-detail", args=[self.ex.pk]), data, format="json")
+
+    def test_the_owner_saves_a_new_version_in_place(self):
+        shots = [{"shot_id": 1, "image_prompt": "golden hour", "video_prompt": "b"}]
+        res = self.patch(self.owner, {"shots": shots, "master_prompt": "At golden hour."})
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.ex.refresh_from_db()
+        self.assertEqual(self.ex.shots, shots)
+        self.assertEqual(self.ex.master_prompt, "At golden hour.")
+        self.assertEqual(SavedExtraction.objects.filter(user=self.owner).count(), 1)
+
+    def test_an_edit_does_not_count_toward_the_allowance(self):
+        self.client.force_authenticate(self.owner)
+        before = self.client.get(reverse("extractions-check-limit")).data["used"]
+        self.patch(self.owner, {"video_concept": "edited"})
+        after = self.client.get(reverse("extractions-check-limit")).data["used"]
+        self.assertEqual(before, after)
+
+    def test_nobody_else_can_edit_it(self):
+        res = self.patch(self.other, {"video_concept": "mine now"})
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+        self.ex.refresh_from_db()
+        self.assertEqual(self.ex.video_concept, "A concept")
+
+    def test_the_owner_kind_and_user_cannot_be_changed(self):
+        res = self.patch(self.owner, {"kind": "breakdown", "user": self.other.pk, "video_concept": "ok"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.ex.refresh_from_db()
+        self.assertEqual(self.ex.kind, "prompts")
+        self.assertEqual(self.ex.user, self.owner)
+
+
+class WeightedAllowanceTests(APITestCase):
+    """Every ten analysed minutes is one extraction, reserved before the work."""
+
+    def setUp(self):
+        self.free = make_user("weighted-free@example.com", is_pro=False)
+        self.pro = make_user("weighted-pro@example.com", is_pro=True)
+
+    def reserve(self, user, key, seconds, kind="prompts"):
+        self.client.force_authenticate(user)
+        return self.client.post(
+            reverse("extractions-reserve"),
+            {"idempotency_key": key, "seconds": seconds, "kind": kind},
+            format="json",
+        )
+
+    def used(self, user):
+        self.client.force_authenticate(user)
+        return self.client.get(reverse("extractions-check-limit")).data["used"]
+
+    def test_length_to_extractions(self):
+        from apps.extractions.services import units_for
+
+        self.assertEqual([units_for(s) for s in (8, 600, 601, 1500, 7200, None)], [1, 1, 2, 3, 12, 1])
+
+    def test_a_long_video_costs_more_and_a_retry_costs_nothing(self):
+        first = self.reserve(self.pro, "job-a", 25 * 60)
+        again = self.reserve(self.pro, "job-a", 25 * 60)
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(first.data["units"], 3)
+        self.assertEqual(again.status_code, status.HTTP_200_OK)
+        self.assertFalse(again.data["charged"])
+        self.assertEqual(self.used(self.pro), 3)
+
+    def test_a_video_too_long_for_what_is_left_is_refused_and_explained(self):
+        self.assertEqual(self.reserve(self.free, "a", 25 * 60).status_code, 201)   # 3 of 4
+        res = self.reserve(self.free, "b", 25 * 60)                                # needs 3, 1 left
+
+        self.assertEqual(res.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        self.assertIn("counts as 3 extractions", res.data["detail"])
+        self.assertIn("1 extraction left", res.data["detail"])
+        self.assertEqual(self.reserve(self.free, "c", 30).status_code, 201)        # a clip still fits
+        self.assertEqual(self.reserve(self.free, "d", 30).status_code, 429)
+        self.assertEqual(self.used(self.free), 4)
+
+    def test_a_failed_job_is_refunded(self):
+        self.reserve(self.pro, "job-f", 25 * 60)
+        self.client.force_authenticate(self.pro)
+        res = self.client.post(reverse("extractions-release"), {"idempotency_key": "job-f"}, format="json")
+
+        self.assertTrue(res.data["released"])
+        self.assertEqual(self.used(self.pro), 0)
+        self.assertEqual(self.reserve(self.pro, "job-f", 25 * 60).status_code, 201)   # re-run is charged again
+
+    def test_a_saved_result_of_a_charged_job_is_not_counted_twice(self):
+        self.reserve(self.pro, "job-s", 30)
+        self.client.force_authenticate(self.pro)
+        self.client.post(
+            reverse("extractions-list"),
+            {"video_name": "v", "video_concept": "c", "voiceover_text": "", "character_sheets": [],
+             "shots": [], "job_id": "job-s"},
+            format="json",
+        )
+        make_extraction(self.pro)   # a save from a client that predates reservations
+
+        self.assertEqual(self.used(self.pro), 2)
+
+    def test_saving_a_paid_result_is_never_refused_even_at_the_limit(self):
+        for i in range(4):
+            self.reserve(self.free, f"job-{i}", 30)
+        self.client.force_authenticate(self.free)
+        payload = {"video_name": "v", "video_concept": "c", "voiceover_text": "", "character_sheets": [], "shots": []}
+
+        # The fourth reservation used the last extraction; its result still saves.
+        for i in range(4):
+            res = self.client.post(reverse("extractions-list"), {**payload, "job_id": f"job-{i}"}, format="json")
+            self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        # A save with no job behind it — every charge is claimed — is refused.
+        unpaid = self.client.post(reverse("extractions-list"), payload, format="json")
+        self.assertEqual(unpaid.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+    def test_reservations_need_a_user_and_a_key(self):
+        self.assertEqual(
+            self.client.post(reverse("extractions-reserve"), {"idempotency_key": "x", "seconds": 1}, format="json").status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+        self.assertEqual(self.reserve(self.pro, "", 30).status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_a_save_from_a_website_without_job_ids_claims_its_charge(self):
+        """The website deploys by hand and can lag the extractor: until it
+        sends job ids, its saves must not count a second time."""
+        self.reserve(self.pro, "job-old-site", 30)
+        self.client.force_authenticate(self.pro)
+        res = self.client.post(
+            reverse("extractions-list"),
+            {"video_name": "v", "video_concept": "c", "voiceover_text": "", "character_sheets": [], "shots": []},
+            format="json",
+        )
+
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(SavedExtraction.objects.get(user=self.pro).job_id, "job-old-site")
+        self.assertEqual(self.used(self.pro), 1)
+
+    def test_a_second_untagged_save_does_not_claim_the_same_charge(self):
+        self.reserve(self.pro, "job-1", 30)
+        self.client.force_authenticate(self.pro)
+        payload = {"video_name": "v", "video_concept": "c", "voiceover_text": "", "character_sheets": [], "shots": []}
+        self.client.post(reverse("extractions-list"), payload, format="json")
+        self.client.post(reverse("extractions-list"), payload, format="json")
+
+        self.assertEqual(self.used(self.pro), 2)   # one charged job + one save with no job behind it

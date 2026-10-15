@@ -86,6 +86,9 @@ class SavedExtractionSerializer(serializers.ModelSerializer):
             "master_prompt",
             "master_prompt_json",
             "details",
+            "kind",
+            "breakdown",
+            "job_id",
             "is_public",
             "created_at",
         ]

@@ -420,6 +420,9 @@ class Extraction(BaseModel):
     read_from: str = "file"
     # A poster for a reading with no shot thumbnails — YouTube's own.
     cover_url: Optional[str] = None
+    # Until when (epoch seconds) an edit can look at the video again. None
+    # once it is gone, or when it was never kept.
+    refine_until: Optional[float] = None
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -936,10 +939,11 @@ def _config(
     max_tokens: int,
     thinking: str,
     low_media: bool = False,
+    system: str = SYSTEM,
 ) -> Any:
     """Request settings, built as defensively as clipping's — see _build_config."""
     kwargs: dict[str, Any] = {
-        "system_instruction": SYSTEM,
+        "system_instruction": system,
         "response_mime_type": "application/json",
         "response_schema": schema,
         # Gemini 3 warns that lowering temperature can loop or degrade output.

@@ -11,6 +11,9 @@ import {
 } from "./studioWorkflow";
 import { studioInstalled, sendToStudio, toBuildOptions } from "./studioBridge";
 import DownloadButtons from "./DownloadButtons";
+import { clock, parseClock, sectionOptions, sectionProblem } from "./timeFields";
+import RefinePanel from "./RefinePanel";
+import { OPEN_KEY, asResult, savedExtras, savedVersion } from "./saved";
 import StoreLink, { STORE_URLS } from "../../StoreLink";
 
 /* The one place the Studio listing is named, shared with every other install
@@ -62,35 +65,6 @@ const DEFAULT_EXTRACT_OPTS = {
   sectionEnd: "",
 };
 
-/** "1:20", "1:02:05" or "95" as seconds. null when empty, NaN when it is neither. */
-function parseClock(text) {
-  const t = String(text || "").trim();
-  if (!t) return null;
-  if (!/^\d+(:\d{1,2}){0,2}(\.\d+)?$/.test(t)) return NaN;
-  return t.split(":").reduce((total, part) => total * 60 + Number(part), 0);
-}
-
-/** Seconds as 1:05, or 1:02:05 past an hour. */
-function clock(seconds) {
-  const s = Math.max(0, Math.round(Number(seconds) || 0));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const rest = String(s % 60).padStart(2, "0");
-  return h ? `${h}:${String(m).padStart(2, "0")}:${rest}` : `${m}:${rest}`;
-}
-
-/* Checked here rather than left to the engine, because the engine treats a
-   time it cannot read as "not given" — and a typo would silently become an
-   analysis of the whole video, charged as one. */
-function sectionProblem(o) {
-  const start = parseClock(o.sectionStart);
-  const end = parseClock(o.sectionEnd);
-  if (Number.isNaN(start)) return "Start time should look like 1:20, or stay empty for the beginning.";
-  if (Number.isNaN(end)) return "End time should look like 2:45, or stay empty for the end.";
-  if (start != null && end != null && end <= start) return "The end time has to be after the start time.";
-  return null;
-}
-
 /** Send only what the user actually changed; null means "engine defaults". */
 function buildExtractionOptions(o) {
   const body = {};
@@ -101,34 +75,8 @@ function buildExtractionOptions(o) {
   if (o.aspectRatio !== "source") body.aspect_ratio = o.aspectRatio;
   const direction = o.creativeDirection.trim();
   if (direction) body.creative_direction = direction;
-  const start = parseClock(o.sectionStart);
-  const end = parseClock(o.sectionEnd);
-  if (Number.isFinite(start) && start > 0) body.start_sec = start;
-  if (Number.isFinite(end)) body.end_sec = end;
+  Object.assign(body, sectionOptions(o));
   return Object.keys(body).length ? body : null;
-}
-
-/* What a saved extraction keeps besides the original five fields. Django has
-   a column for the master prompt and one JSON bag for everything else, so the
-   next thing the engine reports does not need a migration to be kept. */
-function savedExtras(result) {
-  return {
-    master_prompt: result.master_prompt || "",
-    master_prompt_json: result.master_prompt_json || null,
-    details: {
-      characters_description: result.characters_description || "",
-      aspect_ratio: result.aspect_ratio || "",
-      duration_sec: result.duration_sec ?? null,
-      section: result.section || null,
-      warnings: result.warnings || [],
-      thumbnails_id: result.thumbnails_id || null,
-      model: result.model || "",
-      // The cut-list export counts frames at this rate.
-      source_fps: result.source_fps ?? null,
-      read_from: result.read_from || "file",
-      cover_url: result.cover_url || null,
-    },
-  };
 }
 
 /** A copy button that says it worked, the way the rest of this page does. */
@@ -256,6 +204,10 @@ export default function ExtractorPage() {
   const [showExtractOpts, setShowExtractOpts] = useState(false);
   const [masterView, setMasterView] = useState("text"); // text | json
   const [savedId, setSavedId] = useState(null);
+  /* Every edit is a version; Undo goes back one. The first is what the
+     engine returned. */
+  const [versions, setVersions] = useState([]);
+  const [refineLog, setRefineLog] = useState([]);
   const [isPublished, setIsPublished] = useState(false);
   const [publishBusy, setPublishBusy] = useState(false);
 
@@ -341,6 +293,60 @@ export default function ExtractorPage() {
      Django API and answers /api/videos with a 404. */
   const API_URL = process.env.NEXT_PUBLIC_EXTRACTOR_API_URL || "https://autoflow-extractor-production.up.railway.app/api/videos";
   const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.auto-flow.studio/api";
+
+  /* Each version is saved onto the same row: an edit never creates an
+     extraction, so it never counts toward the allowance. */
+  const persistVersion = (version) => {
+    if (!savedId || !token) return;
+    fetch(`${DJANGO_API_URL}/extractions/${savedId}/`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(savedVersion(version)),
+    }).catch(() => { /* the version is on screen; the next edit saves again */ });
+  };
+
+  const applyRefined = (next, entry) => {
+    setVersions((v) => [...v, next]);
+    setResult(next);
+    setRefineLog((l) => [...l, entry]);
+    persistVersion(next);
+  };
+
+  const undoRefine = () => {
+    if (versions.length < 2) return;
+    const back = versions[versions.length - 2];
+    setVersions(versions.slice(0, -1));
+    setResult(back);
+    // Mark the newest change that is still standing as undone.
+    setRefineLog((l) => {
+      const i = l.map((e) => !e.undone).lastIndexOf(true);
+      return i < 0 ? l : l.map((e, j) => (j === i ? { ...e, undone: true } : e));
+    });
+    persistVersion(back);
+  };
+
+  /* Opened from the dashboard: the saved extraction arrives through
+     sessionStorage and lands straight in the results view, ready to edit. */
+  useEffect(() => {
+    if (typeof window === "undefined" || !new URLSearchParams(window.location.search).has("open")) return;
+    try {
+      const raw = sessionStorage.getItem(OPEN_KEY);
+      sessionStorage.removeItem(OPEN_KEY);
+      if (!raw) return;
+      const row = JSON.parse(raw);
+      const opened = asResult(row);
+      setResult(opened);
+      setVersions([opened]);
+      setRefineLog([]);
+      setSavedId(row.id);
+      setIsPublished(!!row.is_public);
+      setSaveStatus("saved");
+      setStatus("completed");
+      window.history.replaceState(null, "", window.location.pathname);
+    } catch (e) {
+      /* nothing to open */
+    }
+  }, []);
 
   const handleDrop = useCallback((e) => {
     e.preventDefault();
@@ -493,6 +499,8 @@ export default function ExtractorPage() {
           if (data.status === "completed") {
             setStatus("completed");
             setResult(data.result);
+            setVersions([data.result]);
+            setRefineLog([]);
             clearInterval(interval);
             
             // Auto-save to Django
@@ -515,6 +523,9 @@ export default function ExtractorPage() {
                   voiceover_text: data.result.voiceover_text || "",
                   character_sheets: data.result.character_sheets || [],
                   shots: data.result.shots || [],
+                  // The job this came from: its extractions were reserved when
+                  // it started, so saving it must not count them again.
+                  job_id: jobId,
                   ...savedExtras(data.result),
                 })
               });
@@ -570,6 +581,12 @@ export default function ExtractorPage() {
             </h1>
             <p style={{ fontSize: "1.15rem", maxWidth: "650px", margin: "0 auto", lineHeight: "1.7", color: "var(--text-secondary)" }}>
               Upload any AI-generated video and our AI will extract the exact image prompts, motion prompts, voiceover script, and character descriptions used to create it.
+            </p>
+            <p style={{ fontSize: "0.95rem", margin: "14px auto 0", color: "var(--text-secondary)" }}>
+              Want to know why a video works instead?{" "}
+              <a href="/breakdown" style={{ color: "var(--primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}>
+                Break it down: hook, pacing, structure →
+              </a>
             </p>
             {/* Supported Platforms */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", justifyContent: "center", marginTop: "28px" }}>
@@ -869,6 +886,9 @@ export default function ExtractorPage() {
                     more closely. */}
                 <div style={{ marginTop: "20px" }}>
                   <span style={studioLabelStyle}>Analyze part of the video</span>
+                  <p className="terminal-text" style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "var(--text-muted)", textShadow: "none" }}>
+                    Long videos count as one extraction per 10 minutes analysed, so a section of a long video uses fewer.
+                  </p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "16px", marginTop: "6px" }}>
                     <label style={studioFieldStyle}>
                       <span style={{ ...studioLabelStyle, fontSize: "0.7rem" }}>From</span>
@@ -1003,7 +1023,7 @@ export default function ExtractorPage() {
                   </span>
                 )}
               </div>
-              <button className="cyber-btn" style={{ padding: "12px 24px" }} onClick={() => { setStatus("idle"); setFile(null); setSavedId(null); setIsPublished(false); setStudioSent(false); }}>Extract Another</button>
+              <button className="cyber-btn" style={{ padding: "12px 24px" }} onClick={() => { setStatus("idle"); setFile(null); setSavedId(null); setIsPublished(false); setStudioSent(false); setVersions([]); setRefineLog([]); setJobId(null); }}>Extract Another</button>
             </div>
 
             {/* ── Privacy ──
@@ -1086,6 +1106,20 @@ export default function ExtractorPage() {
                   {result.warnings.map((w, i) => <li key={i}>{w}</li>)}
                 </ul>
               </div>
+            )}
+
+            {/* --- Refine by chat --- */}
+            {result.shots?.length > 0 && (token || user) && (
+              <RefinePanel
+                result={result}
+                jobId={jobId}
+                token={token || (typeof window !== "undefined" ? localStorage.getItem("access_token") : null)}
+                apiUrl={API_URL}
+                log={refineLog}
+                canUndo={versions.length > 1}
+                onResult={applyRefined}
+                onUndo={undoRefine}
+              />
             )}
 
             {/* --- Master prompt ---
