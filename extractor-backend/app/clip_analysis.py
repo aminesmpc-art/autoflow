@@ -602,6 +602,7 @@ async def _generate_window(
     contents: list[Any],
     config: Any,
     say,
+    timeout: float = MODEL_CALL_TIMEOUT_SEC,
 ) -> Any:
     last_error: BaseException | None = None
     for attempt in range(1, WINDOW_ATTEMPTS + 1):
@@ -620,10 +621,7 @@ async def _generate_window(
                     contents=contents,
                     config=config,
                 )
-            return await asyncio.wait_for(
-                call,
-                timeout=MODEL_CALL_TIMEOUT_SEC,
-            )
+            return await asyncio.wait_for(call, timeout=timeout)
         except Exception as exc:                              # noqa: PERF203
             last_error = exc
             if attempt == WINDOW_ATTEMPTS:

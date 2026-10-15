@@ -10,6 +10,10 @@ import {
   downloadStudioWorkflow,
 } from "./studioWorkflow";
 import { studioInstalled, sendToStudio, toBuildOptions } from "./studioBridge";
+import DownloadButtons from "./DownloadButtons";
+import { clock, parseClock, sectionOptions, sectionProblem } from "./timeFields";
+import RefinePanel from "./RefinePanel";
+import { OPEN_KEY, asResult, savedExtras, savedVersion } from "./saved";
 import StoreLink, { STORE_URLS } from "../../StoreLink";
 
 /* The one place the Studio listing is named, shared with every other install
@@ -17,7 +21,7 @@ import StoreLink, { STORE_URLS } from "../../StoreLink";
 const STUDIO_STORE_URL = STORE_URLS.studio;
 
 /* Extraction options. Mirrors ExtractionOptions in
-   extractor-backend/app/api/videos.py — the engine validates and falls back on
+   extractor-backend/app/extraction.py — the engine validates and falls back on
    anything it doesn't recognise, so an older engine simply ignores these. */
 const EXTRACT_LANGUAGES = [
   ["auto", "Same as video"],
@@ -39,11 +43,26 @@ const EXTRACT_STYLES = [
   ["3d", "3D render"],
 ];
 
+const EXTRACT_RATIOS = [
+  ["source", "Same as video"],
+  ["16:9", "16:9 landscape"],
+  ["9:16", "9:16 vertical"],
+  ["1:1", "1:1 square"],
+  ["4:5", "4:5 portrait"],
+];
+
+/* The engine cuts anything longer, so the box stops at the same place. */
+const MAX_DIRECTION_CHARS = 300;
+
 const DEFAULT_EXTRACT_OPTS = {
   shotCount: "auto",
   language: "auto",
   style: "faithful",
   characterSheets: true,
+  aspectRatio: "source",
+  creativeDirection: "",
+  sectionStart: "",
+  sectionEnd: "",
 };
 
 /** Send only what the user actually changed; null means "engine defaults". */
@@ -53,7 +72,20 @@ function buildExtractionOptions(o) {
   if (o.language !== "auto") body.language = o.language;
   if (o.style !== "faithful") body.style = o.style;
   if (!o.characterSheets) body.character_sheets = false;
+  if (o.aspectRatio !== "source") body.aspect_ratio = o.aspectRatio;
+  const direction = o.creativeDirection.trim();
+  if (direction) body.creative_direction = direction;
+  Object.assign(body, sectionOptions(o));
   return Object.keys(body).length ? body : null;
+}
+
+/** A copy button that says it worked, the way the rest of this page does. */
+function copyWithFeedback(e, text, done = "✓ Copied!") {
+  navigator.clipboard.writeText(text);
+  const button = e.currentTarget;
+  const original = button.innerHTML;
+  button.innerHTML = done;
+  setTimeout(() => { button.innerHTML = original; }, 2000);
 }
 
 /* Field styles for the Studio options grid. The select carries an explicit
@@ -85,6 +117,70 @@ const studioSelectStyle = {
   cursor: "pointer",
 };
 
+const chipStyle = {
+  border: "1px solid rgba(255, 92, 0, 0.4)",
+  padding: "2px 10px",
+  fontSize: "0.8rem",
+  color: "var(--text-primary)",
+};
+
+/** What the engine knows about a shot besides its prompts. Every part is
+    optional: an extraction saved before the upgrade has none of them, and
+    this then renders nothing at all. */
+function ShotDetails({ shot }) {
+  const camera = [shot.camera?.shot_size, shot.camera?.lens, shot.camera?.movement]
+    .filter(Boolean)
+    .join(" · ");
+  const cast = Array.isArray(shot.characters) ? shot.characters : [];
+  if (!shot.thumbnail_url && !camera && !cast.length && !shot.dialogue && !shot.sound) return null;
+
+  return (
+    <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginBottom: "24px", alignItems: "flex-start" }}>
+      {shot.thumbnail_url && (
+        // A plain img: the frame comes from the extractor's own host, and a
+        // broken one hides itself rather than leaving an empty box.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={shot.thumbnail_url}
+          alt={`Frame from shot ${shot.shot_id}`}
+          loading="lazy"
+          style={{ maxWidth: "200px", maxHeight: "200px", width: "auto", height: "auto", display: "block", border: "1px solid rgba(255, 92, 0, 0.4)", background: "#000" }}
+          onError={(e) => { e.currentTarget.style.display = "none"; }}
+        />
+      )}
+      <div style={{ flex: "1 1 220px", minWidth: 0, display: "flex", flexDirection: "column", gap: "10px", fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+        {cast.length > 0 && (
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+            {cast.map((name) => <span key={name} style={chipStyle}>👤 {name}</span>)}
+          </div>
+        )}
+        {camera && <div>🎥 {camera}</div>}
+        {shot.dialogue && <div style={{ color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>💬 {shot.dialogue}</div>}
+        {shot.sound && <div>🔊 {shot.sound}</div>}
+      </div>
+    </div>
+  );
+}
+
+/** The downloads, in this page's panel style. */
+function DownloadPanel({ result, sourceName }) {
+  return (
+    <div className="cyber-panel" style={{ marginTop: "60px", padding: "32px 48px" }}>
+      <h3 style={{ margin: "0 0 8px", fontSize: "1.4rem", color: "white", fontWeight: 700 }}>⬇ Download</h3>
+      <p className="terminal-text" style={{ margin: "0 0 20px", fontSize: "0.95rem", color: "var(--text-secondary)", textShadow: "none" }}>
+        Take this breakdown into other tools: a storyboard to share, a shot list for a spreadsheet,
+        subtitles from the dialogue, or a cut list your editor opens.
+      </p>
+      <DownloadButtons
+        result={result}
+        sourceName={sourceName}
+        buttonClassName="cyber-btn"
+        buttonStyle={{ padding: "12px 20px", fontSize: "0.9rem", background: "#000" }}
+      />
+    </div>
+  );
+}
+
 export default function ExtractorPage() {
   const { user, token, loading, login, register } = useAuth();
   const router = useRouter();
@@ -106,7 +202,12 @@ export default function ExtractorPage() {
   const [studioSend, setStudioSend] = useState({ state: "idle", message: "", notes: [] });
   const [extractOpts, setExtractOpts] = useState(DEFAULT_EXTRACT_OPTS);
   const [showExtractOpts, setShowExtractOpts] = useState(false);
+  const [masterView, setMasterView] = useState("text"); // text | json
   const [savedId, setSavedId] = useState(null);
+  /* Every edit is a version; Undo goes back one. The first is what the
+     engine returned. */
+  const [versions, setVersions] = useState([]);
+  const [refineLog, setRefineLog] = useState([]);
   const [isPublished, setIsPublished] = useState(false);
   const [publishBusy, setPublishBusy] = useState(false);
 
@@ -188,8 +289,64 @@ export default function ExtractorPage() {
   const studioBuildsImages = studioOpts.chain !== "videos";
   const studioBuildsVideos = studioOpts.chain !== "images";
 
-  const API_URL = process.env.NEXT_PUBLIC_EXTRACTOR_API_URL || "https://api.auto-flow.studio/api/videos";
+  /* The extractor is its own service on Railway; api.auto-flow.studio is the
+     Django API and answers /api/videos with a 404. */
+  const API_URL = process.env.NEXT_PUBLIC_EXTRACTOR_API_URL || "https://autoflow-extractor-production.up.railway.app/api/videos";
   const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.auto-flow.studio/api";
+
+  /* Each version is saved onto the same row: an edit never creates an
+     extraction, so it never counts toward the allowance. */
+  const persistVersion = (version) => {
+    if (!savedId || !token) return;
+    fetch(`${DJANGO_API_URL}/extractions/${savedId}/`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(savedVersion(version)),
+    }).catch(() => { /* the version is on screen; the next edit saves again */ });
+  };
+
+  const applyRefined = (next, entry) => {
+    setVersions((v) => [...v, next]);
+    setResult(next);
+    setRefineLog((l) => [...l, entry]);
+    persistVersion(next);
+  };
+
+  const undoRefine = () => {
+    if (versions.length < 2) return;
+    const back = versions[versions.length - 2];
+    setVersions(versions.slice(0, -1));
+    setResult(back);
+    // Mark the newest change that is still standing as undone.
+    setRefineLog((l) => {
+      const i = l.map((e) => !e.undone).lastIndexOf(true);
+      return i < 0 ? l : l.map((e, j) => (j === i ? { ...e, undone: true } : e));
+    });
+    persistVersion(back);
+  };
+
+  /* Opened from the dashboard: the saved extraction arrives through
+     sessionStorage and lands straight in the results view, ready to edit. */
+  useEffect(() => {
+    if (typeof window === "undefined" || !new URLSearchParams(window.location.search).has("open")) return;
+    try {
+      const raw = sessionStorage.getItem(OPEN_KEY);
+      sessionStorage.removeItem(OPEN_KEY);
+      if (!raw) return;
+      const row = JSON.parse(raw);
+      const opened = asResult(row);
+      setResult(opened);
+      setVersions([opened]);
+      setRefineLog([]);
+      setSavedId(row.id);
+      setIsPublished(!!row.is_public);
+      setSaveStatus("saved");
+      setStatus("completed");
+      window.history.replaceState(null, "", window.location.pathname);
+    } catch (e) {
+      /* nothing to open */
+    }
+  }, []);
 
   const handleDrop = useCallback((e) => {
     e.preventDefault();
@@ -211,6 +368,11 @@ export default function ExtractorPage() {
   const startAnalysis = async (explicitToken = null) => {
     if (mode === "upload" && !file) return;
     if (mode === "url" && !videoUrl.trim()) return;
+    if (sectionProblem(extractOpts)) {
+      // The message sits under the time fields; make sure it is on screen.
+      setShowExtractOpts(true);
+      return;
+    }
 
     const activeToken = explicitToken || token || (typeof window !== "undefined" ? localStorage.getItem("access_token") : null);
 
@@ -322,11 +484,23 @@ export default function ExtractorPage() {
           const response = await fetch(`${API_URL}/status/${jobId}`, {
             headers: activeToken ? { "Authorization": `Bearer ${activeToken}` } : {}
           });
+          // A job this account cannot see (signed out, or another account)
+          // answers 401/404, which used to leave the spinner going forever.
+          if (response.status === 401 || response.status === 404) {
+            setStatus("error");
+            setError(response.status === 401
+              ? "Your session expired while the video was being analysed. Sign in and run it again."
+              : "This analysis could not be found on the server. Please run it again.");
+            clearInterval(interval);
+            return;
+          }
           const data = await response.json();
-          
+
           if (data.status === "completed") {
             setStatus("completed");
             setResult(data.result);
+            setVersions([data.result]);
+            setRefineLog([]);
             clearInterval(interval);
             
             // Auto-save to Django
@@ -348,7 +522,11 @@ export default function ExtractorPage() {
                   video_concept: data.result.video_concept || "",
                   voiceover_text: data.result.voiceover_text || "",
                   character_sheets: data.result.character_sheets || [],
-                  shots: data.result.shots || []
+                  shots: data.result.shots || [],
+                  // The job this came from: its extractions were reserved when
+                  // it started, so saving it must not count them again.
+                  job_id: jobId,
+                  ...savedExtras(data.result),
                 })
               });
               if (saveResponse.ok) {
@@ -403,6 +581,12 @@ export default function ExtractorPage() {
             </h1>
             <p style={{ fontSize: "1.15rem", maxWidth: "650px", margin: "0 auto", lineHeight: "1.7", color: "var(--text-secondary)" }}>
               Upload any AI-generated video and our AI will extract the exact image prompts, motion prompts, voiceover script, and character descriptions used to create it.
+            </p>
+            <p style={{ fontSize: "0.95rem", margin: "14px auto 0", color: "var(--text-secondary)" }}>
+              Want to know why a video works instead?{" "}
+              <a href="/breakdown" style={{ color: "var(--primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}>
+                Break it down: hook, pacing, structure →
+              </a>
             </p>
             {/* Supported Platforms */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", justifyContent: "center", marginTop: "28px" }}>
@@ -683,9 +867,81 @@ export default function ExtractorPage() {
                       {extractOpts.characterSheets ? "✓ Included" : "✗ Skipped"}
                     </button>
                   </label>
+
+                  <label style={studioFieldStyle}>
+                    <span style={studioLabelStyle}>Frame</span>
+                    <select
+                      value={extractOpts.aspectRatio}
+                      onChange={(e) => setExtractOpt("aspectRatio", e.target.value)}
+                      style={studioSelectStyle}
+                    >
+                      {EXTRACT_RATIOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </label>
                 </div>
 
-                {buildExtractionOptions(extractOpts) && (
+                {/* ── Part of the video ──
+                    Empty means the whole thing. A long video can be taken a
+                    section at a time, which is faster and reads each part
+                    more closely. */}
+                <div style={{ marginTop: "20px" }}>
+                  <span style={studioLabelStyle}>Analyze part of the video</span>
+                  <p className="terminal-text" style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "var(--text-muted)", textShadow: "none" }}>
+                    Long videos count as one extraction per 10 minutes analysed, so a section of a long video uses fewer.
+                  </p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "16px", marginTop: "6px" }}>
+                    <label style={studioFieldStyle}>
+                      <span style={{ ...studioLabelStyle, fontSize: "0.7rem" }}>From</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="0:00 (start)"
+                        value={extractOpts.sectionStart}
+                        onChange={(e) => setExtractOpt("sectionStart", e.target.value)}
+                        style={{ ...studioSelectStyle, cursor: "text" }}
+                        aria-invalid={Number.isNaN(parseClock(extractOpts.sectionStart))}
+                      />
+                    </label>
+                    <label style={studioFieldStyle}>
+                      <span style={{ ...studioLabelStyle, fontSize: "0.7rem" }}>To</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="end of video"
+                        value={extractOpts.sectionEnd}
+                        onChange={(e) => setExtractOpt("sectionEnd", e.target.value)}
+                        style={{ ...studioSelectStyle, cursor: "text" }}
+                        aria-invalid={Number.isNaN(parseClock(extractOpts.sectionEnd))}
+                      />
+                    </label>
+                  </div>
+                  {sectionProblem(extractOpts) && (
+                    <p role="alert" className="terminal-text" style={{ margin: "8px 0 0", fontSize: "0.85rem", color: "var(--accent)", textShadow: "none" }}>
+                      {sectionProblem(extractOpts)}
+                    </p>
+                  )}
+                </div>
+
+                {/* ── Creative direction ──
+                    A brief, not a prompt: it changes what the prompts
+                    describe while the shot structure, timing and camera work
+                    stay the source's. */}
+                <label style={{ ...studioFieldStyle, marginTop: "20px" }}>
+                  <span style={studioLabelStyle}>Creative direction (optional)</span>
+                  <textarea
+                    value={extractOpts.creativeDirection}
+                    maxLength={MAX_DIRECTION_CHARS}
+                    rows={3}
+                    placeholder='Remix it instead of copying it, e.g. "same story, set in Tokyo at night" or "replace the man with a friendly robot".'
+                    onChange={(e) => setExtractOpt("creativeDirection", e.target.value)}
+                    style={{ ...studioSelectStyle, height: "auto", minHeight: "88px", padding: "12px", cursor: "text", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+                  />
+                  <span style={{ alignSelf: "flex-end", fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                    {extractOpts.creativeDirection.length}/{MAX_DIRECTION_CHARS}
+                  </span>
+                </label>
+
+                {JSON.stringify(extractOpts) !== JSON.stringify(DEFAULT_EXTRACT_OPTS) && (
                   <button
                     onClick={() => setExtractOpts(DEFAULT_EXTRACT_OPTS)}
                     className="terminal-text"
@@ -767,7 +1023,7 @@ export default function ExtractorPage() {
                   </span>
                 )}
               </div>
-              <button className="cyber-btn" style={{ padding: "12px 24px" }} onClick={() => { setStatus("idle"); setFile(null); setSavedId(null); setIsPublished(false); setStudioSent(false); }}>Extract Another</button>
+              <button className="cyber-btn" style={{ padding: "12px 24px" }} onClick={() => { setStatus("idle"); setFile(null); setSavedId(null); setIsPublished(false); setStudioSent(false); setVersions([]); setRefineLog([]); setJobId(null); }}>Extract Another</button>
             </div>
 
             {/* ── Privacy ──
@@ -811,8 +1067,117 @@ export default function ExtractorPage() {
               <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "20px" }}>
                 <div className="terminal-text" style={{ fontSize: "1.5rem" }}>🎬 Video Concept & Style</div>
               </div>
+              {/* A reading straight from YouTube has no shot frames; its own
+                  cover stands in so the result still shows which video it is. */}
+              {result.cover_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={result.cover_url}
+                  alt="Video cover"
+                  loading="lazy"
+                  style={{ maxWidth: "240px", width: "100%", height: "auto", display: "block", marginBottom: "16px", border: "1px solid rgba(255, 92, 0, 0.4)" }}
+                  onError={(e) => { e.currentTarget.style.display = "none"; }}
+                />
+              )}
               <p className="terminal-text" style={{ fontSize: "1.1rem", color: "var(--text-secondary)", lineHeight: "1.8", textShadow: "none" }}>{result.video_concept}</p>
+              {(result.section || result.aspect_ratio) && (
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "16px" }}>
+                  {result.section && (
+                    <span className="terminal-text" style={{ border: "1px solid rgba(255, 92, 0, 0.4)", padding: "4px 12px", fontSize: "0.8rem", textShadow: "none" }}>
+                      ⏱ Analysed {clock(result.section.start_sec)}–{clock(result.section.end_sec)} of {clock(result.duration_sec)}
+                    </span>
+                  )}
+                  {result.aspect_ratio && (
+                    <span className="terminal-text" style={{ border: "1px solid rgba(255, 92, 0, 0.4)", padding: "4px 12px", fontSize: "0.8rem", textShadow: "none" }}>
+                      ▭ Written for {result.aspect_ratio}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* --- What was cut short ---
+                The engine says when it dropped or repaired anything, so a
+                shorter shot list is never a silent one. */}
+            {result.warnings?.length > 0 && (
+              <div className="cyber-panel" role="status" style={{ marginBottom: "40px", padding: "20px 28px", borderColor: "var(--warning)" }}>
+                <div className="terminal-text" style={{ color: "var(--warning)", fontSize: "0.95rem", marginBottom: "8px", textShadow: "none" }}>⚠ Notes on this extraction</div>
+                <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-secondary)", fontSize: "0.9rem", lineHeight: 1.6 }}>
+                  {result.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {/* --- Refine by chat --- */}
+            {result.shots?.length > 0 && (token || user) && (
+              <RefinePanel
+                result={result}
+                jobId={jobId}
+                token={token || (typeof window !== "undefined" ? localStorage.getItem("access_token") : null)}
+                apiUrl={API_URL}
+                log={refineLog}
+                canUndo={versions.length > 1}
+                onResult={applyRefined}
+                onUndo={undoRefine}
+              />
+            )}
+
+            {/* --- Master prompt ---
+                One prompt for a video like the whole source, as a paragraph
+                to paste and as the JSON fields people edit Veo prompts in. */}
+            {result.master_prompt && (
+              <div className="cyber-panel" style={{ marginBottom: "40px", padding: "0" }}>
+                <div style={{ background: "#000", padding: "20px 32px", borderBottom: "1px solid var(--primary)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                  <h3 className="terminal-text" style={{ margin: 0, fontSize: "1.1rem", textShadow: "none" }}>🎯 Master Prompt</h3>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    {result.master_prompt_json && (
+                      <div role="tablist" style={{ display: "flex", border: "1px solid var(--primary)" }}>
+                        {[["text", "Prompt"], ["json", "JSON"]].map(([v, l]) => (
+                          <button
+                            key={v}
+                            role="tab"
+                            aria-selected={masterView === v}
+                            onClick={() => setMasterView(v)}
+                            className="terminal-text"
+                            style={{
+                              padding: "8px 14px", border: "none", cursor: "pointer", fontFamily: "inherit",
+                              fontSize: "0.85rem", textShadow: "none",
+                              background: masterView === v ? "var(--primary)" : "#000",
+                              color: masterView === v ? "#000" : "var(--primary)",
+                            }}
+                          >
+                            {l}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      className="cyber-btn"
+                      style={{ padding: "8px 16px", fontSize: "0.9rem" }}
+                      onClick={(e) => copyWithFeedback(
+                        e,
+                        masterView === "json" && result.master_prompt_json
+                          ? JSON.stringify(result.master_prompt_json, null, 2)
+                          : result.master_prompt,
+                      )}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                <div style={{ padding: "28px 32px" }}>
+                  {masterView === "json" && result.master_prompt_json ? (
+                    <pre className="terminal-text" style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, color: "var(--text-primary)", whiteSpace: "pre-wrap", wordBreak: "break-word", textShadow: "none" }}>
+                      {JSON.stringify(result.master_prompt_json, null, 2)}
+                    </pre>
+                  ) : (
+                    <p className="terminal-text" style={{ margin: 0, fontSize: "1.05rem", lineHeight: 1.8, color: "var(--text-primary)", textShadow: "none" }}>
+                      {result.master_prompt}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* --- Teleprompter Voiceover --- */}
             {result.voiceover_text && (
@@ -901,11 +1266,15 @@ export default function ExtractorPage() {
                         <div className="cyber-panel" style={{ flex: 1, padding: "32px" }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
                             <h4 style={{ margin: 0, fontSize: "1.3rem", color: "white", fontWeight: 700 }}>Scene {shot.shot_id}</h4>
-                            <span className="terminal-text" style={{ background: "rgba(255, 92, 0, 0.1)", border: "1px solid var(--primary)", padding: "6px 16px", textShadow: "none" }}>
-                              {shot.time_range}
-                            </span>
+                            {shot.time_range && (
+                              <span className="terminal-text" style={{ background: "rgba(255, 92, 0, 0.1)", border: "1px solid var(--primary)", padding: "6px 16px", textShadow: "none" }}>
+                                {shot.time_range}
+                              </span>
+                            )}
                           </div>
-                          
+
+                          <ShotDetails shot={shot} />
+
                           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
                             {/* Image Prompt */}
                             <div>
@@ -967,6 +1336,11 @@ export default function ExtractorPage() {
                   <p className="terminal-text" style={{ opacity: 0.5, padding: "20px", background: "rgba(255, 92, 0,0.05)", textShadow: "none" }}>No scene data found in this video.</p>
                 )}
               </div>
+            )}
+
+            {/* --- Downloads --- */}
+            {result.shots?.length > 0 && (
+              <DownloadPanel result={result} sourceName={mode === "upload" ? file?.name : videoUrl} />
             )}
 
             {/* --- Export for AutoFlow --- */}

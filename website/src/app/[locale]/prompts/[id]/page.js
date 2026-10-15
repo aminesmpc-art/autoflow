@@ -106,6 +106,18 @@ export default async function PromptDetailPage({ params }) {
               {extraction.video_concept}
             </p>
           </div>
+
+          {extraction.master_prompt && (
+            <div style={{ marginTop: "24px", background: "rgba(255, 92, 0, 0.05)", padding: "24px", borderRadius: "16px", border: "1px solid rgba(255, 92, 0, 0.15)", position: "relative" }}>
+              <h3 style={{ fontSize: "1rem", color: "white", marginBottom: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "1.2rem" }}>🎯</span> Master Prompt
+              </h3>
+              <p style={{ fontSize: "1.05rem", color: "rgba(255,255,255,0.9)", lineHeight: "1.7", margin: 0, paddingRight: "70px" }}>
+                {extraction.master_prompt}
+              </p>
+              <CopyButton text={extraction.master_prompt} style={{ position: "absolute", top: "20px", right: "20px" }} />
+            </div>
+          )}
         </div>
 
         <div style={{ display: "grid", gap: "32px", gridTemplateColumns: "minmax(0, 1fr)" }}>
@@ -122,8 +134,27 @@ export default async function PromptDetailPage({ params }) {
                   <div key={i} className="card-glass" style={{ padding: "24px", borderRadius: "16px", borderLeft: "4px solid var(--primary)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
                       <span style={{ fontSize: "1.2rem", fontWeight: "bold", color: "white" }}>Scene {shot.shot_id}</span>
-                      {shot.timestamp && <span style={{ fontSize: "0.85rem", color: "var(--text-muted)", background: "rgba(255,255,255,0.05)", padding: "2px 8px", borderRadius: "4px" }}>{shot.timestamp}</span>}
+                      {(shot.time_range || shot.timestamp) && <span style={{ fontSize: "0.85rem", color: "var(--text-muted)", background: "rgba(255,255,255,0.05)", padding: "2px 8px", borderRadius: "4px" }}>{shot.time_range || shot.timestamp}</span>}
                     </div>
+
+                    {(shot.thumbnail_url || shot.camera) && (
+                      <div style={{ display: "flex", gap: "16px", alignItems: "flex-start", flexWrap: "wrap", marginBottom: "16px" }}>
+                        {shot.thumbnail_url && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={shot.thumbnail_url}
+                            alt={`Frame from scene ${shot.shot_id}`}
+                            loading="lazy"
+                            style={{ maxWidth: "200px", maxHeight: "200px", width: "auto", height: "auto", borderRadius: "10px", display: "block" }}
+                          />
+                        )}
+                        {shot.camera && (
+                          <div style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                            🎥 {[shot.camera.shot_size, shot.camera.lens, shot.camera.movement].filter(Boolean).join(" · ")}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {shot.image_prompt && (
                       <div style={{ marginBottom: "16px" }}>

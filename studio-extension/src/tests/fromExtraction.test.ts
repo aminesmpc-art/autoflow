@@ -55,6 +55,66 @@ describe('the shape it builds', () => {
     expect(byId(plan!.steps, 'shot2_still').inputs).toEqual(['cast1', 'cast2']);
   });
 
+  describe('when the extraction names who is in each shot', () => {
+    /* The upgraded Extractor lists the characters visible in every shot. A
+       landscape handed a face, or a close-up handed the whole cast, is a
+       generator being told to fit people into a frame that has none. */
+    const cast = {
+      character_sheets: [
+        { character_name: 'Maya', prompt: prompt('sheet one') },
+        { character_name: 'Sam', prompt: prompt('sheet two') },
+      ],
+    };
+    const shots = (who: Array<string[] | undefined>) => who.map((characters, i) => ({
+      shot_id: i + 1,
+      image_prompt: prompt(`shot ${i + 1} still`),
+      video_prompt: prompt(`shot ${i + 1} motion`),
+      ...(characters ? { characters } : {}),
+    }));
+
+    it('wires each still to the characters in it and no others', () => {
+      const { plan } = extractionToPlan(extraction({ ...cast, shots: shots([['Sam'], ['maya ', 'SAM']]) }));
+      expect(byId(plan!.steps, 'shot1_still').inputs).toEqual(['cast2']);
+      expect(byId(plan!.steps, 'shot2_still').inputs).toEqual(['cast1', 'cast2']);
+    });
+
+    it('wires nobody into a shot with nobody in it', () => {
+      const { plan } = extractionToPlan(extraction({ ...cast, shots: shots([[]]) }));
+      expect(byId(plan!.steps, 'shot1_still').inputs).toBeUndefined();
+    });
+
+    it('ignores a name that has no sheet', () => {
+      const { plan } = extractionToPlan(extraction({ ...cast, shots: shots([['Waiter', 'Maya']]) }));
+      expect(byId(plan!.steps, 'shot1_still').inputs).toEqual(['cast1']);
+    });
+
+    it('gives a clip with no still only its own shot\'s cast', () => {
+      const { plan } = extractionToPlan(
+        extraction({ ...cast, shots: shots([['Maya'], []]) }),
+        { mode: 'clips' },
+      );
+      expect(byId(plan!.steps, 'shot1_clip').inputs).toEqual(['cast1']);
+      expect(byId(plan!.steps, 'shot2_clip').inputs).toBeUndefined();
+    });
+
+    it('says so in the description', () => {
+      const { plan } = extractionToPlan(extraction({ ...cast, shots: shots([['Maya']]) }));
+      expect(plan!.description).toMatch(/2 characters wired into the shots they appear in/);
+    });
+
+    it('still compiles to a canvas with the narrower wiring', () => {
+      const { plan } = extractionToPlan(extraction({ ...cast, shots: shots([['Sam'], []]) }));
+      const { template, problems } = compilePlan(plan!);
+      expect(problems).toEqual([]);
+      // Each still also has its own prompt node feeding it; only the cast matters here.
+      const into = (id: string) => template!.edges
+        .filter((e: any) => e.target === id && e.source.startsWith('cast'))
+        .map((e: any) => e.source);
+      expect(into('shot1_still')).toEqual(['cast2']);
+      expect(into('shot2_still')).toEqual([]);
+    });
+  });
+
   it('gives each clip its OWN still and nothing else', () => {
     /* A clip generated from a still it did not come from is a continuity break
        with no explanation. */

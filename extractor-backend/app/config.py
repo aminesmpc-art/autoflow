@@ -26,6 +26,18 @@ class Settings(BaseSettings):
     clip_location: str = "global"
     # Overridable without a deploy, for pinning to an older model in a hurry.
     clip_model: str = ""
+    # The same, for the prompt extractor. Empty follows clip_model, so one
+    # variable moves both unless the extractor needs pinning on its own.
+    extract_model: str = ""
+
+    # Shot thumbnails. They outlive the job — a saved extraction shows them
+    # for as long as it exists — so they get their own folder, and their own
+    # bucket if this one is ever given a lifecycle rule that empties it.
+    # Empty means gcs_bucket_name.
+    thumbs_bucket_name: str = ""
+    # The address thumbnails are served from, as the outside world sees this
+    # service. Empty derives it from each request's forwarded headers.
+    public_url: str = ""
 
     # Stripe
     stripe_secret_key: str = ""
@@ -52,6 +64,12 @@ class Settings(BaseSettings):
     job_state_ttl_sec: int = 24 * 60 * 60
     clip_job_stale_sec: int = 30 * 60
     max_concurrent_clip_jobs: int = 2
+    max_concurrent_extract_jobs: int = 3
+
+    # Explicit download-only imports; no AI work or generation quota.
+    social_imports_enabled: bool = False
+    social_imports_per_hour: int = 10
+    max_concurrent_social_imports: int = 2
 
     # Ceilings on /api/clip/ask, which charges no quota of its own.
     # Far above legitimate use: the heaviest run the website produces is 46
@@ -59,6 +77,14 @@ class Settings(BaseSettings):
     # app/rate_limit.py for why this is a rate limit and not a quota.
     clip_ask_per_minute: int = 60
     clip_ask_per_day: int = 1000
+
+    # Refining an extraction by chat. Edits charge no quota, so they are
+    # rate-limited instead; and the video is kept this long after an
+    # extraction so an edit can look at it again — the user chose one hour,
+    # the smallest footprint, over a day.
+    refine_per_minute: int = 10
+    refine_per_day: int = 200
+    refine_video_ttl_sec: int = 60 * 60
 
     # Limits
     max_video_size_mb: int = 500
