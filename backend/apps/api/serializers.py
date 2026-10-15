@@ -86,6 +86,8 @@ class SavedExtractionSerializer(serializers.ModelSerializer):
             "master_prompt",
             "master_prompt_json",
             "details",
+            "kind",
+            "breakdown",
             "is_public",
             "created_at",
         ]

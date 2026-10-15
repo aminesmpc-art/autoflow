@@ -1031,7 +1031,8 @@ class PublicExtractionsView(APIView):
         # sitemap, so an unfiltered queryset published — and had Google index —
         # every saved extraction, including private uploads.
         extractions = (
-            SavedExtraction.objects.filter(is_public=True)
+            # Only prompt extractions: the gallery is a prompt library.
+            SavedExtraction.objects.filter(is_public=True, kind="prompts")
             .order_by("-created_at")[:50]
         )
         serializer = SavedExtractionSerializer(extractions, many=True)
@@ -1047,7 +1048,7 @@ class PublicExtractionDetailView(APIView):
         from django.shortcuts import get_object_or_404
         
         # Unfiltered, this served any extraction by id to anyone who guessed one.
-        extraction = get_object_or_404(SavedExtraction, pk=pk, is_public=True)
+        extraction = get_object_or_404(SavedExtraction, pk=pk, is_public=True, kind="prompts")
         serializer = SavedExtractionSerializer(extraction)
         return Response(serializer.data)
 

@@ -43,6 +43,7 @@ from pydantic import BaseModel
 
 from app.api.clip import _open_source, clip_model, model_client
 from app.auth import authenticated_user_id, security, verify_jwt
+from app.breakdown import break_down_video, pacing_from_cuts
 from app.config import get_settings
 from app.cuts import detect_cuts_quietly
 from app.extraction import (
@@ -76,6 +77,10 @@ job_gate = asyncio.Semaphore(settings.max_concurrent_extract_jobs)
 
 # How long a finished reading waits for cut detection to catch up.
 CUTS_GRACE_SEC = 20.0
+# A breakdown's pacing needs every cut, so it waits longer.
+BREAKDOWN_CUTS_GRACE_SEC = 120.0
+
+MODES = {"prompts", "breakdown"}
 
 
 def extract_model() -> str:
@@ -96,6 +101,8 @@ class VideoJob(BaseModel):
 class AnalyzeUrlRequest(BaseModel):
     url: str
     options: Optional[ExtractionOptions] = None
+    # "prompts" (the extractor) or "breakdown" (why it works).
+    mode: str = "prompts"
 
 
 class JobStatusResponse(BaseModel):
@@ -160,6 +167,15 @@ def _check_length(probe: Optional[Probe]) -> Probe:
             detail=f"That video is longer than the {settings.max_video_duration_sec // 60}-minute limit.",
         )
     return probe
+
+
+def _check_mode(mode: Optional[str]) -> str:
+    mode = (mode or "prompts").strip().lower()
+    if mode not in MODES:
+        # Unlike an unknown option, an unknown mode cannot fall back: a
+        # breakdown and an extraction are different products.
+        raise HTTPException(status_code=400, detail=f"Unknown mode. Use one of: {', '.join(sorted(MODES))}.")
+    return mode
 
 
 def _parse_options(raw: Optional[str]) -> Optional[ExtractionOptions]:
@@ -237,8 +253,10 @@ async def process_video(
     probe: Optional[Probe] = None,
     owner_id: str = "",
     base_url: str = "",
+    mode: str = "prompts",
 ) -> None:
-    """Watch the video and write the prompts. Always removes the file."""
+    """Watch the video and write the prompts — or, in "breakdown" mode, say
+    why it works. Always removes the file."""
 
     def say(line: str) -> None:
         jobs.update_job(job_id, step=line)
@@ -273,18 +291,46 @@ async def process_video(
             client, source, cleanup, mime = await asyncio.to_thread(
                 _open_source, video_path, say_upload, "videos"
             )
-            result = await extract_video(
-                client,
-                source,
-                duration_sec=probe.duration_sec,
-                section=section,
-                options=options,
-                model=extract_model(),
-                source_mime_type=mime,
-                frame=describe_frame(probe.width, probe.height),
-                source_ratio=nearest_ratio(probe.width, probe.height),
-                on_progress=say,
-            )
+            if mode == "breakdown":
+                result = await break_down_video(
+                    client,
+                    source,
+                    duration_sec=probe.duration_sec,
+                    section=section,
+                    model=extract_model(),
+                    source_mime_type=mime,
+                    frame=describe_frame(probe.width, probe.height),
+                    on_progress=say,
+                )
+            else:
+                result = await extract_video(
+                    client,
+                    source,
+                    duration_sec=probe.duration_sec,
+                    section=section,
+                    options=options,
+                    model=extract_model(),
+                    source_mime_type=mime,
+                    frame=describe_frame(probe.width, probe.height),
+                    source_ratio=nearest_ratio(probe.width, probe.height),
+                    on_progress=say,
+                )
+
+        if mode == "breakdown":
+            say("Measuring the pacing...")
+            # Pacing is the one exact number in a breakdown, so it waits for
+            # the whole decode — and is left out, with a note, rather than
+            # computed from part of the video.
+            try:
+                cuts = await asyncio.wait_for(asyncio.shield(cuts_task), timeout=BREAKDOWN_CUTS_GRACE_SEC)
+                result.pacing = pacing_from_cuts(cuts, *section)
+            except asyncio.TimeoutError:
+                stop_cuts.set()
+                await cuts_task
+                result.warnings.append("Pacing was not measured: the video took too long to decode.")
+            cuts_task = None
+            jobs.update_job(job_id, status="completed", step="", result=result.model_dump())
+            return
 
         say("Lining shots up with the cuts...")
         try:
@@ -494,6 +540,11 @@ def friendly_download_error(url: str, err_msg: str) -> str:
     return err_msg
 
 
+YOUTUBE_BREAKDOWN_NOTE = (
+    "YouTube would not let the server download this video, so the AI watched it on "
+    "YouTube directly. Pacing is measured from the file itself, so this breakdown has "
+    "none; upload the video to get it."
+)
 YOUTUBE_NOTE = (
     "YouTube would not let the server download this video, so the AI watched it on "
     "YouTube directly. Shot thumbnails and cut-exact timings need the file itself, so "
@@ -507,6 +558,7 @@ async def process_youtube_link(
     options: Optional[ExtractionOptions],
     *,
     temp_dir: str,
+    mode: str = "prompts",
 ) -> bool:
     """
     Extract from a YouTube link the model reads itself.
@@ -540,19 +592,30 @@ async def process_youtube_link(
     try:
         async with job_gate:
             say("AI is watching the video on YouTube...")
-            result = await extract_video(
-                model_client(),
-                watch_url(video_id),
-                duration_sec=details.duration_sec,
-                section=section,
-                options=options,
-                model=extract_model(),
-                source_mime_type="video/mp4",
-                on_progress=say,
-            )
+            if mode == "breakdown":
+                result = await break_down_video(
+                    model_client(),
+                    watch_url(video_id),
+                    duration_sec=details.duration_sec,
+                    section=section,
+                    model=extract_model(),
+                    source_mime_type="video/mp4",
+                    on_progress=say,
+                )
+            else:
+                result = await extract_video(
+                    model_client(),
+                    watch_url(video_id),
+                    duration_sec=details.duration_sec,
+                    section=section,
+                    options=options,
+                    model=extract_model(),
+                    source_mime_type="video/mp4",
+                    on_progress=say,
+                )
         result.read_from = "youtube"
         result.cover_url = cover_url(video_id)
-        result.warnings.append(YOUTUBE_NOTE)
+        result.warnings.append(YOUTUBE_BREAKDOWN_NOTE if mode == "breakdown" else YOUTUBE_NOTE)
         jobs.update_job(job_id, status="completed", step="", result=result.model_dump())
     except HTTPException as exc:
         _fail(job_id, str(exc.detail))
@@ -568,6 +631,7 @@ async def process_video_url(
     *,
     owner_id: str = "",
     base_url: str = "",
+    mode: str = "prompts",
 ) -> None:
     """Download a linked video, then analyse it like an upload."""
     temp_dir = tempfile.mkdtemp()
@@ -585,7 +649,7 @@ async def process_video_url(
             # the person hear about the download.
             video_id = youtube_id(url)
             if video_id and await process_youtube_link(
-                job_id, video_id, options, temp_dir=temp_dir
+                job_id, video_id, options, temp_dir=temp_dir, mode=mode
             ):
                 return
             _fail(job_id, friendly_download_error(url, str(exc)))
@@ -599,7 +663,8 @@ async def process_video_url(
             return
 
         await process_video(
-            job_id, video_path, options, probe=probe, owner_id=owner_id, base_url=base_url
+            job_id, video_path, options,
+            probe=probe, owner_id=owner_id, base_url=base_url, mode=mode,
         )
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -658,6 +723,7 @@ async def analyze_video_url(
     """Analyze a video from URL (YouTube, TikTok, etc.). Returns a job ID for polling."""
     await enforce_extraction_limit(f"Bearer {credentials.credentials}")
 
+    mode = _check_mode(body.mode)
     url = body.url.strip()
     if not url.startswith(("http://", "https://")):
         raise HTTPException(
@@ -670,7 +736,7 @@ async def analyze_video_url(
     _new_job(job_id, owner_id)
     background_tasks.add_task(
         process_video_url, job_id, url, body.options,
-        owner_id=owner_id, base_url=public_base(request),
+        owner_id=owner_id, base_url=public_base(request), mode=mode,
     )
 
     return VideoJob(
@@ -688,6 +754,7 @@ async def analyze_video(
     # Multipart can't carry a nested JSON body alongside the file, so options
     # arrive as a JSON string in a form field.
     options: Optional[str] = Form(default=None),
+    mode: Optional[str] = Form(default=None),
     user: dict = Depends(verify_jwt),
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
@@ -696,6 +763,7 @@ async def analyze_video(
     # Before reading the upload — no point accepting 500MB from someone who is
     # over quota.
     await enforce_extraction_limit(f"Bearer {credentials.credentials}")
+    mode = _check_mode(mode)
     parsed_options = _parse_options(options)
 
     content_type = (video.content_type or "").split(";", 1)[0].strip().lower()
@@ -742,7 +810,7 @@ async def analyze_video(
     _new_job(job_id, owner_id)
     background_tasks.add_task(
         process_video, job_id, handle.name, parsed_options,
-        probe=probe, owner_id=owner_id, base_url=public_base(request),
+        probe=probe, owner_id=owner_id, base_url=public_base(request), mode=mode,
     )
 
     return VideoJob(

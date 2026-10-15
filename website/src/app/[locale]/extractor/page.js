@@ -11,6 +11,7 @@ import {
 } from "./studioWorkflow";
 import { studioInstalled, sendToStudio, toBuildOptions } from "./studioBridge";
 import DownloadButtons from "./DownloadButtons";
+import { clock, parseClock, sectionOptions, sectionProblem } from "./timeFields";
 import StoreLink, { STORE_URLS } from "../../StoreLink";
 
 /* The one place the Studio listing is named, shared with every other install
@@ -62,35 +63,6 @@ const DEFAULT_EXTRACT_OPTS = {
   sectionEnd: "",
 };
 
-/** "1:20", "1:02:05" or "95" as seconds. null when empty, NaN when it is neither. */
-function parseClock(text) {
-  const t = String(text || "").trim();
-  if (!t) return null;
-  if (!/^\d+(:\d{1,2}){0,2}(\.\d+)?$/.test(t)) return NaN;
-  return t.split(":").reduce((total, part) => total * 60 + Number(part), 0);
-}
-
-/** Seconds as 1:05, or 1:02:05 past an hour. */
-function clock(seconds) {
-  const s = Math.max(0, Math.round(Number(seconds) || 0));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const rest = String(s % 60).padStart(2, "0");
-  return h ? `${h}:${String(m).padStart(2, "0")}:${rest}` : `${m}:${rest}`;
-}
-
-/* Checked here rather than left to the engine, because the engine treats a
-   time it cannot read as "not given" — and a typo would silently become an
-   analysis of the whole video, charged as one. */
-function sectionProblem(o) {
-  const start = parseClock(o.sectionStart);
-  const end = parseClock(o.sectionEnd);
-  if (Number.isNaN(start)) return "Start time should look like 1:20, or stay empty for the beginning.";
-  if (Number.isNaN(end)) return "End time should look like 2:45, or stay empty for the end.";
-  if (start != null && end != null && end <= start) return "The end time has to be after the start time.";
-  return null;
-}
-
 /** Send only what the user actually changed; null means "engine defaults". */
 function buildExtractionOptions(o) {
   const body = {};
@@ -101,10 +73,7 @@ function buildExtractionOptions(o) {
   if (o.aspectRatio !== "source") body.aspect_ratio = o.aspectRatio;
   const direction = o.creativeDirection.trim();
   if (direction) body.creative_direction = direction;
-  const start = parseClock(o.sectionStart);
-  const end = parseClock(o.sectionEnd);
-  if (Number.isFinite(start) && start > 0) body.start_sec = start;
-  if (Number.isFinite(end)) body.end_sec = end;
+  Object.assign(body, sectionOptions(o));
   return Object.keys(body).length ? body : null;
 }
 
@@ -570,6 +539,12 @@ export default function ExtractorPage() {
             </h1>
             <p style={{ fontSize: "1.15rem", maxWidth: "650px", margin: "0 auto", lineHeight: "1.7", color: "var(--text-secondary)" }}>
               Upload any AI-generated video and our AI will extract the exact image prompts, motion prompts, voiceover script, and character descriptions used to create it.
+            </p>
+            <p style={{ fontSize: "0.95rem", margin: "14px auto 0", color: "var(--text-secondary)" }}>
+              Want to know why a video works instead?{" "}
+              <a href="/breakdown" style={{ color: "var(--primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}>
+                Break it down: hook, pacing, structure →
+              </a>
             </p>
             {/* Supported Platforms */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", justifyContent: "center", marginTop: "28px" }}>

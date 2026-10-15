@@ -24,6 +24,14 @@ class SavedExtraction(models.Model):
     # extractor's output does not need a migration to be kept.
     details = models.JSONField(default=dict, blank=True, help_text="Other extraction metadata.")
 
+    # What kind of analysis this is. "prompts" is the extractor; "breakdown"
+    # is "why it works", which writes no prompts and keeps its whole answer in
+    # `breakdown`. Both are saved here so both appear in history and count
+    # toward the same daily allowance.
+    KIND_CHOICES = [("prompts", "Prompts"), ("breakdown", "Breakdown")]
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default="prompts", db_index=True)
+    breakdown = models.JSONField(null=True, blank=True, help_text="A 'why it works' breakdown.")
+
     # Extractions are saved automatically the moment an analysis finishes, so
     # publishing has to be opt-in: the public gallery and the sitemap read this
     # flag, and before it existed every saved extraction — including the

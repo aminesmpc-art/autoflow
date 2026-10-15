@@ -241,3 +241,59 @@ class ExtractionShapeTests(APITestCase):
         self.assertEqual(res.data["master_prompt"], "")
         self.assertIsNone(res.data["master_prompt_json"])
         self.assertEqual(res.data["details"], {})
+
+
+class BreakdownKindTests(APITestCase):
+    """A "why it works" breakdown is saved as its own kind of extraction."""
+
+    def setUp(self):
+        self.user = make_user("kinds@example.com", is_pro=True)
+        self.client.force_authenticate(self.user)
+
+    def save_breakdown(self):
+        return self.client.post(
+            reverse("extractions-list"),
+            {
+                "video_name": "ad.mp4",
+                "video_concept": "A UGC ad for running shoes.",
+                "voiceover_text": "",
+                "character_sheets": [],
+                "shots": [],
+                "kind": "breakdown",
+                "breakdown": {"hook": {"strength": 8}, "beats": [], "pacing": {"cut_count": 12}},
+            },
+            format="json",
+        )
+
+    def test_a_breakdown_round_trips(self):
+        res = self.save_breakdown()
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        saved = self.client.get(reverse("extractions-list")).data[0]
+        self.assertEqual(saved["kind"], "breakdown")
+        self.assertEqual(saved["breakdown"]["pacing"]["cut_count"], 12)
+
+    def test_prompts_is_the_default_kind(self):
+        self.assertEqual(make_extraction(self.user).kind, "prompts")
+
+    def test_an_unknown_kind_is_refused(self):
+        res = self.client.post(
+            reverse("extractions-list"),
+            {"video_name": "x", "video_concept": "", "voiceover_text": "", "character_sheets": [],
+             "shots": [], "kind": "poetry"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_a_breakdown_counts_toward_the_daily_allowance(self):
+        before = self.client.get(reverse("extractions-check-limit")).data["used"]
+        self.save_breakdown()
+        after = self.client.get(reverse("extractions-check-limit")).data["used"]
+        self.assertEqual(after, before + 1)
+
+    def test_the_public_gallery_never_lists_a_breakdown(self):
+        self.save_breakdown()
+        SavedExtraction.objects.filter(kind="breakdown").update(is_public=True)
+        pk = SavedExtraction.objects.get(kind="breakdown").pk
+        self.assertEqual(self.client.get(reverse("extractions-public")).data, [])
+        res = self.client.get(reverse("extractions-public-detail", args=[pk]))
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
