@@ -446,13 +446,16 @@ Split the footage at every cut: each change of camera angle, framing or scene st
 - start, end: where the shot begins and ends, as MM:SS.s, read off the video itself. Do not estimate them from how much happens and do not space them evenly.
 - characters: the name of everyone visible in the shot, written exactly as in your characters list. Empty when nobody is on screen.
 - shot_size, lens, camera_movement: the framing, the apparent focal length and depth of field, and how the camera moves.
-- dialogue: every word spoken during the shot, as NAME: "line". Empty when nothing is said.
+- dialogue: every word spoken during the shot, as NAME: "line", each line given to the person who says it (see SPEAKERS). Empty when nothing is said.
 - sound: the ambience, sound effects and music heard during the shot. Empty when silent.
 - image_prompt: a production-ready prompt for the shot's key frame — subject and wardrobe, pose and expression, setting, composition, lighting, lens, colour palette, texture and detail. Make it self-contained: describe each character's look in it, because a generator reads one prompt at a time and has never seen the others.
 - video_prompt: a prompt for the motion — what moves and how, with its weight and physics, the camera move, the pacing, and for generators that make sound, the dialogue in quotes and the sounds.
 
 CHARACTERS
 Every person, creature or mascot who appears more than in passing. Give each a short name, and describe their appearance: face, age, hair, eyes, build, wardrobe, accessories. Use exactly the same name everywhere they appear.
+
+SPEAKERS
+Give each line to the person who says it: the one on screen whose mouth moves with the words, or the voice that answers the line before. A name inside a line is the person being spoken TO — "Yo Benny" is said to Benny by someone else — so nobody addresses themselves by their own name. Check every line against this before answering, and keep each name attached to the same look in every shot and sheet.
 
 NAMES
 Name a person only with what this video itself says or shows, and only that much: someone called "Jimmy" is "Jimmy". Never add a surname, a channel or stage name, a nickname or a job you know from anywhere else, and never name anyone because of how they look or who they resemble. Everyone the video does not name gets a plain descriptive name such as "Woman in red coat". This holds everywhere you write a name or describe a person — characters, sheets, shots, prompts, dialogue speakers and the master prompt: describe people by how they look, never by who they are.
@@ -912,6 +915,39 @@ def canonical(names: list[str], table: dict[str, str]) -> list[str]:
     return out
 
 
+# A dialogue segment as the prompt asks for it: NAME: "line".
+_LINE = re.compile(r'([^:"\n]{1,40}?):\s*["\u201c]([^"\u201d]*)["\u201d]')
+
+
+def _addresses(name: str, text: str) -> bool:
+    """Whether `text` speaks TO `name` — "Yo Benny", "Benny, come here",
+    "thanks, Benny" — rather than about them or as them ("I'm Benny")."""
+    n = re.escape(name)
+    return bool(
+        re.search(rf"\b(?:yo|hey|hi|oi|ok|okay|look|listen|come on|bro)\s*,?\s+{n}\b", text, re.I)
+        or re.search(rf"^\s*{n}\s*[,!?]", text, re.I)
+        or re.search(rf",\s*{n}\s*[.!?]?\s*$", text, re.I)
+    )
+
+
+def self_addressed(shots: list[Shot]) -> list[int]:
+    """Shots with a line given to the very person it speaks to.
+
+    The live run that prompted this gave "Yo Benny, this stuff hitting" to
+    Benny: the two boys' names were swapped. A person does not call
+    themselves by name, so a line that does is a line on the wrong speaker —
+    and usually a sign that the names are swapped everywhere.
+    """
+    found = []
+    for shot in shots:
+        for speaker, text in _LINE.findall(shot.dialogue or ""):
+            speaker = speaker.strip()
+            if speaker and _addresses(speaker, text):
+                found.append(shot.shot_id)
+                break
+    return found
+
+
 def _sheets(drafts: list[SheetDraft]) -> list[CharacterSheet]:
     out: list[CharacterSheet] = []
     seen: set[str] = set()
@@ -1223,6 +1259,15 @@ async def extract_video(
                 f"The shots cover {_clock(covered)} of the {_clock(span)} analysed, so "
                 f"some of the video may have no shot."
             )
+
+    flagged = self_addressed(shots)
+    if flagged:
+        listed = ", ".join(str(n) for n in flagged[:6])
+        warnings.append(
+            f"In shot{'s' if len(flagged) != 1 else ''} {listed} a character is given a line that "
+            f"calls them by their own name, so the speakers — and possibly the names — may be "
+            f"swapped. Check who says what before you use the character names."
+        )
 
     say(f"{len(shots)} shots written")
 
