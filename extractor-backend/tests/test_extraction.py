@@ -493,3 +493,30 @@ class TestExtractVideo:
             return time.perf_counter() - started
 
         assert run(both()) < 0.55
+
+
+class TestSpeakers:
+    def test_the_prompt_says_who_a_name_belongs_to(self):
+        prompt = build_window_prompt(None, window=(0, 30), duration_sec=30)
+        assert "SPEAKERS" in prompt and "nobody addresses themselves by their own name" in prompt
+
+    @pytest.mark.parametrize("dialogue, flagged", [
+        ('Benny: "Yo Benny, this stuff hitting."', True),           # the live run
+        ('Jax: "Yo Benny, this stuff hitting."', False),
+        ('Benny: "Benny, come here!"', True),
+        ('Benny: "Thanks, Benny."', True),
+        ('Benny: "I\'m Benny and this is my yard."', False),         # an introduction
+        ('Jax: "For what?" Benny: "Get some girls over here?" Jax: "Say less."', False),
+        ('Jax: "Hey Jax"', True),
+        ('', False),
+    ])
+    def test_a_line_that_calls_its_own_speaker_by_name(self, dialogue, flagged):
+        from app.extraction import self_addressed
+
+        shots = [Shot(shot_id=2, dialogue=dialogue)]
+        assert (self_addressed(shots) == [2]) is flagged
+
+    def test_the_result_warns_when_speakers_look_swapped(self):
+        client = fake_client(lambda _w: reading([shot(0, 3.5, who=["Marco"], dialogue='Marco: "Hey Marco, plates up."')]))
+        result = run(extract_video(client, "gs://b/v.mp4", duration_sec=4.0, model="m"))
+        assert any("calls them by their own name" in w for w in result.warnings)
