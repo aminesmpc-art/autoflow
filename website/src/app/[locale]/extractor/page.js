@@ -1,24 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import { useRouter } from "next/navigation";
-import {
-  STUDIO_OPTIONS,
-  DEFAULT_STUDIO_OPTS,
-  buildStudioWorkflow,
-  downloadStudioWorkflow,
-} from "./studioWorkflow";
-import { studioInstalled, sendToStudio, toBuildOptions } from "./studioBridge";
-import DownloadButtons from "./DownloadButtons";
-import { clock, parseClock, sectionOptions, sectionProblem } from "./timeFields";
-import RefinePanel from "./RefinePanel";
+import { parseClock, sectionOptions, sectionProblem } from "./timeFields";
 import { OPEN_KEY, asResult, savedExtras, savedVersion } from "./saved";
-import StoreLink, { STORE_URLS } from "../../StoreLink";
-
-/* The one place the Studio listing is named, shared with every other install
-   button on the site. */
-const STUDIO_STORE_URL = STORE_URLS.studio;
+import UploadBox, { SelectChip, ToggleChip } from "./UploadBox";
+import ProgressView from "./ProgressView";
+import Workspace from "./Workspace";
+import { Icon, displayName } from "./ui";
+import "./extractor.css";
 
 /* Extraction options. Mirrors ExtractionOptions in
    extractor-backend/app/extraction.py — the engine validates and falls back on
@@ -51,6 +42,8 @@ const EXTRACT_RATIOS = [
   ["4:5", "4:5 portrait"],
 ];
 
+const SHOT_COUNTS = [["auto", "Auto"], ...[3, 4, 5, 6, 8, 10, 12, 16, 20].map((n) => [String(n), String(n)])];
+
 /* The engine cuts anything longer, so the box stops at the same place. */
 const MAX_DIRECTION_CHARS = 300;
 
@@ -79,131 +72,141 @@ function buildExtractionOptions(o) {
   return Object.keys(body).length ? body : null;
 }
 
-/** A copy button that says it worked, the way the rest of this page does. */
-function copyWithFeedback(e, text, done = "✓ Copied!") {
-  navigator.clipboard.writeText(text);
-  const button = e.currentTarget;
-  const original = button.innerHTML;
-  button.innerHTML = done;
-  setTimeout(() => { button.innerHTML = original; }, 2000);
+/* A link as typed: "youtube.com/watch?v=…" works as well as the full URL. */
+const LINKISH = /^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i;
+
+function normalizeLink(text) {
+  const t = String(text || "").trim();
+  if (!LINKISH.test(t)) return null;
+  return /^https?:\/\//i.test(t) ? t : `https://${t}`;
 }
 
-/* Field styles for the Studio options grid. The select carries an explicit
-   width and height rather than a flex basis — inside a column flex, a basis
-   resolves against the cross axis and silently becomes the height. */
-const studioFieldStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "6px",
-  minWidth: 0,
-};
-
-const studioLabelStyle = {
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "1px",
-  color: "var(--text-secondary)",
-  fontFamily: "inherit",
-};
-
-const studioSelectStyle = {
-  width: "100%",
-  height: "44px",
-  padding: "0 12px",
-  background: "#000",
-  color: "white",
-  border: "1px solid rgba(255, 92, 0, 0.4)",
-  fontSize: "0.9rem",
-  cursor: "pointer",
-};
-
-const chipStyle = {
-  border: "1px solid rgba(255, 92, 0, 0.4)",
-  padding: "2px 10px",
-  fontSize: "0.8rem",
-  color: "var(--text-primary)",
-};
-
-/** What the engine knows about a shot besides its prompts. Every part is
-    optional: an extraction saved before the upgrade has none of them, and
-    this then renders nothing at all. */
-function ShotDetails({ shot }) {
-  const camera = [shot.camera?.shot_size, shot.camera?.lens, shot.camera?.movement]
-    .filter(Boolean)
-    .join(" · ");
-  const cast = Array.isArray(shot.characters) ? shot.characters : [];
-  if (!shot.thumbnail_url && !camera && !cast.length && !shot.dialogue && !shot.sound) return null;
+/** The options as chips under the box. Section and brief need typing, so
+    they open a small drawer instead of a list. */
+function ExtractOptions({ opts, setOpt, reset, drawer, setDrawer }) {
+  const problem = sectionProblem(opts);
+  const hasSection = !!(opts.sectionStart.trim() || opts.sectionEnd.trim());
+  const brief = opts.creativeDirection.trim();
+  const changed = JSON.stringify(opts) !== JSON.stringify(DEFAULT_EXTRACT_OPTS);
+  const toggle = (name) => setDrawer(drawer === name ? null : name);
 
   return (
-    <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginBottom: "24px", alignItems: "flex-start" }}>
-      {shot.thumbnail_url && (
-        // A plain img: the frame comes from the extractor's own host, and a
-        // broken one hides itself rather than leaving an empty box.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={shot.thumbnail_url}
-          alt={`Frame from shot ${shot.shot_id}`}
-          loading="lazy"
-          style={{ maxWidth: "200px", maxHeight: "200px", width: "auto", height: "auto", display: "block", border: "1px solid rgba(255, 92, 0, 0.4)", background: "#000" }}
-          onError={(e) => { e.currentTarget.style.display = "none"; }}
+    <>
+      <div className="xf-opts" aria-label="Extraction options">
+        <SelectChip name="Shots" value={opts.shotCount} options={SHOT_COUNTS} fallback="auto" onChange={(v) => setOpt("shotCount", v)} />
+        <SelectChip name="Style" value={opts.style} options={EXTRACT_STYLES} fallback="faithful" onChange={(v) => setOpt("style", v)} />
+        <SelectChip name="Frame" value={opts.aspectRatio} options={EXTRACT_RATIOS} fallback="source" onChange={(v) => setOpt("aspectRatio", v)} />
+        <SelectChip name="Language" value={opts.language} options={EXTRACT_LANGUAGES} fallback="auto" onChange={(v) => setOpt("language", v)} />
+        <ToggleChip
+          name="Character sheets"
+          value={opts.characterSheets ? "On" : "Off"}
+          on={!opts.characterSheets}
+          pressed={opts.characterSheets}
+          onClick={() => setOpt("characterSheets", !opts.characterSheets)}
         />
-      )}
-      <div style={{ flex: "1 1 220px", minWidth: 0, display: "flex", flexDirection: "column", gap: "10px", fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-        {cast.length > 0 && (
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            {cast.map((name) => <span key={name} style={chipStyle}>👤 {name}</span>)}
-          </div>
+        <ToggleChip
+          name="Part"
+          icon="clock"
+          value={hasSection ? `${opts.sectionStart.trim() || "0:00"}–${opts.sectionEnd.trim() || "end"}` : "Whole video"}
+          on={hasSection || drawer === "section"}
+          expanded={drawer === "section"}
+          onClick={() => toggle("section")}
+        />
+        <ToggleChip
+          name="Brief"
+          icon="sparkles"
+          value={brief ? "Added" : "None"}
+          on={!!brief || drawer === "brief"}
+          expanded={drawer === "brief"}
+          onClick={() => toggle("brief")}
+        />
+        {changed && (
+          <button type="button" className="xf-link xf-link-muted xf-chip-reset" onClick={() => { reset(); setDrawer(null); }}>
+            Reset
+          </button>
         )}
-        {camera && <div>🎥 {camera}</div>}
-        {shot.dialogue && <div style={{ color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>💬 {shot.dialogue}</div>}
-        {shot.sound && <div>🔊 {shot.sound}</div>}
       </div>
-    </div>
-  );
-}
 
-/** The downloads, in this page's panel style. */
-function DownloadPanel({ result, sourceName }) {
-  return (
-    <div className="cyber-panel" style={{ marginTop: "60px", padding: "32px 48px" }}>
-      <h3 style={{ margin: "0 0 8px", fontSize: "1.4rem", color: "white", fontWeight: 700 }}>⬇ Download</h3>
-      <p className="terminal-text" style={{ margin: "0 0 20px", fontSize: "0.95rem", color: "var(--text-secondary)", textShadow: "none" }}>
-        Take this breakdown into other tools: a storyboard to share, a shot list for a spreadsheet,
-        subtitles from the dialogue, or a cut list your editor opens.
-      </p>
-      <DownloadButtons
-        result={result}
-        sourceName={sourceName}
-        buttonClassName="cyber-btn"
-        buttonStyle={{ padding: "12px 20px", fontSize: "0.9rem", background: "#000" }}
-      />
-    </div>
+      {drawer === "section" && (
+        <div className="xf-drawer">
+          <div className="xf-drawer-head">
+            <strong>Analyse part of the video</strong>
+            <span>Empty means the whole video</span>
+          </div>
+          <div className="xf-fields xf-fields-2">
+            <label className="xf-field">
+              <span className="xf-label">From</span>
+              <input
+                className="xf-input xf-tc"
+                type="text"
+                inputMode="numeric"
+                placeholder="0:00"
+                value={opts.sectionStart}
+                onChange={(e) => setOpt("sectionStart", e.target.value)}
+                aria-invalid={Number.isNaN(parseClock(opts.sectionStart))}
+              />
+            </label>
+            <label className="xf-field">
+              <span className="xf-label">To</span>
+              <input
+                className="xf-input xf-tc"
+                type="text"
+                inputMode="numeric"
+                placeholder="end"
+                value={opts.sectionEnd}
+                onChange={(e) => setOpt("sectionEnd", e.target.value)}
+                aria-invalid={Number.isNaN(parseClock(opts.sectionEnd))}
+              />
+            </label>
+          </div>
+          {problem
+            ? <p role="alert" className="xf-error" style={{ margin: "8px 0 0" }}>{problem}</p>
+            : <p className="xf-help" style={{ margin: "8px 0 0" }}>Long videos count as one extraction per 10 minutes analysed, so a part of a long video uses fewer — and is read more closely.</p>}
+        </div>
+      )}
+
+      {drawer === "brief" && (
+        <div className="xf-drawer">
+          <div className="xf-drawer-head">
+            <strong>Creative direction</strong>
+            <span>{opts.creativeDirection.length}/{MAX_DIRECTION_CHARS}</span>
+          </div>
+          <textarea
+            className="xf-textarea"
+            value={opts.creativeDirection}
+            maxLength={MAX_DIRECTION_CHARS}
+            rows={3}
+            placeholder='Remix it instead of copying it — "same story, set in Tokyo at night" or "replace the man with a friendly robot".'
+            onChange={(e) => setOpt("creativeDirection", e.target.value)}
+            aria-label="Creative direction"
+          />
+          <p className="xf-help" style={{ margin: "8px 0 0" }}>
+            A brief, not a prompt: it changes what the prompts describe, while the shots, timing and camera work stay the source&apos;s.
+          </p>
+        </div>
+      )}
+    </>
   );
 }
 
 export default function ExtractorPage() {
   const { user, token, loading, login, register } = useAuth();
   const router = useRouter();
-  
-  const [mode, setMode] = useState("upload"); // upload, url
+
   const [videoUrl, setVideoUrl] = useState("");
   const [file, setFile] = useState(null);
   const [jobId, setJobId] = useState(null);
   const [status, setStatus] = useState("idle"); // idle, uploading, processing, completed, error
   const [stepMessage, setStepMessage] = useState("");
+  const [startedAt, setStartedAt] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [saveStatus, setSaveStatus] = useState("idle");
-  const [studioOpts, setStudioOpts] = useState(DEFAULT_STUDIO_OPTS);
-  const [studioSent, setStudioSent] = useState(false);
-  /* null while the answer is unknown. Three states that look different on
-     screen: asking waits, installed sends, missing offers the install. */
-  const [hasStudio, setHasStudio] = useState(null);
-  const [studioSend, setStudioSend] = useState({ state: "idle", message: "", notes: [] });
   const [extractOpts, setExtractOpts] = useState(DEFAULT_EXTRACT_OPTS);
-  const [showExtractOpts, setShowExtractOpts] = useState(false);
-  const [masterView, setMasterView] = useState("text"); // text | json
+  const [drawer, setDrawer] = useState(null); // section | brief
   const [savedId, setSavedId] = useState(null);
+  /* A saved extraction opened from the dashboard keeps the name it was saved under. */
+  const [openedName, setOpenedName] = useState(null);
   /* Every edit is a version; Undo goes back one. The first is what the
      engine returned. */
   const [versions, setVersions] = useState([]);
@@ -218,6 +221,12 @@ export default function ExtractorPage() {
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState(null);
   const [authSubmitting, setAuthSubmitting] = useState(false);
+
+  /* No tabs: a chosen file is what runs, otherwise the link. */
+  const source = file ? "upload" : "url";
+  const link = normalizeLink(videoUrl);
+  const ready = source === "upload" || !!link;
+  const busy = status === "uploading" || status === "processing";
 
   /** Publishing is opt-in: extractions save privately, and this is the only
       thing that puts one in the public gallery. */
@@ -244,50 +253,6 @@ export default function ExtractorPage() {
 
   const setExtractOpt = (key, value) =>
     setExtractOpts((prev) => ({ ...prev, [key]: value }));
-
-  const setStudioOpt = (key, value) =>
-    setStudioOpts((prev) => ({ ...prev, [key]: value }));
-
-  // Built on every render so the counts below always match the current options.
-  // Cheap — a handful of shots, no I/O.
-  /* Asked as soon as there is a result rather than at the moment of the
-     click, so the button is right before it is reached for. */
-  useEffect(() => {
-    if (!result?.shots?.length) return;
-    let alive = true;
-    studioInstalled().then((yes) => { if (alive) setHasStudio(yes); });
-    return () => { alive = false; };
-  }, [result]);
-
-  /** Hand the extraction to the extension, which builds it and opens it. */
-  const handleSendToStudio = async () => {
-    if (!result) return;
-    setStudioSend({ state: "sending", message: "", notes: [] });
-    const reply = await sendToStudio(
-      result,
-      toBuildOptions(studioOpts, result.video_name || "Extracted Workflow"),
-    );
-    if (reply.ok) {
-      setStudioSend({
-        state: "sent",
-        message: `Opened in Studio — ${reply.nodes} nodes. If the canvas did not come up, open the extension and it is waiting.`,
-        notes: reply.notes || [],
-      });
-      return;
-    }
-    setStudioSend({
-      state: "error",
-      message: reply.error || "Studio could not build that.",
-      notes: [],
-    });
-  };
-
-  const studioPreview =
-    result?.shots?.length ? buildStudioWorkflow(result, studioOpts) : null;
-  const studioGenCount =
-    studioPreview?.nodes.filter((n) => n.data.type === "generate").length ?? 0;
-  const studioBuildsImages = studioOpts.chain !== "videos";
-  const studioBuildsVideos = studioOpts.chain !== "images";
 
   /* The extractor is its own service on Railway; api.auto-flow.studio is the
      Django API and answers /api/videos with a 404. */
@@ -339,6 +304,7 @@ export default function ExtractorPage() {
       setVersions([opened]);
       setRefineLog([]);
       setSavedId(row.id);
+      setOpenedName(row.video_name || null);
       setIsPublished(!!row.is_public);
       setSaveStatus("saved");
       setStatus("completed");
@@ -348,29 +314,27 @@ export default function ExtractorPage() {
     }
   }, []);
 
-  const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
-    }
-  }, []);
-
-  const handleDragOver = useCallback((e) => {
-    e.preventDefault();
-  }, []);
-
-  const handleFileSelect = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-    }
+  const resetAll = () => {
+    setStatus("idle");
+    setFile(null);
+    setVideoUrl("");
+    setResult(null);
+    setSavedId(null);
+    setOpenedName(null);
+    setIsPublished(false);
+    setVersions([]);
+    setRefineLog([]);
+    setJobId(null);
+    setSaveStatus("idle");
+    setError(null);
+    window.scrollTo({ top: 0 });
   };
 
   const startAnalysis = async (explicitToken = null) => {
-    if (mode === "upload" && !file) return;
-    if (mode === "url" && !videoUrl.trim()) return;
+    if (!ready) return;
     if (sectionProblem(extractOpts)) {
       // The message sits under the time fields; make sure it is on screen.
-      setShowExtractOpts(true);
+      setDrawer("section");
       return;
     }
 
@@ -383,6 +347,7 @@ export default function ExtractorPage() {
     }
 
     setStatus("uploading");
+    setStartedAt(Date.now());
     setStepMessage("Checking plan limits...");
     setError(null);
 
@@ -403,7 +368,7 @@ export default function ExtractorPage() {
       const options = buildExtractionOptions(extractOpts);
 
       let response;
-      if (mode === "upload") {
+      if (source === "upload") {
         setStepMessage("Uploading video...");
         const formData = new FormData();
         formData.append("video", file);
@@ -419,14 +384,15 @@ export default function ExtractorPage() {
           body: formData,
         });
       } else {
-        setStepMessage("Submitting video URL...");
+        setStepMessage("Sending the link...");
+        setVideoUrl(link);
         response = await fetch(`${API_URL}/analyze-url`, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${activeToken}`,
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({ url: videoUrl.trim(), ...(options ? { options } : {}) }),
+          body: JSON.stringify({ url: link, ...(options ? { options } : {}) }),
         });
       }
 
@@ -438,7 +404,7 @@ export default function ExtractorPage() {
       const data = await response.json();
       setJobId(data.job_id);
       setStatus("processing");
-      setStepMessage(mode === "upload" ? "Video analysis started. Polling for updates..." : "Downloading video on server...");
+      setStepMessage(source === "upload" ? "Preparing video for AI..." : "Downloading video from URL...");
     } catch (err) {
       setStatus("error");
       setError(err.message);
@@ -455,7 +421,7 @@ export default function ExtractorPage() {
     setAuthError(null);
 
     try {
-      const res = authTab === "login" 
+      const res = authTab === "login"
         ? await login(authEmail.trim(), authPassword.trim())
         : await register(authEmail.trim(), authPassword.trim());
 
@@ -502,7 +468,8 @@ export default function ExtractorPage() {
             setVersions([data.result]);
             setRefineLog([]);
             clearInterval(interval);
-            
+            window.scrollTo({ top: 0 });
+
             // Auto-save to Django
             setSaveStatus("saving");
             try {
@@ -515,7 +482,7 @@ export default function ExtractorPage() {
                 method: "POST",
                 headers: saveHeaders,
                 body: JSON.stringify({
-                  video_name: mode === "upload" ? file?.name : (() => {
+                  video_name: source === "upload" ? file?.name : (() => {
                     try { return new URL(videoUrl).hostname; }
                     catch(e) { return "Video Link"; }
                   })(),
@@ -558,1137 +525,98 @@ export default function ExtractorPage() {
     return () => clearInterval(interval);
   }, [status, jobId, token, API_URL]);
 
+  const sourceName = openedName || (file ? file.name : videoUrl);
+  const shownName = openedName || (file ? file.name : displayName(videoUrl));
+  const refineToken = token || (typeof window !== "undefined" ? localStorage.getItem("access_token") : null);
+
   return (
-    <div className="section" style={{ minHeight: "100vh", position: "relative", overflow: "hidden" }}>
-      {/* Absolute Ambient Backgrounds */}
-      <div style={{ position: "absolute", top: "-10%", left: "50%", transform: "translateX(-50%)", width: "80vw", height: "80vw", background: "radial-gradient(circle, rgba(255, 92, 0, 0.08) 0%, rgba(0,0,0,0) 70%)", zIndex: -1, pointerEvents: "none" }} />
-      
-      <div className="container" style={{ position: "relative", zIndex: 1 }}>
-        <div style={{ padding: "100px 0 60px", textAlign: "center", position: "relative" }}>
-          <div className="animate-in" style={{ animationDelay: "0.1s" }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: "12px", marginBottom: "24px", padding: "8px 16px", border: "1px solid var(--primary)", background: "rgba(255, 92, 0, 0.05)" }}>
-              <div style={{ width: "8px", height: "8px", background: "var(--primary)", animation: "terminal-blink 1s infinite" }}></div>
-              <span className="terminal-text" style={{ fontSize: "0.9rem", letterSpacing: "2px", textTransform: "uppercase", textShadow: "none" }}>AI-Powered Video Analysis</span>
-            </div>
-            <h1 style={{ 
-              fontSize: "clamp(3rem, 6vw, 5rem)", 
-              letterSpacing: "-0.02em", 
-              marginBottom: "24px", 
-              fontWeight: "800",
-              color: "#FFF",
-            }}>
-              Video <span className="text-gradient">Extractor</span>
-            </h1>
-            <p style={{ fontSize: "1.15rem", maxWidth: "650px", margin: "0 auto", lineHeight: "1.7", color: "var(--text-secondary)" }}>
-              Upload any AI-generated video and our AI will extract the exact image prompts, motion prompts, voiceover script, and character descriptions used to create it.
-            </p>
-            <p style={{ fontSize: "0.95rem", margin: "14px auto 0", color: "var(--text-secondary)" }}>
-              Want to know why a video works instead?{" "}
-              <a href="/breakdown" style={{ color: "var(--primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}>
-                Break it down: hook, pacing, structure →
-              </a>
-            </p>
-            {/* Supported Platforms */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", justifyContent: "center", marginTop: "28px" }}>
-              {["Runway Gen-3", "OpenAI Sora", "Kling AI", "Midjourney", "Luma", "Pika Labs", "Google Veo"].map((platform) => (
-                <span key={platform} style={{ padding: "6px 16px", border: "1px solid rgba(255,92,0,0.3)", borderRadius: "20px", fontSize: "0.85rem", color: "var(--text-secondary)", background: "rgba(255,92,0,0.05)", letterSpacing: "0.3px" }}>
-                  {platform}
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ maxWidth: "860px", margin: "0 auto" }}>
-          {/* Toggle Tab */}
-            <div style={{ display: "flex", gap: "0", justifyContent: "center", marginBottom: "40px" }}>
-              <button 
-                onClick={() => setMode("upload")}
-                style={{ 
-                  padding: "14px 32px", 
-                  background: mode === "upload" ? "var(--primary)" : "transparent",
-                  color: mode === "upload" ? "#000" : "var(--text-secondary)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius-sm) 0 0 var(--radius-sm)",
-                  cursor: "pointer",
-                  fontSize: "0.95rem",
-                  fontWeight: "600",
-                  transition: "all 0.2s ease"
-                }}
-              >
-                📁 Upload File
-              </button>
-              <button 
-                onClick={() => setMode("url")}
-                style={{ 
-                  padding: "14px 32px", 
-                  background: mode === "url" ? "var(--primary)" : "transparent",
-                  color: mode === "url" ? "#000" : "var(--text-secondary)",
-                  border: "1px solid var(--border)",
-                  borderLeft: "none",
-                  borderRadius: "0 var(--radius-sm) var(--radius-sm) 0",
-                  cursor: "pointer",
-                  fontSize: "0.95rem",
-                  fontWeight: "600",
-                  transition: "all 0.2s ease"
-                }}
-              >
-                🔗 Paste URL
-              </button>
-            </div>
-
-            {/* Quick Demo Sample Chips */}
-            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "8px", marginBottom: "32px", flexWrap: "wrap" }}>
-              <span style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginRight: "4px" }}>Test with 1-click sample:</span>
-              <button
-                type="button"
-                className="sample-chip"
-                onClick={() => {
-                  setMode("url");
-                  setUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-                }}
-              >
-                🌆 Cyberpunk Tokyo (Sora)
-              </button>
-              <button
-                type="button"
-                className="sample-chip"
-                onClick={() => {
-                  setMode("url");
-                  setUrl("https://www.youtube.com/watch?v=jNQXAC9IVRw");
-                }}
-              >
-                🦅 Cinematic Drone (Runway)
-              </button>
-              <button
-                type="button"
-                className="sample-chip"
-                onClick={() => {
-                  setMode("url");
-                  setUrl("https://www.youtube.com/shorts/sample-video");
-                }}
-              >
-                ⚔️ Ronin Samurai (Kling)
-              </button>
-            </div>
-
-            {/* --- Upload Zone or URL Input (Available to All Visitors) --- */}
-          {status === "idle" && (
-            mode === "upload" ? (
-              <div 
-                className="cyber-panel animate-in delay-1"
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                style={{ 
-                  textAlign: "center",
-                  cursor: "pointer",
-                  padding: "100px 40px",
-                  transition: "all 0.2s",
-                }}
-                onClick={() => document.getElementById("file-upload").click()}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.boxShadow = "0 0 40px rgba(255, 92, 0, 0.2), inset 0 0 40px rgba(255, 92, 0, 0.1)";
-                  e.currentTarget.style.borderColor = "#FFF";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.boxShadow = "0 0 20px rgba(255, 92, 0, 0.05), inset 0 0 20px rgba(255, 92, 0, 0.05)";
-                  e.currentTarget.style.borderColor = "var(--primary)";
-                }}
-              >
-                <div style={{ position: "absolute", top: 10, left: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
-                <div style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
-                <div style={{ position: "absolute", bottom: 10, left: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
-                <div style={{ position: "absolute", bottom: 10, right: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
-                
-                <input 
-                  id="file-upload" 
-                  type="file" 
-                  accept="video/mp4,video/quicktime,video/webm" 
-                  style={{ display: "none" }} 
-                  onChange={handleFileSelect}
-                />
-                {file ? (
-                  <div style={{ position: "relative", zIndex: 1 }}>
-                    <div className="terminal-text" style={{ fontSize: "4rem", marginBottom: "20px" }}>✅ Ready to Extract</div>
-                    <h3 style={{ marginBottom: "8px", fontSize: "1.8rem", color: "#FFF", fontFamily: "'JetBrains Mono', monospace" }}>{file.name}</h3>
-                    <p className="terminal-text" style={{ marginBottom: "32px", color: "var(--text-secondary)" }}>{(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to analyze</p>
-                    <button 
-                      className="cyber-btn" 
-                      onClick={(e) => { e.stopPropagation(); startAnalysis(); }}
-                      style={{ fontSize: "1.2rem", padding: "16px 40px", fontWeight: "700" }}
-                    >
-                      Extract Prompts
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ position: "relative", zIndex: 1 }}>
-                    <div className="terminal-text" style={{ fontSize: "3rem", marginBottom: "24px", animation: "terminal-blink 2s infinite" }}>📤</div>
-                    <h3 style={{ fontSize: "2rem", marginBottom: "12px", fontFamily: "'JetBrains Mono', monospace", color: "#FFF", textTransform: "uppercase" }}>Drop your video here</h3>
-                    <p className="terminal-text" style={{ fontSize: "1.1rem", color: "var(--text-secondary)" }}>Drag & drop or click to browse (Max 500MB)</p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div 
-                className="cyber-panel animate-in delay-1"
-                style={{ 
-                  textAlign: "center",
-                  padding: "80px 40px",
-                }}
-              >
-                <div style={{ position: "absolute", top: 10, left: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
-                <div style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderTop: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
-                <div style={{ position: "absolute", bottom: 10, left: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderLeft: "2px solid var(--primary)" }}></div>
-                <div style={{ position: "absolute", bottom: 10, right: 10, width: 20, height: 20, borderBottom: "2px solid var(--primary)", borderRight: "2px solid var(--primary)" }}></div>
-                
-                <div style={{ position: "relative", zIndex: 1 }}>
-                  <div className="terminal-text" style={{ fontSize: "3rem", marginBottom: "24px" }}>🔗</div>
-                  <h3 style={{ fontSize: "2rem", marginBottom: "12px", fontFamily: "'JetBrains Mono', monospace", color: "#FFF", textTransform: "uppercase" }}>Paste a video link</h3>
-                  <p className="terminal-text" style={{ fontSize: "1.1rem", marginBottom: "32px", color: "var(--text-secondary)" }}>
-                    Supports YouTube, TikTok, Instagram, Twitter/X
-                  </p>
-                  
-                  <div style={{ display: "flex", gap: "0", maxWidth: "600px", margin: "0 auto", width: "100%" }}>
-                    <input 
-                      type="text"
-                      placeholder="https://www..."
-                      value={videoUrl}
-                      onChange={(e) => setVideoUrl(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter" && videoUrl.trim()) startAnalysis(); }}
-                      className="terminal-text"
-                      style={{
-                        flex: 1,
-                        padding: "16px 24px",
-                        background: "#000",
-                        border: "1px solid var(--primary)",
-                        color: "var(--primary)",
-                        fontSize: "1rem",
-                        outline: "none",
-                        transition: "all 0.3s ease"
-                      }}
-                      onFocus={(e) => e.target.style.boxShadow = "inset 0 0 10px rgba(255, 92, 0, 0.2)"}
-                      onBlur={(e) => e.target.style.boxShadow = "none"}
-                    />
-                    <button 
-                      className="cyber-btn" 
-                      onClick={() => startAnalysis()}
-                      disabled={!videoUrl.trim()}
-                      style={{ 
-                        fontSize: "1.1rem", 
-                        padding: "16px 36px", 
-                        borderLeft: "none",
-                        whiteSpace: "nowrap",
-                        opacity: !videoUrl.trim() ? 0.5 : 1
-                      }}
-                    >
-                      Extract Prompts
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )
-          )}
-
-        {/* ── Extraction options (Open to all visitors) ──
-            Collapsed by default: the defaults reproduce the original
-            behaviour exactly, so most people never need to open this. */}
-        {(status === "idle" || status === "error") && (
-          <div className="cyber-panel animate-in" style={{ marginTop: "24px", padding: "0", overflow: "hidden" }}>
-            <button
-              onClick={() => setShowExtractOpts((v) => !v)}
-              className="terminal-text"
-              style={{
-                width: "100%", padding: "20px 28px", background: "transparent",
-                border: "none", color: "var(--primary)", cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                fontSize: "0.95rem", textTransform: "uppercase", letterSpacing: "1px",
-                textShadow: "none", fontFamily: "inherit",
-              }}
-              aria-expanded={showExtractOpts}
-            >
-              <span>⚙ Extraction options</span>
-              <span>{showExtractOpts ? "−" : "+"}</span>
-            </button>
-
-            {showExtractOpts && (
-              <div style={{ padding: "0 28px 28px" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "16px" }}>
-                  <label style={studioFieldStyle}>
-                    <span style={studioLabelStyle}>Number of shots</span>
-                    <select
-                      value={extractOpts.shotCount}
-                      onChange={(e) => setExtractOpt("shotCount", e.target.value)}
-                      style={studioSelectStyle}
-                    >
-                      <option value="auto">Auto</option>
-                      {[3, 4, 5, 6, 8, 10, 12, 16, 20].map((n) => (
-                        <option key={n} value={n}>{n} shots</option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label style={studioFieldStyle}>
-                    <span style={studioLabelStyle}>Voiceover language</span>
-                    <select
-                      value={extractOpts.language}
-                      onChange={(e) => setExtractOpt("language", e.target.value)}
-                      style={studioSelectStyle}
-                    >
-                      {EXTRACT_LANGUAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
-                  </label>
-
-                  <label style={studioFieldStyle}>
-                    <span style={studioLabelStyle}>Visual style</span>
-                    <select
-                      value={extractOpts.style}
-                      onChange={(e) => setExtractOpt("style", e.target.value)}
-                      style={studioSelectStyle}
-                    >
-                      {EXTRACT_STYLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
-                  </label>
-
-                  <label style={{ ...studioFieldStyle, justifyContent: "flex-end" }}>
-                    <span style={studioLabelStyle}>Character sheets</span>
-                    <button
-                      type="button"
-                      onClick={() => setExtractOpt("characterSheets", !extractOpts.characterSheets)}
-                      className="terminal-text"
-                      style={{
-                        ...studioSelectStyle,
-                        textAlign: "left",
-                        color: extractOpts.characterSheets ? "var(--primary)" : "var(--text-secondary)",
-                        textShadow: "none",
-                        fontFamily: "inherit",
-                      }}
-                      aria-pressed={extractOpts.characterSheets}
-                    >
-                      {extractOpts.characterSheets ? "✓ Included" : "✗ Skipped"}
-                    </button>
-                  </label>
-
-                  <label style={studioFieldStyle}>
-                    <span style={studioLabelStyle}>Frame</span>
-                    <select
-                      value={extractOpts.aspectRatio}
-                      onChange={(e) => setExtractOpt("aspectRatio", e.target.value)}
-                      style={studioSelectStyle}
-                    >
-                      {EXTRACT_RATIOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
-                  </label>
-                </div>
-
-                {/* ── Part of the video ──
-                    Empty means the whole thing. A long video can be taken a
-                    section at a time, which is faster and reads each part
-                    more closely. */}
-                <div style={{ marginTop: "20px" }}>
-                  <span style={studioLabelStyle}>Analyze part of the video</span>
-                  <p className="terminal-text" style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "var(--text-muted)", textShadow: "none" }}>
-                    Long videos count as one extraction per 10 minutes analysed, so a section of a long video uses fewer.
-                  </p>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "16px", marginTop: "6px" }}>
-                    <label style={studioFieldStyle}>
-                      <span style={{ ...studioLabelStyle, fontSize: "0.7rem" }}>From</span>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="0:00 (start)"
-                        value={extractOpts.sectionStart}
-                        onChange={(e) => setExtractOpt("sectionStart", e.target.value)}
-                        style={{ ...studioSelectStyle, cursor: "text" }}
-                        aria-invalid={Number.isNaN(parseClock(extractOpts.sectionStart))}
-                      />
-                    </label>
-                    <label style={studioFieldStyle}>
-                      <span style={{ ...studioLabelStyle, fontSize: "0.7rem" }}>To</span>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="end of video"
-                        value={extractOpts.sectionEnd}
-                        onChange={(e) => setExtractOpt("sectionEnd", e.target.value)}
-                        style={{ ...studioSelectStyle, cursor: "text" }}
-                        aria-invalid={Number.isNaN(parseClock(extractOpts.sectionEnd))}
-                      />
-                    </label>
-                  </div>
-                  {sectionProblem(extractOpts) && (
-                    <p role="alert" className="terminal-text" style={{ margin: "8px 0 0", fontSize: "0.85rem", color: "var(--accent)", textShadow: "none" }}>
-                      {sectionProblem(extractOpts)}
-                    </p>
-                  )}
-                </div>
-
-                {/* ── Creative direction ──
-                    A brief, not a prompt: it changes what the prompts
-                    describe while the shot structure, timing and camera work
-                    stay the source's. */}
-                <label style={{ ...studioFieldStyle, marginTop: "20px" }}>
-                  <span style={studioLabelStyle}>Creative direction (optional)</span>
-                  <textarea
-                    value={extractOpts.creativeDirection}
-                    maxLength={MAX_DIRECTION_CHARS}
-                    rows={3}
-                    placeholder='Remix it instead of copying it, e.g. "same story, set in Tokyo at night" or "replace the man with a friendly robot".'
-                    onChange={(e) => setExtractOpt("creativeDirection", e.target.value)}
-                    style={{ ...studioSelectStyle, height: "auto", minHeight: "88px", padding: "12px", cursor: "text", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
-                  />
-                  <span style={{ alignSelf: "flex-end", fontSize: "0.75rem", color: "var(--text-secondary)" }}>
-                    {extractOpts.creativeDirection.length}/{MAX_DIRECTION_CHARS}
-                  </span>
-                </label>
-
-                {JSON.stringify(extractOpts) !== JSON.stringify(DEFAULT_EXTRACT_OPTS) && (
-                  <button
-                    onClick={() => setExtractOpts(DEFAULT_EXTRACT_OPTS)}
-                    className="terminal-text"
-                    style={{
-                      marginTop: "16px", background: "transparent", border: "none",
-                      color: "var(--text-secondary)", cursor: "pointer", padding: 0,
-                      fontSize: "0.85rem", textDecoration: "underline",
-                      textUnderlineOffset: "4px", textShadow: "none", fontFamily: "inherit",
-                    }}
-                  >
-                    Reset to defaults
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {(status === "uploading" || status === "processing") && (
-          <div className="cyber-panel animate-in" style={{ padding: "50px 36px", textAlign: "left", position: "relative", overflow: "hidden" }}>
-            <div className="laser-scanner-line" />
-            
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "10px" }}>
-              <div className="terminal-text" style={{ fontSize: "1.2rem", fontWeight: "700" }}>
-                ⚡ Neural Vision Analysis in Progress...
-              </div>
-              <span className="badge" style={{ background: "rgba(255, 92, 0, 0.2)", color: "var(--primary-light)", borderColor: "var(--primary)" }}>
-                {status === "uploading" ? "UPLOADING MEDIA" : "ANALYZING SHOTS"}
-              </span>
-            </div>
-
-            <div style={{ background: "#050507", border: "1px solid rgba(255, 92, 0, 0.35)", borderRadius: "10px", padding: "24px", fontFamily: "'JetBrains Mono', monospace", color: "var(--primary)", minHeight: "220px", position: "relative", boxShadow: "inset 0 0 30px rgba(0,0,0,0.9)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px", color: "#10B981" }}>
-                <span>●</span> <span>[SYSTEM] Vision pipeline initialized</span>
-              </div>
-              <p style={{ margin: "0 0 10px 0", color: "#FFF" }}>
-                &gt; Current Stage: <strong style={{ color: "var(--primary-light)" }}>{stepMessage || "Deconstructing video into keyframe sequences..."}</strong>
+    <div className="xf" style={{ minHeight: "100vh", position: "relative", paddingBottom: "40px" }}>
+      {/* No z-index here: it would trap the dialogs and the refine sheet
+          beneath the site header. */}
+      <div className="container">
+        {status === "completed" && result ? (
+          <Workspace
+            result={result}
+            name={shownName}
+            sourceName={sourceName}
+            saveStatus={saveStatus}
+            savedId={savedId}
+            isPublished={isPublished}
+            publishBusy={publishBusy}
+            onTogglePublished={togglePublished}
+            onReset={resetAll}
+            refine={result.shots?.length > 0 && (token || user) ? {
+              result,
+              jobId,
+              token: refineToken,
+              apiUrl: API_URL,
+              log: refineLog,
+              canUndo: versions.length > 1,
+              onResult: applyRefined,
+              onUndo: undoRefine,
+            } : null}
+          />
+        ) : (
+          <>
+            <header className="xf-hero">
+              <h1>Video <span className="text-gradient">Extractor</span></h1>
+              <p className="xf-hero-lead">
+                Drop in any video and get every shot back as image and motion prompts, with the
+                voiceover script and a design sheet for each character.
               </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px", opacity: 0.8, fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "16px" }}>
-                <div>[01/04] Detecting shot cuts, aspect ratio &amp; focal length...</div>
-                <div>[02/04] Vision AI extracting cinematic prompt &amp; lighting cues...</div>
-                <div>[03/04] Transcribing voiceover &amp; sound effect cues...</div>
-                <div>[04/04] Building character sheet &amp; ComfyUI node graph...</div>
-              </div>
-              <div style={{ width: "10px", height: "18px", background: "var(--primary)", display: "inline-block", animation: "terminal-blink 1s infinite", verticalAlign: "middle", marginTop: "12px" }}></div>
-            </div>
-          </div>
-        )}
+              <p className="xf-hero-alt">
+                Want to know why a video works instead? <a href="/breakdown">Break it down</a>
+              </p>
+            </header>
 
-        {status === "error" && (
-          <div className="cyber-panel animate-in" style={{ padding: "80px 40px", borderColor: "var(--accent)", textAlign: "center", boxShadow: "inset 0 0 40px rgba(229, 9, 20, 0.2)" }}>
-            <div className="terminal-text" style={{ fontSize: "3rem", marginBottom: "24px", color: "var(--accent)", textShadow: "0 0 10px var(--accent)" }}>⚠️ Error</div>
-            <h3 style={{ color: "var(--accent)", marginBottom: "16px", fontSize: "1.8rem", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase" }}>Extraction Failed</h3>
-            <p className="terminal-text" style={{ maxWidth: "600px", margin: "0 auto 32px", fontSize: "1rem", color: "var(--text-secondary)" }}>{error}</p>
-            <button className="cyber-btn" style={{ border: "1px solid var(--accent)", color: "var(--accent)", boxShadow: "none" }} onClick={() => { setStatus("idle"); setFile(null); }}>
-              Try Again
-            </button>
-          </div>
-        )}
-
-        {status === "completed" && result && (
-          <div className="animate-in delay-1">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "40px", paddingBottom: "24px", borderBottom: "1px solid var(--primary)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                <h2 className="terminal-text" style={{ fontSize: "2.2rem", margin: 0, textShadow: "none" }}>Extraction Results</h2>
-                {saveStatus === "saving" && (
-                  <span style={{ background: "transparent", color: "var(--warning)", border: "1px solid var(--warning)", padding: "4px 12px", fontSize: "0.8rem", borderRadius: "6px" }}>
-                    Saving...
-                  </span>
-                )}
-                {saveStatus === "saved" && (
-                  <span style={{ background: "rgba(255,92,0,0.1)", color: "var(--primary)", border: "1px solid var(--primary)", padding: "4px 12px", fontSize: "0.8rem", borderRadius: "6px" }}>
-                    ✓ Saved
-                  </span>
-                )}
-                {saveStatus === "error" && (
-                  <span style={{ background: "transparent", color: "var(--accent)", border: "1px solid var(--accent)", padding: "4px 12px", fontSize: "0.8rem", borderRadius: "6px" }}>
-                    Save failed
-                  </span>
-                )}
-              </div>
-              <button className="cyber-btn" style={{ padding: "12px 24px" }} onClick={() => { setStatus("idle"); setFile(null); setSavedId(null); setIsPublished(false); setStudioSent(false); setVersions([]); setRefineLog([]); setJobId(null); }}>Extract Another</button>
-            </div>
-
-            {/* ── Privacy ──
-                Extractions save privately. This is the only thing that puts
-                one in the public gallery, and it says so plainly, because the
-                gallery is indexed by search engines. */}
-            {savedId && (
-              <div
-                className="cyber-panel"
-                style={{ marginBottom: "40px", padding: "24px 28px", display: "flex", gap: "20px", alignItems: "center", flexWrap: "wrap", justifyContent: "space-between" }}
-              >
-                <div style={{ maxWidth: "560px" }}>
-                  <h4 className="terminal-text" style={{ margin: "0 0 6px 0", fontSize: "1rem", color: "white", textShadow: "none" }}>
-                    {isPublished ? "🌐 Listed in the public gallery" : "🔒 Private to your account"}
-                  </h4>
-                  <p className="terminal-text" style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.5, textShadow: "none" }}>
-                    {isPublished
-                      ? "Anyone can view these prompts on the Prompts page, and search engines may index them."
-                      : "Only you can see this extraction. Publish it to share the prompts on the Prompts page."}
-                  </p>
-                </div>
-                <button
-                  className="cyber-btn"
-                  onClick={togglePublished}
-                  disabled={publishBusy}
-                  style={{
-                    padding: "14px 28px", whiteSpace: "nowrap",
-                    background: isPublished ? "#000" : "var(--primary)",
-                    color: isPublished ? "var(--primary)" : "#000",
-                    opacity: publishBusy ? 0.6 : 1,
-                  }}
-                  aria-pressed={isPublished}
-                >
-                  {publishBusy ? "..." : isPublished ? "Make Private" : "Publish to Gallery"}
-                </button>
-              </div>
-            )}
-
-            {/* --- Summary Card --- */}
-            <div className="cyber-panel" style={{ marginBottom: "40px", padding: "32px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "20px" }}>
-                <div className="terminal-text" style={{ fontSize: "1.5rem" }}>🎬 Video Concept & Style</div>
-              </div>
-              {/* A reading straight from YouTube has no shot frames; its own
-                  cover stands in so the result still shows which video it is. */}
-              {result.cover_url && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={result.cover_url}
-                  alt="Video cover"
-                  loading="lazy"
-                  style={{ maxWidth: "240px", width: "100%", height: "auto", display: "block", marginBottom: "16px", border: "1px solid rgba(255, 92, 0, 0.4)" }}
-                  onError={(e) => { e.currentTarget.style.display = "none"; }}
-                />
-              )}
-              <p className="terminal-text" style={{ fontSize: "1.1rem", color: "var(--text-secondary)", lineHeight: "1.8", textShadow: "none" }}>{result.video_concept}</p>
-              {(result.section || result.aspect_ratio) && (
-                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "16px" }}>
-                  {result.section && (
-                    <span className="terminal-text" style={{ border: "1px solid rgba(255, 92, 0, 0.4)", padding: "4px 12px", fontSize: "0.8rem", textShadow: "none" }}>
-                      ⏱ Analysed {clock(result.section.start_sec)}–{clock(result.section.end_sec)} of {clock(result.duration_sec)}
-                    </span>
-                  )}
-                  {result.aspect_ratio && (
-                    <span className="terminal-text" style={{ border: "1px solid rgba(255, 92, 0, 0.4)", padding: "4px 12px", fontSize: "0.8rem", textShadow: "none" }}>
-                      ▭ Written for {result.aspect_ratio}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* --- What was cut short ---
-                The engine says when it dropped or repaired anything, so a
-                shorter shot list is never a silent one. */}
-            {result.warnings?.length > 0 && (
-              <div className="cyber-panel" role="status" style={{ marginBottom: "40px", padding: "20px 28px", borderColor: "var(--warning)" }}>
-                <div className="terminal-text" style={{ color: "var(--warning)", fontSize: "0.95rem", marginBottom: "8px", textShadow: "none" }}>⚠ Notes on this extraction</div>
-                <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-secondary)", fontSize: "0.9rem", lineHeight: 1.6 }}>
-                  {result.warnings.map((w, i) => <li key={i}>{w}</li>)}
-                </ul>
-              </div>
-            )}
-
-            {/* --- Refine by chat --- */}
-            {result.shots?.length > 0 && (token || user) && (
-              <RefinePanel
-                result={result}
-                jobId={jobId}
-                token={token || (typeof window !== "undefined" ? localStorage.getItem("access_token") : null)}
-                apiUrl={API_URL}
-                log={refineLog}
-                canUndo={versions.length > 1}
-                onResult={applyRefined}
-                onUndo={undoRefine}
+            {busy ? (
+              <ProgressView
+                status={status}
+                step={stepMessage}
+                startedAt={startedAt}
+                name={file ? file.name : displayName(videoUrl)}
               />
-            )}
-
-            {/* --- Master prompt ---
-                One prompt for a video like the whole source, as a paragraph
-                to paste and as the JSON fields people edit Veo prompts in. */}
-            {result.master_prompt && (
-              <div className="cyber-panel" style={{ marginBottom: "40px", padding: "0" }}>
-                <div style={{ background: "#000", padding: "20px 32px", borderBottom: "1px solid var(--primary)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                  <h3 className="terminal-text" style={{ margin: 0, fontSize: "1.1rem", textShadow: "none" }}>🎯 Master Prompt</h3>
-                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                    {result.master_prompt_json && (
-                      <div role="tablist" style={{ display: "flex", border: "1px solid var(--primary)" }}>
-                        {[["text", "Prompt"], ["json", "JSON"]].map(([v, l]) => (
-                          <button
-                            key={v}
-                            role="tab"
-                            aria-selected={masterView === v}
-                            onClick={() => setMasterView(v)}
-                            className="terminal-text"
-                            style={{
-                              padding: "8px 14px", border: "none", cursor: "pointer", fontFamily: "inherit",
-                              fontSize: "0.85rem", textShadow: "none",
-                              background: masterView === v ? "var(--primary)" : "#000",
-                              color: masterView === v ? "#000" : "var(--primary)",
-                            }}
-                          >
-                            {l}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <button
-                      className="cyber-btn"
-                      style={{ padding: "8px 16px", fontSize: "0.9rem" }}
-                      onClick={(e) => copyWithFeedback(
-                        e,
-                        masterView === "json" && result.master_prompt_json
-                          ? JSON.stringify(result.master_prompt_json, null, 2)
-                          : result.master_prompt,
-                      )}
-                    >
-                      Copy
-                    </button>
-                  </div>
-                </div>
-                <div style={{ padding: "28px 32px" }}>
-                  {masterView === "json" && result.master_prompt_json ? (
-                    <pre className="terminal-text" style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, color: "var(--text-primary)", whiteSpace: "pre-wrap", wordBreak: "break-word", textShadow: "none" }}>
-                      {JSON.stringify(result.master_prompt_json, null, 2)}
-                    </pre>
-                  ) : (
-                    <p className="terminal-text" style={{ margin: 0, fontSize: "1.05rem", lineHeight: 1.8, color: "var(--text-primary)", textShadow: "none" }}>
-                      {result.master_prompt}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* --- Teleprompter Voiceover --- */}
-            {result.voiceover_text && (
-              <div className="cyber-panel" style={{ marginBottom: "48px", position: "relative", padding: "0" }}>
-                <div style={{ background: "#000", padding: "20px 32px", borderBottom: "1px solid var(--primary)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    <h3 className="terminal-text" style={{ margin: 0, fontSize: "1.1rem", textShadow: "none" }}>🎙️ Voiceover Script</h3>
-                  </div>
-                  <button 
-                    className="cyber-btn"
-                    style={{ padding: "8px 16px", fontSize: "0.9rem" }}
-                    onClick={(e) => {
-                      navigator.clipboard.writeText(result.voiceover_text);
-                      e.currentTarget.innerHTML = "✓ Copied!";
-                      setTimeout(() => e.currentTarget.innerHTML = "Copy Script", 2000);
-                    }}
-                  >
-                    Copy Script
-                  </button>
-                </div>
-                <div style={{ padding: "40px" }}>
-                  <p className="terminal-text" style={{ fontSize: "1.2rem", lineHeight: "2", color: "var(--text-primary)", whiteSpace: "pre-wrap", textShadow: "none" }}>
-                    {result.voiceover_text}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* --- Character Designs --- */}
-            {result.character_sheets && (
-              <div style={{ marginBottom: "64px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "24px" }}>
-                  <h3 className="terminal-text" style={{ margin: 0, fontSize: "1.6rem", textShadow: "none" }}>👤 Character Designs</h3>
-                </div>
-                {result.character_sheets.length > 0 ? (
-                  <div className="grid-2" style={{ gap: "24px" }}>
-                    {result.character_sheets.map((char, i) => (
-                      <div key={i} className="cyber-panel" style={{ padding: "32px", display: "flex", flexDirection: "column" }}>
-                        <h4 className="terminal-text" style={{ fontSize: "1.2rem", marginBottom: "20px", display: "flex", alignItems: "center", gap: "8px", textShadow: "none" }}>
-                          &gt; {char.character_name}
-                        </h4>
-                        <div style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column" }}>
-                          <div className="terminal-text" style={{ padding: "20px", flex: 1, fontSize: "0.95rem", background: "#000", border: "1px solid rgba(255, 92, 0,0.3)", color: "var(--text-secondary)", lineHeight: "1.7", textShadow: "none" }}>
-                            {char.prompt}
-                          </div>
-                          <button 
-                            className="cyber-btn"
-                            style={{ position: "absolute", top: "12px", right: "12px", padding: "8px 12px", fontSize: "0.8rem", background: "#000" }}
-                            onClick={(e) => {
-                              navigator.clipboard.writeText(char.prompt);
-                              e.currentTarget.innerText = "✓ Copied!";
-                              setTimeout(() => e.currentTarget.innerText = "COPY", 2000);
-                            }}
-                          >
-                            COPY
-                          </button>
+            ) : (
+              <>
+                {status === "error" && (
+                  <div className="xf-start" style={{ marginBottom: 12 }}>
+                    <div className="xf-callout xf-callout-error" role="alert">
+                      <Icon name="alert" />
+                      <div>
+                        <strong style={{ color: "var(--text-primary)", display: "block" }}>That extraction did not finish</strong>
+                        {error}
+                        <div style={{ marginTop: 4, color: "var(--text-muted)", fontSize: "0.82rem" }}>
+                          Your video and options are still below — fix what it says and press the button again.
                         </div>
                       </div>
-                    ))}
+                    </div>
                   </div>
-                ) : (
-                  <p className="terminal-text" style={{ opacity: 0.5, padding: "20px", background: "rgba(255, 92, 0,0.05)", textShadow: "none" }}>No character data found in this video.</p>
                 )}
-              </div>
-            )}
-
-            {/* --- Scene Breakdown Timeline --- */}
-            {result.shots && (
-              <div style={{ marginBottom: "60px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "32px" }}>
-                  <h3 className="terminal-text" style={{ margin: 0, fontSize: "1.6rem", textShadow: "none" }}>🎞️ Scene Breakdown</h3>
-                </div>
-                {result.shots.length > 0 ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "32px", position: "relative", paddingLeft: "16px" }}>
-                    {/* Glowing vertical timeline line */}
-                    <div style={{ position: "absolute", left: "40px", top: "24px", bottom: "24px", width: "1px", background: "var(--primary)", opacity: 0.5, zIndex: 0 }}></div>
-                    
-                    {result.shots.map((shot, i) => (
-                      <div key={i} style={{ position: "relative", zIndex: 1, display: "flex", gap: "32px", width: "100%" }}>
-                        {/* Timeline Node */}
-                        <div className="terminal-text" style={{ width: "48px", height: "48px", background: "#000", border: "1px solid var(--primary)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", fontSize: "1.2rem", flexShrink: 0, zIndex: 2 }}>
-                          {shot.shot_id}
-                        </div>
-                        
-                        {/* Shot Content Card */}
-                        <div className="cyber-panel" style={{ flex: 1, padding: "32px" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
-                            <h4 style={{ margin: 0, fontSize: "1.3rem", color: "white", fontWeight: 700 }}>Scene {shot.shot_id}</h4>
-                            {shot.time_range && (
-                              <span className="terminal-text" style={{ background: "rgba(255, 92, 0, 0.1)", border: "1px solid var(--primary)", padding: "6px 16px", textShadow: "none" }}>
-                                {shot.time_range}
-                              </span>
-                            )}
-                          </div>
-
-                          <ShotDetails shot={shot} />
-
-                          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-                            {/* Image Prompt */}
-                            <div>
-                              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                                <div style={{ width: "8px", height: "8px", background: "var(--primary)", animation: "terminal-blink 1.5s infinite" }}></div>
-                                <span className="terminal-text" style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "1px", textShadow: "none" }}>Image Prompt</span>
-                              </div>
-                              <div style={{ position: "relative" }}>
-                                <div className="terminal-text" style={{ padding: "20px 60px 20px 20px", background: "#000", border: "1px dashed rgba(255, 92, 0,0.4)", color: "var(--text-primary)", fontSize: "0.95rem", lineHeight: "1.6", textShadow: "none" }}>
-                                  {shot.image_prompt}
-                                </div>
-                                <button 
-                                  className="cyber-btn"
-                                  style={{ position: "absolute", top: "12px", right: "12px", width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center", background: "#000", fontSize: "1.2rem", padding: 0 }}
-                                  title="Copy Prompt"
-                                  onClick={(e) => {
-                                    navigator.clipboard.writeText(shot.image_prompt);
-                                    e.currentTarget.innerHTML = "✓";
-                                    setTimeout(() => e.currentTarget.innerHTML = "📋", 2000);
-                                  }}
-                                >
-                                  📋
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Video Prompt */}
-                            {shot.video_prompt && (
-                              <div>
-                                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                                  <div style={{ width: "8px", height: "8px", background: "var(--primary)" }}></div>
-                                  <span className="terminal-text" style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "1px", textShadow: "none" }}>Video / Motion Prompt</span>
-                                </div>
-                                <div style={{ position: "relative" }}>
-                                  <div className="terminal-text" style={{ padding: "20px 60px 20px 20px", background: "#000", border: "1px solid var(--primary)", color: "white", fontSize: "0.95rem", lineHeight: "1.6", textShadow: "none" }}>
-                                    {shot.video_prompt}
-                                  </div>
-                                  <button 
-                                    className="cyber-btn"
-                                    style={{ position: "absolute", top: "12px", right: "12px", width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--primary)", color: "#000", fontSize: "1.2rem", padding: 0 }}
-                                    title="Copy Prompt"
-                                    onClick={(e) => {
-                                      navigator.clipboard.writeText(shot.video_prompt);
-                                      e.currentTarget.innerHTML = "✓";
-                                      setTimeout(() => e.currentTarget.innerHTML = "📋", 2000);
-                                    }}
-                                  >
-                                    📋
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="terminal-text" style={{ opacity: 0.5, padding: "20px", background: "rgba(255, 92, 0,0.05)", textShadow: "none" }}>No scene data found in this video.</p>
-                )}
-              </div>
-            )}
-
-            {/* --- Downloads --- */}
-            {result.shots?.length > 0 && (
-              <DownloadPanel result={result} sourceName={mode === "upload" ? file?.name : videoUrl} />
-            )}
-
-            {/* --- Export for AutoFlow --- */}
-            {result.shots && result.shots.length > 0 && (
-              <div className="cyber-panel" style={{ marginTop: "60px", padding: "48px" }}>
-                <div style={{ position: "relative", zIndex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "16px" }}>
-                    <h3 style={{ margin: 0, fontSize: "1.8rem", color: "white", fontWeight: 700 }}>Export to AutoFlow</h3>
-                  </div>
-                  <p className="terminal-text" style={{ marginBottom: "40px", fontSize: "1.1rem", maxWidth: "600px", color: "var(--text-secondary)", textShadow: "none" }}>
-                    Copy all prompts at once and batch-generate videos using the <a href="https://chromewebstore.google.com/detail/autoflow-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc" target="_blank" rel="noopener noreferrer" style={{ color: "var(--primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}>AutoFlow Extension</a>.
+                <UploadBox
+                  file={file}
+                  onFile={setFile}
+                  url={videoUrl}
+                  onUrl={setVideoUrl}
+                  onStart={() => startAnalysis()}
+                  ready={ready}
+                  busy={busy}
+                  goLabel="Extract prompts"
+                >
+                  <ExtractOptions
+                    opts={extractOpts}
+                    setOpt={setExtractOpt}
+                    reset={() => setExtractOpts(DEFAULT_EXTRACT_OPTS)}
+                    drawer={drawer}
+                    setDrawer={setDrawer}
+                  />
+                  <p className="xf-help" style={{ marginTop: 14, textAlign: "center" }}>
+                    Works with videos made in Runway, Sora, Kling, Veo, Luma, Pika and Midjourney — and with any filmed video.
                   </p>
-
-                  <div className="grid-2" style={{ gap: "32px" }}>
-                    <div style={{ padding: "24px", background: "#000", border: "1px solid rgba(255, 92, 0,0.3)" }}>
-                      <h4 className="terminal-text" style={{ fontSize: "1.1rem", marginBottom: "8px", color: "white", textShadow: "none" }}>Image Prompts</h4>
-                      <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "20px", textShadow: "none" }}>Copy all image prompts at once.</p>
-                      <button 
-                        className="cyber-btn"
-                        style={{ width: "100%", padding: "16px", background: "#000", color: "white" }}
-                        onClick={(e) => {
-                          const prompts = result.shots.map(s => s.image_prompt).filter(Boolean).join("\n\n");
-                          navigator.clipboard.writeText(prompts);
-                          const originalHtml = e.currentTarget.innerHTML;
-                          e.currentTarget.innerHTML = "✓ Copied!";
-                          setTimeout(() => e.currentTarget.innerHTML = originalHtml, 2000);
-                        }}
-                      >
-                        Copy All
-                      </button>
-                    </div>
-
-                    <div style={{ padding: "24px", background: "#000", border: "1px solid var(--primary)" }}>
-                      <h4 className="terminal-text" style={{ fontSize: "1.1rem", marginBottom: "8px", color: "white", textShadow: "none" }}>Video Prompts</h4>
-                      <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "20px", textShadow: "none" }}>Copy all motion prompts at once.</p>
-                      <button 
-                        className="cyber-btn"
-                        style={{ width: "100%", padding: "16px", background: "var(--primary)", color: "#000" }}
-                        onClick={(e) => {
-                          const prompts = result.shots.map(s => s.video_prompt).filter(Boolean).join("\n\n");
-                          navigator.clipboard.writeText(prompts);
-                          const originalHtml = e.currentTarget.innerHTML;
-                          e.currentTarget.innerHTML = "✓ Copied!";
-                          setTimeout(() => e.currentTarget.innerHTML = originalHtml, 2000);
-                        }}
-                      >
-                        Copy All
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* ── Send to Studio ──
-                      A .json in Studio's own export format. Studio already
-                      imports that shape, so this needs no extension update. */}
-                  <div style={{ marginTop: "32px", padding: "28px", background: "#000", border: "1px solid var(--primary)" }}>
-                    <h4 className="terminal-text" style={{ fontSize: "1.2rem", margin: "0 0 8px 0", color: "white", textShadow: "none" }}>
-                      ⚡ Build an AutoFlow Studio Workflow
-                    </h4>
-                    <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--text-secondary)", margin: "0 0 24px 0", textShadow: "none" }}>
-                      Every shot becomes real nodes with its prompts already wired in — no copy-pasting, nothing left to rebuild by hand.
-                    </p>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-                      <label style={studioFieldStyle}>
-                        <span style={studioLabelStyle}>Build</span>
-                        <select
-                          value={studioOpts.chain}
-                          onChange={(e) => setStudioOpt("chain", e.target.value)}
-                          style={studioSelectStyle}
-                        >
-                          <option value="image_to_video">Still → Clip</option>
-                          <option value="images">Stills only</option>
-                          <option value="videos">Clips only</option>
-                        </select>
-                      </label>
-
-                      {studioBuildsImages && (
-                        <label style={studioFieldStyle}>
-                          <span style={studioLabelStyle}>Image model</span>
-                          <select
-                            value={studioOpts.imageModel}
-                            onChange={(e) => setStudioOpt("imageModel", e.target.value)}
-                            style={studioSelectStyle}
-                          >
-                            {STUDIO_OPTIONS.imageModels.map((m) => <option key={m} value={m}>{m}</option>)}
-                          </select>
-                        </label>
-                      )}
-
-                      {studioBuildsVideos && (
-                        <label style={studioFieldStyle}>
-                          <span style={studioLabelStyle}>Video model</span>
-                          <select
-                            value={studioOpts.videoModel}
-                            onChange={(e) => setStudioOpt("videoModel", e.target.value)}
-                            style={studioSelectStyle}
-                          >
-                            {STUDIO_OPTIONS.videoModels.map((m) => <option key={m} value={m}>{m}</option>)}
-                          </select>
-                        </label>
-                      )}
-
-                      <label style={studioFieldStyle}>
-                        <span style={studioLabelStyle}>Aspect ratio</span>
-                        <select
-                          value={studioOpts.aspectRatio}
-                          onChange={(e) => setStudioOpt("aspectRatio", e.target.value)}
-                          style={studioSelectStyle}
-                        >
-                          {(studioBuildsImages ? STUDIO_OPTIONS.imageRatios : STUDIO_OPTIONS.videoRatios)
-                            .map((r) => <option key={r} value={r}>{r}</option>)}
-                        </select>
-                      </label>
-
-                      {studioBuildsVideos && (
-                        <label style={studioFieldStyle}>
-                          <span style={studioLabelStyle}>Clip length</span>
-                          <select
-                            value={studioOpts.duration}
-                            onChange={(e) => setStudioOpt("duration", e.target.value)}
-                            style={studioSelectStyle}
-                          >
-                            {STUDIO_OPTIONS.durations.map((d) => <option key={d} value={d}>{d}</option>)}
-                          </select>
-                        </label>
-                      )}
-
-                      <label style={studioFieldStyle}>
-                        <span style={studioLabelStyle}>Platform</span>
-                        <select
-                          value={studioOpts.platform}
-                          onChange={(e) => setStudioOpt("platform", e.target.value)}
-                          style={studioSelectStyle}
-                        >
-                          <option value="flow">Google Flow</option>
-                          <option value="chatgpt">ChatGPT</option>
-                        </select>
-                      </label>
-                    </div>
-
-                    {studioBuildsVideos && !STUDIO_OPTIONS.videoRatios.includes(studioOpts.aspectRatio) && (
-                      <p className="terminal-text" style={{ fontSize: "0.85rem", color: "var(--primary)", margin: "0 0 16px 0", textShadow: "none" }}>
-                        Flow only offers {STUDIO_OPTIONS.videoRatios.join(", ")} for video — clips will use 9:16.
-                      </p>
-                    )}
-
-                    <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
-                      {/* Installed: hand the extraction over and let the
-                          extension build it on the canvas. */}
-                      {hasStudio === true && (
-                        <button
-                          className="cyber-btn"
-                          style={{ padding: "16px 32px", background: "var(--primary)", color: "#000", fontWeight: 700 }}
-                          disabled={
-                            !studioPreview
-                            || studioPreview.nodes.length === 0
-                            || studioSend.state === "sending"
-                          }
-                          onClick={handleSendToStudio}
-                        >
-                          {studioSend.state === "sending" ? "Building…" : "⚡ Open in Studio"}
-                        </button>
-                      )}
-
-                      {/* Still asking. Showing either of the other two here
-                          would change shape under the cursor a moment later. */}
-                      {hasStudio === null && (
-                        <button
-                          className="cyber-btn"
-                          style={{ padding: "16px 32px", background: "var(--primary)", color: "#000", fontWeight: 700, opacity: 0.6 }}
-                          disabled
-                        >
-                          Looking for Studio…
-                        </button>
-                      )}
-
-                      {/* Not installed: installing is the offer, because it is
-                          the one that ends in a canvas rather than a file. */}
-                      {hasStudio === false && (
-                        <StoreLink
-                          product="studio"
-                          className="cyber-btn"
-                          style={{ padding: "16px 32px", background: "var(--primary)", color: "#000", fontWeight: 700, textDecoration: "none", display: "inline-block" }}
-                        >
-                          ⚡ Install AutoFlow Studio
-                        </StoreLink>
-                      )}
-
-                      <span className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--text-secondary)", textShadow: "none" }}>
-                        {studioPreview?.nodes.length ?? 0} nodes · {studioGenCount} generation{studioGenCount === 1 ? "" : "s"}
-                      </span>
-
-                      {/* The file, always available and never the headline.
-                          It uses this page's own builder, so it works with or
-                          without the extension. */}
-                      <button
-                        onClick={() => {
-                          downloadStudioWorkflow(
-                            result,
-                            studioOpts,
-                            (result.video_name || "Extracted Workflow")
-                          );
-                          setStudioSent(true);
-                        }}
-                        disabled={!studioPreview || studioPreview.nodes.length === 0}
-                        className="terminal-text"
-                        style={{
-                          background: "none", border: "none", padding: 0, cursor: "pointer",
-                          fontSize: "0.85rem", color: "var(--text-secondary)",
-                          textDecoration: "underline", textShadow: "none",
-                        }}
-                      >
-                        or download the .json
-                      </button>
-                    </div>
-
-                    {studioSend.state === "sent" && (
-                      <p className="terminal-text" style={{ fontSize: "0.9rem", color: "var(--primary)", marginTop: "20px", marginBottom: 0, textShadow: "none" }}>
-                        ✓ {studioSend.message}
-                      </p>
-                    )}
-
-                    {studioSend.notes.length > 0 && (
-                      <ul className="terminal-text" style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "12px 0 0 0", paddingLeft: "20px", textShadow: "none", lineHeight: 1.6 }}>
-                        {studioSend.notes.map((note, i) => <li key={i}>{note}</li>)}
-                      </ul>
-                    )}
-
-                    {studioSend.state === "error" && (
-                      <p className="terminal-text" style={{ fontSize: "0.9rem", color: "#ff6b6b", marginTop: "20px", marginBottom: 0, textShadow: "none" }}>
-                        {studioSend.message}
-                      </p>
-                    )}
-
-                    {hasStudio === false && (
-                      <p className="terminal-text" style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "16px", marginBottom: 0, textShadow: "none", lineHeight: 1.7 }}>
-                        With AutoFlow Studio installed this becomes one click: every shot arrives
-                        as a node with its prompts already wired in, on a canvas you can run.{" "}
-                        <a
-                          href={STUDIO_STORE_URL}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ color: "var(--primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}
-                        >
-                          Install it
-                        </a>
-                        , reload this page, and the button above sends straight to the canvas.
-                      </p>
-                    )}
-
-                    {studioSent && (
-                      <div style={{ marginTop: "20px", padding: "20px 24px", background: "rgba(255, 92, 0, 0.06)", border: "1px solid var(--primary)" }}>
-                        <p className="terminal-text" style={{ fontSize: "0.95rem", color: "var(--primary)", margin: "0 0 14px 0", textShadow: "none", fontWeight: 700 }}>
-                          ✓ Workflow saved to your downloads
-                        </p>
-                        <ol className="terminal-text" style={{ margin: 0, paddingLeft: "20px", fontSize: "0.9rem", color: "rgba(255,255,255,0.85)", lineHeight: 1.9, textShadow: "none" }}>
-                          <li>
-                            Open <strong>AutoFlow Studio</strong>
-                            {hasStudio === false && (
-                              <>
-                                {" — "}
-                                <a
-                                  href={STUDIO_STORE_URL}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  style={{ color: "var(--primary)", textDecoration: "underline", textUnderlineOffset: "4px" }}
-                                >
-                                  install it first
-                                </a>
-                                , the file needs it
-                              </>
-                            )}
-                          </li>
-                          <li>
-                            On the gallery screen press <strong>⭱ Import</strong> — or drag the
-                            .json straight onto it
-                          </li>
-                          <li>
-                            It lands in <strong>My Workflows</strong>, wired and ready to run
-                          </li>
-                        </ol>
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{ marginTop: "32px", padding: "20px 24px", background: "rgba(255, 92, 0,0.05)", borderLeft: "4px solid var(--primary)", display: "flex", gap: "16px", alignItems: "flex-start" }}>
-                    <span className="terminal-text" style={{ fontSize: "1.5rem", lineHeight: 1 }}>!</span>
-                    <div>
-                      <h4 className="terminal-text" style={{ color: "var(--primary)", margin: "0 0 4px 0", fontSize: "1rem", textShadow: "none" }}>💡 Pro Tip</h4>
-                      <p className="terminal-text" style={{ margin: 0, fontSize: "0.95rem", color: "rgba(255,255,255,0.8)", lineHeight: "1.5", textShadow: "none" }}>
-                        For best results with AutoFlow's Auto Character Mapping, make sure your reference images match the character descriptions above.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                </UploadBox>
+              </>
             )}
-
-            {/* Sticky Floating Action Bar */}
-            <div
-              className="glass-panel"
-              style={{
-                position: "sticky",
-                bottom: "24px",
-                margin: "40px auto 0",
-                maxWidth: "780px",
-                padding: "14px 24px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: "16px",
-                flexWrap: "wrap",
-                zIndex: 90,
-                border: "1px solid rgba(255, 92, 0, 0.4)",
-                boxShadow: "0 20px 50px rgba(0,0,0,0.9), 0 0 30px rgba(255, 92, 0, 0.2)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <span style={{ fontSize: "1.2rem" }}>⚡</span>
-                <span style={{ fontSize: "0.9rem", fontWeight: "600", color: "#FFF" }}>
-                  {result.shots?.length || 0} Shots Extracted
-                </span>
-              </div>
-              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    const allPrompts = result.shots?.map((s, i) => `Shot ${i+1}: ${s.prompt || s.visual_prompt || ''}`).join("\n\n");
-                    navigator.clipboard?.writeText(allPrompts || "");
-                    alert("All prompts copied to clipboard!");
-                  }}
-                  style={{ padding: "8px 16px", fontSize: "0.85rem" }}
-                >
-                  📋 Copy All Prompts
-                </button>
-                <a
-                  href="/studio"
-                  className="btn btn-primary"
-                  style={{ padding: "8px 18px", fontSize: "0.85rem" }}
-                >
-                  ✨ Open in Studio Canvas →
-                </a>
-              </div>
-            </div>
-          </div>
+          </>
         )}
-        </div>
 
         {/* --- SEO Section --- */}
         {status === "idle" && (
@@ -1775,7 +703,7 @@ export default function ExtractorPage() {
                 { q: "What video formats are supported?", a: "We support MP4, MOV, and WebM video files up to 500MB. You can also paste a direct link from YouTube, TikTok, Instagram, or X — we'll download and analyze it for you." },
                 { q: "Which AI video generators does it work with?", a: "Our extractor works with videos made by any AI tool — including Runway Gen-3, OpenAI Sora, Kling AI, Luma Dream Machine, Pika Labs, Google Veo, Minimax, and more. It can also analyze traditional footage to generate AI-ready prompts." },
                 { q: "How accurate are the extracted prompts?", a: "Our vision AI analyzes every frame to identify artistic style, lighting, camera angles, character details, and motion patterns. While no extraction is 100% identical to the original, our prompts consistently produce visually similar results when used with the same AI tools." },
-                { q: "Can I extract prompts from YouTube or TikTok videos?", a: "Yes! Switch to 'Paste URL' mode and enter any public video link. We support YouTube, TikTok, Instagram Reels, and X/Twitter videos. The video is downloaded temporarily on our servers for analysis and deleted immediately after." },
+                { q: "Can I extract prompts from YouTube or TikTok videos?", a: "Yes! Paste any public video link into the box. We support YouTube, TikTok, Instagram Reels, and X/Twitter videos. The video is downloaded temporarily on our servers for analysis and deleted immediately after." },
                 { q: "What's the difference between image prompts and motion prompts?", a: "Image prompts describe what each frame looks like — the subject, style, lighting, and composition. Motion prompts describe how the camera moves and how elements animate between frames — things like 'slow dolly zoom' or 'pan left with parallax'." },
               ].map((faq, i) => (
                 <details key={i} style={{ marginBottom: "12px", border: "1px solid rgba(255,92,0,0.15)", borderRadius: "12px", background: "rgba(10,10,10,0.4)", overflow: "hidden" }}>
@@ -1827,7 +755,7 @@ export default function ExtractorPage() {
                 { "@type": "Question", name: "What video formats are supported?", acceptedAnswer: { "@type": "Answer", text: "We support MP4, MOV, and WebM video files up to 500MB. You can also paste a link from YouTube, TikTok, Instagram, or X." } },
                 { "@type": "Question", name: "Which AI video generators does it work with?", acceptedAnswer: { "@type": "Answer", text: "Our extractor works with videos from Runway Gen-3, OpenAI Sora, Kling AI, Luma Dream Machine, Pika Labs, Google Veo, Minimax, and more." } },
                 { "@type": "Question", name: "How accurate are the extracted prompts?", acceptedAnswer: { "@type": "Answer", text: "Our vision AI analyzes every frame to identify style, lighting, camera angles, and motion patterns. Prompts consistently produce visually similar results." } },
-                { "@type": "Question", name: "Can I extract prompts from YouTube or TikTok videos?", acceptedAnswer: { "@type": "Answer", text: "Yes! Switch to Paste URL mode and enter any public video link from YouTube, TikTok, Instagram Reels, or X/Twitter." } },
+                { "@type": "Question", name: "Can I extract prompts from YouTube or TikTok videos?", acceptedAnswer: { "@type": "Answer", text: "Yes! Paste any public video link from YouTube, TikTok, Instagram Reels, or X/Twitter into the box." } },
                 { "@type": "Question", name: "What's the difference between image prompts and motion prompts?", acceptedAnswer: { "@type": "Answer", text: "Image prompts describe what each frame looks like. Motion prompts describe camera movements and element animations between frames." } },
               ],
             }),

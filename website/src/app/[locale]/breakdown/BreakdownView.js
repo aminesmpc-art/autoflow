@@ -1,6 +1,8 @@
 "use client";
 
 import { clock } from "../extractor/timeFields";
+import { useRef } from "react";
+import { CopyButton, Icon, useHeadMetrics } from "../extractor/ui";
 import PacingChart from "./PacingChart";
 
 /* A "why it works" breakdown, read top to bottom the way a strategist would
@@ -9,19 +11,77 @@ import PacingChart from "./PacingChart";
    to steal. Scores are the model's judgement and are labelled as out of ten;
    pacing is measured and says so. */
 
-const panel = { background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "12px", padding: "24px", marginBottom: "24px" };
-const h3 = { margin: "0 0 14px", fontSize: "1.15rem", color: "white", fontWeight: 700 };
-const label = { fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)" };
-const body = { color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 };
-const chip = { border: "1px solid rgba(255, 92, 0, 0.4)", padding: "2px 10px", fontSize: "0.8rem", color: "var(--text-primary)", borderRadius: "999px" };
+/* The report's parts, in reading order, for the jump links in the header.
+   `has` says whether a breakdown has anything to show there. */
+const PARTS = [
+  { id: "bd-hook", label: "Hook", has: (b) => !!b.hook },
+  { id: "bd-pacing", label: "Pacing", has: (b) => !!b.pacing?.buckets?.length },
+  { id: "bd-structure", label: "Structure", has: (b) => b.beats?.length > 0 },
+  { id: "bd-risks", label: "Drop-off risks", has: () => true },
+  { id: "bd-techniques", label: "Techniques", has: (b) => b.techniques?.length > 0 },
+  { id: "bd-cta", label: "Call to action", has: () => true },
+  { id: "bd-copy", label: "What to copy", has: (b) => b.what_to_copy?.length > 0 },
+];
 
 function Stat({ name, value, note }) {
   return (
-    <div style={{ ...panel, marginBottom: 0, padding: "16px 20px", flex: "1 1 160px" }}>
-      <div style={label}>{name}</div>
-      <div style={{ fontSize: "1.8rem", fontWeight: 600, color: "white", margin: "4px 0 2px" }}>{value}</div>
-      {note && <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{note}</div>}
+    <div className="xf-stat">
+      <div className="xf-stat-k">{name}</div>
+      <div className="xf-stat-v">{value}</div>
+      {note && <div className="xf-stat-n">{note}</div>}
     </div>
+  );
+}
+
+function Section({ id, icon, title, aside, children, accent }) {
+  return (
+    <section id={id} className="xf-panel xf-bd-section" style={accent ? { borderColor: "var(--xf-accent-line)" } : undefined}>
+      <div className="xf-panel-head">
+        <h3 className="xf-panel-title"><Icon name={icon} /> {title}</h3>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** The sticky header over a breakdown: what the video is, its key numbers,
+    the page's actions, and a link to each part of the report. */
+export function BreakdownHeader({ breakdown: b, name, actions }) {
+  const head = useRef(null);
+  useHeadMetrics(head);
+  const parts = PARTS.filter((p) => p.has(b));
+  const span = b.section ? b.section.end_sec - b.section.start_sec : b.duration_sec;
+  const jump = (id) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  return (
+    <header className="xf-ws-head" ref={head}>
+      <div className="xf-ws-top">
+        <div className="xf-ws-id">
+          {b.cover_url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className="xf-ws-cover" src={b.cover_url} alt="" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+          )}
+          <div style={{ minWidth: 0 }}>
+            <h1 className="xf-ws-name" title={name}>{name}</h1>
+            <div className="xf-ws-stats">
+              <span><Icon name="layers" size={13} />Why it works</span>
+              {span > 0 && <span><Icon name="clock" size={13} /><span className="xf-tc">{clock(span)}</span></span>}
+              {b.hook && <span>hook {b.hook.strength}/10</span>}
+              {b.pacing && <span>{b.pacing.cuts_per_minute} cuts a minute</span>}
+            </div>
+          </div>
+        </div>
+        <div className="xf-ws-actions">{actions}</div>
+      </div>
+      <nav className="xf-tabs" aria-label="Parts of the breakdown">
+        {parts.map((p) => (
+          <button key={p.id} type="button" className="xf-tab" onClick={() => jump(p.id)}>{p.label}</button>
+        ))}
+      </nav>
+    </header>
   );
 }
 
@@ -32,159 +92,145 @@ export default function BreakdownView({ breakdown: b }) {
   const pacing = b.pacing;
 
   return (
-    <div>
+    <div className="xf-bd">
       {/* What it is */}
-      <div style={panel}>
-        {b.cover_url && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={b.cover_url} alt="Video cover" loading="lazy"
-            style={{ maxWidth: "220px", width: "100%", display: "block", marginBottom: "14px", borderRadius: "6px" }}
-            onError={(e) => { e.currentTarget.style.display = "none"; }} />
+      <div className="xf-panel">
+        <p className="xf-prose" style={{ whiteSpace: "normal" }}>{b.summary}</p>
+        {(b.format || b.tone || b.section) && (
+          <div className="xf-tags" style={{ marginTop: 12 }}>
+            {b.format && <span className="xf-tag">{b.format}</span>}
+            {b.tone && <span className="xf-tag">{b.tone}</span>}
+            {b.section && (
+              <span className="xf-tag">
+                <Icon name="clock" size={12} />
+                <span className="xf-tc">{clock(b.section.start_sec)}–{clock(b.section.end_sec)}</span> of <span className="xf-tc">{clock(b.duration_sec)}</span>
+              </span>
+            )}
+          </div>
         )}
-        <p style={{ ...body, color: "var(--text-primary)", fontSize: "1.05rem" }}>{b.summary}</p>
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "14px" }}>
-          {b.format && <span style={chip}>{b.format}</span>}
-          {b.tone && <span style={chip}>{b.tone}</span>}
-          {b.section && <span style={chip}>⏱ {clock(b.section.start_sec)}–{clock(b.section.end_sec)} of {clock(b.duration_sec)}</span>}
-        </div>
         {(b.audience || b.platform_fit) && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", marginTop: "16px" }}>
-            {b.audience && <div><div style={label}>Audience</div><p style={body}>{b.audience}</p></div>}
-            {b.platform_fit && <div><div style={label}>Platform fit</div><p style={body}>{b.platform_fit}</p></div>}
+          <div className="xf-two">
+            {b.audience && <div><div className="xf-kv-k">Audience</div><p className="xf-kv-v">{b.audience}</p></div>}
+            {b.platform_fit && <div><div className="xf-kv-k">Platform fit</div><p className="xf-kv-v">{b.platform_fit}</p></div>}
           </div>
         )}
       </div>
 
       {b.warnings?.length > 0 && (
-        <div role="status" style={{ ...panel, borderColor: "var(--warning)", padding: "16px 24px" }}>
-          <div style={{ color: "var(--warning)", fontSize: "0.9rem", marginBottom: "6px" }}>⚠ Notes on this breakdown</div>
-          <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-secondary)", fontSize: "0.88rem", lineHeight: 1.6 }}>
-            {b.warnings.map((w, i) => <li key={i}>{w}</li>)}
-          </ul>
+        <div className="xf-callout" role="status" style={{ marginTop: 14 }}>
+          <Icon name="alert" />
+          <div>
+            <strong style={{ color: "var(--text-primary)", display: "block", marginBottom: 4 }}>Notes on this breakdown</strong>
+            <ul>{b.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+          </div>
         </div>
       )}
 
       {/* The numbers */}
-      <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginBottom: "24px" }}>
+      <div className="xf-stats">
         {hook && <Stat name="Hook" value={`${hook.strength}/10`} note="AI's judgement" />}
         {pacing && <Stat name="Cuts per minute" value={pacing.cuts_per_minute} note="Measured from the video" />}
         {pacing && <Stat name="Average shot" value={`${pacing.average_shot_sec}s`} note={`${pacing.cut_count} cuts`} />}
-        <Stat name="Call to action" value={cta.present ? `${cta.strength}/10` : "None"} note={cta.present && cta.at_sec != null ? `at ${clock(cta.at_sec)}` : "AI's judgement"} />
+        <Stat
+          name="Call to action"
+          value={cta.present ? `${cta.strength}/10` : "None"}
+          note={cta.present && cta.at_sec != null ? `at ${clock(cta.at_sec)}` : "AI's judgement"}
+        />
       </div>
 
-      {/* Hook */}
       {hook && (
-        <div style={panel}>
-          <h3 style={h3}>🎣 The hook <span style={{ ...label, marginLeft: "6px" }}>{clock(hook.start_sec)}–{clock(hook.end_sec)}</span></h3>
-          {hook.technique && <span style={chip}>{hook.technique}</span>}
-          <p style={{ ...body, marginTop: "12px", color: "var(--text-primary)" }}>{hook.what_happens}</p>
-          {hook.why && <p style={{ ...body, marginTop: "8px" }}><strong style={{ color: "white" }}>Why it works:</strong> {hook.why}</p>}
-          {hook.improve && <p style={{ ...body, marginTop: "8px" }}><strong style={{ color: "white" }}>Make it stronger:</strong> {hook.improve}</p>}
-        </div>
+        <Section
+          id="bd-hook"
+          icon="hook"
+          title="The hook"
+          aside={<span className="xf-tc xf-muted">{clock(hook.start_sec)}–{clock(hook.end_sec)}</span>}
+        >
+          {hook.technique && <div className="xf-tags"><span className="xf-tag xf-tag-accent">{hook.technique}</span></div>}
+          <p className="xf-prose" style={{ marginTop: 10, whiteSpace: "normal" }}>{hook.what_happens}</p>
+          {hook.why && <p className="xf-why"><strong>Why it works:</strong> {hook.why}</p>}
+          {hook.improve && <p className="xf-why"><strong>Make it stronger:</strong> {hook.improve}</p>}
+        </Section>
       )}
 
-      {/* Pacing */}
-      {pacing ? (
-        <div style={panel}>
-          <h3 style={h3}>✂ Pacing — cuts per {pacing.bucket_sec || 10} seconds</h3>
+      {pacing?.buckets?.length > 0 && (
+        <Section id="bd-pacing" icon="scissors" title={`Pacing — cuts per ${pacing.bucket_sec || 10} seconds`}>
           <PacingChart pacing={pacing} />
-        </div>
-      ) : null}
+        </Section>
+      )}
 
-      {/* Structure */}
       {b.beats?.length > 0 && (
-        <div style={panel}>
-          <h3 style={h3}>🧱 Structure</h3>
-          <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "14px" }}>
+        <Section id="bd-structure" icon="layers" title="Structure">
+          <ol className="xf-timeline">
             {b.beats.map((beat, i) => (
-              <li key={i} style={{ display: "flex", gap: "16px", alignItems: "flex-start" }}>
-                <span style={{ ...label, minWidth: "86px", paddingTop: "3px", fontVariantNumeric: "tabular-nums" }}>
-                  {clock(beat.start_sec)}–{clock(beat.end_sec)}
-                </span>
+              <li key={i}>
+                <span className="xf-tc">{clock(beat.start_sec)}–{clock(beat.end_sec)}</span>
                 <div style={{ minWidth: 0 }}>
-                  <span style={chip}>{beat.label}</span>
-                  <p style={{ ...body, marginTop: "6px", color: "var(--text-primary)" }}>{beat.what_happens}</p>
-                  {beat.purpose && <p style={{ ...body, fontSize: "0.88rem" }}>{beat.purpose}</p>}
+                  <span className="xf-tag xf-tag-accent">{beat.label}</span>
+                  <p>{beat.what_happens}</p>
+                  {beat.purpose && <p className="xf-quiet">{beat.purpose}</p>}
                 </div>
               </li>
             ))}
           </ol>
-        </div>
+        </Section>
       )}
 
-      {/* Risks */}
-      <div style={panel}>
-        <h3 style={h3}>📉 Where viewers might leave</h3>
+      <Section id="bd-risks" icon="trendDown" title="Where viewers might leave">
         {b.attention_risks?.length ? (
-          <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "12px" }}>
+          <ol className="xf-timeline">
             {b.attention_risks.map((r, i) => (
-              <li key={i} style={{ display: "flex", gap: "12px" }}>
-                <span aria-hidden="true" style={{ color: "var(--warning)" }}>⚠</span>
-                <div>
-                  <span style={{ ...label, fontVariantNumeric: "tabular-nums" }}>Risk at {clock(r.at_sec)}</span>
-                  <p style={{ ...body, color: "var(--text-primary)" }}>{r.why}</p>
-                  {r.fix && <p style={{ ...body, fontSize: "0.88rem" }}><strong style={{ color: "white" }}>Fix:</strong> {r.fix}</p>}
+              <li key={i}>
+                <span className="xf-tc">at {clock(r.at_sec)}</span>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ marginTop: 0 }}>{r.why}</p>
+                  {r.fix && <p className="xf-quiet"><strong style={{ color: "var(--text-primary)" }}>Fix:</strong> {r.fix}</p>}
                 </div>
               </li>
             ))}
-          </ul>
+          </ol>
         ) : (
-          <p style={body}>No moment stood out as a likely drop-off.</p>
+          <p className="xf-muted" style={{ margin: 0 }}>No moment stood out as a likely drop-off.</p>
         )}
-      </div>
+      </Section>
 
-      {/* Techniques */}
       {b.techniques?.length > 0 && (
-        <div style={panel}>
-          <h3 style={h3}>🎬 Techniques</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "14px" }}>
+        <Section id="bd-techniques" icon="film" title="Techniques">
+          <div className="xf-techs">
             {b.techniques.map((t, i) => (
-              <div key={i} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "14px" }}>
-                <div style={{ color: "white", fontWeight: 600 }}>{t.name}</div>
-                {t.where && <div style={{ ...label, margin: "4px 0 6px" }}>{t.where}</div>}
-                <p style={{ ...body, fontSize: "0.88rem" }}>{t.why_it_works}</p>
+              <div className="xf-tech" key={i}>
+                <strong>{t.name}</strong>
+                {t.where && <span className="xf-tc">{t.where}</span>}
+                <p>{t.why_it_works}</p>
               </div>
             ))}
           </div>
-        </div>
+        </Section>
       )}
 
-      {/* Call to action */}
-      <div style={panel}>
-        <h3 style={h3}>📣 Call to action</h3>
+      <Section id="bd-cta" icon="megaphone" title="Call to action">
         {cta.present ? (
-          <p style={{ ...body, color: "var(--text-primary)" }}>
-            {cta.at_sec != null && <span style={{ ...label, marginRight: "8px" }}>{clock(cta.at_sec)}</span>}
+          <p className="xf-prose" style={{ whiteSpace: "normal" }}>
+            {cta.at_sec != null && <span className="xf-tc xf-muted" style={{ marginRight: 8 }}>{clock(cta.at_sec)}</span>}
             {cta.what}
           </p>
         ) : (
-          <p style={body}>The video does not ask the viewer to do anything.</p>
+          <p className="xf-muted" style={{ margin: 0 }}>The video does not ask the viewer to do anything.</p>
         )}
-        {cta.suggestion && <p style={{ ...body, marginTop: "8px" }}><strong style={{ color: "white" }}>Suggestion:</strong> {cta.suggestion}</p>}
-      </div>
+        {cta.suggestion && <p className="xf-why"><strong>Suggestion:</strong> {cta.suggestion}</p>}
+      </Section>
 
-      {/* What to copy */}
       {b.what_to_copy?.length > 0 && (
-        <div style={{ ...panel, borderColor: "rgba(255, 92, 0, 0.5)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "14px" }}>
-            <h3 style={{ ...h3, margin: 0 }}>✅ What to copy</h3>
-            <button
-              type="button"
-              className="cyber-btn"
-              style={{ padding: "6px 14px", fontSize: "0.8rem" }}
-              onClick={(e) => {
-                navigator.clipboard.writeText(b.what_to_copy.map((x, i) => `${i + 1}. ${x}`).join("\n"));
-                const btn = e.currentTarget; const was = btn.textContent;
-                btn.textContent = "✓ Copied"; setTimeout(() => { btn.textContent = was; }, 2000);
-              }}
-            >
-              Copy list
-            </button>
-          </div>
-          <ol style={{ margin: 0, paddingLeft: "22px", color: "var(--text-primary)", lineHeight: 1.7 }}>
+        <Section
+          id="bd-copy"
+          icon="checkList"
+          title="What to copy"
+          accent
+          aside={<CopyButton text={() => b.what_to_copy.map((x, i) => `${i + 1}. ${x}`).join("\n")} label="Copy list" />}
+        >
+          <ol className="xf-copylist">
             {b.what_to_copy.map((x, i) => <li key={i}>{x}</li>)}
           </ol>
-        </div>
+        </Section>
       )}
     </div>
   );
