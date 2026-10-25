@@ -34,11 +34,11 @@ export function baseName(source) {
 }
 
 /**
- * The four downloads as a row of buttons. Styling comes from the page that
- * hosts it — the extractor's terminal look, the dashboard's glass — so this
- * only decides what each button makes and whether it can.
+ * The four downloads: what each makes, whether it can, and why not. The
+ * extractor lists them in a menu and the dashboard as buttons; both read
+ * this one list.
  */
-export default function DownloadButtons({ result, sourceName, buttonClassName, buttonStyle }) {
+export function downloadActions(result, sourceName) {
   const can = exportsAvailable(result);
   const base = baseName(sourceName);
   const clipName = (() => {
@@ -47,7 +47,7 @@ export default function DownloadButtons({ result, sourceName, buttonClassName, b
     catch (e) { return name || "source.mp4"; }
   })();
 
-  const buttons = [
+  return [
     {
       key: "storyboard",
       label: "Storyboard PDF",
@@ -72,18 +72,21 @@ export default function DownloadButtons({ result, sourceName, buttonClassName, b
       title: "Import into Premiere or DaVinci to cut the source at every shot",
       run: () => downloadText(`${base}.edl`, toEdl(result, { title: base, sourceName: clipName }), "text/plain"),
     },
-  ];
+  ].map((b) => ({ ...b, ok: !!can[b.key], why: can[b.key] ? b.title : WHY_NOT[b.key] }));
+}
 
+/** The four downloads as a row of buttons, styled by the page that hosts it. */
+export default function DownloadButtons({ result, sourceName, buttonClassName, buttonStyle }) {
   return (
-    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-      {buttons.map((b) => (
+    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+      {downloadActions(result, sourceName).map((b) => (
         <button
           key={b.key}
           type="button"
           className={buttonClassName}
-          style={{ ...buttonStyle, opacity: can[b.key] ? 1 : 0.45, cursor: can[b.key] ? "pointer" : "not-allowed" }}
-          disabled={!can[b.key]}
-          title={can[b.key] ? b.title : WHY_NOT[b.key]}
+          style={buttonStyle}
+          disabled={!b.ok}
+          title={b.why}
           onClick={b.run}
         >
           {b.label}
