@@ -32,8 +32,10 @@ urlpatterns = [
     # the official bundle above so a failure in one cannot take out the other.
     path("templates/community", community_views.CommunityListView.as_view(), name="community-list"),
     path("templates/community/submit", community_views.CommunitySubmitView.as_view(), name="community-submit"),
+    path("templates/community/me", community_views.CommunityMeView.as_view(), name="community-me"),
     path("templates/community/<int:pk>", community_views.CommunityDetailView.as_view(), name="community-detail"),
     path("templates/community/<int:pk>/like", community_views.CommunityLikeView.as_view(), name="community-like"),
+    path("templates/community/<int:pk>/report", community_views.CommunityReportView.as_view(), name="community-report"),
 
     # Usage
     path("usage/consume", views.ConsumePromptView.as_view(), name="usage-consume"),
