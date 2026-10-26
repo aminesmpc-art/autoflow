@@ -5,7 +5,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import Script from "next/script";
 import MobileMenu from "./MobileMenu";
-import StoreLink from "./StoreLink";
+import { PRODUCTS } from "./products";
 import { AuthProvider } from "../context/AuthContext";
 import AuthButtons from "./AuthButtons";
 import MobileBanner from "./MobileBanner";
@@ -269,34 +269,50 @@ function Header() {
           <span className="logo-text">AutoFlow</span>
         </a>
         <ul className="nav-links">
-          <li>
-            <a href="/studio" className="nav-item-feature">
-              <span className="nav-dot" /> Studio
-            </a>
+          {/* Opens on hover and on keyboard focus (:focus-within), so it
+              needs no script and works from the Tab key. */}
+          <li className="nav-products">
+            <button type="button" className="nav-products-trigger" aria-haspopup="true">
+              Products <span className="nav-caret" aria-hidden="true">▾</span>
+            </button>
+            <div className="nav-products-menu">
+              <ul>
+                {PRODUCTS.map((product) => (
+                  <li key={product.key}>
+                    <a href={product.href} className="nav-product">
+                      <span className="nav-product-icon" aria-hidden="true">{product.icon}</span>
+                      <span className="nav-product-text">
+                        <span className="nav-product-name">
+                          {product.name}
+                          {product.badge && <NavBadge label={product.badge} />}
+                        </span>
+                        <span className="nav-product-blurb">{product.blurb}</span>
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </li>
-          <li>
-            <a href="/extractor" className="nav-item-feature">
-              <span className="nav-dot nav-dot-green" /> Extractor
-            </a>
-          </li>
-          <li><a href="/clipping">Clipping</a></li>
-          <li><a href="/#features">Batch Queue</a></li>
-          <li><a href="/#how-it-works">How It Works</a></li>
           <li><a href="/pricing">Pricing</a></li>
-          <li><a href="/blog">Blog</a></li>
+          <li><a href="/blog">Guides</a></li>
           <li><a href="/faq">FAQ</a></li>
         </ul>
         <div className="header-actions">
           <LangDropdown />
           <AuthButtons />
-          <StoreLink className="btn btn-primary btn-header">
-            Install Free
-          </StoreLink>
+          <a href="/#tools" className="btn btn-primary btn-header">
+            Get started
+          </a>
         </div>
         <MobileMenu />
       </nav>
     </header>
   );
+}
+
+function NavBadge({ label }) {
+  return <span className={`nav-badge ${label === "Free" ? "nav-badge--free" : ""}`}>{label}</span>;
 }
 
 function Footer() {
@@ -309,17 +325,16 @@ function Footer() {
             <span className="logo-text">AutoFlow</span>
           </a>
           <p className="text-secondary">
-            The complete generative AI video automation suite for Google Flow and beyond.
-            Visual node canvas, Story Director continuity, and batch queue processing.
+            AI video tools for Google Flow: batch generation, a visual node
+            canvas, motion control, prompt extraction and clipping.
           </p>
         </div>
         <div className="footer-col">
           <span className="footer-heading">Products</span>
           <ul>
-            <li><a href="/studio">AutoFlow Studio (Canvas)</a></li>
-            <li><a href="/extractor">AI Video Prompt Extractor</a></li>
-            <li><a href="/clipping">Clipping — long video into short clips</a></li>
-            <li><a href="/#features">AutoFlow Queue Manager</a></li>
+            {PRODUCTS.map((product) => (
+              <li key={product.key}><a href={product.href}>{product.fullName}</a></li>
+            ))}
             <li><a href="/pricing">Pricing (Pro $9.99)</a></li>
             <li><a href="/changelog">Changelog</a></li>
           </ul>

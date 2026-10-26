@@ -17,6 +17,10 @@ const COMPARISON_ROWS = [
   { feature: "Character Sheet Generation", free: "✓ Included", pro: "✓ Included" },
   { feature: "1-Click ComfyUI Graph Export", free: "✓ Included", pro: "✓ Included" },
 
+  { feature: "Motion Control", category: "AutoFlow Motion" },
+  { feature: "Motion Jobs", free: "3 jobs / day", pro: "Unlimited" },
+  { feature: "Transfer, Replace & Restyle Modes", free: "✓ Included", pro: "✓ Included" },
+
   { feature: "Queue Manager Automation", category: "Queue Manager" },
   { feature: "Daily Text Prompts", free: "50 prompts / day", pro: "Unlimited Prompts" },
   { feature: "Image-to-Video Prompts", free: "20 / day", pro: "Unlimited" },
@@ -93,6 +97,7 @@ export default function PricingCalculator() {
           <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "12px", marginBottom: "36px", flex: 1, color: "var(--text-secondary)", fontSize: "0.92rem" }}>
             <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "var(--primary)" }}>✓</span> 10 Studio workflow runs / month</li>
             <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "var(--primary)" }}>✓</span> 3 Video Prompt Extractions / day</li>
+            <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "var(--primary)" }}>✓</span> 3 Motion Control jobs / day</li>
             <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "var(--primary)" }}>✓</span> 50 Google Flow prompts / day</li>
             <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "var(--primary)" }}>✓</span> Unlimited nodes per canvas graph</li>
             <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "var(--primary)" }}>✓</span> 1 Character face continuity lock</li>
@@ -130,6 +135,7 @@ export default function PricingCalculator() {
 
           <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "12px", marginBottom: "36px", flex: 1, color: "#FFF", fontSize: "0.92rem" }}>
             <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "#10B981", fontWeight: "700" }}>✓</span> <strong>Unlimited</strong> Studio workflow runs</li>
+            <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "#10B981", fontWeight: "700" }}>✓</span> <strong>Unlimited</strong> Motion Control jobs</li>
             <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "#10B981", fontWeight: "700" }}>✓</span> <strong>20</strong> Video Prompt Extractions / day</li>
             <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "#10B981", fontWeight: "700" }}>✓</span> <strong>Unlimited</strong> prompt automation</li>
             <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "#10B981", fontWeight: "700" }}>✓</span> <strong>Unlimited</strong> character continuity locks</li>

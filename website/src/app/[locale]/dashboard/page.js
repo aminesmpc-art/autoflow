@@ -13,6 +13,8 @@ export default function DashboardPage() {
   const [expandedId, setExpandedId] = useState(null);
 
   const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.auto-flow.studio/api";
+  /* Shot thumbnails live on the extractor, not on Django. */
+  const EXTRACTOR_API_URL = process.env.NEXT_PUBLIC_EXTRACTOR_API_URL || "https://autoflow-extractor-production.up.railway.app/api/videos";
 
   useEffect(() => {
     if (!loading && !user) {
@@ -40,9 +42,10 @@ export default function DashboardPage() {
     if (token) fetchExtractions();
   }, [token, DJANGO_API_URL]);
 
-  const handleDelete = async (id, e) => {
+  const handleDelete = async (extraction, e) => {
     e.stopPropagation();
     if (!confirm("Are you sure you want to delete this saved extraction?")) return;
+    const id = extraction.id;
     
     try {
       const res = await fetch(`${DJANGO_API_URL}/extractions/${id}/`, {
@@ -51,6 +54,15 @@ export default function DashboardPage() {
       });
       if (res.ok) {
         setExtractions(extractions.filter(ex => ex.id !== id));
+        // Its shot thumbnails go with it. Best effort: the extraction is
+        // already gone, and a thumbnail left behind is unlisted and unlinked.
+        const thumbs = extraction.details?.thumbnails_id;
+        if (thumbs) {
+          fetch(`${EXTRACTOR_API_URL}/thumbs/${thumbs}`, {
+            method: "DELETE",
+            headers: { "Authorization": `Bearer ${token}` }
+          }).catch(() => {});
+        }
       }
     } catch (err) {
       console.error("Delete failed", err);
@@ -121,7 +133,7 @@ export default function DashboardPage() {
                     
                     <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
                       <button 
-                        onClick={(e) => handleDelete(ex.id, e)}
+                        onClick={(e) => handleDelete(ex, e)}
                         style={{ background: "transparent", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: "8px", fontSize: "1.2rem", transition: "color 0.2s" }}
                         onMouseEnter={(e) => e.target.style.color = "#ef4444"}
                         onMouseLeave={(e) => e.target.style.color = "var(--text-secondary)"}
@@ -138,6 +150,43 @@ export default function DashboardPage() {
                   {/* Expanded Content */}
                   {isExpanded && (
                     <div style={{ padding: "32px", borderTop: "1px solid rgba(255,255,255,0.05)", background: "rgba(0,0,0,0.3)" }}>
+
+                      {ex.master_prompt && (
+                        <div style={{ marginBottom: "32px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", gap: "12px" }}>
+                            <h4 style={{ fontSize: "0.9rem", textTransform: "uppercase", color: "var(--text-secondary)", letterSpacing: "1px", margin: 0 }}>Master Prompt</h4>
+                            <div style={{ display: "flex", gap: "8px" }}>
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: "6px 14px", fontSize: "0.8rem" }}
+                                onClick={(e) => {
+                                  navigator.clipboard.writeText(ex.master_prompt);
+                                  e.target.innerText = "✓ Copied";
+                                  setTimeout(() => e.target.innerText = "Copy", 2000);
+                                }}
+                              >
+                                Copy
+                              </button>
+                              {ex.master_prompt_json && (
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ padding: "6px 14px", fontSize: "0.8rem" }}
+                                  onClick={(e) => {
+                                    navigator.clipboard.writeText(JSON.stringify(ex.master_prompt_json, null, 2));
+                                    e.target.innerText = "✓ Copied";
+                                    setTimeout(() => e.target.innerText = "Copy JSON", 2000);
+                                  }}
+                                >
+                                  Copy JSON
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{ padding: "20px", background: "rgba(0,0,0,0.5)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.05)", color: "var(--text-primary)", lineHeight: 1.6 }}>
+                            {ex.master_prompt}
+                          </div>
+                        </div>
+                      )}
                       
                       {ex.voiceover_text && (
                         <div style={{ marginBottom: "32px" }}>
@@ -158,7 +207,7 @@ export default function DashboardPage() {
                                 className="btn btn-secondary" 
                                 style={{ padding: "8px 16px", fontSize: "0.85rem" }}
                                 onClick={(e) => {
-                                  const prompts = ex.shots.map(s => s.image_prompt).filter(Boolean).join("\\n\\n");
+                                  const prompts = ex.shots.map(s => s.image_prompt).filter(Boolean).join("\n\n");
                                   navigator.clipboard.writeText(prompts);
                                   e.target.innerText = "✓ Copied Images";
                                   setTimeout(() => e.target.innerText = "Copy Image Prompts", 2000);
@@ -170,7 +219,7 @@ export default function DashboardPage() {
                                 className="btn btn-secondary" 
                                 style={{ padding: "8px 16px", fontSize: "0.85rem", background: "rgba(22, 163, 74, 0.1)", color: "#4ade80", borderColor: "rgba(22, 163, 74, 0.3)" }}
                                 onClick={(e) => {
-                                  const prompts = ex.shots.map(s => s.video_prompt).filter(Boolean).join("\\n\\n");
+                                  const prompts = ex.shots.map(s => s.video_prompt).filter(Boolean).join("\n\n");
                                   navigator.clipboard.writeText(prompts);
                                   e.target.innerText = "✓ Copied Videos";
                                   setTimeout(() => e.target.innerText = "Copy Video Prompts", 2000);
@@ -187,6 +236,16 @@ export default function DashboardPage() {
                                 <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: "rgba(0,0,0,0.5)", border: "1px solid var(--primary-light)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.9rem", fontWeight: "bold", flexShrink: 0 }}>
                                   {shot.shot_id}
                                 </div>
+                                {shot.thumbnail_url && (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={shot.thumbnail_url}
+                                    alt=""
+                                    loading="lazy"
+                                    style={{ maxWidth: "96px", maxHeight: "96px", width: "auto", height: "auto", borderRadius: "8px", flexShrink: 0 }}
+                                    onError={(e) => { e.currentTarget.style.display = "none"; }}
+                                  />
+                                )}
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{ fontSize: "0.85rem", color: "var(--accent)", marginBottom: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                     <strong>Image:</strong> {shot.image_prompt}

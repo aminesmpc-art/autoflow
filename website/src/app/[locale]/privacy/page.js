@@ -1,4 +1,18 @@
 import { getDictionary, locales, defaultLocale } from '../../dictionaries';
+import PrivacyPolicy, { PRIVACY_UPDATED } from '../../privacy/PrivacyPolicy';
+
+/* The policy has one official text, in English, and every language shows it.
+   This page used to carry a short translated summary instead — one that said
+   AutoFlow collects no personal data and never uploads your content — and a
+   visitor whose browser is not set to English, a store reviewer included, was
+   served that summary at /privacy rather than the policy. */
+const OFFICIAL_TEXT_NOTE = {
+  ar: 'النص الرسمي لسياسة الخصوصية هذه باللغة الإنجليزية، وهو معروض أدناه.',
+  fr: 'Le texte officiel de cette politique de confidentialité est en anglais ; il figure ci-dessous.',
+  es: 'El texto oficial de esta política de privacidad está en inglés y se muestra a continuación.',
+  de: 'Die offizielle Fassung dieser Datenschutzerklärung ist auf Englisch und steht unten.',
+  it: 'Il testo ufficiale di questa informativa sulla privacy è in inglese ed è riportato qui sotto.',
+};
 
 export async function generateStaticParams() {
   return locales.filter(l => l !== defaultLocale).map(locale => ({ locale }));
@@ -7,19 +21,14 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }) {
   const { locale } = await params;
   const t = getDictionary(locale);
-  const baseUrl = 'https://www.auto-flow.studio';
 
-  const languages = { 'en': `${baseUrl}/privacy`, 'x-default': `${baseUrl}/privacy` };
-  locales.filter(l => l !== defaultLocale).forEach(l => {
-    languages[l] = `${baseUrl}/${l}/privacy`;
-  });
-
+  /* The same English text as /privacy, so that is the canonical page and
+     there are no language alternates to advertise. */
   return {
     title: t.privacyPage.title + ' — AutoFlow',
     description: t.footer.privacy,
     alternates: {
-      canonical: `${baseUrl}/${locale}/privacy`,
-      languages,
+      canonical: 'https://www.auto-flow.studio/privacy',
     },
   };
 }
@@ -33,39 +42,18 @@ export default async function LocalePrivacyPage({ params }) {
       <section className="legal-hero">
         <div className="container">
           <h1>{t.privacyPage.title}</h1>
-          <p className="text-secondary">{t.privacyPage.lastUpdated}</p>
+          {OFFICIAL_TEXT_NOTE[locale] && (
+            <p className="text-secondary">{OFFICIAL_TEXT_NOTE[locale]}</p>
+          )}
+          <p className="text-secondary" dir="ltr" lang="en">
+            Last updated: {PRIVACY_UPDATED}
+          </p>
         </div>
       </section>
 
       <section className="section">
-        <div className="container legal-content">
-          <h2>{locale === 'ar' ? 'ما هي المعلومات التي نجمعها' : locale === 'fr' ? 'Informations que nous collectons' : 'Information We Collect'}</h2>
-          <p>{locale === 'ar'
-            ? 'AutoFlow لا يجمع بيانات شخصية. تتم جميع عمليات المعالجة محلياً في متصفحك. نرسل فقط عدادات استخدام مجهولة للتحقق من حدود الخطة.'
-            : locale === 'fr'
-            ? "AutoFlow ne collecte pas de données personnelles. Tout le traitement se fait localement dans votre navigateur. Seuls des compteurs d'utilisation anonymes sont envoyés pour vérifier les limites de votre plan."
-            : 'AutoFlow does not collect personal data. All processing happens locally in your browser. We only send anonymous usage counts to verify plan limits.'}</p>
-
-          <h2>{locale === 'ar' ? 'تخزين البيانات' : locale === 'fr' ? 'Stockage des données' : 'Data Storage'}</h2>
-          <p>{locale === 'ar'
-            ? 'جميع النصوص والصور والفيديوهات المُنشأة تبقى في التخزين المحلي لمتصفحك. AutoFlow لا يرفع أبداً محتواك إلى أي خادم خارجي.'
-            : locale === 'fr'
-            ? "Tous les prompts, images et vidéos générées restent dans le stockage local de votre navigateur. AutoFlow n'envoie jamais votre contenu vers un serveur externe."
-            : 'All prompts, images, and generated videos stay in your browser\'s local storage. AutoFlow never uploads your content to any external server.'}</p>
-
-          <h2>{locale === 'ar' ? 'خدمات الطرف الثالث' : locale === 'fr' ? 'Services tiers' : 'Third-Party Services'}</h2>
-          <p>{locale === 'ar'
-            ? 'يتفاعل AutoFlow مع Google Flow (labs.google) داخل جلسة المتصفح الخاصة بك. نحن لا نصل إلى Google APIs أو خوادم خارجية أخرى مباشرة.'
-            : locale === 'fr'
-            ? "AutoFlow interagit avec Google Flow (labs.google) dans votre session navigateur. Nous n'accédons pas directement aux APIs Google ni à d'autres serveurs."
-            : 'AutoFlow interacts with Google Flow (labs.google) within your browser session. We do not access Google APIs or other external servers directly.'}</p>
-
-          <h2>{locale === 'ar' ? 'اتصل بنا' : locale === 'fr' ? 'Nous contacter' : 'Contact Us'}</h2>
-          <p>{locale === 'ar'
-            ? 'لأي أسئلة حول الخصوصية، تواصل معنا على:'
-            : locale === 'fr'
-            ? 'Pour toute question sur la confidentialité, contactez-nous à :'
-            : 'For any privacy questions, contact us at:'} <a href="mailto:support@auto-flow.studio">support@auto-flow.studio</a></p>
+        <div className="container legal-content" dir="ltr" lang="en">
+          <PrivacyPolicy />
         </div>
       </section>
     </>

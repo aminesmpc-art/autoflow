@@ -11,7 +11,7 @@ export const metadata = {
   },
   openGraph: {
     title: "AutoFlow Pricing — Free & Pro Plans",
-    description: "One subscription for all three: AutoFlow Studio canvas, AI Video Prompt Extractor, and Google Flow batch automation. Start free, upgrade for unlimited.",
+    description: "One subscription for every AutoFlow tool: the Queue Manager, AutoFlow Studio, AutoFlow Motion and the AI Video Prompt Extractor. Start free, upgrade for unlimited.",
     url: "https://www.auto-flow.studio/pricing",
   },
 };
@@ -23,10 +23,10 @@ export default function PricingPage() {
         <div className="container">
           <div className="badge" style={{ marginBottom: "20px" }}>Transparent Pricing</div>
           <h1 style={{ fontSize: "2.8rem", marginBottom: "16px" }}>
-            Three Flagship Tools.<br /><span className="text-gradient">One Unified Subscription.</span>
+            Every AutoFlow Tool.<br /><span className="text-gradient">One Pro Plan.</span>
           </h1>
           <p style={{ maxWidth: "680px", margin: "0 auto", fontSize: "1.15rem", color: "var(--text-secondary)" }}>
-            Unlock AutoFlow Studio (Visual Node Canvas), AI Video Prompt Extractor, and the Google Flow Queue Manager. Start free, scale when ready.
+            The Queue Manager, AutoFlow Studio, AutoFlow Motion and the AI Video Prompt Extractor share one account and one subscription. Start free, scale when ready.
           </p>
         </div>
       </section>

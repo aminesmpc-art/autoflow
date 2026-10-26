@@ -1,0 +1,472 @@
+/* ============================================================
+   AutoFlow Motion landing page
+   ============================================================ */
+
+.motion-hero {
+  padding: 160px 0 110px;
+  position: relative;
+  overflow: hidden;
+}
+
+.motion-hero-glow {
+  position: absolute;
+  top: -10%;
+  right: -15%;
+  width: 1000px;
+  height: 1000px;
+  background: radial-gradient(circle, rgba(255, 92, 0, 0.16) 0%, rgba(229, 9, 20, 0.05) 45%, transparent 70%);
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+.motion-hero-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 72px;
+  align-items: center;
+}
+
+.motion-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 99px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: rgba(255, 92, 0, 0.1);
+  border: 1px solid rgba(255, 92, 0, 0.3);
+  color: var(--primary-light);
+  margin-bottom: 28px;
+  box-shadow: 0 0 20px rgba(255, 92, 0, 0.2);
+}
+
+.motion-hero h1 {
+  font-size: clamp(2.6rem, 5vw, 4.4rem);
+  line-height: 1.08;
+  margin-bottom: 24px;
+}
+
+.motion-lead {
+  font-size: 1.2rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  max-width: 580px;
+  margin-bottom: 36px;
+}
+
+.motion-ctas {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.motion-ctas--center {
+  position: relative;
+  justify-content: center;
+  margin-bottom: 0;
+}
+
+/* Stands in for the store button until the listing is published. */
+.motion-soon {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 26px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 92, 0, 0.5);
+  background: rgba(255, 92, 0, 0.07);
+  color: var(--primary-light);
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.motion-plan-note {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.motion-plan-note strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* The side panel, shown at the width it has in Chrome. */
+.motion-panel-frame {
+  width: 380px;
+  padding: 8px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 92, 0, 0.45) 0%, rgba(255, 255, 255, 0.08) 100%);
+  box-shadow: 0 30px 100px -20px rgba(255, 92, 0, 0.45), 0 20px 50px rgba(0, 0, 0, 0.9);
+}
+
+.motion-panel-frame--wide {
+  width: 400px;
+}
+
+.motion-panel-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 15px;
+}
+
+/* Alternate sections, as on the Studio page. */
+.motion-band {
+  background: rgba(255, 255, 255, 0.01);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── What you can do ── */
+.motion-modes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.motion-card {
+  background: rgba(12, 12, 12, 0.7);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 32px 26px;
+  box-shadow: var(--shadow-card);
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+
+.motion-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 92, 0, 0.4);
+}
+
+.motion-card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  margin-bottom: 20px;
+  background: rgba(255, 92, 0, 0.1);
+  border: 1px solid rgba(255, 92, 0, 0.2);
+}
+
+.motion-card h3 {
+  font-size: 1.2rem;
+  margin-bottom: 10px;
+}
+
+.motion-card p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* ── How it works ── */
+.motion-how {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 72px;
+  align-items: center;
+}
+
+.motion-how-title {
+  margin: 20px 0 36px;
+}
+
+.motion-steps {
+  list-style: none;
+  display: grid;
+  gap: 16px;
+}
+
+.motion-step {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 18px;
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: rgba(12, 12, 12, 0.6);
+}
+
+.motion-step-num {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  color: #fff;
+  background: var(--gradient-primary);
+  box-shadow: var(--shadow-btn);
+}
+
+.motion-step h3 {
+  font-size: 1.15rem;
+  margin-bottom: 6px;
+}
+
+.motion-step p {
+  color: var(--text-secondary);
+  font-size: 0.97rem;
+  line-height: 1.6;
+}
+
+/* ── Built for real runs ── */
+.motion-features {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.motion-feature {
+  padding: 28px 26px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: rgba(12, 12, 12, 0.6);
+}
+
+.motion-feature h3 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 1.1rem;
+  margin-bottom: 10px;
+}
+
+.motion-feature h3::before {
+  content: "✓";
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  color: #fff;
+  background: var(--gradient-primary);
+}
+
+.motion-feature p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* ── Plans ── */
+.motion-plans {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+  max-width: 880px;
+  margin: 0 auto;
+}
+
+.motion-plan {
+  display: flex;
+  flex-direction: column;
+  padding: 36px 32px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  background: rgba(12, 12, 12, 0.7);
+}
+
+.motion-plan--pro {
+  border-color: var(--primary);
+  background: linear-gradient(160deg, rgba(255, 92, 0, 0.12) 0%, rgba(12, 12, 14, 0.95) 100%);
+  box-shadow: 0 20px 60px -10px rgba(255, 92, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.motion-plan-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.motion-plan--pro .motion-plan-name {
+  color: var(--primary-light);
+}
+
+.motion-plan-price {
+  font-size: 2.6rem;
+  font-weight: 800;
+  margin: 6px 0 4px;
+}
+
+.motion-plan-price span {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.motion-plan-headline {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 10px 0 18px;
+}
+
+.motion-plan ul {
+  list-style: none;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  flex: 1;
+  margin-bottom: 28px;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.motion-plan li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.motion-plan li::before {
+  content: "✓";
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.motion-plan .btn {
+  width: 100%;
+}
+
+.motion-plan-fineprint {
+  max-width: 760px;
+  margin: 28px auto 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+/* ── What you need + privacy ── */
+.motion-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+}
+
+.motion-info-card {
+  padding: 36px 32px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  background: rgba(12, 12, 12, 0.7);
+}
+
+.motion-info-card h2 {
+  font-size: 1.7rem;
+  margin-bottom: 20px;
+}
+
+.motion-info-card ul {
+  list-style: none;
+  display: grid;
+  gap: 14px;
+  margin-bottom: 20px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.motion-info-card li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.motion-info-card li::before {
+  content: "✓";
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.motion-info-note {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.motion-link {
+  color: var(--primary-light);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.motion-link:hover {
+  text-decoration: underline;
+}
+
+.motion-disclaimer {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 24px 64px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.7;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+  .motion-modes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .motion-features {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 960px) {
+  .motion-hero {
+    padding-top: 130px;
+    text-align: center;
+  }
+  .motion-hero-grid,
+  .motion-how {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 56px;
+  }
+  .motion-lead {
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .motion-ctas {
+    justify-content: center;
+  }
+  .motion-panel-frame,
+  .motion-panel-frame--wide {
+    width: min(360px, 100%);
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 680px) {
+  .motion-modes,
+  .motion-features,
+  .motion-plans,
+  .motion-two {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .motion-plan,
+  .motion-info-card {
+    padding: 30px 22px;
+  }
+  .motion-soon {
+    width: 100%;
+    justify-content: center;
+  }
+  .motion-badge {
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+    padding: 6px 12px;
+  }
+}

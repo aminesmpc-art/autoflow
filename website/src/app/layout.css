@@ -123,13 +123,153 @@
   flex-shrink: 0;
 }
 
+/* ── Products menu ── */
+.nav-products {
+  position: relative;
+}
+
+.nav-products-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border: none;
+  border-radius: 9999px;
+  background: none;
+  color: rgba(255, 255, 255, 0.68);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.nav-products:hover .nav-products-trigger,
+.nav-products:focus-within .nav-products-trigger {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.nav-caret {
+  font-size: 0.7rem;
+  transition: transform 0.15s ease;
+}
+
+.nav-products:hover .nav-caret,
+.nav-products:focus-within .nav-caret {
+  transform: rotate(180deg);
+}
+
+/* The top padding bridges the gap under the trigger, so the pointer can move
+   down into the menu without leaving it.
+
+   Closed means transparent and click-through, not visibility: hidden. A
+   hidden link cannot take focus, and Chrome skipped the whole list on a quick
+   Tab from "Products" even after the menu had turned visible. This way the
+   links stay in the Tab order and focusing any of them opens the menu. */
+.nav-products-menu {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  padding-top: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 120;
+}
+
+.nav-products:hover .nav-products-menu,
+.nav-products:focus-within .nav-products-menu {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%);
+}
+
+.nav-products-menu ul {
+  display: grid;
+  gap: 2px;
+  width: 340px;
+  margin: 0;
+  padding: 8px;
+  list-style: none;
+  background: rgba(12, 12, 14, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.9), 0 0 30px rgba(255, 92, 0, 0.06);
+}
+
+.nav-links .nav-product {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  white-space: normal;
+  color: inherit;
+}
+
+.nav-links .nav-product:hover,
+.nav-links .nav-product:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.nav-product-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(255, 92, 0, 0.1);
+  border: 1px solid rgba(255, 92, 0, 0.2);
+  font-size: 1rem;
+}
+
+.nav-product-text {
+  display: grid;
+  gap: 2px;
+}
+
+.nav-product-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #FFFFFF;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.nav-product-blurb {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.nav-badge {
+  padding: 2px 7px;
+  border-radius: 99px;
+  border: 1px solid rgba(255, 92, 0, 0.35);
+  background: rgba(255, 92, 0, 0.18);
+  color: var(--primary-light);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.nav-badge--free {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.12);
+  color: #34D399;
+}
+
 @media (max-width: 1080px) {
   .site-header {
     top: 12px;
     width: calc(100% - 24px);
-  }
-  .nav-links {
-    display: none;
   }
   .header-nav {
     height: 50px;
@@ -310,6 +450,7 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+  overflow-y: auto;
   animation: slideIn 0.25s ease;
   z-index: 160;
 }
@@ -371,13 +512,39 @@
   font-size: 0.95rem;
 }
 
+/* Hidden at the same width the phone menu appears: between 1025 and 1080px
+   the header used to show neither the links nor the menu button. */
 @media (max-width: 1024px) {
+  .nav-links {
+    display: none;
+  }
   .mobile-menu-btn {
     display: flex;
   }
   .header-actions {
     display: none;
   }
+}
+
+.mobile-menu-heading {
+  padding: 0 16px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mobile-menu .mobile-menu-product {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mobile-menu-divider {
+  height: 1px;
+  margin: 0 16px;
+  background: var(--border);
 }
 
 /* ── Language Switcher ── */

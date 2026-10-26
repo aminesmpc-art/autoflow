@@ -1,0 +1,153 @@
+/* ============================================================
+   AutoFlow Queue Manager page
+   ============================================================ */
+
+.queue-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 160px 0 100px;
+}
+
+.queue-hero-glow {
+  position: absolute;
+  top: -10%;
+  right: -10%;
+  width: 1000px;
+  height: 1000px;
+  background: radial-gradient(circle, rgba(255, 92, 0, 0.14) 0%, rgba(229, 9, 20, 0.04) 45%, transparent 70%);
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+.queue-hero-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 56px;
+  align-items: center;
+}
+
+.queue-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 28px;
+  padding: 6px 16px;
+  border-radius: 99px;
+  border: 1px solid rgba(255, 92, 0, 0.3);
+  background: rgba(255, 92, 0, 0.1);
+  color: var(--primary-light);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.queue-hero h1 {
+  font-size: clamp(2.6rem, 5vw, 4.2rem);
+  line-height: 1.08;
+  margin-bottom: 24px;
+}
+
+.queue-lead {
+  max-width: 560px;
+  margin-bottom: 36px;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  line-height: 1.7;
+}
+
+.queue-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.queue-note {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.queue-note strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* The square artwork, cropped to the two screens in its middle. */
+.queue-hero-media {
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 92, 0, 0.25);
+  box-shadow: 0 30px 100px -20px rgba(255, 92, 0, 0.4), 0 20px 50px rgba(0, 0, 0, 0.9);
+}
+
+.queue-hero-media img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 11;
+  object-fit: cover;
+  object-position: center 52%;
+}
+
+.queue-results {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 60px;
+  align-items: center;
+}
+
+.queue-plans-section {
+  padding-top: 0;
+}
+
+.queue-plans {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 32px;
+  align-items: center;
+  padding: 28px 32px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  background: rgba(12, 12, 12, 0.7);
+}
+
+.queue-plans p {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.queue-plan-name {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.queue-plan-name--pro {
+  color: var(--primary-light);
+}
+
+@media (max-width: 960px) {
+  .queue-hero {
+    padding-top: 130px;
+    text-align: center;
+  }
+  .queue-hero-grid,
+  .queue-results {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 48px;
+  }
+  .queue-lead {
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .queue-ctas {
+    justify-content: center;
+  }
+  .queue-plans {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    text-align: center;
+  }
+}

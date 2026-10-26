@@ -17,17 +17,22 @@ export default async function sitemap() {
      a different question and disagrees — /pricing is in it and /fr/pricing
      serves 200. Verified route by route against production 2026-09-03. */
   const routes = [
-    { path: '', lastmod: '2026-08-22' },
+    { path: '', lastmod: '2026-10-03' },
     { path: '/studio', lastmod: '2026-08-22', englishOnly: true },
     { path: '/pricing', lastmod: '2026-08-22' },
     { path: '/faq', lastmod: '2026-06-19' },
     { path: '/blog', lastmod: '2026-06-19' },
-    { path: '/privacy', lastmod: '2026-04-01' },
+    /* /fr/privacy and the rest still answer, but with the same English text
+       and a canonical pointing here, so there is no cluster to advertise. */
+    { path: '/privacy', lastmod: '2026-10-07', englishOnly: true },
     { path: '/terms', lastmod: '2026-04-01' },
     { path: '/prompts', lastmod: '2026-07-04' },
     { path: '/extractor', lastmod: '2026-07-04' },
     { path: '/clipping', lastmod: '2026-09-03', englishOnly: true },
     { path: '/changelog', lastmod: '2026-06-16', englishOnly: true },
+    { path: '/motion', lastmod: '2026-10-03', englishOnly: true },
+    /* The Queue Manager's sections moved here from the home page. */
+    { path: '/queue', lastmod: '2026-10-03', englishOnly: true },
   ];
   
   const staticSitemaps = routes.map(({ path: route, lastmod, englishOnly }) => {

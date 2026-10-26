@@ -112,7 +112,7 @@ export default function BlogPost() {
 
             <h2 id="what-is-autoflow">What is AutoFlow?</h2>
             <p>
-              AutoFlow is a <Link href="/#features">Chrome extension</Link> that sits alongside Google Flow as
+              AutoFlow is a <Link href="/queue">Chrome extension</Link> that sits alongside Google Flow as
               a side panel. Think of it as an <strong>autopilot for video generation</strong> —
               it handles the clicking, waiting, retrying, and downloading so you
               don&apos;t have to.

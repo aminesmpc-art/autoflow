@@ -692,9 +692,22 @@
   margin: 0 auto;
 }
 
+/* Linked sections (/privacy#motion) clear the fixed header. */
+.legal-content [id] {
+  scroll-margin-top: 120px;
+}
+
 .legal-content h2 {
   font-size: 1.4rem;
   margin: 40px 0 12px;
+  color: var(--text-primary);
+}
+
+/* Subsections (2.1, 2.6 …) sit under their section, not above it: the
+   global h3 is larger than the h2 above. */
+.legal-content h3 {
+  font-size: 1.1rem;
+  margin: 28px 0 10px;
   color: var(--text-primary);
 }
 

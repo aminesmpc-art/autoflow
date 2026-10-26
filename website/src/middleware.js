@@ -36,8 +36,19 @@ const unlocalizedPaths = [
   '/pricing',
   '/privacy',
   '/terms',
-  '/changelog'
+  '/changelog',
+  '/motion',
+  '/queue'
 ];
+
+/* The pages above that have no [locale] twin at all, so every language gets
+   the one English page. They used to be rewritten to /fr/studio and the rest
+   for any browser not set to English, and every one of those was a 404 in
+   production (checked 2026-10-02 with Accept-Language fr, de and ar). The
+   sitemap marks the same pages `englishOnly`. */
+const englishOnlyPaths = ['/studio', '/clipping', '/changelog', '/motion', '/queue'];
+const isEnglishOnly = (path) =>
+  englishOnlyPaths.some(p => path === p || path.startsWith(`${p}/`));
 
 export function middleware(request) {
   const { pathname } = request.nextUrl;
@@ -58,12 +69,25 @@ export function middleware(request) {
     return NextResponse.redirect(url);
   }
 
+  /* A locale in front of an English-only page has nowhere to go — the
+     localized header links /fr/studio — so send it to the English page. */
+  const prefixed = pathname.match(/^\/([a-z]{2})(\/.*)$/);
+  if (prefixed && locales.includes(prefixed[1]) && isEnglishOnly(prefixed[2])) {
+    const url = request.nextUrl.clone();
+    url.pathname = prefixed[2];
+    return NextResponse.redirect(url);
+  }
+
   // Check if the pathname already has a locale
   const pathnameHasLocale = locales.some(
     locale => pathname.startsWith(`/${locale}/`) || pathname === `/${locale}`
   );
 
   if (pathnameHasLocale) {
+    return NextResponse.next();
+  }
+
+  if (isEnglishOnly(pathname)) {
     return NextResponse.next();
   }
 

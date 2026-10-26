@@ -41,7 +41,12 @@ export default function CheckoutClient() {
   }, []);
 
   useEffect(() => {
-    window.afCheckoutComplete = () => setDone(true);
+    window.afCheckoutComplete = () => {
+      setDone(true);
+      // Which button sold it is the session's utm_content: the extensions tag
+      // every Upgrade link. No email or receipt goes to analytics.
+      window.gtag?.("event", "pro_checkout_complete", { plan_id: PLAN_ID });
+    };
     return () => {
       delete window.afCheckoutComplete;
     };
@@ -70,8 +75,8 @@ export default function CheckoutClient() {
           <h1>You&apos;re Pro</h1>
           <p className="text-secondary" style={{ marginTop: "0.75rem" }}>
             Your payment went through on <strong>{email}</strong> — the same account you
-            use in AutoFlow. Open the extension and hit <strong>Refresh Usage</strong> to
-            see it.
+            use in AutoFlow. Go back to the extension: AutoFlow Motion switches to Pro by
+            itself within a minute, and in Queue Manager, press <strong>Refresh Usage</strong>.
           </p>
         </div>
       </section>

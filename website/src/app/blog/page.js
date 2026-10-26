@@ -117,7 +117,7 @@ export default function BlogPage() {
           <div className="blog-internal-links">
             <h3>Explore AutoFlow</h3>
             <div className="blog-links-grid">
-              <Link href="/#features" className="blog-link-card">
+              <Link href="/queue" className="blog-link-card">
                 <span>⚡</span>
                 <div>
                   <strong>Features</strong>

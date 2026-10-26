@@ -13,7 +13,9 @@ export default function StoreLink({ className, children, href, product = 'queue'
     if (typeof window !== 'undefined' && window.gtag) {
       window.gtag('event', 'click_extension_store', {
         event_category: 'outbound',
-        event_label: product === 'studio' ? 'Chrome Web Store - Studio' : 'Chrome Web Store - Queue',
+        event_label: product === 'studio' ? 'Chrome Web Store - Studio'
+          : product === 'motion' ? 'Chrome Web Store - Motion'
+          : 'Chrome Web Store - Queue',
         value: 1,
       });
     }

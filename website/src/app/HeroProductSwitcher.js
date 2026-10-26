@@ -4,7 +4,7 @@ import { useState } from "react";
 import StoreLink from "./StoreLink";
 
 export default function HeroProductSwitcher() {
-  const [activeTab, setActiveTab] = useState("studio");
+  const [activeTab, setActiveTab] = useState("motion");
 
   return (
     <div className="animate-in delay-4" style={{ marginTop: "40px" }}>
@@ -20,6 +20,13 @@ export default function HeroProductSwitcher() {
       >
         <button
           type="button"
+          className={`product-tab-btn ${activeTab === "queue" ? "active" : ""}`}
+          onClick={() => setActiveTab("queue")}
+        >
+          <span style={{ color: "#818CF8" }}>⚡</span> Queue Manager (Batch Runner)
+        </button>
+        <button
+          type="button"
           className={`product-tab-btn ${activeTab === "studio" ? "active" : ""}`}
           onClick={() => setActiveTab("studio")}
         >
@@ -27,17 +34,17 @@ export default function HeroProductSwitcher() {
         </button>
         <button
           type="button"
+          className={`product-tab-btn ${activeTab === "motion" ? "active" : ""}`}
+          onClick={() => setActiveTab("motion")}
+        >
+          <span style={{ color: "var(--primary)" }}>🕺</span> AutoFlow Motion (New)
+        </button>
+        <button
+          type="button"
           className={`product-tab-btn ${activeTab === "extractor" ? "active" : ""}`}
           onClick={() => setActiveTab("extractor")}
         >
           <span style={{ color: "#10B981" }}>🔍</span> Video Prompt Extractor
-        </button>
-        <button
-          type="button"
-          className={`product-tab-btn ${activeTab === "queue" ? "active" : ""}`}
-          onClick={() => setActiveTab("queue")}
-        >
-          <span style={{ color: "#818CF8" }}>⚡</span> Queue Manager (Batch Runner)
         </button>
       </div>
 
@@ -120,6 +127,54 @@ export default function HeroProductSwitcher() {
             <div style={{ display: "flex", gap: "24px", marginTop: "20px", color: "var(--text-secondary)", fontSize: "0.85rem", flexWrap: "wrap" }}>
               <div>⚡ <strong>No Python Required:</strong> 100% In-Browser Graph Canvas</div>
               <div>🔒 <strong>Identity Persistence:</strong> Keep faces &amp; clothes identical across shots</div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: AUTOFLOW MOTION */}
+        {activeTab === "motion" && (
+          <div style={{ padding: "32px", textAlign: "left" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
+              <div>
+                <span className="badge" style={{ background: "rgba(255, 92, 0, 0.15)", borderColor: "var(--primary)", color: "#FFF", marginRight: "10px" }}>
+                  🕺 MOTION CONTROL
+                </span>
+                <span style={{ fontSize: "0.88rem", color: "var(--text-muted)" }}>
+                  Transfer Motion • Replace the Subject • Restyle the Video
+                </span>
+              </div>
+              <a href="/motion" className="btn btn-primary" style={{ padding: "6px 16px", fontSize: "0.85rem" }}>
+                See AutoFlow Motion →
+              </a>
+            </div>
+
+            <div className="switcher-motion">
+              <div className="switcher-motion-steps">
+                <div style={{ background: "#111317", padding: "16px", borderRadius: "10px", border: "1px solid rgba(255, 92, 0, 0.4)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--primary)", fontWeight: "700", marginBottom: "6px" }}>01 • YOUR VIDEO</div>
+                  <div style={{ fontSize: "0.9rem", fontWeight: "600", color: "#FFF", marginBottom: "4px" }}>The movement to keep</div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>Cut into pieces of up to 10 seconds</div>
+                </div>
+                <div style={{ background: "#111317", padding: "16px", borderRadius: "10px", border: "1px solid rgba(255, 255, 255, 0.15)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "#818CF8", fontWeight: "700", marginBottom: "6px" }}>02 • YOUR AI ASSISTANT</div>
+                  <div style={{ fontSize: "0.9rem", fontWeight: "600", color: "#FFF", marginBottom: "4px" }}>A prompt for every piece</div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>Gemini, ChatGPT or Claude</div>
+                </div>
+                <div style={{ background: "#111317", padding: "16px", borderRadius: "10px", border: "1px solid rgba(16, 185, 129, 0.4)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "#10B981", fontWeight: "700", marginBottom: "6px" }}>03 • GOOGLE FLOW</div>
+                  <div style={{ fontSize: "0.9rem", fontWeight: "600", color: "#FFF", marginBottom: "4px" }}>Your character, the same motion</div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>Same subject and setting in every piece</div>
+                </div>
+              </div>
+              <div className="switcher-motion-shot">
+                <img
+                  src="/screenshots/motion/panel-modes.webp"
+                  alt="AutoFlow Motion side panel: choose what changes"
+                  width={510}
+                  height={812}
+                  loading="lazy"
+                />
+              </div>
             </div>
           </div>
         )}

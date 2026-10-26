@@ -1,13 +1,14 @@
 "use client";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
-import StoreLink from "./StoreLink";
+import { PRODUCTS } from "./products";
 
 export default function MobileMenu() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname() || '';
   const localeMatch = pathname.match(/^\/(ar|fr|es)(\/|$)/);
   const prefix = localeMatch ? `/${localeMatch[1]}` : "";
+  const close = () => setOpen(false);
 
   return (
     <>
@@ -25,32 +26,42 @@ export default function MobileMenu() {
       </button>
 
       {open && (
-        <div className="mobile-menu-overlay" onClick={() => setOpen(false)}>
+        <div className="mobile-menu-overlay" onClick={close}>
           <nav
             className="mobile-menu"
+            aria-label="Menu"
             onClick={(e) => e.stopPropagation()}
           >
+            <div className="mobile-menu-heading">Products</div>
             <ul>
-              <li><a href={`${prefix}/studio`} onClick={() => setOpen(false)} style={{ color: "var(--primary-light)", fontWeight: "600" }}>✨ AutoFlow Studio (NEW)</a></li>
-              <li><a href={`${prefix}/extractor`} onClick={() => setOpen(false)} style={{ color: "var(--primary)", fontWeight: "600" }}>🔍 Video Extractor (FREE)</a></li>
-              <li><a href={`${prefix}/clipping`} onClick={() => setOpen(false)}>✂️ Clipping</a></li>
-              <li><a href={`${prefix}/#features`} onClick={() => setOpen(false)}>Batch Queue</a></li>
-              <li><a href={`${prefix}/#how-it-works`} onClick={() => setOpen(false)}>How It Works</a></li>
-              <li><a href={`${prefix}/pricing`} onClick={() => setOpen(false)}>Pricing</a></li>
-              <li><a href={`${prefix}/blog`} onClick={() => setOpen(false)}>Blog</a></li>
-              <li><a href={`${prefix}/faq`} onClick={() => setOpen(false)}>FAQ</a></li>
+              {PRODUCTS.map((product) => (
+                <li key={product.key}>
+                  <a href={product.href} onClick={close} className="mobile-menu-product">
+                    <span aria-hidden="true">{product.icon}</span>
+                    {product.name}
+                    {product.badge && (
+                      <span className={`nav-badge ${product.badge === "Free" ? "nav-badge--free" : ""}`}>
+                        {product.badge}
+                      </span>
+                    )}
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <div className="mobile-menu-divider" />
+            <ul>
+              <li><a href={`${prefix}/pricing`} onClick={close}>Pricing</a></li>
+              <li><a href={`${prefix}/blog`} onClick={close}>Guides</a></li>
+              <li><a href={`${prefix}/faq`} onClick={close}>FAQ</a></li>
             </ul>
             <div className="mobile-menu-lang">
               <a href="/" className={`lang-option ${!localeMatch ? "active" : ""}`}>EN</a>
               <a href="/ar" className={`lang-option ${localeMatch && localeMatch[1] === "ar" ? "active" : ""}`}>AR</a>
               <a href="/fr" className={`lang-option ${localeMatch && localeMatch[1] === "fr" ? "active" : ""}`}>FR</a>
             </div>
-            <StoreLink
-              className="btn btn-primary mobile-menu-cta"
-              onClick={() => setOpen(false)}
-            >
-              Install Free
-            </StoreLink>
+            <a href="/#tools" className="btn btn-primary mobile-menu-cta" onClick={close}>
+              Get started
+            </a>
           </nav>
         </div>
       )}

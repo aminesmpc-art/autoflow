@@ -154,7 +154,7 @@ upward, dramatic and awe-inspiring, 4K`}</pre>
             <h2 id="tip-4">Tip 4: Leverage Auto-Retry</h2>
             <p>
               Some failures are random — server load, temporary issues, or quota limits.
-              That&apos;s why <Link href="/#features">AutoFlow has auto-retry built in</Link>.
+              That&apos;s why <Link href="/queue#features">AutoFlow has auto-retry built in</Link>.
             </p>
             <p>
               By default, AutoFlow retries failed prompts up to 2 times before marking

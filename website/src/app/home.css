@@ -1,0 +1,364 @@
+/* ============================================================
+   Home page — the tools, the chooser, how they fit, the plans
+   ============================================================ */
+
+/* ── The tools ── */
+.home-tools {
+  background: rgba(255, 92, 0, 0.02);
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: 40px;
+}
+
+/* Flex, not grid: five cards make a row of three and a centred row of two. */
+.home-tools-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 24px;
+}
+
+.home-tool {
+  flex: 1 1 320px;
+  max-width: 370px;
+  display: flex;
+  flex-direction: column;
+  padding: 30px 28px;
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(160deg, rgba(255, 92, 0, 0.05) 0%, rgba(10, 10, 10, 0.95) 100%);
+  box-shadow: var(--shadow-card);
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+
+.home-tool:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 92, 0, 0.35);
+}
+
+.home-tool--new {
+  border-color: rgba(255, 92, 0, 0.4);
+  background: linear-gradient(160deg, rgba(255, 92, 0, 0.12) 0%, rgba(10, 10, 10, 0.95) 100%);
+  box-shadow: 0 0 30px rgba(255, 92, 0, 0.08), var(--shadow-card);
+}
+
+.home-tool-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.home-tool-icon {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba(255, 92, 0, 0.1);
+  border: 1px solid rgba(255, 92, 0, 0.2);
+  font-size: 1.35rem;
+}
+
+.home-tool-kind {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.home-tool h3 {
+  font-size: 1.45rem;
+  margin-bottom: 8px;
+}
+
+.home-tool-blurb {
+  margin-bottom: 18px;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.home-tool-points {
+  flex: 1;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  margin-bottom: 26px;
+  list-style: none;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.home-tool-points li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.home-tool-points li::before {
+  content: "✓";
+  color: var(--primary);
+  font-weight: 700;
+}
+
+/* Two equal columns, so every card's buttons line up on one row. */
+.home-tool-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.home-tool-actions .btn {
+  width: 100%;
+  padding: 11px 12px;
+  font-size: 0.9rem;
+  justify-content: center;
+  text-align: center;
+}
+
+.home-tool-soon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 92, 0, 0.5);
+  background: rgba(255, 92, 0, 0.07);
+  color: var(--primary-light);
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* ── Which tool do I need ── */
+.home-choose-list {
+  display: grid;
+  gap: 12px;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.home-choose-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: rgba(12, 12, 12, 0.7);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.home-choose-row:hover,
+.home-choose-row:focus-visible {
+  border-color: rgba(255, 92, 0, 0.4);
+  background: rgba(255, 92, 0, 0.05);
+}
+
+.home-choose-need {
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.home-choose-tool {
+  flex: none;
+  color: var(--primary-light);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ── How the tools fit together ── */
+.home-flow {
+  border-top: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.home-flow-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  list-style: none;
+}
+
+.home-flow-step {
+  position: relative;
+  padding: 28px 24px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  background: rgba(12, 12, 12, 0.7);
+}
+
+.home-flow-num {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--gradient-primary);
+  color: #FFFFFF;
+  font-weight: 800;
+  box-shadow: 0 0 20px rgba(255, 92, 0, 0.45);
+}
+
+.home-flow-step h3 {
+  font-size: 1.3rem;
+  margin-bottom: 8px;
+}
+
+.home-flow-step p {
+  margin-bottom: 16px;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.home-flow-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.home-flow-links a {
+  color: var(--primary-light);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.home-flow-links a:hover {
+  text-decoration: underline;
+}
+
+/* ── One plan ── */
+.home-plans-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+  max-width: 880px;
+  margin: 0 auto;
+}
+
+.home-plan {
+  display: flex;
+  flex-direction: column;
+  padding: 34px 30px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  background: rgba(12, 12, 12, 0.7);
+}
+
+.home-plan--pro {
+  border-color: var(--primary);
+  background: linear-gradient(160deg, rgba(255, 92, 0, 0.12) 0%, rgba(12, 12, 14, 0.95) 100%);
+  box-shadow: 0 20px 60px -10px rgba(255, 92, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.home-plan-name {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.home-plan--pro .home-plan-name {
+  color: var(--primary-light);
+}
+
+.home-plan-price {
+  margin: 6px 0 18px;
+  font-size: 2.5rem;
+  font-weight: 800;
+}
+
+.home-plan-price span {
+  color: var(--text-muted);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.home-plan ul {
+  flex: 1;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  margin-bottom: 26px;
+  list-style: none;
+  color: var(--text-secondary);
+}
+
+.home-plan li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.home-plan li::before {
+  content: "✓";
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.home-cta-actions {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+}
+
+/* ── Hero switcher: the Motion tab ── */
+.switcher-motion {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 24px;
+  align-items: center;
+}
+
+.switcher-motion-steps {
+  display: grid;
+  gap: 14px;
+}
+
+.switcher-motion-shot {
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 92, 0, 0.35);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+}
+
+.switcher-motion-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1024px) {
+  .home-flow-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .home-choose-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .home-flow-steps,
+  .home-plans-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .switcher-motion {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .switcher-motion-shot {
+    max-width: 260px;
+    margin: 0 auto;
+  }
+}
