@@ -158,6 +158,41 @@ export function AuthProvider({ children }) {
     }
   };
 
+  // Sign in with a Google ID token. The backend creates the account when it
+  // does not exist yet, so this is both "log in" and "sign up" — which is why
+  // the same button serves both pages.
+  const loginWithGoogle = async (idToken) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_token: idToken }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Google sign-in failed");
+      }
+
+      const data = await response.json();
+
+      // The token pair carries a user id, not an email, so the address comes
+      // from the Google credential we just sent — it is a JWT of its own.
+      const email = decodeJwtPayload(idToken)?.email || "User";
+
+      localStorage.setItem("access_token", data.access);
+      localStorage.setItem("refresh_token", data.refresh);
+      localStorage.setItem("user_email", email);
+
+      setToken(data.access);
+      setUser({ email });
+      scheduleRefresh(data.access);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  };
+
   const logout = () => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     localStorage.removeItem("access_token");
@@ -168,7 +203,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, loginWithGoogle, logout }}>
       {children}
     </AuthContext.Provider>
   );

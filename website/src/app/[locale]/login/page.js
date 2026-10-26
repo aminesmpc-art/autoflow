@@ -5,6 +5,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { afterAuthPath } from "../../afterAuth";
+import GoogleSignInButton from "../../GoogleSignInButton";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -69,6 +70,8 @@ export default function LoginPage() {
             {isLoading ? "Logging in..." : "Log In"}
           </button>
         </form>
+
+        <GoogleSignInButton onError={setError} />
 
         <p style={{ marginTop: "1.5rem", textAlign: "center", color: "var(--text-secondary)" }}>
           Don't have an account? <Link href="/register" style={{ color: "var(--primary-light)" }}>Sign up</Link>
