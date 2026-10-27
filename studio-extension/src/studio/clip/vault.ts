@@ -206,17 +206,35 @@ async function putWithRoom(record: VaultRecord): Promise<void> {
   }
 }
 
-/** Keep a finished clip. Never throws — persistence is an improvement. */
-export async function saveMedia(key: string, blob: Blob): Promise<void> {
-  if (!canPersist()) return;
+/** Keep a finished clip. Never throws — persistence is an improvement — but
+ *  says whether it worked, for a caller that must not drop its own copy
+ *  unless the vault really has one. */
+export async function saveMedia(key: string, blob: Blob): Promise<boolean> {
+  if (!canPersist()) return false;
   try {
     await putWithRoom({
       key: `media:${key}`, kind: 'media', blob, size: blob.size,
       savedAt: stamp(), type: blob.type,
     });
     await sweep();
+    return true;
   } catch (error) {
     console.warn('[AutoFlow] Could not keep the clip for next time:', error);
+    return false;
+  }
+}
+
+/** Drop every clip whose key starts with this, e.g. a deleted workflow's. */
+export async function dropMedia(prefix: string): Promise<void> {
+  if (!canPersist()) return;
+  try {
+    for (const record of await list()) {
+      if (record.key.startsWith(`media:${prefix}`)) {
+        await run('readwrite', (s) => s.delete(record.key) as IDBRequest<any>);
+      }
+    }
+  } catch (error) {
+    console.warn('[AutoFlow] Could not forget those clips:', error);
   }
 }
 

@@ -310,7 +310,10 @@ describe('a finished clip reaches the canvas playable', () => {
   it('has a worker handler that answers asynchronously', () => {
     const at = WORKER.indexOf("if (msg?.type === 'STUDIO_FETCH_MEDIA')");
     expect(at).toBeGreaterThan(-1);
-    const body = WORKER.slice(at, at + 1800);
+    /* Wide enough for the whole handler. It grew when the fetch gained
+       `credentials: 'include'` and the note explaining why — the two
+       assertions below are unchanged, the window just has to reach them. */
+    const body = WORKER.slice(at, at + 2400);
     expect(body).toMatch(/return true; \/\/ async/);
     expect(body).toMatch(/readAsDataURL\(blob\)/);
   });

@@ -68,6 +68,7 @@ export const NODE_DOCS: Record<string, NodeDoc> = {
       { id: 'image_ref', label: '🖼 — A reference image (Ingredients mode)' },
       { id: 'frame_start', label: 'S — Start frame (Frames mode, Flow only)' },
       { id: 'frame_end', label: 'E — End frame (Frames mode, Flow only)' },
+      { id: 'video_ref', label: 'V — A Flow clip to use whole (Omni); other models take its last frame' },
     ],
     outputs: [
       { id: 'result', label: '→ — The generated image or video clip' },

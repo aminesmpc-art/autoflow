@@ -1919,7 +1919,30 @@ async function trackTextReply(
       logLine(`Waiting ${Math.round(elapsed / 1000)}s — generating ${isGenerating()}, reply ${current.length} chars`);
     }
 
-    // Unchanged from before we asked means our answer has not started.
+    /* Unchanged from before we asked means our answer has not started.
+     *
+     * ── Known gap, deliberately left ──
+     *
+     * This is the wrong question, and the Gemini, ChatGPT and Claude adapters
+     * no longer ask it: a reply is accepted only if it READS DIFFERENTLY from
+     * the last one, so a model answering a second round in the same thread
+     * with the same words — `{"approved":true,"issues":[]}` from a Chief, the
+     * ordinary shape of an approval — is never seen, and the node times out
+     * with the finished answer on screen.
+     *
+     * The fix there is to count assistant TURNS instead, taking a baseline
+     * before asking. It is not applied here because replyBlocks() cannot
+     * supply that count: it matches `.message-bubble` and
+     * `[data-testid*="message"]`, which are turn markers for EITHER speaker,
+     * so the count would move when our own question rendered and hand back
+     * the previous reply as though it were this one. And per the note on
+     * replyBlocks, Grok's turn markup is the part that was never read off a
+     * live conversation — so the assistant-only selector this needs has to be
+     * measured, not guessed.
+     *
+     * Until then a Grok node carrying a repeated identical answer waits out
+     * its budget. Every other path is unaffected.
+     */
     if (!current || current === priorReply) continue;
 
     if (current === lastSeen) stableCount++;

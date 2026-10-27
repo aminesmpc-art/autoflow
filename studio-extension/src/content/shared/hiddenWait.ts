@@ -30,7 +30,7 @@
  * mutations before it are ignored, so the observer only ever shortens the
  * tail of a wait. Never rejects, and always settles exactly once.
  */
-export function sleepOrDomChange(ms: number, minMs = 250): Promise<void> {
+export function sleepOrDomChange(ms: number, minMs = 250, backgroundWait?: (ms: number) => Promise<void>): Promise<void> {
   return new Promise((resolve) => {
     let settled = false;
     const startedAt = Date.now();
@@ -64,10 +64,17 @@ export function sleepOrDomChange(ms: number, minMs = 250): Promise<void> {
     };
 
     const timer = setTimeout(finish, ms);
+    // Gemini supplies a worker clock; other adapters keep their existing timer.
+    backgroundWait?.(ms).then(finish).catch(() => {});
 
     try {
+      let deferred = false;
       obs = new MutationObserver(() => {
         if (Date.now() - startedAt >= minMs) finish();
+        else if (backgroundWait && !deferred) {
+          deferred = true;
+          backgroundWait(Math.max(50, minMs - (Date.now() - startedAt))).then(finish).catch(() => {});
+        }
       });
       obs.observe(document.body, {
         childList: true,
@@ -75,7 +82,8 @@ export function sleepOrDomChange(ms: number, minMs = 250): Promise<void> {
         /* src covers an <img>/<video> whose element is reused and only
            repointed, which is how several of these sites swap in a result. */
         attributes: true,
-        attributeFilter: ['src'],
+        characterData: !!backgroundWait,
+        attributeFilter: backgroundWait ? ['src', 'class', 'aria-busy', 'aria-disabled'] : ['src'],
       });
     } catch {
       /* No body yet, or observers unavailable. The timer alone still carries

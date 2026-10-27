@@ -24,10 +24,16 @@
  *                      ├──► shot still ──► shot clip
  *   character sheets ──┘
  *
- * Every character sheet feeds every still. That is what keeps a face the same
- * face across twelve shots, and it is the single thing a hand-built version of
- * this gets wrong most often — the wiring is tedious, so it gets skipped, and
- * the character drifts.
+ * A character sheet feeds every still that character is in. That is what
+ * keeps a face the same face across twelve shots, and it is the single thing
+ * a hand-built version of this gets wrong most often — the wiring is tedious,
+ * so it gets skipped, and the character drifts.
+ *
+ * The Extractor names who is visible in each shot. Wiring only those keeps a
+ * landscape free of faces and a two-hander from being handed the whole cast,
+ * which a generator otherwise tries to fit into the frame. An extraction from
+ * before it named them has no `characters` on its shots, and gets every sheet
+ * in every still, as it always did.
  *
  * Each still feeds its own clip and nothing else. A clip generated from a
  * still it did not come from is a continuity break with no explanation.
@@ -53,6 +59,8 @@ export interface Extraction {
     time_range?: string;
     image_prompt?: string;
     video_prompt?: string;
+    /** Who is visible, by character_name. Absent on older extractions. */
+    characters?: string[];
   }>;
 }
 
@@ -104,6 +112,9 @@ export interface BuildResult {
 
 const clean = (v: unknown): string => String(v ?? '').replace(/\s+/g, ' ').trim();
 
+/** A character name as it is matched, not as it is shown. */
+const nameKey = (v: unknown): string => clean(v).toLowerCase();
+
 /** A short label for a node, from a prompt that may be a paragraph. */
 function labelFrom(prompt: string, fallback: string): string {
   const words = prompt.split(' ').slice(0, 6).join(' ');
@@ -138,6 +149,7 @@ export function extractionToPlan(
 
   /* ── The cast ── */
   const characterIds: string[] = [];
+  const idByName = new Map<string, string>();
   if (options.characters !== false) {
     const sheets = Array.isArray(extraction.character_sheets) ? extraction.character_sheets : [];
     sheets.forEach((sheet, i) => {
@@ -148,6 +160,8 @@ export function extractionToPlan(
       }
       const id = `cast${i + 1}`;
       characterIds.push(id);
+      const name = nameKey(sheet?.character_name);
+      if (name && !idByName.has(name)) idByName.set(name, id);
       steps.push({
         id,
         type: 'generate',
@@ -180,6 +194,20 @@ export function extractionToPlan(
     );
   }
 
+  /* The sheets a shot is wired to. Names are matched loosely — case and
+     spacing — because the sheet and the shot come from the same answer and
+     differ only in how carefully it was typed. A name with no sheet (a waiter
+     the analysis did not draw) wires nothing. */
+  const castFor = (shot: NonNullable<Extraction['shots']>[number]): string[] | undefined => {
+    if (!characterIds.length) return undefined;
+    if (!Array.isArray(shot?.characters)) return [...characterIds];
+    const ids = [...new Set(
+      shot.characters.map((n) => idByName.get(nameKey(n))).filter((id): id is string => !!id),
+    )];
+    return ids.length ? ids : undefined;
+  };
+  const perShot = shots.some((shot) => Array.isArray(shot?.characters));
+
   let built = 0;
   shots.forEach((shot, i) => {
     const n = Number(shot?.shot_id) || i + 1;
@@ -208,10 +236,10 @@ export function extractionToPlan(
         model: options.imageModel,
         label: `${n}. ${labelFrom(still, 'Still')}${suffix}`,
         prompt: still,
-        /* Every character, into every still. This is what keeps a face the
-           same face across a dozen shots, and it is exactly the wiring a
-           hand-built version skips because it is tedious. */
-        inputs: characterIds.length ? [...characterIds] : undefined,
+        /* The characters in this shot, into its still. This is what keeps a
+           face the same face across a dozen shots, and it is exactly the
+           wiring a hand-built version skips because it is tedious. */
+        inputs: castFor(shot),
       });
       built++;
     }
@@ -232,7 +260,7 @@ export function extractionToPlan(
         prompt: clip,
         /* Its OWN still and nothing else. A clip generated from a still it did
            not come from is a continuity break with no explanation. */
-        inputs: hasStill ? [stillId] : (characterIds.length ? [...characterIds] : undefined),
+        inputs: hasStill ? [stillId] : castFor(shot),
       });
       built++;
     }
@@ -253,7 +281,9 @@ export function extractionToPlan(
   const description = [
     clean(extraction.video_concept).slice(0, 180),
     `${shots.length} shot${shots.length === 1 ? '' : 's'}`,
-    cast ? `${cast} character${cast === 1 ? '' : 's'} wired into every still` : '',
+    cast
+      ? `${cast} character${cast === 1 ? '' : 's'} wired into ${perShot ? 'the shots they appear in' : 'every still'}`
+      : '',
   ].filter(Boolean).join(' · ');
 
   return { plan: { name, description, steps }, problems };

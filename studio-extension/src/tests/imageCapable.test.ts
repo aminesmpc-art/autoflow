@@ -61,7 +61,10 @@ describe('nothing is sent that would be thrown away', () => {
        turn is the next message in the same conversation, with them above it. */
     expect(SRC).toMatch(
       /images: round === 0 && !threadOpen && IMAGE_CAPABLE\.has\(key\) \? refImages : \[\]/);
-    expect(SRC).toMatch(/images: IMAGE_CAPABLE\.has\(at\.platform\) \? refineImages : \[\]/);
+    /* `attempt === 0 &&` joined the change request when it learned to correct
+       itself: a correction is the next message in the same chat, with the
+       pictures already above it. */
+    expect(SRC).toMatch(/images: attempt === 0 && IMAGE_CAPABLE\.has\(at\.platform\) \? refineImages : \[\]/);
   });
 
   it('does not tell the model to look at pictures it will never receive', () => {

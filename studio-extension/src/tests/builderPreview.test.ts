@@ -382,13 +382,18 @@ describe('the keyboard is visible, the way Linear and Raycast make it', () => {
     expect(css).toMatch(/\.sp-ask__go:disabled \.sp-key--on/);
   });
 
-  it('drops the marketing kicker for a tighter heading', () => {
-    /* An uppercase accent eyebrow over a 20px title is a landing page. Both
-       references let the input be the interface. */
-    expect(document.querySelector('.sp-ask__kicker')).toBeNull();
+  it('keeps the eyebrow a label, not a second headline', () => {
+    /* This used to remove the kicker outright: an uppercase accent eyebrow
+       over a 20px title read as a landing page. The Build tab redesign
+       brought one back on purpose, beside a "Production skills" badge and
+       over a larger heading of its own. What still holds is that the eyebrow
+       is the smallest step on the scale, so it cannot compete with the
+       heading it sits over. */
+    expect(document.querySelector('.sp-ask__kicker')?.textContent).toBe('AI WORKFLOW BUILDER');
     const css = CSS();
-    const at = css.lastIndexOf('.sp-ask__q {');
-    expect(css.slice(at, css.indexOf('}', at))).toMatch(/font-size: var\(--t-lg\)/);
+    const at = css.indexOf('#view-build .sp-ask__kicker {');
+    expect(at).toBeGreaterThan(-1);
+    expect(css.slice(at, css.indexOf('}', at))).toMatch(/font-size: var\(--t-micro\)/);
   });
 
   it('does not give a 320px panel a horizontal scrollbar', () => {

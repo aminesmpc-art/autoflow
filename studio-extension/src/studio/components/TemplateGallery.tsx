@@ -8,6 +8,8 @@ import { useStudioStore, normalizeWorkflow, resolveAssets } from '../store';
 import { CATEGORIES, type Template } from '../templates';
 import { loadTemplates, refreshTemplates, type TemplateSource } from '../templates/loader';
 import { getUpgradeTarget } from '../../shared/api';
+import CommunityFeed from '../community/CommunityFeed';
+import type { ComposerSource } from '../community/PostComposer';
 
 /** Node-chain preview gets noisy past this many dots */
 const MAX_PREVIEW_DOTS = 8;
@@ -34,6 +36,9 @@ export default function TemplateGallery() {
   const [importError, setImportError] = useState<string | null>(null);
   const [importOk, setImportOk] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  /* A workflow handed over to post — from the side panel's builder, or the canvas. */
+  const [pendingPost, setPendingPost] = useState<ComposerSource | null>(null);
+  const takePending = useCallback(() => setPendingPost(null), []);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { listWorkflows(); }, [listWorkflows]);
@@ -97,7 +102,7 @@ export default function TemplateGallery() {
          upgrade page instead. The card is a conversion surface, not a
          disabled button. */
       if (template.locked) {
-        const { url } = await getUpgradeTarget();
+        const { url } = await getUpgradeTarget('templates');
         window.open(url, '_blank', 'noopener');
         return;
       }
@@ -157,9 +162,20 @@ export default function TemplateGallery() {
          so it parks an id in storage and asks for the canvas to open; this is
          where that choice is collected. Cleared immediately, or every later
          visit to the gallery would reopen the same template. */
-      chrome.storage.local.get(['af_pending_template', 'af_pending_workflow'])
-        .then(({ af_pending_template: pending, af_pending_workflow: built }) => {
+      chrome.storage.local.get(['af_pending_template', 'af_pending_workflow', 'af_pending_post', 'af_open_community'])
+        .then(({ af_pending_template: pending, af_pending_workflow: built, af_pending_post: toPost, af_open_community: community }) => {
           if (!live) return undefined;
+          /* "Post to community" from somewhere this tree is not mounted (the
+             side panel's builder, the canvas): the workflow is parked whole,
+             and the Community tab opens with the composer on it. */
+          if (toPost || community) {
+            return chrome.storage.local.remove(['af_pending_post', 'af_open_community']).then(() => {
+              setCategory('Community');
+              if (toPost && Array.isArray((toPost as any).nodes)) {
+                setPendingPost({ name: (toPost as any).name || 'Untitled', nodes: (toPost as any).nodes, edges: (toPost as any).edges || [] });
+              }
+            });
+          }
           /* A workflow built from a description in the panel's Build tab. It
              is parked whole rather than by id, because it exists nowhere but
              in that panel — there is no published list to look it up in. */
@@ -246,6 +262,7 @@ export default function TemplateGallery() {
       </div>
 
       {/* Search */}
+      {category !== 'Community' && (
       <div className="studio-gallery__search">
         <input
           className="studio-gallery__search-input"
@@ -255,6 +272,7 @@ export default function TemplateGallery() {
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
+      )}
 
       {importError && (
         <div className="studio-gallery__error">⚠ {importError}</div>
@@ -275,6 +293,12 @@ export default function TemplateGallery() {
             {cat}
           </button>
         ))}
+        <button
+          className={`studio-gallery__tab studio-gallery__tab--community ${category === 'Community' ? 'studio-gallery__tab--active' : ''}`}
+          onClick={() => setCategory('Community')}
+        >
+          Community
+        </button>
         <button
           className={`studio-gallery__tab ${category === 'Mine' ? 'studio-gallery__tab--active' : ''}`}
           onClick={() => setCategory('Mine')}
@@ -316,8 +340,13 @@ export default function TemplateGallery() {
         </div>
       )}
 
+      {/* Community — workflows people posted */}
+      {category === 'Community' && (
+        <CommunityFeed onUse={loadTemplate} pending={pendingPost} onPendingTaken={takePending} />
+      )}
+
       {/* Template Grid */}
-      {category !== 'Mine' && (
+      {category !== 'Mine' && category !== 'Community' && (
       <div className="studio-gallery__grid">
         {visible.map((tpl) => (
           <div

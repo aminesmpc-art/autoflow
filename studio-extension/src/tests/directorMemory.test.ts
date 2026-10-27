@@ -94,7 +94,9 @@ describe('telling our turn from the one before it', () => {
   });
 
   it('passes it to the wait, which passes it to isGenerating', () => {
-    expect(GEMINI).toMatch(/trackTextReply\(nodeId, priorReply, config\?\.rawReply === true, turnsBefore\)/);
+    /* The network capture rides after the counts; it does not replace them. */
+    expect(GEMINI).toMatch(
+      /trackTextReply\(nodeId, priorReply, config\?\.rawReply === true, turnsBefore, repliesBefore, network\)/);
     expect(GEMINI).toMatch(/function isGenerating\(sinceTurns = 0\): boolean/);
     expect(GEMINI).toMatch(/const running = isGenerating\(sinceTurns\);/);
   });
@@ -119,8 +121,11 @@ describe('telling our turn from the one before it', () => {
 
   it('names the adapter build, so a stale tab is visible', () => {
     /* A content script already injected into an open tab is not replaced by a
-       rebuild. Without a new name, this fix and its absence look identical. */
-    expect(GEMINI).toMatch(/const ADAPTER_BUILD = 'thinking-wait-v5';/);
+       rebuild. Without a new name, this fix and its absence look identical.
+       Every adapter change since has moved the name on, so it is not pinned
+       here: what matters is that there is one and each node's log carries it. */
+    expect(GEMINI).toMatch(/const ADAPTER_BUILD = '[a-z0-9-]+';/);
+    expect(GEMINI).toMatch(/logLine\(`Executing node \$\{nodeId\} \[adapter \$\{ADAPTER_BUILD\}\]`\)/);
   });
 });
 
@@ -228,6 +233,15 @@ describe('what a repair actually says', () => {
     /* Everything else is in the thread. This is not: a model that has written
        prose in between drifts off the JSON shape unless told again. */
     expect(reviewFollowUp(directors, prompts)).toContain('{"approved":true,"issues":[]}');
+  });
+
+  it('checks execution defects in both review paths without judging word count', () => {
+    for (const review of [reviewAsk(PLAN, directors, prompts), reviewFollowUp(directors, prompts)]) {
+      expect(review).toContain('time ranges');
+      expect(review).toContain('occupied hands and props');
+      expect(review).toContain('camera height, mount and movement must agree');
+      expect(review).toContain('do not reject for word count');
+    }
   });
 
   it('is dramatically shorter than the form that assumes no memory', () => {

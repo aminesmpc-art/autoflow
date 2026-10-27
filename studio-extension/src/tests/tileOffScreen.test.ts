@@ -172,6 +172,36 @@ describe('the poller stops waiting for something waiting cannot fix', () => {
     expect(window).toMatch(/bringTileIntoView\(trackedTile\)/);
   });
 
+  it('does not announce the give-up on the path that succeeded', () => {
+    /* Observed, 00:14:25, on a clip that was fine:
+     *
+     *   Flow's API already has the finished clip after 0s of thumbnail — taking it from there…
+     *   Tile has shown a thumbnail for 0s without ever attaching a playable clip
+     *     (API: VIDEO_PRESENT), including 0 attempts at scrolling it back into view —
+     *     taking it as finished. It will have no preview and nothing chained from it
+     *     will have a last frame.
+     *   Clip attached once the tile was scrolled into view
+     *   Last frame captured (30KB) from the downloaded clip
+     *
+     * Both lines, same second. The give-up sat AFTER the if/else chain rather
+     * than inside its last branch, so the short-circuit set state and then
+     * fell into it. "0s" and "0 attempts" are the signature: no wait elapsed
+     * and nothing was scrolled, because nothing had gone wrong. It cost
+     * nothing but the reading — which is the whole value of the line.
+     */
+    const branch = SRC.slice(SRC.indexOf("if (state === 'thumbnail-only')"));
+    const body = branch.slice(0, branch.indexOf('} else if (thumbnailOnlySince)'));
+    const shortCircuit = body.indexOf('taking it from there rather than waiting');
+    const giveUp = body.indexOf('without ever attaching a ');
+    expect(shortCircuit).toBeGreaterThan(-1);
+    expect(giveUp).toBeGreaterThan(shortCircuit);
+
+    // Reached only by falling through every earlier branch.
+    const between = body.slice(shortCircuit, giveUp);
+    expect(between).toMatch(/\} else if \(serviceStillWorking \|\| held < grace \|\| nativeRetry\?\.attempts\) \{/);
+    expect(between).toMatch(/continue;\s*\n\s*\} else \{/);
+  });
+
   it('says how many times it tried, when it gives up anyway', () => {
     /* The old message said the clip never attached and left the reason to be
        guessed at. Whether it was ever scrolled back is the difference between

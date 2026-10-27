@@ -42,21 +42,27 @@ const ACCEPTS: Record<string, Array<'text' | 'picture' | 'video'>> = {
   // Extend continues an actual clip. A still of one is not the same thing,
   // and accepting it produced a brand-new clip that looked like a success.
   video: ['video', 'picture'],
+  // A Flow clip's V. A clip's result leaves on the same `result` port as a
+  // still's, so which of the two it is is checked against the node below.
+  video_ref: ['picture'],
 };
 
 const HUMAN: Record<string, string> = {
+  character: 'a native Flow character',
   text: 'a written prompt',
   picture: 'a picture',
   video: 'a clip',
 };
 
 const PORT_NAME: Record<string, string> = {
+  character: 'the character input',
   text: 'the prompt input',
   image_ref: 'the reference input',
   place_ref: 'the place image input',
   frame_start: 'the start frame',
   frame_end: 'the end frame',
   video: 'the clip input',
+  video_ref: 'V, the video reference',
 };
 
 export interface ConnectionAttempt {
@@ -66,6 +72,29 @@ export interface ConnectionAttempt {
   targetHandle?: string | null;
 }
 
+/** Enough of a node to tell a Flow clip from everything else. */
+export interface NodeInfo { id: string; type?: string; data?: any }
+
+/**
+ * Whether a node's result is a clip Flow made — the only kind Flow's library
+ * holds, and so the only kind V can put on a prompt. A Grok or Gemini clip, a
+ * cut from a local file and an extension are clips too, but not Flow's.
+ */
+export const isFlowClip = (node: NodeInfo | undefined): boolean =>
+  node?.type === 'generate' && (node.data?.platform || 'flow') === 'flow' && node.data?.mediaType === 'video';
+
+/** Why V refuses this source, or null. Only a Flow clip's result fits. */
+function videoRefProblem(c: ConnectionAttempt, nodes: readonly NodeInfo[]): string | null {
+  if ((c.sourceHandle || 'result') !== 'result') {
+    return 'V takes a whole clip. Wire a Flow clip\'s output here — a still goes into the reference input (🖼).';
+  }
+  const source = nodes.find((n) => n.id === c.source);
+  if (source && !isFlowClip(source)) {
+    return 'V takes a clip made on Flow, the only kind Flow\'s library holds. Wire this one into the reference input (🖼) to use its picture.';
+  }
+  return null;
+}
+
 /**
  * Why this wire cannot exist, or null when it can.
  *
@@ -73,9 +102,25 @@ export interface ConnectionAttempt {
  * picture, and the prompt input only takes writing" tells someone what to do
  * next; "invalid connection" does not.
  */
-export function connectionProblem(c: ConnectionAttempt): string | null {
+export function connectionProblem(
+  c: ConnectionAttempt,
+  existing: readonly ConnectionAttempt[] = [],
+  nodes: readonly NodeInfo[] = [],
+): string | null {
   if (!c.source || !c.target) return 'That wire has no node on one end.';
   if (c.source === c.target) return 'A node cannot feed itself.';
+  if (['frame_start', 'frame_end'].includes(c.targetHandle || '') && existing.some(e =>
+    e.target === c.target && e.targetHandle === c.targetHandle && e.source !== c.source)) {
+    return `The ${PORT_NAME[c.targetHandle!]} already has an image. Remove that wire before connecting another.`;
+  }
+  if (c.targetHandle === 'video_ref') {
+    // Flow takes one video per prompt (measured: five images and one video).
+    if (existing.some(e => e.target === c.target && e.targetHandle === 'video_ref' && e.source !== c.source)) {
+      return 'V already has a clip — Flow takes one video per prompt. Remove that wire before connecting another.';
+    }
+    const problem = videoRefProblem(c, nodes);
+    if (problem) return problem;
+  }
 
   const from = EMITS[c.sourceHandle || 'result'];
   const to = ACCEPTS[c.targetHandle || 'text'];
@@ -92,7 +137,11 @@ export function connectionProblem(c: ConnectionAttempt): string | null {
 }
 
 /** True when the wire is allowed. React Flow wants a boolean. */
-export const canConnect = (c: ConnectionAttempt): boolean => connectionProblem(c) === null;
+export const canConnect = (
+  c: ConnectionAttempt,
+  existing: readonly ConnectionAttempt[] = [],
+  nodes: readonly NodeInfo[] = [],
+): boolean => connectionProblem(c, existing, nodes) === null;
 
 /**
  * Whether a node could accept the wire currently being dragged.

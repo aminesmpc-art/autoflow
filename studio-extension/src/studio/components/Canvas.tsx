@@ -13,19 +13,22 @@ import {
   useStore,
   type Connection,
   type OnConnect,
+  type OnConnectEnd,
   BackgroundVariant,
   Panel,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { Icon } from './Icon';
-import { getUpgradeTarget } from '../../shared/api';
+import CanvasPostButton from '../community/CanvasPostButton';
+import { getUpgradeTarget, type UpgradePlace } from '../../shared/api';
 import { StoryNode } from '../nodes/StoryNode';
 import { ChiefNode } from '../nodes/ChiefNode';
 import { ClippingNode } from '../nodes/ClippingNode';
 import { CutNode } from '../nodes/CutNode';
 import { MotionNode } from '../nodes/MotionNode';
 import { canConnect, connectionProblem } from '../canvas/connect';
+import { boxOf, freeSpot, sizeOf } from '../canvas/placement';
 import { useStudioStore, FREE_LIMITS } from '../store';
 import { consumeStudioRun } from '../../shared/api';
 import { PromptNode } from '../nodes/PromptNode';
@@ -107,10 +110,11 @@ function CanvasInner() {
   } = useStudioStore();
 
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
+  const [connectionMsg, setConnectionMsg] = useState<string | null>(null);
   const [mcpStatus, setMcpStatus] = useState<McpBridgeStatus>('disconnected');
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { zoomIn, zoomOut, fitView, setCenter } = useReactFlow();
+  const { zoomIn, zoomOut, fitView, setCenter, screenToFlowPosition, getNodes, getZoom } = useReactFlow();
   const zoomPct = Math.round(useStore((s) => s.transform[2]) * 100);
   const [showMinimap, setShowMinimap] = useState(true);
 
@@ -238,9 +242,9 @@ function CanvasInner() {
      The template gallery has always asked; the topbar and the limit notice
      had the pricing URL hardcoded, so a change to it would have fixed one
      conversion surface out of three. */
-  const openUpgrade = useCallback(async () => {
+  const openUpgrade = useCallback(async (place: UpgradePlace) => {
     let url = 'https://auto-flow.studio/pricing';
-    try { url = (await getUpgradeTarget()).url || url; } catch { /* the literal is the fallback */ }
+    try { url = (await getUpgradeTarget(place)).url || url; } catch { /* the literal is the fallback */ }
     window.open(url, '_blank', 'noopener');
   }, []);
 
@@ -291,12 +295,27 @@ function CanvasInner() {
    * is paid for; what is not charged again is the run itself.
    */
   const handleRetry = useCallback(async (ids?: string[]) => {
-    if (isRunning) return;
+    /* Every one of these used to be a bare `return`, and a button that does
+       nothing and says nothing is indistinguishable from a broken one. The
+       run-still-in-progress case is the one that actually happened: a run
+       that threw left isRunning true, and Retry declined in silence until the
+       tab was reloaded. */
+    if (isRunning) {
+      setLimitMsg('A run is still in progress. Stop it first, then press Retry.');
+      return;
+    }
     const requested = ids && ids.length ? ids : failedNodeIds;
-    if (!requested.length) return;
+    if (!requested.length) {
+      setLimitMsg('Nothing to retry — no node is in a failed state.');
+      return;
+    }
 
     const only = runner.planRetry(requested, nodes, edges);
-    if (!only.size) return;
+    if (!only.size) {
+      setLimitMsg('Nothing to retry — the node asked for is switched off, or is not '
+        + 'one that runs.');
+      return;
+    }
 
     setLimitMsg(null);
     runner.run(nodes, edges, { only });
@@ -350,18 +369,65 @@ function CanvasInner() {
      looked correctly connected because there was a line going into it. */
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
-      const problem = connectionProblem(connection as any);
-      if (problem) { setLimitMsg(problem); return; }
+      const { edges: currentEdges, nodes: currentNodes } = useStudioStore.getState();
+      const problem = connectionProblem(connection, currentEdges, currentNodes);
+      if (problem) { setConnectionMsg(problem); return; }
+      setConnectionMsg(null);
       setLimitMsg(null);
       setEdges(addEdge({
         ...connection,
         type: 'deletable',
         animated: true,
         style: { stroke: '#8b5cf6', strokeWidth: 2.5 },
-      }, edges));
+      }, currentEdges));
     },
-    [edges, setEdges]
+    [setEdges]
   );
+
+  /* Released on a node rather than on a port dot: connect to the first
+     input that takes what this wire carries. React Flow only connects within
+     20px of a handle, so a wire dropped on the middle of a node did nothing
+     at all — no edge, no message — which reads exactly like the 1-star
+     review: "nodes don't properly connect". The rules are connect.ts's, as
+     for any other wire; this only chooses the port. */
+  const connectByDrop = useCallback((event: MouseEvent | TouchEvent, from: { nodeId: string; id?: string | null; type: string }) => {
+    const point = 'changedTouches' in event ? event.changedTouches[0] : event;
+    if (!point) return;
+    const under = document.elementFromPoint(point.clientX, point.clientY);
+    const nodeEl = under?.closest?.('.react-flow__node') as HTMLElement | null;
+    const targetId = nodeEl?.dataset.id;
+    if (!nodeEl || !targetId || targetId === from.nodeId) return;
+    const fromOutput = from.type === 'source';
+    const ports = Array.from(nodeEl.querySelectorAll<HTMLElement>(
+      `.react-flow__handle.${fromOutput ? 'target' : 'source'}`)).map((h) => h.dataset.handleid || null);
+    /* V before 🖼: a Flow clip dropped on a clip means "use this clip", and
+       both ports accept it. Anything V refuses still falls through to 🖼. */
+    ports.sort((a, b) => Number(b === 'video_ref') - Number(a === 'video_ref'));
+    const { edges, nodes } = useStudioStore.getState();
+    const attempts = ports.map((port) => (fromOutput
+      ? { source: from.nodeId, sourceHandle: from.id ?? null, target: targetId, targetHandle: port }
+      : { source: targetId, sourceHandle: port, target: from.nodeId, targetHandle: from.id ?? null }));
+    const fits = attempts.find((c) => canConnect(c, edges, nodes));
+    if (fits) { onConnect(fits as Connection); return; }
+    setConnectionMsg(attempts.length
+      ? connectionProblem(attempts[0], edges, nodes)
+      : 'That node has no input for this wire.');
+  }, [onConnect]);
+
+  const onConnectEnd: OnConnectEnd = useCallback((event, state) => {
+    if (state.isValid || !state.fromHandle) return;
+    if (!state.toHandle) { connectByDrop(event, state.fromHandle as any); return; }
+    const [source, target] = state.fromHandle.type === 'source'
+      ? [state.fromHandle, state.toHandle] : [state.toHandle, state.fromHandle];
+    if (source.type !== 'source' || target.type !== 'target') {
+      setConnectionMsg('Connect an output on the right to an input on the left.');
+      return;
+    }
+    const { edges, nodes } = useStudioStore.getState();
+    setConnectionMsg(connectionProblem({
+      source: source.nodeId, target: target.nodeId, sourceHandle: source.id, targetHandle: target.id,
+    }, edges, nodes));
+  }, [connectByDrop]);
 
   /* Handle node selection */
   const onNodeClick = useCallback(
@@ -383,16 +449,60 @@ function CanvasInner() {
     return false;
   }, [canAddNode]);
 
+  /* Where a node added from the library goes: the middle of what is on
+     screen, moved to the nearest spot that overlaps nothing. Every add used
+     to step 50px down from a fixed point, so new nodes stacked on each other
+     and hid the ports underneath — see canvas/placement.ts. */
+  const place = useCallback((type: string) => {
+    const size = sizeOf(type);
+    const rect = reactFlowWrapper.current?.getBoundingClientRect();
+    const centre = rect
+      ? screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+      : { x: 400, y: 200 };
+    const anchor = { x: centre.x - size.w / 2, y: centre.y - size.h / 2 };
+    /* React Flow's own copy of the nodes, because it carries the measured
+       size and the store's copy does not. A video clip renders 551px tall;
+       placed by a guess of 380, the next node landed on its lower half. */
+    const taken = getNodes().map((n) => boxOf(n as any));
+    /* The panels that float over the canvas count as taken too: a node
+       placed under the Node library on the left, or the zoom dock and the
+       minimap at the bottom, is on the canvas and out of reach. */
+    for (const sel of ['.studio-toolbar', '.studio-dock', '.react-flow__minimap']) {
+      const r = reactFlowWrapper.current?.querySelector(sel)?.getBoundingClientRect();
+      if (!r || !r.width) continue;
+      const a = screenToFlowPosition({ x: r.left, y: r.top });
+      const b = screenToFlowPosition({ x: r.right, y: r.bottom });
+      taken.push({ x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y });
+    }
+    const spot = freeSpot(anchor, size, taken);
+
+    /* Clear of every other node can still mean off the screen: on a laptop
+       a 551px clip next to two others runs out of view. A node you just
+       added and cannot see is the same dead end as one under another node,
+       so bring it into view — at the zoom you are already using. */
+    if (rect) {
+      const toolbar = reactFlowWrapper.current?.querySelector('.studio-toolbar')?.getBoundingClientRect();
+      const tl = screenToFlowPosition({ x: Math.max(rect.left, toolbar?.right ?? rect.left), y: rect.top });
+      const br = screenToFlowPosition({ x: rect.right, y: rect.bottom });
+      const inView = spot.x >= tl.x && spot.y >= tl.y && spot.x + size.w <= br.x && spot.y + size.h <= br.y;
+      if (!inView) {
+        const zoom = getZoom();
+        setTimeout(() => setCenter(spot.x + size.w / 2, spot.y + size.h / 2, { zoom, duration: 300 }), 0);
+      }
+    }
+    return spot;
+  }, [getNodes, getZoom, screenToFlowPosition, setCenter]);
+
   const addPromptNode = useCallback(() => {
     if (!guardAdd()) return;
     const id = `prompt_${Date.now()}`;
     addNode({
       id,
       type: 'prompt',
-      position: { x: 100, y: 100 + nodes.length * 50 },
+      position: place('prompt'),
       data: { type: 'prompt', label: `Prompt ${nodes.filter(n => (n.data as any).type === 'prompt').length + 1}`, text: '' },
     });
-  }, [addNode, nodes, guardAdd]);
+  }, [addNode, nodes, guardAdd, place]);
 
   const addImageNode = useCallback(() => {
     if (!guardAdd()) return;
@@ -400,10 +510,10 @@ function CanvasInner() {
     addNode({
       id,
       type: 'image',
-      position: { x: 100, y: 200 + nodes.length * 50 },
+      position: place('image'),
       data: { type: 'image', label: `Image ${nodes.filter(n => (n.data as any).type === 'image').length + 1}`, imageName: '', imageData: '' },
     });
-  }, [addNode, nodes, guardAdd]);
+  }, [addNode, nodes, guardAdd, place]);
 
   const addGenerateNode = useCallback(() => {
     if (!guardAdd()) return;
@@ -411,12 +521,16 @@ function CanvasInner() {
     addNode({
       id,
       type: 'generate',
-      position: { x: 500, y: 150 + nodes.length * 50 },
+      position: place('generate'),
       data: {
         type: 'generate',
         label: `Generate ${nodes.filter(n => (n.data as any).type === 'generate').length + 1}`,
-        model: 'Nano Banana Pro',
-        mediaType: 'image',
+        /* A "Flow clip" made an image until its Output was changed, and the
+           Start/End frame ports only exist for video — so a new user wiring
+           a start frame found nowhere to put it. The same defaults the
+           workflow builder gives a video step (builder/plan.ts). */
+        model: 'Omni 1.1 Flash',
+        mediaType: 'video',
         aspectRatio: '9:16',
         duration: '6s',
         creationType: 'ingredients',
@@ -429,7 +543,7 @@ function CanvasInner() {
         errorMessage: null,
       },
     });
-  }, [addNode, nodes, guardAdd]);
+  }, [addNode, nodes, guardAdd, place]);
 
   /** Shows the last frame of the clip feeding it, and passes it on. */
   const addFrameNode = useCallback(() => {
@@ -438,14 +552,13 @@ function CanvasInner() {
     addNode({
       id,
       type: 'frame',
-      position: { x: 380, y: 420 + nodes.length * 50 },
+      position: place('frame'),
       data: {
         type: 'frame',
         label: `Last Frame ${nodes.filter((n) => (n.data as any).type === 'frame').length + 1}`,
-        frameUrl: '',
       },
     });
-  }, [addNode, nodes, guardAdd]);
+  }, [addNode, nodes, guardAdd, place]);
 
   /**
    * A generate node preconfigured for Grok Imagine.
@@ -463,7 +576,7 @@ function CanvasInner() {
     addNode({
       id,
       type: 'generate',
-      position: { x: 620, y: 320 + nodes.length * 50 },
+      position: place('generate'),
       data: {
         type: 'generate',
         label: `Grok Clip ${nodes.filter((n) => {
@@ -487,7 +600,7 @@ function CanvasInner() {
         errorMessage: null,
       },
     });
-  }, [addNode, nodes, guardAdd]);
+  }, [addNode, nodes, guardAdd, place]);
 
   /**
    * Grok's extend, as its own node.
@@ -511,7 +624,7 @@ function CanvasInner() {
     addNode({
       id,
       type: 'agent',
-      position: { x: 620, y: 260 + nodes.length * 50 },
+      position: place('agent'),
       data: {
         type: 'agent',
         label: `Agent ${nodes.filter((n) => (n.data as any).type === 'agent').length + 1}`,
@@ -527,7 +640,7 @@ function CanvasInner() {
         errorMessage: null,
       },
     });
-  }, [addNode, nodes, guardAdd]);
+  }, [addNode, nodes, guardAdd, place]);
 
   const addExtendNode = useCallback(() => {
     if (!guardAdd()) return;
@@ -535,7 +648,7 @@ function CanvasInner() {
     addNode({
       id,
       type: 'extend',
-      position: { x: 900, y: 320 + nodes.length * 50 },
+      position: place('extend'),
       data: {
         type: 'extend',
         label: `Extend ${nodes.filter((n) => (n.data as any).type === 'extend').length + 1}`,
@@ -546,7 +659,7 @@ function CanvasInner() {
         errorMessage: null,
       },
     });
-  }, [addNode, nodes, guardAdd]);
+  }, [addNode, nodes, guardAdd, place]);
 
   /**
    * A generate node preconfigured to ask ChatGPT for text.
@@ -564,7 +677,7 @@ function CanvasInner() {
     addNode({
       id,
       type: 'story',
-      position: { x: 300, y: 250 + nodes.length * 50 },
+      position: place('story'),
       data: {
         type: 'story',
         /* The stored type stays 'story' — every saved workflow, all 26
@@ -581,7 +694,7 @@ function CanvasInner() {
         status: 'idle',
       },
     } as any);
-  }, [addNode, nodes, guardAdd]);
+  }, [addNode, nodes, guardAdd, place]);
 
   const addChiefNode = useCallback(() => {
     if (!guardAdd()) return;
@@ -589,7 +702,7 @@ function CanvasInner() {
     addNode({
       id,
       type: 'chief',
-      position: { x: 300, y: 250 + nodes.length * 50 },
+      position: place('chief'),
       data: {
         type: 'chief',
         label: `Director Chief ${nodes.filter((node) => node.type === 'chief').length + 1}`,
@@ -598,7 +711,7 @@ function CanvasInner() {
         status: 'idle',
       },
     } as any);
-  }, [addNode, nodes, guardAdd]);
+  }, [addNode, nodes, guardAdd, place]);
 
   /* The Clipping node. Its own node rather than a mode on the Director:
      the Director writes prompts from an idea, this one reads a recording and
@@ -609,7 +722,7 @@ function CanvasInner() {
     addNode({
       id,
       type: 'clip',
-      position: { x: 300, y: 250 + nodes.length * 50 },
+      position: place('clip'),
       data: {
         type: 'clip',
         label: `Clipping ${nodes.filter((x) => x.type === 'clip').length + 1}`,
@@ -619,7 +732,7 @@ function CanvasInner() {
         status: 'idle',
       },
     } as any);
-  }, [addNode, nodes, guardAdd]);
+  }, [addNode, nodes, guardAdd, place]);
 
   const addMotionNode = useCallback(() => {
     if (!guardAdd()) return;
@@ -627,7 +740,7 @@ function CanvasInner() {
     addNode({
       id,
       type: 'motion',
-      position: { x: 300, y: 250 + nodes.length * 50 },
+      position: place('motion'),
       data: {
         type: 'motion',
         label: `Motion Control ${nodes.filter((x) => x.type === 'motion').length + 1}`,
@@ -639,7 +752,7 @@ function CanvasInner() {
         status: 'idle',
       },
     } as any);
-  }, [addNode, nodes, guardAdd]);
+  }, [addNode, nodes, guardAdd, place]);
 
   const addAskNode = useCallback(() => {
     if (!guardAdd()) return;
@@ -647,7 +760,7 @@ function CanvasInner() {
     addNode({
       id,
       type: 'generate',
-      position: { x: 300, y: 250 + nodes.length * 50 },
+      position: place('generate'),
       data: {
         type: 'generate',
         label: `Ask AI ${nodes.filter((n) => {
@@ -669,7 +782,7 @@ function CanvasInner() {
         errorMessage: null,
       },
     });
-  }, [addNode, nodes, guardAdd]);
+  }, [addNode, nodes, guardAdd, place]);
 
   return (
     <div className="studio-canvas" ref={reactFlowWrapper}>
@@ -718,7 +831,7 @@ function CanvasInner() {
                 className={`studio-topbar__upgrade ${
                   runsLeft <= LOW_RUNS ? 'studio-topbar__upgrade--urgent' : ''
                 }`}
-                onClick={openUpgrade}
+                onClick={() => void openUpgrade('top_bar')}
               >
                 <Icon name="upgrade" className="studio-topbar__glyph" />
                 {runsLeft === 0 ? 'Get more runs' : 'Upgrade'}
@@ -751,6 +864,7 @@ function CanvasInner() {
               MCP {mcpStatus === 'connected' ? 'Active' : 'Idle'}
             </span>
           </span>
+          <CanvasPostButton />
           <button
             className="studio-topbar__icon"
             onClick={() => exportWorkflow()}
@@ -775,13 +889,13 @@ function CanvasInner() {
       </div>
 
       {/* Limit notice — dismissible, never blocks the canvas */}
-      {limitMsg && (
-        <div className="studio-limit">
-          <span className="studio-limit__text">{limitMsg}</span>
-          <button type="button" className="studio-limit__cta" onClick={openUpgrade}>
+      {(connectionMsg || limitMsg) && (
+        <div className="studio-limit" role="status">
+          <span className="studio-limit__text">{connectionMsg || limitMsg}</span>
+          {!connectionMsg && <button type="button" className="studio-limit__cta" onClick={() => void openUpgrade('limit')}>
             Upgrade
-          </button>
-          <button className="studio-limit__close" onClick={() => setLimitMsg(null)} aria-label="Dismiss">×</button>
+          </button>}
+          <button className="studio-limit__close" onClick={() => { setLimitMsg(null); setConnectionMsg(null); }} aria-label="Dismiss">×</button>
         </div>
       )}
 
@@ -790,7 +904,7 @@ function CanvasInner() {
         <div className="studio-toolbar__title">
           <Icon name="nodes" />
           <div><strong>Node library</strong><span>Click a tool to add it</span></div>
-          <span className="studio-toolbar__count">12</span>
+          <span className="studio-toolbar__count">13</span>
         </div>
         <div className="studio-toolbar__items">
         <div className="studio-toolbar__group">
@@ -920,7 +1034,10 @@ function CanvasInner() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
-        isValidConnection={(c) => canConnect(c as any)}
+        isValidConnection={(c) => canConnect(c, useStudioStore.getState().edges, useStudioStore.getState().nodes)}
+        onConnectStart={() => setConnectionMsg(null)}
+        onConnectEnd={onConnectEnd}
+        onClickConnectEnd={onConnectEnd}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}

@@ -244,7 +244,7 @@ describe('the poller can recover a tile that scrolled out of the page', () => {
     /* A tab loaded before the extension, or a Flow change, leaves the
        interceptor with nothing. Every API rule is inside a guard so the DOM
        path stays exactly as it was rather than the node failing outright. */
-    expect(poller).toMatch(/if \(isApiAvailable\(\)\) \{/);
+    expect(poller).toMatch(/if \(isApiAvailable\(\) && !nativeRetry\?\.attempts\) \{/);
     expect(poller).toMatch(/API \$\{apiState \|\| \(isApiAvailable\(\) \? /);
   });
 

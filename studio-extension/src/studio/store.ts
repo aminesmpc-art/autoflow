@@ -7,8 +7,9 @@
 import { create } from 'zustand';
 import type { Node, Edge } from '@xyflow/react';
 import { applyNodeChanges, applyEdgeChanges } from '@xyflow/react';
-import { migrateFrameEdges } from './templates/validate';
+import { hasVideoRefPort, isFramesMode, migrateFrameEdges, releaseVideoRef, retargetImagePorts } from './templates/validate';
 import { MODEL_RENAMES } from '../types';
+import { dropMedia, loadMedia, saveMedia } from './clip/vault';
 
 /* ── Types ── */
 
@@ -137,6 +138,7 @@ const STORAGE_PREFIX = 'studio_workflow_';
 const RUNTIME_KEYS = new Set([
   'status', 'progress', 'previewUrl', 'previewVideoUrl',
   'resultUrl', 'resultTileId', 'errorMessage', 'resultText',
+  'lastFrameUrl', 'sentPrompt',
 ]);
 
 /**
@@ -163,10 +165,158 @@ function stripResults(nodes: Node[]): Node[] {
         resultUrl: null,
         resultTileId: null,
         resultText: '',
+        lastFrameUrl: '',
+        sentPrompt: '',
         errorMessage: null,
       },
     };
   });
+}
+
+/* ── Keeping saves small ──
+   "please make the tool not slow becouse the panal get glitch and samtims stop"
+
+   Two things made every save heavy. Measured on the built Motion panel with
+   five saved projects of six 4MB clips each, storage faked in memory (a lower
+   bound — real chrome.storage also crosses a process):
+   - listWorkflows() read ALL of storage, get(null), after every save just to
+     list names: 150–380ms frozen each time.
+   - media was saved inline as data: URLs, so each save rewrote 28MB, every
+     5s in a run: finished clips (up to 15MB each, content/flow/index.ts),
+     subject, place and replacement photos (up to 10MB each), ending frames,
+     and the image nodes that carry the same photos again.
+   The list now comes from a small index, and any large data: URL lives in
+   the IndexedDB vault with only a reference in the saved workflow. In memory
+   nothing changes: the data URLs are still there. */
+const INDEX_KEY = 'studio_index_workflows';
+
+const metaOf = (w: any): SavedWorkflowMeta => ({
+  id: w.id, name: w.name || 'Untitled', createdAt: w.createdAt || 0, updatedAt: w.updatedAt || 0,
+  nodeCount: (w.nodes || []).length,
+});
+const sortMeta = (index: Record<string, SavedWorkflowMeta>): SavedWorkflowMeta[] =>
+  Object.values(index).sort((a, b) => b.updatedAt - a.updatedAt);
+
+async function readIndex(): Promise<Record<string, SavedWorkflowMeta>> {
+  const got = await chrome.storage.local.get(INDEX_KEY);
+  let index: Record<string, SavedWorkflowMeta> | undefined = got?.[INDEX_KEY];
+  if (!index) {
+    // Once, for workflows saved before the index: the only full read left.
+    const all = await chrome.storage.local.get(null);
+    index = {};
+    for (const [key, w] of Object.entries(all || {})) {
+      if (key.startsWith(STORAGE_PREFIX) && (w as any)?.id) index[(w as any).id] = metaOf(w);
+    }
+    await chrome.storage.local.set({ [INDEX_KEY]: index });
+    return index;
+  }
+  /* Heal against the keys actually stored, without reading their values
+     (getKeys, Chrome 130+): another document of the same extension may have
+     saved or deleted since this index was written. */
+  const local = chrome.storage.local as any;
+  if (typeof local.getKeys === 'function') {
+    const ids = new Set(((await local.getKeys()) as string[])
+      .filter((k) => k.startsWith(STORAGE_PREFIX)).map((k) => k.slice(STORAGE_PREFIX.length)));
+    let changed = false;
+    for (const id of Object.keys(index)) if (!ids.has(id)) { delete index[id]; changed = true; }
+    const missing = [...ids].filter((id) => !index![id]);
+    if (missing.length) {
+      const found = await chrome.storage.local.get(missing.map((id) => `${STORAGE_PREFIX}${id}`));
+      for (const w of Object.values(found || {})) if ((w as any)?.id) { index[(w as any).id] = metaOf(w); changed = true; }
+    }
+    if (changed) await chrome.storage.local.set({ [INDEX_KEY]: index });
+  }
+  return index;
+}
+
+/* Only large, canonical base64 data URLs move: rebuilt from the header kept
+   in the reference, they come back as the identical string, so fingerprints
+   built from them (Motion's configuration) still match after a reopen. */
+const VAULT_MIN = 256 * 1024;
+const DATA_URL = /^data:([\w.+-]+\/[\w.+-]+);base64,/;
+const VAULT_REF = /^vault:(wf:[^|]+)\|([\w.+-]+\/[\w.+-]+)$/;
+const mediaPrefix = (workflowId: string) => `wf:${workflowId}:`;
+
+/* What the vault already holds under each key, so unchanged media is not
+   written again on every save. */
+const vaulted = new Map<string, string>();
+const printOf = (url: string) => `${url.length}:${url.slice(-64)}`;
+/* The decoded size of a base64 data URL, without copying the payload. */
+const bytesOf = (url: string) => Math.floor((url.length - url.indexOf(',') - 1) * 3 / 4)
+  - (url.endsWith('==') ? 2 : url.endsWith('=') ? 1 : 0);
+
+async function base64Of(blob: Blob): Promise<string> {
+  if (typeof FileReader !== 'undefined') {
+    const url = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+    return url.slice(url.indexOf(',') + 1);
+  }
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let text = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(text);
+}
+
+/** Every node's data, with each string passed through `swap`. */
+async function mapStrings(value: any, path: string, swap: (s: string, path: string) => Promise<any>): Promise<any> {
+  if (typeof value === 'string') return swap(value, path);
+  if (Array.isArray(value)) {
+    const out = [];
+    for (let i = 0; i < value.length; i++) out.push(await mapStrings(value[i], `${path}.${i}`, swap));
+    return out;
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = await mapStrings(v, path ? `${path}.${k}` : k, swap);
+    return out;
+  }
+  return value;
+}
+
+/** The workflow as saved: large media moved into the vault. */
+async function mediaOut(nodes: Node[], workflowId: string): Promise<Node[]> {
+  return Promise.all(nodes.map(async (n) => ({
+    ...n,
+    data: await mapStrings(n.data, '', async (url, path) => {
+      const head = url.length >= VAULT_MIN ? DATA_URL.exec(url) : null;
+      if (!head) return url;
+      const key = `${mediaPrefix(workflowId)}${n.id}:${path}`;
+      const print = printOf(url);
+      /* Remembered AND still there: the vault evicts for room, and a
+         reference to evicted media would lose it on the next open. Reading
+         the record gives a Blob handle, not the bytes, so this is cheap. */
+      const held = vaulted.get(key) === print && (await loadMedia(key))?.size === bytesOf(url);
+      if (!held) {
+        let blob: Blob;
+        try { blob = await (await fetch(url)).blob(); } catch { return url; }
+        // The vault refused: keep it in the workflow rather than lose it.
+        if (!await saveMedia(key, blob)) return url;
+        vaulted.set(key, print);
+      }
+      return `vault:${key}|${head[1]}`;
+    }),
+  })));
+}
+
+/** The workflow as used: vault references turned back into data URLs. */
+async function mediaIn(nodes: Node[]): Promise<Node[]> {
+  return Promise.all(nodes.map(async (n) => ({
+    ...n,
+    data: await mapStrings(n.data, '', async (value) => {
+      const ref = value.startsWith('vault:') ? VAULT_REF.exec(value) : null;
+      if (!ref) return value;
+      const blob = await loadMedia(ref[1]);
+      // Evicted for room. A clip is still in Flow; a photo needs adding again.
+      if (!blob) return '';
+      const url = `data:${ref[2]};base64,${await base64Of(blob)}`;
+      vaulted.set(ref[1], printOf(url));
+      return url;
+    }),
+  })));
 }
 
 function generateId(): string {
@@ -226,6 +376,20 @@ export async function resolveAssets(nodes: Node[]): Promise<Node[]> {
     if (!url) return n;
     return { ...n, data: { ...d, imageData: url, imageName: d.imageName || 'reference' } };
   });
+}
+
+/**
+ * A saved workflow's graph, without opening it. The Community composer posts
+ * one straight from My Workflows, and opening it would replace whatever is on
+ * the canvas. Media comes back from the vault exactly as on open, so "include
+ * my images" has the pictures to include.
+ */
+export async function readSavedWorkflow(id: string): Promise<{ name: string; nodes: Node[]; edges: Edge[] } | null> {
+  const key = `${STORAGE_PREFIX}${id}`;
+  const data = (await chrome.storage.local.get(key))[key];
+  if (!data) return null;
+  const normalized = normalizeWorkflow(data.nodes || [], data.edges || []);
+  return { name: data.name || 'Untitled', nodes: await mediaIn(normalized.nodes), edges: normalized.edges };
 }
 
 export function normalizeWorkflow(nodes: Node[], edges: Edge[]): { nodes: Node[]; edges: Edge[] } {
@@ -305,18 +469,30 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         position: { x: src.position.x + 60, y: src.position.y + 60 },
         selected: false,
         // A copy has not run yet — carry the config, drop the result
-        data: { ...src.data, status: 'idle', progress: 0, previewUrl: '', resultUrl: '', resultTileId: null, errorMessage: null },
+        data: { ...src.data, status: 'idle', progress: 0, previewUrl: '', resultUrl: '', resultTileId: null, lastFrameUrl: '', sentPrompt: '', errorMessage: null },
       };
       return { nodes: [...s.nodes, copy] };
     });
     touch();
   },
   updateNodeData: (nodeId, data) => {
-    set((s) => ({
-      nodes: s.nodes.map((n) =>
-        n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n
-      ),
-    }));
+    set((s) => {
+      const node = s.nodes.find(n => n.id === nodeId);
+      const nextData = { ...node?.data, ...data };
+      const changedFrames = node?.type === 'generate'
+        && isFramesMode(node.data) !== isFramesMode(nextData);
+      // Leaving the one mode with a V port: its clip wire goes to image_ref first.
+      const lostVideoRef = node?.type === 'generate'
+        && hasVideoRefPort(node.data) && !hasVideoRefPort(nextData);
+      const edges = lostVideoRef ? releaseVideoRef(nodeId, s.edges) : s.edges;
+      const moved = changedFrames ? retargetImagePorts(nodeId, edges, isFramesMode(nextData)) : null;
+      if (moved) nextData.framesNotice = moved.dropped
+        ? `${moved.dropped} extra image connection${moved.dropped > 1 ? 's' : ''} removed — Frames uses two.` : '';
+      return {
+        nodes: s.nodes.map(n => n.id === nodeId ? { ...n, data: nextData } : n),
+        ...(moved ? { edges: moved.edges } : lostVideoRef ? { edges } : {}),
+      };
+    });
     // Runner status/progress writes are not user edits
     if (Object.keys(data).some((k) => !RUNTIME_KEYS.has(k))) touch();
   },
@@ -435,46 +611,63 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   saveError: null,
   savedWorkflows: [],
 
-  saveWorkflow: async () => {
-    const { workflow, nodes, edges } = get();
-    if (nodes.length === 0) return false; // nothing worth storing
-    set({ saveState: 'saving', saveError: null });
+  /* One save at a time. Moving clips into the vault makes a save take a
+     moment, and two overlapping ones could land out of order — an older
+     snapshot written over a newer one. Each queued save reads the state when
+     it starts, so the last one always writes the latest. */
+  saveWorkflow: (() => {
+    let chain: Promise<unknown> = Promise.resolve();
+    const saveNow = async (): Promise<boolean> => {
+      const { workflow, nodes, edges } = get();
+      if (nodes.length === 0) return false; // nothing worth storing
+      set({ saveState: 'saving', saveError: null });
 
-    const data = {
-      ...workflow,
-      updatedAt: Date.now(),
-      nodes: stripResults(nodes),
-      edges,
+      try {
+        const data = {
+          ...workflow,
+          updatedAt: Date.now(),
+          nodes: await mediaOut(stripResults(nodes), workflow.id),
+          edges,
+        };
+        let index: Record<string, SavedWorkflowMeta> | null = null;
+        try { index = await readIndex(); index[workflow.id] = metaOf(data); } catch { index = null; }
+        await chrome.storage.local.set({
+          [`${STORAGE_PREFIX}${workflow.id}`]: data,
+          studio_last_workflow_id: workflow.id,
+          ...(index ? { [INDEX_KEY]: index } : {}),
+        });
+        /* Changes made while this was saving are not in it, so they stay dirty. */
+        const now = get();
+        set({
+          ...(now.nodes === nodes && now.edges === edges ? { isDirty: false } : {}),
+          saveState: 'saved',
+          ...(now.workflow.id === workflow.id ? { workflow: { ...now.workflow, updatedAt: data.updatedAt } } : {}),
+          ...(index ? { savedWorkflows: sortMeta(index) } : {}),
+        });
+        setTimeout(() => {
+          if (get().saveState === 'saved') set({ saveState: 'idle' });
+        }, 2000);
+        return true;
+      } catch (e: any) {
+        // Quota is the realistic failure: uploaded reference images are stored
+        // as base64. Surface it instead of the old silent console.error.
+        const quota = /quota/i.test(e?.message || '');
+        console.error('[Studio] Failed to save workflow:', e);
+        set({
+          saveState: 'error',
+          saveError: quota
+            ? 'Storage full — delete old workflows in My Workflows'
+            : e?.message || 'Save failed',
+        });
+        return false;
+      }
     };
-    try {
-      await chrome.storage.local.set({
-        [`${STORAGE_PREFIX}${workflow.id}`]: data,
-        studio_last_workflow_id: workflow.id,
-      });
-      set({
-        isDirty: false,
-        saveState: 'saved',
-        workflow: { ...workflow, updatedAt: data.updatedAt },
-      });
-      get().listWorkflows();
-      setTimeout(() => {
-        if (get().saveState === 'saved') set({ saveState: 'idle' });
-      }, 2000);
-      return true;
-    } catch (e: any) {
-      // Quota is the realistic failure: uploaded reference images are stored
-      // as base64. Surface it instead of the old silent console.error.
-      const quota = /quota/i.test(e?.message || '');
-      console.error('[Studio] Failed to save workflow:', e);
-      set({
-        saveState: 'error',
-        saveError: quota
-          ? 'Storage full — delete old workflows in My Workflows'
-          : e?.message || 'Save failed',
-      });
-      return false;
-    }
-  },
+    return () => {
+      const next = chain.then(saveNow, saveNow);
+      chain = next;
+      return next;
+    };
+  })(),
 
   loadWorkflow: async (id) => {
     try {
@@ -482,7 +675,9 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       const result = await chrome.storage.local.get(key);
       const data = result[key];
       if (!data) return;
-      const { nodes, edges } = normalizeWorkflow(data.nodes || [], data.edges || []);
+      const normalized = normalizeWorkflow(data.nodes || [], data.edges || []);
+      const nodes = await mediaIn(normalized.nodes);
+      const { edges } = normalized;
       set({
         workflow: { id: data.id, name: data.name, createdAt: data.createdAt, updatedAt: data.updatedAt },
         nodes,
@@ -509,19 +704,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
   listWorkflows: async () => {
     try {
-      const all = await chrome.storage.local.get(null);
-      const list: SavedWorkflowMeta[] = Object.keys(all)
-        .filter((k) => k.startsWith(STORAGE_PREFIX))
-        .map((k) => all[k])
-        .filter((w) => w && w.id)
-        .map((w) => ({
-          id: w.id,
-          name: w.name || 'Untitled',
-          createdAt: w.createdAt || 0,
-          updatedAt: w.updatedAt || 0,
-          nodeCount: (w.nodes || []).length,
-        }))
-        .sort((a, b) => b.updatedAt - a.updatedAt);
+      const list = sortMeta(await readIndex());
       set({ savedWorkflows: list });
       return list;
     } catch (e) {
@@ -533,6 +716,12 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   deleteWorkflow: async (id) => {
     try {
       await chrome.storage.local.remove(`${STORAGE_PREFIX}${id}`);
+      try {
+        const index = await readIndex();
+        if (index[id]) { delete index[id]; await chrome.storage.local.set({ [INDEX_KEY]: index }); }
+      } catch { /* the next list heals it */ }
+      for (const key of [...vaulted.keys()]) if (key.startsWith(mediaPrefix(id))) vaulted.delete(key);
+      void dropMedia(mediaPrefix(id));
       await get().listWorkflows();
     } catch (e) {
       console.error('[Studio] Failed to delete workflow:', e);

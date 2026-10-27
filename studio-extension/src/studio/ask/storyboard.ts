@@ -572,6 +572,85 @@ const EMPTY_START = new RegExp(
  */
 const RESTART_EMPTY = new RegExp(EMPTY_START.source.replace(`|${PREPARED_GROUND}`, ''), 'i');
 
+/* Outdoors, where "empty" is the subject rather than a stage of the work. */
+const OUTDOOR = 'land|landscape|terrain|plain|plains|grassland|moor|moorland|heath|'
+  + 'tundra|steppe|desert|dunes|valley|hill|hills|hillside|ridge|slope|horizon|'
+  + 'sky|skies|wilderness|countryside|expanse|wasteland|badlands|snowfield|'
+  + 'ice|shore|beach|sea|ocean|water|road|street|track|path|trail|clearing|'
+  + 'field|fields|meadow|prairie|savannah|savanna|plateau|basin|gorge|ravine';
+
+/**
+ * Emptiness that describes scenery, not an unfinished job.
+ *
+ * EMPTY_START's vocabulary was written for interiors and builds, where "empty"
+ * means the work has not happened: an empty room, bare boards, nothing yet
+ * installed. Outdoors the same word is the subject. "Empty highland plains" is
+ * what a cold moor looks like, and a wilderness piece cannot describe its own
+ * world without it.
+ *
+ * Read off a real run, on an eight-shot first-person survival episode. The
+ * writer was told shot 2 restarted the scene, rewrote the action twice, and
+ * failed a third time on
+ *
+ *   "cold wind rushing across empty highland plains"
+ *
+ * — which is in the Ambient noise line, not the action. Three attempts spent
+ * on a word the brief had asked for.
+ *
+ * This is the third time the same shape has been found. PREPARED_GROUND was
+ * already lifted out of RESTART_EMPTY for it, twice, on `leveled` and on
+ * `graded`. The lesson each time is the same: a word is not a restart, a word
+ * ABOUT SOMETHING is.
+ */
+const OUTDOOR_EMPTINESS = new RegExp(
+  /* At most three words between the adjective and the noun, and each of them
+     a bare word rather than a span of anything.
+
+     The first version allowed forty characters of "not a full stop", which
+     reaches straight across a clause boundary: in "the empty room, its window
+     looking out over open land" it matched from `empty` all the way to `land`
+     and blanked the restart along with the scenery. A comma has to stay
+     allowed — "empty, frost-bitten hills" is the phrasing this exists for —
+     so the limit is words, not punctuation. */
+  '\\b(?:empty|emptied|bare|barren|vacant|blank|open)\\b'
+  + '(?:[\\s,]+[A-Za-z][A-Za-z-]*){0,3}[\\s,]+(?:' + OUTDOOR + ')\\b',
+  'gi',
+);
+
+/* Where the audio sentences begin. Google's documented prefixes, which this
+   brief requires every clip prompt to end with. */
+const AUDIO_TAIL = /\b(?:ambient noise|ambient sound|sfx)\s*:/i;
+
+/**
+ * The prompt as the RESTART rules should read it: the picture, and nothing
+ * that is not the picture.
+ *
+ * Masked rather than cut, so every index still lines up with the original and
+ * triggerText quotes the words the writer actually has to change. A trigger
+ * pointing at text that has been spliced out is worse than no trigger.
+ *
+ * Two things are blanked:
+ *   — the "Ambient noise: ... SFX: ..." tail. A restart is a claim about what
+ *     the shot OPENS ON. Sound is not the opening state, and the brief orders
+ *     those sentences, so failing a writer for them is unwinnable.
+ *   — emptiness that qualifies a landscape, per OUTDOOR_EMPTINESS.
+ */
+export function restartScope(prompt: string): string {
+  const blank = (text: string, from: number, len: number): string =>
+    text.slice(0, from) + ' '.repeat(len) + text.slice(from + len);
+
+  let out = prompt;
+  const tail = AUDIO_TAIL.exec(out);
+  if (tail) out = blank(out, tail.index, out.length - tail.index);
+
+  OUTDOOR_EMPTINESS.lastIndex = 0;
+  let hit: RegExpExecArray | null;
+  while ((hit = OUTDOOR_EMPTINESS.exec(out))) {
+    out = blank(out, hit.index, hit[0].length);
+  }
+  return out;
+}
+
 const ATTRIBUTED =
   /\b(?:says?|said|whispers?|shouts?|asks?|answers?|replies|replied|murmurs?|mutters?|exclaims?|adds|calls|yells?|sings?|tells|breathes)\b[^\u201c\u201d"]{0,40}["\u201c]([^"\u201d]{2,})["\u201d]/gi;
 
@@ -624,6 +703,18 @@ export function shotContract(
   targets: ShotTarget[], extraFields = '', wantsSpeaker = false,
   /** How many reference stills are attached to this message. */
   attached = 0,
+  /**
+   * Nobody speaks in this piece.
+   *
+   * The per-shot notes below end with a spoken-word budget, which is right for
+   * anything with dialogue in it and actively wrong for anything without: a
+   * brief that says NOBODY SPEAKS, followed eight times by "if anyone speaks in
+   * this one, the whole spoken line fits in about twelve words", is two
+   * instructions arguing, and the one repeated eight times tends to win.
+   *
+   * Defaulted false, so every existing caller is unchanged.
+   */
+  silent = false,
 ): string {
   /* Each target described by what it is configured to do, not just what kind
      of thing it is. A writer that knows the node is 9:16, ten seconds long and
@@ -721,11 +812,13 @@ export function shotContract(
          generator does not lengthen the shot — it rushes the line or clips
          the end, and the result is the "not realistic talking" this was
          reported as. */
-      notes.push(
-        `     If anyone speaks in this one, the whole spoken line fits in about `
-        + `${dialogueBudget(t.duration)} words. Longer and the delivery is rushed to fit `
-        + 'the clip.',
-      );
+      if (!silent) {
+        notes.push(
+          `     If anyone speaks in this one, the whole spoken line fits in about `
+          + `${dialogueBudget(t.duration)} words. Longer and the delivery is rushed to fit `
+          + 'the clip.',
+        );
+      }
     }
     return [head, ...notes];
   });
@@ -859,6 +952,9 @@ export function shotContract(
   ].join('\n');
 }
 
+/** What can start the next key or value after a comma or colon, or the end. */
+const JSON_FOLLOWS = /\s*(?:["{[\]}\-\d]|(?:true|false|null)\b|$)/y;
+
 /**
  * Rescue an envelope whose only fault is an unescaped quote.
  *
@@ -874,11 +970,11 @@ export function shotContract(
  *
  * Deliberately narrow. It walks the text as a parser would and only ever
  * escapes a quote that is INSIDE a string and not the one closing it —
- * decided by what follows: a comma, a closing brace or bracket means the
- * string is ending, anything else means the quote is part of the sentence.
- * It rewrites nothing outside a string, so a reply that is malformed in some
- * other way still fails rather than being silently reshaped into something
- * that parses and is wrong.
+ * decided by what follows: a closing brace or bracket, or a comma or colon
+ * with JSON after it, means the string is ending; anything else means the
+ * quote is part of the sentence. It rewrites nothing outside a string, so a
+ * reply that is malformed in some other way still fails rather than being
+ * silently reshaped into something that parses and is wrong.
  */
 export function repairInnerQuotes(json: string): string {
   let out = '';
@@ -896,11 +992,17 @@ export function repairInnerQuotes(json: string): string {
     if (!inString) { inString = true; out += ch; continue; }
 
     /* Inside a string, at a quote. Whatever comes next says whether this is
-       the end of the value or a quotation mark in the middle of it. */
+       the end of the value or a quotation mark in the middle of it. A comma
+       or a colon only ends it when JSON follows them: a quoted word in a
+       sentence is followed by more sentence — the sign reads "OPEN", then
+       she turns — and taking that comma as the end lost the reply anyway. */
     let j = i + 1;
     while (j < json.length && /\s/.test(json[j])) j++;
     const next = json[j];
-    if (next === ',' || next === '}' || next === ']' || next === ':' || next === undefined) {
+    JSON_FOLLOWS.lastIndex = j + 1;
+    const closes = next === undefined || next === '}' || next === ']'
+      || ((next === ',' || next === ':') && JSON_FOLLOWS.test(json));
+    if (closes) {
       inString = false;
       out += ch;
     } else {
@@ -1349,7 +1451,9 @@ export function checkShots(
          wasted. */
       /* RESTART_EMPTY, not EMPTY_START: a continuation may describe the ground
          it inherited without being accused of starting over. See its comment. */
-      const restart = RESTARTS.exec(p) || RESTART_EMPTY.exec(p);
+      /* Read against the picture only. See restartScope. */
+      const scope = restartScope(p);
+      const restart = RESTARTS.exec(scope) || RESTART_EMPTY.exec(scope);
       if (restart) {
         problems.push({
           shot: n, code: 'contRestart',

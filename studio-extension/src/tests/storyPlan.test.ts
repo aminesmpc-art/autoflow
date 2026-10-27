@@ -134,8 +134,15 @@ describe('housekeeping', () => {
        the thing it did NOT promise, and given only the climbing shape a model
        puts the reversal in a middle beat where there is room for it. See
        storyNichePresets.test.ts. */
+    /* The three diary shapes are the fourth such decision, and they exist for
+       the same reason `twist` does: given only the climbing shapes, a model
+       writes a first-person episode as a build to a payoff, and a POV diary
+       does not pay off — it stops inside the situation. They are listed
+       after the general shapes and before `free`, which stays last because it
+       is the absence of a choice rather than one. */
     expect(STRUCTURES.map((s) => s.id))
-      .toEqual(['hook', 'twist', 'transform', 'buildTimelapse', 'craftTransform',
+      .toEqual(['survivalDiary', 'missionDiary', 'discoveryDiary',
+        'hook', 'twist', 'transform', 'buildTimelapse', 'craftTransform',
         'loop', 'ugcAd', 'free']);
     for (const s of STRUCTURES) expect(s.name.length).toBeGreaterThan(3);
   });

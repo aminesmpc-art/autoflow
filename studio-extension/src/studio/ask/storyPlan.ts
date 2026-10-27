@@ -21,6 +21,13 @@
 
 import type { ShotTarget } from './storyboard';
 
+import {
+  readPovSettings, povBriefLines, povContinuityLines, povProgressionLines,
+  povContinuationLines, povAnchorLines, povIsSilent, povSheetGuidance,
+  POV_SURVIVAL_DEFAULTS, POV_SURVIVAL_PRESET_ID,
+  type PovSettings,
+} from './povSurvival';
+
 export interface CastMember {
   /** How the story refers to them: "the designer", "Maya". */
   name: string;
@@ -85,16 +92,28 @@ export const CAMERA_PROGRESSIONS: CameraProgressionOption[] = [
        whoever remembers to type it into `look`. */
     id: 'mountedPOV',
     name: 'Body-Mounted POV (Action Cam)',
-    hint: 'Strapped to the subject. The rig shows at the frame edge and the body drives it.',
+    hint: 'Worn by the subject. The body drives the frame.',
     rules: [
-      'MOUNTED CAMERA: the camera is physically strapped to the subject. Nobody is holding it.',
-      '  · Part of the mount is in frame at all times — a strap, the edge of a harness, the',
-      '    housing rim across the bottom of the picture. Say which, in every prompt. Without',
-      '    it the shot renders as a camera floating near the subject, which is a drone.',
+      'MOUNTED CAMERA: the camera is worn by the subject. Nobody is holding it.',
+      /* The mount used to be required in every prompt, on the reasoning that
+         without visible hardware the shot renders as a floating camera.
+         Measured on a real eight-shot episode it produced "the dark leather rim
+         of the chest harness mount is visible along the bottom edge of the
+         frame" in all eight — a piece of modern equipment, permanently, in a
+         prehistoric story whose same brief banned modern objects.
+
+         What sells a worn camera is the body, and the three lines below are
+         that. Visible hardware is now a setting: PovSettings.showCameraMount,
+         off by default. */
       '  · Wide-angle action-cam optics: the edges bow outward and near things loom large.',
       '  · The frame moves because the BODY moves. Every step, turn and breath is in it, as',
       '    constant micro-vibration rather than as anything a camera operator decided.',
-      '  · No pan, tilt or zoom is ever chosen. There is nobody there to choose one.',
+      /* Not "no pan or tilt is ever chosen", which reads as "the frame never
+         turns" — and a first-person piece is made of the frame turning. The
+         distinction is who moved it, not whether it moved. */
+      '  · Every reframe comes from the body: head turns, looking up and down, turning at',
+      '    the waist, dropping as they crouch, pitching as they climb. What never appears is',
+      '    a DELIBERATE camera move — a composed pan, a smooth tilt, a zoom, a dolly or a crane.',
     ],
   },
   {
@@ -246,7 +265,7 @@ export const AUDIO_MODES: AudioModeOption[] = [
   },
 ];
 
-export type VisualPresetId = 'liveAction' | 'miniatureMacro' | 'smartphonePOV' | 'cinema35mm' | 'cgi3d' | 'anime' | 'none';
+export type VisualPresetId = 'liveAction' | 'miniatureMacro' | 'smartphonePOV' | 'cinema35mm' | 'cgi3d' | 'anime' | 'povSurvival' | 'none';
 
 export interface VisualPresetOption {
   id: VisualPresetId;
@@ -272,6 +291,19 @@ export const ALWAYS_NEGATIVE =
   + 'no fake app interface, no logos overlaid on the picture';
 
 export const VISUAL_PRESETS: VisualPresetOption[] = [
+  {
+    /* The first-person formats — prehistoric survival, Viking, medieval,
+       post-apocalyptic, wilderness, historical diary. Selecting it also fills the
+       POV / Action Camera settings, which is where the format actually lives; this
+       entry carries only what a STYLE preset is for, the look and its negatives. */
+    id: 'povSurvival',
+    name: 'POV Survival / GoPro Diary',
+    stylePrompt: 'Photorealistic first-person action-camera footage, natural available '
+      + 'light, authentic skin, cloth, dirt and weather texture, believable grain and '
+      + 'motion blur, the look of a real recording rather than a production.',
+    negativePrompt: 'No cinematic gimbal glide, no drone or crane, no floating camera, '
+      + 'no third-person shot of the camera operator, no studio lighting, no plastic skin.',
+  },
   {
     id: 'liveAction',
     name: 'Live-Action 8K',
@@ -350,7 +382,13 @@ export const COLOR_TEMPS: Array<{ id: ColorTempId; name: string; hint: string }>
   {
     id: 'daylight',
     name: 'Daylight, 5600K',
-    hint: 'neutral sun. The safe one, and the right one for most product and UGC work.',
+    /* Prompt-pasteable, like every other hint in this list. This one used to
+       read 'The safe one, and the right one for most product and UGC work' —
+       dropdown advice, written to a person choosing — and storyBrief prints
+       the hint verbatim, so a prehistoric survival brief carried a sentence
+       about UGC work into the model's context. Overcast is named because it
+       sits in this range and is what an outdoor piece most often wants. */
+    hint: 'cold neutral daylight with no colour cast either way — flat overcast, open shade, a white sky.',
   },
   {
     id: 'tungsten',
@@ -373,9 +411,10 @@ export const COLOR_TEMPS: Array<{ id: ColorTempId; name: string; hint: string }>
  * Each hint is written to be pasted into a prompt as-is. That is deliberate:
  * a hint the writer has to translate is a hint it will translate differently
  * each time. */
-export type LightingId = 'intimate' | 'tension' | 'hero' | 'none';
+export type LightingId = 'intimate' | 'tension' | 'hero' | 'overcast' | 'none';
 
 export const LIGHTING_GRAMMARS: Array<{ id: LightingId; name: string; hint: string }> = [
+  { id: 'overcast', name: 'Natural overcast daylight', hint: 'soft diffuse daylight under a slate-grey overcast sky; shaded interiors remain darker, with a natural exposure transition when stepping outside.' },
   { id: 'none', name: 'Not specified', hint: 'no fixed lighting setup.' },
   {
     id: 'intimate',
@@ -412,6 +451,14 @@ export interface StorySettings {
   audioMode?: AudioModeId;
   /** Visual style preset. */
   visualPreset?: VisualPresetId;
+  /**
+   * POV / Action Camera settings, for a first-person piece.
+   *
+   * Optional and absent by default. A Director that has never been told about
+   * this writes exactly the brief it always did — see effectivePov, which is
+   * also what lets naming the preset alone be enough.
+   */
+  pov?: PovSettings;
   /* Decided once for the whole piece. Both are film language rather than
      scene content, so they belong in the settings turn and appear once in
      the brief — not restated per shot, where they would drift. */
@@ -627,9 +674,56 @@ export const isUgc = (s: StorySettings): boolean =>
   || s.structure === 'ugcAd';
 
 export type StructureId = 'hook' | 'twist' | 'transform' | 'buildTimelapse' | 'craftTransform'
+  | 'survivalDiary' | 'missionDiary' | 'discoveryDiary'
   | 'loop' | 'free' | 'ugcAd';
 
 export const STRUCTURES: Array<{ id: StructureId; name: string; hint: string; shape: string[] }> = [
+  {
+    /* The shape a first-person diary episode takes. Written as a sequence of
+       KINDS of beat rather than a count, because the beat count comes from the
+       shots actually wired to the Director — see beatsFor. A structure that
+       hard-coded eight would be wrong for the seven-shot version of the same
+       story, and the graph is what decides. */
+    id: 'survivalDiary',
+    name: 'Survival Diary (POV)',
+    hint: 'First-person episode: hook, work, company, travel, clue, tension, reveal, unresolved.',
+    shape: [
+      'HOOK — open already inside something happening. No arrival, no establishing.',
+      'TACTILE WORK — hands doing one physical thing, close and legible.',
+      'COMPANY — someone else in the group acts, and acts toward the camera.',
+      'TRAVEL — the group moves, and the world is seen while moving through it.',
+      'CLUE — something is noticed that was not being looked for.',
+      'TENSION — the clue means something, and the group changes because of it.',
+      'REVEAL — the thing itself, shown before anything explains it.',
+      'UNRESOLVED — stop inside the situation. Do not close it.',
+      'Use as many of these as there are shots, in this order, collapsing or',
+      '  repeating kinds rather than inventing a different shape.',
+    ],
+  },
+  {
+    id: 'missionDiary',
+    name: 'Mission Diary (POV)',
+    hint: 'First-person episode with an objective: brief, approach, obstacle, execution, exit.',
+    shape: [
+      'OBJECTIVE — what is being attempted, shown rather than announced.',
+      'APPROACH — getting there, and what the place looks like on the way in.',
+      'OBSTACLE — the thing that was not planned for.',
+      'EXECUTION — the attempt itself, in tactile physical steps.',
+      'EXIT — leaving, changed, with the cost of it visible.',
+    ],
+  },
+  {
+    id: 'discoveryDiary',
+    name: 'Discovery Diary (POV)',
+    hint: 'First-person episode about finding something: search, trace, approach, reveal, consequence.',
+    shape: [
+      'SEARCH — looking, without knowing yet what for.',
+      'TRACE — the first sign that something is there.',
+      'APPROACH — closing on it, cautiously, with the body reading the risk.',
+      'REVEAL — what it is, shown plainly and held.',
+      'CONSEQUENCE — what it means, in what the group does next.',
+    ],
+  },
   {
     id: 'hook',
     name: 'Hook → Build → Payoff',
@@ -790,7 +884,91 @@ export function readStorySettings(d: any): StorySettings {
     lighting: (n.lighting as LightingId) || DEFAULT_STORY.lighting,
     timedBeats: !!n.timedBeats,
     avoid: typeof n.avoid === 'string' ? n.avoid : '',
+    pov: readPovSettings(n.pov),
   };
+}
+
+/**
+ * The POV settings this piece is actually being written with, if any.
+ *
+ * Three states, and the middle one is the reason this exists:
+ *
+ *   a POV block          — use it, however it was configured
+ *   no block, POV preset — use the preset's defaults, so choosing
+ *                          "POV Survival / GoPro Diary" and nothing else
+ *                          produces a coherent first-person piece
+ *   neither              — undefined, and not one word of the brief changes
+ */
+/**
+ * What selecting "POV Survival / GoPro Diary" should change, and no more.
+ *
+ * Returns a patch rather than a whole settings object, because the requirement
+ * is not "make this a POV piece" but "make this a POV piece without throwing
+ * away what I already wrote". Three rules fall out of that:
+ *
+ *   · cast, world, look, avoid and beats are never touched. They are the
+ *     story; the preset is how it is shot.
+ *   · structure, cameraProgression and audioMode are set only when they are
+ *     still at the factory default. A Director already set to ASMR
+ *     Craftsmanship was set to it on purpose.
+ *   · the POV block is written whole, because there was nothing there to
+ *     preserve — and an override afterwards is one dropdown away.
+ */
+export function chestDocumentaryPresetPatch(s: StorySettings): Partial<StorySettings> {
+  return {
+    visualPreset: POV_SURVIVAL_PRESET_ID,
+    cameraProgression: 'mountedPOV',
+    audioMode: 'ambient',
+    lighting: 'overcast',
+    colorTemp: 'daylight',
+    pov: { ...(s.pov || POV_SURVIVAL_DEFAULTS), perspective: 'firstPerson', rig: 'goproChest',
+      cameraHeight: 'chestLevel', lens: '14mm', stabilization: 'none', bodyMovement: 'natural',
+      framing: 'imperfectDocumentary', distortion: 'fisheye', focusDepth: 'deep',
+      motionBlur: 'directional', movementResponse: 'adaptive', colorTreatment: 'earth',
+      showHands: true, showForearms: true, protagonistFaceVisible: false, showCameraMount: false,
+      narrationStrategy: 'none', narrationPerson: 'none', dialogueDensity: 'none' },
+  };
+}
+
+export function povSurvivalPresetPatch(s: StorySettings): Partial<StorySettings> {
+  const patch: Partial<StorySettings> = {
+    visualPreset: POV_SURVIVAL_PRESET_ID,
+    pov: { ...POV_SURVIVAL_DEFAULTS },
+  };
+  if (!s.pov) {
+    if ((s.structure || DEFAULT_STORY.structure) === DEFAULT_STORY.structure) {
+      patch.structure = 'survivalDiary';
+    }
+    if ((s.cameraProgression || DEFAULT_STORY.cameraProgression) === DEFAULT_STORY.cameraProgression) {
+      patch.cameraProgression = 'mountedPOV';
+    }
+    /* environment_only in the request's vocabulary. audioMode already means
+       exactly this, so it is set rather than duplicated. */
+    if ((s.audioMode || DEFAULT_STORY.audioMode) === DEFAULT_STORY.audioMode) {
+      patch.audioMode = 'ambient';
+    }
+  }
+  return patch;
+}
+
+/**
+ * Whether anyone speaks on camera in this piece.
+ *
+ * Two settings have to agree for the answer to be no, and both already exist:
+ * the audio mode says the clips carry environment rather than voices, and the
+ * POV block says the dialogue density is none. Asked here so the shot list can
+ * stop appending "if anyone speaks in this one, the line fits in about twelve
+ * words" to a piece whose brief says nobody speaks.
+ */
+export function storyIsSilent(s: StorySettings): boolean {
+  const audio = s.audioMode || DEFAULT_STORY.audioMode;
+  return (audio === 'ambient' || audio === 'none') && povIsSilent(effectivePov(s));
+}
+
+export function effectivePov(s: StorySettings): PovSettings | undefined {
+  if (s.pov) return s.pov;
+  if (s.visualPreset === POV_SURVIVAL_PRESET_ID) return POV_SURVIVAL_DEFAULTS;
+  return undefined;
 }
 
 /**
@@ -1184,9 +1362,35 @@ export function storyBrief(
     out.push('');
   }
 
+  /* POV, before the camera section rather than inside it.
+     Perspective is a fact about the whole piece; coverage is a choice about
+     how to shoot it. Stated in that order because the second only makes sense
+     once the first is settled — "Establishing ➜ Push In" means something
+     different when the camera is strapped to somebody's chest. */
+  const pov = effectivePov(s);
+  for (const line of povBriefLines(pov)) out.push(line);
+  for (const line of povContinuationLines(pov)) out.push(line);
+  for (const line of povProgressionLines(pov)) out.push(line);
+  for (const line of povAnchorLines(pov, targets.filter((t) => t.media === 'video').length)) {
+    out.push(line);
+  }
+  /* POV storyboard composition, only when a sheet is actually connected.
+     Without this every panel comes back as the group lined up front-facing
+     at equal distances, and the video prompts derived from it repeat the
+     same passive composition eight times. */
+  if (targets.some((t) => t.isSheet)) {
+    for (const line of povSheetGuidance(pov)) out.push(line);
+  }
+
   // Camera Progression
   const cameraMode = CAMERA_PROGRESSIONS.find((c) => c.id === (s.cameraProgression || 'dynamic'));
-  if (cameraMode && cameraMode.rules.length) {
+  /* The POV block has already said all of this, in more detail and about this
+     specific piece. Printing both leaves the writer reconciling two
+     descriptions of one camera, and the coverage entry is the vaguer of the
+     two. Any other coverage still prints: a POV piece shot with Director
+     Coverage is a real combination and the two do not overlap. */
+  const povOwnsCamera = !!pov && cameraMode?.id === 'mountedPOV';
+  if (cameraMode && cameraMode.rules.length && !povOwnsCamera) {
     out.push(`CINEMATOGRAPHY & CAMERA — ${cameraMode.name}`);
     for (const line of cameraMode.rules) out.push(line);
     /* Two settings that can contradict each other, reconciled here rather
@@ -1234,12 +1438,27 @@ export function storyBrief(
 
   for (const line of openingState(s, targets)) out.push(line);
 
-  const chosen = RULES.filter((r) => s.rules.includes(r.id));
+  /* noRepeatAction is dropped for a POV piece, and replaced in the POV block
+     by "a distinct physical action or story purpose".
+
+     The rule asks for a different movement, angle and distance in every clip.
+     On a worn camera there IS no different angle to choose, and demanding one
+     costs the piece the thing that makes it read as one continuous person:
+     walking looks like walking, and two consecutive travel shots should. */
+  const povRelaxes = !!effectivePov(s);
+  const chosen = RULES.filter((r) => s.rules.includes(r.id)
+    && !(povRelaxes && r.id === 'noRepeatAction'));
   if (chosen.length) {
     out.push('RULES — these hold for every shot without exception.');
     for (const r of chosen) out.push(`  · ${r.line}`);
     out.push('');
   }
+
+  /* Beside the rules, because it does the same job at a different grain: a
+     rule is one sentence about the piece, these are the specific things that
+     must not change between two prompts. Only emitted when the POV settings
+     ask for it — continuity 'normal' adds nothing. */
+  for (const line of povContinuityLines(effectivePov(s))) out.push(line);
 
   out.push(`BEATS — ${beats} across the whole piece, distributed over the shots below in`);
   out.push('proportion to their length. A 4s shot holds one action. A 6-8s shot has an');

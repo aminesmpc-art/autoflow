@@ -1,4 +1,5 @@
 node_modules/
+.npm-audit-cache/
 dist/
 *.js.map
 

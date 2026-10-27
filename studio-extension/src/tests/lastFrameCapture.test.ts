@@ -210,8 +210,13 @@ describe('a frame is only taken where the playhead really is', () => {
     expect(bare).toMatch(/if \(!await seekVideo\(video, target\)\) continue;/);
   });
 
-  it('announces a first-frame substitution rather than passing it off', () => {
-    expect(SRC).toMatch(/OPENING frame is/);
-    expect(SRC).toMatch(/continuity from this node will be wrong/);
+  it('never passes the opening frame off as the last one', () => {
+    /* It used to stand in, announced: "the OPENING frame is standing in —
+       continuity from this node will be wrong". It no longer stands in at
+       all: the opening frame is kept as a preview and no ending reference is
+       returned, so nothing chained below can continue from the wrong end. */
+    expect(bare).toMatch(/return \{ first: first \|\| last, last \};/);
+    expect(bare).not.toMatch(/last: last \|\| first/);
+    expect(SRC).toMatch(/no ending reference is returned/);
   });
 });

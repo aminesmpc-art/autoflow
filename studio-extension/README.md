@@ -3,9 +3,17 @@
 Node workflows driving **Google Veo (Flow)**, **ChatGPT** and **Grok** from one
 canvas, on the same AutoFlow account.
 
+## Connection test and fixes — 1.5.2
+
+Import [the three-clip test workflow](test-workflows/studio-connection-test.json). Two test images are included. It checks image-to-Start, Last Frame capture, Start/End ordering and direct clip-to-clip continuity. [Test instructions](test-workflows/README.md) explain the expected result and generation costs.
+
+This build refreshes dynamic canvas connection targets, moves wires when a node changes mode/platform, prevents duplicate frame inputs, and preserves named frame order through both runners and the Flow adapter. Missing connected frames fail explicitly instead of silently shifting another image into their slot.
+
+Run `npm run test:connections` for the offline mouse-drag check. Load the production `dist` directory after building with `npm run build:publish`, and refresh Flow after updating the extension. Live provider behavior is separate from local wiring verification.
+
 See `../STUDIO_SPLIT_PLAN.md` for the migration plan and decisions.
 
-## State
+## Historical split milestones (not current release status)
 
 | Milestone | |
 |---|---|
@@ -20,8 +28,7 @@ See `../STUDIO_SPLIT_PLAN.md` for the migration plan and decisions.
 | 8 · Grok adapter | not started |
 | 9 · Store listing | not started |
 
-Nothing runs yet. The entry points named in `webpack.config.js` land in
-milestone 2.
+The table above records the original split plan; the current extension has runnable engines and a canvas.
 
 ## Drift check
 
@@ -38,6 +45,4 @@ fixes stale while still shipping a checkout bug. Run it before every release.
 
 ## Permissions
 
-Deliberately smaller than the AutoFlow extension — 6 permissions, 4 hosts.
-`sidePanel`, `downloads`, `webRequest` and `notifications` are not needed here.
-Adding any back should require a reason.
+The current permission and host list is declared in `manifest.json`. The historical split plan's original counts are no longer current.

@@ -30,6 +30,11 @@
  */
 
 import { FLOW_STRINGS } from '../content/flow/flowStrings';
+import { checkUploadFileAccess, uploadFileAccessMessage } from './uploadFileAccess';
+import {
+  CAPTURE_GRACE_MS, captureReady, deliverToCapturedInput, installFileCapture, removeFileCapture, type Send,
+} from './fileCapture';
+import { backgroundStrict, handBack, showBriefly, type Shown } from './backgroundMode';
 
 /**
  * Words that mean "media" beside the upload verb.
@@ -53,7 +58,26 @@ const MEDIA_WORDS = [
 /** What the caller gets back. */
 export interface DebugUploadResult {
   ok: boolean;
+  uploadState?: 'ready' | 'pending' | 'failed';
+  tabId?: number;
+  projectUrl?: string;
   error?: string;
+  /**
+   * Whether the library was CHECKED, and what it said.
+   *
+   * `true` means every file was found ready. All other states block generation;
+   * uploadState distinguishes an explicit failure from a pending/unknown result.
+   */
+  confirmed?: boolean;
+  /** What the check saw, for the log, whether or not it changed the outcome. */
+  confirmNote?: string;
+  /**
+   * How the files got in: the intercepted chooser, a file input already on
+   * the page, or the input Flow created when no chooser opened (see
+   * ./fileCapture.ts). Said in the run log, because the third is the one that
+   * explains a profile where the chooser never comes.
+   */
+  route?: 'chooser' | 'direct' | 'captured';
   /**
    * What each file was ACTUALLY written to disk as, in the order given.
    *
@@ -201,8 +225,17 @@ export async function uploadViaFileChooser(
   tabId: number,
   filePaths: string[],
 ): Promise<DebugUploadResult> {
+  const accessError = await checkUploadFileAccess();
+  if (accessError) return { ok: false, uploadState: 'failed', error: accessError };
   const target = { tabId };
   let attached = false;
+  const send: Send = (method, params) => sendCDP(target, method, params);
+  /* Whether the second route's hook is in the page — and so has to come out
+     again before the debugger lets go. */
+  let captureInstalled = false;
+  /* Background mode only: what was in front before Flow was shown for the
+     click route, put back on the way out. */
+  let shown: Shown | null = null;
 
   try {
     /* ── 1. Attach debugger ── */
@@ -242,12 +275,37 @@ export async function uploadViaFileChooser(
        Tried first, and silently skipped when there is no input to be found:
        some dialogs only create one when the picker is actually invoked, and
        for those the click-and-intercept path below is still the answer. */
-    const direct = await trySetFilesDirectly(target, filePaths);
+    /* Polled, not sampled. Flow's picker is Angular and builds its <input
+       type=file> when the dialog's own code gets round to it, so the first
+       look lands before it exists:
+
+         Direct route was skipped: no file input on the page yet
+
+       and the run then went down the coordinate path and timed out. Three
+       seconds here is bought against a fifteen-second chooser timeout, and
+       the route it buys needs no coordinates, no click and no banner-proof
+       geometry — so it is worth waiting for. */
+    let direct = await trySetFilesDirectly(target, filePaths);
+    for (let look = 0; !direct.ok && look < 6 && /no file input/i.test(direct.why || ''); look++) {
+      await new Promise((r) => setTimeout(r, 500));
+      direct = await trySetFilesDirectly(target, filePaths);
+    }
     if (direct.ok) {
       try {
         await sendCDP(target, 'Page.setInterceptFileChooserDialog', { enabled: false });
       } catch { /* never enabled on this path */ }
-      return { ok: true };
+      return { ok: true, route: 'direct' };
+    }
+
+    /* Background mode reaches here only when Flow offered no input to set
+       directly. Everything below clicks at measured coordinates, and a hidden
+       tab has no layout to measure — getBoundingClientRect is 0x0 there — so
+       Flow is shown for the moment the click takes, and the window handed back
+       in the finally block. Without background mode the tab is already in
+       front (uploadToFlow raised it), so this changes nothing. */
+    if (await backgroundStrict()) {
+      shown = await showBriefly(tabId);
+      await new Promise((r) => setTimeout(r, 600));
     }
 
     /* ── 3. Get FRESH button coordinates ──
@@ -336,6 +394,7 @@ export async function uploadViaFileChooser(
             if (low.indexOf(MED[k]) !== -1) { isMed = true; break; }
           }
           cands.push({
+            el: b,
             label: t, med: isMed, len: t.length,
             x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
             w: Math.round(r.width), h: Math.round(r.height)
@@ -355,6 +414,10 @@ export async function uploadViaFileChooser(
           return a.len - c.len;
         });
         var p = cands[0];
+        /* Parked on window so the settle step below can re-measure THIS
+           button rather than run the whole search again and possibly pick a
+           different one. */
+        window.__afUploadBtn = p.el;
         return JSON.stringify({
           x: p.x, y: p.y, w: p.w, h: p.h, label: p.label,
           alternatives: cands.length - 1, dialog: !!dialog
@@ -381,12 +444,127 @@ export async function uploadViaFileChooser(
       return { ok: false, error: 'button coordinates are zero — button may be off-screen' };
     }
 
+    /* ── 3b. Is that point actually ON the button? ──────────────────────────────
+     *
+     * The step above measures. It does not check that what it measured can be
+     * clicked, and a synthetic mouse event at a point outside the viewport —
+     * or under something else — lands on nothing at all. There is no error for
+     * that: the press and the release both "succeed", no chooser opens, and
+     * fifteen seconds later the run reports
+     *
+     *   file chooser did not open within 15s. Clicked "uploadUpload media"
+     *   at 510,965 (120x34). Direct route was skipped: no file input yet
+     *
+     * which describes a click that never happened as though it had. The
+     * button here is the picker's own
+     *
+     *   <button class="... sidebar-upload-btn ..." mattooltip="Upload media">
+     *     <mat-icon class="upload-icon google-symbols">upload</mat-icon>
+     *     <span class="upload-text">Upload media</span>
+     *
+     * and it sits at the BOTTOM of the picker's rail — the first thing to fall
+     * below the fold when the debugging banner and Flow's own credits notice
+     * each take a strip off the viewport. Which is why this began failing on
+     * a session that had both and not on one that had neither.
+     *
+     * So: scroll it into view, measure it again there, and hit-test before
+     * spending the click. Four points rather than one, because the centre of
+     * a Material button is covered by its own ripple and touch-target spans
+     * on some layouts, and an edge that IS the button beats a centre that is
+     * not reachable. Everything it learns goes into the failure message, so
+     * "off-viewport" and "covered by the credits banner" stop sharing one
+     * sentence with "Flow renamed the button". */
+    const settleResult: any = await sendCDP(target, 'Runtime.evaluate', {
+      expression: `(function () {
+        var b = window.__afUploadBtn;
+        if (!b || !b.isConnected) {
+          return JSON.stringify({ error: 'the upload button left the page before it was clicked' });
+        }
+        try { b.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e) {}
+        var r = b.getBoundingClientRect();
+        var vw = window.innerWidth, vh = window.innerHeight;
+        var pts = [
+          [r.left + r.width / 2, r.top + r.height / 2],
+          [r.left + r.width / 2, r.top + Math.min(6, r.height / 2)],
+          [r.left + Math.min(8, r.width / 2), r.top + r.height / 2],
+          [r.right - Math.min(8, r.width / 2), r.top + r.height / 2]
+        ];
+        var blocked = [];
+        for (var i = 0; i < pts.length; i++) {
+          var x = Math.round(pts[i][0]), y = Math.round(pts[i][1]);
+          if (x < 0 || y < 0 || x >= vw || y >= vh) { blocked.push('outside the viewport'); continue; }
+          var hit = document.elementFromPoint(x, y);
+          /* The button, or something inside it. NOT an ancestor of it:
+             hit.contains(b) was here and made the whole test a rubber
+             stamp, because document.body contains every button on the
+             page — so a point sitting on the page background passed as
+             a point on the button. A check that cannot fail is worse
+             than no check, because it is trusted. */
+          if (hit && (hit === b || b.contains(hit))) {
+            return JSON.stringify({ x: x, y: y, w: Math.round(r.width), h: Math.round(r.height) });
+          }
+          var name = 'nothing';
+          if (hit) {
+            name = hit.tagName.toLowerCase();
+            var cls = typeof hit.className === 'string' ? hit.className.trim().split(/\s+/)[0] : '';
+            if (cls) name += '.' + cls;
+          }
+          blocked.push(name);
+        }
+        return JSON.stringify({
+          error: 'the upload button is on the page but no point on it can be clicked',
+          rect: 'top ' + Math.round(r.top) + ', left ' + Math.round(r.left)
+            + ', ' + Math.round(r.width) + 'x' + Math.round(r.height),
+          viewport: vw + 'x' + vh,
+          blockedBy: blocked
+        });
+      })()`,
+      returnByValue: true,
+    });
+
+    let settled: any = {};
+    try { settled = JSON.parse(settleResult?.result?.value || '{}'); } catch { /* reported below */ }
+    if (settled.error) {
+      return {
+        ok: false,
+        error: `${settled.error}`
+          + (settled.rect ? `. It measures ${settled.rect} in a ${settled.viewport} viewport` : '')
+          + (settled.blockedBy ? `, and the points tried hit: ${settled.blockedBy.join(', ')}` : '')
+          + '.',
+      };
+    }
+    if (settled.x != null && settled.y != null) {
+      /* The settled point wins. The first measurement was taken before the
+         scroll, so it describes where the button WAS. */
+      btnCoords = { ...btnCoords, x: settled.x, y: settled.y, w: settled.w, h: settled.h };
+    }
+
     /* ── 4. Enable file chooser interception ── */
     await sendCDP(target, 'Page.setInterceptFileChooserDialog', { enabled: true });
 
+    /* ── 4b. …and catch Flow's file input itself, in case no chooser comes ──
+       On a profile whose first upload is held by Flow's consent dialog,
+       Chrome never opens the chooser at all — see ./fileCapture.ts. The hook
+       lets every call through, so wherever the chooser does open, this route
+       is never taken. */
+    captureInstalled = await installFileCapture(send).catch(() => false);
+    /* The route this hook opens, taken below when no chooser came. It never
+       reports success it did not get: the files go to Flow's own input or the
+       upload fails, and the library check after the upload still has to find
+       them by name. */
+    const deliverCaptured = (): Promise<{ ok: boolean; why?: string }> => (captureInstalled
+      ? deliverToCapturedInput(send, filePaths)
+      : Promise.resolve({ ok: false, why: 'the hook that catches Flow\'s file input could not be installed' }));
+
     /* ── 5. Set up a promise that resolves when the file chooser fires ── */
     const chooserFired = new Promise<void>((resolve, reject) => {
+      /* One outcome only: the chooser, the caught input, or the timeout. Two
+         routes delivering the same files would put them in Flow twice. */
+      let settled = false;
       const timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        if (watch) clearInterval(watch);
         chrome.debugger.onEvent.removeListener(handler);
         /* Everything known at the moment it gave up. Without the label and
            the direct-route reason this said only "did not open within 15s",
@@ -401,12 +579,33 @@ export async function uploadViaFileChooser(
         ));
       }, 15_000);
 
+      /* The second route's signal: Flow made its file input, and no chooser
+         followed it. Waiting out the rest of fifteen seconds for a dialog
+         Chrome has already declined to show would only delay the route that
+         works. */
+      let caughtAt = 0;
+      const watch = captureInstalled ? setInterval(() => {
+        void captureReady(send).then((ready) => {
+          if (settled || !ready) return;
+          if (!caughtAt) { caughtAt = Date.now(); return; }
+          if (Date.now() - caughtAt < CAPTURE_GRACE_MS) return;
+          settled = true;
+          clearTimeout(timeout);
+          if (watch) clearInterval(watch);
+          chrome.debugger.onEvent.removeListener(handler);
+          reject(Object.assign(new Error('no file chooser opened, but Flow created its file input'), { captured: true }));
+        });
+      }, 400) : undefined;
+
       function handler(
         source: chrome.debugger.Debuggee,
         method: string,
         params?: any,
       ) {
         if (source.tabId !== tabId || method !== 'Page.fileChooserOpened') return;
+        if (settled) return;
+        settled = true;
+        if (watch) clearInterval(watch);
         clearTimeout(timeout);
         chrome.debugger.onEvent.removeListener(handler);
 
@@ -425,6 +624,16 @@ export async function uploadViaFileChooser(
     });
 
     /* ── 7. Click the "Upload media" button using CDP trusted mouse events ── */
+    /* A move first. Real hardware never produces a press at a point the
+       pointer has not reached, and an Angular Material button installs
+       pointer handlers that expect the sequence — the ripple this button
+       carries is loaded lazily on the first pointer event it sees. */
+    await sendCDP(target, 'Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: btnCoords.x,
+      y: btnCoords.y,
+      button: 'none',
+    });
     await sendCDP(target, 'Input.dispatchMouseEvent', {
       type: 'mousePressed',
       x: btnCoords.x,
@@ -441,18 +650,41 @@ export async function uploadViaFileChooser(
     });
 
     /* ── 8. Wait for the interception to complete ── */
-    await chooserFired;
+    try {
+      await chooserFired;
+    } catch (noChooser: any) {
+      /* The click may have built the input even though no chooser followed —
+         Flow's picker creates one when its upload flow starts, and that is
+         exactly the state the direct route wants. Cheaper to look than to
+         throw away the cut and the director pass behind it. */
+      const late = await trySetFilesDirectly(target, filePaths);
+      /* Then the input Flow created off the page, caught by the hook (4b). */
+      const caught = late.ok ? { ok: false, why: '' } : await deliverCaptured();
+      if (late.ok || caught.ok) {
+        try {
+          await sendCDP(target, 'Page.setInterceptFileChooserDialog', { enabled: false });
+        } catch { /* best effort */ }
+        return { ok: true, route: late.ok ? 'direct' : 'captured' };
+      }
+      throw new Error(
+        `${noChooser?.message || noChooser} (and still ${late.why || 'no usable file input'}; ${caught.why})`,
+      );
+    }
 
     /* ── 9. Disable interception ── */
     try {
       await sendCDP(target, 'Page.setInterceptFileChooserDialog', { enabled: false });
     } catch { /* non-fatal */ }
 
-    return { ok: true };
+    return { ok: true, route: 'chooser' };
   } catch (e: any) {
     return { ok: false, error: e?.message || String(e) };
   } finally {
+    if (shown) await handBack(shown);
     if (attached) {
+      /* The hook lives in Flow's page and outlasts the debugger. It comes out
+         while there is still a debugger to take it out with. */
+      if (captureInstalled) await removeFileCapture(send);
       try {
         await new Promise<void>((resolve) => {
           chrome.debugger.detach(target, () => {
@@ -516,6 +748,8 @@ export async function uploadToFlow(
   tabId: number,
   files: Array<{ dataUrl: string; filename: string }>,
 ): Promise<DebugUploadResult> {
+  const accessError = await checkUploadFileAccess();
+  if (accessError) return { ok: false, uploadState: 'failed', error: accessError };
   const saved: Array<{ path: string; downloadId: number; name: string }> = [];
 
   /* Whatever the last run could not clean up, before this one adds more. */
@@ -540,18 +774,28 @@ export async function uploadToFlow(
      * part that stops it happening.
      *
      * Best effort: a tab that cannot be activated is still worth trying to
-     * drive, and the attempts below will report what they actually find. */
+     * drive, and the attempts below will report what they actually find.
+     *
+     * Background mode (AutoFlow Motion, backgroundMode.ts) leaves the tab
+     * where it is and buys the same two things directly: Chrome is told not
+     * to discard it, and a tab it already discarded fails the first message
+     * below, which reloads it in place (the "receiving end" branch). The
+     * direct upload route needs no layout, so a hidden tab can take it. */
     try {
       const tab = await chrome.tabs.get(tabId);
-      await chrome.tabs.update(tabId, { active: true });
-      if (tab.windowId != null) {
-        await chrome.windows.update(tab.windowId, { focused: true });
+      if (await backgroundStrict()) {
+        await chrome.tabs.update(tabId, { autoDiscardable: false });
+      } else {
+        await chrome.tabs.update(tabId, { active: true });
+        if (tab.windowId != null) {
+          await chrome.windows.update(tab.windowId, { focused: true });
+        }
+        /* A discarded tab starts its reload the moment it is activated, so this
+           is the one place a flat wait is right — there is nothing to poll yet
+           on this side of the message port. The content script does the real
+           waiting once it can answer. */
+        await new Promise((r) => setTimeout(r, 600));
       }
-      /* A discarded tab starts its reload the moment it is activated, so this
-         is the one place a flat wait is right — there is nothing to poll yet
-         on this side of the message port. The content script does the real
-         waiting once it can answer. */
-      await new Promise((r) => setTimeout(r, 600));
     } catch { /* not focusable; the attempts below will say what they found */ }
 
     /* ── Step 1: Have the content script open the upload dialog ── */
@@ -672,6 +916,28 @@ export async function uploadToFlow(
     /* ── Step 3: Intercept file chooser and provide files ── */
     const paths = saved.map((s) => s.path);
     const result = await uploadViaFileChooser(tabId, paths);
+    const names = saved.map((f) => f.name);
+
+    /* ── Step 3.5: Did Flow actually take them? ────────────────────────────────
+     *
+     * uploadViaFileChooser resolves when DOM.setFileInputFiles resolves, which
+     * is Chrome putting the PATHS on the input. Flow has not read a byte yet,
+     * and everything downstream treated that as "uploaded":
+     *
+     *   07:36:59  Motion  2 piece(s) are in the Flow library.
+     *   07:37:39  Flow    ERROR: nothing in the library matches
+     *                     "Motion-Control-1-silent-part1-of-2.mp4"
+     *
+     * Forty seconds apart, about the same two files, and the second one was
+     * right. On a new Google account Flow's rights notice stands in front of
+     * the ingest; the Motion node walked away believing it was done, and the
+     * queue it handed the tab to closed the open dialog on its way in.
+     *
+     * So the upload does not finish here. It finishes when the names are in
+     * the library, or when something says why they are not. */
+    const landed = result.ok
+      ? await confirmUploadLanded(tabId, names)
+      : { ok: false, ran: false, note: '' };
 
     /* ── Step 4: Delayed cleanup ──
        Flow needs time to READ the file from disk and UPLOAD it to their
@@ -692,9 +958,22 @@ export async function uploadToFlow(
       }, 60_000);
     }
 
+    /* Unknown is not failed, but neither one permits generation. Pending
+       uploads are rechecked on retry without sending the bytes again. */
+    if (result.ok && !landed.ok) {
+      return { ok: false, error: landed.note, names, confirmed: false,
+        uploadState: 'failed' in landed && landed.failed ? 'failed' : 'pending', confirmNote: landed.note };
+    }
+
     /* The names go back with the result, in the order the files came in, so
        the caller searches Flow's library for what is actually in it. */
-    return { ...result, names: saved.map((f) => f.name) };
+    return {
+      ...result,
+      names,
+      confirmed: landed.ran ? true : undefined,
+      uploadState: result.ok && landed.ok ? 'ready' : 'failed',
+      confirmNote: landed.note || undefined,
+    };
   } catch (e: any) {
     /* If we failed, clean up immediately — no upload is in progress */
     for (const s of saved) {
@@ -706,6 +985,97 @@ export async function uploadToFlow(
 
 /* ──────────────────────────────────────────────────────────────────────── */
 /* Helpers                                                                 */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * How long Flow gets to put an uploaded clip in its library.
+ *
+ * Generous on purpose. This number is only ever spent in full on a FAILING
+ * upload — a clip that lands in three seconds is confirmed in three seconds —
+ * and the cost of being impatient is throwing away a cut plus the whole
+ * director pass that produced it: minutes of work and a Gemini conversation.
+ */
+const LIBRARY_LANDING_MS = 45_000;
+
+/**
+ * Ask the page whether the upload arrived, and turn the answer into one line.
+ *
+ * `ran` is the field that matters. It separates "Flow did not take the file"
+ * from "I could not tell", and only the first may fail an upload. Collapsing
+ * the two would be the original bug in miniature: one sentence that fitted
+ * several causes and named none of them.
+ */
+export async function confirmUploadLanded(
+  tabId: number,
+  names: string[],
+): Promise<{ ok: boolean; ran: boolean; note: string; failed?: boolean }> {
+  let reply: any;
+  try {
+    reply = await chrome.tabs.sendMessage(tabId, {
+      type: 'CONFIRM_VIDEOS_IN_LIBRARY',
+      names,
+      budgetMs: LIBRARY_LANDING_MS,
+    });
+  } catch (e: any) {
+    /* No content script, or the tab went away. The upload may well have
+       worked; nothing here knows, and nothing here may say otherwise. */
+    return { ok: false, ran: false, note: `the library could not be checked (${e?.message || e})` };
+  }
+
+  if (!reply) return { ok: false, ran: false, note: 'the library check returned nothing' };
+
+  if (Array.isArray(reply.failed) && reply.failed.length) {
+    return { ok: false, ran: true, failed: true,
+      note: `Video upload failed in Flow: ${reply.failed.join(', ')}. Retry this piece's upload.` };
+  }
+  if (Array.isArray(reply.processing) && reply.processing.length) {
+    return { ok: false, ran: true,
+      note: `Flow is still processing ${reply.processing.join(', ')}. Retry checks the existing upload without sending another copy.` };
+  }
+  if (reply.ok) {
+    return {
+      ok: true,
+      ran: true,
+      note: reply.consentDismissed
+        ? `answered Flow's rights notice ${reply.consentDismissed}x while waiting`
+        : '',
+    };
+  }
+
+  /* The picker could not be opened or searched. Not evidence of absence. */
+  if (reply.reason) {
+    return { ok: false, ran: false, note: `the library could not be searched: ${reply.reason}` };
+  }
+
+  const missing: string[] = Array.isArray(reply.missing) && reply.missing.length
+    ? reply.missing
+    : names;
+  const secs = Math.round(LIBRARY_LANDING_MS / 1000);
+
+  /* The consent still on screen is a cause with an action attached, so it is
+     said INSTEAD of the generic timeout rather than appended to it. */
+  if (reply.consentOnScreen) {
+    return {
+      ok: false,
+      ran: true,
+      note: `Flow's "Rights to use this video" notice is still on screen unanswered, so `
+        + `${missing.join(', ')} never reached the library. Open the Flow tab, agree to it `
+        + 'once by hand ("I agree, do not show again"), and run this again.',
+    };
+  }
+
+  return {
+    ok: false,
+    ran: true,
+    note: `Chrome handed the file(s) to Flow but nothing named ${missing.join(', ')} `
+      + `appeared in its library within ${secs}s`
+      + (reply.consentDismissed
+        ? ` (Flow's rights notice was answered ${reply.consentDismissed}x while waiting)`
+        : '')
+      + '. Nothing was generated.',
+  };
+}
+
 /* ──────────────────────────────────────────────────────────────────────── */
 
 /**
@@ -865,8 +1235,27 @@ async function trySetFilesDirectly(
 function sendCDP(target: chrome.debugger.Debuggee, method: string, params?: object): Promise<any> {
   return new Promise((resolve, reject) => {
     chrome.debugger.sendCommand(target, method, params, (result) => {
-      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-      else resolve(result);
+      if (chrome.runtime.lastError) {
+        /* ── Name the command, because Chrome does not ────────────────────
+         *
+         * chrome.runtime.lastError.message for a protocol refusal is the raw
+         * JSON and nothing else:
+         *
+         *   The upload failed: {"code":-32000,"message":"Not allowed"}
+         *
+         * Eleven sendCDP calls run between attaching and the click, and that
+         * message fits all eleven equally. It reached a user as the whole
+         * explanation for an upload that worked on one Chrome profile and not
+         * another, and there was no way to tell from it whether the browser
+         * refused to enable a domain, to set the files, or to dispatch the
+         * click — three different causes with three different fixes.
+         *
+         * The method name is free and it is the one fact that narrows it. */
+        const detail = chrome.runtime.lastError.message || '';
+        reject(new Error(method === 'DOM.setFileInputFiles' && /not allowed/i.test(detail)
+          ? `${uploadFileAccessMessage()} If already enabled, your browser policy may block automated file uploads.`
+          : `${method}: ${detail}`));
+      } else resolve(result);
     });
   });
 }

@@ -78,10 +78,10 @@ describe('the repair only touches what it must', () => {
   });
 
   it('does not mistake a closing quote for an inner one', () => {
-    /* The whole rule is what FOLLOWS the quote: a comma, a brace, a bracket
-       or a colon closes the string; anything else means it is mid-sentence.
-       Getting this backwards would escape every closing quote and destroy a
-       reply that arrived correct. */
+    /* The whole rule is what FOLLOWS the quote: a brace, a bracket, or a
+       comma or colon with JSON after it closes the string; anything else means
+       it is mid-sentence. Getting this backwards would escape every closing
+       quote and destroy a reply that arrived correct. */
     const j = '{"a":"one","b":"two","c":["three"],"d":{"e":"four"}}';
     expect(JSON.parse(repairInnerQuotes(j))).toEqual(JSON.parse(j));
   });
@@ -95,6 +95,27 @@ describe('the repair only touches what it must', () => {
   it('handles a quote at the very end of a value', () => {
     const q = '{"shots":[{"n":1,"prompt":"he said "go" and left"}]}';
     expect(JSON.parse(repairInnerQuotes(q)).shots[0].prompt).toBe('he said "go" and left');
+  });
+
+  it('reads a quoted word that a comma follows', () => {
+    /* A comma used to end the string on its own, so this came apart at
+       "OPEN", — the sentence goes on after it, which JSON never does. */
+    const q = '{"shots":[{"n":1,"prompt":"The sign reads "OPEN", then she turns.","title":"Sign"}]}';
+    const shot = JSON.parse(repairInnerQuotes(q)).shots[0];
+    expect(shot.prompt).toBe('The sign reads "OPEN", then she turns.');
+    expect(shot.title).toBe('Sign');
+  });
+
+  it('reads a quoted word that a colon follows', () => {
+    const q = '{"prompt":"A caption reads "Note": the door is locked.","why":"keeps it"}';
+    expect(JSON.parse(repairInnerQuotes(q))).toEqual({
+      prompt: 'A caption reads "Note": the door is locked.', why: 'keeps it',
+    });
+  });
+
+  it('leaves valid JSON with numbers, literals and nesting byte for byte', () => {
+    const good = '{"n": -1, "ok": true, "none": null, "cast": [{"name": "A"}, {"name": "B"}], "list": ["x", "y"]}';
+    expect(repairInnerQuotes(good)).toBe(good);
   });
 });
 

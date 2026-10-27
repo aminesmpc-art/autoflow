@@ -26,10 +26,19 @@ function FrameNodeComponent({ id, data, selected }: NodeProps) {
   const [zoomed, setZoomed] = useState(false);
 
   const frame: string = nodeData.frameUrl || '';
-  /* The runner writes frameUrl on every run, empty string included, so an
-     empty string that EXISTS means the capture was attempted and came back
-     with nothing. Undefined means it has never run. */
-  const ranEmpty = !frame && typeof nodeData.frameUrl === 'string';
+  /* "Tried, got nothing" is only true once the clip feeding this node has
+     finished. It used to be read off frameUrl being an empty string — but
+     every new Last Frame node was created with frameUrl: '', so each one
+     opened on "The clip above ran but gave up no last frame" before anything
+     had run, while a real empty capture (the runner writes only a CHANGED
+     frame, and '' to '' is no change) never showed it. The clip's own
+     status answers it on both the canvas and the worker path. */
+  const upstreamDone = useStudioStore((s) => {
+    const wire = s.edges.find((e) => e.target === id && (e.targetHandle || 'image_ref') === 'image_ref');
+    const source = wire ? s.nodes.find((n) => n.id === wire.source) : undefined;
+    return (source?.data as any)?.status === 'done';
+  });
+  const ranEmpty = !frame && upstreamDone;
 
   return (
     <div className={`fn-wrap sn-wrap--kind-frame ${selected ? 'fn-wrap--selected' : ''}`}>

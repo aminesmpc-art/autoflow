@@ -22,6 +22,7 @@
    ============================================================ */
 
 import { validateTemplate, isRunnableType } from '../templates/validate';
+import { readPovSettings, type PovSettings } from '../ask/povSurvival';
 import type { Template } from '../templates';
 
 /** What a plan may ask for. One name per node type the canvas can draw. */
@@ -124,6 +125,19 @@ export interface PlanStep {
   voice?: string;
   /** Story director settings (story type only) */
   cast?: Array<{ name: string; look: string; role?: string; voice?: string }>;
+  /**
+   * POV / Action Camera settings, for a first-person piece. Story steps only.
+   *
+   * One object rather than eighteen fields on PlanStep. They are eighteen
+   * answers about one decision — how the camera relates to the body carrying
+   * it — and a plan that sets none of them is every plan written before this
+   * existed, which must keep compiling unchanged.
+   *
+   * Optional, and normalised on the way in: an unknown value becomes the
+   * preset's default rather than failing the build, which is how
+   * readStorySettings already treats a setting it does not recognise.
+   */
+  pov?: Partial<PovSettings> & Record<string, unknown>;
   world?: string;
   look?: string;
   structure?: string;
@@ -484,6 +498,10 @@ export function compilePlan(plan: Plan, opts: { id?: string } = {}): CompileResu
              control and does not. */
           timedBeats: !!step.timedBeats,
           avoid: typeof step.avoid === 'string' ? step.avoid : '',
+          /* Only when the plan said something. Writing a normalised default
+             block onto every Director would turn "no opinion" into "first
+             person, 20mm, face hidden" for every piece ever built. */
+          ...(readPovSettings(step.pov) ? { pov: readPovSettings(step.pov) } : {}),
           status: 'idle',
         },
       });

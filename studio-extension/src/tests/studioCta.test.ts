@@ -72,7 +72,12 @@ describe('it gets louder only when it is in the way', () => {
 
 describe('it asks the server where Pro is', () => {
   it('uses getUpgradeTarget, like the gallery already did', () => {
-    expect(CANVAS).toMatch(/getUpgradeTarget\(\)\)\.url/);
+    expect(CANVAS).toMatch(/getUpgradeTarget\(place\)\)\.url/);
+  });
+
+  it('names which button it was, so a sale can be traced to it', () => {
+    expect(CANVAS).toMatch(/onClick=\{\(\) => void openUpgrade\('top_bar'\)\}/);
+    expect(CANVAS).toMatch(/className="studio-limit__cta" onClick=\{\(\) => void openUpgrade\('limit'\)\}/);
   });
 
   it('keeps no hardcoded pricing link in the markup', () => {

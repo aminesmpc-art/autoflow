@@ -193,14 +193,39 @@ describe('a run does not begin by waiting half a minute', () => {
     expect(Number(ms![1].replace(/_/g, ''))).toBeLessThanOrEqual(5_000);
   });
 
+  /** The `if (!ready)` block on the STUDIO_EXECUTE_NODE path, and only that
+      one — `await waitForTabReady(tabId, 10_000)` also appears in the
+      ask-for-a-plan path, so matching the whole file proved nothing about
+      this one. */
+  const injectBlock = (): string => {
+    const at = WORKER.indexOf("if (msg.type === 'STUDIO_EXECUTE_NODE') {");
+    expect(at).toBeGreaterThan(-1);
+    const from = WORKER.indexOf('if (!ready) {', at);
+    expect(from).toBeGreaterThan(-1);
+    return WORKER.slice(from, from + 1100);
+  };
+
   it('still injects when nothing answered', () => {
     /* The remedy is unchanged — it just is not made to wait thirty seconds
-       for its turn. */
-    expect(WORKER).toMatch(/if \(!ready\) \{\s*\n\s*try \{\s*\n\s*await chrome\.scripting\.executeScript/);
+       for its turn, and it now says so on the way past. */
+    expect(injectBlock()).toMatch(/await chrome\.scripting\.executeScript\(\{ target: \{ tabId \}, files: \[cfg\.script\] \}\);/);
+  });
+
+  it('says so, rather than recovering in silence', () => {
+    /* The reported symptom was a feed with a thirty-second hole in it: the
+       listen, the injection and the wait after it wrote nothing anyone could
+       see, so a hand-off that was quietly recovering looked exactly like one
+       that had died. */
+    expect(injectBlock()).toMatch(/diag\('Bridge',/);
   });
 
   it('gives the freshly injected script its own wait', () => {
-    expect(WORKER).toMatch(/await waitForTabReady\(tabId, 10_000\);/);
+    /* And asks repeatedly rather than sleeping once. executeScript resolving
+       means the FILE was injected, not that the script has added its
+       onMessage listener — which is what the keepalive routine next door
+       already knew, and what the 1500ms sleep here did not. */
+    expect(injectBlock()).toMatch(/await waitForListener\(tabId\)/);
+    expect(WORKER).toMatch(/async function waitForListener\(tabId: number, tries = \d+, gapMs = \d+\)/);
   });
 
   it('still says how long it waited, whenever that is not instant', () => {

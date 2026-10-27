@@ -614,7 +614,37 @@ export function composeAskPrompt(
 
 /** Shared by the runner and Ask AI's draft preview. */
 export function composeAskRequest(presetId: string | undefined, incoming: string, hasImage: boolean,
-  localBrief = '', placeDetails = ''): string {
+  localBrief = '', placeDetails = '', options: AskWritingOptions = {}): string {
   const subject = [incoming.trim(), localBrief.trim()].filter(Boolean).join('\n\n');
-  return composeAskPrompt(presetId, subject, hasImage, placeDetails);
+  const base = composeAskPrompt(presetId, subject, hasImage, placeDetails);
+  if (!base) return ''; // Preferences alone are not a task.
+  const settings = normalizeAskWritingOptions(options);
+  const instructions = [
+    settings.detail === 'concise' ? 'Be concise. Keep essential subject, action and continuity details; remove repetition.' : '',
+    settings.detail === 'detailed' ? 'Be specific and detailed without repetition. Resolve relevant visual, spatial and action details without changing the brief.' : '',
+    settings.language ? `Write the output in ${settings.language}. Preserve proper names and required schema keys.` : '',
+    settings.tone ? `Writing style: ${settings.tone}.` : '',
+    settings.include ? `Required details: ${settings.include}` : '',
+    settings.avoid ? `Exclude from the described scene or output: ${settings.avoid}` : '',
+  ].filter(Boolean);
+  return instructions.length ? `${base}\n\nWriting preferences (preserve the preset's output structure and required constraints):\n${instructions.join('\n')}` : base;
+}
+
+export interface AskWritingOptions {
+  detail?: 'concise' | 'detailed' | '';
+  language?: string;
+  tone?: string;
+  include?: string;
+  avoid?: string;
+}
+
+/** Imported workflows may contain invalid or outdated settings. */
+export function normalizeAskWritingOptions(value: unknown): AskWritingOptions {
+  const input = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const text = (key: string, limit: number) => typeof input[key] === 'string' ? (input[key] as string).trim().slice(0, limit) : '';
+  return {
+    detail: input.detail === 'concise' || input.detail === 'detailed' ? input.detail : '',
+    language: text('language', 80), tone: text('tone', 160),
+    include: text('include', 2000), avoid: text('avoid', 2000),
+  };
 }

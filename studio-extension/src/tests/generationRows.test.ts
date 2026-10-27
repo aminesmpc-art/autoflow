@@ -102,11 +102,26 @@ describe('findRowForPrompt', () => {
     expect(findRowForPrompt(PROMPT)!.tileId).toBe(TILE);
   });
 
-  it('matches on a long opening when Flow clipped the text', () => {
-    // Cards truncate very long prompts; 80 shared characters is still
-    // conclusive between two prompts that were not written to collide.
+  it('matches a clipped card once the caller has narrowed to new rows', () => {
+    /* Cards truncate very long prompts. This used to say "80 shared
+       characters is still conclusive between two prompts that were not
+       written to collide" — and this product writes prompts that collide, on
+       purpose: a multi-shot episode repeats a continuity lock verbatim at the
+       head of all eight, so they share their first 1,499 characters. A card
+       clipped inside that lock is a prefix of every shot in the episode.
+
+       So a prefix identifies a row only once the caller has excluded
+       everything that was on the page before it submitted. Then novelty names
+       the row and the prefix agrees with it. See lockedPromptTile.test.ts. */
     mountRow(PROMPT.slice(0, 110), TILE);
-    expect(findRowForPrompt(PROMPT)!.tileId).toBe(TILE);
+    expect(findRowForPrompt(PROMPT, new Set())!.tileId).toBe(TILE);
+  });
+
+  it('will not guess from a clipped card when nothing has been narrowed', () => {
+    /* The widened second attempt, after 45s. Guessing here is what handed
+       shot 2 the finished clip belonging to shot 1. */
+    mountRow(PROMPT.slice(0, 110), TILE);
+    expect(findRowForPrompt(PROMPT)).toBeNull();
   });
 
   it('refuses to match on a prompt too short to identify anything', () => {

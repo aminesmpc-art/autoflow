@@ -14,7 +14,7 @@ import './sidepanel.css';
 import {
   login, logout, isLoggedIn, getProfile,
   listCommunityTemplates, getCommunityTemplate, likeCommunityTemplate,
-  submitCommunityTemplate, getUpgradeUrl, resolveApiBase, type CommunityCard,
+  getUpgradeUrl, resolveApiBase, type CommunityCard,
 } from '../shared/api';
 import { loadTemplates, refreshTemplates } from '../studio/templates/loader';
 import { BRAND_MARKS } from '../studio/components/brandMarks';
@@ -424,7 +424,7 @@ function wire(): void {
         /* getUpgradeUrl carries the account email in the URL fragment, which
            is what lets the webhook attach the membership to the right
            account. The literal is only a fallback. */
-        const url = await getUpgradeUrl().catch(() => '');
+        const url = await getUpgradeUrl('sidepanel').catch(() => '');
         await chrome.tabs.create({ url: url || 'https://www.auto-flow.studio/checkout' });
       } catch { /* the tab could not be opened; the button comes back */ }
       proGo.disabled = false;
@@ -2291,9 +2291,15 @@ function setTemplateSource(next: TemplateSourceTab): void {
 
 /** Share the workflow the Build tab just made. */
 async function shareBuilt(template: any): Promise<void> {
-  const who = (document.getElementById('foot-acct')?.textContent || '').trim();
-  const res = await submitCommunityTemplate(template, who.includes('@') ? who.split('@')[0] : who);
-  buildSays(res.ok ? 'ok' : 'bad', res.message);
+  /* A post goes live at once and carries a display name, a title and a
+     caption — so it is made in Studio's post form, where the person sees
+     exactly what everyone will see. This used to send it from here, under the
+     part of their email before the @. */
+  await chrome.storage.local.set({
+    af_pending_post: { name: template?.name || 'Untitled', nodes: template?.nodes || [], edges: template?.edges || [] },
+  });
+  chrome.runtime.sendMessage({ type: 'PANEL_OPEN_STUDIO' }).catch(() => {});
+  buildSays('ok', 'Opening the post form in Studio…');
 }
 
 function renderPills(): void {

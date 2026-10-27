@@ -1,6 +1,7 @@
 /**
  * @jest-environment jsdom
  */
+export {};
 
 /**
  * The website handing a workflow to Studio.

@@ -210,19 +210,27 @@ describe('the name searched for is the name Flow actually has', () => {
        "(8)" while every attach searched for "Motion-Control-1-part1-of-2". */
     expect(UPLOAD).toMatch(/names\?: string\[\]/);
     expect(UPLOAD).toMatch(/return \{ path, downloadId, name: got \|\| filename \}/);
-    expect(UPLOAD).toMatch(/names: saved\.map\(\(f\) => f\.name\)/);
+    /* Hoisted to a const once the landing check needed the same list — it is
+       now searched for in Flow's library before the upload returns, as well as
+       reported back. Pinned as the declaration plus a use, rather than as the
+       inline expression it used to be, so moving it again does not read as
+       losing it. */
+    expect(UPLOAD).toMatch(/const names = saved\.map\(\(f\) => f\.name\);/);
+    expect(UPLOAD).toMatch(/await confirmUploadLanded\(tabId, names\)/);
   });
 
   it('the Motion node searches under that name', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
-    const body = RUNNER.slice(at, at + 22000);
-    expect(body).toMatch(/const savedAs: string\[\] = Array\.isArray\(upload\.names\)/);
+    /* To the method's end, not a fixed length: the method grows, and a line
+       pushed past a fixed window reads as a line deleted. */
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
+    expect(body).toMatch(/const actual = String\(upload\.names\?\.\[0\] \|\| ''\)\.trim\(\)/);
     expect(body).toMatch(/row\.filename = actual;/);
   });
 
   it('says so in the log rather than renaming behind the run', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
-    expect(RUNNER.slice(at, at + 22000))
+    expect(RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at)))
       .toMatch(/Chrome saved piece \$\{row\.index\} as/);
   });
 });

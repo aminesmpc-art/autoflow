@@ -93,7 +93,7 @@ export type VideoDuration = '4s' | '6s' | '8s' | '10s';
 export type RenderResolution = '360p' | '720p';
 
 // ── Image generation model & ratio ──
-export type ImageModel = 'Nano Banana Pro' | 'Nano Banana 2' | 'Nano Banana 2 Lite';
+export type ImageModel = 'Nano Banana Pro' | 'Nano Banana 2.1' | 'Nano Banana 2' | 'Nano Banana 2 Lite';
 export type ImageRatio = '16:9' | '4:3' | '1:1' | '3:4' | '9:16';
 
 // ── Settings snapshot ──
@@ -122,6 +122,13 @@ export interface QueueSettings {
      piece, where that clip IS the motion being transferred, so a video made
      without it is a different job at full price. */
   styleReferenceRequired?: boolean;
+  /** Motion's native watcher owns retries; disable engine resubmissions. */
+  retryFailedMotion?: boolean;
+  /* Whether `model` is required rather than preferred. Motion Control needs
+     Omni 1.1 Flash: it is the model that takes the motion clip as a reference.
+     Without this, a Flow account that does not offer the model generated with
+     whatever Flow had selected, and nobody was told. */
+  modelRequired?: boolean;
 
   // Timing
   waitMinSec: number;                // Min wait time between prompts (default 10)
@@ -212,7 +219,11 @@ export type ScannedTileState = 'completed' | 'failed' | 'generating' | 'unknown'
 // ── Scanned asset for Library ──
 export interface ScannedAsset {
   index: number;            // sequential index across all assets
-  tileId: string;           // Flow's data-tile-id (unique per tile)
+  /* What flowTileIdentity calls the tile: its data-tile-id where the page
+     states one, otherwise its data-media-id or the token in its media URL.
+     Look it up with findTileByIdentity — on the Angular Flow there is no
+     data-tile-id attribute to select on. */
+  tileId: string;
   label: string;            // display label
   thumbnailUrl: string;
   videoSrc: string;         // video src URL (empty for images)
@@ -537,6 +548,9 @@ export const modelHasDuration = (model: string): boolean =>
    the run on whatever Flow defaulted to. */
 export const AVAILABLE_IMAGE_MODELS: ImageModel[] = [
   'Nano Banana Pro',
+  /* Flow lists Nano Banana 2.1 now (2026-10-18); setModel's version tier
+     maps between 2 and 2.1 on whichever Flow the account has. */
+  'Nano Banana 2.1',
   'Nano Banana 2',
   'Nano Banana 2 Lite',
 ];

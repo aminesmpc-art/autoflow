@@ -37,6 +37,12 @@ const codeOnly = (src: string): string => src.replace(/\/\*[\s\S]*?\*\//g, '');
 const WORKER = codeOnly(read('background', 'service-worker.ts'));
 const RUNNER = codeOnly(read('studio', 'engine', 'WorkflowRunner.ts'));
 
+const pingRoutine = () => {
+  const at = WORKER.indexOf('async function tabPingRoutine(');
+  expect(at).toBeGreaterThan(-1);
+  return WORKER.slice(at, WORKER.indexOf('\n}', at) + 2);
+};
+
 describe('the beta is opt-in', () => {
   it('is off unless the user turned it on', () => {
     expect(WORKER).toMatch(/const BACKGROUND_TABS_KEY = 'af_background_tabs'/);
@@ -57,22 +63,18 @@ describe('the beta is opt-in', () => {
 
 describe('with the beta on, the tab is left alone', () => {
   it('skips the routine foreground grab', () => {
-    const at = WORKER.indexOf('async function tabPingRoutine(');
-    expect(at).toBeGreaterThan(-1);
-    const body = WORKER.slice(at, at + 1400);
+    const body = pingRoutine();
     expect(body).toMatch(/if \(!tab\.active && !\(await backgroundTabsOn\(\)\)\)/);
   });
 
   /* The health check is a different question from visibility, and dropping
      it would lose the only signal that an orphaned content script exists. */
   it('still checks that something is listening', () => {
-    const at = WORKER.indexOf('async function tabPingRoutine(');
-    expect(WORKER.slice(at, at + 1400)).toMatch(/type: 'PING'/);
+    expect(pingRoutine()).toMatch(/type: 'PING'/);
   });
 
   it('keeps stealing focus when the beta is off', () => {
-    const at = WORKER.indexOf('async function tabPingRoutine(');
-    expect(WORKER.slice(at, at + 1400)).toMatch(/chrome\.tabs\.update\(keptTabId, \{ active: true \}\)/);
+    expect(pingRoutine()).toMatch(/chrome\.tabs\.update\(keptTabId, \{ active: true \}\)/);
   });
 });
 
@@ -138,8 +140,7 @@ describe('needs attention', () => {
   /* A banner that outlives its cause is worse than none — the next real one
      reads as the same stale message. */
   it('clears itself as soon as the tab answers', () => {
-    const at = WORKER.indexOf('async function tabPingRoutine(');
-    const body = WORKER.slice(at, at + 1600);
+    const body = pingRoutine();
     const ping = body.indexOf("type: 'PING'");
     expect(body.slice(ping, ping + 400)).toMatch(/needsAttention: ''/);
   });
@@ -220,10 +221,19 @@ describe('focus changes become something the user asks for', () => {
     it('still happens with the beta on', () => {
       const body = keepalive();
       const from = body.indexOf('const raiseKey');
-      const to = body.indexOf('keptTabId = tabId');
+      // The target is now assigned before the asynchronous protection read;
+      // the hand-off block ends when monitoring is armed.
+      const to = body.indexOf('armKeepalive();');
       expect(from).toBeGreaterThan(-1);
       expect(to).toBeGreaterThan(from);
-      expect(body.slice(from, to)).not.toMatch(/backgroundTabsOn\(\)/);
+      /* The beta may only ADD raises — Motion's foreground mode follows every
+         step — never take the hand-off away: a new provider or tab raises
+         whatever followEachStep says. */
+      const block = body.slice(from, to);
+      const follow = 'const followEachStep = !!providerProtection && !(await backgroundTabsOn());';
+      expect(block).toContain(follow);
+      expect(block).toMatch(/if \(lastRaisedFor !== raiseKey \|\| followEachStep\) \{/);
+      expect(block.replace(follow, '')).not.toMatch(/backgroundTabsOn\(\)/);
     });
   });
 

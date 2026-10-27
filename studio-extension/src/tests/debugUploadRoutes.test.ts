@@ -145,7 +145,13 @@ describe('a failure that can be acted on', () => {
     /* "did not open within 15s" is equally true of a missed click, a renamed
        button, and a Flow that never opens a chooser — three problems wearing
        one sentence. */
-    const m = /file chooser did not open within 15s[\s\S]*?\);/.exec(SRC) as RegExpExecArray;
+    /* Anchored on the throw rather than on the first mention of the
+       sentence. It is now quoted in a comment further up the file too —
+       the failure it describes came back on a second session — and
+       matching the comment would prove nothing about what the user is
+       actually handed. Stricter than it was, not looser. */
+    const m = /reject\(new Error\(\s*`file chooser did not open within 15s[\s\S]*?\)\);/
+      .exec(SRC) as RegExpExecArray;
     expect(m).not.toBeNull();
     expect(m[0]).toMatch(/btnCoords\.label/);
     expect(m[0]).toMatch(/direct\.why/);

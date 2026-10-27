@@ -144,7 +144,8 @@ describe('when the browser has no IndexedDB', () => {
   });
 
   it('saves without complaining', async () => {
-    await expect(vault.saveMedia('k', bytes(4))).resolves.toBeUndefined();
+    // Without IndexedDB nothing is kept, and it says so rather than throwing.
+    await expect(vault.saveMedia('k', bytes(4))).resolves.toBe(false);
     await expect(vault.saveSource('k', new File([new Uint8Array(4)], 'v.mp4')))
       .resolves.toBeUndefined();
   });

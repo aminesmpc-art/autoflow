@@ -6,8 +6,8 @@
    to the runner. Text replies become the prompt for a downstream node; images
    become a reference.
 
-   Chat only — no API key anywhere in this extension, by design. Everything
-   here works the page the way a person would.
+   Prompts and attachments go through the page. Text results can also be read
+   from that existing request's response when Gemini delays rendering it.
 
    Gemini's DOM differs from ChatGPT's in three ways that matter:
    - The composer is Quill (`.ql-editor`), not ProseMirror, so it takes plain
@@ -24,6 +24,10 @@ console.log('[AutoFlow Gemini] Content script loaded on', location.href);
 import { cleanAssistantReply, looksLikeUsablePrompt } from '../chatgpt/chatgptReply';
 import { isVisible } from '../shared/visible';
 import { sleepOrDomChange } from '../shared/hiddenWait';
+import { sleep } from './wait';
+import { beginNetworkTurn, type NetworkTurn } from './network';
+import { deliverOnce } from '../shared/deliverOnce';
+import { answerVideoReminder } from './videoReminder';
 import { insertIntoEditable, readRenderedText } from '../shared/composerText';
 
 const GENERATION_TIMEOUT_MS = 6 * 60 * 1000;
@@ -89,12 +93,20 @@ function logLine(line: string): void {
    one it is. */
 import { shouldTidy, tidyAwayConversation, waitForNoDialog, openConversation, conversationId } from './tidy';
 
-const ADAPTER_BUILD = 'thinking-wait-v5';
+const ADAPTER_BUILD = 'new-chat-url-v9';
+// A completed server turn can exist before Gemini renders any turn DOM.
+let networkConversationUsed = false;
 
 /** Backstop for a wedged tab. */
 const TEXT_CEILING_MS = 10 * 60 * 1000;
 const POLL_MS = 2000;
 const UPLOAD_TIMEOUT_MS = 45 * 1000;
+/* How long one delivery route gets to show a chip before the next is tried.
+   The chip mounts ~400ms after the hand-over (measured on a 119KB clip), so
+   this is five times that — generous, because trying the next route too soon
+   is exactly how a file arrives twice. Only a route that FAILS pays it; one
+   that works returns the moment its chip appears. */
+const ROUTE_BUDGET_MS = 2000;
 const MAX_CAPTURE_BYTES = 15 * 1024 * 1024;
 /* The clip is inlined as a base64 data URL and travels through
    chrome.runtime.sendMessage, which caps a message at roughly 64MB. Base64 is
@@ -146,25 +158,6 @@ function send(type: string, payload: Record<string, unknown>): void {
   try { chrome.runtime.sendMessage({ type, payload }).catch(complain); } catch (e) { complain(e); }
 }
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-
-
-/* Chrome throttles timers in background tabs, and the tab we open is
-   deliberately in the background. A round-trip to the worker keeps this
-   thread awake so the poller keeps ticking. */
-let antiThrottle: ReturnType<typeof setInterval> | null = null;
-const startAntiThrottle = () => {
-  if (!antiThrottle) {
-    antiThrottle = setInterval(() => {
-      try { chrome.runtime.sendMessage({ type: 'PING' }).catch(() => {}); } catch {}
-    }, 15_000);
-  }
-};
-const stopAntiThrottle = () => {
-  if (antiThrottle) { clearInterval(antiThrottle); antiThrottle = null; }
-};
-
 /* ── Page pieces ── */
 
 /** Gemini's composer: a Quill editor inside a `rich-textarea`. */
@@ -187,7 +180,8 @@ function findComposer(): HTMLElement | null {
  * health check has to account for that.
  */
 /**
- * Turns rendered in the thread. Zero means a fresh, unused chat.
+ * Turns rendered in the thread. Zero alone does not prove a fresh chat when
+ * a network reply has arrived ahead of Gemini's rendering.
  *
  * `user-query, model-response` — NOT `conversation-container`, which was the
  * obvious guess and is wrong: measured on a live hydrated thread, that element
@@ -197,6 +191,21 @@ function findComposer(): HTMLElement | null {
  */
 function turnCount(): number {
   return document.querySelectorAll('user-query, model-response').length;
+}
+
+/**
+ * Whether the address is a conversation, read off the URL rather than the page.
+ *
+ * turnCount() counts what Gemini has RENDERED. A hidden tab, a thread still
+ * loading, or a redesign can render none of a thread's turns, and "0 turns,
+ * reuse it" then sent a whole new run into the last one. Reported 2026-10-19
+ * from Motion: "dont open new chat in gemini when he start over" — the brief for
+ * the new run landed in the old director thread. Gemini's router puts the
+ * conversation id in the path, with or without an account prefix (/u/1/app/<id>),
+ * and a fresh chat is /app — so the address answers the question on its own.
+ */
+function inConversation(): boolean {
+  return /\/app\/[A-Za-z0-9_-]+\/?$/.test(location.pathname);
 }
 
 /**
@@ -237,9 +246,13 @@ function findNewChatControl(): HTMLElement | null {
  * moved is worse, and the log says which happened.
  */
 async function startNewChat(): Promise<boolean> {
-  if (turnCount() === 0) {
+  const requireReset = networkConversationUsed;
+  if (turnCount() === 0 && !requireReset && !inConversation()) {
     console.log('[AutoFlow Gemini] Already on an empty chat — reusing it');
     return true;
+  }
+  if (turnCount() === 0 && inConversation()) {
+    logLine('No turns rendered, but the address is a conversation — opening a new chat anyway');
   }
   const control = findNewChatControl();
   if (!control) {
@@ -249,7 +262,12 @@ async function startNewChat(): Promise<boolean> {
   control.click();
   for (let i = 0; i < 24; i++) {
     await sleep(250);
-    if (turnCount() === 0 && findComposer()) {
+    const composer = findComposer();
+    /* Off the old address too: with nothing rendered, turnCount() is 0 before
+       the click lands as well as after it. */
+    if (turnCount() === 0 && composer && !inConversation()
+        && (!requireReset || !(composer.innerText || composer.textContent || '').trim())) {
+      networkConversationUsed = false;
       console.log('[AutoFlow Gemini] Started a new chat');
       return true;
     }
@@ -483,6 +501,35 @@ function turnFinished(): boolean | null {
 }
 
 /**
+ * Every reply container on the page, in document order. readLatestReply reads
+ * the last one; trackTextReply COUNTS them.
+ *
+ * Counting the very elements that are read is the point, and it is why this
+ * is a list rather than the single element. Measured on a live hydrated
+ * thread, three turns:
+ *
+ *   containersPerModelResponse   [3, 3, 3]
+ *   containersInsideUserQuery    0
+ *   containersOutsideModelResponse  0
+ *
+ * Three per answer — `structured-content-container.model-response-text`, the
+ * `message-content` inside it, and the `div.markdown-main-panel` inside that,
+ * all carrying identical text. Stable, and none of it belongs to a user turn,
+ * so this count moves when an ANSWER BODY renders and at no other time.
+ *
+ * The count of `model-response` cannot stand in for it: that element appears
+ * the moment Gemini starts thinking, while the text still being read belongs
+ * to the turn before it.
+ */
+function replyContainers(): HTMLElement[] {
+  const inner = document.querySelectorAll<HTMLElement>(
+    'message-content, .model-response-text, .markdown-main-panel'
+  );
+  if (inner.length) return Array.from(inner);
+  return Array.from(document.querySelectorAll<HTMLElement>('model-response'));
+}
+
+/**
  * The newest model turn's text.
  *
  * Read from `message-content` rather than the whole `model-response`. The
@@ -491,15 +538,11 @@ function turnFinished(): boolean | null {
  * button text to every prompt the next node runs.
  */
 function readLatestReply(): string {
-  const inner = document.querySelectorAll<HTMLElement>(
-    'message-content, .model-response-text, .markdown-main-panel'
-  );
+  const blocks = replyContainers();
   /* innerText is layout-dependent and comes back empty on a tab Chrome is
      not painting; textContent does not. Same species as the execCommand
      problem — fine visible, silent and empty hidden. */
-  if (inner.length) return readRenderedText(inner[inner.length - 1]);
-  const turns = document.querySelectorAll<HTMLElement>('model-response');
-  return turns.length ? readRenderedText(turns[turns.length - 1]) : '';
+  return blocks.length ? readRenderedText(blocks[blocks.length - 1]) : '';
 }
 
 /**
@@ -912,48 +955,104 @@ async function attachReferences(dataUrls: string[]): Promise<string | null> {
 
   // Measured the same way it is compared below, or the delta is nonsense.
   const baseline = settledAttachmentCount();
+  /* Chips, not settled media: a route has "taken" the moment its chip mounts,
+     spinner and all. Waiting for the upload to finish before deciding would
+     mean deciding too late, and firing the next route over a file that was
+     already on its way. */
+  const chipBaseline = attachmentCount();
   const dt = new DataTransfer();
   for (const f of files) dt.items.add(f);
 
-  // 1. Direct clipboard paste & drop onto the composer (works across modes without menu clicks)
+  /* ── One route at a time ──────────────────────────────────────────────
+   *
+   * This used to fire a paste AND a drop, back to back, with the same files
+   * and nothing between them. Gemini took both, and every reference arrived
+   * twice — two identical character images on the brief, two identical clips
+   * on every piece. See ../shared/deliverOnce.ts for the whole story.
+   *
+   * Same three routes, same order. The difference is that each waits to see
+   * whether the one before it landed. */
   const composer = findComposer();
-  if (composer) {
-    composer.focus();
-    try {
-      composer.dispatchEvent(new ClipboardEvent('paste', {
-        bubbles: true,
-        cancelable: true,
-        clipboardData: dt,
-      }));
-    } catch {}
-
-    try {
-      composer.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
-      composer.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
-      composer.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
-    } catch {}
-  }
-
-  // 2. File input fallback if paste didn't mount attachment chips
-  await sleep(300);
-  if (settledAttachmentCount() === baseline && attachmentCount() === baseline) {
-    const input = await revealFileInput();
-    if (input) {
-      input.files = dt.files;
-      triggerFileInputChange(input);
-    } else if (settledAttachmentCount() === baseline && attachmentCount() === baseline) {
-      return 'Could not find Gemini\'s file upload — the reference image was not sent';
+  const delivery = await deliverOnce([
+    {
+      name: 'paste',
+      fire: () => {
+        if (!composer) return false;
+        composer.focus();
+        composer.dispatchEvent(new ClipboardEvent('paste', {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: dt,
+        }));
+        return true;
+      },
+    },
+    {
+      name: 'drop',
+      fire: () => {
+        if (!composer) return false;
+        composer.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        composer.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        composer.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        return true;
+      },
+    },
+    {
+      name: 'file input',
+      fire: async (alreadyArrived) => {
+        const input = await revealFileInput();
+        if (!input) return false;
+        /* Revealing the input opens Gemini's menu, and that takes time. A
+           paste or drop given up on can land while it does — fill the input
+           then and the file goes up twice. Backing out leaves the wait below
+           to confirm the copy that did arrive. */
+        if (alreadyArrived()) return false;
+        input.files = dt.files;
+        triggerFileInputChange(input);
+        return true;
+      },
+    },
+  ], () => {
+    /* If handing the file over raises the video reminder, the route HAS been
+       taken — Gemini is asking about the file it was given. Agreeing lets
+       the chip mount; firing the next route instead would deliver it twice. */
+    if (answerVideoReminder('agree')) {
+      logLine("Agreed to Gemini's video reminder so the clip can be attached");
+      return true;
     }
+    return attachmentCount() > chipBaseline;
+  }, ROUTE_BUDGET_MS, { sleep });
+
+  /* Nothing could even be attempted: no composer to paste into, no input to
+     fill. That is a real failure and worth saying now rather than after 45s.
+     A route that WAS fired but not yet seen falls through to the wait below,
+     which has the full upload budget — the old behaviour for a slow site. */
+  if (!delivery.fired) {
+    return 'Could not find Gemini\'s file upload — the reference image was not sent';
   }
+  if (delivery.took) logLine(`reference(s) handed to Gemini by ${delivery.took}`);
 
   const deadline = Date.now() + UPLOAD_TIMEOUT_MS;
   let stable = 0;
+  let saidDuplicate = false;
   while (Date.now() < deadline) {
     await sleep(500);
     /* SETTLED, not merely present. A chip appears the instant the file is
        picked and sits there spinning while the bytes go up; counting chips
        alone let a submit through mid-upload. */
+    if (answerVideoReminder('agree')) logLine("Agreed to Gemini's video reminder so the clip can be attached");
     const arrived = settledAttachmentCount() - baseline;
+    /* MORE than was sent. The check below is `>=`, which is right for
+       "everything arrived" and blind to "something arrived twice" — which is
+       how the paste-and-drop duplicate went unseen. Not fatal: the model is
+       shown the same file twice, not a wrong one, and failing a Director run
+       over it would cost far more than it saves. But it is said, once, so a
+       new route that doubles up names itself instead of hiding. */
+    if (arrived > files.length && !saidDuplicate) {
+      saidDuplicate = true;
+      logLine(`Gemini shows ${arrived} attachments for ${files.length} file(s) — `
+        + 'one was delivered twice. Sending anyway; the model sees a duplicate, not a wrong file.');
+    }
     /* Not-disabled, rather than present-and-enabled. References are attached
        before the prompt is typed, and Gemini renders no send button for an
        empty composer — requiring one here would have timed out every upload
@@ -1038,6 +1137,8 @@ async function handleExecute(payload: any): Promise<any> {
   }
 
   logLine(`Executing node ${nodeId} [adapter ${ADAPTER_BUILD}]`);
+  const stage = (name: string) => logLine(`Stage: ${name} — hidden=${document.hidden}, focused=${document.hasFocus()}`);
+  stage('prepare conversation');
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 10 });
 
   /* The previous node may still be clearing up after itself. Tidying runs
@@ -1045,6 +1146,14 @@ async function handleExecute(payload: any): Promise<any> {
      this one while a confirm dialog is still open — and a modal overlay
      swallows the New Chat click, which would land this node's prompt in the
      previous node's thread. Waiting a moment is cheaper than that. */
+  /* A video reminder still up at the START of a turn belongs to an earlier
+     send that never went — it is not this turn's. Agreeing would send that
+     stale message and double the turn, so it is CANCELLED: the dialog goes,
+     nothing is sent, and this turn starts clean. waitForNoDialog below would
+     otherwise wait three seconds and carry on underneath it. */
+  if (answerVideoReminder('cancel')) {
+    logLine('A video reminder from an earlier send was still open — cancelled it so this turn can start');
+  }
   await waitForNoDialog();
 
   /* Isolate this node first. It has to happen before the composer lookup and
@@ -1056,7 +1165,12 @@ async function handleExecute(payload: any): Promise<any> {
      'never' is the agent loop mid-run: there the thread is the memory, and
      resetting between turns would drop the tool results it just read. */
   if (config?.newChat !== 'never') {
-    await startNewChat();
+    const reset = await startNewChat();
+    if (!reset && networkConversationUsed) {
+      send('STUDIO_NODE_ERROR', { nodeId, error: 'Gemini has a submitted conversation that is not rendered yet. '
+        + 'Could not confirm a fresh chat for this piece; open Gemini before retrying.' });
+      return { success: false };
+    }
   } else if (config?.resumeConversation) {
     /* Continue THIS node's thread, not whichever one is on screen.
      *
@@ -1140,6 +1254,10 @@ async function handleExecute(payload: any): Promise<any> {
       : collectResultImages().map((i) => i.currentSrc || i.src),
   );
   const priorReply = wantsText ? readLatestReply().trim() : '';
+  /* And how many containers held it. "Is this OUR answer" is a question about
+     WHICH container is being read, never about what it says — two identical
+     answers in a row are ordinary. See trackTextReply. */
+  const repliesBefore = wantsText ? replyContainers().length : 0;
   /* How many model turns exist BEFORE we ask. Everything after this point that
      wants to know "is our turn running" has to be able to tell our turn from
      the last one, and a count taken here is the only thing that can. */
@@ -1158,6 +1276,7 @@ async function handleExecute(payload: any): Promise<any> {
   }
 
   if (references.length) {
+    stage('upload references');
     const failure = await attachReferences(references);
     if (failure) {
       send('STUDIO_NODE_ERROR', { nodeId, error: failure });
@@ -1168,33 +1287,145 @@ async function handleExecute(payload: any): Promise<any> {
     composer = findComposer() || composer; // uploading re-renders the composer
   }
 
+  stage('fill prompt');
   if (!fillComposer(composer, prompt)) {
     send('STUDIO_NODE_ERROR', { nodeId, error: 'Could not type into the Gemini prompt box' });
     return { success: false };
   }
   await sleep(400);
 
-  const btn = findSendButton();
-  if (btn) {
-    btn.click();
-  } else {
-    composer.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter', code: 'Enter', bubbles: true, cancelable: true,
-    }));
+  /* ── Submit and VERIFY ──
+   *
+   * The old code did btn.click() and moved on. That fails silently when:
+   * - Angular has rendered the button but not attached its (click) handler
+   * - The tab is in the background and zone.js does not process the click
+   * - Quill accepted text visually but did not update its internal model,
+   *   so the button is still functionally disabled at the framework level
+   *
+   * The ChatGPT adapter already solves this with a try-verify-escalate loop.
+   * This is the same pattern for Gemini: try, check that the prompt was
+   * accepted, escalate if it was not.
+   *
+   * "Accepted" means one of:
+   * - The composer is empty (Gemini clears it on send)
+   * - A new model-response appeared (the turn started)
+   */
+  const composerText = () => (findComposer()?.innerText || findComposer()?.textContent || '').trim();
+  const turnCountNow = () => document.querySelectorAll('model-response, structured-content-container').length;
+  const turnsAtSubmit = turnCountNow();
+  const textAtSubmit = composerText();
+  const network = wantsText ? await beginNetworkTurn(prompt) : null;
+  logLine(network ? 'Network reply capture armed for this prompt.' : 'Using page result collection.');
+
+  /* ── Gemini's video reminder ─────────────────────────────────────────
+   *
+   * Sending a message that carries a video raises "A reminder about creating
+   * videos", and the message is held until it is answered. Before this was
+   * handled, each of the three attempts below waited out its three seconds
+   * behind the modal, and the next attempt fired underneath it.
+   *
+   * Agreeing is what actually sends. So once it is answered the wait is
+   * restarted with room for the send to land, rather than left with whatever
+   * the attempt had remaining — and a turn that starts then counts as this
+   * attempt's, so no second attempt fires on top of a send that worked. */
+  const accepted = async (): Promise<boolean> => {
+    /* Counted, not timed — as it always was. In a throttled background tab
+       each sleep can stretch well past 250ms, and a count of polls keeps the
+       longer, more forgiving wait that stops a slow send from being taken for
+       a failed one and sent again. Without a reminder this is unchanged. */
+    let polls = 12;
+    for (let i = 0; i < polls; i++) {
+      await sleep(250);
+      if (network?.started) {
+        networkConversationUsed = true;
+        logLine('Gemini issued the matching generation request; submission is confirmed.');
+        return true;
+      }
+      if (answerVideoReminder('agree')) {
+        logLine("Agreed to Gemini's video reminder — the message is being sent");
+        polls = i + 1 + 40;              // a fresh ten seconds' worth for the send to land
+        continue;
+      }
+      if (turnCountNow() > turnsAtSubmit) return true;
+      const current = composerText();
+      if (textAtSubmit && (!current || current.length < textAtSubmit.length * 0.3)) return true;
+    }
+    return false;
+  };
+
+  const submitAttempts: Array<[string, () => void]> = [
+    ['send button click', () => {
+      const b = findSendButton();
+      if (b) b.click();
+    }],
+    ['Enter key', () => {
+      const c = findComposer();
+      if (c) c.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true,
+      }));
+    }],
+    /* Angular Material buttons listen on pointerdown, not click. A plain
+       .click() dispatches a click event but not the pointer sequence that
+       Angular's ripple and event system expect. This rung fires the full
+       pointer sequence that a real tap produces. */
+    ['pointer sequence', () => {
+      const b = findSendButton();
+      if (!b) return;
+      b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+      b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true }));
+      b.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+      b.click();
+    }],
+  ];
+
+  let submitted = false;
+  stage('verify submission');
+  try {
+    for (const [name, attempt] of submitAttempts) {
+      if (network?.started) { networkConversationUsed = true; submitted = true; break; }
+      const b = findSendButton() as HTMLButtonElement | null;
+      logLine(
+        `Submitting via ${name} — button ${
+          b ? `found (aria-label="${b.getAttribute('aria-label') || '?'}", ` +
+              `disabled=${b.disabled}, aria-disabled=${b.getAttribute('aria-disabled') || 'false'})` : 'NOT FOUND'
+        }`
+      );
+      attempt();
+      if (await accepted()) {
+        logLine(`Accepted after ${name}`);
+        submitted = true;
+        break;
+      }
+    }
+  } catch (error) { network?.release(); throw error; }
+
+  if (!submitted) {
+    network?.release();
+    /* The prompt is typed and sitting there unsent. Reporting now saves the
+       user from waiting out the full generation timeout for an answer to a
+       question nobody asked. */
+    send('STUDIO_NODE_ERROR', {
+      nodeId,
+      error: 'The prompt was typed into Gemini but the send did not go through — '
+        + 'the page may still have been loading. It is in the composer; run this node again.',
+    });
+    return { success: false };
   }
 
   logLine(`Submitted — waiting for the ${wantsText ? 'reply' : wantsVideo ? 'clip' : 'image'}...`);
+  stage('collect result');
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 20 });
 
   // Hand the channel back now: Chrome closes a sendResponse channel long
   // before a generation finishes. Results travel by sendMessage instead.
-  startAntiThrottle();
   const work = wantsText
-    ? trackTextReply(nodeId, priorReply, config?.rawReply === true, turnsBefore)
+    ? trackTextReply(nodeId, priorReply, config?.rawReply === true, turnsBefore, repliesBefore, network)
     : wantsVideo
       ? trackVideo(nodeId, preexisting)
       : trackGeneration(nodeId, preexisting);
-  work.finally(stopAntiThrottle);
+  void work.finally(() => network?.release()).catch((e: any) =>
+    send('STUDIO_NODE_ERROR', { nodeId, error: `Gemini collection failed: ${e?.message || e}` }));
 
   /* After the answer, never instead of it. The result has already been sent by
      the time this runs, so the worst a failure here can do is leave a row in
@@ -1255,7 +1486,7 @@ async function trackVideo(nodeId: string, preexisting: Set<string>): Promise<voi
   let explained = false;
 
   while (Date.now() - startedAt < 12 * 60 * 1000) {
-    await sleepOrDomChange(2000);
+    await sleepOrDomChange(2000, 250, sleep);
     /* Reading while hidden, deliberately.
        This used to `continue` on document.hidden, on the theory that a
        throttled tab reads nothing useful. The DOM of a hidden tab is
@@ -1368,7 +1599,7 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
   let explained = false;
 
   while (Date.now() - startedAt < GENERATION_TIMEOUT_MS) {
-    await sleepOrDomChange(POLL_MS);
+    await sleepOrDomChange(POLL_MS, 250, sleep);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
       nodeId,
@@ -1437,7 +1668,8 @@ async function trackGeneration(nodeId: string, preexisting: Set<string>): Promis
  * cleanAssistantReply strips surrounding quotes, which can be part of the JSON.
  */
 async function trackTextReply(
-  nodeId: string, priorReply: string, raw = false, sinceTurns = 0
+  nodeId: string, priorReply: string, raw = false, sinceTurns = 0, priorReplies = 0,
+  network?: NetworkTurn | null,
 ): Promise<void> {
   const startedAt = Date.now();
   let lastSeen = '';
@@ -1448,16 +1680,23 @@ async function trackTextReply(
   let answerStarted = false;
   /* Consecutive polls that read "not generating". One is a flicker. */
   let quietPolls = 0;
+  let explainedNetworkFallback = false;
 
   while (Date.now() - startedAt < TEXT_CEILING_MS) {
-    await sleepOrDomChange(POLL_MS);
+    await sleepOrDomChange(POLL_MS, 250, sleep);
     const elapsed = Date.now() - startedAt;
     send('STUDIO_NODE_PROGRESS', {
       nodeId,
       progress: Math.min(90, 20 + Math.floor((elapsed / TEXT_TIMEOUT_MS) * 90)),
     });
 
-    const current = readLatestReply().trim();
+    const captured = network?.reply;
+    if (network?.started) networkConversationUsed = true;
+    if (network?.unreadable && !explainedNetworkFallback) {
+      explainedNetworkFallback = true;
+      logLine('The generation response had no recognized completed text. Waiting for the page result.');
+    }
+    const current = (captured?.text ?? readLatestReply()).trim();
     /* Say WHY it is still waiting, every fifteen seconds.
        A node sat at 83% for four minutes with the finished reply on screen
        and Diagnostics said only "waiting for the reply". Nothing separated a
@@ -1469,43 +1708,51 @@ async function trackTextReply(
         && Math.floor(elapsed / 15_000) !== Math.floor((elapsed - POLL_MS) / 15_000)) {
       logLine(
         `Waiting ${Math.round(elapsed / 1000)}s — finished ${String(turnFinished())}, generating ${running}, `
+        + `replies ${replyContainers().length} (was ${priorReplies}), `
         + `reply ${current.length} chars${answerStarted ? '' : ' (not started — thinking)'}`
       );
     }
 
-    /* Silence, and nothing in flight. Checked before the "has it started"
-       skip below, so a chat that never answers at all still ends.
+    /* ── Is this OUR answer, or the one that was already on screen? ──
      *
-     * Two budgets, because the two silences mean different things. After the
-     * first token, no growth for TEXT_QUIET_MS is an ending. Before it, there
-     * is nothing to have stopped — the model is thinking, and thinking longer
-     * than 45 seconds is ordinary on an extended model. Applying the first
-     * budget to the second case is what reported a Director Chief as timed out
-     * with its finished answer on screen.
+     * This used to be settled by comparing the text:
      *
-     * And an ending must be seen twice. The page passes through moments where
-     * it is neither streaming nor finished; a single reading there is not
-     * evidence that anything is over. */
-    quietPolls = running ? 0 : quietPolls + 1;
-    const silentFor = Date.now() - lastChangeAt;
-    const budget = answerStarted ? TEXT_QUIET_MS : NO_ANSWER_YET_MS;
-    if (silentFor > budget && quietPolls >= QUIET_POLLS_REQUIRED) {
-      logLine(
-        answerStarted
-          ? `Reply stopped growing ${Math.round(silentFor / 1000)}s ago and nothing is running — taking it as finished.`
-          : `No answer after ${Math.round(silentFor / 1000)}s and nothing is running — giving up.`
-      );
-      break;
-    }
-    // Unchanged from before we asked means our answer has not started.
-    if (!current || current === priorReply) continue;
-    if (!answerStarted) {
-      answerStarted = true;
-      logLine(`Answer started after ${Math.round(elapsed / 1000)}s.`);
-    }
+     *     if (!current || current === priorReply) continue;
+     *
+     * which accepts a reply only if it READS DIFFERENTLY from the last one.
+     * That is not a property of a new answer, and a Chief is where it breaks:
+     * asked to review a second round in the same thread, it answers
+     *
+     *     {"approved":true,"issues":[]}
+     *
+     * exactly as it answered the first — 29 identical characters. Every poll
+     * was discarded, so answerStarted never turned true, so the budget stayed
+     * NO_ANSWER_YET_MS; the finished verdict sat on screen for five minutes
+     * while Diagnostics read "reply 29 chars (not started — thinking)", and
+     * the node then failed with "did not finish answering in time". Two
+     * identical verdicts running is not an edge case for a Chief — it is what
+     * an approval looks like.
+     *
+     * A new answer is a new CONTAINER, so that is what is counted, and the
+     * containers counted are the ones readLatestReply reads. Verified against
+     * a live thread: three per answer, none inside a user turn, so this can
+     * only move when an answer body renders.
+     *
+     * The text comparison stays as the fallback for a rename that leaves the
+     * count unable to grow, and it stays as OR: this accepts everything it
+     * used to, and one thing more.
+     */
+    const ourContainer = replyContainers().length > priorReplies;
+    const isOurs = !!current && (!!captured || ourContainer || current !== priorReply);
+    if (isOurs) {
+      if (!answerStarted) {
+        answerStarted = true;
+        logLine(`Answer started after ${Math.round(elapsed / 1000)}s.`);
+      }
 
-    if (current === lastSeen) stableCount++;
-    else { lastSeen = current; stableCount = 0; lastChangeAt = Date.now(); }
+      if (current === lastSeen) stableCount++;
+      else { lastSeen = current; stableCount = 0; lastChangeAt = Date.now(); }
+    }
 
     /* Two ways to know the turn is over, and they deserve different waits.
      *
@@ -1528,8 +1775,8 @@ async function trackTextReply(
      * Flow's poster as a finished clip. An image has its own stability test
      * and must keep it.
      */
-    const said = turnFinished();
-    if (said !== false && (said === true || (stableCount >= 2 && !running))) {
+    const said = captured ? true : turnFinished();
+    if (isOurs && said !== false && (said === true || (stableCount >= 2 && !running))) {
       const cleaned = raw ? current : cleanAssistantReply(current);
       if (!raw && !looksLikeUsablePrompt(cleaned)) {
         send('STUDIO_NODE_ERROR', {
@@ -1539,14 +1786,36 @@ async function trackTextReply(
         return;
       }
       logLine(`Reply captured (${cleaned.length} chars)`);
+      if (captured) logLine('Collected the completed network reply without waiting for page rendering.');
+      /* Which text, from where. A Motion director once got back a reply with
+         no JSON in it while the JSON answer sat on screen; the log could not
+         say whether the page or the network had supplied the wrong text. */
+      logLine(`Read from ${captured ? 'the network reply' : `the page (${replyContainers().length} containers, was ${priorReplies})`}, `
+        + `beginning: "${cleaned.replace(/\s+/g, ' ').slice(0, 80)}"`);
       /* Where this happened, so the node can be brought back here. Read at
          the moment the answer lands, which is the only time it is certainly
          this turn's thread. */
       send('STUDIO_NODE_RESULT', {
         nodeId, tileId: '', text: cleaned,
-        conversationPath: conversationId(location.pathname),
+        conversationPath: captured?.conversationId?.slice(2) || conversationId(location.pathname),
       });
       return;
+    }
+
+    /* Account for the fresh reply and its completion marker before judging
+       silence. A hidden tab can resume after a minute with the finished
+       answer in hand; the older quiet clock must not discard that answer.
+       No new answer still gets the original longer thinking budget. */
+    quietPolls = running ? 0 : quietPolls + 1;
+    const silentFor = Date.now() - lastChangeAt;
+    const budget = answerStarted ? TEXT_QUIET_MS : NO_ANSWER_YET_MS;
+    if (silentFor > budget && quietPolls >= QUIET_POLLS_REQUIRED) {
+      logLine(
+        answerStarted
+          ? `Reply stopped growing ${Math.round(silentFor / 1000)}s ago and nothing is running — giving up without a completion signal.`
+          : `No answer after ${Math.round(silentFor / 1000)}s and nothing is running — giving up.`
+      );
+      break;
     }
   }
 

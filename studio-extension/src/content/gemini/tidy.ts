@@ -21,7 +21,7 @@
  * DOM order are the only things that tell them apart.
  */
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+import { sleep } from './wait';
 
 /**
  * Delete the thread this node just used.

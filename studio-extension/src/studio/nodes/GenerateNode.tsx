@@ -5,15 +5,16 @@
    a compact strip along the bottom.
    ============================================================ */
 
-import { memo, useCallback, useState } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { memo, useCallback, useEffect, useState } from 'react';
+import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import { Lightbox } from '../components/Lightbox';
 import { useStudioStore } from '../store';
 import {
   AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS, modelHasDuration, modelHasResolution,
 } from '../../types';
-import { getAskPresets, DEFAULT_PRESET_ID, findPreset } from '../presets';
-import { portsFor, retargetImagePorts } from '../templates/validate';
+import { portsFor } from '../templates/validate';
+import { isFlowClip } from '../canvas/connect';
+import { takesVideoReference } from '../../shared/videoReference';
 import { CHAT_PLATFORMS } from '../engine/WorkflowRunner';
 import { FLOW_VOICES, NO_VOICE, voiceLabel, voiceBlockedReason } from '../flowVoices';
 import { GrokSettings } from './GrokSettings';
@@ -41,6 +42,7 @@ const CHAT_NAMES: Record<string, string> = {
  * because which is which is the entire meaning of the mode.
  */
 const PORT_SPECS: Record<string, { glyph: string; cls: string; top: string; title: string }> = {
+  character: { glyph: 'C', cls: 'sn-port--character', top: '50%', title: 'Native Flow character — identity and saved voice' },
   text: { glyph: 'T', cls: 'sn-port--text', top: '28%', title: 'Prompt input' },
   /* Prompt writers take references too, now that the ChatGPT script actually
      uploads them. Showing this frame to Ask AI and asking what happens next is
@@ -48,6 +50,7 @@ const PORT_SPECS: Record<string, { glyph: string; cls: string; top: string; titl
   image_ref: { glyph: '🖼', cls: 'sn-port--image', top: '72%', title: 'Reference image' },
   frame_start: { glyph: 'S', cls: 'sn-port--image', top: '56%', title: 'Start frame — where the clip opens' },
   frame_end: { glyph: 'E', cls: 'sn-port--image', top: '80%', title: 'End frame — where the clip lands' },
+  video_ref: { glyph: 'V', cls: 'sn-port--video', top: '50%', title: 'Video reference — wire a Flow clip here to use the whole clip' },
 };
 
 /* Model names must match what Flow renders on the page — single source of truth */
@@ -55,7 +58,13 @@ const VIDEO_MODELS: readonly string[] = AVAILABLE_MODELS;
 const IMAGE_MODELS: readonly string[] = AVAILABLE_IMAGE_MODELS;
 
 const IMAGE_RATIOS = ['9:16', '16:9', '1:1', '4:3', '3:4'];
-const VIDEO_RATIOS = ['9:16', '16:9', '1:1'];
+/* Flow video has two shapes. Its composer offers 16:9 and 9:16 only (checked
+   on flow.google.com 2026-10-25), and the adapter turns everything that is
+   not portrait into landscape — so the 1:1 pill this list used to offer made
+   a widescreen clip. */
+const VIDEO_RATIOS = ['9:16', '16:9'];
+/** The shape a Flow clip actually comes out in, given a saved ratio. */
+const flowVideoShape = (r: string) => (r === '9:16' || r === '3:4' ? '9:16' : '16:9');
 /* Gemini's /videos route offers Landscape and Portrait, nothing else. */
 const GEMINI_VIDEO_RATIOS = ['9:16', '16:9'];
 /* Flow offers 10s as well — omitting it meant the longest clip length was
@@ -88,7 +97,6 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   const removeNode = useStudioStore((s) => s.removeNode);
   const duplicateNode = useStudioStore((s) => s.duplicateNode);
   const [zoomed, setZoomed] = useState(false);
-  const [presetSearch, setPresetSearch] = useState('');
   const [resultCopyStatus, setResultCopyStatus] = useState('');
 
   const set = useCallback(
@@ -108,25 +116,9 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
     [id, updateNodeData]
   );
 
-  /* Switching FROM changes which image ports the node draws, so the wires
-     already attached have to move with it. Left alone they point at a handle
-     that is no longer rendered: React Flow stops drawing the edge, the runner
-     stops finding it, and the clip comes back generated from the prompt with
-     no sign anything was lost. */
+  // The store moves image wires on every mode transition, including platform changes.
   const handleCreationType = useCallback(
-    (value: string) => {
-      const toFrames = value === 'frames';
-      const { edges, setEdges } = useStudioStore.getState();
-      const { edges: moved, dropped } = retargetImagePorts(id, edges, toFrames);
-      setEdges(moved);
-      updateNodeData(id, {
-        creationType: value,
-        // Two stills is the whole mode; say what happened to the third.
-        framesNotice: dropped
-          ? `${dropped} extra image connection${dropped > 1 ? 's' : ''} removed — Frames uses two.`
-          : '',
-      });
-    },
+    (value: string) => updateNodeData(id, { creationType: value }),
     [id, updateNodeData]
   );
 
@@ -142,6 +134,17 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   const hasImageInput = useStudioStore(
     (st) => st.edges.some((e) => e.target === id
       && ['image_ref', 'image', 'frame_start', 'frame_end'].includes(e.targetHandle || '')),
+  );
+
+  /* A clip on V, or a Flow clip on 🖼 instead — the only way to wire a clip
+     into a clip before V existed, which takes just its last frame. Saved
+     workflows still have those wires, so the node points at V. */
+  const videoRefWired = useStudioStore(
+    (st) => st.edges.some((e) => e.target === id && e.targetHandle === 'video_ref'),
+  );
+  const clipOnImageRef = useStudioStore(
+    (st) => st.edges.some((e) => e.target === id && e.targetHandle === 'image_ref'
+      && isFlowClip(st.nodes.find((n) => n.id === e.source))),
   );
 
   const status: NodeStatus = nodeData.status || 'idle';
@@ -169,13 +172,20 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   const isFrames = isVideo && platform === 'flow' && nodeData.creationType === 'frames';
   /* Text output only makes sense on a chat platform — Flow has no chat. */
   const isText = isChat && (mediaType === 'text' || isClaude);
+  const ports = portsFor({ type: 'generate', data: nodeData });
+  const handleSignature = `${ports?.in.join(',')}|${isText ? 'text' : 'result'}`;
+  const updateNodeInternals = useUpdateNodeInternals();
+  useEffect(() => { updateNodeInternals(id); }, [id, handleSignature, updateNodeInternals]);
   const models = isVideo ? VIDEO_MODELS : IMAGE_MODELS;
   /* Flow's, and only Flow's. Imagine's live in GrokSettings, which is the
      point of the split — these lists no longer have to know another platform
      exists. */
   const ratios = isVideo ? VIDEO_RATIOS : IMAGE_RATIOS;
   const durations = DURATIONS;
-  const ratio = nodeData.aspectRatio || '9:16';
+  // A clip saved at 1:1 shows as the 16:9 it will be made in.
+  const ratio = isVideo && isFlow
+    ? flowVideoShape(nodeData.aspectRatio || '9:16')
+    : (nodeData.aspectRatio || '9:16');
   const progress = nodeData.progress || 0;
   const enabled = nodeData.enabled !== false;
 
@@ -236,7 +246,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           className={`sn-media ${!(status === 'done' && (preview || previewVideo)) ? 'sn-media--empty' : ''}`}
           style={
             isText
-              ? { minHeight: 120, maxHeight: 260 }
+              ? { minHeight: status === 'idle' ? 0 : 120, maxHeight: 260 }
               : (status === 'done' && (preview || previewVideo))
                 ? { aspectRatio: ratioToCss(ratio) }
                 : { height: 132 }
@@ -275,7 +285,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
               the next node will run, and worth reading before it does. */}
           {status === 'done' && isText && nodeData.resultText && (
             <div className="sn-ask__result nodrag nowheel">
-              <div className="sn-ask__result-head"><strong>Written prompt</strong><span>{String(nodeData.resultText).length.toLocaleString()} characters</span></div>
+              <div className="sn-ask__result-head"><strong>Result</strong><span>{String(nodeData.resultText).length.toLocaleString()} characters</span></div>
               <div className="sn-reply">{nodeData.resultText}</div>
               <button type="button" onClick={async () => {
                 try { await navigator.clipboard.writeText(String(nodeData.resultText)); setResultCopyStatus('Copied'); }
@@ -325,22 +335,8 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
             </div>
           )}
 
-          {status === 'idle' && (
+          {status === 'idle' && !isText && (
             <div className="sn-media__state sn-media__state--idle">
-              {isText ? (
-                <div className="sn-craft-card">
-                  <div className="sn-craft-card__head">
-                    <span className="sn-craft-card__badge">Prompt workspace</span>
-                    <Icon name="prompt" />
-                  </div>
-                  <div className="sn-craft-card__name">
-                    {findPreset(nodeData.preset).name}
-                  </div>
-                  <small className="sn-craft-card__hint">
-                    {hasPrompt ? 'Connected brief + your instructions' : nodeData.askBrief || nodeData.placePromptNotes ? 'Local brief saved — press Run when ready' : 'Choose a preset and describe your idea below'}
-                  </small>
-                </div>
-              ) : (
                 <>
                   <span className="sn-media__ghost" style={{ aspectRatio: ratioToCss(ratio) }}>
                     <span className="sn-media__state-icon">{isVideo ? '🎞' : '🖼'}</span>
@@ -360,7 +356,6 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                     </small>
                   )}
                 </>
-              )}
             </div>
           )}
         </div>
@@ -373,8 +368,8 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
             Video were two unexplained dropdowns. Everything is labelled and
             everything lands on a column now. */}
         <div className="sn-bar sn-bar--grid">
-          <label className="sn-field" title="Which service runs this node">
-            <span className="sn-field__label">Platform</span>
+          <label className={`sn-field ${isText ? 'sn-field--wide' : ''}`} title="Which service runs this node">
+            <span className="sn-field__label">{isText ? 'AI provider' : 'Platform'}</span>
             <select
               className="sn-bar__sel nodrag"
               value={platform}
@@ -389,7 +384,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
                 }
               }}
             >
-              <option value="flow">Flow</option>
+              {!isText && <option value="flow">Flow</option>}
               <option value="chatgpt">ChatGPT</option>
               <option value="gemini">Gemini</option>
               <option value="grok">Grok</option>
@@ -399,7 +394,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           </label>
 
           {/* Chat platforms can draw or write (except Claude which is text-only) */}
-          {isChat && (
+          {isChat && !isText && (
             <label className="sn-field" title={`Ask ${chatName} for an image, or for a written prompt`}>
               <span className="sn-field__label">Output</span>
               <select
@@ -458,38 +453,16 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
             </small>
           )}
 
-          {isText && <label className="sn-field sn-field--wide"><span className="sn-field__label">Find a preset</span>
-            <input className="sn-bar__sel nodrag" type="search" value={presetSearch} placeholder="Search places, characters, video…"
-              onChange={(e) => setPresetSearch(e.target.value)} /></label>}
-          {isText && (
-            <label className="sn-field sn-field--wide" title="Wraps what you type in a brief, so a few words produce a usable prompt">
-              <span className="sn-field__label">Preset</span>
-              <select
-                className="sn-bar__sel nodrag"
-                value={nodeData.preset || DEFAULT_PRESET_ID}
-                onChange={(e) => set('preset', e.target.value)}
-              >
-                {getAskPresets().filter((p) => p.id === (nodeData.preset || DEFAULT_PRESET_ID) || `${p.name} ${p.hint}`.toLowerCase().includes(presetSearch.toLowerCase())).map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          {/* The hint is the whole point: a dropdown of names teaches nothing,
-              and the difference between these is what they ask the model to do. */}
-          {isText && (
-            <small className="sn-field__hint sn-field--wide">{findPreset(nodeData.preset).hint}</small>
-          )}
-          {isText && nodeData.preset === 'place_environment' && (
-            <label className="sn-field sn-field--wide">
-              <span className="sn-field__label">Customize the place prompt</span>
-              <textarea className="sn-text nodrag nowheel" rows={5}
-                value={nodeData.placePromptNotes || ''}
-                placeholder={'Location: rooftop dance space\nStyle: realistic\nLighting: soft sunset\nCamera: eye-level, medium-wide\nKeep: clear floor, open center, no people'}
-                onChange={(e) => set('placePromptNotes', e.target.value)} />
-              <small className="sn-field__hint">These details are combined with your connected prompt. Output → image generation → Motion Control P. Use I separately for the character.</small>
-            </label>
+          {/* What V will do with this model, before anything is spent. The
+              runner decides with the same rule (shared/videoReference.ts). */}
+          {!!ports?.in.includes('video_ref') && (videoRefWired || clipOnImageRef) && (
+            <small className="sn-field__hint sn-field--wide">
+              {!videoRefWired
+                ? 'A clip on 🖼 counts as its last frame. Wire it into V to use the whole clip.'
+                : takesVideoReference(models.includes(nodeData.model) ? nodeData.model : models[0])
+                  ? 'V: the whole clip goes on the prompt as a video reference, from your Flow library.'
+                  : `V: ${nodeData.model} cannot take a video, so this continues from the clip's last frame. Switch to Omni 1.1 Flash to use the whole clip.`}
+            </small>
           )}
 
           {/* Flow exposes model/ratio/duration; the ChatGPT composer has none */}
@@ -704,7 +677,7 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
             ports the runner read and the node never drew: every image landed
             on image_ref, the runner looked at frame_start, and the node
             generated from the prompt alone. */}
-        {(portsFor({ type: 'generate', data: nodeData })?.in || []).map((port) => {
+        {(ports?.in || []).map((port) => {
           const spec = PORT_SPECS[port];
           if (!spec) return null;
           return (
@@ -728,7 +701,8 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
             <span className="sn-port__glyph">T</span>
           </Handle>
         ) : (
-          <Handle type="source" position={Position.Right} id="result" className="sn-port sn-port--out" style={{ top: '50%' }}>
+          <Handle type="source" position={Position.Right} id="result" className="sn-port sn-port--out" style={{ top: '50%' }}
+            title={isVideo ? 'Clip output — connect to the next clip\'s S (Start frame) or a Last Frame node to continue from its ending' : 'Image output — connect to a reference input or S (Start frame)'}>
             <span className="sn-port__glyph">→</span>
           </Handle>
         )}

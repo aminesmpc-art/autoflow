@@ -74,8 +74,33 @@ describe('claude accounts for fresh text before judging quiet', () => {
   });
 
   it('only delivers a reply that is actually new', () => {
-    const at = trackReply().indexOf('Date.now() - lastChangeAt > TEXT_QUIET_MS');
-    expect(trackReply().slice(at, at + 260)).toMatch(/stable !== priorReply/);
+    /* Still the rule. The proof of it changed, because the old proof became
+       the bug.
+     *
+     * This used to require `stable !== priorReply` right here — "new" meaning
+     * "reads differently from the last answer". A Chief reviewing a second
+     * round in the same thread answers `{"approved":true,"issues":[]}` word
+     * for word as it did the first, so that test threw the real answer away
+     * and the node timed out holding it. See identicalReply.test.ts.
+     *
+     * `stable` now carries the guarantee instead: it is assigned in exactly
+     * one place, under isOurs, which is true only once a new assistant turn
+     * exists. Holding a `stable` at all therefore means holding one from our
+     * own turn — a stronger claim than the text comparison ever made, and one
+     * that survives the model repeating itself.
+     *
+     * Asserted as both halves, because dropping the guard without the
+     * replacement would deliver whatever happened to be on screen. */
+    const body = trackReply();
+    const at = body.indexOf('Date.now() - lastChangeAt > TEXT_QUIET_MS');
+    expect(body.slice(at, at + 260)).not.toMatch(/stable !== priorReply/);
+    expect(body.slice(at, at + 260)).toMatch(/if \(stable\)/);
+
+    const guard = body.indexOf('const isOurs =');
+    const assign = body.indexOf('stable = now;');
+    expect(guard).toBeGreaterThan(-1);
+    expect(assign).toBeGreaterThan(guard);
+    expect((body.match(/stable = now;/g) || []).length).toBe(1);
   });
 
   it('has one delivery path, so the two cannot drift apart', () => {
@@ -215,7 +240,10 @@ describe('every adapter wakes on the DOM, not only the clock', () => {
     const WORKER = codeOnly(read('background', 'service-worker.ts'));
     expect(WORKER).toMatch(/async function refreshFlowStatus\(/);
     const at = WORKER.indexOf('async function tabPingRoutine(');
-    expect(WORKER.slice(at, at + 1800)).toMatch(/refreshFlowStatus\(keptTabId\)/);
+    expect(at).toBeGreaterThan(-1);
+    /* To the end of the function, not a fixed window: the routine grew past
+       1800 characters and the call read as deleted while it was still there. */
+    expect(WORKER.slice(at, WORKER.indexOf('\n}', at) + 2)).toMatch(/refreshFlowStatus\(keptTabId\)/);
   });
 
   it('only flow, since only flow stops producing its own data', () => {

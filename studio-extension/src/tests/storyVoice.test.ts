@@ -107,7 +107,7 @@ describe('the wiring around it', () => {
     expect(contract).toMatch(/wantsSpeaker \? ', "speaker"/);
     expect(runner).toMatch(/const wantsSpeaker = isStory &&/);
     expect(runner).toMatch(
-      /shotContract\(targets, isStory \? STORY_FIELDS : '', wantsSpeaker, refs\.length\)/);
+      /shotContract\(targets, isStory \? STORY_FIELDS : '', wantsSpeaker, refs\.length,/);
   });
 
   it('a voice set by hand on a node outranks the story', () => {

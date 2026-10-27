@@ -152,15 +152,15 @@ export const NODE_MANUAL = `THE NODES, AND WHAT EACH IS FOR
               - cast: [ { "name": "Name", "look": "Appearance description", "role": "position/role" } ]
               - world: "Setting and environment description"
               - look: "Visual style, camera aesthetics, and lighting rules"
-              - structure: "hook" | "twist" | "transform" | "buildTimelapse" | "craftTransform" | "loop" | "ugcAd" | "free"
+              - structure: "hook" | "twist" | "transform" | "buildTimelapse" | "craftTransform" | "loop" | "ugcAd" | "survivalDiary" | "missionDiary" | "discoveryDiary" | "free"
               - cameraProgression: "dynamic" | "establishingToClose" | "actionTracking" | "macroOrbit" | "mountedPOV" | "propped" | "fixed" | "lockedWide"
               - audioMode: "cinematic" | "ambient" | "dialogue" | "asmrCraft" | "none"
-              - visualPreset: "liveAction" | "miniatureMacro" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime" | "none"
+              - visualPreset: "liveAction" | "miniatureMacro" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime" | "povSurvival" | "none"
               - colorTemp: "daylight" (5600K) | "tungsten" (3200K) | "amber" (1800K) |
                            "moon" (6800K) | "none". ONE white balance for the whole piece.
                            Shots that each pick their own look like footage from several
                            days cut together.
-              - lighting: "hero" | "intimate" | "tension" | "none". ONE lighting setup,
+              - lighting: "hero" | "intimate" | "tension" | "overcast" | "none". ONE lighting setup,
                           repeated. Sixteen descriptions of lighting do not hold; one
                           named setup does. Do NOT pair "hero" with visualPreset
                           "smartphonePOV" — that preset rules out studio lighting, so the
@@ -169,6 +169,48 @@ export const NODE_MANUAL = `THE NODES, AND WHAT EACH IS FOR
               - beats: number of story beats across the whole piece, or 0 to derive it
               - timedBeats: true to cut each clip into "[00:00-00:02] ..." segments
               - avoid: "what must not appear"
+              - pov: { ... }  OPTIONAL. First-person / action-camera settings. Omit it
+                        entirely for an ordinary piece. Setting visualPreset to
+                        "povSurvival" turns the whole format on by itself, so pov is
+                        only needed to change something about it:
+                          perspective: "firstPerson" | "thirdPerson" | "cinematic"
+                          rig: "goproHead" | "goproChest" | "bodyMounted" | "handheld" | "cinematic"
+                          lens: "14mm" | "18mm" | "20mm" | "24mm" | "35mm"
+                          distortion: "auto" | "rectilinear" | "mildBarrel" | "fisheye"
+                          focusDepth: "auto" | "deep" | "shallow"
+                          motionBlur: "auto" | "crisp" | "directional"
+                          movementResponse: "auto" | "adaptive" (match walking, crouching, pauses and running to the current beat)
+                          colorTreatment: "auto" | "earth" | "neutral" | "vibrant"
+                          stabilization: "none" | "low" | "medium" | "smooth"
+                          bodyMovement: "subtle" | "natural" | "strong"
+                          cameraHeight: "eyeLevel" | "chestLevel" | "crouched" | "groundLevel"
+                          framing: "clean" | "natural" | "imperfectDocumentary"
+                          showHands / showForearms / showForegroundProp: true | false
+                          protagonistFaceVisible: true | false  (false is what makes it POV)
+                          awareness: "never" | "natural" | "frequent"
+                          interactionDistance: "distant" | "normal" | "close"
+                          continuity: "normal" | "high" | "strict"
+                          preferredShotDuration: "4s" | "6s" | "8s" | "10s"
+                          narrationStrategy: "none" | "separateVoiceover" | "firstPersonDiary"
+                          narrationPerson: "firstPerson" | "thirdPerson" | "none"
+                          hookTiming: "immediate" | "firstThreeSeconds" | "gradual"
+                          actionDensity / dialogueDensity: "low" | "medium" | "high"
+                          endingStyle: "resolved" | "softCliffhanger" | "cliffhanger"
+                          revealStyle: "direct" | "delayed" | "visualBeforeExplanation"
+                          povParticipation: "passive" | "natural" | "active"
+                            Default "active" for POV Survival — the protagonist is IN the
+                            group, not behind it. "passive" makes them a camera only.
+                          animalStyle: "naturalRealism" | "cinematic" | "fantasy"
+                            Default "naturalRealism" — realistic anatomy, proportions,
+                            scale. No monstrous/colossal/supernatural escalation unless
+                            the brief explicitly asks for fantasy creatures.
+                          groupStaging: "distant" | "natural" | "embedded"
+                            Default "embedded" — the POV walks beside, crouches next to,
+                            stands among the group. Hands close to lens, companion one
+                            arm's length away. No family-lineup compositions.
+                        The audio a POV piece records is audioMode "ambient"; there is no
+                        separate audio field here. Narration is never written into a shot
+                        prompt — it is recorded after the clips exist.
             Picking these:
               "propped" + "smartphonePOV" + "ugcAd" is the UGC set — a phone on a
                 counter, unretouched, opening on the hook. Use all three for a
@@ -457,10 +499,10 @@ A step:
                 "voice": "optional Flow voice, e.g. Kore" } ],
     "world": "Setting description",
     "look": "Lighting & style description",
-    "structure": "hook" | "twist" | "transform" | "buildTimelapse" | "craftTransform" | "loop" | "ugcAd" | "free",
+    "structure": "hook" | "twist" | "transform" | "buildTimelapse" | "craftTransform" | "loop" | "ugcAd" | "survivalDiary" | "missionDiary" | "discoveryDiary" | "free",
     "cameraProgression": "dynamic" | "establishingToClose" | "actionTracking" | "macroOrbit" | "mountedPOV" | "propped" | "fixed" | "lockedWide",
     "audioMode": "cinematic" | "ambient" | "dialogue" | "asmrCraft" | "none",
-    "visualPreset": "liveAction" | "miniatureMacro" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime" | "none",
+    "visualPreset": "liveAction" | "miniatureMacro" | "smartphonePOV" | "cinema35mm" | "cgi3d" | "anime" | "povSurvival" | "none",
     "rules": ["cumulative" | "frameChain" | "fixedCamera" | "samePerson" | "inHand" | "phaseComplete" | "satisfyingMoment" | "cutRhythm" | "scaleAnchor" | "noRepeatAction"],
     "beats": 0,
     "timedBeats": false,

@@ -68,7 +68,9 @@ describe('the basename of a download path', () => {
 
 describe('a path never reaches the search box', () => {
   const at = RUNNER.indexOf('private async executeMotionNode');
-  const body = RUNNER.slice(at, at + 22000);
+  /* To the method's end, not a fixed length: the method grows, and a line
+     pushed past a fixed window reads as a line deleted. */
+  const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
 
   /** The guard the runner applies, lifted out. */
   const looksLikeAPath = (s: string) => /[\\/]/.test(s);

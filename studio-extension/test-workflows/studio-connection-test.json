@@ -1,0 +1,228 @@
+{
+  "autoflowStudio": 1,
+  "id": "studio-connection-regression",
+  "name": "Studio Connection Test - 3 clips",
+  "description": "Included test images. Tests image-to-Start, captured last frame, Start/End ordering and direct video chaining. Run submits three provider generations; importing does not run anything.",
+  "useCase": "Connection regression test",
+  "category": "Testing",
+  "difficulty": "Easy",
+  "nodeCount": 9,
+  "nodes": [
+    {
+      "id": "start_image",
+      "type": "image",
+      "position": {
+        "x": 0,
+        "y": 220
+      },
+      "data": {
+        "type": "image",
+        "label": "START IMAGE - included",
+        "imageName": "test-ball-left.png",
+        "imageData": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAoAAAAFoCAIAAABIUN0GAAAKsUlEQVR4nO3XMY5lVxmF0R4UAUNzRIA8AEeeADESKTnTQHJISOQYtVpqIUy1q6rfu/vcr5a0BnD2+5/06X765V//BgAu9mn+AgD4gAQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAGBBgABgQYAAYEGAAG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"
+      }
+    },
+    {
+      "id": "prompt_1",
+      "type": "prompt",
+      "position": {
+        "x": 380,
+        "y": 0
+      },
+      "data": {
+        "type": "prompt",
+        "label": "prompt_1",
+        "text": "One continuous locked-off wide shot, landscape 16:9. A single red ball on the grey tiled floor against the pale blue-grey wall. Keep the same ball, grid, lighting, scale and static camera. No people, text, cuts or camera motion. Begin exactly on the provided start frame. The ball rolls slowly from the left toward the centre, then comes to rest."
+      }
+    },
+    {
+      "id": "clip_1",
+      "type": "generate",
+      "position": {
+        "x": 380,
+        "y": 220
+      },
+      "data": {
+        "type": "generate",
+        "label": "TEST 1 - Image to Start",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Veo 3.1 - Fast",
+        "creationType": "frames",
+        "aspectRatio": "16:9",
+        "duration": "8s",
+        "enabled": true,
+        "status": "idle",
+        "progress": 0
+      }
+    },
+    {
+      "id": "last_frame",
+      "type": "frame",
+      "position": {
+        "x": 800,
+        "y": 220
+      },
+      "data": {
+        "type": "frame",
+        "label": "TEST 2 - Captured last frame"
+      }
+    },
+    {
+      "id": "end_image",
+      "type": "image",
+      "position": {
+        "x": 800,
+        "y": 650
+      },
+      "data": {
+        "type": "image",
+        "label": "END IMAGE - included",
+        "imageName": "test-ball-right.png",
+        "imageData": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAoAAAAFoCAIAAABIUN0GAAAKq0lEQVR4nO3XMa4kWRVF0RoUBkNrCwP1ANpiAthIuPhMA6lNTCxsVGoTFdT/FflOxM4lrQG8kzelrfjy6z//BQAc9mX+AgB4QwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwAAwIMAAMCDAADAgwA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"
+      }
+    },
+    {
+      "id": "prompt_2",
+      "type": "prompt",
+      "position": {
+        "x": 1180,
+        "y": 0
+      },
+      "data": {
+        "type": "prompt",
+        "label": "prompt_2",
+        "text": "One continuous locked-off wide shot, landscape 16:9. A single red ball on the grey tiled floor against the pale blue-grey wall. Keep the same ball, grid, lighting, scale and static camera. No people, text, cuts or camera motion. Begin exactly where the previous clip ended. The ball rolls smoothly to the right, ending exactly on the provided end frame."
+      }
+    },
+    {
+      "id": "clip_2",
+      "type": "generate",
+      "position": {
+        "x": 1180,
+        "y": 220
+      },
+      "data": {
+        "type": "generate",
+        "label": "TEST 3 - Start and End",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Veo 3.1 - Fast",
+        "creationType": "frames",
+        "aspectRatio": "16:9",
+        "duration": "8s",
+        "enabled": true,
+        "status": "idle",
+        "progress": 0
+      }
+    },
+    {
+      "id": "prompt_3",
+      "type": "prompt",
+      "position": {
+        "x": 1640,
+        "y": 0
+      },
+      "data": {
+        "type": "prompt",
+        "label": "prompt_3",
+        "text": "One continuous locked-off wide shot, landscape 16:9. A single red ball on the grey tiled floor against the pale blue-grey wall. Keep the same ball, grid, lighting, scale and static camera. No people, text, cuts or camera motion. Continue from the provided start frame without a jump. The ball pauses briefly on the right, then rolls gently back toward the centre."
+      }
+    },
+    {
+      "id": "clip_3",
+      "type": "generate",
+      "position": {
+        "x": 1640,
+        "y": 220
+      },
+      "data": {
+        "type": "generate",
+        "label": "TEST 4 - Direct video chain",
+        "platform": "flow",
+        "mediaType": "video",
+        "model": "Veo 3.1 - Fast",
+        "creationType": "frames",
+        "aspectRatio": "16:9",
+        "duration": "8s",
+        "enabled": true,
+        "status": "idle",
+        "progress": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "prompt_1-clip_1-text",
+      "source": "prompt_1",
+      "target": "clip_1",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "deletable",
+      "animated": true
+    },
+    {
+      "id": "start_image-clip_1-frame_start",
+      "source": "start_image",
+      "target": "clip_1",
+      "sourceHandle": "image",
+      "targetHandle": "frame_start",
+      "type": "deletable",
+      "animated": true
+    },
+    {
+      "id": "clip_1-last_frame-image_ref",
+      "source": "clip_1",
+      "target": "last_frame",
+      "sourceHandle": "result",
+      "targetHandle": "image_ref",
+      "type": "deletable",
+      "animated": true
+    },
+    {
+      "id": "prompt_2-clip_2-text",
+      "source": "prompt_2",
+      "target": "clip_2",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "deletable",
+      "animated": true
+    },
+    {
+      "id": "last_frame-clip_2-frame_start",
+      "source": "last_frame",
+      "target": "clip_2",
+      "sourceHandle": "image",
+      "targetHandle": "frame_start",
+      "type": "deletable",
+      "animated": true
+    },
+    {
+      "id": "end_image-clip_2-frame_end",
+      "source": "end_image",
+      "target": "clip_2",
+      "sourceHandle": "image",
+      "targetHandle": "frame_end",
+      "type": "deletable",
+      "animated": true
+    },
+    {
+      "id": "prompt_3-clip_3-text",
+      "source": "prompt_3",
+      "target": "clip_3",
+      "sourceHandle": "text",
+      "targetHandle": "text",
+      "type": "deletable",
+      "animated": true
+    },
+    {
+      "id": "clip_2-clip_3-frame_start",
+      "source": "clip_2",
+      "target": "clip_3",
+      "sourceHandle": "result",
+      "targetHandle": "frame_start",
+      "type": "deletable",
+      "animated": true
+    }
+  ]
+}

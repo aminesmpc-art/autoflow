@@ -4,6 +4,7 @@
    ============================================================ */
 
 import { AuthTokens, UserProfile, DailyUsageResponse } from '../types';
+import { IS_MOTION } from './product';
 
 const API_BASE_DEFAULT = 'https://api.auto-flow.studio';
 const API_BASE_KEY = 'autoflow_api_base';
@@ -36,6 +37,7 @@ const API_BASE_KEY = 'autoflow_api_base';
 let apiBaseCache = '';
 
 export async function getApiBase(): Promise<string> {
+  if (IS_MOTION) return API_BASE_DEFAULT;
   if (apiBaseCache) return apiBaseCache;
   try {
     const got = await chrome.storage.local.get(API_BASE_KEY);
@@ -308,7 +310,7 @@ const EXTENSION_VERSION = (() => {
   }
 })();
 
-async function apiFetch(
+export async function apiFetch(
   path: string,
   options: RequestInit = {},
   retry = true
@@ -460,6 +462,22 @@ export async function register(email: string, password: string): Promise<{ ok: b
     }
 
     return { ok: true, message: data.message || 'Account created! You can log in now.' };
+  } catch (err) {
+    return { ok: false, message: networkErrorMessage(err) };
+  }
+}
+
+export async function resendVerificationEmail(email: string): Promise<{ ok: boolean; message: string }> {
+  try {
+    const res = await timedFetch(`${API_BASE}/api/auth/resend-verification`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    return res.ok
+      ? { ok: true, message: data.message || 'Verification email requested. Check your inbox and spam folder.' }
+      : { ok: false, message: typeof data.message === 'string' ? data.message : extractError(data, 'Could not resend the email. Please try again.') };
   } catch (err) {
     return { ok: false, message: networkErrorMessage(err) };
   }
@@ -644,6 +662,7 @@ export async function trackSubmission(input: {
   mode?: string;
   outcome?: 'done' | 'failed';
 }): Promise<boolean> {
+  if (IS_MOTION) return true; // Motion is metered once per admitted source job.
   if (!input.mediaId) return false;
   try {
     const res = await apiFetch('/api/usage/submitted', {
@@ -667,6 +686,7 @@ export async function trackSubmission(input: {
 }
 
 export async function trackUsage(promptCount: number = 1, promptType: 'text' | 'full' = 'text', promptStatus: 'done' | 'failed' = 'done'): Promise<boolean> {
+  if (IS_MOTION) return true;
   try {
     const res = await apiFetch('/api/usage/consume', {
       method: 'POST',
@@ -759,20 +779,30 @@ export interface UpgradeTarget {
  * ever attach to — callers must send the user to sign in rather than open a
  * checkout at all.
  */
-export async function getUpgradeTarget(): Promise<UpgradeTarget> {
+export async function getUpgradeTarget(place?: UpgradePlace): Promise<UpgradeTarget> {
   const profile = await getProfile();
   const email = profile?.email || null;
-  return {
-    url: email
-      ? `${CHECKOUT_PAGE_URL}#email=${encodeURIComponent(email)}`
-      : CHECKOUT_PAGE_URL,
-    email,
-  };
+  return { url: checkoutUrl(email, place), email };
 }
 
 /** Get Whop checkout URL, prefilled with the user's email when signed in. */
-export async function getUpgradeUrl(): Promise<string> {
-  return (await getUpgradeTarget()).url;
+export async function getUpgradeUrl(place?: UpgradePlace): Promise<string> {
+  return (await getUpgradeTarget(place)).url;
+}
+
+/** Which Upgrade button was pressed. The website's analytics reads this, never the email. */
+export type UpgradePlace = 'top_bar' | 'limit' | 'templates' | 'sidepanel';
+
+/**
+ * The checkout address. A named button adds UTM tags, so the website's
+ * analytics can say which button a sale came from (AutoFlow Motion tags its
+ * own the same way, with utm_source=motion). The email stays in the fragment.
+ */
+export function checkoutUrl(email: string | null, place?: UpgradePlace): string {
+  const tags = place
+    ? `?utm_source=studio&utm_medium=extension&utm_campaign=pro_upgrade&utm_content=${place}`
+    : '';
+  return `${CHECKOUT_PAGE_URL}${tags}${email ? `#email=${encodeURIComponent(email)}` : ''}`;
 }
 
 

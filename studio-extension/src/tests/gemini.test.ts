@@ -18,7 +18,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { TextEncoder, TextDecoder } from 'util';
 
-const BUNDLE = join(__dirname, '../../dist/gemini-content.js');
+const BUNDLE = process.env.AF_GEMINI_BUNDLE || join(__dirname, '../../dist/gemini-content.js');
 
 const RED_PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4' +
@@ -75,6 +75,12 @@ function buildHarness(): Harness {
 
   const sent: any[] = [];
   const listeners: Listener[] = [];
+  // Gemini clears its editor when a submission is accepted. Counting clicks
+  // alone leaves the adapter correctly treating every fixture send as unsent.
+  sendBtn.addEventListener('click', () => { composer.textContent = ''; });
+  composer.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') composer.textContent = '';
+  });
   (globalThis as any).chrome = {
     runtime: {
       onMessage: { addListener: (fn: Listener) => listeners.push(fn) },
@@ -184,7 +190,33 @@ beforeAll(() => {
   (globalThis as any).TextDecoder ||= TextDecoder;
   polyfillFileTransfer();
 });
-beforeEach(() => { jest.resetModules(); });
+const fixtureTimers = new Set<ReturnType<typeof setTimeout>>();
+const fixtureObservers: MutationObserver[] = [];
+beforeEach(() => {
+  jest.resetModules();
+  const nativeTimeout = globalThis.setTimeout.bind(globalThis);
+  jest.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: (...args: any[]) => void, delay?: number, ...args: any[]) => {
+    const timer = nativeTimeout(() => {
+      fixtureTimers.delete(timer);
+      callback(...args);
+    }, delay);
+    fixtureTimers.add(timer);
+    return timer;
+  }) as typeof setTimeout);
+  const NativeObserver = globalThis.MutationObserver;
+  jest.spyOn(globalThis, 'MutationObserver').mockImplementation((callback) => {
+    const observer = new NativeObserver(callback);
+    fixtureObservers.push(observer);
+    return observer;
+  });
+});
+afterEach(() => {
+  for (const timer of fixtureTimers) clearTimeout(timer);
+  fixtureTimers.clear();
+  for (const observer of fixtureObservers) observer.disconnect();
+  fixtureObservers.length = 0;
+  jest.restoreAllMocks();
+});
 
 describe('Gemini adapter', () => {
   it('ships a built bundle', () => {
@@ -194,12 +226,16 @@ describe('Gemini adapter', () => {
   it('types the prompt into the Quill composer and sends', async () => {
     const h = buildHarness();
     let clicked = 0;
-    h.sendBtn.addEventListener('click', () => { clicked++; });
+    let submittedPrompt = '';
+    h.sendBtn.addEventListener('click', () => {
+      clicked++;
+      submittedPrompt = h.composer.textContent || '';
+    }, { capture: true });
 
     await h.execute({ nodeId: 'n1', config: { prompt: 'a reference sheet of a fox', mediaType: 'image' } });
     await new Promise((r) => setTimeout(r, 300));
 
-    expect(h.composer.textContent).toBe('a reference sheet of a fox');
+    expect(submittedPrompt).toBe('a reference sheet of a fox');
     expect(clicked).toBe(1);
     expect(errorsFrom(h)).toEqual([]);
   }, 20_000);
@@ -306,6 +342,12 @@ describe('Gemini adapter', () => {
       });
     }
     const editor = real.querySelector<HTMLElement>('.ql-editor')!;
+    let submittedPrompt = '';
+    editor.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      submittedPrompt = editor.textContent || '';
+      editor.textContent = '';
+    });
     (document as any).execCommand = (cmd: string, _ui: boolean, value: string) => {
       if (cmd === 'insertText') editor.textContent = value;
       return true;
@@ -321,7 +363,7 @@ describe('Gemini adapter', () => {
     await h.execute({ nodeId: 'n1', config: { prompt: 'write me a carving prompt', mediaType: 'text' } });
     await new Promise((r) => setTimeout(r, 12_000));
 
-    expect(editor.textContent).toContain('write me a carving prompt');
+    expect(submittedPrompt).toContain('write me a carving prompt');
     const result = h.sent.find((m) => m.type === 'STUDIO_NODE_RESULT');
     expect(result?.payload.text).toMatch(/walnut/);
   }, 30_000);

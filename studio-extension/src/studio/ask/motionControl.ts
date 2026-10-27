@@ -26,13 +26,19 @@
  * replaced, and a prompt that blurs them gets a blurred result.
  */
 
+import { readJsonObject } from './storyboard';
+
 /** What the user is asking Omni to do with the motion. */
 export type MotionMode = 'move' | 'swap' | 'restyle';
 
-export function motionAudioPrompt(prompt: string, muted: boolean): string {
-  return muted
-    ? `${prompt}\nAUDIO OVERRIDE: The source video has no audio track. Perform only the visual edit. Do not generate speech, dialogue, singing, or lip-sync; any earlier audio instructions do not apply. Produce silent output.`
-    : prompt;
+/* With "Keep exact lip sync" on, a silent source still has mouths moving in
+   it, and the user wants them copied — so the override forbids the sound, not
+   the mouth movement the lip-sync block above it asks for. */
+export function motionAudioPrompt(prompt: string, muted: boolean, lipSync = false): string {
+  if (!muted) return prompt;
+  return lipSync
+    ? `${prompt}\nAUDIO OVERRIDE: The source video has no audio track. Do not generate speech, dialogue or singing; the mouth movements still follow the input video exactly, as above. Any other earlier audio instructions do not apply. Produce silent output.`
+    : `${prompt}\nAUDIO OVERRIDE: The source video has no audio track. Perform only the visual edit. Do not generate speech, dialogue, singing, or lip-sync; any earlier audio instructions do not apply. Produce silent output.`;
 }
 
 export interface MotionPiece {
@@ -67,6 +73,14 @@ export interface MotionPiece {
  * node — and which cost a two-press run for every job.
  */
 export interface MotionPieceRow {
+  /** Last usable frame decoded from THIS generated output, never its poster. */
+  endFrameUrl?: string;
+  endFrameError?: string;
+  /** Revision and parent revision make saved/retried chains lineage-safe. */
+  continuityVersion?: string;
+  continuityFrom?: string;
+  /** Explicit permission to start a separate scene without the previous frame. */
+  continuityReset?: boolean;
   index: number;
   of: number;
   startSec: number;
@@ -107,6 +121,18 @@ export interface MotionPieceRow {
   /** The uploaded ingredient has no audio track. */
   audioMuted?: boolean;
   alternatives?: string[];
+  /**
+   * This piece is in Flow's library, under `filename`.
+   *
+   * Per piece, because a retry should redo only the pieces that are not. It
+   * used to be one flag for the whole node, so one failed upload re-cut and
+   * re-uploaded every piece — duplicating the ones Flow already had. Cleared
+   * again when a generation finds the name missing from the library: the
+   * library, not the upload's own report, is the proof.
+   */
+  uploaded?: boolean;
+  /** Bytes handed to Flow, but not yet proven ready. Retry checks before uploading. */
+  uploadPending?: { tabId?: number; projectUrl?: string };
 }
 
 export interface MotionBrief {
@@ -115,9 +141,32 @@ export interface MotionBrief {
   wish: string;
   /** Whether a character/subject still was wired in. */
   hasCharacter: boolean;
+  /**
+   * Whether a setting image was wired into P. It changes where the light comes
+   * from — the setting image, not the input video — and adds the rule that the
+   * setting is named, never described, so it stays the same place in every piece.
+   */
+  hasPlace?: boolean;
   referenceRules?: string;
   offerAlternatives?: boolean;
+  /**
+   * How many chosen people/items are replaced (motionTargets.ts). When set,
+   * referenceRules names each image's target and pointer, and the one-character
+   * wording below ("the provided character from this image") must not be asked
+   * for: it would name one subject where there are several.
+   */
+  replacements?: number;
+  /** "Keep exact lip sync": the mouths and the speech come from the footage, untouched. */
+  lipSync?: boolean;
 }
+
+const REPLACEMENT_BRIEF = 'The chosen people and objects are listed in REPLACEMENTS above, and every piece replaces them the same way. '
+  + 'One with an image: the image goes to every generation, so refer to it ONLY by its pointer, the same words every time. '
+  + 'One described in words: use those words for it, the same way every time. Never describe a different subject.';
+const REPLACEMENT_PIECE = '  · each replacement with an image named ONLY by its pointer ("the person from image 1", "the object from image 2") '
+  + 'plus any words given for it, and nothing else about its appearance; each one without an image in the user\'s '
+  + 'words for it. The same words as last time. Leave out a target that is not in this '
+  + 'piece, and keep every other person and object as the footage shows them';
 
 /**
  * What each mode is, in Google's own words.
@@ -242,7 +291,22 @@ export const MODE_INTENT: Record<MotionMode, {
 const CONTRACT =
   'Answer with ONE JSON object and nothing else: {"prompt":"…","why":"…"}. '
   + '"prompt" is what will be sent to the video model, verbatim. '
-  + '"why" is one short sentence for the person reading the run log.';
+  + '"why" is one short sentence for the person reading the run log. '
+  /* Gemini quoted an on-screen caption with straight quotes, which end a JSON
+     string, and a reply right in every other way was thrown away. Curly
+     quotes are quotation marks to the video model and plain characters to the
+     parser; readMotionPrompt repairs straight ones anyway. */
+  + 'Inside the text, quote any words or on-screen text with curly quotes “like this” — '
+  + 'never straight double quotes, which break the JSON.';
+
+/**
+ * How a setting is named when a setting image is attached: the same words in
+ * every piece, and never a description. Each piece is generated on its own,
+ * so a place put into words is a place each piece re-imagines.
+ */
+export const SETTING_POINTER = 'the provided setting image';
+/** The phrase the director repeats in every prompt, the light included. */
+const SETTING_PHRASE = `in ${SETTING_POINTER}, lit by its light`;
 
 /**
  * The opening turn: what the job is, before any footage is shown.
@@ -258,11 +322,17 @@ export function motionBriefAsk(brief: MotionBrief, pieces: number): string {
     '',
     `THE JOB: ${m.title}.`,
     `The model's own instruction for this is: "${m.googleWording}"`,
-    `It keeps ${m.keeps}. It replaces ${m.replaces}.`,
+    `It keeps ${m.keeps}. It replaces ${m.replaces}.`
+    /* Said here because swap's "everything else in the shot standing" would
+       otherwise keep the old place. */
+    + (brief.hasPlace
+      ? ' A setting image is attached as well, so the place is replaced too: it comes from '
+        + 'that image, not from the video.'
+      : ''),
     '',
     `WHAT THE USER ASKED FOR: ${brief.wish || '(nothing beyond the mode itself)'}`,
     brief.referenceRules || '',
-    brief.hasCharacter
+    brief.replacements ? REPLACEMENT_BRIEF : brief.hasCharacter
       ? 'A character/subject still is attached, and it goes to every generation. Every '
         + 'piece uses that same still, '
         + 'so refer to it as "the provided image" and never describe a different subject.'
@@ -281,10 +351,33 @@ export function motionBriefAsk(brief: MotionBrief, pieces: number): string {
         + 'A prompt that also narrates the movement gives the model two versions of the '
         + 'same thing — the exact frames, and your paraphrase of them — and it blends '
         + 'them. The result then moves roughly like the source instead of exactly like '
-        + 'it. Name the action in a few words at most ("a dance", "she walks and '
-        + 'turns"); never list the steps, the beats or the body parts, and never name '
-        + 'a camera move or a framing, which come from the video too.',
+        + 'it. Do not name the action either — not "a dance", not "a workout", not the '
+        + 'exercise. A name is a paraphrase too, and a wrong or rough one pulls the model '
+        + 'toward the word instead of the footage. Say only that the motion comes from '
+        + 'the input video; never list the steps, the beats or the body parts, and never '
+        + 'name a camera move or a framing, which come from the video too.',
     '',
+    /* The other half of the same rule. Not narrating the motion keeps the
+       director from competing with it; this keeps it from CHANGING it — the
+       commonest way a prompt made the output drift from the source. */
+    'THE MOTION IS FIXED. Each piece\'s footage decides every movement, its order, its '
+    + 'speed and its timing, and the video model is told to follow it frame for frame. '
+    + 'Never write anything that would change it: no new poses, moves, gestures or endings, '
+    + 'nothing faster, slower, smoother, bigger or more dramatic, no slow motion. If what '
+    + 'the user asked for would change the movement, apply it to everything else — the '
+    /* Not into an attached setting: that would re-describe it piece by piece. */
+    + `character, the look${brief.hasPlace ? '' : ', the setting'} — and leave the movement `
+    + 'as the footage has it.',
+    '',
+    /* The same rule for the mouths, when the user asked for it by name. The
+       video model gets its own LIP SYNC block; this keeps the director's words,
+       which come first in that prompt, from asking for anything it forbids. */
+    ...(brief.lipSync
+      ? ['EXACT LIP SYNC IS ON. Every mouth in the footage must move exactly as it does there, in '
+        + 'time with the speech. Never write anything about mouths, speaking, the words or the '
+        + 'voice, and never ask for new dialogue, a different line or different timing: the '
+        + 'video model is told to copy them from the footage.', '']
+      : []),
     /* The movement rule's twin, and the one that was missing while every
        prompt was coming back refused. Same argument, different carrier: the
        reference image holds the person, so a description of them competes with
@@ -303,6 +396,27 @@ export function motionBriefAsk(brief: MotionBrief, pieces: number): string {
         + 'character from this image" and stop there. No hair, no face, no skin, no '
         + 'build, no age, no clothing — not once, and not in passing.',
     '',
+    /* The setting's twin of the subject rule. Every piece is generated on its
+       own, so a setting put into words is a setting re-imagined per piece —
+       which is how a new place came out different from clip to clip. And with
+       a setting attached, the "match the input video's lighting" rule below
+       for keeping the original place is the wrong one: it was given anyway,
+       beside "use the place's light", and each piece settled the contradiction
+       its own way. Spread rather than '' so a job with no setting reads
+       exactly as it did. */
+    ...(brief.hasPlace ? [
+      'DO NOT DESCRIBE THE SETTING. The setting image is attached to every generation, '
+      + 'and it IS the place: its layout, its objects, its colours, its light. Put it into '
+      + 'words and each piece, generated on its own, re-imagines it slightly differently — '
+      + 'which is exactly how a new setting drifts from clip to clip. Write '
+      + `"${SETTING_POINTER}" and stop there, in the same words in every prompt. Its light `
+      + 'and colour come from that image; only the framing and the camera come from the '
+      + 'video. Never write "match the lighting of the input video", "keep the environment" '
+      + 'or "keep the background" while a setting image is attached. If the user asked for '
+      + 'a change to the place itself — night, rain, another colour — write that change, in '
+      + 'the same words in every prompt, and nothing else about it.',
+      '',
+    ] : []),
     `WHAT THE PROMPT IS FOR: ${m.writes}.`,
     '',
     `I will show you the ${pieces} pieces one at a time, in order. For each one you `
@@ -319,7 +433,16 @@ export function motionBriefAsk(brief: MotionBrief, pieces: number): string {
       : '  1. The same subject, REFERRED TO the same way every time — "the provided '
         + 'character from this image", word for word. Not described the same way. Not '
         + 'described at all.',
-    m.narrateMotion
+    /* With a setting attached, the light belongs to it — pointing at the input
+       video's lighting here would hand every piece the contradiction again. */
+    brief.hasPlace
+      ? (m.narrateMotion
+        ? '  2. The same look — the material, the grade, the lens feel — named explicitly in '
+          + `each prompt, and the same place: "${SETTING_PHRASE}", word for word.`
+        : `  2. The same setting and light — "${SETTING_PHRASE}", word for word in each `
+          + 'prompt. With a new setting, light and colour come from that image; only the '
+          + 'framing comes from the input video.')
+      : m.narrateMotion
       ? '  2. The same look — lighting, grade, lens feel — named explicitly in each prompt.'
       /* Named as a REFERENCE rather than as values. Inventing "bright soft studio
          lighting" makes the pieces agree with each other and disagree with the
@@ -337,16 +460,21 @@ export function motionBriefAsk(brief: MotionBrief, pieces: number): string {
  * A turn for one piece.
  *
  * The piece's own footage is attached by the caller; this is the sentence that
- * goes with it. It carries the piece's position deliberately — "this is the
- * last one, it has to land" is information the model cannot get from the
- * footage.
+ * goes with it. It carries the piece's position — information the model
+ * cannot get from the footage — for continuity, and for nothing else.
+ *
+ * It used to say more: the opening piece "carries the hook — whatever makes
+ * someone stay", the final one "has to land rather than trail off". Both are
+ * invitations to change the motion — a punchier start, a bigger finish — and
+ * the same turn then told the director never to change the motion. The
+ * footage decides how a piece opens and how it ends.
  */
 export function motionPieceAsk(brief: MotionBrief, piece: MotionPiece): string {
   const m = MODE_INTENT[brief.mode];
   const where = piece.index === 1
-    ? 'This is the OPENING piece. It carries the hook — whatever makes someone stay.'
+    ? 'This is the OPENING piece.'
     : piece.index === piece.of
-      ? 'This is the FINAL piece. It has to land rather than trail off.'
+      ? 'This is the FINAL piece.'
       : `This is piece ${piece.index} of ${piece.of}, in the middle.`;
 
   return [
@@ -376,9 +504,12 @@ export function motionPieceAsk(brief: MotionBrief, piece: MotionPiece): string {
     'Watch it. Then write the prompt for this piece:',
     m.narrateMotion
       ? `  · the movement as shape and rhythm — that is what ${m.title.toLowerCase()} transforms`
-      : '  · NOT the movement. The clip carries it, and describing it competes with '
-        + 'it. Name the action in a few words at most and move on',
-    brief.hasCharacter
+      /* Not even named. A director told it could label the action wrote
+         "a dance" — and a label that is wrong for a workout pulls the output
+         toward the word instead of the footage. */
+      : '  · NOT the movement, and no name for it either ("a dance", "push-ups"). The '
+        + 'clip carries it; write only that the motion comes from the input video',
+    brief.replacements ? REPLACEMENT_PIECE : brief.hasCharacter
       ? (m.narrateSubject
         ? '  · the provided image as the subject, described identically to last time'
         : '  · the subject named ONLY as "the provided character from this image", the '
@@ -386,10 +517,22 @@ export function motionPieceAsk(brief: MotionBrief, piece: MotionPiece): string {
           + 'clothing. The image goes with this clip; the model can see them')
       : '  · the subject as it appears in the footage — name it in a few words, and do '
         + 'not describe a person\'s appearance',
-    m.narrateMotion
-      ? '  · the look, named again in full — the model has no memory of the other pieces'
-      : '  · "match the lighting, grade and framing of the input video" — do not invent '
-        + 'lighting or a camera move, both of those come from the clip',
+    brief.hasPlace
+      /* restyle still names its material on every piece; the light is the setting's. */
+      ? (m.narrateMotion
+        ? '  · the material\'s look, named again in full — the model has no memory of the '
+          + 'other pieces. The light is the setting image\'s, not yours to name'
+        : '')
+      : m.narrateMotion
+        ? '  · the look, named again in full — the model has no memory of the other pieces'
+        : '  · "match the lighting, grade and framing of the input video" — do not invent '
+          + 'lighting or a camera move, both of those come from the clip',
+    brief.hasPlace
+      ? `  · the setting ONLY as "${SETTING_PHRASE}" — the same words as last time, and `
+        + 'nothing about what is in it. A change the user asked for to the place goes in the '
+        + 'same words as last time too. Not "match the lighting of the input video": with a '
+        + 'new setting, only the framing and the camera come from the clip'
+      : '',
     /* The timecodes above are context for YOU. They were being copied into the
        prompt — "Transfer the exact choreography from 0.0s to 6.0s" — and the
        video model is handed this clip alone, so a source timeline it cannot
@@ -402,7 +545,9 @@ export function motionPieceAsk(brief: MotionBrief, piece: MotionPiece): string {
       : '',
     '',
     brief.referenceRules || '',
-    'Reference-role rules above take precedence over generic instructions to preserve source lighting or background. Never change the source motion to create a new hook or ending.',
+    'Reference-role rules above take precedence over generic instructions to preserve source lighting or background.',
+    'The footage fixes this piece\'s motion — every movement, its order, its speed and its timing. '
+    + 'Write nothing that would add, cut, re-time or change any of it.',
     CONTRACT,
     brief.offerAlternatives ? 'Also include "alternatives": ["...", "..."] in that same JSON object: two complete alternative prompts, each at least 25 characters. Vary wording or visual emphasis only; keep the same reference roles, movement, timing, audio policy and user intent. These are for review, not extra generations.' : '',
   ].filter(Boolean).join('\n');
@@ -429,7 +574,14 @@ export function motionPieceAsk(brief: MotionBrief, piece: MotionPiece): string {
  * subject" is an opinion the model can disagree with; "you wrote sleeveless,
  * shorts, waistband" is a fact it can act on.
  */
-export function motionSubjectRedoAsk(piece: MotionPiece, terms: string[]): string {
+export function motionSubjectRedoAsk(piece: MotionPiece, terms: string[], hasPlace = false): string {
+  /* With a setting attached, "keep the environment and the input video's
+     lighting" would undo the setting rule in the very turn that rewrites the
+     prompt. */
+  const rest = hasPlace
+    ? `the action named in a few words, and "${SETTING_PHRASE}".`
+    : 'the action named in a few words, the environment, and the instruction to match '
+      + 'the lighting, grade and framing of the input video.';
   return [
     `STOP — do not generate. The prompt you just wrote for piece ${piece.index} describes `
     + `what the subject looks like. These words are the problem: ${terms.join(', ')}.`,
@@ -442,10 +594,80 @@ export function motionSubjectRedoAsk(piece: MotionPiece, terms: string[]): strin
     'Write the same prompt again with every physical description removed. The subject is '
     + '"the provided character from this image" and nothing more — no hair, no face, '
     + 'no skin, no build, no age, no clothing. Keep everything else exactly as you had '
-    + 'it: the action named in a few words, the environment, and the instruction to match '
-    + 'the lighting, grade and framing of the input video.',
+    + `it: ${rest}`,
     '',
     CONTRACT,
+  ].join('\n');
+}
+
+/**
+ * What a Motion run still has to do, piece by piece.
+ *
+ * Each piece passes three steps — a prompt, a place in Flow's library, a
+ * clip — and a retry resumes every piece at the first one it has not passed.
+ * Cutting is not a step of its own: a piece is cut only when a later step
+ * still needs its footage (the director watches it; the upload sends it).
+ *
+ *   onlyPiece       "Retry piece" — every rule is scoped to that piece
+ *   legacyUploaded  rows written before `uploaded` was per piece fall back to
+ *                   the old node-wide flag
+ *
+ * Pure, so the rules are tested against rows rather than against the source
+ * of the runner that applies them.
+ */
+export function motionWork(opts: { onlyPiece?: number; throughPiece?: number; legacyUploaded?: boolean } = {}) {
+  const inScope = (r: MotionPieceRow) => !opts.onlyPiece || (r.index >= opts.onlyPiece && r.index <= (opts.throughPiece || opts.onlyPiece));
+  const uploaded = (r: MotionPieceRow) => r.uploaded ?? (opts.legacyUploaded === true);
+  const needsPrompt = (r: MotionPieceRow) => inScope(r) && !String(r.prompt || '').trim();
+  /* A piece already made needs nothing from Flow's library any more. */
+  const needsUpload = (r: MotionPieceRow) => inScope(r) && r.status !== 'done' && !uploaded(r);
+  const needsCut = (r: MotionPieceRow) => needsPrompt(r) || (needsUpload(r) && !r.uploadPending);
+  return { uploaded, needsPrompt, needsUpload, needsCut };
+}
+
+/** A file handed to the chooser is not yet a usable Flow ingredient. */
+/**
+ * The shorter side a Motion piece is cut at, in pixels.
+ *
+ * The source's own size was used, so a 4K phone clip went to Flow as 4K —
+ * several times the bytes to upload and a processing wait Flow could run past
+ * minutes on, for a generation made at 720p. Omni reads the motion from the
+ * frames; 1080 keeps every movement and pose legible for it.
+ */
+export const MOTION_CUT_SHORT_SIDE = 1080;
+
+export function recordMotionUpload(row: MotionPieceRow, reply: {
+  ok?: boolean; confirmed?: boolean; uploadState?: string; names?: string[];
+  tabId?: number; projectUrl?: string;
+} | undefined): boolean {
+  const actual = String(reply?.names?.[0] || '').trim();
+  if (actual && !/[\\/]/.test(actual)) row.filename = actual;
+  row.uploaded = reply?.ok === true && reply.confirmed === true;
+  row.uploadPending = !row.uploaded && (reply?.uploadState === 'pending' || reply?.ok === true)
+    ? { tabId: reply.tabId, projectUrl: reply.projectUrl } : undefined;
+  return row.uploaded;
+}
+
+/**
+ * The opening turn's addition when a director pass is RESUMED.
+ *
+ * The director used to be all or nothing: failing on piece two threw away
+ * piece one's prompt with it, and a retry never asked again. Now the prompts
+ * already written are kept, and a retry asks only for the missing ones — in a
+ * new conversation, because the old one is gone (Gemini deletes its own). So
+ * the new one is shown what the old one wrote, which is what lets a piece in
+ * the middle still start where its neighbour ends.
+ */
+export function motionResumeNote(written: Array<{ index: number; prompt: string }>, missing: number[]): string {
+  return [
+    'CONTINUING AN EARLIER SESSION. These prompts were already written for these same',
+    'pieces of this same video. They stand as they are — do not rewrite them:',
+    '',
+    ...written.map((w) => `  Piece ${w.index}: ${w.prompt}`),
+    '',
+    `You will be shown only the piece${missing.length === 1 ? '' : 's'} still missing a prompt: `
+    + `${missing.join(', ')}. Write each so it continues from the piece before it and leads into `
+    + 'the piece after it, exactly as if all of them had been written in one pass.',
   ].join('\n');
 }
 
@@ -469,13 +691,23 @@ export function readMotionPrompt(reply: string, index: number): MotionPrompt {
   const start = raw.indexOf('{');
   const end = raw.lastIndexOf('}');
   if (start < 0 || end <= start) {
-    throw new Error(`Piece ${index}: the director replied with no JSON object.`);
+    /* Says WHAT was read. Reported 2026-10-19 with the JSON reply sitting on
+       the Gemini tab while this said there was none: the text the adapter
+       handed back was something else — an earlier turn, or half an answer —
+       and without it the banner could not say which. */
+    const seen = raw.replace(/\s+/g, ' ').trim();
+    throw new Error(`Piece ${index}: the director replied with no JSON object. `
+      + (seen ? `What was read: "${seen.length > 140 ? `${seen.slice(0, 140)}…` : seen}"` : 'The reply read was empty.'));
   }
 
-  let parsed: any;
-  try {
-    parsed = JSON.parse(raw.slice(start, end + 1));
-  } catch {
+  /* The storyboard's reader: plain JSON first, then with the straight quotes
+     inside a value escaped. Gemini wrote
+       {"prompt":"… Translate the on-screen text to English: "I scolded him and he got mad 😨".", …}
+     — every field right, the caption quoted the way a person would — and the
+     director stopped the run on two characters. A retry would have been asked
+     the same question and answered it the same way. */
+  const parsed: any = readJsonObject(raw);
+  if (!parsed) {
     throw new Error(`Piece ${index}: the director's JSON could not be read.`);
   }
 
@@ -514,9 +746,11 @@ export function plainMotionPrompt(brief: MotionBrief, piece: MotionPiece): strin
     /* Pointed at the footage rather than at invented values, for the same
        reason the director is told to: naming a look in words makes the parts
        agree with each other and disagree with the clip they came from. */
-    parts.push(m.narrateMotion
-      ? 'Keep the lighting and framing identical across parts.'
-      : 'Match the lighting, grade and framing of the input video.');
+    parts.push(brief.hasPlace
+      ? `Keep the setting identical across parts: ${SETTING_PHRASE}, with the framing of the input video.`
+      : m.narrateMotion
+        ? 'Keep the lighting and framing identical across parts.'
+        : 'Match the lighting, grade and framing of the input video.');
   }
   return parts.join(' ');
 }

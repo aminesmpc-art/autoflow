@@ -3,6 +3,21 @@ const handlers: Record<string, Function[]> = {};
 
 jest.mock('../studio/engine/bridge', () => ({
   bridge: {
+      /* The v1.5.0 coordinator methods.
+
+         These tests drive the LOCAL execution path — that is the whole point
+         of them — so the coordinator must decline. Returning false is what
+         the real bridge returns when the worker port is not connected, and
+         run() falls through to the local loop on it.
+
+         Without them tryCoordinatorRun threw "bridge.startRun is not a
+         function" and took 42 tests with it: the mock was written before the
+         coordinator existed and nothing made it keep up. */
+      startRun: () => false,
+      stopRun: () => false,
+      pauseRun: () => false,
+      resumeRun: () => false,
+      requestSnapshot: () => false,
     connect: jest.fn(),
     disconnect: jest.fn(),
     send: jest.fn(),

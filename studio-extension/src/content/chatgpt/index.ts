@@ -868,6 +868,9 @@ async function handleExecute(payload: any): Promise<any> {
   // is being written.
   const preexisting = new Set(collectResultImages().map((i) => i.currentSrc || i.src));
   const priorReply = wantsText ? readLatestReply().trim() : '';
+  /* And how many assistant turns held it. Text alone cannot tell a new answer
+     from an identical repeat of the last one — see trackTextReply. */
+  const repliesBefore = wantsText ? replyContainers().length : 0;
 
   /* Attach references before typing.
      Order matters: uploading can re-render the composer, and a prompt typed
@@ -1054,7 +1057,7 @@ async function handleExecute(payload: any): Promise<any> {
   // chrome.runtime.sendMessage, same pattern as the Flow content script.
   startAntiThrottle();
   const work = wantsText
-    ? trackTextReply(nodeId, priorReply, config?.rawReply === true)
+    ? trackTextReply(nodeId, priorReply, config?.rawReply === true, repliesBefore)
     : trackGeneration(nodeId, preexisting);
   work.finally(stopAntiThrottle);
   return { success: true };
@@ -1221,10 +1224,29 @@ function turnFinished(): boolean | null {
  * own accessibility tree relies on. Falls back to the last article element,
  * which is the shape the conversation has had through several redesigns.
  */
+/**
+ * Every ASSISTANT turn on the page, in document order. readLatestReply reads
+ * the last one; trackTextReply COUNTS them.
+ *
+ * A list rather than a single element because "is this OUR answer" is a
+ * question about WHICH turn is being read, and cannot be answered by what it
+ * says — see trackTextReply.
+ *
+ * Role-attributed turns ONLY, and empty rather than falling back to
+ * `article`: an article is any turn, including the question we just typed, so
+ * a count built on it would move before the answer existed and hand the
+ * caller the PREVIOUS reply as though it were this one. Empty is the honest
+ * answer — the caller falls back to comparing the text, which is what it did
+ * before this existed.
+ */
+function replyContainers(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-message-author-role="assistant"]'));
+}
+
 function readLatestReply(): string {
-  const byRole = document.querySelectorAll('[data-message-author-role="assistant"]');
+  const byRole = replyContainers();
   if (byRole.length) {
-    return (byRole[byRole.length - 1] as HTMLElement).innerText || '';
+    return byRole[byRole.length - 1].innerText || '';
   }
   const articles = document.querySelectorAll('article');
   if (articles.length) {
@@ -1252,7 +1274,7 @@ function readLatestReply(): string {
  * cleanAssistantReply strips surrounding quotes, which can be part of the JSON.
  */
 async function trackTextReply(
-  nodeId: string, priorReply: string, raw = false
+  nodeId: string, priorReply: string, raw = false, priorReplies = 0
 ): Promise<void> {
   const startedAt = Date.now();
   let lastSeen = '';
@@ -1285,8 +1307,18 @@ async function trackTextReply(
     const generating = isGenerating();
     const said = turnFinished();
 
-    // Unchanged from before we asked means our answer hasn't started yet.
-    if (!current || current === priorReply) {
+    /* ── Is this OUR answer, or the one that was already on screen? ──
+     *
+     * Comparing the text accepts a reply only if it READS DIFFERENTLY from
+     * the last one, which is not a property of a new answer. A Chief asked to
+     * review a second round in the same thread answers
+     * `{"approved":true,"issues":[]}` exactly as it answered the first, and
+     * every poll gets discarded until the node times out with the finished
+     * verdict on screen. (Reported against Gemini; this adapter had the same
+     * line.) A new answer is a new assistant TURN, so that is what is counted.
+     * OR, not instead of: this accepts everything the text test used to. */
+    const ourTurn = replyContainers().length > priorReplies;
+    if (!current || !(ourTurn || current !== priorReply)) {
       /* Silence, and nothing in flight. This is the no-answer backstop, not a
          deadline for a reply that is visibly growing. */
       if (Date.now() - lastChangeAt > TEXT_QUIET_MS && !generating && said !== false) break;

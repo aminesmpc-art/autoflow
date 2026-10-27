@@ -218,3 +218,4 @@ describe('stopping', () => {
     expect(cleared('studio-tab-ping')).toBe(true);
   });
 });
+export {};

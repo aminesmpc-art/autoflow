@@ -120,7 +120,7 @@ describe('it hands off, it does not transact', () => {
   it('opens the real checkout, with the email the webhook needs', () => {
     /* getUpgradeUrl puts the account email in the URL fragment, which is what
        lets the membership attach to the right account. */
-    expect(SRC).toMatch(/proGo\.addEventListener[\s\S]{0,400}await getUpgradeUrl\(\)/);
+    expect(SRC).toMatch(/proGo\.addEventListener[\s\S]{0,400}await getUpgradeUrl\('sidepanel'\)/);
     expect(SRC).toMatch(/chrome\.tabs\.create\(\{ url: url \|\| 'https:\/\/www\.auto-flow\.studio\/checkout' \}\)/);
   });
 

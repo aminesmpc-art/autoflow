@@ -106,6 +106,13 @@ describe('dimming nodes while a wire is being dragged', () => {
 });
 
 describe('canConnect', () => {
+  it('refuses a second image on an occupied named frame slot', () => {
+    const existing = [{ source: 'first', target: 'b', sourceHandle: 'image', targetHandle: 'frame_start' }];
+    const attempt = { source: 'a', target: 'b', sourceHandle: 'image', targetHandle: 'frame_start' };
+    expect(canConnect(attempt, existing)).toBe(false);
+    expect(connectionProblem(attempt, existing)).toMatch(/start frame already has an image/i);
+    expect(canConnect({ ...attempt, targetHandle: 'frame_end' }, existing)).toBe(true);
+  });
   it('is the boolean React Flow asks for', () => {
     expect(canConnect({ source: 'a', target: 'b', sourceHandle: 'text', targetHandle: 'text' })).toBe(true);
     expect(canConnect({ source: 'a', target: 'b', sourceHandle: 'result', targetHandle: 'text' })).toBe(false);

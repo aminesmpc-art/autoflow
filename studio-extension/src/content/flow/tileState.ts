@@ -41,6 +41,18 @@ export function getStudioTileState(
    */
   expectVideo = false,
 ): StudioTileState {
+  // ── 0. FAILED, by Flow's own component ──
+  // First, because a failed tile is neither in flight nor finished, and the
+  // checks below can read its furniture as either. See flowErrorTile.
+  if (flowErrorTile(tile)) return 'failed';
+  const video = resultArea(tile).querySelector('video');
+  const playable = video
+    ? (video.currentSrc
+      || video.getAttribute('src')
+      || video.querySelector('source[src]')?.getAttribute('src')
+      || '')
+    : '';
+
   // ── 1. GENERATING — must be checked BEFORE completion. ──
   // While Flow generates, the tile shows a blurred preview <img> with a
   // "24%" badge. That preview is a real image, so any completion check
@@ -60,7 +72,8 @@ export function getStudioTileState(
   const progress = extractTileProgress(tile);
   const finishedStillAtHundred = !expectVideo && progress === 100
     && !!tile.querySelector('img[data-media-id][src]');
-  if (progress !== null && !finishedStillAtHundred) return 'generating';
+  const finishedVideoAtHundred = expectVideo && progress === 100 && !!playable;
+  if (progress !== null && !finishedStillAtHundred && !finishedVideoAtHundred) return 'generating';
 
   const icons = tile.querySelectorAll('.google-symbols, .material-icons, .material-symbols-outlined, .material-symbols');
   for (const icon of icons) {
@@ -70,8 +83,9 @@ export function getStudioTileState(
     }
   }
 
-  // Generating text cues
-  const text = tile.textContent?.toLowerCase() || '';
+  /* Generating text cues, read off the tile's own words rather than the title
+     and prompt Flow wrote about it. See statusText. */
+  const text = statusText(tile);
   if (matchesFlowText(text, 'queued') || matchesFlowText(text, 'preparing')) {
     return 'generating';
   }
@@ -97,13 +111,6 @@ export function getStudioTileState(
    * had, so it gets its own name. The caller decides how long to allow it —
    * see THUMBNAIL_GRACE_MS — because that is a question about time and this
    * function is a question about the DOM. */
-  const video = resultArea(tile).querySelector('video');
-  const playable = video
-    ? (video.currentSrc
-      || video.getAttribute('src')
-      || video.querySelector('source[src]')?.getAttribute('src')
-      || '')
-    : '';
   if (playable) return 'completed';
 
   /* Authoritative: once the tile holds a <video>, no <img> beside it gets a
@@ -147,7 +154,7 @@ export function getStudioTileState(
   }
 
   // Play button icons (completed video)
-  if (!expectVideo || !videoWithoutClip) {
+  if (!expectVideo && !videoWithoutClip) {
     for (const icon of icons) {
       const txt = icon.textContent?.trim() || '';
       if (txt === 'play_arrow' || txt === 'play_circle') return 'completed';
@@ -175,6 +182,132 @@ export function getStudioTileState(
 
   if (videoWithoutClip) return 'thumbnail-only';
   return 'unknown';
+}
+
+/**
+ * Flow's own component for a failed generation, if this tile is showing one.
+ *
+ * Copied from a live project on 2026-10-01. A refused Omni generation is
+ * still a flow-video-tile; what changes is what is inside it:
+ *
+ *   <flow-video-tile>
+ *     <div class="container">
+ *       <flow-error-tile>
+ *         <div class="error-tile"><div class="error-tile-content">
+ *           <div class="error-message">
+ *             <mat-icon class="error-icon …">warning</mat-icon>
+ *             <div class="error-title">Failed</div>
+ *             <div class="error-subtitle">
+ *               <span class="error-message-text">This generation might violate our policies. …</span>
+ *               <span class="disclaimer-message">You have not been charged for this generation.</span>
+ *           <div class="buttons-container">   Retry · Reuse prompt · Delete
+ *
+ * A component rather than a word: the one failure signal that no prompt,
+ * title or translation can produce. It carries no id — a failed generation has
+ * no media to name it by.
+ */
+export function flowErrorTile(tile: Element): Element | null {
+  return tile.matches('flow-error-tile') ? tile : tile.querySelector('flow-error-tile');
+}
+
+/**
+ * Set on every failed tile on the page just before a node submits.
+ *
+ * A retried Motion piece sends the same prompt again, so the earlier attempt's
+ * failure sits in the grid with identical text and — having no media — no id
+ * to exclude it by. Marked first, only a failure that appears after the
+ * submit can be the node's own.
+ */
+export const PRIOR_FAILURE = 'data-af-prior-failure';
+
+/** Whether this tile shows a failure that predates the node watching it. */
+export function isPriorFailure(tile: Element): boolean {
+  return !!flowErrorTile(tile)?.hasAttribute(PRIOR_FAILURE);
+}
+
+/** Flow's reason for a failed tile, in its own words, or null if it shows none. */
+export function flowErrorReason(tile: Element): { reason: string; notCharged: boolean } | null {
+  const failure = flowErrorTile(tile);
+  if (!failure) return null;
+  const read = (selector: string): string =>
+    (failure.querySelector(selector)?.textContent || '').replace(/\s+/g, ' ').trim();
+  return { reason: read('.error-message-text'), notCharged: matchesFlowText(read('.disclaimer-message'), 'notCharged') };
+}
+
+/**
+ * What a node says when Flow failed its generation: Flow's sentence verbatim,
+ * because it is the only account of why.
+ *
+ * One addition, for the refusal that rewording cannot fix. "…about generating
+ * prominent people" is Flow taking a face in the reference image or the video
+ * for a real, well-known person — a judgment about the picture, which no
+ * prompt changes.
+ */
+export function flowFailureMessage(tile: Element): string {
+  const said = flowErrorReason(tile);
+  if (!said?.reason) return '';
+  const people = /prominent people/i.test(said.reason)
+    ? ' Flow takes the person in the reference image or the video for a real, well-known '
+      + 'person. Rewording the prompt will not change that; use a different reference.'
+    : '';
+  return `Flow: ${said.reason}${said.notCharged ? ' (Not charged.)' : ''}${people}`;
+}
+
+/**
+ * Where Flow writes ABOUT a generation rather than reporting its state.
+ *
+ * The title, the prompt, the model and the aspect ratio. All of it is text
+ * Flow composed from what the user asked for, and none of it says whether the
+ * clip is finished.
+ */
+const LABEL_PARTS = 'flow-expandable-prompt, flow-batch-info, flow-tile-hover-footer, '
+  + '.footer-title, .metadata, .prompt-text, .text-part';
+
+/**
+ * The tile's text, with everything Flow wrote about it removed.
+ *
+ * Tile state is decided partly by scanning for words — 'preparing', 'queued'
+ * for a generation in flight; 'failed', 'blocked', 'violate', 'rejected' for
+ * one that died. Those words are machine status. The same words also occur in
+ * ordinary English, and Flow prints two pieces of ordinary English inside the
+ * tile: the prompt, and a TITLE it auto-writes from that prompt.
+ *
+ * Reported from a real run. A first-person survival shot was titled
+ *
+ *   "Protagonist preparing to leave camp"
+ *
+ * and `preparing` is a generating cue. The tile therefore read `generating`
+ * for as long as anyone watched it:
+ *
+ *   05:14:57  Waiting 90s  — tile 34142166 is generating, API completed
+ *   05:15:13  Waiting 105s — tile 34142166 is generating, API completed
+ *   05:15:28  Waiting 120s — tile 34142166 is generating, API completed
+ *
+ * with the finished clip sitting in the grid the whole time.
+ *
+ * This is the third time the shape has been found: a prompt saying a shelter
+ * was `rejected` reading as a rejected generation, a landscape described as
+ * `empty` reading as an unstarted scene, and now a title containing
+ * `preparing`. The fix each time is the same one — ask the question of the
+ * thing that answers it.
+ */
+export function statusText(tile: Element): string {
+  const labels = new Set<Element>();
+  for (const el of Array.from(tile.querySelectorAll(LABEL_PARTS))) labels.add(el);
+  if (!labels.size) return (tile.textContent || '').toLowerCase();
+
+  let out = '';
+  const walk = (node: Element): void => {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === 3) { out += child.textContent || ''; continue; }
+      if (child.nodeType !== 1) continue;
+      const el = child as Element;
+      if (labels.has(el) || el.matches(LABEL_PARTS)) continue;
+      walk(el);
+    }
+  };
+  walk(tile);
+  return out.toLowerCase();
 }
 
 /** Flow's own progress badge ("24%") from a generating tile, or null */
@@ -245,7 +378,16 @@ const INGREDIENT_ALT = /generated or uploaded by you|present in your collection|
 export function findLargestImgSrc(tile: Element): string {
   const imgs = resultArea(tile).querySelectorAll('img[src]');
   let bestSrc = '';
-  let bestArea = 0;
+  /* Below zero, so that a zero-area image still counts.
+   *
+   * Area is here to choose BETWEEN candidates. Starting the floor at 0 also
+   * made it decide whether there is an answer at all — and every image on a
+   * tile the virtual list has scrolled away from, or has not laid out yet,
+   * measures exactly 0x0. Nothing beat the floor, this returned '', and the
+   * caller had no media URL for a generation that had completed: no preview
+   * on the node, no reference for whatever was chained below it, and nothing
+   * anywhere saying the tile had simply been off screen when it was read. */
+  let bestArea = -1;
   for (const img of imgs) {
     const src = img.getAttribute('src') || '';
     if (src.startsWith('data:') && src.length < 200) continue;

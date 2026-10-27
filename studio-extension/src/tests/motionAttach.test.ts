@@ -102,7 +102,10 @@ describe('the character reaches every piece, without an edge to draw it', () => 
     /* The same still on all of them — that is what stops the subject drifting
        between independently generated clips. */
     expect(body()).toContain('const references = [...character, ...place]');
-    expect(body()).toMatch(/referenceImageData: references\.length \? references : undefined/);
+    /* "Keep clips consistent" adds the previous piece's end frame after them;
+       the character and the place still go with every piece either way. */
+    expect(body()).toMatch(
+      /referenceImageData: handoff\.frame \? \[\.\.\.references, handoff\.frame\] : references\.length \? references : undefined/);
   });
 
   it('draws no edges at all any more, so none can be wrong', () => {

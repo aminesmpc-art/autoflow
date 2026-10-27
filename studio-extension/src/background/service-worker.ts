@@ -15,10 +15,18 @@
    service worker cannot fetch a chunk the way a page can — the upload would
    have failed at the first click, on the one path that needed it. Costs ~16KB
    in a worker that is already far larger than that. */
-import { uploadToFlow } from './debugUpload';
+import { uploadToFlow, confirmUploadLanded, type DebugUploadResult } from './debugUpload';
+import { backgroundStrict } from './backgroundMode';
+import { answerGeminiWait } from './geminiWait';
+import { installGeminiNetwork } from './geminiNetwork';
+import { flowProjectId, isFlowPage } from '../shared/flowUrls';
 import { trackSubmission } from '../shared/api';
 import { record as recordAttempt } from '../shared/attemptLog';
 import { outstandingAcrossRuns } from '../shared/runJournal';
+import { RunCoordinator, type CoordinatorHost, type NodeExecutionConfig } from './runCoordinator';
+import type { CanvasToSwMessage, SwToCanvasMessage } from '../shared/executionTypes';
+
+const coordinator = new RunCoordinator();
 
 /* Media ids this worker has already reported as submitted. In memory on
    purpose: it exists to stop one run re-posting the same id, not to survive
@@ -194,10 +202,10 @@ async function flushParked(port: chrome.runtime.Port): Promise<void> {
 
 /* ── Keepalive ──
    A video generation easily outlasts Chrome's idle timeout for a service
-   worker. If the worker is recycled mid-run the port dies and the next node
-   fails with "Lost connection". An alarm ticking under the idle threshold
-   keeps it resident; autoDiscardable stops Chrome dropping the platform tab
-   out from under a running generation. */
+   worker. Alarms wake it for health/status checks; Motion also persists its
+   target so monitoring recovers after recycling without replaying execution.
+   autoDiscardable stops Chrome automatically dropping the working tab; it
+   does not disable hidden-page timer throttling or freezing. */
 const KEEPALIVE_ALARM = 'studio-keepalive';
 /* ── The one that actually un-throttles ──
    A platform tab is opened with active:false, so it is hidden from the moment
@@ -260,12 +268,124 @@ const TAB_PING_ALARM = 'studio-tab-ping';
 const TAB_PING_MINUTES = 0.5;
 let keptTabId: number | null = null;
 let keptPlatform: Platform | null = null;
+let keepaliveEpoch = 0;
+
+/** Motion binds this at worker startup; Studio retains its existing behavior. */
+interface ProviderProtection {
+  hold(tabId: number, platform: string): Promise<void>;
+  recover(): Promise<{ tabId: number; platform: string } | null>;
+  release(): Promise<void>;
+}
+let providerProtection: ProviderProtection | null = null;
+export function bindProviderKeepalive(protection: ProviderProtection): void {
+  providerProtection = protection;
+}
+
+function armKeepalive(): void {
+  chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.5 });
+  chrome.alarms.create(TAB_PING_ALARM, {
+    delayInMinutes: TAB_PING_MINUTES,
+    periodInMinutes: TAB_PING_MINUTES,
+  });
+}
+
+async function recoverProviderKeepalive(): Promise<void> {
+  if (!providerProtection || keptTabId !== null || !studioPort || !runState.running) return;
+  const epoch = keepaliveEpoch;
+  const target = await providerProtection.recover();
+  // The run may have ended while session storage was being read.
+  if (!target || epoch !== keepaliveEpoch || keptTabId !== null || !studioPort || !runState.running) return;
+  if (!(target.platform in PLATFORMS)) return;
+  keptTabId = target.tabId;
+  keptPlatform = target.platform as Platform;
+  lastRaisedFor = `${keptPlatform}:${keptTabId}`;
+  armKeepalive();
+  diag('Bridge', `Recovered ${keptPlatform} background monitoring after worker restart; no generation was resubmitted.`);
+}
 
 /* The provider the run was last brought forward for, as platform:tab.
    Null between runs, so the first hand-off of a run always counts. */
 let lastRaisedFor: string | null = null;
 
+/* ── CoordinatorHost: wires the coordinator to the worker's tab management ─── */
+const coordinatorHost: CoordinatorHost = {
+  /* Throws a message for the node rather than returning false: "Failed to
+     dispatch execution to platform tab" told nobody which tab, or why. */
+  async executeOnPlatform(nodeId: string, config: NodeExecutionConfig): Promise<boolean> {
+    const platform = (config.platform || 'flow') as Platform;
+    const cfg = PLATFORMS[platform] || PLATFORMS.flow;
+    const tabId = await ensurePlatformTab(platform);
+    if (!tabId) {
+      throw new Error(`Could not open a ${cfg.name} tab. Check the site is reachable and you are signed in.`);
+    }
+    await startKeepalive(tabId, platform).catch(() => { /* non-critical */ });
+    const reply = await deliverToProvider(tabId, platform, {
+      type: 'STUDIO_EXECUTE_NODE',
+      payload: { nodeId, config },
+    });
+    // The adapter refused it outright, before starting anything.
+    if (reply?.type === 'STUDIO_NODE_ERROR') {
+      throw new Error(String(reply.payload?.error || `The ${cfg.name} tab refused this node`));
+    }
+    return true;
+  },
+  
+  sendControl(command: 'pause' | 'resume' | 'stop'): void {
+    if (keptTabId) {
+      const type = command === 'pause' ? 'STUDIO_PAUSE'
+        : command === 'resume' ? 'STUDIO_RESUME'
+        : 'STUDIO_STOP';
+      chrome.tabs.sendMessage(keptTabId, { type }).catch(() => {});
+    }
+  },
+  
+  broadcast(message: SwToCanvasMessage): void {
+    // Send to Canvas port if connected
+    if (studioPort) {
+      try { studioPort.postMessage(message); } catch { /* port died */ }
+    }
+    // Also update the side panel's run state
+    if (message.type === 'SW_RUN_STATE') {
+      const snap = message.payload;
+      patchRunState({
+        running: snap.state === 'running',
+        paused: snap.state === 'paused',
+        done: snap.progress.current,
+        total: snap.progress.total,
+        nodeLabel: snap.currentNodeId || '',
+      });
+    }
+  },
+  
+  notify(title: string, message: string): void {
+    /* Only notify if the Studio Canvas is NOT connected — if the user
+       is watching, the UI itself is the notification. */
+    if (!studioPort) {
+      try {
+        chrome.notifications.create(`run-${Date.now()}`, {
+          type: 'basic',
+          title,
+          message,
+          iconUrl: 'icons/icon128.png',
+        });
+      } catch { /* notifications permission may not be available */ }
+    }
+  },
+};
+
+coordinator.bind(coordinatorHost);
+
 async function startKeepalive(tabId: number, platform: Platform): Promise<void> {
+  const epoch = ++keepaliveEpoch;
+  keptTabId = tabId;
+  keptPlatform = platform;
+  try {
+    if (providerProtection) await providerProtection.hold(tabId, platform);
+    else await chrome.tabs.update(tabId, { autoDiscardable: false });
+  } catch {
+    diag('Bridge', `Could not protect the ${platform} tab from automatic discarding. Keep it open while this step runs.`);
+  }
+  if (epoch !== keepaliveEpoch) return;
   /* Switch ONCE when the run moves to a different provider.
    *
    * This is the hand-off — the Director finishes on Gemini and Flow takes
@@ -277,29 +397,33 @@ async function startKeepalive(tabId: number, platform: Platform): Promise<void> 
    * is what that beta is for; this is not routine. Keyed on platform AND tab
    * so six Flow nodes in a row raise nothing after the first, and a run that
    * never leaves one provider switches exactly once.
+   *
+   * Motion's foreground mode additionally raises each step, including another
+   * step on the same tab. Its strict mode never raises. Studio behavior stays
+   * keyed to provider handoffs.
    */
   const raiseKey = `${platform}:${tabId}`;
-  if (lastRaisedFor !== raiseKey) {
+  const followEachStep = !!providerProtection && !(await backgroundTabsOn());
+  if (epoch !== keepaliveEpoch) return;
+  if (lastRaisedFor !== raiseKey || followEachStep) {
     lastRaisedFor = raiseKey;
-    try {
-      const tab = await chrome.tabs.update(tabId, { active: true });
-      if (tab?.windowId != null) {
-        await chrome.windows.update(tab.windowId, { focused: true });
-      }
-      diag('Bridge', `Handed to ${platform} — brought its tab forward.`);
-    } catch { /* the tab went; the run will report that itself */ }
+    const strict = await backgroundStrict();
+    if (epoch !== keepaliveEpoch) return;
+    if (strict) {
+      diag('Bridge', `Handed to ${platform} — left its tab where it is (background mode).`);
+    } else {
+      try {
+        const tab = await chrome.tabs.update(tabId, { active: true });
+        if (tab?.windowId != null) {
+          await chrome.windows.update(tab.windowId, { focused: true });
+        }
+        diag('Bridge', `Handed to ${platform} — brought its tab forward.`);
+      } catch { /* the tab went; the run will report that itself */ }
+    }
   }
 
-  keptTabId = tabId;
-  keptPlatform = platform;
-  chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.4 });
-  chrome.alarms.create(TAB_PING_ALARM, {
-    delayInMinutes: TAB_PING_MINUTES,
-    periodInMinutes: TAB_PING_MINUTES,
-  });
-  try {
-    await chrome.tabs.update(tabId, { autoDiscardable: false });
-  } catch { /* the tab may have gone; the alarm still matters */ }
+  if (epoch !== keepaliveEpoch) return;
+  armKeepalive();
 }
 
 /**
@@ -357,14 +481,50 @@ async function refreshFlowStatus(tabId: number): Promise<void> {
 }
 
 async function tabPingRoutine(): Promise<void> {
+  await recoverProviderKeepalive();
   if (keptTabId === null) { await stopKeepalive(); return; }
+  // A late response for the previous provider must not stop or diagnose the
+  // new one. Every handoff and stop changes this epoch, including same-tab work.
+  const epoch = keepaliveEpoch;
+  const current = () => epoch === keepaliveEpoch && keptTabId !== null;
 
   let tab: chrome.tabs.Tab;
   try {
     tab = await chrome.tabs.get(keptTabId);
   } catch {
+    if (!current()) return;
     diag('Bridge', 'The working tab was closed - stopping the keepalive.');
     await stopKeepalive();
+    return;
+  }
+  if (!current()) return;
+
+  // Motion's original foreground mode owns the working tab/window for the
+  // duration of the step. Activate before checking for a frozen background tab.
+  if (providerProtection && !(await backgroundTabsOn())) {
+    if (!current()) return;
+    try {
+      if (!tab.active || (tab as chrome.tabs.Tab & { frozen?: boolean }).frozen || tab.discarded) {
+        tab = await chrome.tabs.update(keptTabId!, { active: true });
+      }
+      if (!current()) return;
+      await chrome.windows.update(tab.windowId, { focused: true });
+    } catch { /* The health check below reports an unavailable tab. */ }
+    if (!current()) return;
+  }
+
+  if (providerProtection && (tab.discarded || (tab as chrome.tabs.Tab & { frozen?: boolean }).frozen)) {
+    const condition = tab.discarded ? 'discarded' : 'frozen';
+    patchRunState({
+      needsAttention: tab.discarded
+        ? `Chrome discarded the ${keptPlatform} tab. Open it to check the existing result before retrying this step; do not generate again.`
+        : `Chrome has frozen the ${keptPlatform} tab. Open it to resume collecting this step; do not generate again.`,
+      attentionTabId: keptTabId,
+    });
+    if (reinjectSaidFor !== condition) {
+      reinjectSaidFor = condition;
+      diag('Bridge', `Chrome ${condition} the working tab. Background protection cannot unfreeze it; no retry was submitted.`);
+    }
     return;
   }
 
@@ -375,11 +535,13 @@ async function tabPingRoutine(): Promise<void> {
      wherever the user put it; the health check below still runs, because
      "is anything listening?" is a different question from "is it visible?". */
   if (!tab.active && !(await backgroundTabsOn())) {
+    if (!current()) return;
     try { await chrome.tabs.update(keptTabId, { active: true }); } catch { /* gone */ }
   }
+  if (!current()) return;
 
-  /* Keep Flow's status fresh while its tab is hidden. Only Flow: it is the
-     only adapter whose page stops producing the data its engine reads. */
+  /* Flow has a captured status request we can refresh. Gemini observes its
+     existing generation response instead; that POST must never be replayed. */
   if (keptPlatform === 'flow') {
     void refreshFlowStatus(keptTabId);
   }
@@ -391,6 +553,7 @@ async function tabPingRoutine(): Promise<void> {
      can no longer hear it. */
   try {
     await chrome.tabs.sendMessage(keptTabId, { type: 'PING' });
+    if (!current()) return;
     reinjectSaidFor = null;   // it answered; a later failure is news again
     /* It is listening, so whatever the user was being asked to do is done.
        A banner that outlives its cause is worse than none: the next real one
@@ -400,6 +563,7 @@ async function tabPingRoutine(): Promise<void> {
     }
     return;
   } catch { /* fall through and work out why */ }
+  if (!current()) return;
 
   const conf = keptPlatform ? PLATFORMS[keptPlatform] : undefined;
   if (!conf?.script) return;
@@ -454,9 +618,11 @@ async function tabPingRoutine(): Promise<void> {
   try {
     await chrome.scripting.executeScript({ target: { tabId: keptTabId }, files: [conf.script] });
   } catch (err: any) {
+    if (!current()) return;
     diag('Bridge', `Cannot reach the ${conf.name} tab: ${err?.message || err}`);
     return;
   }
+  if (!current()) return;
 
   /* Did that actually help? The old code announced the re-injection and
      assumed so. If the script still does not answer, saying "re-injected it"
@@ -476,11 +642,13 @@ async function tabPingRoutine(): Promise<void> {
   let answered = false;
   for (let i = 0; i < 4 && !answered; i++) {
     if (i) await new Promise((r) => setTimeout(r, 400));
+    if (!current()) return;
     try {
       await chrome.tabs.sendMessage(keptTabId, { type: 'PING' });
       answered = true;
     } catch { /* not up yet */ }
   }
+  if (!current()) return;
 
   try {
     if (!answered) throw new Error('no answer');
@@ -514,15 +682,18 @@ export function matchesUrlPattern(url: string, pattern: string): boolean {
 }
 
 async function stopKeepalive(): Promise<void> {
+  ++keepaliveEpoch;
   chrome.alarms.clear(KEEPALIVE_ALARM).catch(() => {});
   chrome.alarms.clear(TAB_PING_ALARM).catch(() => {});
   keptPlatform = null;
   reinjectSaidFor = null;
   /* So the next run's first hand-off is a hand-off again. */
   lastRaisedFor = null;
-  if (keptTabId !== null) {
-    try { await chrome.tabs.update(keptTabId, { autoDiscardable: true }); } catch { /* gone */ }
-    keptTabId = null;
+  const previous = keptTabId;
+  keptTabId = null;
+  if (providerProtection) await providerProtection.release().catch(() => {});
+  else if (previous !== null) {
+    try { await chrome.tabs.update(previous, { autoDiscardable: true }); } catch { /* gone */ }
   }
 }
 
@@ -666,17 +837,37 @@ async function platformState(match: string | string[]): Promise<PlatformState> {
   return granted ? 'closed' : 'blocked';
 }
 
-/** Reuse the user's existing tab if there is one; open it if not. */
-async function ensurePlatformTab(platform: Platform): Promise<number | null> {
+/**
+ * Reuse the user's existing tab if there is one; open it if not.
+ *
+ * For Flow, WHICH tab matters. The upload and the generation each ask for one,
+ * separately — and "the first tab that matched" could be a Flow homepage for
+ * one and a project for the other, putting the pieces in one project's library
+ * while the generation searched another's and found nothing. It could also be
+ * another Labs tool entirely: the match is all of labs.google. So a tab already
+ * inside a Flow project comes first, then any Flow page, then — as before —
+ * whatever matched. Both steps ask the same question and get the same tab.
+ *
+ * `freshFlowProject`: when no Flow tab is open, open Flow's homepage rather
+ * than the last project, so the page can start a NEW project for the run.
+ * Motion Control asks for this; every other caller still returns to the
+ * project the user was last in.
+ */
+async function ensurePlatformTab(platform: Platform, opts: { freshFlowProject?: boolean } = {}): Promise<number | null> {
   const cfg = PLATFORMS[platform];
   try {
     const existing = await chrome.tabs.query({ url: cfg.match });
-    if (existing.length && existing[0].id != null) return existing[0].id;
+    const pick = platform === 'flow'
+      ? existing.find((t) => t.id != null && !!flowProjectId(t.url || ''))
+        || existing.find((t) => t.id != null && isFlowPage(t.url || ''))
+        || existing[0]
+      : existing[0];
+    if (pick && pick.id != null) return pick.id;
 
     // Flow: return to the project the user was last in, so generations land
     // where they expect rather than in a fresh untitled one.
     let url = cfg.open;
-    if (platform === 'flow') {
+    if (platform === 'flow' && !opts.freshFlowProject) {
       const stored = await chrome.storage.local.get('af_last_flow_project');
       if (stored?.af_last_flow_project) url = stored.af_last_flow_project;
     }
@@ -754,6 +945,73 @@ async function waitForTabReady(tabId: number, timeoutMs = 30_000): Promise<boole
     await new Promise((r) => setTimeout(r, 300));
   }
   return false;
+}
+
+/**
+ * Wait for a freshly injected content script to start answering.
+ *
+ * executeScript resolving means the FILE was injected, not that the script
+ * has run far enough to add its onMessage listener — the keepalive routine
+ * learned this and asks four times over ~1.2s. The dispatch path slept once
+ * for 1500ms and then sent, so an adapter that was about to work perfectly
+ * could still be reported as "tab not reachable after injecting".
+ */
+async function waitForListener(tabId: number, tries = 6, gapMs = 400): Promise<boolean> {
+  for (let i = 0; i < tries; i++) {
+    if (i) await new Promise((r) => setTimeout(r, gapMs));
+    try {
+      await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+      return true;
+    } catch { /* not up yet */ }
+  }
+  return false;
+}
+
+/**
+ * Hand a node to a provider tab, and say so when it cannot be done.
+ *
+ * The worker's run path, which since v1.5.0 takes every ordinary run, sent the
+ * node with a bare, unawaited chrome.tabs.sendMessage. A tab open since before
+ * the extension was installed or updated has no content script — on a fresh
+ * install from the store, that is the Flow tab the user already had open —
+ * so the send failed with nobody listening, and the node sat on "running"
+ * until the coordinator's sixteen-minute backstop. The canvas path below has
+ * always checked, injected and retried; this is the same sequence, with the
+ * same words, for a caller that has no Studio port to answer on.
+ *
+ * Resolves with the adapter's reply. Throws a message for the node.
+ */
+async function deliverToProvider(tabId: number, platform: Platform, msg: any): Promise<any> {
+  const cfg = PLATFORMS[platform] || PLATFORMS.flow;
+  const inject = async () => {
+    await chrome.scripting.executeScript({ target: { tabId }, files: [cfg.script] });
+    return waitForListener(tabId);
+  };
+  if (!(await waitForTabReady(tabId, 30_000))) {
+    diag('Bridge', `The ${cfg.name} tab had no listener — injecting the adapter before sending it this node.`);
+    try {
+      if (!(await inject())) {
+        diag('Bridge', `The ${cfg.name} tab still does not answer after injecting. `
+          + 'Reloading that tab is the fix; the adapter cannot attach to a page that predates it.');
+      }
+    } catch (err: any) {
+      diag('Bridge', `Could not inject into the ${cfg.name} tab: ${err?.message || err}`);
+    }
+  }
+  try {
+    return await chrome.tabs.sendMessage(tabId, msg);
+  } catch (err: any) {
+    if (!err?.message?.includes('Receiving end does not exist')) {
+      throw new Error(`${cfg.name} tab error: ${err?.message || err}`);
+    }
+    try {
+      await inject();
+      return await chrome.tabs.sendMessage(tabId, msg);
+    } catch (retryErr: any) {
+      throw new Error(`${cfg.name} tab not reachable after injecting: ${retryErr?.message || retryErr}. `
+        + 'Reload that tab and run again.');
+    }
+  }
 }
 
 function replyToStudio(msg: any): void {
@@ -925,7 +1183,41 @@ chrome.runtime.onConnect.addListener((port) => {
   flushParked(port).catch(() => { /* nothing held, or storage gone */ });
 
   port.onMessage.addListener(async (msg: any) => {
-    if (!msg?.type?.startsWith?.('STUDIO_')) return;
+    if (providerProtection && studioPort !== port) return;
+    if (!msg?.type?.startsWith?.('STUDIO_') && !msg?.type?.startsWith?.('SW_')) return;
+
+    // ── v1.5.0: RunCoordinator messages from Canvas ──
+    switch (msg.type) {
+      case 'SW_START_RUN':
+        coordinator.start(msg.payload).catch(err => {
+          console.error('[SW] RunCoordinator start failed:', err);
+          /* And where it can be read. The canvas hands the run over and
+             returns immediately — bridge.startRun() reports that the manifest
+             was POSTED, not that it was accepted — so a refusal here left the
+             runner believing the worker owned a run that was never going to
+             happen. Diagnostics showed the hand-off, then nothing. */
+          diag('Run', `The background runner did not take this run: ${
+            err?.message || err}. Press Stop, then Run again.`);
+        });
+        return;
+      case 'SW_STOP_RUN':
+        coordinator.stop();
+        return;
+      case 'SW_PAUSE_RUN':
+        coordinator.pause();
+        return;
+      case 'SW_RESUME_RUN':
+        coordinator.resume();
+        return;
+      case 'SW_GET_SNAPSHOT':
+        try {
+          studioPort?.postMessage({
+            type: 'SW_SNAPSHOT',
+            payload: coordinator.getSnapshot(),
+          });
+        } catch { /* port died */ }
+        return;
+    }
 
     // Studio reports its own run lifecycle so the panel can show it.
     if (msg.type === 'STUDIO_RUN_STATE') {
@@ -939,13 +1231,21 @@ chrome.runtime.onConnect.addListener((port) => {
        * justify it. */
       if (msg.payload && msg.payload.running === false) {
         stopKeepalive().catch(() => { /* nothing was running */ });
+      } else if (msg.payload?.running === true) {
+        recoverProviderKeepalive().catch(() => {});
       }
       return;
     }
 
+    const executing = msg.type === 'STUDIO_EXECUTE_NODE';
+    let requestEpoch = keepaliveEpoch;
+    const currentRequest = () => !providerProtection || (studioPort === port
+      && requestEpoch === keepaliveEpoch && (!executing || runState.running));
+    if (!currentRequest()) return;
     const platform: Platform = msg.payload?.config?.platform || 'flow';
     const cfg = PLATFORMS[platform] || PLATFORMS.flow;
     const tabId = await ensurePlatformTab(platform);
+    if (!currentRequest()) return;
 
     if (!tabId) {
       nodeError(
@@ -957,7 +1257,10 @@ chrome.runtime.onConnect.addListener((port) => {
 
     // Only arm the keepalive for work that actually takes minutes.
     if (msg.type === 'STUDIO_EXECUTE_NODE') {
-      startKeepalive(tabId, platform).catch(() => { /* non-critical */ });
+      await startKeepalive(tabId, platform).catch(() => { /* non-critical */ });
+      if (providerProtection && keepaliveEpoch !== requestEpoch + 1) return;
+      requestEpoch = keepaliveEpoch;
+      if (!currentRequest()) return;
     }
 
     /* Applies to a tab we found as well as one we opened: a ChatGPT window the
@@ -972,6 +1275,7 @@ chrome.runtime.onConnect.addListener((port) => {
       tabId,
       msg.type === 'STUDIO_EXECUTE_NODE' ? 30_000 : 3_000
     );
+    if (!currentRequest()) return;
     /* Printed whenever it was not instant. A readiness check that silently
        costs seconds is exactly how forty of them went unnoticed: every log
        line said what happened, none said when. */
@@ -981,15 +1285,31 @@ chrome.runtime.onConnect.addListener((port) => {
       console.log(`[Studio] Waited ${(waited / 1000).toFixed(1)}s for the ${cfg.name} tab (ready=${ready})`);
     }
     if (!ready) {
+      /* Out loud. This branch, the injection and the wait after it produced
+         nothing the user could see, so a hand-off that was quietly recovering
+         looked identical to one that had died — and the first thing to say
+         anything was the keepalive alarm, half a minute later. */
+      diag('Bridge', `The ${cfg.name} tab had no listener — injecting the adapter before `
+        + 'sending it this node.');
       try {
         await chrome.scripting.executeScript({ target: { tabId }, files: [cfg.script] });
-        await waitForTabReady(tabId, 10_000);
-      } catch { /* the send below reports it properly */ }
+        if (!currentRequest()) return;
+        if (!(await waitForListener(tabId))) {
+          diag('Bridge', `The ${cfg.name} tab still does not answer after injecting. `
+            + 'Reloading that tab is the fix; the adapter cannot attach to a page '
+            + 'that predates it.');
+        }
+      } catch (err: any) {
+        if (!currentRequest()) return;
+        diag('Bridge', `Could not inject into the ${cfg.name} tab: ${err?.message || err}`);
+      }
     }
 
+    if (!currentRequest()) return;
     try {
       replyToStudio(await chrome.tabs.sendMessage(tabId, msg) || { type: 'STUDIO_ACK' });
     } catch (err: any) {
+      if (!currentRequest()) return;
       // A tab open since before the extension loaded has no content script.
       if (!err?.message?.includes('Receiving end does not exist')) {
         nodeError(msg.payload?.nodeId, `${cfg.name} tab error: ${err.message}`);
@@ -997,9 +1317,16 @@ chrome.runtime.onConnect.addListener((port) => {
       }
       try {
         await chrome.scripting.executeScript({ target: { tabId }, files: [cfg.script] });
-        await new Promise((r) => setTimeout(r, 1500));
+        if (!currentRequest()) return;
+        /* Asked repeatedly rather than slept at once: 1500ms was a guess, and
+           a slow load spent it and then failed the node on the first send. */
+        await waitForListener(tabId);
+        if (!currentRequest()) return;
         replyToStudio(await chrome.tabs.sendMessage(tabId, msg) || { type: 'STUDIO_ACK' });
       } catch (retryErr: any) {
+        if (!currentRequest()) return;
+        diag('Bridge', `The ${cfg.name} tab could not be reached even after injecting the `
+          + 'adapter into it. Reload that tab and run again.');
         nodeError(msg.payload?.nodeId, `${cfg.name} tab not reachable after injecting: ${retryErr.message}`);
       }
     }
@@ -1286,6 +1613,9 @@ chrome.runtime.onMessageExternal?.addListener((msg, _sender, sendResponse) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type === 'GEMINI_WAIT') return answerGeminiWait(msg.ms, sender, sendResponse);
+  if (msg?.type === 'GEMINI_NETWORK_INSTALL') return installGeminiNetwork(sender, sendResponse);
+
   // Flow's React submit handlers ignore untrusted synthetic events.
   if (msg?.type === 'REACT_TRIGGER') {
     const tabId = sender.tab?.id;
@@ -1453,6 +1783,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           mode: 'studio',
         }).catch(() => { /* metering must never fail a generation */ });
       }
+    }
+    // ── v1.5.0: Route to RunCoordinator first ──
+    if (coordinator.isRunning()) {
+      if (msg.type === 'STUDIO_NODE_RESULT') coordinator.handleNodeResult(msg.payload || msg);
+      if (msg.type === 'STUDIO_NODE_PROGRESS') coordinator.handleNodeProgress(msg.payload || msg);
+      if (msg.type === 'STUDIO_NODE_ERROR') coordinator.handleNodeError(msg.payload || msg);
     }
     replyToStudio(msg);
     // Progress is worth surfacing in the panel too — it is the only place the
@@ -1642,7 +1978,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const maxBytes = Number(msg.payload?.maxBytes) || 15 * 1024 * 1024;
       try {
         if (!/^https:\/\//.test(url)) throw new Error('not an https url');
-        const resp = await fetch(url);
+        /* credentials, because a flow.google.com/asb/ clip URL is served off
+           the user's Google session and this worker is a DIFFERENT origin
+           from it — fetch defaults to same-origin, so without this the
+           cookies are withheld and the request comes back 403. The queue
+           extension has always passed it; this copy never did.
+
+           The request then REDIRECTS to googlevideo.com, which sends no CORS
+           headers, so it can only be followed by something holding a host
+           permission for it — see host_permissions in the manifest. */
+        const resp = await fetch(url, { credentials: 'include' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const blob = await resp.blob();
         if (blob.size > maxBytes) {
@@ -1836,7 +2181,25 @@ async function debugUploadEnabled(): Promise<boolean> {
 /* Returns `names`: what each file was actually written to disk as, so the
    caller can search Flow's library for the name it really has rather than the
    one that was requested. See DebugUploadResult. */
-async function debugUploadToFlow(msg: any): Promise<{ ok: boolean; error?: string; names?: string[] }> {
+async function debugUploadToFlow(msg: any): Promise<DebugUploadResult> {
+  if (msg?.verifyOnly === true) {
+    // Recheck the SAME project only. Never create a project or open a chooser.
+    const pending = msg.pending;
+    const names = Array.isArray(msg.names) ? msg.names.filter((n: unknown) => typeof n === 'string' && n.length > 0) : [];
+    const unverified: DebugUploadResult = { ok: false, uploadState: 'pending', names,
+      tabId: pending?.tabId, projectUrl: pending?.projectUrl,
+      error: 'Open the original Flow project, then retry to check the pending upload. No duplicate was uploaded.' };
+    if (!pending?.projectUrl || !names.length) return unverified;
+    const tabs = await chrome.tabs.query({});
+    const tab = tabs.find(t => t.id === pending.tabId && t.url?.split(/[?#]/)[0] === pending.projectUrl)
+      || tabs.find(t => t.url?.split(/[?#]/)[0] === pending.projectUrl);
+    if (!tab?.id || !/^https:\/\/(flow\.google\.com|labs\.google)\//.test(tab.url || '')) return unverified;
+    const checked = await confirmUploadLanded(tab.id, names);
+    return { ok: checked.ok, names, confirmed: checked.ok,
+      uploadState: checked.ok ? 'ready' : checked.failed ? 'failed' : 'pending',
+      tabId: tab.id, projectUrl: pending.projectUrl,
+      error: checked.ok ? undefined : checked.note };
+  }
   if (!(await debugUploadEnabled())) {
     return {
       ok: false,
@@ -1855,7 +2218,9 @@ async function debugUploadToFlow(msg: any): Promise<{ ok: boolean; error?: strin
      lookup this replaces reported "no Flow tab is open" while Flow was plainly
      open on screen — chrome.tabs.query returns nothing for a host the
      extension cannot access, which is indistinguishable from no such tab. */
-  const tabId = typeof msg?.tabId === 'number' ? msg.tabId : (await ensurePlatformTab('flow'));
+  const tabId = typeof msg?.tabId === 'number'
+    ? msg.tabId
+    : (await ensurePlatformTab('flow', { freshFlowProject: msg?.newProjectIfClosed === true }));
   if (!tabId) {
     /* Separate the two causes rather than blaming the user's tabs. */
     const state = await platformState('flow');
@@ -1869,7 +2234,33 @@ async function debugUploadToFlow(msg: any): Promise<{ ok: boolean; error?: strin
     };
   }
 
-  return uploadToFlow(tabId, files);
+  /* ── Hand the keepalive to Flow before the upload, not after it ─────────
+   *
+   * The keepalive brings "the working tab" forward every thirty seconds, and
+   * it only learns which tab that is when a NODE executes. The upload is not a
+   * node. In Motion Control it runs between the Director's last Gemini turn
+   * and the first Flow generation, so the keepalive was still holding Gemini:
+   * uploadToFlow brought Flow forward, and within half a minute the keepalive
+   * switched back to Gemini — mid-upload, with the file chooser being driven
+   * in a tab that had just been pushed into the background.
+   *
+   * Only when one is armed. An upload outside a run has no keepalive to fight
+   * with, and this should not start one. */
+  // A resumed Motion run can have prepared prompts and reach upload before
+  // any analysis node. Protect Flow before the uploader changes its setting.
+  const motionUploadRun = !!providerProtection && !!studioPort && runState.running;
+  if ((keptTabId !== null || motionUploadRun) && keptTabId !== tabId) {
+    await startKeepalive(tabId, 'flow').catch(() => { /* the upload reports for itself */ });
+  }
+
+  /* A Flow tab opened just now is still loading, and its script is not
+     listening yet — the prepare message would land nowhere, and the upload's
+     recovery for that is a reload. Returns at once for a tab already awake. */
+  await waitForTabReady(tabId, 30_000).catch(() => false);
+
+  const projectUrl = (await chrome.tabs.get(tabId)).url?.split(/[?#]/)[0];
+  const result = await uploadToFlow(tabId, files);
+  return { ...result, tabId, projectUrl };
 }
 
 
@@ -1925,3 +2316,14 @@ async function proxyApiFetch(msg: any): Promise<any> {
     return { ok: false, error: e?.message || String(e) };
   }
 }
+
+/* ── v1.5.0: Recover interrupted runs ──
+ *
+ * When Chrome recycles the service worker (which it does constantly), this
+ * is the first code that runs. If a RunCoordinator snapshot exists in
+ * session storage, it means a run was in flight when the worker went down.
+ * We restore the snapshot so the Canvas shows the last known state when the
+ * user re-opens Studio. */
+coordinator.recover().catch(err => {
+  console.error('[SW] RunCoordinator recovery failed:', err);
+});

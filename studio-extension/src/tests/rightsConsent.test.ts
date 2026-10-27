@@ -46,7 +46,7 @@ function showDialog(buttons: string[] = ['Cancel', 'I agree, do not show again',
   }
 }
 
-afterEach(() => { document.body.innerHTML = ''; });
+afterEach(() => { document.body.innerHTML = ''; delete (document as any).hidden; });
 
 describe('the rights consent', () => {
   it('presses the one that does not come back', () => {
@@ -74,6 +74,18 @@ describe('the rights consent', () => {
     showDialog();
     document.querySelector('[role="dialog"]')!.setAttribute('aria-hidden', 'true');
     expect(rightsConsentButton(document)).toBeNull();
+  });
+
+  it('still finds it in a background tab, where everything measures 0×0', () => {
+    /* This used to call 0×0 "not showing". Chrome computes no layout for a tab
+       it is not rendering, so every rect is 0×0 there — the consent would
+       never have been found. Now it goes through ../shared/visible.ts. */
+    showDialog();
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    for (const el of Array.from(document.querySelectorAll('*'))) {
+      (el as any).getBoundingClientRect = () => ({ width: 0, height: 0, left: 0, top: 0 });
+    }
+    expect(rightsConsentButton(document)?.textContent).toBe('I agree, do not show again');
   });
 
   it('does not go hunting outside a dialog', () => {

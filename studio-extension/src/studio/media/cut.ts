@@ -50,6 +50,7 @@ import {
   rampMap, retimeCues, retimeOps, retimeCutaways, type TimeMap,
 } from './retime';
 import type { EditOp } from '../clip/editSheet';
+import { shrinkToShortSide } from './shortSide';
 
 export interface CutOptions {
   startSec: number;
@@ -76,6 +77,10 @@ export interface CutOptions {
      from the sheet because these are bytes rather than a plan: a cutaway is
      the one kind that has to be made before it can be drawn. */
   cutaways?: Cutaway[];
+  /* Scale the picture down so its SHORTER side is at most this many pixels —
+     1080 makes a 4K portrait clip 1080x1920. Never scales up, and only applies
+     to a plain cut: a reframe or anything drawn sets its own size. */
+  maxShortSide?: number;
 }
 
 export interface CutResult {
@@ -200,6 +205,11 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
   const videoTrack = await input.getPrimaryVideoTrack();
   const outWidth = plan?.keyframes[0]?.rect.width ?? videoTrack?.displayWidth ?? 0;
   const outHeight = plan?.keyframes[0]?.rect.height ?? videoTrack?.displayHeight ?? 0;
+  /* A plain cut only: with a plan or a canvas, the size above IS the output
+     and everything drawn is laid out against it. */
+  const shrink = !plan && !drawing && options.maxShortSide
+    ? shrinkToShortSide(outWidth, outHeight, options.maxShortSide)
+    : null;
 
   let canvas: OffscreenCanvas | null = null;
   let ctx: OffscreenCanvasRenderingContext2D | null = null;
@@ -500,6 +510,7 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
          also drawing that crop onto a canvas applies it twice, and the second
          one lands on an already-cropped frame. */
       ...(fixed && !drawing ? { crop: fixed } : {}),
+      ...(shrink ? { width: shrink.width, height: shrink.height, fit: 'fill' as const } : {}),
       ...(drawing && ctx && canvas
         ? {
           processedWidth: outWidth,
@@ -549,14 +560,15 @@ export async function cutClip(input: Input, options: CutOptions): Promise<CutRes
 
   return {
     blob,
-    width: outWidth,
-    height: outHeight,
+    width: shrink?.width ?? outWidth,
+    height: shrink?.height ?? outHeight,
     mode,
     report: [
       `cut ${startSec.toFixed(2)}–${endSec.toFixed(2)}s (${seconds.toFixed(2)}s)`,
       mode === 'full-frame'
         ? 'full frame, no reframe'
         : `${mode} crop ${outWidth}x${outHeight}`,
+      shrink ? `scaled from ${outWidth}x${outHeight} to ${shrink.width}x${shrink.height}` : null,
       plan ? plan.why : null,
       silent ? 'audio discarded' : 'audio kept',
       `${(blob.size / 1e6).toFixed(2)} MB`,

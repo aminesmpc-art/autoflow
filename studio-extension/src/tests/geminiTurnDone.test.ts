@@ -91,6 +91,15 @@ function harness(history: number) {
     if (cmd === 'insertText') composer.textContent = v;
     return true;
   };
+  /* Gemini empties its editor when it accepts a send, and the adapter now
+     checks for exactly that before it starts waiting. Without it every send
+     here reads as unsent and nothing is ever collected. */
+  let submitted = false;
+  composer.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    submitted ||= composer.textContent !== '';
+    composer.textContent = '';
+  });
 
   jest.isolateModules(() => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -182,7 +191,10 @@ function harness(history: number) {
   });
 
   const results = () => sent.filter((m) => m?.type === 'STUDIO_NODE_RESULT');
-  return { execute, sent, results, startReply, growReply, finishReply, openCodeBlock, composer };
+  return {
+    execute, sent, results, startReply, growReply, finishReply, openCodeBlock, composer,
+    submitted: () => submitted,
+  };
 }
 
 const ASK = {
@@ -198,6 +210,38 @@ beforeAll(() => {
   if (!existsSync(BUNDLE)) throw new Error(`build first: ${BUNDLE} is missing`);
 });
 
+/* Each test re-requires the bundle, and a polling loop left over from the
+   test before would keep ticking against the next test's page and post what
+   it reads there — "old answer 0" from a history turn. The adapter's timers
+   and observers are torn down when their test ends, so no loop outlives the
+   page it was reading. Same teardown as gemini.test.ts. */
+const fixtureTimers = new Set<ReturnType<typeof setTimeout>>();
+const fixtureObservers: MutationObserver[] = [];
+beforeEach(() => {
+  const nativeTimeout = globalThis.setTimeout.bind(globalThis);
+  jest.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: (...args: any[]) => void, delay?: number, ...args: any[]) => {
+    const timer = nativeTimeout(() => {
+      fixtureTimers.delete(timer);
+      callback(...args);
+    }, delay);
+    fixtureTimers.add(timer);
+    return timer;
+  }) as typeof setTimeout);
+  const NativeObserver = globalThis.MutationObserver;
+  jest.spyOn(globalThis, 'MutationObserver').mockImplementation((callback) => {
+    const observer = new NativeObserver(callback);
+    fixtureObservers.push(observer);
+    return observer;
+  });
+});
+afterEach(() => {
+  for (const timer of fixtureTimers) clearTimeout(timer);
+  fixtureTimers.clear();
+  for (const observer of fixtureObservers) observer.disconnect();
+  fixtureObservers.length = 0;
+  jest.restoreAllMocks();
+});
+
 // Two stable polls are required, so a completion takes several seconds of
 // wall clock. The negative tests must wait longer than that or they prove
 // nothing — which is exactly how the first ChatGPT version of this passed.
@@ -207,7 +251,11 @@ describe('a reply that pauses mid-sentence', () => {
   it('is not captured while the footer is missing', async () => {
     const h = harness(0);
     h.execute(ASK);
-    await waitFor(() => h.composer.textContent === '', 4000);
+    /* After the prompt has gone, as on the real page. Waiting for an empty
+       composer passed at once — it is empty before anything is typed — so
+       the reply landed before the send, and a reply already on screen when
+       the prompt goes is, correctly, not this turn's. */
+    expect(await waitFor(h.submitted, 10_000)).toBe(true);
 
     h.startReply(HALF);
     await tick(12000);
@@ -218,7 +266,11 @@ describe('a reply that pauses mid-sentence', () => {
   it('is captured in full once the footer appears', async () => {
     const h = harness(0);
     h.execute(ASK);
-    await waitFor(() => h.composer.textContent === '', 4000);
+    /* After the prompt has gone, as on the real page. Waiting for an empty
+       composer passed at once — it is empty before anything is typed — so
+       the reply landed before the send, and a reply already on screen when
+       the prompt goes is, correctly, not this turn's. */
+    expect(await waitFor(h.submitted, 10_000)).toBe(true);
 
     h.startReply(HALF);
     await tick(900);
@@ -234,7 +286,11 @@ describe('a conversation that already has history', () => {
   it('does not read an earlier turn’s copy button as this turn finishing', async () => {
     const h = harness(4);
     h.execute(ASK);
-    await waitFor(() => h.composer.textContent === '', 4000);
+    /* After the prompt has gone, as on the real page. Waiting for an empty
+       composer passed at once — it is empty before anything is typed — so
+       the reply landed before the send, and a reply already on screen when
+       the prompt goes is, correctly, not this turn's. */
+    expect(await waitFor(h.submitted, 10_000)).toBe(true);
 
     h.startReply(HALF);
     await tick(12000);
@@ -250,7 +306,11 @@ describe('an account that is not in English', () => {
        this work, and it is why the icon is checked first. */
     const h = harness(0);
     h.execute(ASK);
-    await waitFor(() => h.composer.textContent === '', 4000);
+    /* After the prompt has gone, as on the real page. Waiting for an empty
+       composer passed at once — it is empty before anything is typed — so
+       the reply landed before the send, and a reply already on screen when
+       the prompt goes is, correctly, not this turn's. */
+    expect(await waitFor(h.submitted, 10_000)).toBe(true);
 
     h.startReply(FULL);
     h.finishReply('Copier');

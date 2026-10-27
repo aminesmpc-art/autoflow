@@ -21,8 +21,8 @@
  *   noRepeatAction  The kung-fu cat prompt spends a paragraph on it.
  *   scaleAnchor     A miniature with nothing beside it photographs exactly
  *                   like the full-size thing it copies.
- *   mountedPOV      A strap or housing rim at the frame edge. Drop it and the
- *                   generator renders a drone.
+ *   mountedPOV      The body moves the frame, and only the body does. The rig
+ *                   itself is no longer forced into shot — see showCameraMount.
  *   lockedWide      Same position, altitude, lens AND angle across shots, with
  *                   the subject framed for the size it ends at.
  *
@@ -119,21 +119,36 @@ describe('a piece that ends on a reversal rather than a payoff', () => {
 });
 
 describe('a camera strapped to the subject', () => {
-  it('insists the rig itself is visible', () => {
-    /* The one detail the whole genre rests on. Without it the generator
-       renders a smooth camera floating near the animal, which is a drone. */
+  it('does NOT put the rig in shot, which is now a setting', () => {
+    /* This used to insist on it: "a strap or housing rim at the frame edge,
+       drop it and the generator renders a drone."
+
+       Measured on a real eight-shot first-person episode, that produced "the
+       dark leather rim of the chest harness mount is visible along the bottom
+       edge of the frame" in all eight prompts — a piece of modern equipment,
+       permanently, in a prehistoric story whose same brief banned modern
+       objects.
+
+       Visible hardware is now PovSettings.showCameraMount, off by default.
+       What keeps the shot from reading as a drone is the body: the bounce,
+       the micro-vibration, the imperfect reframing — which the rules below
+       still describe, and which the next test checks. */
     const lines = camera('mountedPOV')!.rules.join('\n');
-    expect(lines).toMatch(/strap/);
-    expect(lines).toMatch(/housing rim/);
-    expect(lines).toMatch(/in frame at all times/);
-    expect(lines).toMatch(/which is a drone/);
+    expect(lines).not.toMatch(/strap|harness|housing rim/i);
+    expect(lines).not.toMatch(/in frame at all times/);
   });
 
   it('makes the body the reason the frame moves', () => {
     const lines = camera('mountedPOV')!.rules.join('\n');
     expect(lines).toMatch(/BODY moves/);
     expect(lines).toMatch(/micro-vibration/);
-    expect(lines).toMatch(/No pan, tilt or zoom is ever chosen/);
+    /* "No pan, tilt or zoom is ever chosen" read as "the frame never turns",
+       and a first-person piece is made of the frame turning. What survives is
+       the distinction that matters: the body may move the frame, an operator
+       may not. */
+    expect(lines).toMatch(/Every reframe comes from the body/);
+    expect(lines).toMatch(/head turns, looking up and down/);
+    expect(lines).toMatch(/DELIBERATE camera move/);
   });
 
   it('reaches the brief', () => {

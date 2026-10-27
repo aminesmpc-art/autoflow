@@ -112,7 +112,9 @@ describe('nothing else can reach the module', () => {
   it('and it imports it statically, because a worker cannot fetch a chunk', () => {
     /* As a dynamic import webpack emitted chunk 720, which a service worker
        has no way to load — the upload would have failed at the first click. */
-    expect(WORKER).toMatch(/^import \{ uploadToFlow \} from '\.\/debugUpload';$/m);
+    /* Other names may ride along on the same line — the upload re-check needs
+       confirmUploadLanded — as long as it stays the one static import. */
+    expect(WORKER).toMatch(/^import \{ uploadToFlow(?:, (?:type )?\w+)* \} from '\.\/debugUpload';$/m);
     /* Matched as an ASSIGNMENT, not as the words. The comment above the
        import explains why it is not lazy and says "await import" while doing
        so — a looser pattern fails on the explanation for the fix. */

@@ -213,6 +213,29 @@ export function describeButton(el: Element): string {
   ].filter(Boolean).join(' ');
 }
 
+/**
+ * Flow's Agent chip, only while it is ON.
+ *
+ * With Agent on, the prompt bar swaps the settings chip for "Agent
+ * instructions" and a plain "Settings" button, so the model, ratio and length
+ * cannot be set and a run stops before it types a prompt. Read live on
+ * flow.google.com, 2026-10-18:
+ *
+ *   <button class="agent-mode-chip agent-mode-chip-checked" aria-pressed="true">
+ *     <div class="glow-outline …"></div>…<span class="agent-mode-chip-label">Agent</span>
+ *
+ * The old test read a `.content` span that is no longer there, and took only
+ * the FIRST pressed button on the page, so Agent stayed on.
+ */
+export function findActiveAgentToggle(): HTMLElement | null {
+  for (const btn of Array.from(document.querySelectorAll<HTMLElement>('button[aria-pressed="true"]'))) {
+    if (btn.classList.contains('agent-mode-chip')) return btn;
+    const label = (btn.querySelector('.agent-mode-chip-label, .content')?.textContent || btn.textContent || '').trim();
+    if (exactMatchFlowText(label, 'agent')) return btn;
+  }
+  return null;
+}
+
 export function findGenerateButton(): Element | null {
   // Strategy 1: Find button containing the arrow_forward icon text
   const buttons = document.querySelectorAll('button');
@@ -1232,6 +1255,15 @@ export function describeFrameSlot(slot: HTMLElement): string {
    your library".
    ──────────────────────────────────────────────────────────── */
 
+/** Typed composer chips may use a storage-hosted thumbnail, including videos. */
+function ingredientThumbnail(chip: Element): HTMLImageElement | null {
+  const typedChip = chip.closest('flow-image-ingredient-chip, flow-video-ingredient-chip')
+    || chip.querySelector('flow-image-ingredient-chip, flow-video-ingredient-chip');
+  const thumbnail = chip.querySelector<HTMLImageElement>('img.chip-image[src]');
+  if (typedChip && thumbnail) return thumbnail;
+  return Array.from(chip.querySelectorAll<HTMLImageElement>('img[src]')).find(isMediaImage) || null;
+}
+
 /** Reference chips currently attached to the prompt bar. */
 export function findAttachedIngredients(): HTMLElement[] {
   /* Current Angular Flow: semantic custom elements are stable across locale
@@ -1241,18 +1273,8 @@ export function findAttachedIngredients(): HTMLElement[] {
     .map((host) => (host.querySelector('button.chip-container, button') as HTMLElement | null) || host)
     .filter((chip) => {
       if (!isVisible(chip)) return false;
-      const img = chip.querySelector('img[src]');
-      if (img && isMediaImage(img)) return true;
-      /* A VIDEO ingredient has no <img> at all, and requiring one dropped it
-         here — before chipMediaReady, which has handled video chips all along
-         and never saw one. Motion Control found out the expensive way:
-
-           02:15:51  attached "Motion-Control-1-part1-of-2.mp4" as the style reference
-           02:16:12  Flow shows 1 of 2 ingredient(s) — 1 still(s) and the motion clip
-
-         The clip was on the prompt. attachFromLibrary had confirmed it with a
-         different counter. This one could not see it, so the run refused to
-         press Generate on a prompt that was correctly assembled. */
+      if (ingredientThumbnail(chip)) return true;
+      // Older video chips mount a player instead of a thumbnail.
       return !!chip.querySelector('video');
     });
   if (current.length) return current;
@@ -1272,38 +1294,16 @@ export function findAttachedIngredients(): HTMLElement[] {
 }
 
 /**
- * Chips whose image has actually arrived.
- *
- * A chip appears the instant the upload starts, so counting chips alone still
- * races the upload. Flow fades each one in with `opacity: 1` once it has
- * loaded, and the element's own `complete`/`naturalWidth` say the same thing
- * without depending on a style Flow could restyle tomorrow.
- */
-/**
- * Whether a chip is showing its media — picture OR clip.
- *
- * An ingredient is not always an image. Omni 1.1 Flash takes up to five
- * images AND a video, and the clipper attaches exactly that: a video already
- * in the Flow library, put on the prompt before the queue starts, so the
- * generation matches the footage it belongs beside (see the styleReference
- * block in flow/index.ts).
- *
- * Everything here required `img[src]` with naturalWidth > 0. A video chip
- * holds a <video>, so it could never satisfy that — and since
- * ingredientChipsSettled() asks whether EVERY chip is ready, one video
- * reference made the answer permanently false. A node with a style reference
- * then sat out the whole ninety-second settle wait and failed, with all of
- * its ingredients correctly attached and visible on screen.
- *
- * The video test is deliberately weak: a source, or a poster. Not readyState,
- * which is about playback buffering rather than about the reference existing,
- * and not a class name, which would be a guess. `video` is a tag.
+ * A mounted chip alone is not ready: wait for its thumbnail to load and its
+ * processing state to clear. Older video chips expose a source or poster;
+ * playback buffering is not required for an attached reference.
  */
 function chipMediaReady(chip: Element): boolean {
   if (chip.getAttribute('aria-busy') === 'true') return false;
+  if (chip.querySelector('.chip-placeholder')) return false;
 
-  const img = chip.querySelector<HTMLImageElement>('img[src]');
-  if (img && isMediaImage(img)) return img.complete && img.naturalWidth > 0;
+  const img = ingredientThumbnail(chip);
+  if (img) return img.complete && img.naturalWidth > 0;
 
   const video = chip.querySelector<HTMLVideoElement>('video');
   if (video) {
@@ -1423,6 +1423,53 @@ export function flowTileIdentity(tile: Element): string {
   return m ? (m[1] || m[2] || '') : '';
 }
 
+/**
+ * The tile that flowTileIdentity would call `id`, or null.
+ *
+ * The inverse existed nowhere, which is why every lookup in the codebase was
+ * written as `querySelector('[data-tile-id="…"]')` — an attribute this Flow
+ * does not set on anything. Measured 2026-09-17: zero matches in the
+ * document, on a project holding finished image and video tiles.
+ *
+ * Four routes, cheapest first, because they answer for different tiles:
+ *   - a stated data-tile-id, for the Flow this codebase was written against;
+ *   - a history step, which is where the detail view puts them;
+ *   - a stated data-media-id, which image tiles carry on their <img>;
+ *   - and failing all of that, ask each tile its own name. A VIDEO tile has
+ *     no identifying attribute anywhere on it, so this last one is not a
+ *     fallback for it — it is the only route it has.
+ */
+export function findTileByIdentity(id: string): Element | null {
+  if (!id) return null;
+
+  /* An attribute selector rather than `#history-step-${CSS.escape(id)}`.
+     CSS.escape renders a leading digit as `\31 2…`, and the space that
+     terminates that escape becomes a descendant combinator once it is
+     concatenated after a prefix — silently selecting something else. */
+  const attr = (name: string, value: string): string =>
+    `[${name}="${value.replace(/["\\]/g, '\\$&')}"]`;
+
+  const stated = document.querySelector(attr('data-tile-id', id))
+    || document.querySelector(attr('id', `history-step-${id}`));
+  if (stated) return stated;
+
+  const stamped = document.querySelector(attr('data-media-id', id));
+  if (stamped) {
+    /* Up to the tile, because that is what every caller expects to hold —
+       resultArea, getTileState and bringTileIntoView all read the container,
+       not the <img> inside it. */
+    return stamped.closest(
+      'flow-video-tile, flow-image-tile, flow-tile-container, '
+      + 'flow-grid-tile-container, div[data-tile-id]'
+    ) || stamped;
+  }
+
+  for (const tile of findAssetCards()) {
+    if (flowTileIdentity(tile) === id) return tile;
+  }
+  return null;
+}
+
 export function readGenerationRows(): FlowGenerationRow[] {
   const rows: FlowGenerationRow[] = [];
 
@@ -1500,7 +1547,24 @@ export function readGenerationRows(): FlowGenerationRow[] {
  * Absence is the useful answer: it means our submit never landed, which is
  * worth failing on rather than papering over with somebody else's tile.
  */
-export function findRowForPrompt(prompt: string): FlowGenerationRow | null {
+export function findRowForPrompt(
+  prompt: string,
+  /**
+   * Tile ids that were already on the page before this node submitted.
+   *
+   * A row that existed before we asked for anything is, by definition, not
+   * ours. The caller knows which those are; passing them turns "which row
+   * looks like mine" into "which row appeared because of me", which is a
+   * question with one answer.
+   */
+  exclude?: Set<string>,
+  /**
+   * Rows that cannot be excluded by id. A failed generation has no media, so
+   * it has no id to put in `exclude` — and a retry sends the same prompt, so
+   * the earlier attempt's failed row matches it word for word.
+   */
+  skip?: (row: FlowGenerationRow) => boolean,
+): FlowGenerationRow | null {
   const want = normalisePrompt(prompt);
   if (want.length < 8) return null; // too short to identify anything
 
@@ -1508,20 +1572,73 @@ export function findRowForPrompt(prompt: string): FlowGenerationRow | null {
      matching rows and the older one is already finished. Taking it would hand
      this run the previous run's clip — green, plausible, and the wrong video.
      readGenerationRows returns document order, so this reverses it. */
-  const rows = readGenerationRows().slice().reverse();
+  const rows = readGenerationRows().slice().reverse()
+    .filter((r) => !(exclude && r.tileId && exclude.has(r.tileId)))
+    .filter((r) => !skip?.(r));
+
   const exact = rows.find((r) => normalisePrompt(r.prompt) === want);
   if (exact) return exact;
 
-  /* Flow can trim trailing whitespace, collapse newlines, or clip a very long
-     prompt in the card. A long shared opening is still conclusive — two
-     different prompts agreeing on their first 80 characters would have to be
-     deliberate. */
-  const head = want.slice(0, 80);
+  /* —— The head alone is not a name ——
+   *
+   * This used to accept any row sharing our first 80 characters, reasoning
+   * that "two different prompts agreeing on their first 80 characters would
+   * have to be deliberate".
+   *
+   * It is deliberate. A multi-shot episode repeats a continuity lock VERBATIM
+   * at the head of every prompt — that repetition is the single biggest lever
+   * on holding a character, a palette and a world together across shots, and
+   * this project's own builder emits it. Measured on a real eight-shot
+   * episode: the shots share their first 1,499 characters. So shot 2 matched
+   * shot 1's finished tile on a page that did not contain shot 2 at all, and
+   * every shot after the first was handed the first shot's clip.
+   *
+   * Both ends have to agree. What makes two shots different lives at the END
+   * of the prompt, so a row whose head matches and whose tail does not is
+   * somebody else's generation — not a shortened copy of ours.
+   */
+  const EDGE = 80;
+  const head = want.slice(0, EDGE);
   if (head.length < 40) return null;
-  return rows.find((r) => {
-    const got = normalisePrompt(r.prompt);
-    return got.startsWith(head) || want.startsWith(got.slice(0, 80));
-  }) || null;
+
+  if (want.length >= EDGE * 2) {
+    const tail = want.slice(-EDGE);
+    const bothEnds = rows.find((r) => {
+      const got = normalisePrompt(r.prompt);
+      return got.startsWith(head) && got.endsWith(tail);
+    });
+    if (bothEnds) return bothEnds;
+  }
+
+  /* Flow can clip a very long prompt in the card, which loses the tail.
+   *
+   * A clipped card is a PREFIX of the real prompt — that is what clipping
+   * means. Sharing a head is not: two shots of one episode share their
+   * opening lock and then say different things, so shot 1's card STARTS like
+   * shot 2's prompt without being a shortened form of it. Length cannot stand
+   * in for the test either, because the shots are not the same length; only
+   * `want.startsWith(got)` asks the right question.
+   *
+   * But a prefix is still not a name, and this is the part that cannot be
+   * argued away: a card clipped INSIDE the shared lock is a prefix of every
+   * shot in the episode. The text on the page genuinely does not say which
+   * generation it is, and no cleverness here can recover what Flow did not
+   * render.
+   *
+   * So the prefix route answers only once the caller has narrowed the
+   * candidates to rows that did not exist before it submitted. Then novelty
+   * is doing the identifying and the prefix is only confirming it, which is
+   * sound. Asked without that narrowing — the widened second attempt after
+   * 45 seconds — it refuses, because the alternative is adopting a finished
+   * clip belonging to an earlier shot. A node that waits is recoverable; a
+   * node that goes green holding the wrong video is not.
+   */
+  if (!exclude) return null;
+  const asPrefix = rows.filter((r) => {
+    const got = normalisePrompt(r.prompt).replace(/\s*(?:\u2026|\.\.\.)$/, '');
+    return got.length >= EDGE && got.length < want.length && want.startsWith(got);
+  });
+  return asPrefix.length === 1 ? asPrefix[0] : null;
 }
 
 /**
@@ -1938,6 +2055,14 @@ function findTileId(el: Element): string {
   // Child with data-tile-id
   const child = el.querySelector('[data-tile-id]');
   if (child) return (child as HTMLElement).dataset?.tileId || '';
+  /* What the tile calls itself, before what the list calls its row.
+     Neither attribute above exists on this Flow, so this used to fall
+     straight to data-index — also absent — and return ''. getAllTileIds is
+     built on this, so it returned an empty list, and with it the engine's
+     whole "these are the tiles that were here before I pressed Generate"
+     comparison. Everything downstream ran on prompt matching alone. */
+  const identity = flowTileIdentity(el);
+  if (identity) return identity;
   // Fallback to data-index
   return (el as HTMLElement).dataset?.index || '';
 }
@@ -3616,7 +3741,7 @@ export function getTileStateById(tileId: string): TileState | null {
   // Prioritize history steps over grid tiles, as grid tiles can freeze when behind the detail view
   let el = document.querySelector(`#history-step-${CSS.escape(tileId)}`);
   if (!el) {
-     el = document.querySelector(`div[data-tile-id="${CSS.escape(tileId)}"]`);
+     el = findTileByIdentity(tileId);
   }
   if (!el) return null;
   return getTileState(el);
@@ -3723,7 +3848,66 @@ export async function bringTileIntoView(tile: Element): Promise<boolean> {
        source to it. Shorter than one poll tick, so the wait costs nothing the
        poller was not already spending. */
     await sleep(700);
+    if (!tile.querySelector('video')) await hoverTile(tile);
     return !before && !!tile.querySelector('video');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Make Flow mount the tile's <video>.
+ *
+ * Scrolling is not what does it. Measured on a live project with four
+ * FINISHED clips: every tile carried an <img> thumbnail, `document` held
+ * ZERO <video> elements, and no tile had a poster. Dispatching the pointer
+ * sequence below on one tile mounted a player on it within four seconds,
+ * with readyState 4 and the real clip URL on it.
+ *
+ * That is the whole reason a finished clip reached the canvas as a still:
+ * with no player, extractTileMediaUrl fell through to the thumbnail, the node
+ * got a JPEG where it expected a clip, and the "open in Flow to play" badge
+ * is what that looks like from the front.
+ *
+ * Synthetic events are used rather than a real cursor because there is no
+ * cursor to use — the run is often in a tab nobody is looking at. They work
+ * there: this needs no focus, no layout and no visibility, unlike
+ * execCommand and getBoundingClientRect, which is why hidden runs could read
+ * this page but never get a clip off it.
+ */
+export async function hoverTile(tile: Element): Promise<boolean> {
+  try {
+    /* Flow listens on the tile's inner surface, so aim at the media element
+       when there is one and fall back to the tile itself.
+
+       Scoped to the result half for the same reason every other read here is:
+       a batch also holds its INPUT pictures as chips, and hovering one of
+       those mounts nothing — it is not a generated clip. `resultArea`'s rule,
+       inline to avoid importing tileState into selectors. */
+    const result = tile.querySelector('.batch-tiles-section') || tile;
+    const target = (result.querySelector('img') || result) as Element;
+    const r = target.getBoundingClientRect();
+    /* A hidden tab computes no layout, so the rect is 0x0 and these
+       coordinates are 0,0. Flow's handlers do not read them — they are
+       required fields on the event, not inputs to the decision. */
+    const at = {
+      clientX: r.left + r.width / 2,
+      clientY: r.top + r.height / 2,
+      bubbles: true,
+      cancelable: true,
+      view: window,
+    };
+    for (const type of ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointermove', 'mousemove']) {
+      const Ctor = type.startsWith('pointer') && typeof PointerEvent === 'function' ? PointerEvent : MouseEvent;
+      target.dispatchEvent(new Ctor(type, at as any));
+    }
+    /* Flow fetches the clip on hover; four seconds is what it took on the
+       live page, and a miss here is not fatal — the API fallback still runs. */
+    for (let i = 0; i < 8; i++) {
+      await sleep(500);
+      if (tile.querySelector('video')) return true;
+    }
+    return false;
   } catch {
     return false;
   }

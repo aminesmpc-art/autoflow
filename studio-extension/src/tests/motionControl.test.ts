@@ -176,11 +176,14 @@ describe('the subject is pointed at, never described', () => {
 });
 
 describe('each piece knows where it sits', () => {
-  it('tells the first piece it carries the hook', () => {
+  /* Position only, for continuity. It used to add that the opening piece
+     "carries the hook" and the final one "has to land" — invitations to
+     change the motion, which the footage fixes. */
+  it('tells the first piece it opens the run', () => {
     expect(motionPieceAsk(brief(), piece(1, 3))).toMatch(/OPENING piece/);
   });
 
-  it('tells the last piece to land', () => {
+  it('tells the last piece it closes the run', () => {
     expect(motionPieceAsk(brief(), piece(3, 3))).toMatch(/FINAL piece/);
   });
 
@@ -294,6 +297,31 @@ describe('reading a piece back', () => {
     expect(got.prompt).toBe('A long enough direction to be usable here.');
   });
 
+  it('reads the reply Gemini sent with the caption in straight quotes', () => {
+    /* Verbatim from the run it stopped. The caption is quoted the way a person
+       would quote it, which ends a JSON string early; every field is right. */
+    const reply = '{"prompt":"The provided character from this image, a dance in the provided setting image, lit by its light. Keep the dog from the video. Translate the on-screen text to English: "I scolded him and he got mad 😨".","why":"Applies character replacement and the new environment lighting while keeping the dog and translating the caption to English."}';
+    expect(() => JSON.parse(reply)).toThrow();
+    const got = readMotionPrompt(reply, 1);
+    expect(got.prompt).toMatch(/^The provided character from this image/);
+    expect(got.prompt).toContain('English: "I scolded him and he got mad 😨".');
+    expect(got.why).toMatch(/^Applies character replacement/);
+  });
+
+  it('reads a quoted word followed by a comma', () => {
+    const got = readMotionPrompt(
+      '{"prompt":"The sign on the door reads "OPEN", then the character walks through it.","why":"keeps the sign"}',
+      2);
+    expect(got.prompt).toBe('The sign on the door reads "OPEN", then the character walks through it.');
+    expect(got.why).toBe('keeps the sign');
+  });
+
+  it('asks for curly quotes inside the text', () => {
+    /* The parser repairs straight quotes; the brief stops most of them
+       being written in the first place. */
+    expect(motionPieceAsk(brief(), piece(1, 2))).toMatch(/curly quotes “like this”/);
+  });
+
   it('refuses an empty prompt rather than spending a generation on it', () => {
     expect(() => readMotionPrompt('{"prompt":"","why":"none"}', 1))
       .toThrow(/empty prompt/);
@@ -347,7 +375,10 @@ describe('the node makes the clips itself', () => {
     /* OMNI_MAX_SEC comes from Flow's own error message, and the splitter
        already nudges boundaries into pauses. Re-deriving either here would be
        a second opinion about a settled fact. */
-    expect(RUNNER).toMatch(/planOmniChunks\(probe\.durationSec, \[\], OMNI_MAX_SEC\)/);
+    /* planMotionRun: the same chunker, checked against the length the panel
+       showed and cut within the length the file measures. */
+    expect(RUNNER).toMatch(/planMotionRun\(probe\.durationSec, nodeData\)/);
+    expect(RUNNER).toMatch(/motionPreparedRange: rangeKey/);
   });
 
   it('shows each piece to the director rather than describing it', () => {
@@ -361,10 +392,13 @@ describe('the node makes the clips itself', () => {
   it('keeps every piece in ONE conversation', () => {
     /* firstTurn true for the brief, false for every piece — so piece two is
        written by a model that has seen piece one. The thread machinery is the
-       one added for the Directors. */
+       one added for the Directors. The brief now counts ROWS, not fresh cuts:
+       a resumed pass cuts only the pieces it still needs, but the director is
+       still told how many pieces the whole job has. */
     const at = RUNNER.indexOf('private async executeMotionNode');
     const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
-    expect(body).toMatch(/motionBriefAsk\(brief, cuts\.length\), true, references/);
+    expect(body).toMatch(/const opening = motionBriefAsk\(brief, rows\.length\)/);
+    expect(body).toMatch(/this\.askAgent\(nodeId, platform, opening, true, references\)/);
   });
 
   it('generates every piece here, in one press', () => {
@@ -373,7 +407,9 @@ describe('the node makes the clips itself', () => {
        Spawned Omni nodes could not run on the press that built them. */
     const at = RUNNER.indexOf('private async executeMotionNode');
     const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
-    expect(body).toMatch(/await this\.awaitBridge\(nodeId, \{/);
+    /* The submission is a named object now, so automatic retries can send
+       the same one again. */
+    expect(body).toMatch(/await this\.awaitBridge\(nodeId, generation,/);
     expect(body).toMatch(/model: 'Omni 1\.1 Flash'/);
     expect(body).toMatch(/creationType: 'ingredients'/);
     expect(body).not.toMatch(/addNode\(\{/);
@@ -394,8 +430,9 @@ describe('the node makes the clips itself', () => {
        a Promise.all here would be a race with a plausible-looking diff. */
     const at = RUNNER.indexOf('private async executeMotionNode');
     const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
-    expect(body).toMatch(/for \(const row of rows\) \{/);
-    expect(body).not.toMatch(/Promise\.all\(rows/);
+    /* `order`: the same rows, ready pieces first — see motionSlowPiece.test.ts. */
+    expect(body).toMatch(/for \(const row of order\) \{/);
+    expect(body).not.toMatch(/Promise\.all\((rows|order)/);
   });
 
   it('does not make a piece that already came back', () => {
@@ -411,8 +448,8 @@ describe('the node makes the clips itself', () => {
        later, one at a time, for a reason belonging to a step already over. */
     const at = RUNNER.indexOf('private async executeMotionNode');
     const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
-    const guard = body.indexOf('Nothing was generated, so nothing has to be cleaned up');
-    const make = body.indexOf('await this.awaitBridge(nodeId, {');
+    const guard = body.indexOf('if (!upload?.ok || upload.confirmed !== true)');
+    const make = body.indexOf('await this.awaitBridge(nodeId, generation');
     expect(guard).toBeGreaterThan(-1);
     expect(make).toBeGreaterThan(guard);
   });
@@ -424,7 +461,7 @@ describe('the node makes the clips itself', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
     const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     const saved = body.indexOf('motionPreparedFrom: sourceKey');
-    const make = body.indexOf('await this.awaitBridge(nodeId, {');
+    const make = body.indexOf('await this.awaitBridge(nodeId, generation');
     expect(saved).toBeGreaterThan(-1);
     expect(make).toBeGreaterThan(saved);
   });
@@ -438,12 +475,15 @@ describe('the node makes the clips itself', () => {
     expect(body).toMatch(/the pieces that `\s*\+ 'succeeded are kept/);
   });
 
-  it('says out loud when it fell back to the plain instruction', () => {
+  it('stops and says so when the director fails, instead of substituting', () => {
     /* The plain template is exactly what the director exists to improve on.
-       Substituting it quietly would make a worse run look like a good one. */
+       It used to be substituted for EVERY piece — the good prompts included —
+       and generated anyway. Now the run stops with what was written saved,
+       and says so: a worse run no longer gets to look like a good one. */
     const at = RUNNER.indexOf('private async executeMotionNode');
     const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
-    expect(body).toMatch(/The director could not be reached/);
+    expect(body).toMatch(/The director stopped at piece/);
+    expect(body).not.toMatch(/plainMotionPrompt\(/);
     expect(body).toMatch(/motionDirected: directed/);
   });
 
@@ -552,9 +592,10 @@ describe('getting a video into the node', () => {
     /* Two different causes needing two different fixes. "No video" for both
        sends someone hunting the wrong one. */
     const at = RUNNER.indexOf('private async executeMotionNode');
-    /* Widened as the reuse rules grew above it; the two messages sit at the
-       top of the method, just further down than they used to. */
-    const body = RUNNER.slice(at, at + 7000);
+    /* The whole method, not a fixed window: it was widened twice as the reuse
+       rules grew above the messages, and the scan branch (motionTargets) pushed
+       them past it a third time. */
+    const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     expect(body).toMatch(/not loaded any more — the bytes do not survive a/);
     expect(body).toMatch(/has no video\. Choose a file on the node, or wire V/);
   });
@@ -651,7 +692,7 @@ describe('the step that cannot be worked around is checked first', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
     const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
     const check = body.indexOf("af_debug_upload");
-    const cut = body.indexOf('planOmniChunks(');
+    const cut = body.indexOf('planMotionRun(');
     const direct = body.indexOf('motionBriefAsk(');
     expect(check).toBeGreaterThan(-1);
     expect(cut).toBeGreaterThan(check);
@@ -689,13 +730,14 @@ describe('the upload step is never silent', () => {
   it('says why it failed, in the feed and not only on the node', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
     const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
-    expect(body).toMatch(/studioLog\('Motion', `The upload failed: \$\{why\}`\)/);
+    /* Per piece now, so the feed says WHICH piece Flow did not take. */
+    expect(body).toMatch(/studioLog\('Motion', `Piece \$\{row\.index\}: the upload failed: \$\{why\}`\)/);
   });
 
   it('says when it worked', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
     const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
-    expect(body).toMatch(/piece\(s\) are in the Flow library/);
+    expect(body).toMatch(/is ready in the Flow library — found by name and processed/);
   });
 });
 
@@ -780,8 +822,11 @@ describe('a failed upload does not cost the director pass', () => {
        prompts were only written down after the step that failed. */
     const at = RUNNER.indexOf('private async executeMotionNode');
     const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
-    expect(body).toMatch(/const havePrompts = this\.targetedRun/);
-    expect(body).toMatch(/const reusable = havePrompts && nodeData\.motionUploaded === true/);
+    /* Now per PIECE: a prompt and a place in Flow's library are separate
+       steps with separate records, so a failed upload keeps every prompt —
+       and keeps every piece Flow already took. */
+    expect(body).toMatch(/needsPrompt, needsUpload, needsCut/);
+    expect(body).toMatch(/recordMotionUpload\(row, upload\);/);
   });
 
   it('writes the prompts down before it tries to upload', () => {
@@ -796,20 +841,23 @@ describe('a failed upload does not cost the director pass', () => {
   it('only claims the upload landed once it has', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
     const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
-    const failed = body.indexOf('The pieces could not be put into Flow');
-    const stamped = body.indexOf('motionUploaded: true');
+    const failed = body.indexOf('could not be put into Flow');
+    const stamped = body.lastIndexOf('recordMotionUpload(row, upload);');
     expect(failed).toBeGreaterThan(-1);
     expect(stamped).toBeGreaterThan(failed);
   });
 
-  it('re-cuts without re-asking, and matches prompts by piece index', () => {
+  it('asks the director only for pieces without a prompt, each onto its own row', () => {
     /* Array position would put an edited row's prompt on the wrong piece the
-       moment the cut plan changes by one. */
+       moment the cut plan changes by one. Now there is no mapping at all: a
+       resumed run carries the rows over, and each prompt is written onto the
+       row of the piece it was written for. */
     const at = RUNNER.indexOf('private async executeMotionNode');
     const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
-    expect(body).toMatch(/if \(havePrompts\) \{/);
-    expect(body).toMatch(/existing\.find\(\(r\) => r\.index === p\.piece\.index\)/);
-    expect(body).toMatch(/the director is not asked again/);
+    expect(body).toMatch(/const toDirect = rows\.filter\(needsPrompt\);/);
+    expect(body).toMatch(/for \(const row of toDirect\) \{/);
+    expect(body).toMatch(/row\.prompt = got\.prompt;/);
+    expect(body).not.toMatch(/written\[i\]/);
   });
 
   it('forgets it uploaded anything when the video changes', () => {
@@ -868,8 +916,8 @@ describe('a retry does not pay for the expensive third twice', () => {
     expect(RUNNER).toMatch(/this\.targetedRun = !!only;/);
     const at = RUNNER.indexOf('private async executeMotionNode');
     const body = RUNNER.slice(at, RUNNER.indexOf('private async askAgent(', at));
-    expect(body).toMatch(/const havePrompts = this\.targetedRun/);
-    expect(body).toMatch(/const reusable = havePrompts &&/);
+    expect(body).toMatch(/const resumable = this\.targetedRun/);
+    expect(body).toMatch(/const reusable = resumable &&/);
     expect(body).toMatch(/nodeData\.motionPreparedFrom === sourceKey/);
   });
 
@@ -880,7 +928,8 @@ describe('a retry does not pay for the expensive third twice', () => {
     const at = RUNNER.indexOf('private async executeMotionNode');
     const body = RUNNER.slice(at, at + 24000);
     expect(body).toMatch(/if \(!reusable && !file\) \{/);
-    expect(body).toMatch(/if \(!reusable && !uploadReady\) \{/);
+    /* Asked only when some piece in scope will actually be uploaded. */
+    expect(body).toMatch(/existing\.some\(r => needsUpload\(r\) && !r\.uploadPending\)/);
   });
 
   it('will not reuse pieces cut from a different video', () => {

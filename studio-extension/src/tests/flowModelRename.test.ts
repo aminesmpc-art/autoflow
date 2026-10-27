@@ -96,6 +96,19 @@ describe('the tier that ignores versions cannot pick the wrong model', () => {
     expect(choose('Nano Banana Pro', IMAGE)).toBe('Nano Banana Pro');
   });
 
+  it('follows Nano Banana 2 to 2.1, and 2.1 back to 2, on whichever Flow the account has', () => {
+    /* "NANO BANANA IS NOW 2.1" (2026-10-18). The rows carry a banana glyph. */
+    const renamed = ['🍌 Nano Banana Pro', '🍌 Nano Banana 2.1', '🍌 Nano Banana 2.1 Lite'];
+    expect(choose('Nano Banana 2', renamed)).toBe('🍌 Nano Banana 2.1');
+    expect(choose('Nano Banana 2 Lite', renamed)).toBe('🍌 Nano Banana 2.1 Lite');
+    expect(choose('Nano Banana Pro', renamed)).toBe('🍌 Nano Banana Pro');
+    expect(choose('Nano Banana 2.1', ['🍌 Nano Banana Pro', '🍌 Nano Banana 2', '🍌 Nano Banana 2 Lite'])).toBe('🍌 Nano Banana 2');
+    // Both listed: each name gets its own model.
+    const both = ['🍌 Nano Banana Pro', '🍌 Nano Banana 2', '🍌 Nano Banana 2.1'];
+    expect(choose('Nano Banana 2', both)).toBe('🍌 Nano Banana 2');
+    expect(choose('Nano Banana 2.1', both)).toBe('🍌 Nano Banana 2.1');
+  });
+
   it('refuses rather than guessing when a stripped name fits two models', () => {
     /* Equality on the stripped form, not substring: "nano banana" must not
        claim "nano banana pro". Two candidates strip to the same thing here, so

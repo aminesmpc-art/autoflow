@@ -43,7 +43,10 @@
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 import { matchesFlowText, searchInputSelector } from './flowStrings';
+import { isVisible } from '../shared/visible';
+import { LIBRARY_MISS } from '../../shared/flowMessages';
 import { ingredientChips, isMediaImage, MEDIA_IMG_SELECTOR } from './flowDom';
+import { asbToken, clipLabel, clipName, decodeClipRef, type ClipRef } from '../../shared/videoReference';
 
 export interface AttachResult {
   ok: boolean;
@@ -825,6 +828,404 @@ export function mediaDialogOpen(doc: Document = document, need: 'upload' | 'libr
 }
 
 /**
+ * The picker row that NAMES this clip, or nothing.
+ *
+ * Lifted out of attachFromLibrary so the confirmation below can ask the same
+ * question the attach asks. Two readings of "is it in the library" that could
+ * disagree would be worse than none: the confirmation would pass on a library
+ * the attach then cannot find the clip in — the exact failure it exists to
+ * prevent, wearing a green tick.
+ *
+ * "The first video in the picker" is not "the video I searched for". Before
+ * the filter lands the first video is whatever was showing, and for a job
+ * whose pieces are part1 and part2 of one clip, taking the wrong one produces
+ * a plausible video of the wrong six seconds that nothing downstream can
+ * detect. So the row has to carry the name.
+ */
+export function namedVideoRow(doc: Document, wanted: string): HTMLElement | null {
+  const open = mediaDialogRoot(doc);
+  if (!open) return null;
+  for (const video of Array.from(open.querySelectorAll<HTMLElement>('video'))) {
+    let row: HTMLElement | null = video;
+    for (let up = 0; up < 6 && row; up++) {
+      /* Stop at the row's edge. Climbing one level too far reaches the
+         container that holds EVERY result, whose text carries every name —
+         so searching for part1 matched on part2's row and clicked part2.
+         An ancestor holding a second clip is not this clip's row. */
+      if (row.querySelectorAll('video').length > 1) break;
+      if ((row.textContent || '').toLowerCase().includes(wanted.toLowerCase())) return video;
+      row = row.parentElement;
+    }
+  }
+  return null;
+}
+
+/* ──────────────────────────────────────────────────────────────────────── */
+/* Picker rows, as the Angular Flow draws them                             */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+/*
+ * ── Why namedVideoRow is not enough on its own ────────────────────────────
+ *
+ * It finds a clip by climbing out from a <video>. Measured on a live project,
+ * the current picker has NO <video> in its result list at all:
+ *
+ *   finished row    .asset-thumbnail > img.asset-thumbnail-image
+ *   processing row  .asset-thumbnail > mat-icon "videocam", nothing else
+ *   the only video  the PREVIEW pane's player, mounted once a finished row
+ *                   is the active one
+ *
+ * So namedVideoRow could only ever match through the preview pane, which is
+ * why it worked when it did. It also explains the failure exactly:
+ *
+ *   00:00:02  "Motion-Control-1-silent-part2-of-2" is in the Flow library
+ *   00:00:02  … nothing named Motion-Control-1-silent-part1-of-2 appeared
+ *             in its library within 45s. Nothing was generated.
+ *
+ * Both pieces were in the library the whole time. Part1 was searched first,
+ * while Flow was still processing it: the row was there, named in full, but a
+ * processing clip gets no preview, so there was no <video> to climb from and
+ * the 45 seconds ran out. Part2 was searched after, by which time it had
+ * finished, was previewed, and matched at once.
+ *
+ * The name was never missing. It is in `span.asset-title`, in full — the "…"
+ * on screen is CSS. This reads that.
+ */
+const ASSET_ROW = 'button[role="option"].asset-item, [role="option"].asset-item';
+const ASSET_TITLE = '.asset-title';
+const ELLIPSIS = /(?:…|\.\.\.)\s*$/;
+/* Below this a shortened title says too little to be told apart from its
+   neighbours, and is not trusted even when everything else agrees. */
+const MIN_PREFIX = 12;
+
+/** What the picker says about one clip. */
+export interface AssetRow {
+  failed: boolean;
+  /** The row itself — the element that takes the click. */
+  row: HTMLElement;
+  /**
+   * Flow has finished processing it: a thumbnail has replaced the placeholder.
+   * Until then it cannot be previewed, and so cannot be added to the prompt.
+   */
+  ready: boolean;
+  /**
+   * It is the row "Add to prompt" would add.
+   *
+   * Tracked because pressing it is NOT idempotent. Measured: pressing an
+   * inactive row selects it and mounts its preview; pressing the ACTIVE row
+   * attaches it at once and closes the picker. A caller that presses first
+   * and looks for "Add to prompt" second attaches the clip, finds no button,
+   * reports failure — and its retry attaches the clip a second time.
+   */
+  active: boolean;
+  /** Matched on a title Flow had shortened with an ellipsis. */
+  shortened: boolean;
+}
+
+/** The name, as the picker would show it: no extension, no case, no padding. */
+function assetName(s: string): string {
+  return String(s || '').trim().replace(/\.mp4$/i, '').trim().toLowerCase();
+}
+
+function titleOf(row: HTMLElement): string | null {
+  const el = row.querySelector(ASSET_TITLE);
+  return el ? (el.textContent || '').trim() : null;
+}
+
+/** Rows that carry a title — the only layout this part knows how to read. */
+function titledAssetRows(root: ParentNode): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(ASSET_ROW))
+    .filter((r) => titleOf(r) !== null);
+}
+
+function readAssetRow(row: HTMLElement, shortened: boolean): AssetRow {
+  const thumb = row.querySelector('.asset-thumbnail');
+  // Inspect status, not the title (a user can name a clip "Failed").
+  const status = [thumb?.textContent, row.querySelector('[role="alert"], .error-message, .status-message')?.textContent,
+    row.getAttribute('data-status')].filter(Boolean).join(' ');
+  const failed = /\b(failed|failure|error|échec|échoué|erreur|fallido|fehler)\b/i.test(status)
+    || Array.from(thumb?.querySelectorAll('mat-icon, .google-symbols') || [])
+      .some(icon => /^(error|error_outline|warning|report_problem)$/.test(icon.textContent?.trim() || ''))
+    || !!thumb?.querySelector('[data-state="error"], [data-status="failed"]');
+  return {
+    row,
+    failed,
+    /* No thumbnail container at all is a layout not seen yet. Not blocking on
+       it: "ready" is a reason to wait, and waiting on a guess costs minutes. */
+    ready: !failed && (thumb ? !!thumb.querySelector('img[src], video[src], video source[src]') : false),
+    active: row.classList.contains('asset-item-active')
+      || row.getAttribute('aria-selected') === 'true',
+    shortened,
+  };
+}
+
+/**
+ * The picker row NAMED `wanted`, in any state, or nothing.
+ *
+ * ── Exactly, not "contains" ─────────────────────────────────────────────
+ *
+ * namedVideoRow used `includes`, under which part1-of-2 also matches
+ * part1-of-20. A title element holds one name and nothing else, so it can be
+ * compared whole.
+ *
+ * ── The newest, when a name repeats ─────────────────────────────────────
+ *
+ * Every run uploads its pieces again under the same names; one live library
+ * held three part1-of-2 rows. The picker lists Recent first, so the first
+ * exact row is the one just uploaded. An older namesake is not safe to take
+ * instead — a node relabelled or re-pointed at a different source keeps the
+ * name and changes the clip.
+ *
+ * ── Titles Flow shortens ────────────────────────────────────────────────
+ *
+ * Measured: Flow cuts some titles in the DOM itself — "Character dancing using
+ * video mo…", with the full name in no attribute anywhere on the row. A piece
+ * name is up to forty characters of label plus "-partN-of-M", so a long label
+ * can be cut the same way. A shortened title is taken only when
+ *
+ *   - it is a real prefix of the wanted name, at least MIN_PREFIX long, and
+ *   - EVERY titled row in the picker is compatible with the wanted name.
+ *
+ * The second condition is what makes a prefix safe: it holds only once the
+ * search has filtered the list down to clips that could be this one. Before
+ * the filter lands, unrelated rows are showing and it fails, so the caller's
+ * poll simply goes round again. If the filter never narrows that far, this
+ * never guesses — "Motion-Control-12-silent-part1…" is also the start of
+ * part10, part11 and part12.
+ */
+export function namedAssetRow(doc: Document, wanted: string): AssetRow | null {
+  const open = mediaDialogRoot(doc);
+  if (!open) return null;
+  const want = assetName(wanted);
+  if (!want) return null;
+
+  const rows = titledAssetRows(open);
+  if (!rows.length) return null;
+
+  const exact = rows.find((r) => assetName(titleOf(r)!) === want);
+  if (exact) return readAssetRow(exact, false);
+
+  const compatible = (title: string): boolean => {
+    if (assetName(title) === want) return true;
+    if (!ELLIPSIS.test(title)) return false;
+    const prefix = assetName(title.replace(ELLIPSIS, ''));
+    return prefix.length >= MIN_PREFIX && want.startsWith(prefix);
+  };
+  const cut = rows.find((r) => ELLIPSIS.test(titleOf(r)!) && compatible(titleOf(r)!));
+  if (!cut) return null;
+  if (!rows.every((r) => compatible(titleOf(r)!))) return null;
+  return readAssetRow(cut, true);
+}
+
+/** True when the picker draws titled asset rows — i.e. namedAssetRow applies. */
+export function drawsAssetRows(doc: Document): boolean {
+  const open = mediaDialogRoot(doc);
+  return !!open && titledAssetRows(open).length > 0;
+}
+
+/**
+ * How long a piece may still be processing before the attach gives up on it.
+ *
+ * Generous on purpose. The failure this exists for was a 4K, seven-second
+ * piece that was still processing more than 45 seconds after it landed, and
+ * giving up early costs a whole retry of the prompt.
+ */
+const READY_BUDGET_MS = 180_000;
+
+/**
+ * Put a titled picker row on the prompt: wait for it, select it ONCE, add it.
+ *
+ * Every step is read back off the page before the next one, because each was
+ * measured to fail in a way nothing else reports:
+ *
+ *   processing  A clip Flow is still processing has no preview and cannot be
+ *               added. Waited for, and named when it runs out — "still
+ *               processing" and "not in the library" need different fixes.
+ *   select      Pressing an inactive row selects it. Pressing the ACTIVE row
+ *               attaches it immediately and closes the picker, so it is never
+ *               pressed when it already is — otherwise the "Add to prompt"
+ *               lookup finds nothing, reports failure, and the retry attaches
+ *               the clip a second time.
+ *   add         "Add to prompt" adds whichever row is active, which is why the
+ *               row is confirmed active first rather than assumed.
+ */
+async function attachAssetRow(
+  doc: Document, wanted: string, name: string, found: AssetRow, before: number,
+  o: { step: number; say: (line: string) => void; find?: () => AssetRow | null },
+): Promise<AttachResult> {
+  const { step, say } = o;
+  let asset = found;
+  // Re-read by the same test that found it: a name, or a clip's token.
+  const refresh = (): AssetRow => (o.find ? o.find() : namedAssetRow(doc, wanted))
+    || (asset.row.isConnected ? readAssetRow(asset.row, asset.shortened) : asset);
+  if (asset.failed) return { ok: false, reason: `Video upload failed in Flow: "${name}". Retry this piece's upload.` };
+
+  if (asset.shortened) {
+    say(`"${name}" is listed under a shortened title — taken once the search narrowed to it`);
+  }
+
+  if (!asset.ready) {
+    const budget = step === 0 ? 0 : READY_BUDGET_MS;
+    const started = Date.now();
+    let lastSaid = started;
+    say(`"${name}" is in the library but Flow is still processing it — waiting for it to finish`);
+    while (!asset.ready && Date.now() - started < budget) {
+      await sleep(1000);
+      asset = refresh();
+      if (asset.failed) return { ok: false, reason: `Video upload failed in Flow: "${name}". Retry this piece's upload.` };
+      if (Date.now() - lastSaid >= 15_000) {
+        lastSaid = Date.now();
+        say(`still processing "${name}" (${Math.round((Date.now() - started) / 1000)}s)`);
+      }
+    }
+    if (!asset.ready) {
+      return {
+        ok: false,
+        reason: `"${name}" is in the Flow library, but Flow was still processing it after `
+          + `${Math.round(budget / 1000)}s`,
+      };
+    }
+    say(`"${name}" finished processing`);
+  }
+
+  if (!asset.active) {
+    press(asset.row);
+    const deadline = Date.now() + (step === 0 ? 0 : 5_000);
+    for (;;) {
+      await sleep(step === 0 ? 0 : 250);
+      asset = refresh();
+      if (asset.active || Date.now() >= deadline) break;
+    }
+    if (!asset.active) {
+      return { ok: false, reason: `pressed "${name}" in the picker but Flow did not select it` };
+    }
+  }
+
+  const findAdd = (): HTMLElement | undefined => Array.from(doc.querySelectorAll<HTMLElement>('button'))
+    .find((b) => matchesFlowText((b.textContent || '').trim(), 'addToPrompt'));
+  let add = findAdd();
+  for (let waited = 0; !add && waited < (step === 0 ? 0 : 5_000); waited += 250) {
+    await sleep(250);
+    add = findAdd();
+  }
+  if (!add) return { ok: false, reason: 'no "Add to Prompt" to press' };
+  press(add);
+  await sleep(step + 500);
+
+  /* Confirmed, not assumed — same as the older path below. */
+  if (attachedCount(doc) <= before) {
+    return { ok: false, reason: 'Flow accepted the click but no ingredient appeared' };
+  }
+  say(`attached "${name}" as the style reference`);
+  return { ok: true };
+}
+
+/** Lower case, one space: how a prompt and a picker title are compared. */
+const normalise = (s: string): string => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/** A title that could be this prompt: the same, or one cut short of the other. */
+function titleFits(title: string, want: string): boolean {
+  const t = normalise(title.replace(ELLIPSIS, ''));
+  if (!t) return false;
+  if (t === want) return true;
+  const n = Math.min(t.length, want.length);
+  return n >= MIN_PREFIX && t.slice(0, n) === want.slice(0, n);
+}
+
+const rowHasToken = (row: HTMLElement, token: string): boolean =>
+  Array.from(row.querySelectorAll<HTMLElement>('img[src], video[src], source[src]'))
+    .some((m) => asbToken(m.getAttribute('src')) === token);
+
+/**
+ * The picker row that IS this clip, or nothing.
+ *
+ * By token first: a Flow video carries no id attribute anywhere, and its one
+ * name is the /asb/ token in its thumbnail. Measured on flow.google.com
+ * 2026-10-25, a clip's row in the composer's picker shows the same
+ * /asb/<TOKEN> thumbnail as its tile in the grid, 3 clips of 3.
+ *
+ * By title only as a fallback, because two takes of one prompt are two rows
+ * under one title and only the token tells them apart. With a token, a
+ * title match is taken only when it is the single row that fits; without one
+ * (the clip was known by API media id, which does not convert), the newest
+ * row that fits — the picker lists Recent first.
+ */
+export function clipAssetRow(doc: Document, clip: ClipRef): AssetRow | null {
+  const open = mediaDialogRoot(doc);
+  if (!open) return null;
+  const rows = Array.from(open.querySelectorAll<HTMLElement>(ASSET_ROW));
+  if (clip.token) {
+    const mine = rows.find((r) => rowHasToken(r, clip.token));
+    if (mine) return readAssetRow(mine, false);
+  }
+  const want = normalise(clip.title);
+  if (want.length < MIN_PREFIX) return null;
+  const fits = rows.filter((r) => titleFits(titleOf(r) || '', want));
+  if (!fits.length || (clip.token && fits.length > 1)) return null;
+  return readAssetRow(fits[0], ELLIPSIS.test(titleOf(fits[0]) || ''));
+}
+
+/** The start of a prompt, to type into the picker's search. */
+const searchFragment = (title: string): string =>
+  title.replace(/\s+/g, ' ').trim().split(' ').slice(0, 6).join(' ').slice(0, 40).trim();
+
+/**
+ * Put a clip Flow generated on the prompt: V on a Studio node.
+ *
+ * The prompt narrows the search, since that is what the picker lists a
+ * generated clip under; the token picks the row. If the prompt search turns up
+ * nothing with the token, the whole Videos tab is read once, newest first —
+ * a title that differs from the prompt as sent is still the same clip.
+ */
+async function attachClip(
+  doc: Document, search: HTMLInputElement, clip: ClipRef, before: number,
+  o: { step: number; say: (line: string) => void },
+): Promise<AttachResult> {
+  const { step, say } = o;
+  const label = clipLabel(clip);
+  const find = () => clipAssetRow(doc, clip);
+  const budget = step === 0 ? 0 : 10_000;
+  const poll = async (): Promise<AssetRow | null> => {
+    for (let waited = 0; ; waited += 250) {
+      const found = find();
+      if (found || waited >= budget) return found;
+      await sleep(250);
+    }
+  };
+
+  const fragment = searchFragment(clip.title);
+  if (fragment) typeInto(search, fragment);
+  let asset = await poll();
+  if (!asset && fragment && clip.token) {
+    say(`${label} did not come up under its prompt — reading the whole Videos tab for it`);
+    typeInto(search, '');
+    asset = await poll();
+  }
+  if (!asset) {
+    return {
+      ok: false,
+      reason: `${label} is not in this Flow project's library — ${assetTitlesOnScreen(doc)}. `
+        + 'The clip has to be made in the same Flow project as this node',
+    };
+  }
+  say(clip.token && rowHasToken(asset.row, clip.token)
+    ? `found ${label} in the library by its id`
+    : clip.token
+      ? `found ${label} in the library by its prompt — the only clip under that title`
+      : `found ${label} in the library by its prompt — the newest clip under that title`);
+  return attachAssetRow(doc, fragment, clipName(clip), asset, before, { step, say, find });
+}
+
+/** What the picker is showing, for a failure message a person can act on. */
+function assetTitlesOnScreen(doc: Document, max = 4): string {
+  const open = mediaDialogRoot(doc);
+  const titles = open ? titledAssetRows(open).map((r) => titleOf(r)!) : [];
+  if (!titles.length) return 'the search returned nothing';
+  const shown = titles.slice(0, max).map((t) => `"${t}"`).join(', ');
+  return `the picker shows ${shown}${titles.length > max ? ` and ${titles.length - max} more` : ''}`;
+}
+
+/**
  * Find a video in the library by name and put it on the prompt.
  *
  * Returns rather than throws at every step, because a style reference is an
@@ -873,6 +1274,10 @@ export async function attachFromLibrary(
     };
   }
 
+  // A clip wired into V is found by its token, not by a filename.
+  const clip = decodeClipRef(name);
+  if (clip) return attachClip(doc, search, clip, before, { step, say });
+
   /* Searched by the name it was uploaded under. uploadVideo.libraryName is
      what produces that name, so the two must not drift. */
   const wanted = name.replace(/\.mp4$/i, '');
@@ -900,29 +1305,28 @@ export async function attachFromLibrary(
    *
    * So it polls for a result that carries the name, which is both the correct
    * answer and the proof that the search finished. */
-  const namedRow = (): HTMLElement | null => {
-    const open = mediaDialogRoot(doc);
-    if (!open) return null;
-    for (const video of Array.from(open.querySelectorAll<HTMLElement>('video'))) {
-      let row: HTMLElement | null = video;
-      for (let up = 0; up < 6 && row; up++) {
-        /* Stop at the row's edge. Climbing one level too far reaches the
-           container that holds EVERY result, whose text carries every name —
-           so searching for part1 matched on part2's row and clicked part2.
-           An ancestor holding a second clip is not this clip's row. */
-        if (row.querySelectorAll('video').length > 1) break;
-        if ((row.textContent || '').toLowerCase().includes(wanted.toLowerCase())) return video;
-        row = row.parentElement;
-      }
-    }
-    return null;
-  };
-
   const budget = step === 0 ? 0 : 10_000;
-  let hit: HTMLElement | null = namedRow();
-  for (let waited = 0; !hit && waited < budget; waited += 250) {
+
+  /* One poll, both layouts. The titled row is read first; the <video> climb
+     runs only on a picker that has no titled rows, because where they exist
+     the one <video> on screen is the preview pane — and matching that is the
+     bug this replaced. See namedAssetRow. */
+  let asset: AssetRow | null = null;
+  let hit: HTMLElement | null = null;
+  for (let waited = 0; ; waited += 250) {
+    asset = namedAssetRow(doc, wanted);
+    if (asset) break;
+    if (!drawsAssetRows(doc)) {
+      hit = namedVideoRow(doc, wanted);
+      if (hit) break;
+    }
+    if (waited >= budget) break;
     await sleep(250);
-    hit = namedRow();
+  }
+
+  if (asset) return attachAssetRow(doc, wanted, name, asset, before, { step, say });
+  if (drawsAssetRows(doc)) {
+    return { ok: false, reason: `${LIBRARY_MISS} "${name}" — ${assetTitlesOnScreen(doc)}` };
   }
 
   /* Nothing named it. One lone result is still almost certainly the answer —
@@ -952,7 +1356,7 @@ export async function attachFromLibrary(
         : stills
           ? `the dialog is showing ${stills} still(s) and no video — it is on the `
             + `Images tab, so "${name}" could not be seen from here`
-          : `nothing in the library matches "${name}" — check the name, or upload it once by hand`,
+          : `${LIBRARY_MISS} "${name}" — check the name, or upload it once by hand`,
     };
   }
 
@@ -983,6 +1387,193 @@ export async function attachFromLibrary(
 
   say(`attached "${name}" as the style reference`);
   return { ok: true };
+}
+
+/* ──────────────────────────────────────────────────────────────────────── */
+/* Did the upload actually land                                            */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+/** What confirmInLibrary saw. Never throws; every field is evidence. */
+export interface LibraryConfirmation {
+  /** Every requested asset is in the library and ready, not merely listed. */
+  ok: boolean;
+  found: string[];
+  missing: string[];
+  /**
+   * Found, but Flow has not finished processing them yet. A subset of
+   * `found`: the upload landed but is NOT yet confirmed usable. This blocks generation.
+   */
+  processing: string[];
+  failed: string[];
+  /** How many times the rights notice was answered while waiting. */
+  consentDismissed: number;
+  /** It is on screen RIGHT NOW, unanswered — the one cause worth naming. */
+  consentOnScreen: boolean;
+  /**
+   * Why the search could not be RUN at all. Absent when it ran.
+   *
+   * The distinction is the whole point of this field and the caller has to
+   * keep it: a search that ran and found nothing is evidence the upload
+   * failed; a search that never ran is evidence of nothing. Failing an upload
+   * on the second would break every setup where the picker is merely
+   * somewhere this file has not learned to look yet.
+   */
+  reason?: string;
+}
+
+/**
+ * Is it in Flow's library yet?
+ *
+ * ── Why this exists ──────────────────────────────────────────────────────
+ *
+ * uploadViaFileChooser returns `{ok: true}` the moment DOM.setFileInputFiles
+ * resolves — which is Chrome handing the file PATHS to an <input>. Flow has
+ * not read a byte at that point. The upload then reported success, the caller
+ * logged "2 piece(s) are in the Flow library", and the attach a few seconds
+ * later said "nothing in the library matches", which was the truth:
+ *
+ *   07:36:59  Motion  2 piece(s) are in the Flow library.
+ *   07:37:39  Flow    ERROR: nothing in the library matches
+ *                     "Motion-Control-1-silent-part1-of-2.mp4"
+ *
+ * Both sentences were about the same two files and only one of them had
+ * looked. This is the one that looks.
+ *
+ * ── Why it also presses the consent ─────────────────────────────────────────────
+ *
+ * Flow puts "Rights to use this video" in front of the FIRST upload on an
+ * account and will not ingest until it is answered. That is why this failed on
+ * a new Google account and not on an established one: same code, same clip,
+ * and on the new account a dialog nobody had answered yet standing between the
+ * bytes and the library.
+ *
+ * A watcher is armed by the worker before the chooser runs, but it is fired
+ * and forgotten and its 45s can expire on either side of the moment that
+ * matters. So the wait that CARES about the answer does the pressing too —
+ * every turn of the loop, not once before it. If the notice is what holds the
+ * file, this clears it and the next poll finds the clip.
+ *
+ * ── What it refuses to do ─────────────────────────────────────────────────
+ *
+ * Guess. A picker it cannot open or search sets `reason` and leaves `missing`
+ * alone, so the caller can tell "Flow did not take it" from "I could not
+ * check" — three different fixes hid behind one sentence once already.
+ */
+export async function confirmInLibrary(
+  names: string[],
+  deps: Deps & { budgetMs?: number; readyBudgetMs?: number } = {},
+): Promise<LibraryConfirmation> {
+  const doc = deps.doc || document;
+  const say = deps.log || (() => {});
+  const step = deps.step ?? 700;
+  /* step 0 is this file's existing signal for "a test, no real waits", and it
+     has to zero the budget too — otherwise a test for the missing case sits
+     here for forty-five seconds doing nothing. */
+  const budget = deps.budgetMs ?? (step === 0 ? 0 : 45_000);
+  /* Arriving and being ready are two waits, not one.
+   *
+   * `budget` is for the clip to APPEAR, and is only spent in full on an upload
+   * that failed. A clip that has appeared and is processing is an upload that
+   * worked: Flow is busy with it. Both used to share the 45 seconds, so a 4K
+   * piece that landed in ten and needed two minutes to process was reported
+   * "still processing" and the whole run stopped — on 2026-10-01 with piece 1
+   * ready and never generated. Once the row is there, it gets what the attach
+   * already allows for the same state, READY_BUDGET_MS. Together they stay
+   * under the five minutes Chrome gives the worker for one message. */
+  const readyBudget = deps.readyBudgetMs ?? (step === 0 ? 0 : READY_BUDGET_MS);
+
+  /* Searched by the name it was uploaded under, minus the extension, exactly
+     as attachFromLibrary searches. The two must not drift. */
+  const wanted = names
+    .map((n) => String(n || '').replace(/\.mp4$/i, '').trim())
+    .filter((n) => n.length > 0);
+
+  let consentDismissed = 0;
+  const seen = () => !!rightsConsentButton(doc);
+  const base = (): LibraryConfirmation => ({
+    ok: false, found: [], missing: [...wanted], processing: [], failed: [], consentDismissed, consentOnScreen: seen(),
+  });
+
+  if (!wanted.length) return { ...base(), ok: true, missing: [] };
+
+  /* Before anything else. The notice stands in front of the ingest, so a
+     search run underneath it polls a library that cannot fill. */
+  if (dismissRightsConsent(deps)) consentDismissed++;
+
+  const opened = await openMediaDialog({ ...deps, need: 'library' });
+  if (!opened.ok) return { ...base(), reason: opened.reason };
+
+  /* The search below looks for a <video>, and Flow opens on Images. */
+  if (!(await selectVideosTab(deps))) {
+    say('no Videos tab in the dialog — confirming against whatever tab is showing');
+  }
+
+  const dialog = mediaDialogRoot(doc);
+  const search = dialog && dialog.querySelector<HTMLInputElement>(searchInputSelector());
+  if (!search) {
+    return {
+      ...base(),
+      reason: dialog
+        ? 'the picker is open but has no search box in it'
+        : `the media picker could not be located in the page${buttonsOnPage(doc)}`,
+    };
+  }
+
+  const found: string[] = [];
+  const missing: string[] = [];
+  const processing: string[] = [];
+  const failed: string[] = [];
+
+  /* A named row can still be processing or failed. Preserve those states,
+     and do not turn mere presence into permission to generate. */
+  const locate = (name: string): { ready: boolean; failed: boolean } | null => {
+    const row = namedAssetRow(doc, name);
+    if (row) return { ready: row.ready, failed: row.failed };
+    if (drawsAssetRows(doc)) return null;
+    return namedVideoRow(doc, name) ? { ready: true, failed: false } : null;
+  };
+
+  for (const name of wanted) {
+    typeInto(search, name);
+    /* Its own deadline per name rather than one shared across all of them.
+       They upload together, so the first to appear is the slow one and the
+       rest arrive behind it — but a shared budget spent waiting for name one
+       would report name two missing without ever having waited for it. */
+    let deadline = Date.now() + budget;
+    let processingSince = 0;
+    let hit = locate(name);
+    while ((!hit || (!hit.ready && !hit.failed)) && Date.now() < deadline) {
+      if (hit && !processingSince) {
+        processingSince = Date.now();
+        deadline = Math.max(deadline, processingSince + readyBudget);
+        if (readyBudget) {
+          say(`"${name}" is in the Flow library — waiting up to ${Math.round(readyBudget / 1000)}s `
+            + 'for Flow to finish processing it');
+        }
+      }
+      if (dismissRightsConsent(deps)) consentDismissed++;
+      await sleep(500);
+      hit = locate(name);
+    }
+    if (!hit) {
+      missing.push(name);
+    } else if (hit.failed) {
+      failed.push(name);
+      say(`Video upload failed in Flow: "${name}"`);
+    } else if (hit.ready) {
+      found.push(name);
+      say(`"${name}" is in the Flow library`);
+    } else {
+      found.push(name);
+      processing.push(name);
+      say(`"${name}" is in the Flow library — Flow is still processing it`);
+    }
+  }
+
+  return {
+    ok: missing.length === 0 && processing.length === 0 && failed.length === 0,
+    found, missing, processing, failed, consentDismissed, consentOnScreen: seen(),
+  };
 }
 
 /* ──────────────────────────────────────────────────────────────────────── */
@@ -1052,14 +1643,18 @@ export function rightsConsentButton(doc: Document = document): HTMLElement | nul
   return null;
 }
 
-/** On screen and not merely present. Overlays are kept in the DOM when shut. */
+/**
+ * On screen and not merely present. Overlays are kept in the DOM when shut.
+ *
+ * Through the shared isVisible rather than a size check of its own. This used
+ * to call 0×0 "not showing" — and a tab Chrome is not rendering measures 0×0
+ * for EVERYTHING, so in a background tab the consent would never have been
+ * found. ../shared/visible.ts exists because that exact check stalled every
+ * other adapter; Flow was the one without it, until this added it back.
+ */
 function isShowing(el: HTMLElement): boolean {
   if (el.getAttribute('aria-hidden') === 'true') return false;
-  const rect = el.getBoundingClientRect();
-  if (!rect.width && !rect.height) return false;
-  const style = el.ownerDocument?.defaultView?.getComputedStyle(el);
-  if (!style) return true;
-  return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+  return isVisible(el);
 }
 
 /** Press it if it is there. Says whether it was, and never throws. */

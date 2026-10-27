@@ -3,9 +3,17 @@
    Uses chrome.runtime.connect for persistent port communication.
    ============================================================ */
 
+import type { RunManifest } from '../../shared/executionTypes';
+
 export type BridgeStatus = 'disconnected' | 'connecting' | 'connected';
 
 export interface NodeExecutionConfig {
+  /* Which wait this execution answers. Set by awaitBridge; an adapter that
+     echoes it in its replies can never be mistaken for a later run of the
+     same node. */
+  execId?: string;
+  /** Motion only: up to three native Retry clicks on failed tiles. */
+  retryFailedMotion?: boolean;
   /* A video already in the Flow library, attached to the prompt so a
      generation matches the look of the clip it belongs beside. A NAME, not
      bytes: getting a video INTO Flow cannot be automated — see
@@ -25,6 +33,8 @@ export interface NodeExecutionConfig {
    * So the caller declares which kind it has, and this one fails instead.
    */
   styleReferenceRequired?: boolean;
+  /** Stop instead of generating when Flow cannot select `model` (Motion: Omni 1.1 Flash). */
+  modelRequired?: boolean;
   prompt: string;
   model: string;
   /** 'text' asks ChatGPT for a written answer instead of an image — the reply
@@ -55,6 +65,7 @@ export interface NodeExecutionConfig {
   voice?: string;
   referenceImageIds?: string[];
   referenceImageData?: string[]; // base64 fallback
+  frameReferences?: import('../../shared/frameReferences').FrameReference[];
   /** Target platform — the service worker routes by this. Default 'flow'. */
   platform?: 'flow' | 'chatgpt' | 'gemini' | 'grok';
   /**
@@ -296,6 +307,33 @@ export class StudioBridge {
    */
   static async sendMessage(type: string, payload?: any): Promise<any> {
     return chrome.runtime.sendMessage({ type, payload });
+  }
+
+  // ── v1.5.0: RunCoordinator command methods ──
+  
+  /** Start a run via the Service Worker RunCoordinator */
+  startRun(manifest: RunManifest): boolean {
+    return this.send('SW_START_RUN', manifest);
+  }
+  
+  /** Stop the current run via the coordinator */
+  stopRun(): boolean {
+    return this.send('SW_STOP_RUN');
+  }
+  
+  /** Pause the current run via the coordinator */
+  pauseRun(): boolean {
+    return this.send('SW_PAUSE_RUN');
+  }
+  
+  /** Resume the current run via the coordinator */
+  resumeRun(): boolean {
+    return this.send('SW_RESUME_RUN');
+  }
+  
+  /** Request current execution snapshot from coordinator */
+  requestSnapshot(): boolean {
+    return this.send('SW_GET_SNAPSHOT');
   }
 }
 

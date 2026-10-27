@@ -412,7 +412,8 @@ describe('a picture with the change, too', () => {
     /* Those are already in the conversation. Re-sending them with every
        change would upload the same pictures again and again. */
     expect(SRC).toMatch(/let refineImages: string\[\] = \[\];/);
-    expect(SRC).toMatch(/images: IMAGE_CAPABLE\.has\(at\.platform\) \? refineImages : \[\]/);
+    /* Sent with the change itself, not again with each correction of it. */
+    expect(SRC).toMatch(/images: attempt === 0 && IMAGE_CAPABLE\.has\(at\.platform\) \? refineImages : \[\]/);
   });
 
   it('draws both rows through one function rather than two copies', () => {
@@ -482,10 +483,12 @@ describe('the model is told the pictures are there', () => {
 
   it('says on the button itself what the change picture is for', () => {
     mountPanel();
-    expect(document.getElementById('build-refine-image')!.getAttribute('title'))
-      .toMatch(/what to change/i);
-    expect((document.getElementById('build-refine') as HTMLInputElement).placeholder)
-      .toMatch(/picture of what to change/i);
+    const button = document.getElementById('build-refine-image')!;
+    expect(button.getAttribute('title')).toMatch(/what to change/i);
+    /* The input's placeholder became an example of a change ("make the ending
+       funnier") in the Build tab redesign, so the button is where this is
+       said — to a screen reader as well as on hover. */
+    expect(button.getAttribute('aria-label')).toMatch(/what to change/i);
   });
 });
 

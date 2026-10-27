@@ -103,7 +103,12 @@ describe('every host permission is one we actually use', () => {
    * saying so here is the point — the rule below exists to stop permissions
    * accumulating without a reason attached.
    */
-  const FETCH_ONLY = new Set([BACKEND, 'flow-content.google']);
+  /* googlevideo.com is where a flow.google.com/asb/ clip URL REDIRECTS to.
+     It serves no page, hosts no UI and is never navigated to — but a fetch of
+     a clip lands there, it sends no CORS headers, and a redirect can only be
+     followed by a context holding a host permission for its target. Without
+     it the worker cannot retrieve a finished clip at all. */
+  const FETCH_ONLY = new Set([BACKEND, 'flow-content.google', 'googlevideo.com']);
 
   it('backs each host permission with a content script, or names why not', () => {
     const scriptedHosts = new Set(Array.from(scripted).map(host));

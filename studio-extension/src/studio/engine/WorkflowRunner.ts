@@ -4,6 +4,7 @@
    generate node on Google Flow via the bridge.
    ============================================================ */
 
+import { LIBRARY_MISS } from '../../shared/flowMessages';
 import type { Node, Edge } from '@xyflow/react';
 import {
   topologicalSort,
@@ -13,6 +14,10 @@ import {
 } from './topoSort';
 import { trackUsage, trackSubmission } from '../../shared/api';
 import { bridge, type NodeExecutionConfig, type NodeResult } from './bridge';
+import { serializeNodes, serializeEdges } from '../../shared/serializer';
+import type { RunManifest, NodeExecutionStatus, ExecutionSnapshot } from '../../shared/executionTypes';
+import { needsCanvasNode } from '../../shared/executionTypes';
+import { frameReferencesFor, inlineFrame } from '../../shared/frameReferences';
 import {
   beginRun as journalBeginRun,
   finishRun as journalFinishRun,
@@ -31,7 +36,7 @@ import {
 } from '../ask/storyboard';
 import {
   storyBrief, STORY_FIELDS, DEFAULT_STORY, voiceForShot, readStorySettings, isUgc, isBuild,
-  storyIsUnset, settingsAsk, readSettingsReply,
+  storyIsUnset, storyIsSilent, settingsAsk, readSettingsReply,
   type StorySettings,
 } from '../ask/storyPlan';
 import { runAgent, type AgentStep, type ToolOutcome } from './agent';
@@ -58,8 +63,10 @@ const LAYOUT_GAP_X = 520;
    is far shorter than a Cut node, so they stack tighter. */
 const BROLL_ROW_H = 240;
 import {
-  isFramesMode, extendChain, secondsOf, isRunnableType, GROK_MAX_TOTAL_SECONDS,
+  isFramesMode, extendChain, secondsOf, isRunnableType, GROK_MAX_TOTAL_SECONDS, hasVideoRefPort,
 } from '../templates/validate';
+import { videoReferenceFor } from '../../shared/videoReference';
+import { shotPromptFor, shotPromptsByTarget } from '../../shared/shotPrompt';
 
 export type RunnerState = 'idle' | 'running' | 'paused' | 'stopped' | 'done' | 'error';
 
@@ -216,6 +223,8 @@ export class WorkflowRunner {
      side went on waiting for a reply that was never coming. Each pending
      wait registers here so stop() can end it now. */
   private pendingWaits = new Set<(reason: Error) => void>();
+  /** Numbers each awaitBridge, so its replies can be told from older ones. */
+  private bridgeWaits = 0;
   private pauseRequested = false;
   /** Set by run(): true when this press was a targeted retry, not a full Run. */
   private targetedRun = false;
@@ -375,7 +384,63 @@ export class WorkflowRunner {
    * upstream results — after a Studio reload this runner holds none, so those
    * generations are pulled back in rather than failing on missing input again.
    */
+  /**
+   * Results this runner never produced, but the canvas is holding anyway.
+   *
+   * —— Why a retry used to restart the whole episode ——
+   *
+   * planRetry walks upstream from what is being retried and pulls in anything
+   * whose result it does not have. `this.nodeResults` is in memory, so after a
+   * reload — or in a fresh runner — it has nothing, and the walk drags the
+   * entire chain back in. Retrying shot 4 of an eight-shot episode re-ran
+   * shots 1, 2 and 3 and the Director, and paid for all of them again.
+   *
+   * The canvas knows better. A generate node that finished carries its result
+   * url, its preview and its tile id; a frame node carries the still it
+   * captured. Reading those back is free, and it is the difference between
+   * resuming and starting over.
+   *
+   * Deliberately NOT reconstructing `referenceUrl` from a preview thumbnail.
+   * Only the captured lastFrameUrl can restore a direct clip chain.
+   */
+  private adoptCanvasResults(nodes: Node[]): number {
+    let found = 0;
+    for (const node of nodes) {
+      if (this.nodeResults.has(node.id)) continue;
+      const d = node.data as any;
+      if (d?.type === 'frame') {
+        const url = typeof d.frameUrl === 'string' ? d.frameUrl : '';
+        if (!url) continue;
+        this.nodeResults.set(node.id, { tileId: '', imageUrl: url });
+        found++;
+        continue;
+      }
+      if (!isRunnableType(d?.type) || d?.status !== 'done') continue;
+      const media = d.resultUrl || d.previewUrl || '';
+      const text = typeof d.resultText === 'string' ? d.resultText : '';
+      if (!media && !text) continue;
+      this.nodeResults.set(node.id, {
+        tileId: typeof d.resultTileId === 'string' ? d.resultTileId : '',
+        imageUrl: d.mediaType === 'text' ? text : media,
+        previewUrl: typeof d.previewUrl === 'string' ? d.previewUrl : '',
+        previewVideoUrl: typeof d.previewVideoUrl === 'string' ? d.previewVideoUrl : '',
+        referenceUrl: inlineFrame(d.lastFrameUrl),
+        text,
+      });
+      found++;
+    }
+    return found;
+  }
+
   planRetry(requestedIds: string[], nodes: Node[], edges: Edge[]): Set<string> {
+    /* Before deciding what has to run again, take account of everything the
+       canvas already finished. Without this the walk below treats a whole
+       completed episode as missing. */
+    const adopted = this.adoptCanvasResults(nodes);
+    if (adopted) {
+      console.log(`[Runner] Retry: ${adopted} finished node(s) read back off the canvas `
+        + '— they will not be generated again.');
+    }
     const nodeById = new Map(nodes.map((n) => [n.id, n]));
     const isRunnable = (id: string) => {
       const d = nodeById.get(id)?.data as any;
@@ -415,7 +480,124 @@ export class WorkflowRunner {
     return set;
   }
 
+  /**
+   * v1.5.0: Start a run through the Service Worker RunCoordinator.
+   *
+   * The coordinator drives the execution loop in the service worker so
+   * it survives this tab being closed. This method serializes the graph,
+   * sends it to the SW, and returns immediately — the coordinator
+   * broadcasts progress via the port and the listeners above apply it.
+   *
+   * Returns true if the coordinator accepted the run, false if it could
+   * not be reached (in which case the caller falls back to local execution).
+   */
+  private tryCoordinatorRun(nodes: Node[], edges: Edge[], opts: RunOptions = {}): boolean {
+    this.setupCoordinatorListeners();
+    
+    const manifest: RunManifest = {
+      runId: `run-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`,
+      workflowId: useStudioStore.getState().workflow.id,
+      nodes: serializeNodes(nodes),
+      edges: serializeEdges(edges),
+      options: opts.only ? { only: Array.from(opts.only) } : {},
+      startedAt: Date.now(),
+    };
+
+    /* ── Is there anything in this run the worker cannot execute? ──
+     *
+     * Asked HERE, of the actual graph, because this is the only moment the
+     * choice can still be made: once the manifest is sent, the coordinator
+     * owns the run and its only way to report a node it cannot execute is to
+     * fail that node. Which is exactly what happened — a Motion node came
+     * back "Did not start: motion node type requires Canvas presence in
+     * v1.5.0", and pressing Retry delegated it again and said the same thing.
+     *
+     * Scoped to `only` so a targeted retry is judged on what it will actually
+     * run, not on the rest of the workflow: retrying one generate node in a
+     * workflow that happens to contain a Motion node should still go to the
+     * worker and keep working with the tab closed. */
+    const blocked = manifest.nodes.filter(
+      (n) => (!opts.only || opts.only.has(n.id)) && needsCanvasNode(n),
+    );
+    if (blocked.length) {
+      console.log(
+        `[Runner] ${blocked.map((n) => n.type).join(', ')} needs the Studio canvas — `
+        + 'running locally instead of delegating to the worker.'
+      );
+      return false;
+    }
+
+    return bridge.startRun(manifest);
+  }
+
+  /**
+   * Run the workflow, and END the run whatever happens.
+   *
+   * ── Why this wrapper exists ──
+   *
+   * runLocal sets isRunning true near its top and clears it near its bottom,
+   * three hundred lines apart, with ONE try/catch between them covering a
+   * single node type. Anything that threw outside that catch — a Director
+   * turn, a Chief repair round, a clip decode, a bridge timeout — left the
+   * canvas believing a run was still in progress.
+   *
+   * Which is invisible until you press Retry, because Retry opens with
+   *
+   *     if (isRunning) return;
+   *
+   * so the button did nothing at all, silently, until the tab was reloaded.
+   * Reported exactly that way: "why when i click retry its desnt work".
+   *
+   * The delegated path returns BEFORE the try, deliberately: the coordinator
+   * owns that run's state and is still broadcasting it, so clearing it here
+   * would stop a background run the moment it started.
+   */
   async run(nodes: Node[], edges: Edge[], opts: RunOptions = {}): Promise<void> {
+    if (this.tryCoordinatorRun(nodes, edges, opts)) {
+      console.log('[Runner] Run delegated to Service Worker RunCoordinator');
+      return;
+    }
+    console.log('[Runner] Coordinator unavailable, running locally');
+
+    try {
+      await this.runLocal(nodes, edges, opts);
+    } catch (err: any) {
+      /* Said out loud rather than swallowed. A run that ended on an unhandled
+         error used to leave the canvas frozen and the Diagnostics feed silent,
+         so nothing anywhere named the thing that went wrong. */
+      const why = err?.message || String(err);
+      console.error('[Runner] Run ended on an unhandled error:', err);
+      studioLog('Run', `Stopped on an unexpected error: ${why}`);
+      this.state = 'error';
+    } finally {
+      this.settleRun();
+    }
+  }
+
+  /**
+   * Put the canvas back into a state somebody can act on.
+   *
+   * Idempotent, and safe after a clean finish — runLocal has already cleared
+   * these by then, and setting them again changes nothing.
+   */
+  private settleRun(): void {
+    const store = useStudioStore.getState();
+    store.setRunning(false);
+    store.setPaused(false);
+    store.setCurrentNode(null);
+    this.pauseRequested = false;
+    if (this.state === 'running') this.state = 'error';
+  }
+
+  private async runLocal(nodes: Node[], edges: Edge[], opts: RunOptions = {}): Promise<void> {
+    /* ── v1.5.0: Try the Service Worker coordinator first ──
+     *
+     * The coordinator handles basic generate nodes in the background.
+     * Complex node types (agent, motion, story multi-turn repair) that
+     * need Canvas presence fall back to the local execution path below.
+     *
+     * If the coordinator accepts the run, this method returns immediately.
+     * Progress is applied by the SW_RUN_STATE / SW_NODE_STATUS listeners. */
     const store = useStudioStore.getState();
     const only = opts.only;
 
@@ -606,10 +788,33 @@ export class WorkflowRunner {
              frame visible and reusable. */
           const source = getNodeInputs(step.nodeId, edges).get('image_ref')?.[0];
           const upstream = source ? this.nodeResults.get(source) : undefined;
-          const frameUrl = upstream?.referenceUrl || '';
+          const captured = upstream?.referenceUrl || '';
+
+          /* —— Never overwrite a good frame with nothing ——
+           *
+           * A frame node is a data node, so it runs on EVERY pass — the `only`
+           * filter gates runnable nodes and nothing else. On a targeted retry
+           * the clip above it is skipped, which means this.nodeResults holds
+           * no result for it, which means `captured` is ''.
+           *
+           * Writing that '' back to the node destroyed the frame this workflow
+           * depends on. Reported as: retry one shot, and every shot after it
+           * turns red with "The clip above ran but gave up no last frame" —
+           * so the only way forward was to re-run the entire episode and pay
+           * for eight clips again.
+           *
+           * The frame on the node is the capture from when the clip actually
+           * finished. It is still correct. A pass that produced nothing new
+           * has learned nothing about it. */
+          const held = typeof nodeData.frameUrl === 'string' ? nodeData.frameUrl : '';
+          const frameUrl = captured || held;
 
           this.nodeResults.set(step.nodeId, { tileId: '', imageUrl: frameUrl });
-          store.updateNodeData(step.nodeId, { frameUrl });
+          if (frameUrl !== held) store.updateNodeData(step.nodeId, { frameUrl });
+          else if (!captured && held) {
+            console.log(`[Runner] Frame "${nodeData.label}": kept the frame it already had `
+              + '(the clip above it was not re-run)');
+          }
 
           if (!frameUrl) {
             // Not fatal: a downstream node will fail with its own clear
@@ -699,8 +904,10 @@ export class WorkflowRunner {
              the user should be billed a second time for. */
           let succeeded = false;
           let lastError = 'Generation failed';
+          // Motion's content watcher owns each piece's three native retries.
+          const maxRetries = step.nodeType === 'motion' ? 0 : MAX_AUTO_RETRIES;
 
-          for (let attempt = 0; attempt <= MAX_AUTO_RETRIES; attempt++) {
+          for (let attempt = 0; attempt <= maxRetries; attempt++) {
             if (this.abortRequested) break;
 
             try {
@@ -722,6 +929,7 @@ export class WorkflowRunner {
                 resultUrl: result.videoUrl || result.imageUrl || result.thumbnailUrl || '',
                 previewUrl: result.previewUrl || '',
                 previewVideoUrl: result.previewVideoUrl || '',
+                lastFrameUrl: nodeData.mediaType === 'video' ? inlineFrame(result.referenceUrl) || '' : '',
                 resultTileId: result.tileId,
                 // Shown on the node so the written prompt is reviewable.
                 resultText: result.text || '',
@@ -753,7 +961,7 @@ export class WorkflowRunner {
                 });
                 break;
               }
-              const canRetry = attempt < MAX_AUTO_RETRIES && isTransientFailure(lastError);
+              const canRetry = attempt < maxRetries && isTransientFailure(lastError);
               console.error(
                 `[Runner] Generate "${nodeData.label}" attempt ${attempt + 1} failed:`,
                 lastError, canRetry ? '— retrying' : '— giving up'
@@ -999,6 +1207,8 @@ export class WorkflowRunner {
        sit in. Edge order is invisible on the canvas and changes when a
        connection is remade, which is not something to hang a video on. */
     const isFrames = isFramesMode(nodeData);
+    const frameReferences = isFrames
+      ? frameReferencesFor(nodeId, edges, id => this.nodeResults.get(id)) : undefined;
     const orderedSources = isFrames
       ? [...(inputs.get('frame_start') || []), ...(inputs.get('frame_end') || [])]
       : (inputs.get('image_ref') || []);
@@ -1019,6 +1229,35 @@ export class WorkflowRunner {
         // the capture itself failed.
         referenceImageIds.push(imgResult.tileId);
       }
+    }
+
+    /* A clip on V. Omni gets the whole clip, picked from Flow's library by
+       its /asb/ token; any other model continues from its last frame, as a
+       clip on 🖼 always did. The same rule as the worker's — see
+       shared/videoReference.ts. Decided before the chain check below, so a
+       frame taken from V counts as something to continue from. */
+    let videoReference: string | undefined;
+    const videoSourceId = hasVideoRefPort(nodeData) ? inputs.get('video_ref')?.[0] : undefined;
+    if (videoSourceId) {
+      const upData = useStudioStore.getState().nodes.find(n => n.id === videoSourceId)?.data as any;
+      const upResult = this.nodeResults.get(videoSourceId);
+      const ref = videoReferenceFor(upResult || upData?.status === 'done' ? {
+        ...upResult,
+        tileId: upResult?.tileId || upData?.resultTileId,
+        resultUrl: upData?.resultUrl,
+        referenceUrl: upResult?.referenceUrl || upData?.lastFrameUrl,
+        sentPrompt: upData?.sentPrompt,
+      } : undefined, nodeData.model || 'Omni 1.1 Flash');
+      if (ref.kind === 'none') throw new Error(ref.error);
+      if (typeof nodeData.styleReference === 'string' && nodeData.styleReference && ref.kind === 'clip') {
+        throw new Error(
+          `This node already puts "${nodeData.styleReference}" on the prompt from the Flow library, `
+          + 'and Flow takes one video per prompt — remove the V wire or that library video'
+        );
+      }
+      if (ref.kind === 'clip') videoReference = ref.styleReference;
+      else referenceImageData.unshift(ref.frame);
+      studioLog('Runner', ref.note);
     }
 
     /* A broken link in a chain must not generate anyway.
@@ -1066,7 +1305,7 @@ export class WorkflowRunner {
        point knows which one applies. */
     const hasReferenceImage = referenceImageData.length > 0 || referenceImageIds.length > 0;
     let askPrompt = nodeData.mediaType === 'text'
-      ? composeAskRequest(nodeData.preset, prompt, hasReferenceImage, String(nodeData.askBrief || ''), String(nodeData.placePromptNotes || ''))
+      ? composeAskRequest(nodeData.preset, prompt, hasReferenceImage, String(nodeData.askBrief || ''), String(nodeData.placePromptNotes || ''), nodeData.askWritingOptions)
       : prompt;
 
     // An empty prompt still submits and burns a generation on Flow, so fail
@@ -1177,9 +1416,9 @@ export class WorkflowRunner {
          generation matches the look of the clip it belongs beside. The upload
          cannot be automated, so this is a NAME the clipper put there once —
          see content/flow/uploadVideo.ts for why. */
-      styleReference: typeof nodeData.styleReference === 'string'
+      styleReference: videoReference ?? (typeof nodeData.styleReference === 'string'
         ? nodeData.styleReference
-        : undefined,
+        : undefined),
       /* Motion Control sets this on every piece it generates. The reference is
          the footage the motion comes from, so a clip made without it is not
          this job at all — see NodeExecutionConfig.
@@ -1189,13 +1428,16 @@ export class WorkflowRunner {
          still sitting on canvases and are still motion pieces. Reading it here
          means nobody has to rebuild a canvas to inherit the check. */
       styleReferenceRequired: nodeData.styleReferenceRequired === true
-        || typeof nodeData.motionFrom === 'string',
+        || typeof nodeData.motionFrom === 'string'
+        // A clip wired into V is the point of the wire; without it, stop.
+        || videoReference !== undefined,
       /* Flow's voice picker. Left out of this payload the node's dropdown
          would set a field nothing ever read — the control would look like it
          worked and change nothing about the clip. */
       voice: nodeData.voice || undefined,
       referenceImageIds: referenceImageIds.length > 0 ? referenceImageIds : undefined,
       referenceImageData: referenceImageData.length > 0 ? referenceImageData : undefined,
+      frameReferences,
     };
 
     /**
@@ -1230,6 +1472,12 @@ export class WorkflowRunner {
        adapters cannot report. */
     const timeoutMs = isTextNode ? TEXT_BACKSTOP_MS : isVideoNode ? 22 * 60 * 1000 : 8 * 60 * 1000;
     const timeoutLabel = isTextNode ? '16 minutes' : isVideoNode ? '22 minutes' : '8 minutes';
+
+    /* What Flow's picker lists this clip under, kept for a node that wires it
+       into V: the prompt narrows the library search to its takes. */
+    if (config.platform === 'flow' && config.mediaType === 'video') {
+      useStudioStore.getState().updateNodeData(nodeId, { sentPrompt: askPrompt });
+    }
 
     const owner = useStudioStore.getState().nodes.find(n => n.id === textSourceId)?.data as any;
     const chief = owner?.chiefId && edges.some(e => e.source === owner.chiefId && e.target === textSourceId)
@@ -1349,7 +1597,10 @@ export class WorkflowRunner {
         if (Array.isArray(cached) && cached.length === director.targets.length && cached.every(p => typeof p === 'string' && p.trim())) {
           this.shotPlans.set(director.id, cached);
           this.preparedDirectors.set(director.id, { tileId: '', text: cached.join('\n\n') });
-          store.updateNodeData(director.id, { shotPrompts: cached, shotTitles: director.targets.map(t => t.label), status: 'done' });
+          store.updateNodeData(director.id, {
+            shotPrompts: cached, shotPromptsByTarget: shotPromptsByTarget(director.targets, cached),
+            shotTitles: director.targets.map(t => t.label), status: 'done',
+          });
           continue;
         }
         this.preparedDirectors.delete(director.id);
@@ -1447,7 +1698,11 @@ export class WorkflowRunner {
           this.shotPlans.set(director.id, checkpoint.prompts[director.id]);
           const text = checkpoint.prompts[director.id].join('\n\n');
           this.preparedDirectors.set(director.id, { ...result, text });
-          store.updateNodeData(director.id, { shotPrompts: checkpoint.prompts[director.id], resultText: text });
+          store.updateNodeData(director.id, {
+            shotPrompts: checkpoint.prompts[director.id],
+            shotPromptsByTarget: shotPromptsByTarget(director.targets, checkpoint.prompts[director.id]),
+            resultText: text,
+          });
           director.targets.forEach((target, i) => {
             if (!affected.some(issue => issue.targetId === target.id)) store.updateNodeData(target.id, voices[i]);
           });
@@ -1475,6 +1730,17 @@ export class WorkflowRunner {
     timeoutMs: number,
     timeoutLabel: string
   ): Promise<NodeResult> {
+    /* This wait's own name. Replies are matched on the node, and a node
+       outlives its runs: a Flow tab still watching an earlier run's
+       generation answers for the same node minutes later, live or held for
+       the panel by the worker. On 2026-10-01 its "Engine stalled at IDLE"
+       landed in the next run's director and stopped it. An adapter that
+       echoes this id is heard only by the wait that sent it; one that echoes
+       nothing is heard exactly as before. */
+    const execId = `${nodeId}#${Date.now().toString(36)}-${++this.bridgeWaits}`;
+    const ours = (payload: any): boolean =>
+      payload?.nodeId === nodeId && (!payload.execId || payload.execId === execId);
+    const stale = (payload: any): boolean => payload?.nodeId === nodeId && !ours(payload);
     return new Promise<NodeResult>((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
@@ -1487,7 +1753,8 @@ export class WorkflowRunner {
       }, timeoutMs);
 
       const onResult = (payload: any) => {
-        if (payload.nodeId !== nodeId) return;
+        if (stale(payload)) studioLog('Studio', 'Ignored a late result for this node from an earlier run.');
+        if (!ours(payload)) return;
         cleanup();
         if (payload.error) {
           reject(new Error(payload.error));
@@ -1508,12 +1775,15 @@ export class WorkflowRunner {
       };
 
       const onProgress = (payload: any) => {
-        if (payload.nodeId !== nodeId) return;
+        if (!ours(payload)) return;
         useStudioStore.getState().updateNodeData(nodeId, { progress: payload.progress || 0 });
       };
 
       const onError = (payload: any) => {
-        if (payload.nodeId !== nodeId) return;
+        if (stale(payload)) {
+          studioLog('Studio', `Ignored a late error for this node from an earlier run: ${payload.error || 'no detail'}`);
+        }
+        if (!ours(payload)) return;
         cleanup();
         const err: any = new Error(payload.error || 'Generation failed');
         /* Carried rather than matched on the message. The adapter refuses to
@@ -1544,7 +1814,7 @@ export class WorkflowRunner {
 
       // Send execution command — if the port is down the command never
       // arrives and no reply is coming, so fail now rather than in 10 minutes
-      if (!bridge.executeNode(nodeId, config)) {
+      if (!bridge.executeNode(nodeId, { ...config, execId })) {
         cleanup();
         reject(new Error('Lost connection to the extension — reopen Studio and try again'));
       }
@@ -1644,7 +1914,12 @@ export class WorkflowRunner {
   /** This node's own shot, or null when the source did not write a set. */
   private shotFor(sourceId: string, nodeId: string, edges: Edge[]): string | null {
     const plan = this.shotPlans.get(sourceId);
-    if (!plan) return null;
+    /* No plan in memory — a retry after a reload. The set the writer kept on
+       itself, rather than its whole text. */
+    if (!plan) {
+      const nodes = useStudioStore.getState().nodes;
+      return shotPromptFor(nodes.find((n) => n.id === sourceId), nodeId, nodes as any, edges as any);
+    }
     const idx = this.shotTargetsFor(sourceId, edges).findIndex((t) => t.id === nodeId);
     if (idx < 0 || idx >= plan.length) return null;
     return plan[idx];
@@ -1745,7 +2020,11 @@ export class WorkflowRunner {
     }
 
     let message = brief + '\n'
-      + shotContract(targets, isStory ? STORY_FIELDS : '', wantsSpeaker, refs.length);
+      /* A piece whose audio is environment-only and whose POV settings say the
+         dialogue density is none does not want a spoken-word budget on every
+         shot. See storyIsSilent. */
+      + shotContract(targets, isStory ? STORY_FIELDS : '', wantsSpeaker, refs.length,
+        isStory && storyIsSilent(readStorySettings(nodeData)));
     /* A ledger, not a best-of-round snapshot.
      *
      * This used to keep whichever ROUND had the fewest problems and throw the
@@ -2151,6 +2430,10 @@ export class WorkflowRunner {
          pairing is the thing that was wrong for a whole run without anybody
          being able to see it. */
       shotPrompts: best.shots.map((sh) => sh.prompt),
+      /* By clip id as well, so a retry after a reload — or on the worker,
+         which never held the plan — sends each clip its own shot rather than
+         the whole set. See shared/shotPrompt.ts. */
+      shotPromptsByTarget: shotPromptsByTarget(targets, best.shots.map((sh) => sh.prompt)),
     });
     return { tileId: '', text: combined };
   }
@@ -2716,8 +2999,8 @@ export class WorkflowRunner {
   ): Promise<NodeResult> {
     const store = useStudioStore.getState();
     const {
-      motionBriefAsk, motionPieceAsk, readMotionPrompt, plainMotionPrompt, MODE_INTENT, motionAudioPrompt,
-      motionSubjectRedoAsk,
+      motionBriefAsk, motionPieceAsk, readMotionPrompt, MODE_INTENT, motionAudioPrompt,
+      motionSubjectRedoAsk, motionResumeNote, motionWork, recordMotionUpload, MOTION_CUT_SHORT_SIDE,
     } = await import('../ask/motionControl');
     type MotionBrief = import('../ask/motionControl').MotionBrief;
     type MotionPiece = import('../ask/motionControl').MotionPiece;
@@ -2747,6 +3030,41 @@ export class WorkflowRunner {
     }
     if (!sourceKey) sourceKey = String(nodeData.sourceKey || '').trim();
 
+    /* ── Scan only: who and what is in the footage ─────────────────────────
+     *
+     * Asked from the panel's "Find people & items", before any job: one turn
+     * with the analysis engine over (at most) the first 30 seconds of the
+     * selected range. Nothing is uploaded to Flow and nothing is generated, so
+     * none of the job's checks below apply — the continuity and trim guards,
+     * the upload switch, a Motion job. It leaves before all of them. */
+    if (nodeData.motionScanTargets === true) {
+      const { clipMedia } = await import('../clip/clipMedia');
+      const { planMotionRun: plan, motionRangeKey: keyOf } = await import('../ask/motionRange');
+      const { motionTargetsAsk, readMotionTargets } = await import('../ask/motionTargets');
+      const source = sourceKey ? getSource(sourceKey) : undefined;
+      if (!source) throw new Error('Add the video again to scan it — the bytes do not survive a page reload.');
+      const probe = await clipMedia.probe(source as File);
+      const chunks = plan(probe.durationSec, nodeData);
+      if (!chunks.length) throw new Error('That video has no duration this can read.');
+      const startSec = chunks[0].startSec;
+      const endSec = Math.min(chunks[chunks.length - 1].endSec, startSec + 30);
+      store.updateNodeData(nodeId, { status: 'running', statusNote: 'Preparing the video for the scan...' });
+      const cut: any = await clipMedia.cut(source as File, {
+        startSec, endSec, silent: true, maxShortSide: MOTION_CUT_SHORT_SIDE,
+      });
+      const clip = await motionBlobToDataUrl(cut?.blob ?? cut);
+      store.updateNodeData(nodeId, { statusNote: 'Finding the people and items in the video...' });
+      const reply = await this.askAgent(nodeId, chatPlatform(nodeData.platform), motionTargetsAsk(), true, [clip]);
+      const targets = readMotionTargets(reply);
+      store.updateNodeData(nodeId, {
+        motionTargetList: targets,
+        motionTargetsFor: `${sourceKey}|${keyOf(nodeData) || ''}`,
+        status: 'idle', statusNote: '', errorMessage: undefined,
+      });
+      studioLog('Motion', `Scan found ${targets.length}: ${targets.map((t) => t.label).join('; ')}`);
+      return { text: `Found ${targets.length} people and items.` } as NodeResult;
+    }
+
     /* ── Is any of this already done? ──────────────────────────────────────
      *
      * Cutting, directing and uploading are the expensive third of this node
@@ -2764,7 +3082,17 @@ export class WorkflowRunner {
     const existing: MotionPieceRow[] = Array.isArray(nodeData.motionPieces)
       ? (nodeData.motionPieces as MotionPieceRow[])
       : [];
-    const havePrompts = this.targetedRun
+    const continuity = nodeData.motionContinuity === true;
+    const { endingFrame, continuityInput, continuityOutputCurrent, continuityRetryThrough } = await import('../ask/motionContinuity');
+    if (this.targetedRun && existing.length && (nodeData.motionPreparedContinuity === true) !== continuity) {
+      throw new Error('Clip continuity changed. Start a new generation to apply it.');
+    }
+    const { planMotionRun, motionRangeKey } = await import('../ask/motionRange');
+    const rangeKey = motionRangeKey(nodeData);
+    if (this.targetedRun && existing.length && (nodeData.motionPreparedRange ?? null) !== rangeKey) {
+      throw new Error('Video trim changed. Start a new generation to apply it.');
+    }
+    const resumable = this.targetedRun
       && existing.length > 0
       && nodeData.motionPreparedFrom === sourceKey;
     /* Uploaded is tracked SEPARATELY from directed, because the upload is the
@@ -2782,7 +3110,24 @@ export class WorkflowRunner {
        Gemini, thrown away by a step that comes after them and has nothing to
        do with what they produced. The prompts are now written to the node the
        moment they exist, so a failed upload costs the upload only. */
-    const reusable = havePrompts && nodeData.motionUploaded === true;
+    /* ── Progress is kept PER PIECE ────────────────────────────────────────
+     *
+     * Each piece passes three steps — a prompt, a place in Flow's library, a
+     * clip — and records each as it happens. A retry resumes every piece at
+     * the first step it has not passed, instead of the node redoing a whole
+     * step for all of them because one piece failed it.
+     *
+     * `uploaded` is per row now; rows written before it existed fall back to
+     * the old node-wide flag. "Retry piece" scopes all of it to that piece. */
+    const onlyPiece = this.targetedRun ? Number(nodeData.motionRetryPiece) || 0 : 0;
+    const throughPiece = continuity && onlyPiece ? continuityRetryThrough(existing, onlyPiece) : onlyPiece;
+    const {
+      uploaded: uploadedRow, needsPrompt, needsUpload, needsCut,
+    } = motionWork({ onlyPiece, throughPiece, legacyUploaded: nodeData.motionUploaded === true });
+    /* Nothing left that needs the video: every piece in scope has its prompt
+       and is in Flow (or already made). Then neither the bytes nor the upload
+       switch are asked for. */
+    const reusable = resumable && !existing.some(needsCut);
 
     /* The bytes are only needed to CUT. Pieces already in Flow's library are
        generated from their names, so a retry needs neither the file nor the
@@ -2827,16 +3172,38 @@ export class WorkflowRunner {
       place.push(data);
     }
     if (place.length > 1) throw new Error('Connect one place image to Motion Control so the environment is unambiguous.');
-    const { presetInstruction, referenceGuidance, subjectDescriptionTerms } = await import('../ask/motionGuidance');
+    const { presetInstruction, referenceGuidance, subjectDescriptionTerms, motionFinalPrompt } = await import('../ask/motionGuidance');
+    const { replacementGuidance, replacementLimit, usableReplacements } = await import('../ask/motionTargets');
+    type MotionReplacement = import('../ask/motionTargets').MotionReplacement;
+    /* Chosen people and items, each with its new image (motionTargets.ts). They
+       take the place of the single character image: the images go first, in
+       the user's order, and the generation is told which replaces which. */
+    /* Each one has an image, words, or both; only the images take Omni slots. */
+    const replacements: MotionReplacement[] = mode === 'swap' ? usableReplacements(nodeData.motionReplacements) : [];
+    if (replacements.length) {
+      const images = replacements.flatMap((r) => (r.image ? [r.image] : []));
+      const limit = replacementLimit(place.length > 0, nodeData.motionContinuity === true);
+      if (images.length > limit) {
+        throw new Error(`Flow takes ${limit} replacement image(s) with these settings (5 images in all, counting the place image and the continuity frame). Remove ${images.length - limit}, or describe them in words instead.`);
+      }
+      character.length = 0;
+      character.push(...images);
+    }
     const references = [...character, ...place];
-    const referenceRules = referenceGuidance(character.length, place.length);
+    const referenceRules = replacements.length
+      ? replacementGuidance(replacements, place.length)
+      : referenceGuidance(character.length, place.length);
     const brief: MotionBrief = {
       mode,
       wish: [(prompt || nodeData.wish || '').trim(), presetInstruction(nodeData.motionPreset)].filter(Boolean).join('\n'),
       hasCharacter: character.length > 0,
+      hasPlace: place.length > 0,
       referenceRules,
       offerAlternatives: nodeData.motionAlternatives === true,
+      ...(replacements.length ? { replacements: replacements.length } : {}),
+      ...(nodeData.motionLipSync === true ? { lipSync: true } : {}),
     };
+
 
     /* Is the one step that cannot be worked around even available?
      *
@@ -2860,7 +3227,7 @@ export class WorkflowRunner {
     /* Only asked of a run that is going to upload. A retry generating from
        pieces already in the library uploads nothing, and refusing it over a
        switch it never touches would be a wall with nothing behind it. */
-    if (!reusable && !uploadReady) {
+    if (!uploadReady && (!resumable || existing.some(r => needsUpload(r) && !r.uploadPending))) {
       /* Names the control and where it is. The old wording sent people to
          "Settings", and there is no such switch there — it is a button on
          this node, and it was on a Cut node only, which a canvas built around
@@ -2879,79 +3246,113 @@ export class WorkflowRunner {
     let rows: MotionPieceRow[];
     let directed = true;
     let seams = 0;
+    /** Every step writes its result the moment it has one. */
+    const checkpoint = () => store.updateNodeData(nodeId, { motionPieces: rows.map((r) => ({ ...r })) });
 
-    if (reusable) {
-      rows = existing.map((r) => ({ ...r }));
+    const { clipMedia } = await import('../clip/clipMedia');
+    const { partFileName } = await import('../../content/flow/uploadVideo');
+
+    /* ── 1. The pieces: carried over, or planned now ──────────────────────── */
+    if (resumable) {
+      rows = existing.map((r) => ({ ...r, uploaded: uploadedRow(r) }));
       directed = nodeData.motionDirected !== false;
-      seams = rows.filter((r) => r.cutsSpeech).length;
+      const prompted = rows.filter((r) => !needsPrompt(r)).length;
+      const inFlow = rows.filter((r) => r.uploaded).length;
+      const made = rows.filter((r) => r.status === 'done').length;
       studioLog('Motion',
-        `Reusing ${rows.length} piece(s) already cut, directed and uploaded — `
-        + 'the director is not asked again.');
+        `Resuming ${rows.length} piece(s): ${prompted} prompt(s), ${inFlow} in Flow and `
+        + `${made} clip(s) already done are kept — only the rest is redone.`);
     } else {
-      // 1. Cut it into pieces Omni will take.
-      const { clipMedia } = await import('../clip/clipMedia');
-      const { planOmniChunks, OMNI_MAX_SEC } = await import('../clip/omniChunks');
-      const { partFileName } = await import('../../content/flow/uploadVideo');
-
+      const { OMNI_MAX_SEC } = await import('../clip/omniChunks');
       /* Non-null by the check at the top: the only path here without a file
          has already thrown. */
-      const source = file as File;
-      const probe = await clipMedia.probe(source);
-      const chunks = planOmniChunks(probe.durationSec, [], OMNI_MAX_SEC);
+      const probe = await clipMedia.probe(file as File);
+      /* Checked against the length the panel showed, cut within the length
+         the file measures — the two differ by milliseconds, and a trim to the
+         very end failed on the difference. */
+      const chunks = planMotionRun(probe.durationSec, nodeData);
       if (!chunks.length) throw new Error('That video has no duration this can read.');
-      seams = chunks.filter((c) => c.cutsSpeech).length;
-
-      store.updateNodeData(nodeId, {
-        status: 'running',
-        statusNote: chunks.length === 1
-          ? 'One piece — no seams.'
-          : `Cutting into ${chunks.length} pieces...`,
-      });
       studioLog('Motion',
         `${probe.durationSec.toFixed(1)}s source -> ${chunks.length} piece(s) `
-        + `(Omni takes ${OMNI_MAX_SEC}s at a time).`);
+        + (rangeKey ? `(selected ${chunks[0].startSec}s–${chunks[chunks.length - 1].endSec}s).` : `(Omni takes ${OMNI_MAX_SEC}s at a time).`));
+      const silent = nodeData.motionMuteAudio === true;
+      rows = chunks.map((c) => ({
+        index: c.index, of: c.of, startSec: c.startSec, endSec: c.endSec,
+        seconds: c.seconds, cutsSpeech: c.cutsSpeech,
+        filename: partFileName(silent ? `${label}-silent` : label, c.index, c.of),
+        audioMuted: silent,
+        prompt: '', why: '', status: 'idle' as const, uploaded: false,
+      }));
+      /* Written down before anything is spent on them, so that from here on
+         every step has somewhere to record that it happened. */
+      store.updateNodeData(nodeId, {
+        motionPieces: rows.map((r) => ({ ...r })),
+        motionPreparedFrom: sourceKey,
+        motionPreparedRange: rangeKey,
+        motionPreparedContinuity: continuity,
+        motionDirected: true,
+        motionUploaded: false,
+      });
+    }
+    seams = rows.filter((r) => r.cutsSpeech).length;
 
-      const cuts: Array<{ piece: MotionPiece; dataUrl: string; filename: string }> = [];
-      for (const c of chunks) {
-        if (this.abortRequested) throw new Error('Motion Control stopped.');
-        const cut: any = await clipMedia.cut(source, { startSec: c.startSec, endSec: c.endSec, silent: nodeData.motionMuteAudio === true });
-        const blob: Blob = cut?.blob ?? cut;
-        cuts.push({
-          piece: {
-            index: c.index, of: c.of, startSec: c.startSec, endSec: c.endSec,
-            seconds: c.seconds, cutsSpeech: c.cutsSpeech,
-          },
-          dataUrl: await motionBlobToDataUrl(blob),
-          filename: partFileName(nodeData.motionMuteAudio === true ? `${label}-silent` : label, c.index, c.of),
-        });
-        store.updateNodeData(nodeId, { statusNote: `Cut ${c.index}/${c.of}` });
-      }
+    /* ── 2. Cut only the pieces a later step still needs ──────────────────
+     *
+     * The director watches a piece and the upload sends one; a piece with a
+     * prompt that is already in Flow needs neither. Cutting used to be done for
+     * every piece on every attempt, because the cuts only ever lived in memory
+     * — so a failed upload of one piece re-cut them all. */
+    const cuts = new Map<number, string>();
+    const toCut = rows.filter(needsCut);
+    for (const row of toCut) {
+      if (this.abortRequested) throw new Error('Motion Control stopped.');
+      store.updateNodeData(nodeId, {
+        status: 'running',
+        statusNote: `Cutting piece ${row.index} of ${row.of}...`,
+      });
+      const cut: any = await clipMedia.cut(file as File, {
+        startSec: row.startSec, endSec: row.endSec, silent: row.audioMuted === true,
+        maxShortSide: MOTION_CUT_SHORT_SIDE,
+      });
+      cuts.set(row.index, await motionBlobToDataUrl(cut?.blob ?? cut));
+    }
+    if (resumable && toCut.length) {
+      studioLog('Motion', `Cut ${toCut.length} of ${rows.length} piece(s) again — the others need nothing more from the video.`);
+    }
 
-      // 2. The director pass, in ONE conversation.
+    /* ── 3. The director — only for pieces without a prompt ────────────────
+     *
+     * One conversation, as before, so each piece is written by a model that
+     * has seen the one before it. What changed is failure. It used to throw
+     * away EVERY prompt — the ones already written included — and carry on
+     * with a plain sentence for all of them, which a retry then kept. Now a
+     * failure stops the run with what was written saved, and a retry asks for
+     * the missing pieces only, showing the new conversation the prompts the
+     * old one wrote so the joins still line up. */
+    const toDirect = rows.filter(needsPrompt);
+    if (toDirect.length) {
       const platform = chatPlatform(nodeData.platform);
-      const written: Array<{ prompt: string; why: string; alternatives?: string[] }> = [];
-      if (havePrompts) {
-        /* Already written, for these same cuts. Asking again would produce
-           different wording for a job nobody changed, and cost six Gemini
-           turns and two video uploads to do it. Matched by piece index rather
-           than array position, so an edited row still lands on its own piece. */
-        directed = nodeData.motionDirected !== false;
-        for (const p of cuts) {
-          const had = existing.find((r) => r.index === p.piece.index);
-          written.push({ prompt: had?.prompt || '', why: had?.why || '', alternatives: had?.alternatives });
-        }
-        studioLog('Motion',
-          `Re-cut, but the ${written.length} prompt(s) already written are kept — `
-          + 'the director is not asked again.');
-      } else try {
+      const written = rows.filter((r) => !needsPrompt(r)).map((r) => ({ index: r.index, prompt: r.prompt }));
+      const opening = motionBriefAsk(brief, rows.length)
+        + (written.length ? `\n\n${motionResumeNote(written, toDirect.map((r) => r.index))}` : '');
+      let current = toDirect[0];
+      try {
         store.updateNodeData(nodeId, { statusNote: 'Showing the footage to the director...' });
-        await this.askAgent(nodeId, platform, motionBriefAsk(brief, cuts.length), true, references);
+        await this.askAgent(nodeId, platform, opening, true, references);
 
-        for (const p of cuts) {
+        for (const row of toDirect) {
+          current = row;
           if (this.abortRequested) throw new Error('Motion Control stopped.');
           store.updateNodeData(nodeId, {
-            statusNote: `Directing piece ${p.piece.index} of ${p.piece.of}...`,
+            statusNote: `Directing piece ${row.index} of ${row.of}...`,
           });
+          const p = {
+            piece: {
+              index: row.index, of: row.of, startSec: row.startSec, endSec: row.endSec,
+              seconds: row.seconds, cutsSpeech: row.cutsSpeech,
+            } as MotionPiece,
+            dataUrl: cuts.get(row.index) as string,
+          };
           /* The piece itself goes as the attachment. referenceImageData is named
              for images and carries any data: URL — which is what lets a model
              WATCH this rather than be told about it. */
@@ -2984,7 +3385,7 @@ export class WorkflowRunner {
                 + 'asking the director once more without it, before anything is generated.');
               try {
                 const redo = await this.askAgent(
-                  nodeId, platform, motionSubjectRedoAsk(p.piece, terms), false,
+                  nodeId, platform, motionSubjectRedoAsk(p.piece, terms, brief.hasPlace === true), false,
                 );
                 const fixed = readMotionPrompt(redo, p.piece.index);
                 const left = subjectDescriptionTerms(fixed.prompt);
@@ -3004,111 +3405,126 @@ export class WorkflowRunner {
             }
           }
 
-          written.push({ prompt: got.prompt, why: got.why, alternatives: got.alternatives });
+          row.prompt = got.prompt;
+          row.why = got.why;
+          row.alternatives = got.alternatives;
+          /* Saved the moment it exists. A director that fails on the next
+             piece no longer takes this one down with it. */
+          checkpoint();
           studioLog('Motion', `Piece ${got.index}: ${got.why || got.prompt.slice(0, 80)}`);
         }
       } catch (error: any) {
-        /* A chat outage must not cost the footage that has already been cut. The
-           plain template is exactly what the director exists to improve on, so
-           this is said out loud rather than quietly substituted. */
-        directed = false;
-        written.length = 0;
-        for (const p of cuts) written.push({ prompt: plainMotionPrompt(brief, p.piece), why: '' });
-        studioLog('Motion',
-          `The director could not be reached (${error?.message || error}). Falling back to the `
-          + 'plain instruction for every piece — the same sentence each time, which is what '
-          + 'the director exists to improve on.');
+        if (this.abortRequested) throw error;
+        checkpoint();
+        const why = error?.message || String(error);
+        const kept = rows.filter((r) => !needsPrompt(r)).length;
+        studioLog('Motion', `The director stopped at piece ${current.index}: ${why}`);
+        throw new Error(
+          `The director stopped at piece ${current.index} of ${current.of}: ${why}. `
+          + `${kept} of ${rows.length} prompt(s) are saved — retry asks only for the rest. `
+          + 'Nothing was generated.',
+        );
       }
+    }
 
-      rows = cuts.map((p, i) => ({
-        index: p.piece.index,
-        of: p.piece.of,
-        startSec: p.piece.startSec,
-        endSec: p.piece.endSec,
-        seconds: p.piece.seconds,
-        cutsSpeech: p.piece.cutsSpeech,
-        filename: p.filename,
-        audioMuted: nodeData.motionMuteAudio === true,
-        muteRequested: havePrompts && existing.find((r) => r.index === p.piece.index)?.muteRequested,
-        prompt: written[i]?.prompt || '',
-        alternatives: written[i]?.alternatives,
-        why: written[i]?.why || '',
-        status: 'idle' as const,
-      }));
-
-      /* Saved HERE, before the upload — the step that actually fails.
-         motionUploaded stays false until the pieces are really in Flow, so a
-         retry re-cuts and re-uploads but never re-asks the director. */
-      store.updateNodeData(nodeId, {
-        motionPieces: rows,
-        motionPreparedFrom: sourceKey,
-        motionDirected: directed,
-        motionUploaded: false,
-      });
-
-      // 3. Put the pieces in Flow's library.
-      store.updateNodeData(nodeId, { statusNote: 'Uploading the pieces to Flow...' });
+    /* ── 4. Upload — one piece per call, so each piece's result is its own ──
+     *
+     * It was one call for every piece and one flag for the node, so a failure
+     * could not say which pieces Flow had taken, and the retry uploaded all of
+     * them again. One call each costs a dialog per piece and buys exactly
+     * that: piece 1 in Flow stays in Flow, and only piece 2 goes again. */
+    const toUpload = rows.filter(needsUpload);
+    for (const row of toUpload) {
+      if (this.abortRequested) throw new Error('Motion Control stopped.');
+      store.updateNodeData(nodeId, { statusNote: `${row.uploadPending ? 'Checking upload for' : 'Uploading'} piece ${row.index} of ${row.of} in Flow...` });
       /* Said before it starts, because it is the slowest step and the one that
          shows a banner. A feed that stops dead here reads as a crash. */
       studioLog('Motion',
-        `Uploading ${cuts.length} piece(s) to Flow — Chrome will show a debugging banner.`);
+        row.uploadPending ? `Checking the existing upload for piece ${row.index} — no new upload.`
+          : `Uploading piece ${row.index} of ${row.of} to Flow — Chrome will show a debugging banner.`);
       const upload: any = await chrome.runtime.sendMessage({
         type: 'DEBUG_UPLOAD_TO_FLOW',
-        files: cuts.map((p) => ({ dataUrl: p.dataUrl, filename: p.filename })),
+        verifyOnly: !!row.uploadPending,
+        pending: row.uploadPending,
+        names: [row.filename],
+        files: [{ dataUrl: cuts.get(row.index) as string, filename: row.filename }],
+        /* With Flow closed, open it on a NEW project rather than the last one
+           the user was in. An open project is still used as it is. */
+        newProjectIfClosed: true,
       });
-      if (!upload?.ok) {
-        const why = upload?.error || 'the upload did not go through';
-        studioLog('Motion', `The upload failed: ${why}`);
+      if (!upload?.ok || upload.confirmed !== true) {
+        recordMotionUpload(row, upload);
+        /* In Flow, or very likely, and not ready yet — Flow is still processing
+           it, or the check could not see it. A slow piece, not a failed one, so
+           it no longer stops the run: on 2026-10-01 it did, and piece 1, ready
+           in Flow, was never generated. The ready pieces go first and this one
+           is checked again after them, in the generation loop below. */
+        if (row.uploadPending) {
+          row.status = 'idle';
+          row.errorMessage = undefined;
+          checkpoint();
+          studioLog('Motion', `Piece ${row.index}: ${upload?.error || 'not confirmed ready in Flow yet'} `
+            + '— generating the ready pieces first and coming back to this one.');
+          continue;
+        }
+        row.status = 'error';
+        row.errorMessage = upload?.error || 'The upload is not verified ready in Flow. Retry to check it.';
+        checkpoint();
+        const why = row.errorMessage;
+        const inFlow = rows.filter((r) => r.uploaded).length;
+        studioLog('Motion', `Piece ${row.index}: the upload failed: ${why}`);
         throw new Error(
-          `The pieces could not be put into Flow: ${why}. `
-          + 'Nothing was generated, so nothing has to be cleaned up.',
+          `Piece ${row.index} could not be put into Flow: ${why}. `
+          + `${inFlow} of ${rows.length} piece(s) are ready in Flow and kept. `
+          + (row.uploadPending ? 'Retry checks this existing upload without sending another copy.'
+            : 'Retry uploads only the unfinished pieces. Prepared prompts are kept.'),
         );
       }
       /* ── The name Flow will actually show ─────────────────────────────
        *
-       * Asking for a filename is not the same as getting one. When Chrome's
-       * onDeterminingFilename misses — the MV3 worker may restart between the
-       * download starting and the event firing — it falls back to its own
-       * localised default, and a French profile produced:
-       *
-       *   téléchargement (7)      téléchargement (8)
-       *
-       * sitting in the library while every attach searched for
-       * "Motion-Control-1-part1-of-2" and reported nothing matching. Both
-       * statements were true about the same two files.
-       *
-       * So the row records what was WRITTEN, not what was requested. */
-      const savedAs: string[] = Array.isArray(upload.names) ? upload.names : [];
-      let renamed = 0;
-      rows.forEach((row, i) => {
-        const actual = String(savedAs[i] || '').trim();
-        if (!actual || actual === row.filename) return;
-        /* A NAME, never a path. The first version of this shipped a Windows
-           absolute path into the search box —
-           "C:\Users\HP PROBOOK\Downloads\autoflow-omni-temp\Motion-…" — because
-           the basename was taken with a character class of just [/]. Flow
-           answered "No assets found", which was the truth.
-
-           Kept as a guard rather than trusted to the sender: what goes in this
-           field is typed into a search box, and a path can only ever miss. */
+       * Asking for a filename is not the same as getting one: when Chrome's
+       * onDeterminingFilename misses, it falls back to its own localised
+       * default ("téléchargement (7)"), and every attach then searched for a
+       * name that was never written. The row records what WAS written — and
+       * only a name, never a path: a path typed into Flow's search box can
+       * only ever miss. */
+      const actual = String(upload.names?.[0] || '').trim();
+      if (actual && actual !== row.filename) {
         if (/[\\/]/.test(actual)) {
           studioLog('Motion',
             `Ignoring "${actual}" as a library name for piece ${row.index} — that is a path, `
             + `not a filename. Keeping "${row.filename}".`);
-          return;
+        } else {
+          studioLog('Motion',
+            `Chrome saved piece ${row.index} as "${actual}" rather than "${row.filename}" — `
+            + 'searching Flow for the name it actually has.');
+          row.filename = actual;
         }
+      }
+      /* The second route, named when it was the one that worked: it is what
+         explains a profile where Flow's file chooser never opens. */
+      if (upload.route === 'captured') {
         studioLog('Motion',
-          `Chrome saved piece ${row.index} as "${actual}" rather than "${row.filename}" — `
-          + 'searching Flow for the name it actually has.');
-        row.filename = actual;
-        renamed++;
-      });
-      if (renamed) store.updateNodeData(nodeId, { motionPieces: rows.map((r) => ({ ...r })) });
-
-      studioLog('Motion', `${cuts.length} piece(s) are in the Flow library.`);
-
-      store.updateNodeData(nodeId, { motionUploaded: true });
+          `Piece ${row.index}: Flow's file chooser did not open, so the file went straight to `
+          + "the upload input Flow created instead.");
+      }
+      /* Says which of the two things happened: `confirmed` means the name was
+         found in Flow's library by searching for it; undefined means the check
+         could not run, and this is only the upload's own word. */
+      studioLog('Motion', upload.confirmed
+        ? `Piece ${row.index} is ready in the Flow library — found by name and processed.`
+        : `Piece ${row.index} was handed to Flow, but the library could not be `
+          + `checked: ${upload.confirmNote || 'no reason given'}. Generation is paused.`);
+      if (upload.confirmed && upload.confirmNote) studioLog('Motion', upload.confirmNote);
+      recordMotionUpload(row, upload);
+      checkpoint();
     }
+    /* The upload STEP is over — a piece still processing is waiting on Flow,
+       not on an upload — so the panel moves on to generating. Each row's own
+       `uploaded` still says whether it is ready. */
+    store.updateNodeData(nodeId, {
+      motionUploaded: rows.every((r) => r.uploaded || !!r.uploadPending || r.status === 'done'),
+    });
 
     /* ── 4. Generate them, here, in this node ─────────────────────────────
      *
@@ -3120,21 +3536,42 @@ export class WorkflowRunner {
     let made = 0;
     const failures: string[] = [];
     const retryPieceOnly = this.targetedRun ? Number(nodeData.motionRetryPiece) || 0 : 0;
-    store.updateNodeData(nodeId, { motionRetryPiece: undefined });
+    store.updateNodeData(nodeId, { motionRetryPiece: undefined, motionRetryThrough: undefined });
 
-    for (const row of rows) {
+    /* Ready pieces first. One whose upload Flow was still processing comes
+       last: by then it has had every other generation's time to finish. */
+    const order = [...rows.filter((r) => !r.uploadPending), ...rows.filter((r) => !!r.uploadPending)];
+    if (continuity) order.sort((a, b) => a.index - b.index);
+    for (const row of order) {
       if (this.abortRequested) throw new Error('Motion Control stopped.');
 
       /* A piece that already came back is not made twice. This is what turns a
          retry into "finish the ones that failed" — and it is why the row keeps
          its own status rather than the node keeping one for all of them. */
       if (row.status === 'done' && (row.videoUrl || row.tileId)) {
+        if (continuity && !continuityOutputCurrent(rows, row)) {
+          row.status = 'error';
+          row.errorMessage = 'The previous clip changed. Regenerate this chain to reconnect it; existing video is kept until you confirm.';
+          failures.push(`piece ${row.index}: continuity changed`);
+          write();
+          continue;
+        }
         made++;
         continue;
       }
-      if (retryPieceOnly && row.index !== retryPieceOnly) {
+      if (retryPieceOnly && (row.index < retryPieceOnly || row.index > throughPiece)) {
         if (row.status !== 'done') failures.push(`piece ${row.index} still needs attention`);
         continue;
+      }
+      let handoff: { frame: string; parent?: string } = { frame: '' };
+      if (continuity) {
+        try { handoff = continuityInput(rows, row); }
+        catch (error: any) {
+          row.status = 'error'; row.errorMessage = error.message || String(error);
+          failures.push(`piece ${row.index}: ${row.errorMessage}`);
+          write();
+          continue;
+        }
       }
       if (!row.prompt.trim()) {
         row.status = 'error';
@@ -3142,6 +3579,27 @@ export class WorkflowRunner {
         failures.push(`piece ${row.index} has no prompt`);
         write();
         continue;
+      }
+
+      /* Back to a slow piece: check the same upload again — the check waits for
+         Flow's processing — and never send another copy. */
+      if (row.uploadPending && !row.uploaded) {
+        store.updateNodeData(nodeId, { statusNote: `Checking piece ${row.index} of ${row.of} in Flow...` });
+        studioLog('Motion', `Piece ${row.index}: checking the upload Flow was still processing — no new upload.`);
+        const again: any = await chrome.runtime.sendMessage({
+          type: 'DEBUG_UPLOAD_TO_FLOW', verifyOnly: true, pending: row.uploadPending, names: [row.filename],
+        });
+        recordMotionUpload(row, again);
+        if (!row.uploaded) {
+          row.status = 'error';
+          row.errorMessage = again?.error
+            || 'Flow has not finished processing this piece. Retry checks the existing upload without sending another copy.';
+          failures.push(`piece ${row.index}: ${row.errorMessage}`);
+          studioLog('Motion', `Piece ${row.index} is still not ready in Flow: ${row.errorMessage}`);
+          write();
+          continue;
+        }
+        studioLog('Motion', `Piece ${row.index} is ready in Flow now.`);
       }
 
       row.status = 'running';
@@ -3161,14 +3619,25 @@ export class WorkflowRunner {
           store.updateNodeData(nodeId, { statusNote: `Removing audio from piece ${row.index}...` });
           const { clipMedia } = await import('../clip/clipMedia');
           const { partFileName } = await import('../../content/flow/uploadVideo');
-          const silentCut = await clipMedia.cut(original, { startSec: row.startSec, endSec: row.endSec, silent: true });
+          const silentCut = await clipMedia.cut(original, {
+            startSec: row.startSec, endSec: row.endSec, silent: true, maxShortSide: MOTION_CUT_SHORT_SIDE,
+          });
           if (this.abortRequested) throw new Error('Motion Control stopped.');
           const filename = partFileName(`${label}-silent-${Date.now()}`, row.index, row.of);
           const uploaded: any = await chrome.runtime.sendMessage({
             type: 'DEBUG_UPLOAD_TO_FLOW',
             files: [{ filename, dataUrl: await motionBlobToDataUrl(silentCut.blob) }],
+            newProjectIfClosed: true,
           });
-          if (!uploaded?.ok) throw new Error(uploaded?.error || 'Silent piece upload failed.');
+          if (!uploaded?.ok || uploaded.confirmed !== true) {
+            recordMotionUpload(row, uploaded);
+            if (row.uploadPending) {
+              row.audioMuted = true;
+              row.muteRequested = false;
+            }
+            write();
+            throw new Error(uploaded?.error || 'Silent piece upload is not verified ready in Flow.');
+          }
           const actual = String(uploaded.names?.[0] || '').trim();
           row.filename = actual && !/[\\/]/.test(actual) ? actual : filename;
           row.audioMuted = true;
@@ -3176,8 +3645,18 @@ export class WorkflowRunner {
           write();
         }
         if (this.abortRequested) throw new Error('Motion Control stopped.');
-        const result = await this.awaitBridge(nodeId, {
-          prompt: motionAudioPrompt(`${row.prompt}\nREFERENCE ROLES: ${referenceRules}`, row.audioMuted === true),
+        const generation: NodeExecutionConfig = {
+          /* Written for the VIDEO model: the director's words, then the
+             exact-follow block, then what each image is for. It used to append
+             the director's own instructions instead ("the prompt must NOT
+             describe…"), and nothing asked Omni to follow the motion exactly. */
+          prompt: motionFinalPrompt({
+            prompt: row.prompt, mode, muted: row.audioMuted === true,
+            characters: character.length, places: place.length, preset: nodeData.motionPreset,
+            replacements: replacements.length ? replacements : undefined,
+            continuity: !!handoff.frame,
+            lipSync: nodeData.motionLipSync === true,
+          }),
           platform: 'flow',
           model: 'Omni 1.1 Flash',
           mediaType: 'video',
@@ -3192,8 +3671,15 @@ export class WorkflowRunner {
              nice-to-have; this one IS the motion, so a clip generated without
              it is a different job done at full price. */
           styleReferenceRequired: true,
-          referenceImageData: references.length ? references : undefined,
-        }, 22 * 60 * 1000, '22 minutes');
+          retryFailedMotion: true,
+          /* Omni 1.1 Flash is the model that takes the motion clip. On an
+             account whose Flow does not offer it, the adapter stops instead
+             of generating with whatever Flow had selected. */
+          modelRequired: true,
+          referenceImageData: handoff.frame ? [...references, handoff.frame] : references.length ? references : undefined,
+        };
+        // The content watcher owns the native Retry budget. Do not resubmit here.
+        const result: any = await this.awaitBridge(nodeId, generation, 22 * 60 * 1000, '22 minutes');
 
         row.status = 'done';
         /* previewVideoUrl is the clip itself as a data: URL — it always plays.
@@ -3210,6 +3696,22 @@ export class WorkflowRunner {
         row.posterUrl = String(result.previewUrl || result.thumbnailUrl || '')
           || (playable ? undefined : media) || undefined;
         row.tileId = result.tileId;
+        row.continuityVersion = crypto.randomUUID();
+        row.continuityFrom = handoff.parent;
+        row.endFrameUrl = endingFrame(result.referenceUrl) || undefined;
+        row.endFrameError = undefined;
+        // Keep the successful generation before optional local decoding.
+        write();
+        if (continuity && !row.endFrameUrl) {
+          store.updateNodeData(nodeId, { statusNote: `Reading the ending frame of piece ${row.index}...` });
+          try {
+            const { recoverMotionEndFrame } = await import('../media/motionEndFrame');
+            row.endFrameUrl = await recoverMotionEndFrame(row.videoUrl);
+          } catch (error: any) {
+            row.endFrameError = error.message || String(error);
+            studioLog('Motion', `Piece ${row.index}: clip kept, ending frame unavailable. Dependent clips will wait.`);
+          }
+        }
         row.errorMessage = undefined;
         made++;
         studioLog('Motion', `Piece ${row.index}/${row.of}: done.`);
@@ -3217,8 +3719,25 @@ export class WorkflowRunner {
         const why = error?.message || String(error);
         row.status = 'error';
         row.errorMessage = why;
+        /* Flow's library is the proof of an upload, not the upload's own
+           report. A piece Flow cannot find by name is not in Flow, whatever
+           was recorded — so it goes back to needing an upload, and a retry
+           sends this piece alone instead of failing on the same missing name. */
+        if (why.includes(LIBRARY_MISS) || why.includes('Video upload failed in Flow:')) {
+          row.uploaded = false;
+          row.uploadPending = undefined;
+          row.errorMessage = `${why}. This upload is not usable in Flow, so retrying uploads this piece again.`;
+        }
         failures.push(`piece ${row.index}: ${why}`);
         studioLog('Motion', `Piece ${row.index}/${row.of} failed: ${why}`);
+        /* The account's Flow does not offer the model at all, so every later
+           piece would stop on the same wall. Say it once and stop. The text
+           is the adapter's MODEL_UNAVAILABLE (content/flow/automation.ts);
+           motionModelRequired.test keeps the two in step. */
+        if (why.includes('is not available in this Flow account')) {
+          write();
+          break;
+        }
       }
       write();
     }
@@ -3580,6 +4099,8 @@ export class WorkflowRunner {
    * so now instead of leaving that to be inferred.
    */
   pause(): void {
+    // v1.5.0: Also tell the coordinator to pause
+    bridge.pauseRun();
     this.pauseRequested = true;
     bridge.pauseExecution();
     if (this.pendingWaits.size) {
@@ -3592,6 +4113,8 @@ export class WorkflowRunner {
 
   /** Resume after pause */
   resume(): void {
+    // v1.5.0: Also tell the coordinator to resume
+    bridge.resumeRun();
     this.pauseRequested = false;
     bridge.resumeExecution();
     studioLog('Run', 'Resumed.');
@@ -3599,6 +4122,8 @@ export class WorkflowRunner {
 
   /** Stop the workflow */
   stop(): void {
+    // v1.5.0: Also tell the coordinator to stop
+    bridge.stopRun();
     this.abortRequested = true;
     this.pauseRequested = false;
     /* On disk as well as in memory. abortRequested belongs to a runner that
@@ -3623,6 +4148,99 @@ export class WorkflowRunner {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((r) => setTimeout(r, ms));
+  }
+
+  /* ── v1.5.0: Coordinator integration ──────────────────────────────
+   *
+   * When the RunCoordinator in the service worker drives execution,
+   * these listeners apply its state deltas to the Zustand store so the
+   * Canvas shows live progress.
+   */
+  private coordinatorListenersSet = false;
+  
+  private setupCoordinatorListeners(): void {
+    if (this.coordinatorListenersSet) return;
+    this.coordinatorListenersSet = true;
+    
+    bridge.on('SW_RUN_STATE', (payload: ExecutionSnapshot) => {
+      const store = useStudioStore.getState();
+      store.setRunning(payload.state === 'running');
+      store.setPaused(payload.state === 'paused');
+      if (payload.progress) {
+        store.setRunProgress(payload.progress.current, payload.progress.total);
+      }
+      store.setCurrentNode(payload.currentNodeId ?? null);
+      
+      if (payload.state === 'done' || payload.state === 'stopped' || payload.state === 'error') {
+        this.state = payload.state;
+        store.setRunning(false);
+        store.setPaused(false);
+        store.setCurrentNode(null);
+      } else {
+        this.state = payload.state === 'running' ? 'running' : payload.state === 'paused' ? 'paused' : 'idle';
+      }
+    });
+    
+    bridge.on('SW_NODE_STATUS', (payload: NodeExecutionStatus) => {
+      const store = useStudioStore.getState();
+      /* A frame node's update carries one field and must not be written
+         through the generate-node shape below, which would blank the result
+         fields on a node that has none and, worse, overwrite the frame it is
+         holding with ''. Frames are how a retry resumes — see planRetry. */
+      if (payload.frameUrl) {
+        store.updateNodeData(payload.nodeId, { frameUrl: payload.frameUrl });
+        return;
+      }
+      store.updateNodeData(payload.nodeId, {
+        status: payload.status === 'done' ? 'done' : payload.status,
+        progress: payload.progress ?? 0,
+        errorMessage: payload.errorMessage ?? null,
+        resultUrl: payload.resultUrl || '',
+        previewUrl: payload.previewUrl || '',
+        previewVideoUrl: payload.previewVideoUrl || '',
+        resultTileId: payload.resultTileId || '',
+        resultText: payload.resultText || '',
+        ...(payload.lastFrameUrl !== undefined ? { lastFrameUrl: payload.lastFrameUrl } : {}),
+        ...(payload.sentPrompt !== undefined ? { sentPrompt: payload.sentPrompt } : {}),
+      });
+    });
+    
+    bridge.on('SW_RUN_COMPLETE', () => {
+      void useStudioStore.getState().persistAfterRun();
+    });
+    
+    bridge.on('SW_SNAPSHOT', (payload: ExecutionSnapshot | null) => {
+      if (!payload) return;
+      /* Sync Canvas with an in-progress run the user just opened Studio into. */
+      const store = useStudioStore.getState();
+      store.setRunning(payload.state === 'running');
+      store.setPaused(payload.state === 'paused');
+      if (payload.progress) {
+        store.setRunProgress(payload.progress.current, payload.progress.total);
+      }
+      store.setCurrentNode(payload.currentNodeId ?? null);
+      /* Apply individual node statuses so nodes show their current state */
+      for (const [nodeId, status] of Object.entries(payload.nodeStatuses)) {
+        store.updateNodeData(nodeId, {
+          status: status.status === 'done' ? 'done' : status.status,
+          progress: status.progress ?? 0,
+          errorMessage: status.errorMessage ?? null,
+          ...(status.resultUrl !== undefined ? { resultUrl: status.resultUrl } : {}),
+          ...(status.previewUrl !== undefined ? { previewUrl: status.previewUrl } : {}),
+          ...(status.previewVideoUrl !== undefined ? { previewVideoUrl: status.previewVideoUrl } : {}),
+          ...(status.resultTileId !== undefined ? { resultTileId: status.resultTileId } : {}),
+          ...(status.lastFrameUrl !== undefined ? { lastFrameUrl: status.lastFrameUrl } : {}),
+          ...(status.frameUrl !== undefined ? { frameUrl: status.frameUrl } : {}),
+          ...(status.resultText !== undefined ? { resultText: status.resultText } : {}),
+        });
+      }
+    });
+  }
+
+  /** v1.5.0: Sync with any in-progress coordinator run when Studio (re)opens. */
+  requestCoordinatorSync(): void {
+    this.setupCoordinatorListeners();
+    bridge.requestSnapshot();
   }
 }
 

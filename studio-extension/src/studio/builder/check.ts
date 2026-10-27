@@ -30,6 +30,7 @@ export interface PlanProblem {
     | 'noContinuity' | 'voiceOnFrames'
     | 'voiceWithoutImage' | 'unknownVoice' | 'voiceButSilent' | 'castVoiceUnused'
     | 'storyUnused' | 'uploadUnused' | 'lonelyStory' | 'tooManyReferences'
+    | 'redundantStill'
     | 'orphanStill' | 'thinPrompt' | 'mixedAspect' | 'storyAndPrompts';
   /** What to tell the model, in its own terms. */
   detail: string;
@@ -78,6 +79,10 @@ const HUMAN: Record<PlanProblem['code'], string> = {
   tooManyReferences:
     'One shot is given more reference pictures than Flow accepts, so the extra ones '
     + 'would be dropped when the clip is generated.',
+  redundantStill:
+    'One shot is given both the last frame of the shot before it and a still of its '
+    + 'own. The frame already fixes how that clip opens, so the still costs a '
+    + 'generation to argue with it.',
   orphanStill:
     'One of the stills is generated and then never used. You would pay for it and '
     + 'it would not appear anywhere in the finished video.',
@@ -246,6 +251,55 @@ export function checkPlan(plan: Plan): PlanProblem[] {
     }
   }
 
+  /* ── A still that says nothing the last frame has not ──
+   *
+   * Three different things can feed a picture into a clip, and they do three
+   * different jobs:
+   *
+   *   a CAST/WORLD anchor   — identity and style. Who these people are, what
+   *                           they wear, what the light is like. Shared by
+   *                           many clips, and deliberately neutral about pose
+   *                           and composition.
+   *   a SHOT-SPECIFIC still — a deliberate new composition, for a shot where
+   *                           the story resets the frame.
+   *   a LAST FRAME          — exact temporal continuity: this clip opens on
+   *                           the frame the one before it closed on.
+   *
+   * Treating them as interchangeable is how a sequence ends up with a still
+   * per shot, each re-staging a moment the frame chain already carried, each
+   * costing a generation, and each producing a composition that then argues
+   * with the frame wired beside it.
+   *
+   * The test is what the still FEEDS. One that feeds several clips is an
+   * anchor doing its job, and is left alone. One that feeds exactly this
+   * clip, which is already handed a last frame, is a second opinion about a
+   * moment that is already decided.
+   */
+  for (const s of steps) {
+    if (s.type !== 'generate' || s.media !== 'video') continue;
+    const pictures = imageInputs(s);
+    if (!pictures.some((d) => d!.type === 'frame')) continue;
+
+    const spare = pictures.filter((d) => {
+      if (!d || d.type === 'frame') return false;
+      /* A board is an anchor by definition, however it happens to be wired. */
+      if ((d as any).storyboardSheet) return false;
+      return (feeds.get(d.id) || []).length === 1;
+    });
+    if (spare.length) {
+      out.push({
+        step: s.id,
+        code: 'redundantStill',
+        detail: 'is handed the last frame of the shot before it AND a still ('
+          + `${spare.map((d) => d!.id).join(', ')}) that nothing else uses. The frame `
+          + 'already fixes how this clip opens, so the still can only argue with it, '
+          + 'and it costs a generation to make. Drop it — unless this shot is a '
+          + 'deliberate composition reset, in which case drop the last frame instead '
+          + 'and say in the prompt that the camera has moved.',
+      });
+    }
+  }
+
   /* ── Continuity across a sequence ── */
   /* Only when the piece is ONE narrative, and a story director is what says
      so. Three clips is not by itself a chain: "Water Wipeouts: 4 Written by
@@ -341,8 +395,23 @@ export function checkPlan(plan: Plan): PlanProblem[] {
          and some shots still write themselves. Those shots sit outside the
          cast, world and look everything else shares, which is the one thing
          a director is for. */
+      /* A reference asset is not a shot bypassing the director.
+      
+         An image step whose picture feeds another step is there so the clips
+         have something to look like: a cast and world line-up, a storyboard
+         board, the opening frame for a shot nothing upstream fixes. The
+         Director writes the SHOTS. Asking it to write a cast chart as well
+         produces a scene where a reference sheet was wanted.
+      
+         storyboard.ts already draws this distinction — ShotTarget.role
+         'reference', "an image node feeding a video node is not a shot in the
+         story" — and checkPlan did not, so an episode with a neutral cast
+         anchor was told to delete the anchor's prompt and let the Director
+         write it. An image that feeds nothing is a different fault, and
+         orphanStill already reports it. */
       const bypassing = steps.filter(
-        (s) => writesMedia(s) && ownPrompt(s) && !(s.inputs || []).includes(story.id));
+        (s) => writesMedia(s) && ownPrompt(s) && !(s.inputs || []).includes(story.id)
+          && !(s.media === 'image' && used(s.id)));
       if (bypassing.length) {
         out.push({
           step: bypassing[0].id, code: 'storyAndPrompts',

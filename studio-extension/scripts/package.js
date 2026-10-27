@@ -38,6 +38,8 @@ if (!fs.existsSync(path.join(dist, 'manifest.json'))) {
 }
 
 const manifest = JSON.parse(fs.readFileSync(path.join(dist, 'manifest.json'), 'utf8'));
+const sourceManifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+if (JSON.stringify(manifest) !== JSON.stringify(sourceManifest)) fail('Built manifest is stale; rebuild before packaging.');
 
 /* Every path the manifest promises the browser will be there. */
 const promised = [];
@@ -69,15 +71,13 @@ if (maps.length) {
 
 const name = `autoflow-studio-${manifest.version}.zip`;
 const out = path.join(root, name);
-if (fs.existsSync(out)) fs.rmSync(out);
+if (fs.existsSync(out)) fail(`${name} already exists; choose a new version rather than overwriting it.`);
 
-/* PowerShell's own compressor, so this needs nothing installed. The contents of
-   dist go in at the ROOT of the zip, not inside a dist/ folder — Chrome expects
-   the manifest at the top level, and a nested one is the commonest way a
-   perfectly good build refuses to load. */
+/* The .NET archiver needs no PowerShell Archive module, writes portable '/'
+   entry names, and verifies every entry against the build before returning. */
 execFileSync('powershell', [
-  '-NoProfile', '-NonInteractive', '-Command',
-  `Compress-Archive -Path '${path.join(dist, '*')}' -DestinationPath '${out}' -Force`,
+  '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'zip-dist.ps1'),
+  '-SourceDirectory', dist, '-Destination', out,
 ], { stdio: 'inherit' });
 
 const size = fs.statSync(out).size;

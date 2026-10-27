@@ -87,6 +87,8 @@ export interface ClipMedia {
        when the clip is first encoded, so the clip is made without them and
        remade from the source once Flow returns them. */
     cutaways?: import('../media/overlay').Cutaway[];
+    /* Shorter side at most this many pixels, on a plain cut — see cut.ts. */
+    maxShortSide?: number;
   }): Promise<CutLike>;
 }
 

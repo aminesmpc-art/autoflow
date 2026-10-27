@@ -58,6 +58,7 @@ function buildHarness(
   control: 'sparkle' | 'href' | 'none' = 'sparkle'
 ): Harness {
   document.body.innerHTML = '';
+  window.history.replaceState({}, '', '/app');
   const state = { clicks: 0 };
 
   // Gemini's composer is a Quill editor inside rich-textarea.
@@ -83,7 +84,8 @@ function buildHarness(
     }
     a.addEventListener('click', () => {
       state.clicks++;
-      setTimeout(() => { thread.innerHTML = ''; }, 30);
+      /* Gemini's router: a new chat is /app, with no conversation id. */
+      setTimeout(() => { thread.innerHTML = ''; window.history.pushState({}, '', '/app'); }, 30);
     });
     box(a);
     document.body.append(a);
@@ -181,6 +183,34 @@ describe('every Gemini node starts its own conversation', () => {
     await waitFor(() => h.logs.some((l) => /Already on an empty chat/.test(l)));
 
     expect(h.clicks).toBe(0);
+  });
+
+  it('opens a new chat when the address is a conversation, even with no turns rendered', async () => {
+    /* Reported 2026-10-19 from Motion: starting over did not open a new chat.
+       A thread whose turns are not rendered (a hidden tab, a thread still
+       loading, a redesign) counted 0 turns and was reused, so the new run's
+       brief went into the old director conversation. The address says it is
+       a conversation whatever the page shows. */
+    const h = buildHarness(0);
+    window.history.pushState({}, '', '/app/bf44f320277045d4');
+
+    h.execute(textNode);
+    await waitFor(() => h.logs.some((l) => /Started a new chat/.test(l)));
+
+    expect(h.clicks).toBe(1);
+    expect(location.pathname).toBe('/app');
+    expect(h.logs.join('\n')).toMatch(/the address is a conversation — opening a new chat anyway/);
+    expect(h.logs.join('\n')).not.toMatch(/Already on an empty chat/);
+  });
+
+  it('reads an account-prefixed conversation address the same way', async () => {
+    const h = buildHarness(0);
+    window.history.pushState({}, '', '/u/1/app/bf44f320277045d4');
+
+    h.execute(textNode);
+    await waitFor(() => h.logs.some((l) => /Started a new chat/.test(l)));
+
+    expect(h.clicks).toBe(1);
   });
 
   it('falls back to the href when the sparkle control is absent', async () => {

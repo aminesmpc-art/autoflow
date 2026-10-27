@@ -333,7 +333,7 @@ describe('the name on the page is what finishes the upload', () => {
   it('derives those names the same way the upload does', () => {
     /* One rule, one place. The verification cannot look for a name that only
        the batch loop knows how to build. */
-    expect(FLOW).toMatch(/function uploadFilename\(file: \{ mime\?: string; id\?: string \}, fallback: string\): string/);
+    expect(FLOW).toMatch(/function uploadFilename\(file: \{ mime\?: string; id\?: string; filename\?: string \}, fallback: string\): string/);
     expect(FLOW).toMatch(/const filenames: string\[\] = batch\.map\(/);
     expect(FLOW).toMatch(/uploadFilename\(f, `\$\{batchIdx\}_\$\{i\}`\)\)/);
     expect(FLOW).toMatch(/allFiles\.map\(\(f: any, i: number\) => uploadFilename\(f, `x_\$\{i\}`\)\)/);
@@ -732,7 +732,7 @@ describe('the name on the page is what finishes the upload', () => {
   it('derives those names the same way the upload does', () => {
     /* One rule, one place. The verification cannot look for a name that only
        the batch loop knows how to build. */
-    expect(FLOW).toMatch(/function uploadFilename\(file: \{ mime\?: string; id\?: string \}, fallback: string\): string/);
+    expect(FLOW).toMatch(/function uploadFilename\(file: \{ mime\?: string; id\?: string; filename\?: string \}, fallback: string\): string/);
     expect(FLOW).toMatch(/const filenames: string\[\] = batch\.map\(/);
     expect(FLOW).toMatch(/uploadFilename\(f, `\$\{batchIdx\}_\$\{i\}`\)\)/);
     expect(FLOW).toMatch(/allFiles\.map\(\(f: any, i: number\) => uploadFilename\(f, `x_\$\{i\}`\)\)/);

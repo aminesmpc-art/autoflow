@@ -351,10 +351,28 @@ async function selectModel(want: string): Promise<boolean> {
 
 /* ── Reply ── */
 
-function readLatestReply(): string {
-  const blocks = Array.from(document.querySelectorAll<HTMLElement>(
+/**
+ * Every ASSISTANT turn on the page, in document order. readLatestReply reads
+ * the last one; trackReply COUNTS them.
+ *
+ * A list rather than a single element because "is this OUR answer" is a
+ * question about WHICH turn is being read, and cannot be answered by what it
+ * says — see trackReply.
+ *
+ * Assistant-attributed selectors ONLY, and empty rather than falling back to
+ * the prose sweep below: that sweep matches any rendered markdown, including
+ * the question we just typed, so a count built on it would move before the
+ * answer existed. Empty is the honest answer — the caller falls back to
+ * comparing the text, which is what it did before this existed.
+ */
+function replyContainers(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>(
     '[data-testid="assistant-message"], .font-claude-response, [data-is-streaming]'
   )).filter(isVisible);
+}
+
+function readLatestReply(): string {
+  const blocks = replyContainers();
   if (blocks.length) return blocks[blocks.length - 1].innerText || '';
 
   const proses = Array.from(document.querySelectorAll<HTMLElement>('[class*="prose"], [class*="markdown"]'))
@@ -496,6 +514,9 @@ async function handleExecute(payload: any): Promise<any> {
   }
 
   const priorReply = readLatestReply().trim();
+  /* And how many assistant turns held it. Text alone cannot tell a new answer
+     from an identical repeat of the last one — see trackReply. */
+  const repliesBefore = replyContainers().length;
 
   if (!(await fillComposer(composer, prompt))) {
     send('STUDIO_NODE_ERROR', { nodeId, error: 'Could not type into the Claude prompt box' });
@@ -523,13 +544,15 @@ async function handleExecute(payload: any): Promise<any> {
   send('STUDIO_NODE_PROGRESS', { nodeId, progress: 20 });
   logLine('Sent — waiting for the reply…');
 
-  trackReply(nodeId, priorReply, config?.rawReply === true).catch((e: any) => {
+  trackReply(nodeId, priorReply, config?.rawReply === true, repliesBefore).catch((e: any) => {
     send('STUDIO_NODE_ERROR', { nodeId, error: `Tracking the Claude reply failed: ${e?.message || e}` });
   });
   return { success: true };
 }
 
-async function trackReply(nodeId: string, priorReply: string, raw: boolean): Promise<void> {
+async function trackReply(
+  nodeId: string, priorReply: string, raw: boolean, priorReplies = 0
+): Promise<void> {
   const startedAt = Date.now();
   let stable = '';
   let lastChangeAt = Date.now();
@@ -583,7 +606,21 @@ async function trackReply(nodeId: string, priorReply: string, raw: boolean): Pro
        quiet window, broke, and fell through to the timeout below — reporting
        "did not finish answering" while holding the complete reply it had read
        one line earlier. */
-    if (now && now !== priorReply) {
+    /* ── Is this OUR answer, or the one that was already on screen? ──
+     *
+     * Comparing the text accepts a reply only if it READS DIFFERENTLY from
+     * the last one, which is not a property of a new answer. A Chief asked to
+     * review a second round in the same thread answers
+     * `{"approved":true,"issues":[]}` exactly as it answered the first, and
+     * every poll gets discarded until the node times out with the finished
+     * verdict on screen. (Reported against Gemini; this adapter had the same
+     * line, three times.) A new answer is a new assistant TURN, so that is
+     * what is counted. OR, not instead of: this accepts everything the text
+     * test used to. */
+    const ourTurn = replyContainers().length > priorReplies;
+    const isOurs = !!now && (ourTurn || now !== priorReply);
+
+    if (isOurs) {
       if (now === stable) stableCount++;
       else { stable = now; stableCount = 0; lastChangeAt = Date.now(); }
     }
@@ -594,11 +631,15 @@ async function trackReply(nodeId: string, priorReply: string, raw: boolean): Pro
        polls that the happy path waits for may never both arrive inside the
        quiet window. */
     if (Date.now() - lastChangeAt > TEXT_QUIET_MS && !isGenerating()) {
-      if (stable && stable !== priorReply) { deliver(stable); return; }
+      /* `stable` is only ever assigned in the branch above, which runs only
+         for our own turn — so holding one at all means holding ours. It used
+         to be re-tested against priorReply here, which is the same mistake
+         again and would now reject a legitimate identical answer. */
+      if (stable) { deliver(stable); return; }
       break;
     }
 
-    if (!now || now === priorReply) continue;
+    if (!isOurs) continue;
 
     if (stableCount >= 2 && !isGenerating()) {
       deliver(now);

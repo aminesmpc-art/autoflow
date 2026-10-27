@@ -54,8 +54,10 @@ describe('ports', () => {
 
   it('gives an ingredients node the image port and no frame ports', () => {
     // Frames is a mode, not a replacement — most templates are ingredients.
+    // A Flow clip built from ingredients also takes a whole clip on V
+    // (videoReference.test.ts); a frames node does not.
     expect(gen({ mediaType: 'video', creationType: 'ingredients' }))
-      .toEqual(['text', 'image_ref']);
+      .toEqual(['text', 'image_ref', 'video_ref']);
   });
 
   it('does not offer frame ports on an ordinary image node', () => {
@@ -173,6 +175,15 @@ describe('opening an older frames workflow', () => {
     id: 'g', type: 'generate',
     data: { type: 'generate', mediaType: 'video', creationType: 'frames' },
   };
+
+  it('fills an unused frame socket without moving a correctly named wire', () => {
+    const wired = [
+      { id: 'end', source: 'b', target: 'g', targetHandle: 'frame_end' },
+      { id: 'legacy', source: 'a', target: 'g', targetHandle: 'image_ref' },
+    ];
+    expect(migrateFrameEdges([framesNode], wired).map(e => [e.id, e.targetHandle]))
+      .toEqual([['end', 'frame_end'], ['legacy', 'frame_start']]);
+  });
 
   it('moves stills off image_ref onto the frame ports', () => {
     const out = migrateFrameEdges([framesNode], [

@@ -43,8 +43,15 @@ export function captureVideoFrame(video: HTMLVideoElement): string {
  * unchanged for the user. Returns false rather than throwing: a clip that will
  * not load is a reason to report no frame, never a reason to fail the run.
  */
-export async function ensureVideoLoaded(video: HTMLVideoElement): Promise<boolean> {
-  const ready = () => video.readyState >= 2 && isFinite(video.duration) && video.duration > 0;
+export async function ensureVideoLoaded(
+  video: HTMLVideoElement, { allowUnknownLength = false } = {}
+): Promise<boolean> {
+  /* A live recording reports an Infinity duration until something reads to
+     its end (see knownDuration). framesFromVideoBlob measures that itself, so
+     decodable is enough for it. The page path still waits for a real length:
+     every seek it makes is computed from one. */
+  const ready = () => video.readyState >= 2 && video.duration > 0
+    && (allowUnknownLength || isFinite(video.duration));
   if (ready()) return true;
 
   /* Left as 'auto' on purpose — the caller restores it once the whole capture
@@ -76,6 +83,42 @@ export async function ensureVideoLoaded(video: HTMLVideoElement): Promise<boolea
   });
 
   return ready();
+}
+
+/**
+ * How long a clip is, when the file does not say.
+ *
+ * A live recording — MediaRecorder with a timeslice, which is how browser
+ * screen recorders write — has no Duration element, so the element reports
+ * Infinity until something reads to the end of the file. Nothing here did: an
+ * 8s recording sat out the whole 10s load wait, came back as a clip that
+ * "would not decode", and no ending frame was ever read from it.
+ *
+ * Asked to seek far past the end, Chrome reads to the last frame, fires
+ * durationchange with the real length and parks the playhead there — about
+ * 0.2s for that clip, about 1s for a 54MB one, hence the 10s budget. A clip
+ * that declares its length, as every Flow MP4 does, returns at once and is
+ * never seeked here.
+ *
+ * Returns 0, never Infinity, while the length is still unknown, so the caller
+ * reports no ending frame rather than drawing one from the wrong place.
+ */
+export async function knownDuration(video: HTMLVideoElement, budgetMs = 10_000): Promise<number> {
+  if (video.duration === Infinity) {
+    await new Promise<void>((resolve) => {
+      const finish = () => {
+        clearTimeout(timer);
+        video.removeEventListener('seeked', finish);
+        resolve();
+      };
+      const timer = setTimeout(finish, budgetMs);
+      /* 'seeked', not 'durationchange': the length arrives a moment before
+         this seek settles, and the next seek must not land on top of it. */
+      video.addEventListener('seeked', finish);
+      try { video.currentTime = Number.MAX_SAFE_INTEGER; } catch { finish(); }
+    });
+  }
+  return isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
 }
 
 /**
@@ -273,7 +316,9 @@ export async function framesFromVideoBlob(
   document.body.appendChild(video);
 
   try {
-    if (!(await ensureVideoLoaded(video))) {
+    /* Decodable is enough to start: a clip that does not declare its length
+       is measured below, not refused. */
+    if (!(await ensureVideoLoaded(video, { allowUnknownLength: true }))) {
       logLine('Downloaded the clip but it would not decode');
       return none;
     }
@@ -281,8 +326,12 @@ export async function framesFromVideoBlob(
     const first = await drawWhenDecodable(video);
 
     let last = '';
-    const duration = video.duration;
-    if (isFinite(duration) && duration > 0) {
+    /* Only after the opening frame is drawn: measuring a clip that does not
+       declare its length leaves the playhead at its end. */
+    const duration = await knownDuration(video);
+    if (!duration) {
+      logLine('Last frame: the clip does not record its length, and reading to its end did not find it');
+    } else {
       /* Same ladder as the on-page capture: the very last frame is the one
          most likely to sit in a range that will not decode in time, and half
          a second earlier is still the end of the shot. */
@@ -301,11 +350,11 @@ export async function framesFromVideoBlob(
        and handed it to the clip chained below as the thing to continue from. */
     if (!last && first) {
       logLine(
-        'Last frame: could not reach the end of the clip, so the OPENING frame is '
-        + 'standing in — continuity from this node will be wrong'
+        'Last frame: could not reach the end of the clip. The opening frame is '
+        + 'kept as a preview only; no ending reference is returned.'
       );
     }
-    return { first: first || last, last: last || first };
+    return { first: first || last, last };
   } catch (e: any) {
     logLine(`Downloaded the clip but could not read a frame: ${e?.message || e}`);
     return none;

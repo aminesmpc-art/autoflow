@@ -23,6 +23,7 @@ import { join } from 'path';
 import { compilePlan } from '../studio/builder/plan';
 import { buildSpec } from '../studio/builder/spec';
 import { BUILTIN_ASK_PRESETS } from '../studio/presets';
+import { LIGHTING_GRAMMARS } from '../studio/ask/storyPlan';
 
 const SPEC = buildSpec('a skincare ad');
 
@@ -99,7 +100,12 @@ describe('a plan can set the film language', () => {
 
   it('is documented where the builder will read it', () => {
     expect(SPEC).toMatch(/colorTemp: "daylight" \(5600K\)/);
-    expect(SPEC).toMatch(/lighting: "hero" \| "intimate" \| "tension" \| "none"/);
+    /* Read off the Story node's own list rather than spelled out here, so a
+       setup added there and never told to the builder fails by name. The
+       spelled-out version went red when "overcast" was added to both. */
+    const line = SPEC.split('\n').find((l) => /^\s*- lighting: /.test(l)) || '';
+    expect(line).not.toBe('');
+    for (const { id } of LIGHTING_GRAMMARS) expect({ id, listed: line.includes(`"${id}"`) }).toEqual({ id, listed: true });
   });
 
   it('warns that hero lighting fights the UGC preset', () => {

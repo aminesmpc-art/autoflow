@@ -30,14 +30,19 @@ function normalizeForModelMatch(text: string): string {
     .trim();
 }
 
-/** The rule setModel applies: exact name wins; a substring only when unique. */
+/** The rule setModel applies: exact name wins; a substring only when unique;
+ *  then, only when unique, the same name with version numbers ignored — the
+ *  tier added for Omni's rename, which also maps Nano Banana 2 and 2.1. */
 function choose(menu: string[], target: string): string | null {
   const t = normalizeForModelMatch(target);
   const norm = menu.map((m) => ({ text: m, n: normalizeForModelMatch(m) }));
   const exact = norm.filter((c) => c.n === t);
   if (exact.length) return exact[0].text;
   const loose = norm.filter((c) => c.n.includes(t));
-  return loose.length === 1 ? loose[0].text : null;
+  if (loose.length === 1) return loose[0].text;
+  const strip = (s: string) => s.replace(/\b\d+(\.\d+)*\b/g, ' ').replace(/\s+/g, ' ').trim();
+  const bare = norm.filter((c) => strip(c.n) === strip(t));
+  return bare.length === 1 ? bare[0].text : null;
 }
 
 /** Verbatim from the live menu, emoji included. */
@@ -77,9 +82,12 @@ describe('choosing from the live menu', () => {
   });
 
   it('refuses rather than guessing when a name is ambiguous', () => {
-    // "Nano Banana" alone matches all three. Guessing means a whole run on the
+    // "Banana" alone matches all three. Guessing means a whole run on the
     // wrong model with nothing downstream able to tell.
-    expect(choose(FLOW_IMAGE_MENU, 'Nano Banana')).toBeNull();
+    expect(choose(FLOW_IMAGE_MENU, 'Banana')).toBeNull();
+    // "Nano Banana" is not ambiguous to the version tier: only Nano Banana 2
+    // differs from it by a version number alone, as setModel decides too.
+    expect(choose(FLOW_IMAGE_MENU, 'Nano Banana')).toBe('🍌 Nano Banana 2');
   });
 
   it('returns nothing for a model Flow no longer offers', () => {

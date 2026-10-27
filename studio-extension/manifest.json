@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFlow Studio — Node Workflows for AI Video",
-  "version": "1.4.2",
+  "version": "1.6.1",
   "description": "Visual node workflows that automate multi-step AI video generation in your browser. Independent tool, no affiliation.",
   "minimum_chrome_version": "114",
   "offline_enabled": false,
@@ -15,7 +15,9 @@
     "identity",
     "unlimitedStorage",
     "downloads",
-    "debugger"
+    "debugger",
+    "offscreen",
+    "notifications"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.auto-flow.studio https://* ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*;"
@@ -24,6 +26,7 @@
     "https://labs.google/*",
     "https://flow.google.com/*",
     "https://flow-content.google/*",
+    "https://*.googlevideo.com/*",
     "https://api.auto-flow.studio/*",
     "https://chatgpt.com/*",
     "https://gemini.google.com/*",
@@ -81,6 +84,12 @@
         "chatgpt-content.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["gemini-network.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     },
     {
       "matches": [

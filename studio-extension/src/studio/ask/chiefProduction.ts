@@ -72,9 +72,17 @@ export function contractAsk(): string {
     + '(about two words per second). Preserve the requested scene count and dialogue.';
 }
 
+const PROMPT_CRAFT_REVIEW = 'Also check concrete execution: when timed beats are requested by the plan, video prompts must carry time ranges; '
+  + 'camera height, mount and movement must agree; occupied hands and props must have explicit transfers or releases before another action. '
+  + 'A video needs a visible action and reaction or physical result, not just a tableau with generic "camera and subjects move" language. '
+  + 'Judge only the assigned action: a deliberate still hold or distant animal may be correct. '
+  + 'Report demonstrable conflicts or missing requested instructions with the exact target ID and a specific repair; '
+  + 'do not reject for word count, personal taste, or a preference for extra drama. ';
+
 export function reviewAsk(reply: string, directors: ChiefDirector[], prompts: Record<string, string[]>): string {
   return 'Review ALL Director prompts against the shared bible and scene contracts. '
     + 'Check identities, room assignments, starting/ending states, scene coverage and exact voiceover. '
+    + PROMPT_CRAFT_REVIEW
     + 'Return ONLY {"approved":true,"issues":[]} or {"approved":false,"issues":'
     + '[{"targetId":"exact target ID","problem":"specific conflict"}]}. Do not rewrite prompts.\n'
     + JSON.stringify({ plan: readJsonObject(reply), groups: directors.map(d => ({
@@ -101,6 +109,7 @@ export function reviewFollowUp(directors: ChiefDirector[], prompts: Record<strin
   return 'The Directors have written their prompts from the plan you just made. '
     + 'Review them against that plan — identities, room assignments, '
     + 'starting/ending states, scene coverage and exact voiceover. '
+    + PROMPT_CRAFT_REVIEW
     + 'Return ONLY {"approved":true,"issues":[]} or {"approved":false,"issues":'
     + '[{"targetId":"exact target ID","problem":"specific conflict"}]}. Do not rewrite prompts.\n'
     + JSON.stringify({ groups: directors.map(d => ({

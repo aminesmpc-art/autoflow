@@ -25,7 +25,7 @@ export const NODE_PORTS: Record<string, { in: string[]; out: string[] }> = {
      canvas and changes when a connection is remade. */
   /* Every port a generate node can have in any mode. Not what any single node
      draws — portsFor picks the subset for the mode it is actually in. */
-  generate: { in: ['text', 'image_ref', 'frame_start', 'frame_end'], out: ['result'] },
+  generate: { in: ['text', 'image_ref', 'frame_start', 'frame_end', 'video_ref'], out: ['result'] },
   // A prompt writer emits text rather than a result.
   'generate:text': { in: ['text', 'image_ref'], out: ['text'] },
   /* The Story node: one idea in, prompts out to every node it writes for.
@@ -46,6 +46,13 @@ export const NODE_PORTS: Record<string, { in: string[]; out: string[] }> = {
      a wire the runner never looks at. */
   'generate:ingredients': { in: ['text', 'image_ref'], out: ['result'] },
   'generate:frames': { in: ['text', 'frame_start', 'frame_end'], out: ['result'] },
+  /* A Flow clip built from ingredients also takes one whole clip, on V:
+     "You can't attach one video to another (which is core functionality)",
+     said a 1-star review, and the only way in was image_ref, which takes the
+     clip's last frame. Omni puts the clip itself on the prompt; on Veo the
+     runner falls back to that last frame and the node says so
+     (shared/videoReference.ts). Not in Frames — its two slots are stills. */
+  'generate:ingredients-video': { in: ['text', 'image_ref', 'video_ref'], out: ['result'] },
   /* Grok's extend. A clip in, a prompt for what happens next, a longer clip
      out — so a second extend can chain from the first. `video` rather than
      `image_ref` because a still is exactly what this cannot take. */
@@ -110,10 +117,15 @@ export const isFramesMode = (data: any): boolean =>
 export const portsFor = (node: any) => {
   if (node?.type === 'generate') {
     if (node?.data?.mediaType === 'text') return NODE_PORTS['generate:text'];
-    return NODE_PORTS[isFramesMode(node?.data) ? 'generate:frames' : 'generate:ingredients'];
+    if (isFramesMode(node?.data)) return NODE_PORTS['generate:frames'];
+    return NODE_PORTS[hasVideoRefPort(node?.data) ? 'generate:ingredients-video' : 'generate:ingredients'];
   }
   return NODE_PORTS[node?.type];
 };
+
+/** Whether a generate node draws V: a Flow clip built from ingredients. */
+export const hasVideoRefPort = (data: any): boolean =>
+  (data?.platform || 'flow') === 'flow' && data?.mediaType === 'video' && !isFramesMode(data);
 
 /** Node types this build can actually draw — Canvas.tsx's nodeTypes map. */
 /* What this build can actually draw and drive.
@@ -412,6 +424,9 @@ export function retargetImagePorts(
   edges: any[],
   toFrames: boolean
 ): { edges: any[]; dropped: number } {
+  const occupied = new Set(edges.filter(e => e?.target === nodeId
+    && FRAME_HANDLES.includes(e.targetHandle)).map(e => e.targetHandle));
+  const available = FRAME_HANDLES.filter(handle => !occupied.has(handle));
   let slot = 0;
   let dropped = 0;
 
@@ -420,8 +435,8 @@ export function retargetImagePorts(
     if (e?.target !== nodeId) { next.push(e); continue; }
 
     if (toFrames && e.targetHandle === 'image_ref') {
-      if (slot >= FRAME_HANDLES.length) { dropped++; continue; }
-      next.push({ ...e, targetHandle: FRAME_HANDLES[slot++] });
+      if (slot >= available.length) { dropped++; continue; }
+      next.push({ ...e, targetHandle: available[slot++] });
       continue;
     }
     if (!toFrames && FRAME_HANDLES.includes(e.targetHandle)) {
@@ -432,6 +447,20 @@ export function retargetImagePorts(
   }
 
   return { edges: next, dropped };
+}
+
+/**
+ * Move a node's V wire to the reference input, for a mode that has no V.
+ *
+ * Switched to Frames, to an image, or to another site, the node stops drawing
+ * V, and a wire left on it would be drawn nowhere and read by nothing. On
+ * image_ref the clip still counts — as its last frame, which is what that wire
+ * meant before V existed — and in Frames retargetImagePorts then seats it in
+ * Start or End like any other picture.
+ */
+export function releaseVideoRef(nodeId: string, edges: any[]): any[] {
+  return edges.map(e => (e?.target === nodeId && e.targetHandle === 'video_ref'
+    ? { ...e, targetHandle: 'image_ref' } : e));
 }
 
 /**
@@ -448,7 +477,6 @@ export function migrateFrameEdges(nodes: any[], edges: any[]): any[] {
   for (const n of nodes || []) {
     if (n?.type !== 'generate' || !isFramesMode(n.data)) continue;
     const mine = out.filter((e: any) => e?.target === n.id);
-    if (mine.some((e: any) => FRAME_HANDLES.includes(e.targetHandle))) continue;
     if (!mine.some((e: any) => e.targetHandle === 'image_ref')) continue;
     out = retargetImagePorts(n.id, out, true).edges;
   }

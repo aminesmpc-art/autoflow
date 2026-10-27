@@ -21,15 +21,65 @@ import { orderShotTargets } from '../ask/storyboard';
 import {
   STRUCTURES, RULES, DEFAULT_STORY, beatSummary, beatsFor, readStorySettings,
   CAMERA_PROGRESSIONS, AUDIO_MODES, VISUAL_PRESETS,
+  effectivePov, povSurvivalPresetPatch, chestDocumentaryPresetPatch, LIGHTING_GRAMMARS,
   type CastMember, type StorySettings, type StructureId,
   type CameraProgressionId, type AudioModeId, type VisualPresetId,
 } from '../ask/storyPlan';
+import {
+  PERSPECTIVES, CAMERA_RIGS, POV_LENSES, STABILIZATIONS, BODY_MOVEMENTS,
+  CAMERA_HEIGHTS, FRAMINGS, AWARENESS, INTERACTION_DISTANCES, POV_CONTINUITIES,
+  POV_DURATIONS, NARRATION_STRATEGIES, NARRATION_PERSONS, HOOK_TIMINGS,
+  ACTION_DENSITIES, DIALOGUE_DENSITIES, ENDING_STYLES, REVEAL_STYLES,
+  POV_PARTICIPATIONS, ANIMAL_STYLES, GROUP_STAGINGS,
+  POV_SURVIVAL_DEFAULTS, POV_SURVIVAL_PRESET_ID,
+  type PovSettings, type PovOption,
+} from '../ask/povSurvival';
 import { FLOW_VOICES, NO_VOICE, voiceLabel } from '../flowVoices';
+import { DISTORTIONS, FOCUS_DEPTHS, MOTION_BLURS, MOVEMENT_RESPONSES, COLOR_TREATMENTS } from '../ask/actionCameraLook';
 import { NodeInfoBadge } from './NodeInfoBadge';
 
 /* One reader, shared with the runner. Kept as a local name because this
    file uses it a dozen times, and because the two used to differ. */
 const readStory = readStorySettings;
+
+/** One labelled dropdown, for the POV panel's eighteen of them. */
+function PovSelect<T extends string>({ label, value, options, disabled, onPick }: {
+  label: string; value: T; options: readonly PovOption<T>[];
+  disabled?: boolean; onPick: (v: T) => void;
+}) {
+  return (
+    <div className="sn-field">
+      <label className="sn-field__label">{label}</label>
+      <select
+        className="sn-bar__sel nodrag"
+        value={value}
+        aria-label={label}
+        disabled={disabled}
+        onChange={(e) => onPick(e.target.value as T)}
+      >
+        {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+      </select>
+    </div>
+  );
+}
+
+/** One labelled checkbox, for what the camera's owner shows of themselves. */
+function PovCheck({ label, checked, disabled, onPick }: {
+  label: string; checked: boolean; disabled?: boolean; onPick: (v: boolean) => void;
+}) {
+  return (
+    <label className="sn-story__timing-label nodrag">
+      <input
+        type="checkbox"
+        className="sn-story__check"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onPick(e.target.checked)}
+      />
+      <span>{label}</span>
+    </label>
+  );
+}
 
 function StoryNodeInner({ id, data, selected }: NodeProps) {
   const d = data as any;
@@ -38,7 +88,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
   const duplicateNode = useStudioStore((s) => s.duplicateNode);
   const nodes = useStudioStore((s) => s.nodes);
   const edges = useStudioStore((s) => s.edges);
-  const [activeTab, setActiveTab] = useState<'direct' | 'flow' | 'cast'>('direct');
+  const [activeTab, setActiveTab] = useState<'direct' | 'pov' | 'flow' | 'cast'>('direct');
 
   const story = readStory(d);
   const chiefConnected = edges.some((edge) => edge.source === d.chiefId
@@ -74,6 +124,13 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
   const prompts: string[] = Array.isArray(d.shotPrompts) ? d.shotPrompts : [];
   const [openShot, setOpenShot] = useState<number | null>(null);
   const set = (patch: Partial<StorySettings>) => updateNodeData(id, patch as any);
+
+  /* The POV block the panel is editing.
+     effectivePov resolves the preset-without-a-block case, so a Director that
+     only names the preset opens on its real values rather than on blanks. */
+  const pov: PovSettings = effectivePov(story) || POV_SURVIVAL_DEFAULTS;
+  const setPov = (patch: Partial<PovSettings>) => set({ pov: { ...pov, ...patch } });
+  const povOn = !!effectivePov(story);
 
   const setCast = (i: number, patch: Partial<CastMember>) => {
     const next = story.cast.map((c, k) => (k === i ? { ...c, ...patch } : c));
@@ -192,6 +249,14 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
           </button>
           <button
             type="button"
+            className={`sn-story__tab nodrag ${activeTab === 'pov' ? 'sn-story__tab--active' : ''}`}
+            onClick={() => setActiveTab('pov')}
+            aria-pressed={activeTab === 'pov'}
+          >
+            <Icon name="frame" /> POV {povOn && '\u2713'}
+          </button>
+          <button
+            type="button"
             className={`sn-story__tab nodrag ${activeTab === 'flow' ? 'sn-story__tab--active' : ''}`}
             onClick={() => setActiveTab('flow')}
             aria-pressed={activeTab === 'flow'}
@@ -229,6 +294,11 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
         {/* ── TAB 1: Director Settings ── */}
         {activeTab === 'direct' && (
           <div className="sn-story__panel">
+            <button className="sn-director__mini-btn nodrag" disabled={chiefControlled}
+              title="Apply chest mount, 14mm fisheye, deep focus, adaptive motion, overcast daylight and earth tones"
+              onClick={() => { set(chestDocumentaryPresetPatch(story)); setActiveTab('pov'); }}>
+              Use chest-camera documentary look
+            </button>
             <div className="sn-story__grid">
               <div className="sn-field">
                 <label className="sn-field__label">AI Engine</label>
@@ -253,7 +323,17 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
                   value={story.visualPreset || 'liveAction'}
                   aria-label="Visual Style"
                   disabled={chiefControlled}
-                  onChange={(e) => set({ visualPreset: e.target.value as VisualPresetId })}
+                  onChange={(e) => {
+                    const next = e.target.value as VisualPresetId;
+                    /* Selecting the POV preset fills the format's settings.
+                       Everything it may touch is decided in
+                       povSurvivalPresetPatch — never cast, world, look, avoid
+                       or beats, and never a story setting already moved off
+                       its default. Any other preset is one field, as before. */
+                    set(next === POV_SURVIVAL_PRESET_ID
+                      ? povSurvivalPresetPatch(story)
+                      : { visualPreset: next });
+                  }}
                 >
                   {VISUAL_PRESETS.map((x) => (
                     <option key={x.id} value={x.id}>{x.name}</option>
@@ -308,6 +388,144 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
 
             <div className="sn-story__hint">
               {CAMERA_PROGRESSIONS.find((x) => x.id === story.cameraProgression)?.hint}
+            </div>
+          </div>
+        )}
+
+        {/* ── TAB 2: POV / Action Camera ──
+
+            Absent from every Director until somebody opens it. The panel reads
+            the preset's defaults so it is never blank, but nothing is written
+            to the node until a control is touched — which is what keeps an old
+            saved workflow writing exactly the brief it always wrote. */}
+        {activeTab === 'pov' && (
+          <div className="sn-story__panel">
+            {!povOn && (
+              <div className="sn-story__note">
+                Off. Pick <strong>POV Survival / GoPro Diary</strong> under Visual Style,
+                or change anything below, to shoot this piece first-person.
+              </div>
+            )}
+
+            <div className="sn-story__section">
+              <div className="sn-story__section-head"><span>Camera</span></div>
+              <div className="sn-story__grid">
+                <PovSelect label="Perspective" value={pov.perspective} options={PERSPECTIVES}
+                  disabled={chiefControlled} onPick={(v) => setPov({ perspective: v })} />
+                <PovSelect label="Camera rig" value={pov.rig} options={CAMERA_RIGS}
+                  disabled={chiefControlled} onPick={(v) => setPov({ rig: v })} />
+                <PovSelect label="Lens / FOV" value={pov.lens} options={POV_LENSES}
+                  disabled={chiefControlled} onPick={(v) => setPov({ lens: v })} />
+                <PovSelect label="Stabilisation" value={pov.stabilization} options={STABILIZATIONS}
+                  disabled={chiefControlled} onPick={(v) => setPov({ stabilization: v })} />
+                <PovSelect label="Body movement" value={pov.bodyMovement} options={BODY_MOVEMENTS}
+                  disabled={chiefControlled} onPick={(v) => setPov({ bodyMovement: v })} />
+                <PovSelect label="Camera height" value={pov.cameraHeight} options={CAMERA_HEIGHTS}
+                  disabled={chiefControlled} onPick={(v) => setPov({ cameraHeight: v })} />
+                <PovSelect label="Framing" value={pov.framing} options={FRAMINGS}
+                  disabled={chiefControlled} onPick={(v) => setPov({ framing: v })} />
+                <PovSelect label="Shot length (pacing)" value={pov.preferredShotDuration}
+                  options={POV_DURATIONS} disabled={chiefControlled}
+                  onPick={(v) => setPov({ preferredShotDuration: v })} />
+              </div>
+              <div className="sn-story__hint">
+                {CAMERA_RIGS.find((x) => x.id === pov.rig)?.hint}
+              </div>
+            </div>
+
+            <details className="sn-story__section nodrag">
+              <summary>Lens, motion &amp; documentary look</summary>
+              <div className="sn-story__grid">
+                <PovSelect label="Lens distortion" value={pov.distortion || 'auto'} options={DISTORTIONS}
+                  disabled={chiefControlled} onPick={v => setPov({ distortion: v })} />
+                <PovSelect label="Focus depth" value={pov.focusDepth || 'auto'} options={FOCUS_DEPTHS}
+                  disabled={chiefControlled} onPick={v => setPov({ focusDepth: v })} />
+                <PovSelect label="Motion blur" value={pov.motionBlur || 'auto'} options={MOTION_BLURS}
+                  disabled={chiefControlled} onPick={v => setPov({ motionBlur: v })} />
+                <PovSelect label="Movement response" value={pov.movementResponse || 'auto'} options={MOVEMENT_RESPONSES}
+                  disabled={chiefControlled} onPick={v => setPov({ movementResponse: v })} />
+                <PovSelect label="Colour treatment" value={pov.colorTreatment || 'auto'} options={COLOR_TREATMENTS}
+                  disabled={chiefControlled} onPick={v => setPov({ colorTreatment: v })} />
+                <PovSelect label="Lighting" value={story.lighting || 'none'} options={LIGHTING_GRAMMARS}
+                  disabled={chiefControlled} onPick={v => set({ lighting: v })} />
+              </div>
+              <div className="sn-story__hint">Follow the action adjusts walking, crouching, pauses and running to each beat. The connected video nodes keep their own clip durations.</div>
+            </details>
+
+            <div className="sn-story__section">
+              <div className="sn-story__section-head"><span>What the camera's owner shows</span></div>
+              <PovCheck label="Hands may enter the frame" checked={pov.showHands}
+                disabled={chiefControlled} onPick={(v) => setPov({ showHands: v })} />
+              <PovCheck label="Forearms may enter the frame" checked={pov.showForearms}
+                disabled={chiefControlled} onPick={(v) => setPov({ showForearms: v })} />
+              <PovCheck label="Weapon or held prop in the foreground" checked={pov.showForegroundProp}
+                disabled={chiefControlled} onPick={(v) => setPov({ showForegroundProp: v })} />
+              <PovCheck label="Protagonist's face may be seen" checked={pov.protagonistFaceVisible}
+                disabled={chiefControlled} onPick={(v) => setPov({ protagonistFaceVisible: v })} />
+              <PovCheck label="The rig itself is in shot (strap, harness rim)"
+                checked={pov.showCameraMount} disabled={chiefControlled}
+                onPick={(v) => setPov({ showCameraMount: v })} />
+            </div>
+
+            <div className="sn-story__section">
+              <div className="sn-story__section-head"><span>The people in it</span></div>
+              <div className="sn-story__grid">
+                <PovSelect label="Camera awareness" value={pov.awareness} options={AWARENESS}
+                  disabled={chiefControlled} onPick={(v) => setPov({ awareness: v })} />
+                <PovSelect label="Interaction distance" value={pov.interactionDistance}
+                  options={INTERACTION_DISTANCES} disabled={chiefControlled}
+                  onPick={(v) => setPov({ interactionDistance: v })} />
+              </div>
+              <div className="sn-story__hint">
+                {AWARENESS.find((x) => x.id === pov.awareness)?.hint}
+              </div>
+            </div>
+
+            <div className="sn-story__section">
+              <div className="sn-story__section-head"><span>Behaviour</span></div>
+              <div className="sn-story__grid">
+                <PovSelect label="POV participation" value={pov.povParticipation}
+                  options={POV_PARTICIPATIONS} disabled={chiefControlled}
+                  onPick={(v) => setPov({ povParticipation: v })} />
+                <PovSelect label="Group staging" value={pov.groupStaging}
+                  options={GROUP_STAGINGS} disabled={chiefControlled}
+                  onPick={(v) => setPov({ groupStaging: v })} />
+                <PovSelect label="Animal style" value={pov.animalStyle}
+                  options={ANIMAL_STYLES} disabled={chiefControlled}
+                  onPick={(v) => setPov({ animalStyle: v })} />
+              </div>
+              <div className="sn-story__hint">
+                {POV_PARTICIPATIONS.find((x) => x.id === pov.povParticipation)?.hint}
+              </div>
+            </div>
+
+            <div className="sn-story__section">
+              <div className="sn-story__section-head"><span>Story &amp; retention</span></div>
+              <div className="sn-story__grid">
+                <PovSelect label="Hook timing" value={pov.hookTiming} options={HOOK_TIMINGS}
+                  disabled={chiefControlled} onPick={(v) => setPov({ hookTiming: v })} />
+                <PovSelect label="Reveal style" value={pov.revealStyle} options={REVEAL_STYLES}
+                  disabled={chiefControlled} onPick={(v) => setPov({ revealStyle: v })} />
+                <PovSelect label="Ending style" value={pov.endingStyle} options={ENDING_STYLES}
+                  disabled={chiefControlled} onPick={(v) => setPov({ endingStyle: v })} />
+                <PovSelect label="Action density" value={pov.actionDensity} options={ACTION_DENSITIES}
+                  disabled={chiefControlled} onPick={(v) => setPov({ actionDensity: v })} />
+                <PovSelect label="Dialogue density" value={pov.dialogueDensity} options={DIALOGUE_DENSITIES}
+                  disabled={chiefControlled} onPick={(v) => setPov({ dialogueDensity: v })} />
+                <PovSelect label="Continuity" value={pov.continuity} options={POV_CONTINUITIES}
+                  disabled={chiefControlled} onPick={(v) => setPov({ continuity: v })} />
+                <PovSelect label="Narration" value={pov.narrationStrategy}
+                  options={NARRATION_STRATEGIES} disabled={chiefControlled}
+                  onPick={(v) => setPov({ narrationStrategy: v })} />
+                <PovSelect label="Narration person" value={pov.narrationPerson}
+                  options={NARRATION_PERSONS} disabled={chiefControlled}
+                  onPick={(v) => setPov({ narrationPerson: v })} />
+              </div>
+              <div className="sn-story__hint">
+                Narration is written and recorded separately — the Director is told not to
+                put spoken lines in the clips. Environmental sound is set under
+                Sound &amp; Audio.
+              </div>
             </div>
           </div>
         )}

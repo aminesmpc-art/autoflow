@@ -244,3 +244,4 @@ describe('delivering twice is safe', () => {
     expect(third.posted).toHaveLength(0);
   });
 });
+export {};

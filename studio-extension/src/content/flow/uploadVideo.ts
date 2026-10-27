@@ -55,6 +55,8 @@
  * file.
  */
 
+import { flowProjectId } from '../../shared/flowUrls';
+
 export type UploadOutcome =
   | { ok: true; name: string }
   | { ok: false; stage: 'start' | 'upload' | 'setup'; reason: string };
@@ -73,10 +75,12 @@ export function projectIdFromUrl(href: string = location.href): string {
      Matching only the first returned '' on the new host, and an empty project
      id is not a small failure here: uploadToLibrary refuses without one, so
      the upload reported that it could not find a project on a page that was
-     sitting inside one. */
-  const m = /^https?:\/\/(?:labs\.google\/fx\/tools\/flow|flow\.google\.com)\/project\/([A-Za-z0-9-]+)/
-    .exec(href);
-  return m ? m[1] : '';
+     sitting inside one.
+
+     Now one shared definition (../../shared/flowUrls), because the worker has
+     to answer the same question about a tab's URL when it chooses which Flow
+     tab to use — and two regexes are two chances to disagree. */
+  return flowProjectId(href);
 }
 
 /**

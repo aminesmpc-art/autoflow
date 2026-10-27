@@ -18,6 +18,18 @@ import {
 import { savePromptHistory, saveRunningQueue, clearRunningQueue } from '../../shared/storage';
 import { sleepOrDomChange } from '../shared/hiddenWait';
 import { getStudioImageFiles } from './studioImages';
+import { ensureReferenceImages, referenceProject, referenceReceipts, matchingReferenceRow, referenceSearchQueries,
+  ReferenceReceipt } from './referenceImages';
+import { mediaKey } from './mediaIdentity';
+import { openMediaDialog, mediaDialogRoot } from './libraryPicker';
+import { clipLabel, decodeClipRef, describeLibraryVideo } from '../../shared/videoReference';
+/* Static, not `await import()`.
+   This was the one lazily-loaded module in the content script that is not
+   also imported statically somewhere, so it was the one that became a real
+   chunk — and a content script cannot fetch one. Webpack's publicPath is
+   resolved against the document at runtime, and the document belongs to
+   Flow, so dist/774.js was requested from www.gstatic.com and every prompt
+   died with "Loading chunk 774 failed" before it reached Generate. */
 import {
   AVAILABLE_MODELS, AVAILABLE_IMAGE_MODELS, LEGACY_MODEL_NAMES,
   modelHasDuration, modelHasResolution,
@@ -35,6 +47,7 @@ import {
   sleep,
   findPromptInput,
   findGenerateButton,
+  findActiveAgentToggle,
   findCreditsExhaustedNotice,
   readSelectedModel,
   setKnownModelNames,
@@ -68,7 +81,6 @@ import {
   findAssetSearchDialog,
   findAssetResults,
   isGenerating,
-  tilesHaveProgress,
   countOutputAssets,
   countTilesWithMedia,
   snapshotTiles,
@@ -120,8 +132,10 @@ import {
   mediaNamesOnPage,
   uploadIsOnPage,
   ingredientChipIds,
+  findTileByIdentity,
 } from './selectors';
 import type { TileSnapshot, FailedTileInfo, TileState } from './selectors';
+import { pressLanded } from './pressCheck';
 import { matchesFlowText, exactMatchFlowText, closeAriaSelectors, FLOW_STRINGS, searchInputSelector, isQuotaError, isSafetyViolation } from './flowStrings';
 import {
   getAllCachedStatuses,
@@ -152,6 +166,18 @@ const ALL_KNOWN_MODELS: readonly string[] = [
 ];
 // Lets the selectors tell the model button from the settings chip.
 setKnownModelNames(ALL_KNOWN_MODELS);
+
+/** Marks the message so the Motion runner can stop the whole job on it. */
+export const MODEL_UNAVAILABLE = 'is not available in this Flow account';
+
+/** What a run that requires a model says when Flow cannot select it. Nothing was generated. */
+export function modelUnavailableMessage(wanted: string, offered: string[]): string {
+  return offered.length
+    ? `${wanted} ${MODEL_UNAVAILABLE}: Flow offers ${offered.join(', ')}. Nothing was generated. `
+      + `Use a Google account whose Flow offers ${wanted}, then retry.`
+    : `Could not open Flow's model list to select ${wanted}, so nothing was generated. `
+      + 'Close any open Flow dialog, check the Flow tab is on a project, and retry.';
+}
 
 function normalizeForModelMatch(text: string): string {
   return text
@@ -238,7 +264,8 @@ export const CHIP_APPEAR_MS = 10_000;
  * same names: "has Flow taken this file" is answered by looking for the name
  * on the page, and it cannot look for a name only the batch loop knows.
  */
-function uploadFilename(file: { mime?: string; id?: string }, fallback: string): string {
+function uploadFilename(file: { mime?: string; id?: string; filename?: string }, fallback: string): string {
+  if (/^ref_[a-f0-9]{64}$/.test(file.id || '') && file.filename) return file.filename;
   const ext = (file.mime || '').includes('png') ? 'png' : 'jpg';
   const idSlug = (file.id || '').replace(/-/g, '').slice(0, 8) || fallback;
   return `af_${idSlug}.${ext}`;
@@ -319,6 +346,11 @@ export class AutomationEngine {
       image when the user asked for a video is a wasted credit and a broken
       workflow, so start() aborts rather than continuing on Flow defaults. */
   private mediaTypeApplied = true;
+  /* Set by setModel when it gives up: the model asked for, and the video or
+     image models Flow's list offered (empty when the list itself could not be
+     found). Read once settings are applied, so a run that REQUIRES the model
+     can stop rather than generate with another one. */
+  private modelUnavailable: { wanted: string; offered: string[] } | null = null;
   /** Resolver for re-prompt dialog — waits for user to edit or skip a failed prompt */
   private repromptResolver: ((result: { text: string; skip: boolean }) => void) | null = null;
   /** Resolver for batch re-prompt — waits for user to edit/skip ALL failed prompts at once */
@@ -407,6 +439,22 @@ export class AutomationEngine {
       // Continuing here is what produced "video" nodes rendering images.
       const want = this.queue.settings.mediaType === 'image' ? 'Image' : 'Video';
       const msg = `Could not switch Flow to ${want} mode — stopped instead of generating the wrong media type. Close any open Flow dialog and try again.`;
+      this.log('error', msg);
+      this.stopped = true;
+      for (let i = 0; i < this.queue.prompts.length; i++) {
+        this.updatePromptStatus(i, 'failed', msg);
+      }
+      this.sendQueueStatus('stopped');
+      releaseRunLock(this);
+      this.sendRunLockChanged(false);
+      return;
+    }
+    /* A required model that could not be selected stops here, before anything
+       is submitted. Motion Control asked "why doesn't it switch to Omni 1.1"
+       when the account's Flow did not offer Omni at all: setModel logged
+       "not in menu, using current" and the run generated with Veo. */
+    if (this.queue.settings.modelRequired && this.modelUnavailable) {
+      const msg = modelUnavailableMessage(this.modelUnavailable.wanted, this.modelUnavailable.offered);
       this.log('error', msg);
       this.stopped = true;
       for (let i = 0; i < this.queue.prompts.length; i++) {
@@ -842,8 +890,16 @@ export class AutomationEngine {
             log: (line) => this.log('info', line),
           });
           libraryVideoOn = got.ok;
+          // A clip wired into V carries JSON here; never show that raw.
+          const wiredClip = decodeClipRef(libraryVideo);
           if (got.ok) {
-            this.log('info', `"${libraryVideo}" is on the prompt as an ingredient.`);
+            this.log('info', `${describeLibraryVideo(libraryVideo)} is on the prompt as an ingredient.`);
+          } else if (wiredClip) {
+            throw new Error(
+              `The clip wired into V (${clipLabel(wiredClip)}) could not be put on the prompt — `
+              + `${got.reason}. Nothing was generated. To continue from its last frame `
+              + 'instead, move that wire to the 🖼 input.'
+            );
           } else if (this.queue!.settings.styleReferenceRequired) {
             /* Thrown, not logged: the retry wrapper around this prompt gets
                another go at the dialog, and if it never lands the message is
@@ -944,7 +1000,18 @@ export class AutomationEngine {
         if (this.mode === 'lite') {
           // LITE MODE: Fast submission, no polling, just a minimal delay to let UI reset
           const liteWaitMs = Math.max(3000, waitSec * 1000 - 2000);
-          this.log('info', `[Lite] Generation started. Waiting ${Math.round(liteWaitMs / 1000)}s before next prompt...`);
+          /* Lite does not poll, by design — so it must not claim what it has
+             not watched. "Generation started" was printed unconditionally,
+             including on the run that submitted nothing at all, and it is the
+             line the user read while the project stayed empty. A tile can
+             legitimately take longer than the two seconds above to appear, so
+             none showing is not proof of failure; it is simply what was seen,
+             and that is what it now says. */
+          this.log('info', newTileIds.length > 0
+            ? `[Lite] Generation started — ${newTileIds.length} tile(s) on screen. `
+              + `Waiting ${Math.round(liteWaitMs / 1000)}s before next prompt...`
+            : `[Lite] Submitted, no tile on screen yet. `
+              + `Waiting ${Math.round(liteWaitMs / 1000)}s before next prompt...`);
           await sleep(liteWaitMs);
         } else {
           // FLOW + FULL MODE: Wait the configured time, poll for early failures
@@ -1165,6 +1232,14 @@ export class AutomationEngine {
         return;
 
       } catch (err: any) {
+        // Motion uses only its tracked tile's native Retry action. A second
+        // submission loop would add uncounted attempts or duplicate a live job.
+        if (this.queue!.settings.retryFailedMotion === true) {
+          this.state = 'MARK_FAILED';
+          this.updatePromptStatus(idx, 'failed', err.message);
+          this.log('error', `Motion submission stopped without resubmitting: ${err.message}`);
+          return;
+        }
         // Guard: only REAL safety/policy errors skip retry.
         // "cancelled" is a FAKE transient state — DO NOT skip retry for it.
         const errLower = (err.message || '').toLowerCase();
@@ -1267,17 +1342,14 @@ export class AutomationEngine {
       }
 
       // 2. Deactivate "Agent" mode if it's enabled.
-      // aria-pressed="true" + span.content="Agent" = Agent mode is ON.
       // Settings (model, ratio, etc.) are broken when Agent is active.
-      const agentBtn = document.querySelector('button[aria-pressed="true"]') as HTMLElement | null;
+      // A native click is what toggled the live chip (findActiveAgentToggle).
+      const agentBtn = findActiveAgentToggle();
       if (agentBtn) {
-        const label = agentBtn.querySelector('.content')?.textContent?.trim();
-        if (label && exactMatchFlowText(label, 'agent')) {
-          this.log('warn', 'Agent mode is active — clicking to deactivate');
-          simulateClick(agentBtn);
-          await sleep(1000);
-          continue; // re-check page state after deactivation
-        }
+        this.log('warn', 'Agent mode is active — clicking to deactivate');
+        agentBtn.click();
+        await sleep(1000);
+        continue; // re-check page state after deactivation
       }
 
       // 3. Now that we are sure the Detail View is closed and Agent is off,
@@ -1377,7 +1449,7 @@ export class AutomationEngine {
       if (isParentInHistorySidebar) {
          stateEl = document.querySelector(`#history-step-${CSS.escape(targetTileId)}`);
       } else {
-         stateEl = document.querySelector(`[data-tile-id="${CSS.escape(targetTileId)}"]`);
+         stateEl = findTileByIdentity(targetTileId);
       }
 
       if (!stateEl) {
@@ -1453,7 +1525,7 @@ export class AutomationEngine {
     if (!isParentInHistorySidebar) {
       // If tileEl is not yet set (e.g. wait loop was skipped), try one last time by ID
       if (!tileEl) {
-         tileEl = document.querySelector(`[data-tile-id="${CSS.escape(targetTileId)}"]`);
+         tileEl = findTileByIdentity(targetTileId);
       }
       if (!tileEl || getTileState(tileEl) !== 'completed') {
         throw new Error(`Cannot extend: parent tile did not complete in time or is missing.`);
@@ -2702,6 +2774,10 @@ export class AutomationEngine {
 
   private async setModel(modelName: string, overrideTrigger?: Element | null, isRetry = false): Promise<void> {
     if (this.stopped) return;
+    if (!isRetry) this.modelUnavailable = null;
+    /* The names Flow's model list showed on the last look, for the message a
+       required model gives when it is not among them. */
+    let offered: string[] = [];
 
     // Use override trigger if provided, else use the global settings panel trigger
     const trigger = overrideTrigger || findModelSelectorTrigger();
@@ -2745,6 +2821,7 @@ export class AutomationEngine {
         return this.setModel(modelName, null, true);
       }
       this.log('warn', 'Model dropdown not found. Using Flow default.');
+      if (!overrideTrigger) this.modelUnavailable = { wanted: modelName, offered: [] };
       return;
     }
 
@@ -2864,6 +2941,11 @@ export class AutomationEngine {
         const text = item.textContent || '';
         candidates.push({ item, text, norm: normalizeForModelMatch(text) });
       }
+      /* Readable names: Flow prefixes each row with an icon ligature such as
+         "volume_up" (models that make sound), which is text to the DOM. */
+      offered = candidates
+        .map((c) => c.text.replace(/\b[a-z]+(?:_[a-z]+)+(?=[A-Z0-9])/g, '').replace(/arrow_drop_down/g, '').trim())
+        .filter(Boolean);
 
       const exact = candidates.filter((c) => c.norm === targetNorm);
       const loose = candidates.filter((c) => c.norm.includes(targetNorm));
@@ -2979,6 +3061,7 @@ export class AutomationEngine {
       return this.setModel(modelName, null, true);
     }
     this.log('warn', `Model "${modelName}" not in menu. Using current: ${currentModelRaw}`);
+    if (!overrideTrigger) this.modelUnavailable = { wanted: modelName, offered };
   }
 
   // ================================================================
@@ -3012,6 +3095,50 @@ export class AutomationEngine {
     } catch (e: any) {
       this.log('warn', `Failed to get image blobs: ${e.message}`);
       return false;
+    }
+
+    // Studio/Motion references have content identities. Unlike the legacy queue
+    // cache, these receipts survive a new engine, a retry, and a tab reload.
+    if (imageBlobs.files.every((file: any) => /^ref_[a-f0-9]{64}$/.test(file.id || ''))) {
+      const project = referenceProject(location.href);
+      const attached = () => findLoadedIngredients().flatMap(chip => {
+        const src = chip.querySelector('img')?.getAttribute('src') || '';
+        const id = mediaKey(src);
+        return id ? [id] : [];
+      });
+      const stopped = () => {
+        if (this.stopped) return true;
+        try { return referenceProject(location.href) !== project; } catch { return true; }
+      };
+      const attach = () => ensureReferenceImages(imageBlobs.files, {
+        project, ...referenceReceipts, attached,
+        stopped,
+        log: line => this.log('info', line),
+        upload: async file => {
+          // One at a time: the new loaded chip identifies exactly this file.
+          const input = findPromptInput();
+          if (!input || stopped()) return false;
+          const before = new Set(attached());
+          const transfer = new DataTransfer();
+          transfer.items.add(new File([this.base64ToBlob(file.data, file.mime)], file.filename, { type: file.mime }));
+          input.focus();
+          input.dispatchEvent(new ClipboardEvent('paste', {
+            bubbles: true, cancelable: true, clipboardData: transfer,
+          }));
+          const deadline = Date.now() + INGREDIENT_WAIT_MS;
+          while (Date.now() < deadline && !stopped()) {
+            if (attached().some(id => !before.has(id))) return true;
+            await sleep(500);
+          }
+          // Upload may have landed without a chip. Search, never paste again.
+          return !stopped() && this.selectSavedReference({ filename: file.filename }, attached, stopped);
+        },
+        select: receipt => this.selectSavedReference(receipt, attached, stopped),
+      });
+      // Serialize the receipt check and upload across tabs of the same origin.
+      return navigator.locks
+        ? navigator.locks.request(`autoflow-reference:${project}`, attach)
+        : attach();
     }
 
     // Split files into batches
@@ -3139,6 +3266,84 @@ export class AutomationEngine {
     this.log('warn',
       `Flow never showed a name for ${images.length - named} of ${images.length} image(s) after ${secs}s `
       + `(${boxes} chip(s) in the tray, ${ready} with a picture).`);
+    return false;
+  }
+
+  /** Pick a proven reference, including uploads Flow renamed to a media UUID. */
+  private async selectSavedReference(
+    receipt: ReferenceReceipt, attached: () => string[], stopped = () => this.stopped,
+  ): Promise<boolean> {
+    await this.dismissDialogs();
+    const opened = await openMediaDialog({ need: 'library', log: line => this.log('info', line) });
+    if (!opened.ok || stopped()) return false;
+    const pane = mediaDialogRoot();
+    const tab = pane && Array.from(pane.querySelectorAll<HTMLElement>('mat-list-item, button[role="tab"], [role="tab"]'))
+      .find(el => isVisible(el) && (matchesFlowText(el.textContent?.trim() || '', 'image')
+        || el.querySelector('mat-icon')?.textContent?.trim() === 'image'));
+    if (tab && tab.getAttribute('aria-selected') !== 'true') {
+      simulateClick(tab);
+      await sleep(400);
+    }
+    const dialog = mediaDialogRoot();
+    const search = dialog?.querySelector<HTMLInputElement>(searchInputSelector());
+    if (!dialog || !search) return false;
+
+    // Short name, full name, Flow's own ID, then an empty query that scans the
+    // virtualized rows — always, since a search that finds nothing is not proof
+    // the image is gone.
+    const queries = referenceSearchQueries(receipt);
+    let target: HTMLElement | null = null;
+    for (const query of queries) {
+      await setInputValue(search, query);
+      const deadline = Date.now() + (query ? 3500 : 6000);
+      const scroller = dialog.querySelector<HTMLElement>('cdk-virtual-scroll-viewport, .cdk-virtual-scroll-viewport, .asset-list, [data-testid="virtuoso-scroller"]');
+      if (scroller) scroller.scrollTop = 0;
+      while (Date.now() < deadline && !stopped()) {
+        const rows = findAssetOptions(dialog);
+        target = matchingReferenceRow(rows.length ? rows : findAssetResults(dialog) as HTMLElement[], receipt);
+        if (target) break;
+        if (!query && scroller) {
+          scroller.scrollTop += Math.max(100, scroller.clientHeight * 0.8);
+          scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+        }
+        await sleep(400);
+      }
+      if (target || stopped()) break;
+    }
+    if (!target || stopped()) {
+      await this.dismissDialogs();
+      return false;
+    }
+    /* Proof is the row's own key on a chip, or — when the picker and the
+       prompt name media differently, `/asb/` on one side and a UUID on the
+       other — exactly one chip that was not there before this click. The
+       row was matched by identity or by its content-hash name, so that
+       chip is this picture. */
+    const targetId = mediaKey(target.querySelector('img')?.getAttribute('src') || '');
+    const before = new Set(attached());
+    const landed = () => {
+      const now = attached();
+      return (!!targetId && now.includes(targetId)) || now.filter(id => !before.has(id)).length === 1;
+    };
+    // A selected row may attach immediately when clicked again. Click once only.
+    if (!assetOptionSelected(target) && !target.classList.contains('asset-item-active')) simulateClick(target);
+    await sleep(400);
+    if (!landed()) {
+      const commit = Array.from(dialog.querySelectorAll<HTMLElement>('button')).find(button =>
+        isVisible(button) && !button.hasAttribute('disabled')
+        && matchesFlowText(button.textContent?.trim() || '', 'addToPrompt'));
+      if (commit) simulateClick(commit);
+    }
+    const deadline = Date.now() + INGREDIENT_WAIT_MS;
+    while (Date.now() < deadline && !stopped()) {
+      if (landed()) {
+        await this.dismissDialogs();
+        this.log('info', 'Saved reference attached — reused without uploading.');
+        return true;
+      }
+      await sleep(500);
+    }
+    await this.dismissDialogs();
     return false;
   }
 
@@ -3543,9 +3748,7 @@ export class AutomationEngine {
     const wanted = Math.min(imageBlobs.files.length, 2);
     const names: string[] = [];
     for (let i = 0; i < wanted; i++) {
-      const ext = imageBlobs.files[i].mime.includes('png') ? 'png' : 'jpg';
-      const idSlug = (images[i].id || '').replace(/-/g, '').slice(0, 8) || `${promptIdx}_${i}`;
-      names.push(`af_${idSlug}.${ext}`);
+      names.push(uploadFilename({ ...imageBlobs.files[i], id: images[i].id }, `${promptIdx}_${i}`));
     }
 
     /* The short way: both pictures pasted a second apart, and Flow puts them
@@ -4089,7 +4292,7 @@ export class AutomationEngine {
   }
 
   /** Click the Generate button using multiple strategies for reliability */
-  private async clickGenerate(): Promise<void> {
+  private async clickGenerate(beforeSubmit?: () => void): Promise<void> {
     await humanDelay(300, 600);
 
     // Wait for the Generate button to exist and become enabled.
@@ -4098,6 +4301,10 @@ export class AutomationEngine {
     const maxWaitMs = 60000; // up to 60s for image processing
     const startWait = Date.now();
     let lastLogTime = 0;
+    /* Whether Flow ever agreed this prompt was submittable. Carried to the
+       end because it separates the two reasons nothing happens, and they
+       need different answers from the user — see the throw below. */
+    let everEnabled = false;
 
     while (Date.now() - startWait < maxWaitMs) {
       if (this.stopped) return;
@@ -4108,7 +4315,7 @@ export class AutomationEngine {
           htmlBtn.getAttribute('aria-disabled') === 'true' ||
           htmlBtn.classList.contains('disabled');
 
-        if (!isDisabled) break; // Button is enabled — proceed
+        if (!isDisabled) { everEnabled = true; break; } // Button is enabled — proceed
 
         // Log every 5 seconds while waiting
         const elapsed = Date.now() - startWait;
@@ -4127,7 +4334,17 @@ export class AutomationEngine {
     // Final check — is it still disabled?
     const htmlBtn = btn as HTMLButtonElement;
     if (htmlBtn.disabled || htmlBtn.getAttribute('aria-disabled') === 'true') {
-      this.log('warn', `Generate button still disabled after ${Math.round((Date.now() - startWait) / 1000)}s. Attempting click anyway.`);
+      /* The attempt is kept — the disabled read could be wrong on a build we
+         have not seen — but it is close to hopeless and the log should say so
+         rather than imply an even chance. Measured on the live Angular Flow:
+         a disabled mat-mdc-icon-button computes `pointer-events: none`, so
+         elementFromPoint at its centre returns the WRAPPER rather than the
+         button, and every pointer-based strategy below lands on nothing.
+         Enabled, the same hit test lands inside the button. */
+      this.log('warn',
+        `Generate button still disabled after ${Math.round((Date.now() - startWait) / 1000)}s. `
+        + 'A disabled button takes no pointer events, so the strategies below are '
+        + 'unlikely to land — attempting anyway, then reporting if nothing does.');
     }
 
     this.log('info', 'Generate button is ready');
@@ -4178,9 +4395,21 @@ export class AutomationEngine {
     // An alert already showing means we are out before we even click.
     await throwIfOutOfCredits();
 
+    /* The page as it was before any press, so a press is judged by what IT
+       changed. "Any tile generating" was the second signal here, and it is a
+       statement about the project, not about this press: a tile already busy
+       (a native Retry on an earlier piece, an earlier prompt still rendering,
+       a tile read as busy that is not) made every press "confirmed" on the
+       first poll. Reported 2026-10-20 from Motion: the prompt and both
+       ingredients sat in Flow's box, Generate never went, and the piece read
+       "Generating in Flow…" for 14 minutes, waiting on a clip nothing had
+       asked for. */
+    const tilesBefore = snapshotTiles();
     const clickWorked = async (): Promise<boolean> => {
-      // Poll a few times — Flow's UI needs a moment to clear the prompt and start tiles
-      for (let attempt = 0; attempt < 4; attempt++) {
+      /* Eight polls rather than four: with the page-wide signal gone, a real
+         press that is slow to show must not be read as a miss and pressed
+         again — that would be a second generation. */
+      for (let attempt = 0; attempt < 8; attempt++) {
         /* Credits are NOT checked in here.
            throwIfOutOfCredits opens Flow's alert popover — hover, click, wait
            400ms — and this loop runs four times after every click strategy, so
@@ -4192,13 +4421,16 @@ export class AutomationEngine {
         // Primary signal: prompt text CHANGED after submit.
         // We can't check for empty because Flow's Slate editor always has
         // placeholder text ("What do you want to create?") in textContent.
-        if (promptTextBefore.length > 0) {
-          const textNow = getPromptText();
-          if (textNow !== promptTextBefore) return true;
+        const now = snapshotTiles();
+        const landed = pressLanded(promptTextBefore, getPromptText(), tilesBefore, now);
+        if (landed) {
+          this.log('info', landed === 'prompt'
+            ? 'Press confirmed: the prompt left the composer'
+            : `Press confirmed: tiles ${tilesBefore.total}→${now.total}, `
+              + `generating ${tilesBefore.generating}→${now.generating}`);
+          return true;
         }
-        // Secondary signal: tiles appeared
-        if (tilesHaveProgress()) return true;
-        if (attempt < 3) await sleep(500);
+        if (attempt < 7) await sleep(500);
       }
       return false;
     };
@@ -4215,6 +4447,7 @@ export class AutomationEngine {
     let reactSeen = false;
 
     // Strategy 1: React onPointerDown via MAIN world (most Radix UI buttons use this)
+    beforeSubmit?.();
     const trig1 = await reactTrigger(btn, 'onPointerDown');
     if (trig1.found) reactSeen = true;
     if (trig1.found && trig1.success) {
@@ -4227,6 +4460,7 @@ export class AutomationEngine {
     }
 
     // Strategy 2: React onClick via MAIN world
+    beforeSubmit?.();
     const trig2 = await reactTrigger(btn, 'onClick');
     if (trig2.found) reactSeen = true;
     if (trig2.found && trig2.success) {
@@ -4240,6 +4474,7 @@ export class AutomationEngine {
 
     // Strategy 3: React onKeyDown Enter via MAIN world (on prompt input)
     if (promptInput) {
+      beforeSubmit?.();
       const trig3 = await reactKeyTrigger(promptInput, 'Enter');
       if (trig3.found) reactSeen = true;
       if (trig3.found && trig3.success) {
@@ -4291,6 +4526,7 @@ export class AutomationEngine {
      * an ordering read off one run is a preference, not a proof. */
     if (promptInput) {
       (promptInput as HTMLElement).focus();
+      beforeSubmit?.();
       promptInput.dispatchEvent(new KeyboardEvent('keydown', {
         key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true,
       }));
@@ -4303,6 +4539,7 @@ export class AutomationEngine {
     }
 
     // Fallback 2: simulateClick (full pointer→mouse→click chain)
+    beforeSubmit?.();
     simulateClick(btn);
     this.log('info', 'Fallback 2: simulateClick');
     await humanDelay(800, 1200);
@@ -4312,6 +4549,7 @@ export class AutomationEngine {
     }
 
     // Fallback 3: Native .click()
+    beforeSubmit?.();
     nativeClick(btn);
     this.log('info', 'Fallback 3: native .click()');
     await humanDelay(800, 1200);
@@ -4325,7 +4563,41 @@ export class AutomationEngine {
        a bug in the strategies. */
     await throwIfOutOfCredits();
     this.log('warn', 'All click strategies attempted — none confirmed');
-    await humanDelay(500, 1000);
+
+    /* ── Nothing landed, so nothing may be reported as landed ──
+     *
+     * This used to log that warning and RETURN, and a normal return is how
+     * the caller learns a generation was submitted. It slept two seconds,
+     * found no new tiles, and announced
+     *
+     *   [Lite] Generation started. Waiting 3s before next prompt...
+     *
+     * then moved to the next prompt. A whole queue runs to the end that way
+     * and leaves an EMPTY project, the prompt still sitting in the composer,
+     * one WARN buried in the feed as the only trace. Reported exactly like
+     * that, and it is the third time this shape has cost a run: a step that
+     * could not verify its own success reported success anyway.
+     *
+     * Thrown instead. The per-prompt loop retries the submit once — clicking
+     * a moment too early is the ordinary cause — and then marks THIS prompt
+     * failed, which is what it is.
+     *
+     * The two causes are named apart because they call for different things.
+     * A button that never enabled is Flow refusing the prompt, and no click
+     * route would have helped. A button that was enabled and did not respond
+     * is the click route itself failing.
+     */
+    const disabledNow = htmlBtn.disabled
+      || htmlBtn.getAttribute('aria-disabled') === 'true';
+    throw new Error(
+      (!everEnabled && disabledNow)
+        ? 'Flow never enabled its Generate button for this prompt, so nothing was '
+          + 'submitted and nothing was charged. The prompt is still in the composer — '
+          + 'Flow did not accept it as ready to send.'
+        : 'Flow did not accept the Generate click. Enter, a full pointer sequence and '
+          + 'a native click were all sent and none of them started a generation. '
+          + 'Nothing was submitted, and the prompt is still in the composer.'
+    );
   }
 
   // -- Control methods --
