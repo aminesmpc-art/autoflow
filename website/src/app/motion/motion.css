@@ -470,3 +470,15 @@
     padding: 6px 12px;
   }
 }
+
+/* ── See it working: real screenshots of a finished run beside Flow ── */
+.motion-shot {
+  margin: 0 auto 28px;
+  max-width: 1120px;
+  padding: 8px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 92, 0, 0.35) 0%, rgba(255, 255, 255, 0.06) 100%);
+  box-shadow: 0 30px 100px -30px rgba(255, 92, 0, 0.35), 0 20px 50px rgba(0, 0, 0, 0.8);
+}
+.motion-shot img { display: block; width: 100%; height: auto; border-radius: 15px; }
+.motion-shot figcaption { padding: 12px 10px 6px; color: var(--text-secondary, #a1a1aa); font-size: 0.95rem; text-align: center; }

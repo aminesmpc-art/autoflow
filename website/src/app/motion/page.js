@@ -212,12 +212,49 @@ export default function MotionPage() {
 
           <div className="motion-panel-frame animate-in delay-4">
             <img
-              src="/screenshots/motion/panel-start.webp"
-              alt="The AutoFlow Motion side panel: add a motion video, a subject and a place, then choose what changes"
-              width={840}
-              height={1880}
+              src="/screenshots/motion/panel-inputs.webp"
+              alt="The AutoFlow Motion side panel with a 13-second motion video and a character image added, split into 2 pieces"
+              width={434}
+              height={716}
             />
           </div>
+        </div>
+      </section>
+
+      {/* ── SEE IT WORKING ── */}
+      <section className="section" id="see-it-working">
+        <div className="container">
+          <div className="section-header">
+            <div className="badge">See it working</div>
+            <h2>
+              Finished clips,<br />
+              <span className="text-gradient">right beside your Flow project</span>
+            </h2>
+            <p>
+              A real run: one motion video and one character image became two
+              clips. Each piece lands in your Flow project and plays in the panel.
+            </p>
+          </div>
+          <figure className="motion-shot">
+            <img
+              src="/screenshots/motion/working-results.webp"
+              alt="Google Flow with the AutoFlow Motion panel open: two finished clips of the character in your Flow project, and piece 1 playing in Your results"
+              width={1120}
+              height={534}
+              loading="lazy"
+            />
+            <figcaption>Your results: every piece marked Complete, ready to play, regenerate or download.</figcaption>
+          </figure>
+          <figure className="motion-shot">
+            <img
+              src="/screenshots/motion/working-flow.webp"
+              alt="The motion video and the character image in the AutoFlow Motion panel, next to the clips Motion made in Google Flow"
+              width={1120}
+              height={534}
+              loading="lazy"
+            />
+            <figcaption>The motion video and the character you added, next to the clips Motion made from them.</figcaption>
+          </figure>
         </div>
       </section>
 
@@ -270,10 +307,10 @@ export default function MotionPage() {
           </div>
           <div className="motion-panel-frame motion-panel-frame--wide">
             <img
-              src="/screenshots/motion/panel-modes.webp"
+              src="/screenshots/motion/panel-choose.webp"
               alt="Choosing what changes in AutoFlow Motion: transfer motion, replace subject or restyle video"
-              width={510}
-              height={812}
+              width={428}
+              height={716}
               loading="lazy"
             />
           </div>

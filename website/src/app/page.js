@@ -90,7 +90,7 @@ export default function HomePage() {
   const byKey = Object.fromEntries(PRODUCTS.map((product) => [product.key, product]));
 
   return (
-    <>
+    <div className="home-page">
       {/* ── JSON-LD Structured Data ── */}
       <script
         type="application/ld+json"
@@ -122,8 +122,8 @@ export default function HomePage() {
       />
 
       {/* ── HERO ── */}
-      <section className="hero" style={{ paddingTop: "180px", paddingBottom: "120px", position: "relative", overflow: "hidden" }}>
-        <div className="hero-bg-glow" aria-hidden="true" style={{ position: "absolute", top: "20%", left: "50%", transform: "translate(-50%, -50%)", width: "1000px", height: "1000px", background: "radial-gradient(circle, rgba(79, 70, 229, 0.15) 0%, transparent 60%)", filter: "blur(60px)", pointerEvents: "none" }} />
+      <section className="hero" style={{ paddingTop: "150px", paddingBottom: "88px", position: "relative", overflow: "hidden" }}>
+        <div className="hero-bg-glow" aria-hidden="true" style={{ position: "absolute", top: "20%", left: "50%", transform: "translate(-50%, -50%)", width: "1000px", height: "1000px", background: "radial-gradient(circle, rgba(255, 92, 0, 0.10) 0%, transparent 60%)", filter: "blur(60px)", pointerEvents: "none" }} />
 
         <div className="container hero-content" style={{ textAlign: "center", position: "relative", zIndex: 1 }}>
           <div style={{ display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap", marginBottom: "32px" }}>
@@ -176,6 +176,40 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ── MOTION IN ACTION — a real run, up front ── */}
+      <section className="section home-motion" id="motion">
+        <div className="container">
+          <div className="section-header">
+            <div className="badge">New · AutoFlow Motion</div>
+            <h2>
+              One video&apos;s motion,<br />
+              <span className="text-gradient">your character in every clip</span>
+            </h2>
+            <p>
+              A real run: Motion cut the video, wrote a prompt for each piece and
+              made the clips in Google Flow — right beside your project.
+            </p>
+          </div>
+          <figure className="home-motion-shot">
+            <img
+              src="/screenshots/motion/working-results.webp"
+              alt="Google Flow with the AutoFlow Motion panel open: two finished clips of the character, and piece 1 playing in Your results"
+              width={1120}
+              height={534}
+              loading="lazy"
+            />
+          </figure>
+          <div className="home-motion-ctas">
+            {MOTION_STORE_URL && (
+              <StoreLink product="motion" href={MOTION_STORE_URL} className="btn btn-primary btn-lg">
+                Add to Chrome — Free
+              </StoreLink>
+            )}
+            <a href="/motion" className="btn btn-secondary btn-lg">How Motion works →</a>
+          </div>
+        </div>
+      </section>
+
       {/* ── SOCIAL PROOF & RATING SHOWCASE ── */}
       <section style={{ padding: "80px 0", borderTop: "1px solid rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(255,255,255,0.01)", position: "relative" }}>
         <div className="container">
@@ -187,8 +221,8 @@ export default function HomePage() {
                 <div className="badge" style={{ marginBottom: "16px", borderColor: "rgba(16, 185, 129, 0.2)", background: "rgba(16, 185, 129, 0.05)", color: "var(--success)" }}>
                   ✓ Verified Chrome Web Store Stats
                 </div>
-                <h2 style={{ fontSize: "2.5rem", marginBottom: "16px", background: "var(--gradient-primary)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
-                  Loved by Creators
+                <h2 style={{ marginBottom: "16px" }}>
+                  Loved by <span className="text-gradient">creators</span>
                 </h2>
                 <p className="text-secondary" style={{ fontSize: "1.05rem", lineHeight: 1.6 }}>
                   AutoFlow is trusted by <strong>3,750+</strong> video directors, agencies, and creators worldwide who have automated over <strong>380,000+</strong> prompts and downloaded <strong>315,000+</strong> 4K videos.
@@ -344,7 +378,7 @@ export default function HomePage() {
                     {details.points.map((point) => <li key={point}>{point}</li>)}
                   </ul>
                   <div className="home-tool-actions">
-                    <a href={details.primary.href} className="btn btn-primary">{details.primary.label} →</a>
+                    <a href={details.primary.href} className={`btn ${product.badge === "New" ? "btn-primary" : "btn-secondary"}`}>{details.primary.label} →</a>
                     {details.install && <InstallButton product={details.install} />}
                     {details.secondary && (
                       <a href={details.secondary.href} className="btn btn-secondary">{details.secondary.label}</a>
@@ -468,12 +502,12 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-    </>
+    </div>
   );
 }
 
-/* The store button for an extension. Motion's listing is not published yet,
-   so its card says so instead of linking anywhere. */
+/* The store button for an extension. If MOTION_STORE_URL is ever unset, its
+   card says "Coming soon" instead of linking anywhere. */
 function InstallButton({ product }) {
   if (product === "motion" && !MOTION_STORE_URL) {
     return <span className="home-tool-soon">Coming soon</span>;

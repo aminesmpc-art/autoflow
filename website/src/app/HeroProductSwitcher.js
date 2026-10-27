@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import StoreLink from "./StoreLink";
+import { MOTION_STORE_URL } from "./products";
 
 export default function HeroProductSwitcher() {
-  const [activeTab, setActiveTab] = useState("motion");
+  const [activeTab, setActiveTab] = useState("queue");
 
   return (
     <div className="animate-in delay-4" style={{ marginTop: "40px" }}>
@@ -57,7 +58,7 @@ export default function HeroProductSwitcher() {
           border: "1px solid rgba(255, 255, 255, 0.12)",
           boxShadow: "0 40px 100px -20px rgba(255, 92, 0, 0.25), 0 20px 40px rgba(0,0,0,0.9)",
           backgroundColor: "#08090a",
-          minHeight: "440px",
+          minHeight: "0",
           position: "relative",
         }}
       >
@@ -143,9 +144,16 @@ export default function HeroProductSwitcher() {
                   Transfer Motion • Replace the Subject • Restyle the Video
                 </span>
               </div>
-              <a href="/motion" className="btn btn-primary" style={{ padding: "6px 16px", fontSize: "0.85rem" }}>
-                See AutoFlow Motion →
-              </a>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                {MOTION_STORE_URL && (
+                  <StoreLink product="motion" href={MOTION_STORE_URL} className="btn btn-primary" style={{ padding: "6px 16px", fontSize: "0.85rem" }}>
+                    Add to Chrome — Free
+                  </StoreLink>
+                )}
+                <a href="/motion" className="btn btn-secondary" style={{ padding: "6px 16px", fontSize: "0.85rem" }}>
+                  See AutoFlow Motion →
+                </a>
+              </div>
             </div>
 
             <div className="switcher-motion">
@@ -168,10 +176,10 @@ export default function HeroProductSwitcher() {
               </div>
               <div className="switcher-motion-shot">
                 <img
-                  src="/screenshots/motion/panel-modes.webp"
-                  alt="AutoFlow Motion side panel: choose what changes"
-                  width={510}
-                  height={812}
+                  src="/screenshots/motion/panel-inputs.webp"
+                  alt="AutoFlow Motion side panel with a motion video and a character image added"
+                  width={434}
+                  height={716}
                   loading="lazy"
                 />
               </div>

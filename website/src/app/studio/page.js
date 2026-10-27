@@ -419,6 +419,29 @@ export default function StudioPage() {
         </div>
       </section>
 
+      {/* ── COMMUNITY FEED ── */}
+      <section className="section" id="community" style={{ borderTop: "1px solid var(--border)" }}>
+        <div className="container">
+          <div className="deep-dive-row">
+            <div>
+              <div className="badge" style={{ marginBottom: "16px" }}>New · Community</div>
+              <h3 style={{ fontSize: "2.2rem", marginBottom: "20px" }}>Share Workflows. Use Anyone&apos;s in One Click.</h3>
+              <p className="text-secondary" style={{ fontSize: "1.1rem", lineHeight: 1.7, marginBottom: "24px" }}>
+                Studio has a Community feed. Post a workflow you built and everyone using Studio sees it at once, drawn as a map of its steps. Find one you like, press Use this workflow, and it opens on your canvas ready to run.
+              </p>
+              <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "12px", color: "var(--text-secondary)" }}>
+                <li style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ color: "var(--success)" }}>✓</span> Post from the canvas, with a title and caption</li>
+                <li style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ color: "var(--success)" }}>✓</span> Only the steps are shared, never your results or your photos</li>
+                <li style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ color: "var(--success)" }}>✓</span> Like, report, and delete your own posts any time</li>
+              </ul>
+            </div>
+            <div className="deep-dive-media">
+              <img src="/screenshots/studio/community-feed.webp" alt="The AutoFlow Studio Community feed: a posted workflow with its steps drawn as a map, and Like and Use this workflow buttons" width={680} height={660} loading="lazy" />
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── PRE-BUILT WORKFLOW TEMPLATES ── */}
       <section className="section" style={{ borderTop: "1px solid var(--border)", background: "rgba(255, 92, 0, 0.015)" }}>
         <div className="container">

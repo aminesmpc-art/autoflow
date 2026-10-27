@@ -5,6 +5,7 @@
 export const STORE_URLS = {
   queue: "https://chromewebstore.google.com/detail/autoflow-video-task-man/egplmjhmcicjkojopeoaohofckgeoipc",
   studio: "https://chromewebstore.google.com/detail/autoflow-studio/knodokbipcajhdpafplmlljbaamgfkao",
+  motion: "https://chromewebstore.google.com/detail/autoflow-motion-%E2%80%94-motion/cdfjofjbpbbobgbfggkhdabaplikeica",
 };
 
 export default function StoreLink({ className, children, href, product = 'queue', onClick, style, id }) {

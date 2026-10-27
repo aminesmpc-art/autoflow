@@ -362,3 +362,69 @@
     margin: 0 auto;
   }
 }
+
+/* ── Motion in action: a real run, under the hero ── */
+.home-motion { border-top: 1px solid var(--border); }
+.home-motion-shot {
+  margin: 0 auto;
+  max-width: 1080px;
+  padding: 8px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 92, 0, 0.35) 0%, rgba(255, 255, 255, 0.05) 100%);
+  box-shadow: 0 30px 100px -30px rgba(255, 92, 0, 0.35), 0 20px 50px rgba(0, 0, 0, 0.8);
+}
+.home-motion-shot img { display: block; width: 100%; height: auto; border-radius: 15px; }
+.home-motion-ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-top: 32px; }
+
+/* ============================================================
+   Cleaner home (2026-10-27): same dark and orange, less shouting.
+   One gradient headline (the hero); every other heading is white with
+   one solid orange phrase, smaller, under a quiet label. Tighter
+   spacing between sections, one soft glow, one bright button per card.
+   ============================================================ */
+.home-page .section { padding: 88px 0; }
+.home-page .section-header { margin-bottom: 44px; }
+.home-page .section-header .badge,
+.home-page .section .badge {
+  padding: 4px 12px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary-light);
+  background: rgba(255, 92, 0, 0.06);
+  border-color: rgba(255, 92, 0, 0.18);
+  box-shadow: none;
+}
+.home-page .section h2 {
+  font-size: clamp(2rem, 3.4vw, 2.7rem);
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+.home-page .section h2 .text-gradient {
+  background: none;
+  -webkit-text-fill-color: var(--primary-light);
+  color: var(--primary-light);
+}
+.home-page .section-header p { font-size: 1.08rem; margin-top: 14px; }
+
+/* Tool cards: one bright button, on the new tool only. */
+.home-page .home-tool { box-shadow: none; }
+.home-page .home-tool:not(.home-tool--new) { background: rgba(255, 255, 255, 0.02); }
+.home-page .home-tool--new { box-shadow: 0 0 0 1px rgba(255, 92, 0, 0.25); }
+
+/* Pictures: a thin warm frame instead of a glowing slab. */
+.home-page .home-motion-shot {
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 92, 0, 0.25);
+  box-shadow: 0 24px 60px -30px rgba(255, 92, 0, 0.35);
+}
+.home-page .home-motion-shot img { border-radius: 14px; }
+
+/* Phones: the stats grid asked for 200px columns, so two did not fit in a
+   phone's width and the hero clipped the second ("315,00…"). */
+@media (max-width: 640px) {
+  .home-page .metrics-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 20px 16px; gap: 18px 12px; }
+  .home-page .metric-value { font-size: 1.5rem; }
+}

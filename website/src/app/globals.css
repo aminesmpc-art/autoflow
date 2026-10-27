@@ -590,3 +590,38 @@ h3 { font-size: clamp(1.5rem, 2.2vw, 2rem); letter-spacing: -0.01em; }
   transform: translateY(-1px);
 }
 
+
+/* ============================================================
+   Cleaner look, site-wide (2026-10-27): the same dark and orange,
+   less shouting. Each page keeps its one gradient headline (its h1);
+   section headings are smaller, white with one solid orange phrase,
+   under a quiet uppercase label, with tighter spacing between them.
+   ============================================================ */
+.section { padding: 88px 0; }
+.section-header { margin-bottom: 44px; }
+.section-header p { font-size: 1.08rem; margin-top: 14px; }
+.section-header .badge {
+  padding: 4px 12px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary-light);
+  background: rgba(255, 92, 0, 0.06);
+  border-color: rgba(255, 92, 0, 0.18);
+  box-shadow: none;
+}
+.section h2 {
+  font-size: clamp(2rem, 3.4vw, 2.7rem);
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+.section h2 .text-gradient {
+  background: none;
+  -webkit-text-fill-color: var(--primary-light);
+  color: var(--primary-light);
+}
+
+/* Pricing on phones was 595px wide (live too): the hero's 800px glow
+   (.pricing-hero::before) sticks out past the screen. Clip it. */
+.pricing-hero { overflow: hidden; }

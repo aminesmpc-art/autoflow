@@ -6,10 +6,9 @@
    both import it and get the values. (StoreLink's STORE_URLS lives in a client
    module, which a server page receives as a reference, not as the URLs.) */
 
-/* The Chrome Web Store listing for AutoFlow Motion, once it is published.
-   While it is null, the site says the extension is coming instead of linking
-   to a listing that does not exist yet. */
-export const MOTION_STORE_URL = null;
+/* The Chrome Web Store listing for AutoFlow Motion — published (2026-10-27).
+   Set back to null and the site says the extension is coming instead. */
+export const MOTION_STORE_URL = "https://chromewebstore.google.com/detail/autoflow-motion-%E2%80%94-motion/cdfjofjbpbbobgbfggkhdabaplikeica";
 
 export const PRODUCTS = [
   {
