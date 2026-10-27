@@ -1,4 +1,5 @@
 import StoreLink from "../StoreLink";
+import MotionVideo from "./MotionVideo";
 import FaqAccordion from "../FaqAccordion";
 import { MOTION_STORE_URL } from "../products";
 import "./motion.css";
@@ -235,6 +236,7 @@ export default function MotionPage() {
               clips. Each piece lands in your Flow project and plays in the panel.
             </p>
           </div>
+          <MotionVideo id="UBslbd9kkT4" title="TikTok Shop in 7 Days or Less? Free AI Videos Without Higgsfield" />
           <figure className="motion-shot">
             <img
               src="/screenshots/motion/working-results.webp"
