@@ -1,0 +1,132 @@
+{
+  "manifest_version": 3,
+  "name": "AutoFlow Motion — Motion Control",
+  "version": "0.1.28",
+  "description": "Transfer motion, replace subjects and restyle videos in a focused AutoFlow workspace. Requires your AI platform accounts.",
+  "minimum_chrome_version": "120",
+  "offline_enabled": false,
+  "homepage_url": "https://www.auto-flow.studio/motion",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "scripting",
+    "alarms",
+    "identity",
+    "unlimitedStorage",
+    "downloads",
+    "debugger",
+    "power"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' blob: data: https://api.auto-flow.studio https://autoflow-extractor-production.up.railway.app https://labs.google https://flow.google.com https://flow-content.google https://*.googlevideo.com https://*.googleusercontent.com https://storage.googleapis.com https://chatgpt.com https://gemini.google.com https://claude.ai https://*.tiktok.com https://*.tiktokcdn.com https://*.tiktokv.com https://*.byteoversea.com https://*.ibytedtos.com https://*.cdninstagram.com https://*.fbcdn.net;"
+  },
+  "host_permissions": [
+    "https://labs.google/*",
+    "https://flow.google.com/*",
+    "https://flow-content.google/*",
+    "https://*.googlevideo.com/*",
+    "https://api.auto-flow.studio/*",
+    "https://autoflow-extractor-production.up.railway.app/*",
+    "https://chatgpt.com/*",
+    "https://gemini.google.com/*",
+    "https://claude.ai/*",
+    "https://www.tiktok.com/*",
+    "https://m.tiktok.com/*",
+    "https://vm.tiktok.com/*",
+    "https://vt.tiktok.com/*",
+    "https://www.instagram.com/*",
+    "https://www.youtube.com/*",
+    "https://m.youtube.com/*"
+  ],
+  "optional_host_permissions": [
+    "https://*.tiktok.com/*",
+    "https://*.tiktokcdn.com/*",
+    "https://*.tiktokv.com/*",
+    "https://*.byteoversea.com/*",
+    "https://*.ibytedtos.com/*",
+    "https://*.cdninstagram.com/*",
+    "https://*.fbcdn.net/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "AutoFlow Motion",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.tiktok.com/*", "https://www.instagram.com/*", "https://www.youtube.com/*", "https://m.youtube.com/*", "https://m.tiktok.com/*"],
+      "js": ["social-content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://labs.google/flow*",
+        "https://labs.google/fx*",
+        "https://flow.google.com/*"
+      ],
+      "js": [
+        "sw-bypass.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://labs.google/flow*",
+        "https://labs.google/fx*",
+        "https://flow.google.com/*"
+      ],
+      "js": [
+        "flow-content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "chatgpt-content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["gemini-network.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://gemini.google.com/*"
+      ],
+      "js": [
+        "gemini-content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "claude-content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
+}

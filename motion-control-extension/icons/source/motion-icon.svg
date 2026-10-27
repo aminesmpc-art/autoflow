@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" shape-rendering="geometricPrecision">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e0662f"/><stop offset="1" stop-color="#b13d1e"/></linearGradient>
+    <linearGradient id="lift" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.18"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect x="64" y="64" width="384" height="384" rx="90.24" fill="url(#tile)"/>
+  <rect x="64" y="64" width="384" height="384" rx="90.24" fill="url(#lift)"/>
+  <polygon points="108.506,164 171.098,164 244.826,256 171.098,348 108.506,348 182.234,256" fill="#fff" stroke="#fff" stroke-width="11.904" stroke-linejoin="round"/>
+  <polygon points="204.506,164 267.098,164 340.826,256 267.098,348 204.506,348 278.234,256" fill="#fff" stroke="#fff" stroke-width="11.904" stroke-linejoin="round"/>
+</svg>

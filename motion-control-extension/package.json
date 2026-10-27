@@ -1,0 +1,19 @@
+{
+  "name": "autoflow-motion-extension",
+  "version": "0.1.28",
+  "private": true,
+  "description": "Standalone Motion Control workspace using AutoFlow's shared execution and account services",
+  "scripts": {
+    "build": "node scripts/build.cjs",
+    "build:test": "node scripts/build.cjs --test",
+    "check": "node ../studio-extension/node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
+    "test": "node ../studio-extension/node_modules/jest/bin/jest.js --config jest.config.cjs --runInBand",
+    "test:ui": "node scripts/ui-smoke.cjs",
+    "test:extension": "node scripts/extension-smoke.cjs",
+    "test:background": "node scripts/background-smoke.cjs",
+    "test:gemini-background": "node scripts/gemini-background-smoke.cjs",
+    "test:social": "node scripts/social-smoke.cjs",
+    "icons": "node scripts/make-icons.cjs",
+    "package:store": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-store.ps1"
+  }
+}

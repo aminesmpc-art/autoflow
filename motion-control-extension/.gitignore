@@ -1,0 +1,8 @@
+dist/
+node_modules/
+coverage/
+test-artifacts/
+release/
+
+# Local snapshots of the panel source, kept outside git.
+backups/
