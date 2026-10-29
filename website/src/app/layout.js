@@ -186,6 +186,14 @@ export default function RootLayout({ children }) {
           `}
         </Script>
 
+        {/* ── Google AdSense ── A plain script, as Google gives it: the AdSense
+            site check looks for it in <head>, where next/script would not put it. */}
+        <script
+          async
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8099080279263284"
+          crossOrigin="anonymous"
+        />
+
         {/* ── Subscribe with Google (SwG) ── */}
         <Script
           src="https://news.google.com/swg/js/v1/swg-basic.js"

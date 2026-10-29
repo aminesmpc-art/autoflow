@@ -5,7 +5,7 @@
    your content, while accounts hold an email address and Motion sends your
    videos to Google Flow. */
 
-export const PRIVACY_UPDATED = "25 October 2026";
+export const PRIVACY_UPDATED = "29 October 2026";
 
 export default function PrivacyPolicy() {
   return (
@@ -255,9 +255,10 @@ export default function PrivacyPolicy() {
         </li>
       </ul>
       <p>
-        We do <strong>not</strong> use your data for advertising,
-        profiling, or any purpose unrelated to operating AutoFlow&apos;s
-        extensions and website.
+        We do <strong>not</strong> use your account data, or anything the
+        extensions handle, for advertising, profiling, or any purpose
+        unrelated to operating AutoFlow&apos;s extensions and website. The
+        website itself shows Google ads; see Section 6.
       </p>
 
       {/* ── 5. Where and How Data Is Stored ── */}
@@ -348,6 +349,20 @@ export default function PrivacyPolicy() {
           auto-flow.studio is hosted on Vercel, which may collect standard
           web analytics (page views, country-level geo). This does not apply
           to the extensions themselves.
+        </li>
+        <li>
+          <strong>Google AdSense (Advertising on the website):</strong> Our
+          website at auto-flow.studio shows ads from Google. Third-party
+          vendors, including Google, use cookies to serve ads based on your
+          prior visits to this and other websites. Google&apos;s advertising
+          cookies let it and its partners serve ads to you based on those
+          visits. You can opt out of personalised advertising in{" "}
+          <a href="https://adssettings.google.com" target="_blank" rel="noopener noreferrer">Google Ads Settings</a>,
+          or opt out of some third-party vendors&apos; cookies at{" "}
+          <a href="https://www.aboutads.info/choices" target="_blank" rel="noopener noreferrer">aboutads.info</a>.
+          See how Google uses data from sites that show its ads at{" "}
+          <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener noreferrer">policies.google.com/technologies/partner-sites</a>.
+          Ads appear only on the website, never inside the extensions.
         </li>
       </ul>
       <p>

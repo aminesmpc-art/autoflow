@@ -12,6 +12,8 @@ const publicPaths = [
   '/screenshots',
   '/icons',
   '/robots.txt',
+  // Google AdSense reads /ads.txt at the bare path; a locale prefix 404s it.
+  '/ads.txt',
   '/sitemap.xml',
   '/llms.txt',
   '/llms-full.txt',
