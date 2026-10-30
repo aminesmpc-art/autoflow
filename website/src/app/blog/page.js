@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getAllPosts, getCategories, SITE_URL } from "./content";
+import AdUnit from "../../components/AdUnit";
 
 export const dynamic = 'force-static';
 
@@ -112,6 +113,8 @@ export default function BlogPage() {
               </Link>
             ))}
           </div>
+
+          <AdUnit kind="display" />
 
           {/* SEO Internal Links */}
           <div className="blog-internal-links">

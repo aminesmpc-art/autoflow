@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { getDictionary, locales, defaultLocale } from '../../dictionaries';
 import { getAllPosts } from '../../blog/content';
+import AdUnit from '../../../components/AdUnit';
 
 export async function generateStaticParams() {
   return locales.filter(l => l !== defaultLocale).map(locale => ({ locale }));
@@ -70,6 +71,8 @@ export default async function LocaleBlogPage({ params }) {
               </Link>
             ))}
           </div>
+
+          <AdUnit kind="display" />
         </div>
       </section>
     </>

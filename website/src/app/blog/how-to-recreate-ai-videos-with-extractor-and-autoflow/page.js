@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getPostBySlug, getRelatedPosts, SITE_URL } from "../content";
+import AdUnit from "../../../components/AdUnit";
 
 export const dynamic = 'force-static';
 
@@ -118,6 +119,8 @@ export default function BlogPost() {
             <img src="/screenshots/blog/extractor-tutorial/07.png" alt="Batch downloading generated images" className="blog-image" />
             <img src="/screenshots/blog/extractor-tutorial/08.png" alt="Downloaded images" className="blog-image" />
 
+            <AdUnit kind="inArticle" />
+
             <h2 id="step-3">Step 3: Auto Character Mapping</h2>
             <p>
               Now it&apos;s time to turn those static images into a video timeline. In the AutoFlow extension, click on <strong>Ingredients</strong> and then <strong>Settings</strong> to open your video configuration.
@@ -166,6 +169,8 @@ export default function BlogPost() {
                 Install AutoFlow
               </a>
             </p>
+
+            <AdUnit kind="display" />
           </div>
         </div>
       </article>

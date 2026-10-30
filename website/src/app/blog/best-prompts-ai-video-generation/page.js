@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getPostBySlug, getRelatedPosts, SITE_URL } from "../content";
+import AdUnit from "../../../components/AdUnit";
 
 export const dynamic = 'force-static';
 
@@ -148,6 +149,8 @@ Iceland, perfect reflection in the still water, a
 small cabin with warm glowing windows in the distance`}
             </pre>
 
+            <AdUnit kind="inArticle" />
+
             <h2 id="product">💫 Product & Commercial (5 Prompts)</h2>
 
             <pre className="blog-code">
@@ -253,6 +256,8 @@ marketplace, light distortion at the threshold`}
                 Install AutoFlow — Free
               </a>
             </p>
+
+            <AdUnit kind="display" />
 
             {related.length > 0 && (
               <div className="blog-related">

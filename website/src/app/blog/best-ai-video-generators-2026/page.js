@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getPostBySlug, getRelatedPosts, SITE_URL } from "../content";
+import AdUnit from "../../../components/AdUnit";
 
 export const dynamic = 'force-static';
 
@@ -176,6 +177,8 @@ export default function BlogPost() {
               <li>❌ Short clips (3-4 seconds)</li>
             </ul>
 
+            <AdUnit kind="inArticle" />
+
             <h2 id="sora">5. OpenAI Sora — Most Anticipated</h2>
             <p>
               Sora generates impressively consistent clips but its limited availability
@@ -336,6 +339,8 @@ export default function BlogPost() {
                 Try AutoFlow + Google Flow — Free
               </a>
             </p>
+
+            <AdUnit kind="display" />
 
             {related.length > 0 && (
               <div className="blog-related">

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getPostBySlug, getRelatedPosts, SITE_URL } from "../content";
+import AdUnit from "../../../components/AdUnit";
 
 export const dynamic = 'force-static';
 
@@ -171,6 +172,8 @@ slow motion, vertical, cinematic 4K`}
               for detailed instructions.
             </p>
 
+            <AdUnit kind="inArticle" />
+
             <h2 id="optimize">Optimize for the YouTube Algorithm</h2>
             <p>YouTube&apos;s Shorts algorithm prioritizes:</p>
             <ul>
@@ -243,6 +246,8 @@ slow motion, vertical, cinematic 4K`}
                 Install AutoFlow — Free
               </a>
             </p>
+
+            <AdUnit kind="display" />
 
             {related.length > 0 && (
               <div className="blog-related">

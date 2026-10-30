@@ -1,5 +1,6 @@
 export const dynamic = 'force-static';
 import FAQClient from "./faq-client";
+import AdUnit from "../../components/AdUnit";
 
 export const metadata = {
   title: "FAQ — AutoFlow",
@@ -119,6 +120,7 @@ export default function FAQPage() {
       <section className="section">
         <div className="container">
           <FAQClient faqs={faqs} />
+          <AdUnit kind="display" />
         </div>
       </section>
     </>

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { getPostBySlug, getRelatedPosts, SITE_URL } from "../content";
+import AdUnit from "../../../components/AdUnit";
 import CopyBlock from "../CopyBlock";
 
 export const dynamic = 'force-static';
@@ -452,6 +453,8 @@ Wait silently until the user types: "start".`}
             </div>
 
             {/* ═══════ STEP 3 ═══════ */}
+            <AdUnit kind="inArticle" />
+
             <h2 id="step-3">Step 3: Set Up Frame-to-Video in AutoFlow</h2>
             <p>
               Now the magic happens. Open{" "}
@@ -687,6 +690,8 @@ Wait silently until the user types: "start".`}
             </div>
 
             {/* ── Related ── */}
+            <AdUnit kind="display" />
+
             {related.length > 0 && (
               <div className="blog-related">
                 <h3>📚 Related Articles</h3>

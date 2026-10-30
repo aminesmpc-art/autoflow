@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getPostBySlug, getRelatedPosts, SITE_URL } from "../content";
+import AdUnit from "../../../components/AdUnit";
 
 export const dynamic = 'force-static';
 
@@ -151,6 +152,8 @@ upward, dramatic and awe-inspiring, 4K`}</pre>
               prompts on the higher-quality model later.
             </p>
 
+            <AdUnit kind="inArticle" />
+
             <h2 id="tip-4">Tip 4: Leverage Auto-Retry</h2>
             <p>
               Some failures are random — server load, temporary issues, or quota limits.
@@ -205,6 +208,8 @@ upward, dramatic and awe-inspiring, 4K`}</pre>
                 Install AutoFlow — Free
               </a>
             </p>
+
+            <AdUnit kind="display" />
 
             {related.length > 0 && (
               <div className="blog-related">

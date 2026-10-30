@@ -1,5 +1,6 @@
 import { getDictionary, locales, defaultLocale } from '../../dictionaries';
 import FAQClientLocale from './faq-client';
+import AdUnit from '../../../components/AdUnit';
 
 export async function generateStaticParams() {
   return locales.filter(l => l !== defaultLocale).map(locale => ({ locale }));
@@ -91,6 +92,7 @@ export default async function LocaleFAQPage({ params }) {
       <section className="section">
         <div className="container">
           <FAQClientLocale faqs={t.faq.items} />
+          <AdUnit kind="display" />
         </div>
       </section>
     </>

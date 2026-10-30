@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getPostBySlug, getRelatedPosts, SITE_URL } from "../content";
+import AdUnit from "../../../components/AdUnit";
 
 export const dynamic = 'force-static';
 
@@ -163,6 +164,8 @@ shallow depth of field, warm lighting`}
               </Link>.
             </p>
 
+            <AdUnit kind="inArticle" />
+
             <h2 id="step-4">Step 4: Configure & Run</h2>
             <p>
               In the <strong>Queues</strong> tab, you&apos;ll see your queue with
@@ -223,6 +226,8 @@ shallow depth of field, warm lighting`}
             </p>
 
             {/* ── Related Articles ── */}
+            <AdUnit kind="display" />
+
             {related.length > 0 && (
               <div className="blog-related">
                 <h3>📚 Related Articles</h3>

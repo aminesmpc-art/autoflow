@@ -1,4 +1,5 @@
 import StoreLink from "../StoreLink";
+import { WhatsNew } from "../changelog/Changelog";
 import "./studio.css";
 
 export const metadata = {
@@ -134,6 +135,8 @@ export default function StudioPage() {
               Explore Nodes &amp; Canvas ↓
             </a>
           </div>
+
+          <WhatsNew product="studio" className="animate-in delay-3" />
 
           {/* Canvas Showcase Visual Frame */}
           <div className="studio-canvas-preview animate-in delay-4">

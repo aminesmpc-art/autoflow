@@ -625,3 +625,28 @@ h3 { font-size: clamp(1.5rem, 2.2vw, 2rem); letter-spacing: -0.01em; }
 /* Pricing on phones was 595px wide (live too): the hero's 800px glow
    (.pricing-hero::before) sticks out past the screen. Clip it. */
 .pricing-hero { overflow: hidden; }
+
+/* ── AdSense units (components/AdUnit.js) ── */
+.ad-unit {
+  /* Full width, not auto margins: an auto margin shrinks a grid item
+     (prompts/[id]) to its empty <ins>. */
+  margin: 40px 0;
+  width: 100%;
+  min-height: 100px;
+  overflow: hidden;
+}
+
+.ad-unit-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted, rgba(255, 255, 255, 0.4));
+  text-align: center;
+}
+
+/* AdSense marks a slot it could not fill; drop the label and the space. */
+.ad-unit:has(ins[data-ad-status="unfilled"]) {
+  display: none;
+}

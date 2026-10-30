@@ -1,4 +1,5 @@
 import StoreLink from "../StoreLink";
+import { WhatsNew } from "../changelog/Changelog";
 import MotionVideo from "./MotionVideo";
 import FaqAccordion from "../FaqAccordion";
 import { MOTION_STORE_URL } from "../products";
@@ -209,6 +210,7 @@ export default function MotionPage() {
               <strong>Free:</strong> 3 Motion jobs a day ·{" "}
               <strong>AutoFlow Pro:</strong> unlimited
             </p>
+            <WhatsNew product="motion" className="animate-in delay-3" />
           </div>
 
           <div className="motion-panel-frame animate-in delay-4">

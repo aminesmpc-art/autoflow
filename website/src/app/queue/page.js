@@ -1,4 +1,5 @@
 import StoreLink from "../StoreLink";
+import { WhatsNew } from "../changelog/Changelog";
 import "./queue.css";
 
 /* The Queue Manager's own page. Its sections used to be the home page; the
@@ -116,6 +117,7 @@ export default function QueuePage() {
             <p className="queue-note animate-in delay-3">
               <strong>4.65 / 5</strong> on the Chrome Web Store · used by 3,750+ creators
             </p>
+            <WhatsNew product="queue" className="animate-in delay-3" />
           </div>
           <div className="queue-hero-media animate-in delay-4">
             <img

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getPostBySlug, getRelatedPosts, SITE_URL } from "../content";
+import AdUnit from "../../../components/AdUnit";
 
 export const dynamic = 'force-static';
 
@@ -144,6 +145,8 @@ export default function BlogPost() {
               <li><strong>Quality:</strong> Select 4K to request high-resolution upscaling automatically.</li>
             </ul>
 
+            <AdUnit kind="inArticle" />
+
             <h2 id="how-to-download-4k">How to Download Veo Videos in 4K in Bulk</h2>
             <p>
               Once your queue finishes running on autopilot, AutoFlow saves all generated assets to a local cache. 
@@ -200,6 +203,8 @@ export default function BlogPost() {
             </p>
 
             {/* ── Related Articles ── */}
+            <AdUnit kind="display" />
+
             {related.length > 0 && (
               <div className="blog-related">
                 <h3>📚 Related Articles</h3>

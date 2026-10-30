@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getPostBySlug, getRelatedPosts, SITE_URL } from "../content";
+import AdUnit from "../../../components/AdUnit";
 
 export const dynamic = 'force-static';
 
@@ -237,6 +238,8 @@ export default function BlogPost() {
               ten to twenty times a day, not the people making the prettiest clip.
             </p>
 
+            <AdUnit kind="inArticle" />
+
             <h2 id="bottleneck">Where the Time Actually Goes</h2>
             <p>
               If volume is the job, the constraint is how long one clip takes. By
@@ -302,6 +305,8 @@ export default function BlogPost() {
               </Link>
             </p>
           </div>
+
+          <AdUnit kind="display" />
 
           {related.length > 0 && (
             <div className="blog-related">

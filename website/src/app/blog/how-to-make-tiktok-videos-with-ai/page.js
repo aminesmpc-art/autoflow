@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getPostBySlug, getRelatedPosts, SITE_URL } from "../content";
+import AdUnit from "../../../components/AdUnit";
 
 export const dynamic = 'force-static';
 
@@ -192,6 +193,8 @@ metropolis, seamless morph, vertical video`}
               no quality loss on mobile screens.
             </p>
 
+            <AdUnit kind="inArticle" />
+
             <h2 id="step-4">Step 4: Edit for TikTok</h2>
             <p>
               Before posting, add these elements in your editor:
@@ -278,6 +281,8 @@ metropolis, seamless morph, vertical video`}
             </p>
 
             {/* ── Related Articles ── */}
+            <AdUnit kind="display" />
+
             {related.length > 0 && (
               <div className="blog-related">
                 <h3>📚 Related Articles</h3>

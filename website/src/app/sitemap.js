@@ -29,7 +29,11 @@ export default async function sitemap() {
     { path: '/prompts', lastmod: '2026-07-04' },
     { path: '/extractor', lastmod: '2026-07-04' },
     { path: '/clipping', lastmod: '2026-09-03', englishOnly: true },
-    { path: '/changelog', lastmod: '2026-06-16', englishOnly: true },
+    { path: '/changelog', lastmod: '2026-10-30', englishOnly: true },
+    /* Each extension's release notes (app/changelog/releases.js). */
+    { path: '/queue/changelog', lastmod: '2026-10-30', englishOnly: true },
+    { path: '/studio/changelog', lastmod: '2026-10-30', englishOnly: true },
+    { path: '/motion/changelog', lastmod: '2026-10-30', englishOnly: true },
     { path: '/motion', lastmod: '2026-10-03', englishOnly: true },
     /* The Queue Manager's sections moved here from the home page. */
     { path: '/queue', lastmod: '2026-10-03', englishOnly: true },
