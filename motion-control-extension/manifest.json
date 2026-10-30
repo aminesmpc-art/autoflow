@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFlow Motion — Motion Control",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "description": "Transfer motion, replace subjects and restyle videos in a focused AutoFlow workspace. Requires your AI platform accounts.",
   "minimum_chrome_version": "120",
   "offline_enabled": false,

@@ -36,6 +36,14 @@ export const PRODUCTS = {
 export const RELEASES = {
   queue: [
     {
+      version: "9.3",
+      date: "2026-10-30",
+      title: "Maintenance Release",
+      highlights: [
+        "Everything from 9.2 under a new version number. Nothing changes in how AutoFlow works",
+      ],
+    },
+    {
       version: "9.2",
       date: "2026-10-19",
       title: "Clearer Queues & a Steadier Flow",
@@ -457,6 +465,15 @@ export const RELEASES = {
   ],
 
   motion: [
+    {
+      version: "0.1.29",
+      date: "2026-10-30",
+      title: "Keeping Up With Flow and ChatGPT",
+      highlights: [
+        "Reads Flow's generation updates again after Flow changed how it sends them, so each piece is followed from Flow's own reports",
+        "ChatGPT as the director engine works with ChatGPT's redesigned page",
+      ],
+    },
     {
       version: "0.1.28",
       date: "2026-10-23",

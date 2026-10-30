@@ -1,6 +1,6 @@
 {
   "name": "autoflow-motion-extension",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "private": true,
   "description": "Standalone Motion Control workspace using AutoFlow's shared execution and account services",
   "scripts": {
