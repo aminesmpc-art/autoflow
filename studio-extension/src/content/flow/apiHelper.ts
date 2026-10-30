@@ -751,3 +751,35 @@ export async function activeStatusCheck(mediaIds?: string[]): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Press an element through its own click handler, in the page (pagePress.ts).
+ *
+ * For a handler that refuses scripted events — Flow's image-mode Generate.
+ * The element is marked for the page to find and answered by token; the
+ * mark comes off whatever happens. Ported from AutoFlow's apiHelper, whose
+ * interceptor answers the same message, so either extension's will do.
+ */
+export function pressThroughPage(el: Element, timeoutMs = 2000): Promise<{ ok: boolean; reason?: string; handlers?: number }> {
+  const token = `af${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  el.setAttribute('data-af-press', token);
+  return new Promise((resolve) => {
+    let timer: ReturnType<typeof setTimeout>;
+    const done = (result: { ok: boolean; reason?: string; handlers?: number }) => {
+      window.removeEventListener('message', onMessage);
+      clearTimeout(timer);
+      el.removeAttribute('data-af-press');
+      resolve(result);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      const d = event.data;
+      if (d?.source === 'autoflow-api-interceptor' && d.type === 'PRESS_RESULT' && d.payload?.token === token) {
+        done({ ok: !!d.payload.ok, reason: d.payload.reason, handlers: d.payload.handlers });
+      }
+    };
+    window.addEventListener('message', onMessage);
+    timer = setTimeout(() => done({ ok: false, reason: 'no-answer' }), timeoutMs);
+    window.postMessage({ source: 'autoflow-engine', type: 'PRESS', payload: { token } }, '*');
+  });
+}

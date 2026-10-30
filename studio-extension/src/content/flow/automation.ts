@@ -152,6 +152,7 @@ import {
   activeStatusCheck,
   getInterceptorError,
   getCachedStatus,
+  pressThroughPage,
 } from './apiHelper';
 
 /**
@@ -4434,6 +4435,32 @@ export class AutomationEngine {
       }
       return false;
     };
+
+    /* ── Image mode: through Flow's own handler, first ──
+       Its Generate takes only events whose isTrusted is true (pagePress.ts,
+       measured by AutoFlow on 2026-10-19 with Nano Banana 2.1): click(), a
+       full synthetic pointer sequence and a dispatched Enter all did nothing,
+       so every press below is ignored there and an image node never submitted.
+       The handler itself is called instead, with the click reporting trusted.
+       Video mode skips this and keeps the presses below, which it accepts. */
+    if (this.queue?.settings.mediaType === 'image') {
+      beforeSubmit?.();
+      const pressed = await pressThroughPage(btn);
+      if (pressed.ok) {
+        this.log('info', `Pressed Generate through Flow's own handler (${pressed.handlers})`);
+        await humanDelay(800, 1200);
+        if (await clickWorked()) {
+          this.log('info', 'Generation confirmed started after the handler press');
+          return;
+        }
+      } else {
+        /* no-handler: the tab predates the recorder, which only sees buttons
+           built after it — a reload fixes it. no-answer: no interceptor in
+           this tab answers PRESS at all. */
+        this.log('warn', `Could not press Generate through Flow's handler (${pressed.reason}) — `
+          + (pressed.reason === 'no-handler' ? 'reload the Flow tab if the presses below do not land' : 'trying the presses below'));
+      }
+    }
 
     // ═══════════════════════════════════════════════════════════════
     // CLICK STRATEGIES — React MAIN-world handlers carry isTrusted

@@ -218,8 +218,20 @@ describe('the adapter applies it correctly', () => {
        Failing here would throw away a generation to punish a dropdown — but
        saying nothing is how nobody noticed the setting did nothing for
        months. */
-    const block = SRC.slice(SRC.indexOf('const ratio = String(config?.aspectRatio'));
-    expect(block.slice(0, 700)).toMatch(/logLine\(ratioProblem \|\|/);
-    expect(block.slice(0, 700)).not.toMatch(/STUDIO_NODE_ERROR/);
+    const start = SRC.indexOf('const ratio = String(config?.aspectRatio');
+    const block = SRC.slice(start, SRC.indexOf('fillComposer(composer, prompt);', start));
+    expect(block).toMatch(/logLine\(ratioProblem \|\|/);
+    expect(block).not.toMatch(/STUDIO_NODE_ERROR/);
+  });
+
+  it('asks for the shape in words when the composer has no ratio control', () => {
+    /* Read off the live page 2026-10-29: with Create image on, the composer
+       holds "+", Think, Dictate and Send — no ratio control at all. This then
+       logged "Image ratio set to 9:16" about a ratio it never set. */
+    expect(SRC).toMatch(/if \(!btn\) return NO_RATIO_CONTROL;/);
+    const start = SRC.indexOf('const ratio = String(config?.aspectRatio');
+    const block = SRC.slice(start, SRC.indexOf('fillComposer(composer, prompt);', start));
+    expect(block).toMatch(/ratioProblem === NO_RATIO_CONTROL && SHAPE_WORDS\[ratio\]/);
+    expect(block).toMatch(/prompt = `\$\{prompt\}\\n\\nMake the image \$\{SHAPE_WORDS\[ratio\]\}\.`;/);
   });
 });

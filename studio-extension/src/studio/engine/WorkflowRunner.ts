@@ -2094,6 +2094,11 @@ export class WorkflowRunner {
              throw that away and pay for it twice. */
           round === 0 && !storyRun?.threadOpen,
           round === 0 ? refs : undefined,
+          /* Round 0 is the whole brief, so it stands on its own: if the chat
+             the settings turn opened cannot be reopened, ask it in a fresh one
+             rather than fail the Director. A repair round leans on what came
+             before it and has no such fallback — its banked shots are kept. */
+          round === 0 ? message : undefined,
         );
       } catch (err: any) {
         /* Whatever is already banked is still good. A repair turn that fails

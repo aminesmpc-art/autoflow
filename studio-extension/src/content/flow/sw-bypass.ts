@@ -20,13 +20,21 @@
  * and it reads the body rather than the URL because the URL no longer says
  * what the call is for — see flowBatch.ts.
  *
- * One measured detail decides the shape of this file: all 19 of those calls
- * arrived over XHR and none over fetch. Angular's HttpClient does not use
- * fetch. The fetch branch is kept because the old site uses it and it costs
- * nothing, but on the new site the XHR branch is the one that does the work.
+ * The transport moved. All 19 of those calls once arrived over XHR; measured
+ * again on flow.google.com 2026-10-29, a project load made 17 batchexecute
+ * calls and every one was fetch (AutoFlow's fork saw the switch on
+ * 2026-10-18). Both branches below read statuses AND keep the replayable
+ * status request — the second was XHR-only, so on today's Flow the active
+ * check had nothing to replay and failed every time.
  */
 
 import { isBatchExecuteUrl, readStatuses, diagnostics } from './flowBatch';
+import { installListenerRegistry, pressWithPageHandler } from './pagePress';
+
+/* Before anything else, and before the install guard below can return: the
+   recorder only sees handlers registered after it is in place (pagePress.ts).
+   Idempotent, so AutoFlow's copy and this one cannot record a button twice. */
+installListenerRegistry();
 
 (() => {
   if ((window as any).__af_early_fetch_installed) return;
@@ -57,7 +65,11 @@ import { isBatchExecuteUrl, readStatuses, diagnostics } from './flowBatch';
      treats an absent kind as "cannot judge, let it through" — the pre-fix
      behaviour, where a Frames run's uploaded start frame read as a finished
      video. Read it from the Flow console to tell which is running. */
-  (window as any).__af_interceptor_build = 'batchexecute-2';
+  /* -3 keeps the replayable status request off fetch as well as XHR — Flow's
+     data calls moved to fetch, and the active check was dead without it —
+     and answers PRESS: image mode's Generate takes only trusted events, so
+     the engine asks this world to call the button's own handler. */
+  (window as any).__af_interceptor_build = 'batchexecute-3';
 
   /* The tracker, reachable from the Flow page console as __afReport().
      Defined here rather than in the content script because only the MAIN
@@ -187,6 +199,59 @@ import { isBatchExecuteUrl, readStatuses, diagnostics } from './flowBatch';
     window.postMessage({ source: 'autoflow-api-interceptor', type, payload }, '*');
   }
 
+  /* The engine marked a button and wants it pressed through its own handler
+     (pagePress.ts). Answered by token, so a reply cannot be taken for another
+     press's. The same message AutoFlow's interceptor answers, so whichever of
+     the two installed first serves both extensions. */
+  window.addEventListener('message', (event: MessageEvent) => {
+    if (event.source !== window) return;
+    const d = event.data;
+    if (!d || d.source !== 'autoflow-engine' || d.type !== 'PRESS') return;
+    const token = String(d.payload?.token || '');
+    if (!/^[\w-]{8,64}$/.test(token)) return;
+    const el = document.querySelector(`[data-af-press="${token}"]`);
+    relay('PRESS_RESULT', { token, ...pressWithPageHandler(el) });
+  });
+
+  /** One batchexecute reply, whichever transport carried it. */
+  function afterBatch(url: string, text: string, reqBody: unknown, reqHeaders: Record<string, string>): void {
+    const found = relayBatch(url, text);
+    /* Keep the request that produced statuses — that is the one worth
+       replaying. Requests on this path serve the whole app, so keeping the
+       most recent of ANY of them would usually replay something that reports
+       nothing.
+     *
+       Never keep a request that introduced a generation. The template is
+       replayed verbatim, with credentials, whenever observation has to be
+       recovered — so keeping the SUBMIT here would make recovery generate a
+       second video and charge for it. A response describing only ids already
+       seen cannot have been a submit, and the first status poll after one
+       supplies the template a moment later anyway. */
+    if (found > 0 && !lastBatchIntroducedNewId && typeof reqBody === 'string') {
+      lastStatusRequest = { url, body: reqBody, headers: reqHeaders };
+    }
+  }
+
+  /** A fetch call's body as text, read before the call consumes it. */
+  async function fetchBody(args: any[]): Promise<string | undefined> {
+    const body = args[1]?.body;
+    if (typeof body === 'string') return body;
+    if (body instanceof URLSearchParams) return body.toString();
+    if (body == null && args[0] instanceof Request) {
+      try { return await args[0].clone().text(); } catch { return undefined; }
+    }
+    return undefined;
+  }
+
+  function fetchHeaders(args: any[]): Record<string, string> {
+    const out: Record<string, string> = {};
+    try {
+      new Headers(args[1]?.headers || (args[0] instanceof Request ? args[0].headers : undefined) || {})
+        .forEach((value, name) => { out[name] = value; });
+    } catch { /* unreadable headers: replay without them */ }
+    return out;
+  }
+
   // ═══════════════════════════════════════════
   // 1. FETCH INTERCEPT
   // ═══════════════════════════════════════════
@@ -204,6 +269,11 @@ import { isBatchExecuteUrl, readStatuses, diagnostics } from './flowBatch';
     }
 
     const { isStatus, isGenerate } = isTargetUrl(url);
+    /* Today's Flow sends its data calls this way, so the body is read here,
+       before the call consumes it, for the replay the active check needs. */
+    const batch = isBatchExecuteUrl(url);
+    const reqBody = batch ? await fetchBody(args) : undefined;
+    const reqHeaders = batch ? fetchHeaders(args) : {};
 
     const response = await _realFetch.apply(this || window, args as [RequestInfo | URL, RequestInit?]);
 
@@ -214,11 +284,11 @@ import { isBatchExecuteUrl, readStatuses, diagnostics } from './flowBatch';
       }).catch(() => {});
     }
 
-    /* The new site, if it ever routes one of these through fetch. Read as
-       text: a batchexecute body is not JSON — it opens with a )]}' guard and
-       is a sequence of length-prefixed chunks — so .json() rejects on it. */
-    if (isBatchExecuteUrl(url) && response.ok) {
-      response.clone().text().then((t: string) => relayBatch(url, t)).catch(() => {});
+    /* The branch that carries today's traffic. Read as text: a batchexecute
+       body is not JSON — it opens with a )]}' guard and is a sequence of
+       length-prefixed chunks — so .json() rejects on it. */
+    if (batch && response.ok) {
+      response.clone().text().then((t: string) => afterBatch(url, t, reqBody, reqHeaders)).catch(() => {});
     }
 
     return response;
@@ -284,8 +354,8 @@ import { isBatchExecuteUrl, readStatuses, diagnostics } from './flowBatch';
       });
     }
 
-    /* The new site. This is the branch that actually carries the traffic:
-       every one of the 19 calls a project load makes is an XHR. */
+    /* The transport Flow used for every data call until it moved to fetch,
+       kept for a build that still sends them this way. */
     if (isBatchExecuteUrl(url)) {
       const reqBody = body;
       const reqHeaders = ((this as any).__af_headers || {}) as Record<string, string>;
@@ -294,21 +364,7 @@ import { isBatchExecuteUrl, readStatuses, diagnostics } from './flowBatch';
            Flow uses those for media. Ask before reading. */
         try {
           if (this.responseType && this.responseType !== 'text') return;
-          const found = relayBatch(url, this.responseText || '');
-          /* Keep the request that produced statuses — that is the one worth
-             replaying. Requests on this path serve the whole app, so keeping
-             the most recent of ANY of them would usually replay something
-             that reports nothing. */
-          /* Never keep a request that introduced a generation.
-             The template is replayed verbatim, with credentials, whenever
-             observation has to be recovered — so keeping the SUBMIT here
-             would make recovery generate a second video and charge for it.
-             A response describing only ids already seen cannot have been a
-             submit, and the first status poll after one supplies the template
-             a moment later anyway. */
-          if (found > 0 && !lastBatchIntroducedNewId && typeof reqBody === 'string') {
-            lastStatusRequest = { url, body: reqBody, headers: reqHeaders };
-          }
+          afterBatch(url, this.responseText || '', reqBody, reqHeaders);
         } catch {}
       });
     }

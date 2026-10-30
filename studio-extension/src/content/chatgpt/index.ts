@@ -13,6 +13,7 @@ import { cleanAssistantReply, looksLikeUsablePrompt } from './chatgptReply';
 import { isVisible } from '../shared/visible';
 import { sleepOrDomChange } from '../shared/hiddenWait';
 import { insertIntoEditable } from '../shared/composerText';
+import { CHAT_STRINGS } from '../shared/chatStrings';
 
 const GENERATION_TIMEOUT_MS = 6 * 60 * 1000; // ChatGPT image gen can take minutes
 // Writing a prompt is a chat round-trip, not a render — a node that hangs here
@@ -38,7 +39,7 @@ const TEXT_QUIET_MS = 45 * 1000;
    extension is rebuilt — the tab must be reloaded too — and a stale
    script is indistinguishable from a broken fix unless it says which
    one it is. */
-const ADAPTER_BUILD = 'reply-clock-v4';
+const ADAPTER_BUILD = 'composer-2026-10-29';
 
 /** Backstop for a wedged tab. */
 const TEXT_CEILING_MS = 10 * 60 * 1000;
@@ -158,12 +159,16 @@ function findComposer(): HTMLElement | null {
     document.querySelectorAll<HTMLElement>('textarea, [contenteditable="true"]')
   ).filter(isVisible);
 
+  /* 2026-10-29: #prompt-textarea is gone; the composer is a ProseMirror
+     editor whose label is "Ask ChatGPT". It was found only because it was
+     the one editable on the page — any second one and this took the first. */
   const hinted = candidates.find((c) => {
     const hint = c.getAttribute('placeholder') || c.getAttribute('aria-label') ||
                  c.getAttribute('data-placeholder') || '';
-    return /describe|image|imagine|ask anything/i.test(hint);
+    return /describe|image|imagine|ask anything|ask chatgpt|message chatgpt/i.test(hint);
   });
-  return hinted || candidates[0] || null;
+  const editor = candidates.find((c) => c.classList.contains('ProseMirror'));
+  return hinted || editor || candidates[0] || null;
 }
 
 /** Messages in the thread on screen. Zero means a fresh, unused chat. */
@@ -186,7 +191,23 @@ function findNewChatButton(): HTMLElement | null {
   const all = Array.from(
     document.querySelectorAll<HTMLElement>('[data-testid="create-new-chat-button"]')
   );
-  return all.find(isVisible) || all[0] || null;
+  if (all.length) return all.find(isVisible) || all[0];
+
+  /* Read off the live page 2026-10-29: the testid is gone, and the sidebar's
+     control is a button labelled "New chat". Without this every node after
+     the first appended to the last one's thread — the failure startNewChat
+     exists to prevent. Matched on the WHOLE label: each project in the
+     sidebar carries its own "New chat in <project>", and taking one of those
+     would file the conversation into somebody's project. */
+  const labelled = Array.from(document.querySelectorAll<HTMLElement>('a[aria-label], button[aria-label]'))
+    .filter((el) => isNewChatLabel(el.getAttribute('aria-label')));
+  return labelled.find(isVisible) || labelled[0] || null;
+}
+
+/** Exactly "New chat", in any language chatStrings knows — never "New chat in …". */
+function isNewChatLabel(label: string | null): boolean {
+  const l = String(label || '').trim().toLowerCase();
+  return !!l && (CHAT_STRINGS.newChat as readonly string[]).includes(l);
 }
 
 /**
@@ -286,6 +307,43 @@ function hasToolPill(_label?: string): boolean {
 }
 
 /**
+ * The composer's "+".
+ *
+ * Read off the live page 2026-10-29: the testid is gone and the button is
+ * labelled "Add files and more". Without a fallback every image node stopped
+ * at 'the "+" menu button is not on the page' and ran without the tool.
+ * The label is translated, so the last resort is the first button in the
+ * composer's own form, which is where the "+" has always sat.
+ */
+function findPlusButton(): HTMLElement | null {
+  const byTestId = document.querySelector<HTMLElement>('button[data-testid="composer-plus-btn"]');
+  if (byTestId) return byTestId;
+  const labelled = Array.from(document.querySelectorAll<HTMLElement>('button[aria-label]'))
+    .find((b) => /^add files/i.test(b.getAttribute('aria-label') || '') && isVisible(b));
+  if (labelled) return labelled;
+  const form = findComposer()?.closest('form');
+  return form?.querySelector<HTMLElement>('button[aria-label]') || null;
+}
+
+/**
+ * The entries of the menu the "+" opened.
+ *
+ * They were div.__menu-item. On 2026-10-29 they are plain buttons — no role,
+ * no class worth keeping — each reading its name then a description
+ * ("Create image" + "Visualize anything"), which is what the prefix match on
+ * the caller's side is for. Visible ones only: the closed menus elsewhere on
+ * the page are buttons too.
+ */
+function menuEntries(): HTMLElement[] {
+  const legacy = Array.from(document.querySelectorAll<HTMLElement>('.__menu-item, [role="menuitem"]'));
+  if (legacy.length) return legacy;
+  return Array.from(document.querySelectorAll<HTMLElement>('button')).filter((b) => {
+    if (!isVisible(b) || b.closest('form')) return false;
+    return !!(b.textContent || '').trim();
+  });
+}
+
+/**
  * Put the Create image tool on the composer.
  *
  * Returns a reason when it could not, rather than a bare false: an image node
@@ -296,7 +354,7 @@ function hasToolPill(_label?: string): boolean {
 async function selectCreateImageTool(): Promise<string | null> {
   if (hasToolPill()) return null;
 
-  const plus = document.querySelector<HTMLElement>('button[data-testid="composer-plus-btn"]');
+  const plus = findPlusButton();
   if (!plus) return 'ChatGPT\'s "+" menu button is not on the page';
 
   // A plain .click() does not open it; the menu is opened on pointerdown.
@@ -307,12 +365,11 @@ async function selectCreateImageTool(): Promise<string | null> {
   let item: HTMLElement | undefined;
   for (let i = 0; i < 12 && !item; i++) {
     await sleep(250);
-    item = Array.from(document.querySelectorAll<HTMLElement>('.__menu-item'))
-      .find((el) => /^create image/i.test((el.textContent || '').trim()));
+    item = menuEntries().find((el) => /^create image/i.test((el.textContent || '').trim()));
   }
   if (!item) {
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    const opened = document.querySelectorAll('.__menu-item').length;
+    const opened = menuEntries().length;
     return opened
       ? `ChatGPT's "+" menu has no "Create image" entry (${opened} entries offered)`
       : 'ChatGPT\'s "+" menu did not open';
@@ -349,6 +406,14 @@ async function selectCreateImageTool(): Promise<string | null> {
  * Never fatal. A wrong shape is worth reporting and not worth throwing away a
  * generation over, so this returns a note and the node runs either way.
  */
+const NO_RATIO_CONTROL = 'ChatGPT shows no image ratio control';
+
+/** The shape in words, for a composer with no control to set it. */
+const SHAPE_WORDS: Record<string, string> = {
+  '9:16': 'vertical 9:16', '16:9': 'widescreen 16:9', '1:1': 'square 1:1',
+  '3:4': 'portrait 3:4', '4:3': 'landscape 4:3',
+};
+
 async function selectImageRatio(ratio: string): Promise<string | null> {
   const want = String(ratio || '').trim();
   if (!want) return null;
@@ -357,8 +422,11 @@ async function selectImageRatio(ratio: string): Promise<string | null> {
     'button[aria-label="Choose image aspect ratio"]',
   );
   const btn = button();
-  // Older accounts have no such control. Not a failure — there is nothing to set.
-  if (!btn) return null;
+  /* No such control. Older accounts never had it, and on 2026-10-29 the
+     current composer has none either: with Create image on, the form holds
+     "+", Think, Dictate and Send, nothing else. Said as such, so the caller
+     can ask for the shape in words rather than log a ratio it never set. */
+  if (!btn) return NO_RATIO_CONTROL;
   if ((btn.textContent || '').trim() === want) return null;
 
   /* Opens on pointerdown, like the "+" menu. A plain .click() leaves
@@ -818,7 +886,7 @@ async function captureImage(img: HTMLImageElement): Promise<string> {
 
 async function handleExecute(payload: any): Promise<any> {
   const { nodeId, config } = payload || {};
-  const prompt = (config?.prompt || '').trim();
+  let prompt = (config?.prompt || '').trim();
 
   if (!nodeId) return { success: false };
   if (!prompt) {
@@ -931,7 +999,14 @@ async function handleExecute(payload: any): Promise<any> {
          and is where the user is looking. A STUDIO_NODE_WARNING would have
          been invented here and handled nowhere — the service worker would
          log "no handler" to a console nobody has open. */
-      logLine(ratioProblem || `Image ratio set to ${ratio}`);
+      if (ratioProblem === NO_RATIO_CONTROL && SHAPE_WORDS[ratio]) {
+        /* Nothing to press, so ask in words. This logged "Image ratio set to
+           9:16" about a ratio it had never set, and ChatGPT drew Auto. */
+        prompt = `${prompt}\n\nMake the image ${SHAPE_WORDS[ratio]}.`;
+        logLine(`${NO_RATIO_CONTROL} — asked for ${ratio} in the prompt instead`);
+      } else {
+        logLine(ratioProblem || `Image ratio set to ${ratio}`);
+      }
     }
 
     composer = findComposer() || composer;

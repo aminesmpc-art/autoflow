@@ -350,4 +350,11 @@ describe('coming back to the right conversation', () => {
     expect(at).toBeGreaterThan(-1);
     expect(RUNNER.slice(at, at + 260)).toMatch(/briefs\.set\(director\.id, wholeThing\);/);
   });
+
+  it('asks a Director\'s whole brief again in a fresh chat when its settings chat is gone', () => {
+    /* A Director choosing its own settings writes the brief as the SECOND turn
+       of that chat. With no fallback, a chat that could not be reopened failed
+       the whole Director, though the brief needs nothing above it. */
+    expect(RUNNER).toMatch(/round === 0 \? refs : undefined,[\s\S]{0,500}round === 0 \? message : undefined,\s*\);/);
+  });
 });

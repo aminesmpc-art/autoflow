@@ -347,7 +347,7 @@ describe('saying the interception is alive', () => {
     /* Two rounds went to "is the rebuilt extension actually loaded?" — a
        MAIN-world script only injects at document_start, so an open tab keeps
        the old one and looks identical. */
-    expect(SW).toMatch(/__af_interceptor_build = 'batchexecute-2'/);
+    expect(SW).toMatch(/__af_interceptor_build = 'batchexecute-3'/);
   });
 
   it('answers the badge with aliveness, not only cache freshness', () => {
@@ -444,6 +444,19 @@ describe('the active check', () => {
        encoding and the session tokens — and re-guessing at every deploy. */
     expect(SW2).toMatch(/lastStatusRequest/);
     expect(SW2).toMatch(/method: 'POST'/);
+  });
+
+  it('keeps the request off fetch, the transport Flow uses now', () => {
+    /* Measured 2026-10-29: 17 of 17 batchexecute calls on a project load were
+       fetch. The request was kept on the XHR branch only, so on today's Flow
+       there was nothing to replay and the active check failed every time —
+       exactly while a backgrounded tab, which Flow stops polling, needs it. */
+    const at = SW2.indexOf('const interceptedFetch');
+    const fetchBranch = SW2.slice(at, SW2.indexOf('// Stealth', at));
+    expect(fetchBranch).toMatch(/const reqBody = batch \? await fetchBody\(args\) : undefined;/);
+    expect(fetchBranch).toMatch(/afterBatch\(url, t, reqBody, reqHeaders\)/);
+    // Read before the call consumes the body.
+    expect(fetchBranch.indexOf('await fetchBody(args)')).toBeLessThan(fetchBranch.indexOf('_realFetch.apply('));
   });
 
   it('only keeps a request that actually reported statuses', () => {
