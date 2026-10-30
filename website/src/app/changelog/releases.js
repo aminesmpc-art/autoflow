@@ -365,6 +365,24 @@ export const RELEASES = {
 
   studio: [
     {
+      version: "1.7.0",
+      date: "2026-10-30",
+      title: "Simple View & a Clearer Canvas",
+      highlights: [
+        "Simple view: a template opens as a form. Fill in its prompts and photos, press Run, and watch every image and clip arrive in order. Switch to the canvas any time",
+        "A node's settings open in a side panel when you click it, so nodes are about a third of the size and a whole workflow fits on screen",
+        "Studio opens on For You: the most liked community workflows first, then every AutoFlow template",
+        "Nodes never open on top of each other, and Tidy lays a workflow out in the order it runs",
+      ],
+      improvements: [
+        "Each input says what it takes (Text, Image, Start frame, Video), and inputs no longer cover a node's settings",
+        "Run sits in the top bar, and the node library docks beside the canvas and folds to icons",
+        "Flow image nodes submit again on the latest Flow",
+        "ChatGPT nodes work with ChatGPT's new page and start a fresh chat for each node",
+        "A Director whose earlier chat can't be reopened asks again in a fresh one instead of failing",
+      ],
+    },
+    {
       version: "1.6.1",
       date: "2026-10-27",
       title: "Community Workflows",
