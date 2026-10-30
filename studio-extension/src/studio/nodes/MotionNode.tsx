@@ -27,6 +27,7 @@ import { Icon } from '../components/Icon';
 import { MotionPreview } from '../components/MotionPreview';
 import { useStudioStore } from '../store';
 import { NodeInfoBadge } from './NodeInfoBadge';
+import { NodeSettings } from '../components/NodeSettings';
 import { hasSource, putSource, sourceKeyFor } from '../clip/sourceStore';
 import { MODE_INTENT, type MotionMode, type MotionPieceRow } from '../ask/motionControl';
 import { MOTION_PRESETS, motionPromptWarnings, subjectDescriptionWarning } from '../ask/motionGuidance';
@@ -171,6 +172,18 @@ function MotionNodeInner({ id, data, selected }: NodeProps) {
         </div>
 
         <div className="sn-motion__body">
+          {/* Everything chosen before a run goes to the side panel; the card
+              keeps the pieces, their prompts and anything that stops a run. */}
+          <NodeSettings
+            nodeId={id}
+            selected={!!selected}
+            title={d.label || 'Motion Control'}
+            summary={[
+              MODE_INTENT[mode].title,
+              d.platform === 'chatgpt' ? 'ChatGPT' : 'Gemini',
+              d.sourceName || 'no source video yet',
+            ].join(' · ')}
+          >
           <div className="sn-motion__intro"><span>Motion studio</span><p>Borrow the movement. Make it your own.</p></div>
           <div className="sn-motion__field">
             <label className="sn-field__label" htmlFor={`motion-preset-${id}`}>Prompt preset</label>
@@ -262,6 +275,7 @@ function MotionNodeInner({ id, data, selected }: NodeProps) {
             <span><b>T</b> Instructions</span><span><b>V</b> Motion source</span><span><b>I</b> Character</span><span><b>P</b> Place (optional)</span>
           </div>
           <p className="sn-motion__hint">Connect a place image to P to change the setting. Without it, keep the video’s location. I controls the character; P controls only the environment. Reference changes apply to retries too—use a full Run to rewrite all prompts.</p>
+          </NodeSettings>
 
           {/* Only worth saying while there is nothing to fall back on. Once the
               pieces are cut and uploaded they generate from their names, so a

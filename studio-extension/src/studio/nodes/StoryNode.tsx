@@ -37,6 +37,11 @@ import {
 import { FLOW_VOICES, NO_VOICE, voiceLabel } from '../flowVoices';
 import { DISTORTIONS, FOCUS_DEPTHS, MOTION_BLURS, MOVEMENT_RESPONSES, COLOR_TREATMENTS } from '../ask/actionCameraLook';
 import { NodeInfoBadge } from './NodeInfoBadge';
+import { NodeSettings } from '../components/NodeSettings';
+
+const ENGINE_NAMES: Record<string, string> = {
+  chatgpt: 'ChatGPT', gemini: 'Gemini', grok: 'Grok', claude: 'Claude', zai: 'Z.AI',
+};
 
 /* One reader, shared with the runner. Kept as a local name because this
    file uses it a dozen times, and because the two used to differ. */
@@ -137,6 +142,15 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
     set({ cast: next });
   };
 
+  /* The card's line: who writes, in what look, with which extras on. */
+  const summary = [
+    ENGINE_NAMES[d.platform || 'chatgpt'] || 'ChatGPT',
+    VISUAL_PRESETS.find((x) => x.id === (story.visualPreset || 'liveAction'))?.name,
+    povOn ? 'POV' : null,
+    story.timedBeats ? 'timed beats' : null,
+    story.cast.length ? `${story.cast.length} cast` : null,
+  ].filter(Boolean).join(' · ');
+
   return (
     <div className={`sn-wrap sn-wrap--kind-story ${selected ? 'sn-wrap--selected' : ''}`}>
       <div className="sn-actions">
@@ -168,7 +182,6 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
           )}
         </div>
 
-        <div className="sn-director__intro"><span>Creative direction</span><p>Shape the look, rhythm, and cast of your sequence.</p></div>
         {/* ── Connected Shot Sequencer Ribbon ── */}
         {targets.length === 0 ? (
           <div className="sn-director__empty">
@@ -237,6 +250,36 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
           </div>
         )}
 
+        {/* On the card, not in the panel: it says this Director's settings
+            are not its own, which is worth knowing before opening them. */}
+        {chiefControlled && (
+          <div className="sn-story__note">
+            <strong>
+              Controlled by Director Chief
+              {chiefGroup ? ` — part ${chiefGroup.part} of ${chiefGroup.of}` : ''}.
+            </strong>{' '}
+            Cast, world, look, pacing, and production rules are inherited and locked.
+            This Director writes only its connected shots.
+            {chiefGroup && (
+              <>
+                {' '}The parts run left to right across the canvas, and each one opens
+                where the one before it closed — so moving this node past its
+                neighbour changes the order of the story.
+              </>
+            )}
+          </div>
+        )}
+
+        {/* The four sections go to the side panel; the card keeps the shot
+            list, which is what the Director is for. */}
+        <NodeSettings
+          nodeId={id}
+          selected={!!selected}
+          title={d.label || 'Director'}
+          summary={summary}
+          bodyClass="sn-story-settings"
+        >
+        <div className="sn-director__intro"><span>Creative direction</span><p>Shape the look, rhythm, and cast of your sequence.</p></div>
         {/* ── Directorial Segmented Tabs ── */}
         <div className="sn-story__tabs" role="group" aria-label="Director settings sections">
           <button
@@ -272,24 +315,6 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
             <Icon name="chief" /> Cast & World {story.cast.length > 0 && `(${story.cast.length})`}
           </button>
         </div>
-
-        {chiefControlled && (
-          <div className="sn-story__note">
-            <strong>
-              Controlled by Director Chief
-              {chiefGroup ? ` — part ${chiefGroup.part} of ${chiefGroup.of}` : ''}.
-            </strong>{' '}
-            Cast, world, look, pacing, and production rules are inherited and locked.
-            This Director writes only its connected shots.
-            {chiefGroup && (
-              <>
-                {' '}The parts run left to right across the canvas, and each one opens
-                where the one before it closed — so moving this node past its
-                neighbour changes the order of the story.
-              </>
-            )}
-          </div>
-        )}
 
         {/* ── TAB 1: Director Settings ── */}
         {activeTab === 'direct' && (
@@ -735,6 +760,7 @@ function StoryNodeInner({ id, data, selected }: NodeProps) {
             </div>
           </div>
         )}
+        </NodeSettings>
 
         {d.errorMessage && (
           <div className="sn-story__error">

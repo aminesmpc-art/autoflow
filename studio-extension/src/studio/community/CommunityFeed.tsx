@@ -1,8 +1,9 @@
 /* ============================================================
    CommunityFeed — workflows people posted, "like Facebook" (2026-10-25).
 
-   One column of posts, newest or most liked, loading more as you scroll.
-   Each post: who and when, a title and caption, the workflow drawn as a mini
+   One column of posts, most liked first (the owner's call, 2026-10-29: this
+   is Studio's opening screen now) or newest. Each post: who and when, a
+   title and caption, the workflow drawn as a mini
    map (the only picture a post has — the owner chose JSON only), likes and
    uses, and one big "Use this workflow". Posts go live at once; Report is on
    every post that is not yours, Delete on every one that is.
@@ -51,10 +52,15 @@ interface Props {
   /** A workflow handed over to post (from the side panel's builder). */
   pending?: ComposerSource | null;
   onPendingTaken?: () => void;
+  /** Something sits below the feed. Only the first page loads by itself;
+      the rest wait for "See more posts". Scrolling would otherwise keep
+      fetching pages ahead of the reader, and whatever is underneath could
+      not be reached until every post ever made had loaded. */
+  stepped?: boolean;
 }
 
-export default function CommunityFeed({ onUse, pending, onPendingTaken }: Props) {
-  const [sort, setSort] = useState<FeedSort>('new');
+export default function CommunityFeed({ onUse, pending, onPendingTaken, stepped }: Props) {
+  const [sort, setSort] = useState<FeedSort>('top');
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [next, setNext] = useState<number | null>(0);
   const [loading, setLoading] = useState(false);
@@ -117,13 +123,14 @@ export default function CommunityFeed({ onUse, pending, onPendingTaken }: Props)
      asks for the following one without waiting for a scroll. */
   useEffect(() => {
     const el = sentinel.current;
-    if (!el || error) return undefined;
+    /* next is 0 only before a sort's first page. */
+    if (!el || error || (stepped && next !== 0)) return undefined;
     const io = new IntersectionObserver((entries) => {
       if (entries.some((e) => e.isIntersecting)) void loadMore();
     }, { rootMargin: '800px 0px' });
     io.observe(el);
     return () => io.disconnect();
-  }, [loadMore, error]);
+  }, [loadMore, error, stepped, next]);
 
   const patch = (id: string, change: Partial<FeedPost>) =>
     setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, ...change } : p)));
@@ -163,7 +170,7 @@ export default function CommunityFeed({ onUse, pending, onPendingTaken }: Props)
   };
 
   return (
-    <div className="cf">
+    <div className={`cf ${stepped ? 'cf--stepped' : ''}`}>
       <div className="cf-col">
         {/* Share bar — the "What's on your mind?" of this feed */}
         <div className="cf-card cf-share">
@@ -175,7 +182,7 @@ export default function CommunityFeed({ onUse, pending, onPendingTaken }: Props)
         </div>
 
         <div className="cf-sort" role="tablist" aria-label="Sort posts">
-          {([['new', 'New'], ['top', 'Popular']] as [FeedSort, string][]).map(([key, label]) => (
+          {([['top', 'Popular'], ['new', 'New']] as [FeedSort, string][]).map(([key, label]) => (
             <button key={key} role="tab" aria-selected={sort === key}
               className={`cf-sort__tab ${sort === key ? 'cf-sort__tab--on' : ''}`} onClick={() => setSort(key)}>
               {label}
@@ -252,6 +259,9 @@ export default function CommunityFeed({ onUse, pending, onPendingTaken }: Props)
         )}
         {!loading && !error && next === null && posts.length > 0 && (
           <p className="cf-end">You're all caught up.</p>
+        )}
+        {stepped && !loading && !error && next !== null && posts.length > 0 && (
+          <button className="cf-btn cf-more-posts" onClick={() => void loadMore()}>See more posts</button>
         )}
         <div ref={sentinel} className="cf-sentinel" />
       </div>

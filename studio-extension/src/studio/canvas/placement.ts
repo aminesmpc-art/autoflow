@@ -93,3 +93,108 @@ export function freeSpot(
   }
   return { x: Math.round(anchor.x), y: Math.round(anchor.y) };
 }
+
+export type Placed = Box & { id: string };
+
+/**
+ * How far into the run each node is: the length of the longest chain of
+ * wires leading into it. Tidy lays columns out by it and Simple view lists
+ * results by it, so both show the workflow in the order it runs. A wire that
+ * loops back ranks nothing.
+ */
+export function runRanks(
+  ids: readonly string[],
+  edges: readonly { source: string; target: string }[],
+): Map<string, number> {
+  const known = new Set(ids);
+  const into = new Map<string, string[]>();
+  for (const e of edges) {
+    if (!known.has(e.source) || !known.has(e.target) || e.source === e.target) continue;
+    into.set(e.target, [...(into.get(e.target) || []), e.source]);
+  }
+  const rank = new Map<string, number>();
+  const visiting = new Set<string>();
+  const rankOf = (id: string): number => {
+    const done = rank.get(id);
+    if (done !== undefined) return done;
+    if (visiting.has(id)) return -1;
+    visiting.add(id);
+    let r = 0;
+    for (const s of into.get(id) || []) r = Math.max(r, rankOf(s) + 1);
+    visiting.delete(id);
+    rank.set(id, r);
+    return r;
+  };
+  ids.forEach(rankOf);
+  return rank;
+}
+
+/**
+ * Move overlapping nodes apart, changing as little as possible.
+ *
+ * freeSpot keeps a node being ADDED clear; this is for a workflow that
+ * arrives with nodes already on top of each other. A bundled template did:
+ * measured in the canvas harness on 2026-10-30, Wrong Room Challenge opened
+ * with 24 overlapping pairs, because its positions were laid out for nodes
+ * far shorter than they render (a Director 140px left of the 300px board it
+ * feeds). Covered ports cannot be grabbed, which is the 1-star "nodes don't
+ * properly connect" by another road. Community posts, imports and workflows
+ * the AI builds can arrive the same way.
+ *
+ * Every node keeps its x, so the author's columns survive. Top to bottom,
+ * each one moves down below whatever already-placed node it hits. Returns
+ * only the nodes that moved.
+ */
+export function separate(boxes: readonly Placed[], gap = 24): Map<string, { x: number; y: number }> {
+  const placed: Box[] = [];
+  const moved = new Map<string, { x: number; y: number }>();
+  for (const b of [...boxes].sort((p, q) => p.y - q.y || p.x - q.x)) {
+    let y = b.y;
+    for (;;) {
+      const hit = placed.find((p) => overlaps({ ...b, y }, p, gap));
+      if (!hit) break;
+      y = hit.y + hit.h + gap;
+    }
+    placed.push({ ...b, y });
+    if (y !== b.y) moved.set(b.id, { x: Math.round(b.x), y: Math.round(y) });
+  }
+  return moved;
+}
+
+/**
+ * Lay the whole workflow out left to right, in the order it runs.
+ *
+ * A node's column is the length of the longest chain of wires leading into
+ * it, so everything sits to the right of what it reads from. Inside a column
+ * the nodes keep the top-to-bottom order they had, and stack by their
+ * measured heights. Wires that loop back cannot rank anything, so a node on
+ * a cycle is ranked by the wires that do resolve. Deterministic, so pressing
+ * Tidy twice changes nothing the second time.
+ */
+export function tidy(
+  boxes: readonly Placed[],
+  edges: readonly { source: string; target: string }[],
+  gapX = 96,
+  gapY = 40,
+): Map<string, { x: number; y: number }> {
+  const out = new Map<string, { x: number; y: number }>();
+  if (!boxes.length) return out;
+  const rank = runRanks(boxes.map((b) => b.id), edges);
+
+  const columns = new Map<number, Placed[]>();
+  for (const b of boxes) columns.set(rank.get(b.id)!, [...(columns.get(rank.get(b.id)!) || []), b]);
+  const left = Math.min(...boxes.map((b) => b.x));
+  const top = Math.min(...boxes.map((b) => b.y));
+
+  let x = left;
+  for (const r of [...columns.keys()].sort((a, b) => a - b)) {
+    const col = columns.get(r)!.sort((p, q) => p.y - q.y || p.x - q.x);
+    let y = top;
+    for (const b of col) {
+      out.set(b.id, { x: Math.round(x), y: Math.round(y) });
+      y += b.h + gapY;
+    }
+    x += Math.max(...col.map((b) => b.w)) + gapX;
+  }
+  return out;
+}

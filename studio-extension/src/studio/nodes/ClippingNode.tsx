@@ -29,6 +29,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { Icon } from '../components/Icon';
 import { useStudioStore } from '../store';
 import { NodeInfoBadge } from './NodeInfoBadge';
+import { NodeSettings } from '../components/NodeSettings';
 import {
   STAGE_ORDER, STAGE_LABEL, describeRun, progressOf, nextPending,
   forSource, invalidateFrom, resultOf,
@@ -241,6 +242,20 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
   const readOnServer: boolean = d.readOnServer !== false;
   const aspect: string = ASPECTS.some((a) => a.id === d.aspect) ? d.aspect : '9:16';
 
+  /* The setup strip was kept on the card because "a run reads them every
+     time; the node should state them every time". It still does, in a line:
+     the controls are in the side panel, the statement is here. */
+  const summary = [
+    CHATS.find((c) => c.id === chat)?.name,
+    isCampaign ? 'Campaign' : 'Explainer',
+    `${wanted} clip${wanted === 1 ? '' : 's'}`,
+    aspect,
+    captions ? 'captions' : null,
+    planEdit ? 'edit plan' : null,
+    omniParts ? 'Omni parts' : null,
+    sourceName || 'no video yet',
+  ].filter(Boolean).join(' · ');
+
   const redoFrom = useCallback((stage: StageId) => {
     updateNodeData(id, { clipRun: invalidateFrom(run, stage) } as any);
   }, [id, run, updateNodeData]);
@@ -356,7 +371,6 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
           )}
         </div>
 
-        <div className="sn-clipping__intro"><span>Clip studio</span><p>Turn a long recording into moments worth sharing.</p></div>
         <div className="sn-clipping__progress">
           <div><strong>Preparation progress</strong><span>{Math.round(progress * 100)}%</span></div>
           <progress aria-label="Clipping preparation progress" max={1} value={progress} />
@@ -421,6 +435,14 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
           </div>
         )}
 
+        <NodeSettings
+          nodeId={id}
+          selected={!!selected}
+          title={d.label || 'Clipping'}
+          summary={summary}
+          bodyClass="sn-clip-settings"
+        >
+        <div className="sn-clipping__intro"><span>Clip studio</span><p>Turn a long recording into moments worth sharing.</p></div>
         {/* ── the settings that change what a run does, on the face ──
             These were behind a tab, which meant the chat, the job and the
             number of clips were all discoverable only by knowing to look.
@@ -556,7 +578,7 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
         </div>
 
         <div className="sn-clip__tabs" role="group" aria-label="Clipping sections">
-          {(['source', 'moments', 'settings'] as Tab[]).map((t) => (
+          {(['source', 'settings'] as Tab[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -564,8 +586,8 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               onClick={() => setTab(t)}
               aria-pressed={tab === t}
             >
-              <Icon name={t === 'source' ? 'clip' : t === 'moments' ? 'scissors' : 'story'} />
-              {t === 'source' ? 'Video' : t === 'moments' ? `Moments${moments.length ? ` (${moments.length})` : ''}` : 'The brief'}
+              <Icon name={t === 'source' ? 'clip' : 'story'} />
+              {t === 'source' ? 'Video' : 'The brief'}
             </button>
           ))}
         </div>
@@ -606,74 +628,6 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               creator published one — it skips the slowest stage. Direction and campaign
               rules go in <strong>the brief</strong>, not here.
             </p>
-          </div>
-        )}
-
-        {tab === 'moments' && (
-          <div className="sn-clip__panel">
-            {(short || dropped.length > 0) && (
-              <div className="sn-clip__tally">
-                {short && (
-                  <span>
-                    {moments.length} of {asked} asked for — the rest were not judged
-                    worth posting.
-                  </span>
-                )}
-                {dropped.map((reason, i) => (
-                  <span key={i} className="sn-clip__tally-drop">{reason}</span>
-                ))}
-              </div>
-            )}
-
-            {moments.length ? (
-              <div className="sn-clip__moments">
-                {moments.map((m: any) => {
-                  /* 60 is the threshold the survey posts above. Showing the
-                     number without showing where the line is leaves a clipper
-                     guessing whether 62 is good. */
-                  const score = typeof m.score === 'number' ? Math.max(0, Math.min(100, m.score)) : null;
-                  const band = score === null ? '' : score >= 80 ? 'high' : score >= 60 ? 'ok' : 'low';
-                  return (
-                    <div key={m.rank} className="sn-clip__moment">
-                      <div className="sn-clip__moment-head">
-                        <span className="sn-clip__rank">{m.rank}</span>
-                        {score !== null && (
-                          <span
-                            className={`sn-clip__score sn-clip__score--${band}`}
-                            title={
-                              m.pillars
-                                ? Object.entries(m.pillars)
-                                  .map(([k, v]) => `${k} ${v}`)
-                                  .join(' · ')
-                                : 'out of 100'
-                            }
-                          >
-                            <span className="sn-clip__score-bar">
-                              <span className="sn-clip__score-fill" style={{ width: `${score}%` }} />
-                            </span>
-                            <span className="sn-clip__score-num">{Math.round(score)}/100</span>
-                          </span>
-                        )}
-                      </div>
-                      <div className="sn-clip__moment-body">
-                        {/* The caption, written by the same reply that judged
-                            the clip. It was being computed and discarded. */}
-                        {m.title && <div className="sn-clip__caption">{m.title}</div>}
-                        <div className="sn-clip__quote">&ldquo;{m.hookLine}&rdquo;</div>
-                        {m.why && <p className="sn-clip__why">{m.why}</p>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="sn-clipping__empty">
-                <Icon name="scissors" />
-                <strong>No moments ranked yet.</strong>
-                The audio shortlists them and the model ranks what is said —
-                never a timestamp.
-              </div>
-            )}
           </div>
         )}
 
@@ -813,6 +767,80 @@ function ClippingNodeInner({ id, data, selected }: NodeProps) {
               onBlur={(e) => changeSetting({ campaignRules: e.target.value })}
             />
           </div>
+        )}
+
+        </NodeSettings>
+
+        {/* The moments are the result, so they are on the card — not behind a
+            tab in the panel with the settings that produced them. Only once
+            the ranking has run: before that the stage rail above already
+            says it is waiting, and an empty list explained itself in 120px. */}
+        {survey && (
+        <div className="sn-clip__panel">
+          {(short || dropped.length > 0) && (
+            <div className="sn-clip__tally">
+              {short && (
+                <span>
+                  {moments.length} of {asked} asked for — the rest were not judged
+                  worth posting.
+                </span>
+              )}
+              {dropped.map((reason, i) => (
+                <span key={i} className="sn-clip__tally-drop">{reason}</span>
+              ))}
+            </div>
+          )}
+
+          {moments.length ? (
+            <div className="sn-clip__moments">
+              {moments.map((m: any) => {
+                /* 60 is the threshold the survey posts above. Showing the
+                   number without showing where the line is leaves a clipper
+                   guessing whether 62 is good. */
+                const score = typeof m.score === 'number' ? Math.max(0, Math.min(100, m.score)) : null;
+                const band = score === null ? '' : score >= 80 ? 'high' : score >= 60 ? 'ok' : 'low';
+                return (
+                  <div key={m.rank} className="sn-clip__moment">
+                    <div className="sn-clip__moment-head">
+                      <span className="sn-clip__rank">{m.rank}</span>
+                      {score !== null && (
+                        <span
+                          className={`sn-clip__score sn-clip__score--${band}`}
+                          title={
+                            m.pillars
+                              ? Object.entries(m.pillars)
+                                .map(([k, v]) => `${k} ${v}`)
+                                .join(' · ')
+                              : 'out of 100'
+                          }
+                        >
+                          <span className="sn-clip__score-bar">
+                            <span className="sn-clip__score-fill" style={{ width: `${score}%` }} />
+                          </span>
+                          <span className="sn-clip__score-num">{Math.round(score)}/100</span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="sn-clip__moment-body">
+                      {/* The caption, written by the same reply that judged
+                          the clip. It was being computed and discarded. */}
+                      {m.title && <div className="sn-clip__caption">{m.title}</div>}
+                      <div className="sn-clip__quote">&ldquo;{m.hookLine}&rdquo;</div>
+                      {m.why && <p className="sn-clip__why">{m.why}</p>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="sn-clipping__empty">
+              <Icon name="scissors" />
+              <strong>No moments ranked yet.</strong>
+              The audio shortlists them and the model ranks what is said —
+              never a timestamp.
+            </div>
+          )}
+        </div>
         )}
 
         {fallback && (

@@ -68,10 +68,11 @@ describe('the mini map outline', () => {
 });
 
 describe('where the feed lives', () => {
-  it('is a Community tab on Studio\'s home, with the posting handoff', () => {
+  it('is Studio\'s For You home, with the posting handoff', () => {
+    /* It was a Community tab until 2026-10-29; forYouFeed.test.ts has the rest. */
     const gallery = read('studio', 'components', 'TemplateGallery.tsx');
-    expect(gallery).toMatch(/onClick=\{\(\) => setCategory\('Community'\)\}/);
-    expect(gallery).toMatch(/<CommunityFeed onUse=\{loadTemplate\} pending=\{pendingPost\} onPendingTaken=\{takePending\} \/>/);
+    expect(gallery).toMatch(/onClick=\{\(\) => setCategory\(FOR_YOU\)\}/);
+    expect(gallery).toMatch(/<CommunityFeed onUse=\{loadTemplate\} pending=\{pendingPost\} onPendingTaken=\{takePending\} stepped \/>/);
     expect(gallery).toMatch(/'af_pending_post', 'af_open_community'/);
   });
 

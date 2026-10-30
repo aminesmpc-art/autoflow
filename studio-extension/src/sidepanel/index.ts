@@ -2144,10 +2144,13 @@ async function openTemplate(id: string): Promise<void> {
 
    Everything here degrades to the official gallery. A failed fetch returns an
    empty list rather than throwing, because the curated templates are always
-   there and losing them to a community outage would be the worse bug. */
+   there and losing them to a community outage would be the worse bug.
+
+   Community opens first (the owner's call, 2026-10-29, the same as Studio's
+   For You) — still its own list, never mixed into the official one. */
 
 type TemplateSourceTab = 'official' | 'community';
-let templateSource: TemplateSourceTab = 'official';
+let templateSource: TemplateSourceTab = 'community';
 let communityCards: CommunityCard[] = [];
 let communityLoaded = false;
 
@@ -2273,7 +2276,7 @@ async function loadCommunity(force = false): Promise<void> {
   renderCommunity();
 }
 
-function setTemplateSource(next: TemplateSourceTab): void {
+function setTemplateSource(next: TemplateSourceTab): Promise<void> {
   templateSource = next;
   for (const [id, key] of [['src-official', 'official'], ['src-community', 'community']] as const) {
     const b = document.getElementById(id);
@@ -2285,8 +2288,9 @@ function setTemplateSource(next: TemplateSourceTab): void {
   const pills = document.getElementById('tpl-pills');
   if (pills) (pills as HTMLElement).hidden = next === 'community';
 
-  if (next === 'community') loadCommunity();
-  else renderTemplates();
+  if (next === 'community') return loadCommunity();
+  renderTemplates();
+  return Promise.resolve();
 }
 
 /** Share the workflow the Build tab just made. */
@@ -2498,23 +2502,32 @@ function wireShell(): void {
   document.getElementById('src-community')?.addEventListener('click', () => setTemplateSource('community'));
 
   renderPresets();
-  renderTemplates();
   wireBuilder();
 
+  /* Opens on Community. Empty — nothing shared yet, or the fetch failed,
+     which also reads as empty — falls back to the official set rather than
+     greeting someone with "Nobody has shared a template yet". Unless they
+     have picked a tab themselves in the meantime. */
+  void setTemplateSource(templateSource).then(() => {
+    if (templateSource === 'community' && !communityCards.length) void setTemplateSource('official');
+  });
+
   /* Templates come from the cache, the bundle, or the backend — the loader
-     never waits on the network, so the grid fills immediately and improves. */
+     never waits on the network, so the grid fills immediately and improves.
+     The grid is shared with the community list, so only draw into it while
+     the official set is the one showing. */
   loadTemplates()
     .then(({ templates }) => {
       panelTemplates = templates;
       renderPills();
-      renderTemplates();
+      if (templateSource === 'official') renderTemplates();
       return refreshTemplates();
     })
     .then((fresher) => {
       if (!fresher) return;
       panelTemplates = fresher.templates;
       renderPills();
-      renderTemplates();
+      if (templateSource === 'official') renderTemplates();
     })
     .catch(() => { /* the bundle is the floor; a failed refresh changes nothing */ });
 }

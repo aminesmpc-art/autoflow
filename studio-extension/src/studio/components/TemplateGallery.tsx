@@ -14,6 +14,11 @@ import type { ComposerSource } from '../community/PostComposer';
 /** Node-chain preview gets noisy past this many dots */
 const MAX_PREVIEW_DOTS = 8;
 
+/* Studio opens here, for everyone (the owner's call, 2026-10-29): the
+   community feed first, like a For You page, and every official template
+   under it. It replaces both "All" and the separate Community tab. */
+const FOR_YOU = 'For You';
+
 const relativeTime = (ts: number): string => {
   if (!ts) return '';
   const mins = Math.floor((Date.now() - ts) / 60000);
@@ -29,10 +34,10 @@ export default function TemplateGallery() {
   const {
     setView, setNodes, setEdges, setWorkflowName,
     savedWorkflows, listWorkflows, loadWorkflow, deleteWorkflow,
-    newWorkflow, importWorkflow, saveWorkflow,
+    newWorkflow, importWorkflow, saveWorkflow, setWorkMode,
   } = useStudioStore();
   const [query, setQuery] = useState('');
-  const [category, setCategory] = useState<string>('All');
+  const [category, setCategory] = useState<string>(FOR_YOU);
   const [importError, setImportError] = useState<string | null>(null);
   const [importOk, setImportOk] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -123,6 +128,9 @@ export default function TemplateGallery() {
       setNodes(clonedNodes);
       setEdges(clonedEdges);
       setWorkflowName(template.name);
+      /* A template opens as a form: fill in the inputs, press Run. Its graph
+         is one switch away in the top bar. */
+      setWorkMode('simple');
       setView('canvas');
 
       const withAssets = await resolveAssets(clonedNodes);
@@ -133,15 +141,16 @@ export default function TemplateGallery() {
          opened template could vanish on reload. */
       await saveWorkflow();
     },
-    [setView, setNodes, setEdges, setWorkflowName, newWorkflow, saveWorkflow]
+    [setView, setNodes, setEdges, setWorkflowName, newWorkflow, saveWorkflow, setWorkMode]
   );
 
   const startBlank = useCallback(() => {
     // newWorkflow() mints a fresh id, so a blank canvas can't overwrite the
     // workflow that was open before it.
     newWorkflow();
+    setWorkMode('canvas');
     setView('canvas');
-  }, [newWorkflow, setView]);
+  }, [newWorkflow, setView, setWorkMode]);
 
   /* Templates come from the cache, the bundle, or the backend — see
      templates/loader.ts. The gallery renders whatever is available first and
@@ -167,10 +176,10 @@ export default function TemplateGallery() {
           if (!live) return undefined;
           /* "Post to community" from somewhere this tree is not mounted (the
              side panel's builder, the canvas): the workflow is parked whole,
-             and the Community tab opens with the composer on it. */
+             and For You opens with the composer on it. */
           if (toPost || community) {
             return chrome.storage.local.remove(['af_pending_post', 'af_open_community']).then(() => {
-              setCategory('Community');
+              setCategory(FOR_YOU);
               if (toPost && Array.isArray((toPost as any).nodes)) {
                 setPendingPost({ name: (toPost as any).name || 'Untitled', nodes: (toPost as any).nodes, edges: (toPost as any).edges || [] });
               }
@@ -210,7 +219,7 @@ export default function TemplateGallery() {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return templates.filter((t) => {
-      if (category !== 'All' && t.category !== category) return false;
+      if (category !== FOR_YOU && t.category !== category) return false;
       if (!q) return true;
       return (
         t.name.toLowerCase().includes(q) ||
@@ -261,8 +270,9 @@ export default function TemplateGallery() {
         </div>
       </div>
 
-      {/* Search */}
-      {category !== 'Community' && (
+      {/* Search — over the templates. Typing on For You swaps the feed for
+          the matches, since posts do not take part in it. */}
+      {category !== 'Mine' && (
       <div className="studio-gallery__search">
         <input
           className="studio-gallery__search-input"
@@ -284,7 +294,13 @@ export default function TemplateGallery() {
 
       {/* Category Tabs */}
       <div className="studio-gallery__tabs">
-        {CATEGORIES.map((cat) => (
+        <button
+          className={`studio-gallery__tab studio-gallery__tab--community ${category === FOR_YOU ? 'studio-gallery__tab--active' : ''}`}
+          onClick={() => setCategory(FOR_YOU)}
+        >
+          {FOR_YOU}
+        </button>
+        {CATEGORIES.filter((cat) => cat !== 'All').map((cat) => (
           <button
             key={cat}
             className={`studio-gallery__tab ${category === cat ? 'studio-gallery__tab--active' : ''}`}
@@ -293,12 +309,6 @@ export default function TemplateGallery() {
             {cat}
           </button>
         ))}
-        <button
-          className={`studio-gallery__tab studio-gallery__tab--community ${category === 'Community' ? 'studio-gallery__tab--active' : ''}`}
-          onClick={() => setCategory('Community')}
-        >
-          Community
-        </button>
         <button
           className={`studio-gallery__tab ${category === 'Mine' ? 'studio-gallery__tab--active' : ''}`}
           onClick={() => setCategory('Mine')}
@@ -340,13 +350,22 @@ export default function TemplateGallery() {
         </div>
       )}
 
-      {/* Community — workflows people posted */}
-      {category === 'Community' && (
-        <CommunityFeed onUse={loadTemplate} pending={pendingPost} onPendingTaken={takePending} />
+      {/* For You — workflows people posted, then ours under their own heading.
+          Hidden rather than unmounted while searching, so clearing the search
+          does not refetch the feed. The wrapper must keep no display rule of
+          its own: an author-origin display beats the UA's [hidden]. */}
+      {category === FOR_YOU && (
+        <div hidden={!!query.trim()}>
+          <CommunityFeed onUse={loadTemplate} pending={pendingPost} onPendingTaken={takePending} stepped />
+          <div className="studio-gallery__section">
+            <h2 className="studio-gallery__section-title">More from AutoFlow</h2>
+            <span className="studio-gallery__section-note">Templates made by the AutoFlow team</span>
+          </div>
+        </div>
       )}
 
       {/* Template Grid */}
-      {category !== 'Mine' && category !== 'Community' && (
+      {category !== 'Mine' && (
       <div className="studio-gallery__grid">
         {visible.map((tpl) => (
           <div

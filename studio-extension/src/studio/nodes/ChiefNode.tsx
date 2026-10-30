@@ -6,6 +6,11 @@ import { Icon } from '../components/Icon';
 import { runner } from '../engine/WorkflowRunner';
 import { useStudioStore } from '../store';
 import { NodeInfoBadge } from './NodeInfoBadge';
+import { NodeSettings } from '../components/NodeSettings';
+
+const ENGINE_NAMES: Record<string, string> = {
+  chatgpt: 'ChatGPT', gemini: 'Gemini', grok: 'Grok', claude: 'Claude', zai: 'Z.AI',
+};
 
 function ChiefNodeInner({ id, data, selected }: NodeProps) {
   const d = data as any;
@@ -47,11 +52,19 @@ function ChiefNodeInner({ id, data, selected }: NodeProps) {
         </div>
 
         <div className="sn-chief__body">
-          <div className="sn-chief__intro"><span>Production overview</span><p>One shared plan. Every director in sync.</p></div>
           <div className="sn-chief__stats" aria-label="Connected production">
             <div><strong>{directors.length}<small> / 2–3</small></strong><span>Directors connected</span></div>
             <div><strong>{shots}</strong><span>Shots assigned</span></div>
           </div>
+          {/* The engine is the Chief's one setting; it goes to the side panel.
+              The team, the plan and its problems stay on the card. */}
+          <NodeSettings
+            nodeId={id}
+            selected={!!selected}
+            title={d.label || 'Director Chief'}
+            summary={`${ENGINE_NAMES[d.platform || 'chatgpt'] || 'ChatGPT'} plans the production`}
+          >
+          <div className="sn-chief__intro"><span>Production overview</span><p>One shared plan. Every director in sync.</p></div>
           <div className="sn-chief__field">
           <label className="sn-field__label" htmlFor={`chief-engine-${id}`}>Chief AI Engine</label>
           <select
@@ -73,6 +86,7 @@ function ChiefNodeInner({ id, data, selected }: NodeProps) {
             Directors together before media generation, with up to two repair passes.
           </div>
           </div>
+          </NodeSettings>
 
           <div className="sn-chief__section-title"><Icon name="chief" /><strong>Connected directors</strong></div>
 

@@ -29,12 +29,19 @@ export interface WorkflowMeta {
 
 export type StudioView = 'gallery' | 'canvas';
 
+/** How an open workflow is shown: as the graph, or as a form (Simple view,
+    2026-10-30). Templates open as a form, a blank canvas and a saved
+    workflow as the graph; the top bar switches between them. */
+export type WorkMode = 'simple' | 'canvas';
+
 /* ── Store ── */
 
 interface StudioState {
   /* Navigation */
   view: StudioView;
   setView: (view: StudioView) => void;
+  workMode: WorkMode;
+  setWorkMode: (mode: WorkMode) => void;
 
   /* Workflow metadata */
   workflow: WorkflowMeta;
@@ -419,6 +426,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   /* ── Navigation ── */
   view: 'gallery',
   setView: (view) => set({ view }),
+  workMode: 'canvas',
+  setWorkMode: (workMode) => set({ workMode }),
 
   /* ── Workflow ── */
   workflow: {
@@ -683,6 +692,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         nodes,
         edges,
         view: 'canvas',
+        /* Your own saved work opens as the graph you built. */
+        workMode: 'canvas',
         isDirty: false,
         saveState: 'idle',
       });

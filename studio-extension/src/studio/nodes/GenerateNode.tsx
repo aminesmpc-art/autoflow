@@ -21,6 +21,7 @@ import { GrokSettings } from './GrokSettings';
 import { NodeInfoBadge } from './NodeInfoBadge';
 import { AskBriefEditor } from '../components/AskBriefEditor';
 import { Icon } from '../components/Icon';
+import { NodeSettings } from '../components/NodeSettings';
 
 type NodeStatus = 'idle' | 'running' | 'done' | 'error';
 type Platform = 'flow' | 'chatgpt' | 'gemini' | 'grok' | 'claude' | 'zai';
@@ -192,6 +193,32 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
   // Self-contained data URLs built by the content script.
   const preview = nodeData.previewUrl || '';
   const previewVideo = nodeData.previewVideoUrl || '';
+
+  /* The card's one line: what this node will make, without opening it.
+     Every part is a setting the panel holds, read the same way the panel
+     reads it — the model falls back exactly as the Model select does. */
+  const modelName = models.includes(nodeData.model) ? nodeData.model : models[0];
+  const summary = (isText
+    ? [`${chatName} writes a prompt`]
+    : isFlow
+      ? ['Flow', isVideo ? (isFrames ? 'Start & End frames' : null) : 'Image', modelName,
+        isVideo && modelHasDuration(modelName) ? (nodeData.duration || '6s') : null,
+        isVideo && modelHasResolution(modelName) ? (nodeData.renderResolution || '720p') : null,
+        ratio,
+        isVideo && nodeData.voice && nodeData.voice !== NO_VOICE ? 'voice' : null]
+      : [isGrok ? 'Grok Imagine' : chatName, isVideo ? 'Video' : 'Image',
+        isGrok || (isGemini && isVideo) ? ratio : null]
+  ).filter(Boolean).join(' · ');
+
+  /* The two settings problems that would cost a generation stay on the card:
+     a voice Flow will not use, and a clip on V that this model can only read
+     the last frame of. Hidden in a panel nobody has opened, they would be
+     discovered by watching the output. */
+  const voiceProblem = isVideo && !isGrok
+    ? voiceBlockedReason(nodeData.voice, hasImageInput, nodeData.creationType) : null;
+  const videoRefProblem = !!ports?.in.includes('video_ref') && videoRefWired && !takesVideoReference(modelName)
+    ? `${modelName} cannot take a video, so this continues from the clip's last frame.` : null;
+  const cardWarning = voiceProblem || videoRefProblem;
 
   return (
     /* The family this card belongs to, so a busy canvas is readable
@@ -367,6 +394,16 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
             beside it — and only some of them carried a label, so Flow and
             Video were two unexplained dropdowns. Everything is labelled and
             everything lands on a column now. */}
+        {/* An Ask AI node's brief is its prompt — the thing it is for — so it
+            stays on the card rather than going into the panel. */}
+        {isText && <AskBriefEditor id={id} data={nodeData} hasImage={hasImageInput} />}
+
+        <NodeSettings
+          nodeId={id}
+          selected={!!selected}
+          title={nodeData.label || (isText ? 'Ask AI' : 'Flow clip')}
+          summary={summary}
+        >
         <div className="sn-bar sn-bar--grid">
           <label className={`sn-field ${isText ? 'sn-field--wide' : ''}`} title="Which service runs this node">
             <span className="sn-field__label">{isText ? 'AI provider' : 'Platform'}</span>
@@ -466,7 +503,6 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
           )}
 
           {/* Flow exposes model/ratio/duration; the ChatGPT composer has none */}
-          {isText && <AskBriefEditor id={id} data={nodeData} hasImage={hasImageInput} />}
           {!isChatGPT && (
             <>
               {/* Model takes the full width — the names are long
@@ -670,6 +706,8 @@ function GenerateNodeComponent({ id, data, selected }: NodeProps) {
             </span>
           )}
         </div>
+        </NodeSettings>
+        {cardWarning && <div className="sn-summary sn-summary--warn" role="note">{cardWarning}</div>}
 
         {/* ── Handles: large, labelled, outside the edge ──
             Drawn from portsFor, the same function the validator checks edges

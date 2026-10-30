@@ -11,6 +11,7 @@ import {
   addEdge,
   useReactFlow,
   useStore,
+  useNodesInitialized,
   type Connection,
   type OnConnect,
   type OnConnectEnd,
@@ -28,7 +29,7 @@ import { ClippingNode } from '../nodes/ClippingNode';
 import { CutNode } from '../nodes/CutNode';
 import { MotionNode } from '../nodes/MotionNode';
 import { canConnect, connectionProblem } from '../canvas/connect';
-import { boxOf, freeSpot, sizeOf } from '../canvas/placement';
+import { boxOf, freeSpot, sizeOf, separate, tidy } from '../canvas/placement';
 import { useStudioStore, FREE_LIMITS } from '../store';
 import { consumeStudioRun } from '../../shared/api';
 import { PromptNode } from '../nodes/PromptNode';
@@ -38,6 +39,8 @@ import { FrameNode } from '../nodes/FrameNode';
 import { ExtendNode } from '../nodes/ExtendNode';
 import { AgentNode } from '../nodes/AgentNode';
 import { NodeBoundary } from './NodeBoundary';
+import { InspectorHost } from './NodeSettings';
+import SimpleView from './SimpleView';
 import { DeletableEdge } from '../canvas/DeletableEdge';
 import { runner } from '../engine/WorkflowRunner';
 import { bridge } from '../engine/bridge';
@@ -80,6 +83,12 @@ const edgeTypes = {
   smoothstep: DeletableEdge,
 };
 
+/* Fit the whole workflow. React Flow will not zoom out past 0.5 by default,
+   which is not far enough to fit a 26-node template on a laptop — so
+   "Recenter", described as fitting all nodes, could not. */
+const MIN_ZOOM = 0.1;
+const FIT = { padding: 0.15, maxZoom: 1, minZoom: MIN_ZOOM, duration: 250 };
+
 function CanvasInner() {
   const {
     nodes,
@@ -107,16 +116,31 @@ function CanvasInner() {
     setRunsUsed,
     runBlockedReason,
     canAddNode,
+    workMode,
+    setWorkMode,
   } = useStudioStore();
+  const simple = workMode === 'simple';
 
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
   const [connectionMsg, setConnectionMsg] = useState<string | null>(null);
   const [mcpStatus, setMcpStatus] = useState<McpBridgeStatus>('disconnected');
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { zoomIn, zoomOut, fitView, setCenter, screenToFlowPosition, getNodes, getZoom } = useReactFlow();
+  const { zoomIn, zoomOut, fitView, setCenter, screenToFlowPosition, getNodes, getZoom, getViewport, setViewport } = useReactFlow();
   const zoomPct = Math.round(useStore((s) => s.transform[2]) * 100);
   const [showMinimap, setShowMinimap] = useState(true);
+
+  /* The node library can fold to a strip of icons. Remembered per browser:
+     someone who knows the tools wants the canvas width back every time. */
+  const [libraryOpen, setLibraryOpen] = useState(() => {
+    try { return localStorage.getItem('studio_library_open') !== '0'; } catch { return true; }
+  });
+  const toggleLibrary = useCallback(() => {
+    setLibraryOpen((open) => {
+      try { localStorage.setItem('studio_library_open', open ? '0' : '1'); } catch { /* storage blocked */ }
+      return !open;
+    });
+  }, []);
 
   /* Put a node in the middle of the screen.
      A run happens across a canvas wider than the screen, so "which node is
@@ -132,10 +156,53 @@ function CanvasInner() {
     [nodes, setCenter]
   );
 
-  const handleRecenter = useCallback(
-    () => fitView({ padding: 0.25, maxZoom: 1, duration: 300 }),
-    [fitView]
+  const handleRecenter = useCallback(() => fitView(FIT), [fitView]);
+
+  /* Moves nodes the way a drag does — as React Flow position changes — so
+     the store marks the workflow edited and autosaves it. setNodes would
+     move them silently, and a tidied layout would be gone on reload. */
+  const moveNodes = useCallback((to: Map<string, { x: number; y: number }>) => {
+    onNodesChange([...to].map(([id, position]) => ({ type: 'position', id, position })));
+  }, [onNodesChange]);
+  const measuredBoxes = useCallback(
+    () => getNodes().map((n) => ({ id: n.id, ...boxOf(n as any) })),
+    [getNodes],
   );
+
+  /* Once per workflow, as soon as React Flow has measured its nodes: pull
+     apart any that arrived on top of each other (see separate()), then fit
+     the whole thing in view. Opening a template used to leave the view at
+     100% on its top-left corner, with the rest of the workflow off screen. */
+  const nodesMeasured = useNodesInitialized();
+  const settledFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (settledFor.current === workflow.id) return;
+    /* A blank canvas is settled as it is: otherwise the first node added to
+       it would trigger the fit, and the view would jump to that node. */
+    if (!nodes.length) { settledFor.current = workflow.id; return; }
+    if (!nodesMeasured) return;
+    settledFor.current = workflow.id;
+    const moved = separate(measuredBoxes());
+    if (moved.size) moveNodes(moved);
+    setTimeout(() => fitView(FIT), 60);
+  }, [nodesMeasured, nodes.length, workflow.id, measuredBoxes, moveNodes, fitView]);
+
+  /* Tidy lays everything out in run order. There is no undo in Studio, and
+     this moves every node the person placed by hand — so the old layout is
+     kept, and the button offers it back, until a node or wire is added or
+     removed. */
+  const [beforeTidy, setBeforeTidy] = useState<Map<string, { x: number; y: number }> | null>(null);
+  const handleTidy = useCallback(() => {
+    if (beforeTidy) {
+      moveNodes(beforeTidy);
+      setBeforeTidy(null);
+    } else {
+      setBeforeTidy(new Map(useStudioStore.getState().nodes.map((n) => [n.id, { ...n.position }])));
+      moveNodes(tidy(measuredBoxes(), useStudioStore.getState().edges));
+    }
+    setTimeout(() => fitView(FIT), 60);
+  }, [beforeTidy, moveNodes, measuredBoxes, fitView]);
+  useEffect(() => { setBeforeTidy(null); }, [nodes.length, edges.length, workflow.id]);
 
   /* Only runnable nodes execute — a canvas of prompts alone can't run.
      Asking the shared list rather than testing for 'generate': an agent-only
@@ -430,11 +497,25 @@ function CanvasInner() {
   }, [connectByDrop]);
 
   /* Handle node selection */
+  /* The settings panel floats over the right of the canvas. A node clicked
+     near that edge would open its settings on top of itself, so slide the
+     view just far enough to bring it out from under the panel. */
+  const [inspectorHost, setInspectorHost] = useState<HTMLElement | null>(null);
   const onNodeClick = useCallback(
-    (_: React.MouseEvent, node: any) => {
+    (event: React.MouseEvent, node: any) => {
       setSelectedNode(node.id);
+      // Two frames: the panel fills only once the selection has rendered.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const panel = inspectorHost?.getBoundingClientRect();
+        const card = (event.target as HTMLElement | null)?.closest('.react-flow__node')?.getBoundingClientRect();
+        if (!panel || !panel.width || !card) return;
+        const under = card.right + 16 - panel.left;
+        if (under <= 0) return;
+        const vp = getViewport();
+        setViewport({ ...vp, x: vp.x - under }, { duration: 200 });
+      }));
     },
-    [setSelectedNode]
+    [setSelectedNode, inspectorHost, getViewport, setViewport]
   );
 
   const onPaneClick = useCallback(() => {
@@ -465,9 +546,10 @@ function CanvasInner() {
        placed by a guess of 380, the next node landed on its lower half. */
     const taken = getNodes().map((n) => boxOf(n as any));
     /* The panels that float over the canvas count as taken too: a node
-       placed under the Node library on the left, or the zoom dock and the
-       minimap at the bottom, is on the canvas and out of reach. */
-    for (const sel of ['.studio-toolbar', '.studio-dock', '.react-flow__minimap']) {
+       placed under the zoom dock or the minimap at the bottom is on the
+       canvas and out of reach. (The node library used to be one; it is
+       docked beside the stage now, outside what this measures.) */
+    for (const sel of ['.studio-dock', '.react-flow__minimap', '.studio-runbar']) {
       const r = reactFlowWrapper.current?.querySelector(sel)?.getBoundingClientRect();
       if (!r || !r.width) continue;
       const a = screenToFlowPosition({ x: r.left, y: r.top });
@@ -481,8 +563,7 @@ function CanvasInner() {
        added and cannot see is the same dead end as one under another node,
        so bring it into view — at the zoom you are already using. */
     if (rect) {
-      const toolbar = reactFlowWrapper.current?.querySelector('.studio-toolbar')?.getBoundingClientRect();
-      const tl = screenToFlowPosition({ x: Math.max(rect.left, toolbar?.right ?? rect.left), y: rect.top });
+      const tl = screenToFlowPosition({ x: rect.left, y: rect.top });
       const br = screenToFlowPosition({ x: rect.right, y: rect.bottom });
       const inView = spot.x >= tl.x && spot.y >= tl.y && spot.x + size.w <= br.x && spot.y + size.h <= br.y;
       if (!inView) {
@@ -785,7 +866,7 @@ function CanvasInner() {
   }, [addNode, nodes, guardAdd, place]);
 
   return (
-    <div className="studio-canvas" ref={reactFlowWrapper}>
+    <div className={`studio-canvas ${libraryOpen ? '' : 'studio-canvas--library-folded'} ${simple ? 'studio-canvas--simple' : ''}`}>
       {/* Top Bar */}
       <div className="studio-topbar">
         <div className="studio-topbar__left">
@@ -800,8 +881,20 @@ function CanvasInner() {
         </div>
         {/* Progress used to live here as well as in the run bar — the same
             "0/5" in two places, neither of them next to the controls. The run
-            bar owns it now. */}
-        <div className="studio-topbar__center" />
+            bar owns it now. The centre holds the two ways to see the open
+            workflow: as a form, or as the graph. */}
+        <div className="studio-topbar__center">
+          <div className="studio-topbar__modes" role="group" aria-label="View">
+            <button type="button" className={`studio-topbar__mode ${simple ? 'studio-topbar__mode--on' : ''}`}
+              aria-pressed={simple} onClick={() => setWorkMode('simple')} title="The workflow as a form: inputs, Run, results">
+              Simple
+            </button>
+            <button type="button" className={`studio-topbar__mode ${simple ? '' : 'studio-topbar__mode--on'}`}
+              aria-pressed={!simple} onClick={() => setWorkMode('canvas')} title="The workflow as its graph of nodes">
+              Canvas
+            </button>
+          </div>
+        </div>
         <div className="studio-topbar__right">
           {isPro ? (
             <span className="studio-topbar__stat">
@@ -818,7 +911,7 @@ function CanvasInner() {
               }`}>
                 {runsLeft === 0 ? 'No runs left' : `${runsLeft} runs left`}
               </span>
-              <span className={`studio-topbar__stat ${
+              <span className={`studio-topbar__stat studio-topbar__stat--nodes ${
                 FREE_LIMITS.nodes && nodes.length >= FREE_LIMITS.nodes ? 'studio-topbar__stat--maxed' : ''
               }`}>
                 Nodes {nodes.length}{FREE_LIMITS.nodes ? `/${FREE_LIMITS.nodes}` : ''}
@@ -838,32 +931,18 @@ function CanvasInner() {
               </button>
             </>
           )}
-          <span 
-            className="studio-topbar__stat"
-            title={mcpStatus === 'connected' ? 'MCP Bridge connected to Claude/Cursor (ws://localhost:8124)' : 'MCP Bridge offline (auto-reconnecting)'}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              cursor: 'help',
-              padding: '4px 10px',
-              borderRadius: '6px',
-              background: mcpStatus === 'connected' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.03)',
-              border: `1px solid ${mcpStatus === 'connected' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.06)'}`,
-            }}
-          >
-            <span style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              backgroundColor: mcpStatus === 'connected' ? '#10B981' : '#6B7280',
-              boxShadow: mcpStatus === 'connected' ? '0 0 8px #10B981' : 'none',
-              transition: 'all 0.3s ease'
-            }} />
-            <span style={{ fontSize: '0.78rem', color: mcpStatus === 'connected' ? '#10B981' : 'var(--text-muted)' }}>
-              MCP {mcpStatus === 'connected' ? 'Active' : 'Idle'}
+          {/* A developer bridge. It said "MCP Idle" to everyone, always: the
+              shipped extension never starts it, so the badge was a permanent
+              status for a feature nobody could use. Shown only while a local
+              MCP server is actually driving the canvas. */}
+          {mcpStatus === 'connected' && (
+            <span
+              className="studio-topbar__stat studio-topbar__mcp"
+              title="MCP bridge connected to a local server (ws://localhost:8124)"
+            >
+              MCP connected
             </span>
-          </span>
+          )}
           <CanvasPostButton />
           <button
             className="studio-topbar__icon"
@@ -885,6 +964,24 @@ function CanvasInner() {
               : isDirty ? <><Icon name="dot" className="studio-topbar__glyph studio-topbar__glyph--dirty" /> Save</>
               : <>Save</>}
           </button>
+          {/* Run is the one thing everyone comes here to press. It sat at the
+              bottom of the node library — a list of tools — below twelve
+              buttons that add things. Retry stays in the run bar, beside the
+              failed nodes it re-runs. */}
+          {isRunning ? (
+            <span className="studio-topbar__running" role="status">Running…</span>
+          ) : (
+            <button
+              className="studio-topbar__run"
+              onClick={handleRun}
+              disabled={!canRun}
+              aria-label="Run workflow"
+              title={canRun ? 'Run the workflow' : 'Add a node that generates something first'}
+            >
+              <Icon name="play" className="studio-topbar__glyph" />
+              {canRun ? 'Run' : 'Add a node to run'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -899,23 +996,34 @@ function CanvasInner() {
         </div>
       )}
 
-      {/* Node Toolbar (Left sidebar) */}
+      {/* Node library — docked beside the canvas rather than floating over
+          it. Floating, it covered 150px of the first node of Simple Video,
+          and every layout had to work around it. */}
       <aside className="studio-toolbar" aria-label="Node library">
         <div className="studio-toolbar__title">
           <Icon name="nodes" />
           <div><strong>Node library</strong><span>Click a tool to add it</span></div>
-          <span className="studio-toolbar__count">13</span>
+          <button
+            type="button"
+            className="studio-toolbar__fold"
+            onClick={toggleLibrary}
+            aria-expanded={libraryOpen}
+            aria-label={libraryOpen ? 'Fold the node library' : 'Open the node library'}
+            title={libraryOpen ? 'Fold the node library' : 'Open the node library'}
+          >
+            <Icon name="back" />
+          </button>
         </div>
         <div className="studio-toolbar__items">
         <div className="studio-toolbar__group">
           <div className="studio-toolbar__heading">Inputs</div>
-          <button className="studio-toolbar__btn studio-toolbar__btn--prompt" onClick={addPromptNode} aria-label="Add Prompt node">
+          <button className="studio-toolbar__btn studio-toolbar__btn--prompt" onClick={addPromptNode} aria-label="Add Prompt node" title="Add Prompt node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--prompt">
               <Icon name="prompt" kind="prompt" className="studio-toolbar__btn-icon" />
             </span>
             <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Prompt</span><small>Write your idea</small></span>
           </button>
-          <button className="studio-toolbar__btn studio-toolbar__btn--image" onClick={addImageNode} aria-label="Add Image node">
+          <button className="studio-toolbar__btn studio-toolbar__btn--image" onClick={addImageNode} aria-label="Add Image node" title="Add Image node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--image">
               <Icon name="image" kind="image" className="studio-toolbar__btn-icon" />
             </span>
@@ -925,19 +1033,19 @@ function CanvasInner() {
 
         <div className="studio-toolbar__group">
           <div className="studio-toolbar__heading">Generate</div>
-          <button className="studio-toolbar__btn studio-toolbar__btn--flow" onClick={addGenerateNode} aria-label="Add Flow clip node">
+          <button className="studio-toolbar__btn studio-toolbar__btn--flow" onClick={addGenerateNode} aria-label="Add Flow clip node" title="Add Flow clip node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--flow">
               <Icon name="clip" className="studio-toolbar__btn-icon" />
             </span>
             <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Flow clip</span><small>Generate with Flow</small></span>
           </button>
-          <button className="studio-toolbar__btn studio-toolbar__btn--grok" onClick={addGrokNode} aria-label="Add Grok clip node">
+          <button className="studio-toolbar__btn studio-toolbar__btn--grok" onClick={addGrokNode} aria-label="Add Grok clip node" title="Add Grok clip node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--grok">
               <Icon name="bolt" className="studio-toolbar__btn-icon" />
             </span>
             <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Grok clip</span><small>Generate with Grok</small></span>
           </button>
-          <button className="studio-toolbar__btn studio-toolbar__btn--ask" onClick={addAskNode} aria-label="Add Ask AI node">
+          <button className="studio-toolbar__btn studio-toolbar__btn--ask" onClick={addAskNode} aria-label="Add Ask AI node" title="Add Ask AI node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--ask">
               <Icon name="chat" kind="ask" className="studio-toolbar__btn-icon" />
             </span>
@@ -947,19 +1055,19 @@ function CanvasInner() {
 
         <div className="studio-toolbar__group">
           <div className="studio-toolbar__heading">Direct & automate</div>
-          <button className="studio-toolbar__btn studio-toolbar__btn--story" onClick={addStoryNode} aria-label="Add Director node">
+          <button className="studio-toolbar__btn studio-toolbar__btn--story" onClick={addStoryNode} aria-label="Add Director node" title="Add Director node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--story">
               <Icon name="story" kind="video" className="studio-toolbar__btn-icon" />
             </span>
             <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Director</span><small>Plan connected shots</small></span>
           </button>
-          <button className="studio-toolbar__btn studio-toolbar__btn--chief" onClick={addChiefNode} aria-label="Add Director Chief node">
+          <button className="studio-toolbar__btn studio-toolbar__btn--chief" onClick={addChiefNode} aria-label="Add Director Chief node" title="Add Director Chief node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--chief">
               <Icon name="chief" className="studio-toolbar__btn-icon" />
             </span>
             <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Director Chief</span><small>Coordinate your directors</small></span>
           </button>
-          <button className="studio-toolbar__btn studio-toolbar__btn--agent" onClick={addAgentNode} aria-label="Add Agent node">
+          <button className="studio-toolbar__btn studio-toolbar__btn--agent" onClick={addAgentNode} aria-label="Add Agent node" title="Add Agent node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--agent">
               <Icon name="agent" kind="agent" className="studio-toolbar__btn-icon" />
             </span>
@@ -969,25 +1077,25 @@ function CanvasInner() {
 
         <div className="studio-toolbar__group">
           <div className="studio-toolbar__heading">Edit & continue</div>
-          <button className="studio-toolbar__btn studio-toolbar__btn--clip" onClick={addClipNode} aria-label="Add Clipping node">
+          <button className="studio-toolbar__btn studio-toolbar__btn--clip" onClick={addClipNode} aria-label="Add Clipping node" title="Add Clipping node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--clip">
               <Icon name="scissors" className="studio-toolbar__btn-icon" />
             </span>
             <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Clipping</span><small>Find the best moments</small></span>
           </button>
-          <button className="studio-toolbar__btn studio-toolbar__btn--motion" onClick={addMotionNode} aria-label="Add Motion Control node">
+          <button className="studio-toolbar__btn studio-toolbar__btn--motion" onClick={addMotionNode} aria-label="Add Motion Control node" title="Add Motion Control node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--motion">
               <Icon name="motion" className="studio-toolbar__btn-icon" />
             </span>
             <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Motion Control</span><small>Guide character movement</small></span>
           </button>
-          <button className="studio-toolbar__btn studio-toolbar__btn--frame" onClick={addFrameNode} aria-label="Add Last Frame node">
+          <button className="studio-toolbar__btn studio-toolbar__btn--frame" onClick={addFrameNode} aria-label="Add Last Frame node" title="Add Last Frame node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--frame">
               <Icon name="frame" kind="frame" className="studio-toolbar__btn-icon" />
             </span>
             <span className="studio-toolbar__copy"><span className="studio-toolbar__btn-label">Last frame</span><small>Capture the ending frame</small></span>
           </button>
-          <button className="studio-toolbar__btn studio-toolbar__btn--extend" onClick={addExtendNode} aria-label="Add Extend node">
+          <button className="studio-toolbar__btn studio-toolbar__btn--extend" onClick={addExtendNode} aria-label="Add Extend node" title="Add Extend node">
             <span className="studio-toolbar__node-icon studio-toolbar__node-icon--extend">
               <Icon name="extend" kind="frame" className="studio-toolbar__btn-icon" />
             </span>
@@ -995,39 +1103,13 @@ function CanvasInner() {
           </button>
         </div>
         </div>
-
-        {/* Run control */}
-        {!isRunning && (
-          <div className="studio-toolbar__actions">
-            <button
-              className="studio-toolbar__btn studio-toolbar__btn--run"
-              onClick={handleRun}
-              disabled={!canRun}
-              aria-label="Run workflow"
-            >
-              <Icon name="play" className="studio-toolbar__btn-icon" />
-              <span className="studio-toolbar__btn-label">
-                {canRun ? 'Run workflow' : 'Add a node to run'}
-              </span>
-            </button>
-            {failedNodeIds.length > 0 && (
-              <button
-                className="studio-toolbar__btn studio-toolbar__btn--retry"
-                onClick={() => handleRetry()}
-                aria-label={`Retry ${failedNodeIds.length} failed node${failedNodeIds.length === 1 ? '' : 's'}`}
-                title="Re-runs only the failed nodes and anything skipped because of them"
-              >
-                <Icon name="retry" className="studio-toolbar__btn-icon" />
-                <span className="studio-toolbar__btn-label">
-                  Retry failed ({failedNodeIds.length})
-                </span>
-              </button>
-            )}
-          </div>
-        )}
       </aside>
 
-      {/* React Flow Canvas */}
+      {/* The stage: the canvas and what floats on it, beside the library and
+          under the top bar instead of beneath both. Fitting the view now fits
+          the part you can actually see. */}
+      <div className="studio-stage" ref={reactFlowWrapper}>
+      <InspectorHost.Provider value={inspectorHost}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -1043,8 +1125,9 @@ function CanvasInner() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         deleteKeyCode={['Backspace', 'Delete']}
+        minZoom={MIN_ZOOM}
         fitView
-        fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
+        fitViewOptions={FIT}
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{
           type: 'deletable',
@@ -1095,6 +1178,25 @@ function CanvasInner() {
           </Panel>
         )}
       </ReactFlow>
+      </InspectorHost.Provider>
+
+      {/* Node settings. Empty until one node is selected — the selected
+          node's NodeSettings draws into it — and hidden while empty. */}
+      <aside className="studio-inspector" ref={setInspectorHost} aria-label="Node settings" />
+
+      {/* Over the graph rather than instead of it: the nodes stay mounted
+          and the run is the same run, whichever view pressed Run. */}
+      {simple && (
+        <SimpleView
+          canRun={canRun}
+          elapsed={elapsed}
+          onRun={handleRun}
+          onPause={handlePause}
+          onStop={handleStop}
+          onRetry={handleRetry}
+          onShow={(nodeId) => { setWorkMode('canvas'); setTimeout(() => flyTo(nodeId), 60); }}
+        />
+      )}
 
       {/* ── Run bar ──
           Everything about the run in one place that does not move: what is
@@ -1174,6 +1276,15 @@ function CanvasInner() {
         <button className="studio-dock__btn studio-dock__btn--wide" onClick={handleRecenter} title="Fit all nodes to view">
           ⊡ Recenter
         </button>
+        {nodes.length > 1 && (
+          <button
+            className="studio-dock__btn studio-dock__btn--wide"
+            onClick={handleTidy}
+            title={beforeTidy ? 'Put every node back where it was' : 'Lay the workflow out left to right, in the order it runs'}
+          >
+            {beforeTidy ? '↶ Undo tidy' : '⇉ Tidy'}
+          </button>
+        )}
         {nodes.length > 2 && (
           <>
             <span className="studio-dock__sep" />
@@ -1187,6 +1298,7 @@ function CanvasInner() {
             </button>
           </>
         )}
+      </div>
       </div>
     </div>
   );

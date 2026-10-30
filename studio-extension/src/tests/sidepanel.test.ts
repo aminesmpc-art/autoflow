@@ -209,14 +209,18 @@ describe('the panel is gated behind sign-in', () => {
 });
 
 describe('community templates sit beside the official ones, not among them', () => {
-  it('offers a source switch with Official selected first', () => {
+  it('offers a source switch with Community selected first', () => {
     /* Two sets with different authors and different guarantees. A merged list
-       would imply we vouch for all of them. */
+       would imply we vouch for all of them. Community opens first since
+       2026-10-29, the owner's call — still a separate list. */
     const off = document.getElementById('src-official')!;
     const com = document.getElementById('src-community')!;
-    expect(off.getAttribute('aria-selected')).toBe('true');
-    expect(com.getAttribute('aria-selected')).toBe('false');
-    expect(off.className).toContain('sp-seg2__btn--on');
+    expect(com.getAttribute('aria-selected')).toBe('true');
+    expect(off.getAttribute('aria-selected')).toBe('false');
+    expect(com.className).toContain('sp-seg2__btn--on');
+    expect(off.className).not.toContain('sp-seg2__btn--on');
+    const bar = document.querySelector('.sp-seg2')!.innerHTML;
+    expect(bar.indexOf('src-community')).toBeLessThan(bar.indexOf('src-official'));
   });
 
   it('puts the switch above the search, inside the pinned bar', () => {

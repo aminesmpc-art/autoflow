@@ -53,7 +53,10 @@ describe('a new node lands where it can be used', () => {
   });
 
   it('keeps clear of the panels floating over the canvas', () => {
-    for (const panel of ['.studio-toolbar', '.studio-dock', '.react-flow__minimap']) expect(place).toContain(panel);
+    /* The node library was one until 2026-10-30; it is docked beside the
+       stage now, outside the area place() measures. */
+    for (const panel of ['.studio-dock', '.react-flow__minimap', '.studio-runbar']) expect(place).toContain(panel);
+    expect(place).not.toContain('.studio-toolbar');
   });
 
   it('brings a node it had to put off screen into view', () => {

@@ -128,6 +128,10 @@
 .cf-note__big { color: var(--text); font-size: var(--t-lg); font-weight: 700; }
 .cf-muted { color: var(--text-2); font-size: var(--t-body); line-height: 1.5; margin: 0; }
 .cf-end { text-align: center; color: var(--text-3); font-size: var(--t-small); margin: 8px 0; }
+/* The feed with the templates under it: the 64px that ends a page would
+   read as the end of Studio's home rather than a gap between sections. */
+.cf--stepped { padding-bottom: 8px; }
+.cf-more-posts { align-self: center; }
 .cf-sentinel { height: 1px; }
 .cf-skeleton { height: 300px; background: linear-gradient(100deg, var(--surface) 40%, var(--surface-2) 50%, var(--surface) 60%); background-size: 200% 100%; animation: cf-shine 1.4s linear infinite; }
 @keyframes cf-shine { to { background-position: -200% 0; } }

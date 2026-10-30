@@ -59,13 +59,15 @@ describe('Toolbar Redesign and Deletable Edge', () => {
     }
   });
 
-  it('keeps all twelve add-node actions and separates scrolling from execution controls', () => {
+  it('keeps all twelve add-node actions, and only add-node actions', () => {
+    /* Run and Retry used to sit at the foot of this list. Run is in the top
+       bar now and Retry in the run bar, beside the failures it re-runs —
+       canvasLayout.test.ts holds both. */
     const palette = CANVAS.split('<aside className="studio-toolbar"')[1].split('</aside>')[0];
     expect(palette.match(/aria-label="Add [^"]+ node"/g)).toHaveLength(12);
     expect(palette).toContain('studio-toolbar__items');
-    expect(palette).toContain('studio-toolbar__actions');
-    expect(palette).toContain('onClick={handleRun}');
-    expect(palette).toContain('onClick={() => handleRetry()}');
+    expect(palette).not.toContain('onClick={handleRun}');
+    expect(CANVAS).toMatch(/className="studio-runbar__btn studio-runbar__btn--retry" onClick=\{\(\) => handleRetry\(\)\}/);
     expect(CSS).toMatch(/\.studio-toolbar__items\s*\{[^}]*overflow-y:\s*auto/);
     expect(CSS).toContain('.studio-toolbar__btn:focus-visible');
   });
