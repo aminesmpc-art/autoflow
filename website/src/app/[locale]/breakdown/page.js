@@ -7,7 +7,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { parseClock, sectionOptions, sectionProblem } from "../extractor/timeFields";
 import UploadBox, { ToggleChip } from "../extractor/UploadBox";
 import ProgressView from "../extractor/ProgressView";
-import { Icon, displayName } from "../extractor/ui";
+import { Icon, displayName, outOfExtractions } from "../extractor/ui";
 import BreakdownView, { BreakdownHeader } from "./BreakdownView";
 import "../extractor/extractor.css";
 
@@ -66,7 +66,7 @@ export default function BreakdownPage() {
       const limit = await fetch(`${DJANGO_API_URL}/extractions/check-limit/`, { headers: { Authorization: `Bearer ${token}` } });
       if (limit.ok) {
         const l = await limit.json();
-        if (!l.allowed) throw new Error(`You have used your ${l.limit} extractions for this ${l.period}. A breakdown counts as one per 10 minutes analysed.`);
+        if (!l.allowed) throw new Error(outOfExtractions(l));
       }
       const options = sectionOptions(times);
       let res;
@@ -229,7 +229,7 @@ export default function BreakdownPage() {
                       expanded={partOpen}
                       onClick={() => setShowPart((v) => !v)}
                     />
-                    <span className="xf-help">Counts as one extraction per 10 minutes analysed.</span>
+                    <span className="xf-help">Uses your free video for the day (up to 10 minutes); on Pro, one per 10 minutes.</span>
                   </div>
                   {partOpen && (
                     <div className="xf-drawer">

@@ -171,6 +171,15 @@ export function useHeadMetrics(head) {
   }, [head]);
 }
 
+/** What to say when check-limit answers that the allowance is used up.
+    Free is one video a day; Pro is twenty extractions a day. */
+export function outOfExtractions(state) {
+  const when = state?.period === "month" ? "this month" : "today";
+  if (state?.is_pro) return `You have used your ${state.limit} extractions for ${when}. They come back tomorrow.`;
+  if (state?.limit === 1) return `You have used ${when}'s free video. Come back tomorrow, or upgrade to Pro for 20 extractions a day.`;
+  return `You have used your ${state?.limit} free extractions for ${when}. Upgrade to Pro for 20 extractions a day.`;
+}
+
 /** Seconds as 0:03.4 — a shot's own clock, to a tenth. */
 export function shotClock(seconds) {
   const s = Math.max(0, Number(seconds) || 0);

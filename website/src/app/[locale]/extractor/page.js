@@ -8,7 +8,7 @@ import { OPEN_KEY, asResult, savedExtras, savedVersion } from "./saved";
 import UploadBox, { SelectChip, ToggleChip } from "./UploadBox";
 import ProgressView from "./ProgressView";
 import Workspace from "./Workspace";
-import { Icon, displayName } from "./ui";
+import { Icon, displayName, outOfExtractions } from "./ui";
 import "./extractor.css";
 
 /* Extraction options. Mirrors ExtractionOptions in
@@ -161,7 +161,7 @@ function ExtractOptions({ opts, setOpt, reset, drawer, setDrawer }) {
           </div>
           {problem
             ? <p role="alert" className="xf-error" style={{ margin: "8px 0 0" }}>{problem}</p>
-            : <p className="xf-help" style={{ margin: "8px 0 0" }}>Long videos count as one extraction per 10 minutes analysed, so a part of a long video uses fewer — and is read more closely.</p>}
+            : <p className="xf-help" style={{ margin: "8px 0 0" }}>The free plan reads one video a day, up to 10 minutes, so take a longer video a part at a time. On Pro every 10 minutes analysed counts as one of your 20 a day.</p>}
         </div>
       )}
 
@@ -359,7 +359,7 @@ export default function ExtractorPage() {
       if (limitRes.ok) {
         const limitData = await limitRes.json();
         if (!limitData.allowed) {
-          throw new Error(`You have reached your limit of ${limitData.limit} extractions per ${limitData.period}. ${!limitData.is_pro ? "Upgrade to Pro to unlock 20 extractions per day!" : "Please try again tomorrow."}`);
+          throw new Error(outOfExtractions(limitData));
         }
       }
 
@@ -699,7 +699,7 @@ export default function ExtractorPage() {
                 <p className="text-secondary" style={{ fontSize: "1.1rem" }}>Everything you need to know about the AI Video Prompt Extractor.</p>
               </div>
               {[
-                { q: "Is the AI Video Prompt Extractor free to use?", a: "Yes! You get 3 free extractions per day on the free plan. Need more? Upgrade to Pro for 20 extractions per day. No credit card required to start." },
+                { q: "Is the AI Video Prompt Extractor free to use?", a: "Yes! The free plan extracts one video a day, up to 10 minutes long — take a longer video a part at a time. Need more? Pro gives you 20 extractions a day. No credit card required to start." },
                 { q: "What video formats are supported?", a: "We support MP4, MOV, and WebM video files up to 500MB. You can also paste a direct link from YouTube, TikTok, Instagram, or X — we'll download and analyze it for you." },
                 { q: "Which AI video generators does it work with?", a: "Our extractor works with videos made by any AI tool — including Runway Gen-3, OpenAI Sora, Kling AI, Luma Dream Machine, Pika Labs, Google Veo, Minimax, and more. It can also analyze traditional footage to generate AI-ready prompts." },
                 { q: "How accurate are the extracted prompts?", a: "Our vision AI analyzes every frame to identify artistic style, lighting, camera angles, character details, and motion patterns. While no extraction is 100% identical to the original, our prompts consistently produce visually similar results when used with the same AI tools." },
@@ -751,7 +751,7 @@ export default function ExtractorPage() {
               "@context": "https://schema.org",
               "@type": "FAQPage",
               mainEntity: [
-                { "@type": "Question", name: "Is the AI Video Prompt Extractor free to use?", acceptedAnswer: { "@type": "Answer", text: "Yes! You get 3 free extractions per day on the free plan. Upgrade to Pro for 20 extractions per day." } },
+                { "@type": "Question", name: "Is the AI Video Prompt Extractor free to use?", acceptedAnswer: { "@type": "Answer", text: "Yes! The free plan extracts one video a day, up to 10 minutes long. Pro gives you 20 extractions a day." } },
                 { "@type": "Question", name: "What video formats are supported?", acceptedAnswer: { "@type": "Answer", text: "We support MP4, MOV, and WebM video files up to 500MB. You can also paste a link from YouTube, TikTok, Instagram, or X." } },
                 { "@type": "Question", name: "Which AI video generators does it work with?", acceptedAnswer: { "@type": "Answer", text: "Our extractor works with videos from Runway Gen-3, OpenAI Sora, Kling AI, Luma Dream Machine, Pika Labs, Google Veo, Minimax, and more." } },
                 { "@type": "Question", name: "How accurate are the extracted prompts?", acceptedAnswer: { "@type": "Answer", text: "Our vision AI analyzes every frame to identify style, lighting, camera angles, and motion patterns. Prompts consistently produce visually similar results." } },
