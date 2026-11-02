@@ -5,7 +5,7 @@ export const dynamic = 'force-static';
 export const metadata = {
   title: "Pricing — AutoFlow Free & Pro Plans",
   description:
-    "AutoFlow pricing. Free gives you 10 Studio workflow runs a month, 3 video extractions daily, and 50 daily prompts; Pro ($9.99/mo) is unlimited across the node workflow builder and Google Flow automation.",
+    "AutoFlow pricing. Free gives you 10 Studio workflow runs a month, 1 video extraction a day, and 50 daily prompts; Pro ($9.99/mo) is unlimited across the node workflow builder and Google Flow automation.",
   alternates: {
     canonical: "https://www.auto-flow.studio/pricing",
   },
