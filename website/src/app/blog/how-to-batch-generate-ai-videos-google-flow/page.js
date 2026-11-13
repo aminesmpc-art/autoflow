@@ -98,9 +98,13 @@ export default function BlogPost() {
           </nav>
 
           <div className="blog-article-content">
+            <p className="blog-img-caption" style={{ textAlign: "left", marginBottom: "24px" }}>
+              <strong>Updated November 13, 2026:</strong> Veo 3 is no longer in Flow&apos;s menu, and Veo 3.1 - Fast and Quality leave on December 5, so model advice here now points at Veo 3.1 - Lite and Omni 1.2 Flash. See{" "}
+              <Link href="/blog/google-flow-omni-1-2-model-changes-december-2026">Flow&apos;s current models</Link>.
+            </p>
             <p>
               Google Flow is one of the most powerful AI video generators
-              available today, powered by <strong>Veo 3</strong> and the latest Gemini models.
+              available today, powered by <strong>Veo 3.1</strong>, <strong>Omni</strong> and the latest Gemini models.
               But if you&apos;ve ever tried to generate more than a few videos,
               you know the pain: paste a prompt, click generate, wait, download,
               repeat. For 50 videos, that&apos;s <strong>hours of clicking</strong>.
@@ -166,7 +170,7 @@ shallow depth of field, warm lighting`}
             <h2 id="step-4">Step 4: Configure & Run</h2>
             <p>
               In the <strong>Queues</strong> tab, you&apos;ll see your queue with
-              all settings visible: video model (e.g., Veo 3.1 Fast), aspect
+              all settings visible: video model (e.g., Veo 3.1 - Lite or Omni 1.2 Flash), aspect
               ratio, generations per prompt, download quality, and timing.
               Adjust anything you want, then hit <strong>Run</strong>.
             </p>
@@ -246,8 +250,8 @@ shallow depth of field, warm lighting`}
                 <p>Yes! Free users get daily-limited text prompts. <Link href="/pricing">Upgrade to Pro</Link> for unlimited.</p>
               </details>
               <details>
-                <summary>Does AutoFlow work with Veo 3?</summary>
-                <p>Yes — AutoFlow supports all Google Flow models including Veo 3, Veo 3.1, and Veo 3.1 Fast.</p>
+                <summary>Which Google Flow models does AutoFlow work with?</summary>
+                <p>All the models in Flow&apos;s menu: Veo 3.1 - Lite, Omni 1.2 Flash, and until December 5 Omni 1.1 Flash and Veo 3.1 - Fast and Quality. It sets the clip length and resolution only on the models that have them.</p>
               </details>
               <details>
                 <summary>Is my data private?</summary>

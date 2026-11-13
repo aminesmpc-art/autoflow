@@ -87,6 +87,10 @@ export default function BlogPost() {
           </nav>
 
           <div className="blog-article-content">
+            <p className="blog-img-caption" style={{ textAlign: "left", marginBottom: "24px" }}>
+              <strong>Updated November 13, 2026:</strong> Veo 3 is no longer in Flow&apos;s menu, and Veo 3.1 - Fast and Quality leave on December 5, so model advice here now points at Veo 3.1 - Lite and Omni 1.2 Flash. See{" "}
+              <Link href="/blog/google-flow-omni-1-2-model-changes-december-2026">Flow&apos;s current models</Link>.
+            </p>
             <p>
               The secret to stunning AI videos isn&apos;t just using the right tool — it&apos;s
               using the right <strong>prompts</strong>. A vague prompt gives you a vague video.
@@ -95,7 +99,7 @@ export default function BlogPost() {
             <p>
               Here are 25 battle-tested prompts organized by category. Copy, paste into{" "}
               <Link href="/">AutoFlow</Link>, and generate. Each prompt is optimized for{" "}
-              <strong>Google Flow&apos;s Veo 3</strong> model.
+              <strong>Google Flow</strong>&apos;s current video models, Veo 3.1 - Lite and Omni 1.2 Flash.
             </p>
 
             <h2 id="cinematic">🎬 Cinematic & Film (5 Prompts)</h2>

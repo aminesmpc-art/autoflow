@@ -94,6 +94,10 @@ export default function BlogPost() {
           </nav>
 
           <div className="blog-article-content">
+            <p className="blog-img-caption" style={{ textAlign: "left", marginBottom: "24px" }}>
+              <strong>Updated November 13, 2026:</strong> Veo 3 is no longer in Flow&apos;s menu, and Veo 3.1 - Fast and Quality leave on December 5, so model advice here now points at Veo 3.1 - Lite and Omni 1.2 Flash. See{" "}
+              <Link href="/blog/google-flow-omni-1-2-model-changes-december-2026">Flow&apos;s current models</Link>.
+            </p>
             <p>
               YouTube Shorts has exploded to <strong>70 billion daily views</strong>. Unlike TikTok,
               Shorts offers a clear <strong>monetization path</strong> — the YouTube Partner Program
@@ -120,7 +124,7 @@ export default function BlogPost() {
               <li>
                 <strong>Google Flow</strong> — Google&apos;s AI video generator at{" "}
                 <a href="https://labs.google.com/fx/tools/video-fx" target="_blank" rel="noopener noreferrer">labs.google.com</a>.
-                Uses Veo 3, one of the best AI video models available.
+                Runs Veo 3.1 and Omni, among the best AI video models available.
               </li>
               <li>
                 <strong>AutoFlow</strong> — A{" "}
@@ -161,7 +165,7 @@ slow motion, vertical, cinematic 4K`}
               <li>Open Google Flow → click AutoFlow icon → side panel opens</li>
               <li>Go to <strong>Create</strong> tab → paste all prompts (one per paragraph)</li>
               <li>Click <strong>Parse</strong> → review prompt cards → <strong>Add to Queue</strong></li>
-              <li>In <strong>Queues</strong>, set: Veo 3, 9:16 aspect, 2 generations per prompt</li>
+              <li>In <strong>Queues</strong>, set: Veo 3.1 - Lite or Omni 1.2 Flash, 9:16 aspect, 2 generations per prompt</li>
               <li>Hit <strong>Run</strong> → AutoFlow automates everything</li>
             </ol>
             <p>

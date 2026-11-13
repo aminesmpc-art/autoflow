@@ -78,9 +78,13 @@ export default function BlogPost() {
           </nav>
 
           <div className="blog-article-content">
+            <p className="blog-img-caption" style={{ textAlign: "left", marginBottom: "24px" }}>
+              <strong>Updated November 13, 2026:</strong> The Extractor now also returns the camera, cast and dialogue for each shot, character sheets and a master prompt, and Flow&apos;s Nano Banana 2 was replaced by 2.1. For a walkthrough of today&apos;s Extractor read <Link href="/blog/reverse-engineer-ai-video-shot-by-shot">Reverse-engineering a viral AI video, shot by shot</Link>. See{" "}
+              <Link href="/blog/google-flow-omni-1-2-model-changes-december-2026">Flow&apos;s current models</Link>.
+            </p>
             <p>
               Ever seen a viral AI-generated video and wondered exactly what prompts the creator used? 
-              With the <strong>Video Prompt Extractor</strong>, you can reverse-engineer any MP4 or WebM video to reveal its hidden Image Prompts (Midjourney) and Video Motion Prompts (Runway/Sora).
+              With the <strong>Video Prompt Extractor</strong>, you can reverse-engineer any MP4 or WebM video to get an image prompt and a motion prompt for every shot, ready for Google Flow or any other generator.
             </p>
             <p>
               But extracting the prompts is only half the battle. In this tutorial, we will show you how to seamlessly export those extracted prompts directly into the <strong><Link href="/">AutoFlow Chrome Extension</Link></strong> to automatically batch-generate the entire scene timeline in minutes.

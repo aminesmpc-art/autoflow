@@ -96,6 +96,10 @@ export default function BlogPost() {
           </nav>
 
           <div className="blog-article-content">
+            <p className="blog-img-caption" style={{ textAlign: "left", marginBottom: "24px" }}>
+              <strong>Updated November 13, 2026:</strong> Veo 3 is no longer in Flow&apos;s menu, and Veo 3.1 - Fast and Quality leave on December 5, so model advice here now points at Veo 3.1 - Lite and Omni 1.2 Flash. See{" "}
+              <Link href="/blog/google-flow-omni-1-2-model-changes-december-2026">Flow&apos;s current models</Link>.
+            </p>
             <p>
               Google Flow is a powerhouse for AI video generation, giving creators direct access to 
               <strong>Google Veo</strong>. While the output resolution can reach crisp 4K, generating 
@@ -139,7 +143,7 @@ export default function BlogPost() {
               In the <strong>Queues</strong> tab, you can set the global generation parameters:
             </p>
             <ul>
-              <li><strong>Model:</strong> Choose Veo 3.1 or Veo 3.1 Fast.</li>
+              <li><strong>Model:</strong> Choose Veo 3.1 - Lite, or Omni 1.2 Flash to set the clip length yourself.</li>
               <li><strong>Aspect Ratio:</strong> Select 16:9 for YouTube/film, or 9:16 for TikTok/Shorts.</li>
               <li><strong>Quality:</strong> Select 4K to request high-resolution upscaling automatically.</li>
             </ul>

@@ -24,7 +24,7 @@ export default async function sitemap() {
     { path: '/clipping', lastmod: '2026-09-03' },
     { path: '/pricing', lastmod: '2026-11-13' },
     { path: '/faq', lastmod: '2026-06-19' },
-    { path: '/blog', lastmod: '2026-06-19' },
+    { path: '/blog', lastmod: '2026-11-13' },
     { path: '/about', lastmod: '2026-11-13' },
     { path: '/contact', lastmod: '2026-11-13' },
     { path: '/changelog', lastmod: '2026-06-16' },
@@ -42,17 +42,20 @@ export default async function sitemap() {
   }));
 
   const blogPosts = [
-    { slug: '/blog/how-to-batch-generate-ai-videos-google-flow', lastmod: '2026-05-10' },
-    { slug: '/blog/best-prompts-ai-video-generation', lastmod: '2026-05-12' },
-    { slug: '/blog/google-flow-tips-avoid-failed-generations', lastmod: '2026-05-14' },
-    { slug: '/blog/construction-asmr-ai-video-complete-guide', lastmod: '2026-05-15' },
-    { slug: '/blog/how-to-recreate-ai-videos-with-extractor-and-autoflow', lastmod: '2026-05-18' },
-    { slug: '/blog/how-to-make-tiktok-videos-with-ai', lastmod: '2026-05-20' },
-    { slug: '/blog/how-to-make-youtube-shorts-with-ai', lastmod: '2026-05-22' },
-    { slug: '/blog/best-ai-video-generators-2026', lastmod: '2026-05-25' },
-    { slug: '/blog/how-to-make-money-with-ai-videos', lastmod: '2026-05-28' },
-    // Published in July and never listed here.
-    { slug: '/blog/how-to-download-google-flow-veo-videos-4k', lastmod: '2026-07-25' },
+    { slug: '/blog/how-to-batch-generate-ai-videos-google-flow', lastmod: '2026-11-13' },
+    { slug: '/blog/best-prompts-ai-video-generation', lastmod: '2026-11-13' },
+    { slug: '/blog/google-flow-tips-avoid-failed-generations', lastmod: '2026-11-13' },
+    { slug: '/blog/construction-asmr-ai-video-complete-guide', lastmod: '2026-11-13' },
+    { slug: '/blog/how-to-recreate-ai-videos-with-extractor-and-autoflow', lastmod: '2026-11-13' },
+    { slug: '/blog/how-to-make-tiktok-videos-with-ai', lastmod: '2026-11-13' },
+    { slug: '/blog/how-to-make-youtube-shorts-with-ai', lastmod: '2026-11-13' },
+    { slug: '/blog/best-ai-video-generators-2026', lastmod: '2026-11-13' },
+    { slug: '/blog/how-to-make-money-with-ai-videos', lastmod: '2026-11-13' },
+    // Published in July, never listed here until November.
+    { slug: '/blog/how-to-download-google-flow-veo-videos-4k', lastmod: '2026-11-13' },
+    { slug: '/blog/google-flow-omni-1-2-model-changes-december-2026', lastmod: '2026-11-13' },
+    { slug: '/blog/consistent-characters-google-flow', lastmod: '2026-11-13' },
+    { slug: '/blog/reverse-engineer-ai-video-shot-by-shot', lastmod: '2026-11-13' },
   ];
 
   const blogSitemaps = blogPosts.map(({ slug, lastmod }) => ({

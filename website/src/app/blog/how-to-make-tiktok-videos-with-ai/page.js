@@ -100,6 +100,10 @@ export default function BlogPost() {
           </nav>
 
           <div className="blog-article-content">
+            <p className="blog-img-caption" style={{ textAlign: "left", marginBottom: "24px" }}>
+              <strong>Updated November 13, 2026:</strong> Veo 3 is no longer in Flow&apos;s menu, and Veo 3.1 - Fast and Quality leave on December 5, so model advice here now points at Veo 3.1 - Lite and Omni 1.2 Flash. See{" "}
+              <Link href="/blog/google-flow-omni-1-2-model-changes-december-2026">Flow&apos;s current models</Link>.
+            </p>
             <p>
               TikTok is the fastest-growing platform for short-form video — and AI-generated
               content is <strong>exploding</strong> on it. Channels posting AI videos are getting
@@ -172,7 +176,7 @@ metropolis, seamless morph, vertical video`}
               <li>Open Google Flow and click the AutoFlow icon to open the side panel</li>
               <li>Paste all your prompts into the <strong>Create</strong> tab (one per paragraph)</li>
               <li>Click <strong>Parse Prompts</strong> → review your prompt cards</li>
-              <li>In <strong>Queues</strong>, set your model to <strong>Veo 3</strong> and aspect ratio to <strong>9:16</strong></li>
+              <li>In <strong>Queues</strong>, set your model to <strong>Veo 3.1 - Lite</strong> (or <strong>Omni 1.2 Flash</strong> for longer clips) and aspect ratio to <strong>9:16</strong></li>
               <li>Hit <strong>Run</strong> and walk away</li>
             </ol>
             <p>

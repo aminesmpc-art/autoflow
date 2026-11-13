@@ -82,7 +82,7 @@ export default function BlogPost() {
               {
                 "@type": "Question",
                 name: "What is the best AI video generator for making money?",
-                acceptedAnswer: { "@type": "Answer", text: "Google Flow (Veo 3) paired with AutoFlow for batch processing is the best free option. It offers the highest quality output and AutoFlow lets you generate at scale — 50+ videos in one session — which is essential for monetization through volume." },
+                acceptedAnswer: { "@type": "Answer", text: "Google Flow (Veo 3.1 and Omni) paired with AutoFlow for batch processing is the best free option. It offers the highest quality output and AutoFlow lets you generate at scale — 50+ videos in one session — which is essential for monetization through volume." },
               },
             ],
           }),
@@ -137,7 +137,7 @@ export default function BlogPost() {
             <h2 id="why-now">Why AI Videos Are a Gold Mine Right Now</h2>
             <p>Three factors make 2026 the best time to start:</p>
             <ul>
-              <li><strong>Quality is finally there.</strong> Tools like Google Flow (Veo 3) generate
+              <li><strong>Quality is finally there.</strong> Tools like Google Flow (Veo 3.1 and Omni) generate
               photorealistic video that looks like real footage. A year ago, AI video looked
               obviously fake. Today, viewers can&apos;t tell the difference.</li>
               <li><strong>Platforms are hungry for content.</strong> YouTube Shorts, TikTok, and
@@ -375,7 +375,7 @@ export default function BlogPost() {
               </details>
               <details>
                 <summary>What is the best AI video generator for making money?</summary>
-                <p>Google Flow (Veo 3) paired with <Link href="/">AutoFlow</Link> for batch processing. It&apos;s free, highest quality, and AutoFlow lets you generate 50+ videos at once.</p>
+                <p>Google Flow (Veo 3.1 and Omni) paired with <Link href="/">AutoFlow</Link> for batch processing. It&apos;s free, highest quality, and AutoFlow lets you generate 50+ videos at once.</p>
               </details>
               <details>
                 <summary>Do I need to show my face?</summary>
