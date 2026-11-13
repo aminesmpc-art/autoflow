@@ -6,14 +6,108 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import DownloadButtons from "../extractor/DownloadButtons";
 import BreakdownView from "../breakdown/BreakdownView";
+import { ShotRow } from "../extractor/Workspace";
+import { CopyButton, Icon } from "../extractor/ui";
 import { OPEN_KEY } from "../extractor/saved";
+import "../extractor/extractor.css";
+
+/* Everything a person has saved, newest first: extractions and breakdowns in
+   one list, each a compact row that opens in place. An extraction's main
+   action is to open it in the extractor's workspace, where it can be refined;
+   a breakdown reads right here. */
+
+const KINDS = [
+  ["all", "All"],
+  ["prompts", "Extractions"],
+  ["breakdown", "Breakdowns"],
+];
+
+function kindOf(ex) {
+  return ex.kind === "breakdown" ? "breakdown" : "prompts";
+}
+
+function ExtractionBody({ ex }) {
+  const [view, setView] = useState("image");
+  const [all, setAll] = useState(false);
+  const shots = ex.shots || [];
+  const shown = all ? shots : shots.slice(0, 5);
+
+  return (
+    <>
+      {shots.length > 0 && (
+        <div>
+          <div className="xf-label" style={{ marginBottom: 8 }}>Download</div>
+          <DownloadButtons
+            result={{ ...ex, source_fps: ex.details?.source_fps }}
+            sourceName={ex.video_name}
+            buttonClassName="xf-btn xf-btn-sm"
+          />
+        </div>
+      )}
+
+      {ex.master_prompt && (
+        <div className="xf-block">
+          <div className="xf-block-head">
+            <span><Icon name="target" size={14} /> Master prompt</span>
+            <span style={{ display: "flex", gap: 6 }}>
+              <CopyButton text={ex.master_prompt} className="xf-btn xf-btn-ghost xf-btn-sm" />
+              {ex.master_prompt_json && (
+                <CopyButton text={() => JSON.stringify(ex.master_prompt_json, null, 2)} label="Copy JSON" className="xf-btn xf-btn-ghost xf-btn-sm" />
+              )}
+            </span>
+          </div>
+          <p>{ex.master_prompt}</p>
+        </div>
+      )}
+
+      {ex.voiceover_text && (
+        <div className="xf-block">
+          <div className="xf-block-head">
+            <span><Icon name="mic" size={14} /> Script</span>
+            <CopyButton text={ex.voiceover_text} className="xf-btn xf-btn-ghost xf-btn-sm" />
+          </div>
+          <p className="xf-quiet">{ex.voiceover_text}</p>
+        </div>
+      )}
+
+      {shots.length > 0 && (
+        <div>
+          <div className="xf-toolbar">
+            <div className="xf-seg" role="group" aria-label="Prompt to show">
+              {[["image", "Image", "image"], ["video", "Motion", "motion"]].map(([v, l, icon]) => (
+                <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
+                  <Icon name={icon} size={14} /> {l}
+                </button>
+              ))}
+            </div>
+            <CopyButton
+              text={() => shots.map((s) => (view === "video" ? s.video_prompt : s.image_prompt)).filter(Boolean).join("\n\n")}
+              label={`Copy all ${view === "video" ? "motion" : "image"} prompts`}
+            />
+          </div>
+          <ol className="xf-shots">
+            {shown.map((shot, i) => <ShotRow key={`${shot.shot_id}-${i}`} shot={shot} view={view} />)}
+          </ol>
+          {shots.length > shown.length && (
+            <button type="button" className="xf-btn xf-btn-ghost xf-btn-sm" style={{ marginTop: 8 }} onClick={() => setAll(true)}>
+              Show all {shots.length} shots
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
 
 export default function DashboardPage() {
   const { user, token, loading } = useAuth();
   const router = useRouter();
   const [extractions, setExtractions] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
+  const [kind, setKind] = useState("all");
+  const [query, setQuery] = useState("");
 
   const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.auto-flow.studio/api";
   /* Shot thumbnails live on the extractor, not on Django. */
@@ -21,7 +115,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!loading && !user) {
-      router.push("/login");
+      router.push("/login?next=/dashboard");
     }
   }, [user, loading, router]);
 
@@ -35,9 +129,12 @@ export default function DashboardPage() {
         if (res.ok) {
           const data = await res.json();
           setExtractions(data);
+        } else {
+          setLoadError(true);
         }
       } catch (err) {
         console.error("Failed to load extractions", err);
+        setLoadError(true);
       } finally {
         setIsLoadingData(false);
       }
@@ -45,18 +142,17 @@ export default function DashboardPage() {
     if (token) fetchExtractions();
   }, [token, DJANGO_API_URL]);
 
-  const handleDelete = async (extraction, e) => {
-    e.stopPropagation();
-    if (!confirm("Are you sure you want to delete this saved extraction?")) return;
+  const handleDelete = async (extraction) => {
+    if (!confirm(`Delete “${extraction.video_name}”? This cannot be undone.`)) return;
     const id = extraction.id;
-    
+
     try {
       const res = await fetch(`${DJANGO_API_URL}/extractions/${id}/`, {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (res.ok) {
-        setExtractions(extractions.filter(ex => ex.id !== id));
+        setExtractions((list) => list.filter((ex) => ex.id !== id));
         // Its shot thumbnails go with it. Best effort: the extraction is
         // already gone, and a thumbnail left behind is unlisted and unlinked.
         const thumbs = extraction.details?.thumbnails_id;
@@ -72,238 +168,142 @@ export default function DashboardPage() {
     }
   };
 
+  const openInWorkspace = (ex) => {
+    // The extractor page picks this up and opens it ready to edit.
+    try { sessionStorage.setItem(OPEN_KEY, JSON.stringify(ex)); } catch (e) { return; }
+    router.push("/extractor?open=1");
+  };
+
   if (loading || !user) return <div className="container" style={{ minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center" }}>Loading...</div>;
 
+  const counts = {
+    all: extractions.length,
+    prompts: extractions.filter((ex) => kindOf(ex) === "prompts").length,
+    breakdown: extractions.filter((ex) => kindOf(ex) === "breakdown").length,
+  };
+  const q = query.trim().toLowerCase();
+  const shown = extractions.filter((ex) =>
+    (kind === "all" || kindOf(ex) === kind)
+    && (!q || `${ex.video_name} ${ex.video_concept}`.toLowerCase().includes(q)));
+
   return (
-    <div className="section" style={{ minHeight: "100vh", position: "relative", overflow: "hidden" }}>
-      {/* Background Glow */}
-      <div style={{ position: "absolute", top: "-20%", right: "-10%", width: "60vw", height: "60vw", background: "radial-gradient(circle, rgba(79, 70, 229, 0.05) 0%, transparent 70%)", zIndex: -1, pointerEvents: "none" }} />
-      
-      <div className="container" style={{ position: "relative", zIndex: 1, padding: "100px 24px" }}>
-        
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "48px", borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: "24px" }}>
+    <div className="xf">
+      <div className="container xf-dash">
+        <div className="xf-dash-head">
           <div>
-            <h1 style={{ fontSize: "2.5rem", marginBottom: "8px" }}>Your <span className="text-gradient">Dashboard</span></h1>
-            <p className="text-secondary" style={{ fontSize: "1.1rem" }}>View and manage your saved video extractions.</p>
+            <h1>Your <span className="text-gradient">dashboard</span></h1>
+            <p>Every extraction and breakdown you have saved. Only you can see them unless you publish one.</p>
           </div>
-          <Link href="/extractor" className="btn btn-primary" style={{ borderRadius: "100px", padding: "12px 24px" }}>
-            + New Extraction
-          </Link>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Link href="/breakdown" className="xf-btn">
+              <Icon name="layers" /> Break one down
+            </Link>
+            <Link href="/extractor" className="xf-btn xf-btn-primary">
+              <Icon name="plus" /> Extract a video
+            </Link>
+          </div>
         </div>
 
         {isLoadingData ? (
-          <div style={{ textAlign: "center", padding: "60px" }}>
-            <div style={{ fontSize: "2rem", animation: "spin 2s linear infinite", display: "inline-block" }}>⚙️</div>
-            <p className="text-secondary" style={{ marginTop: "16px" }}>Loading your extractions...</p>
+          <div className="xf-empty" role="status"><span className="xf-spinner" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 8 }} /> Loading your extractions…</div>
+        ) : loadError ? (
+          <div className="xf-callout xf-callout-error" role="alert">
+            <Icon name="alert" />
+            <span>Your extractions could not be loaded. Check your connection and reload the page.</span>
           </div>
         ) : extractions.length === 0 ? (
-          <div className="card-glass" style={{ textAlign: "center", padding: "80px 40px", borderRadius: "24px", border: "1px dashed rgba(255,255,255,0.1)" }}>
-            <div style={{ fontSize: "3rem", marginBottom: "16px", opacity: 0.5 }}>📂</div>
-            <h3 style={{ marginBottom: "16px", fontSize: "1.5rem" }}>No extractions yet</h3>
-            <p className="text-secondary" style={{ marginBottom: "32px", maxWidth: "400px", margin: "0 auto 32px" }}>You haven't extracted any videos yet. Extract your first video to see it saved here automatically.</p>
-            <Link href="/extractor" className="btn btn-secondary" style={{ borderRadius: "100px" }}>
-              Go to Extractor
-            </Link>
+          <div className="xf-empty" style={{ padding: "48px 24px" }}>
+            <Icon name="film" size={28} />
+            <h3 style={{ margin: "12px 0 6px", fontSize: "1.15rem", color: "var(--text-primary)" }}>Nothing saved yet</h3>
+            <p style={{ margin: "0 auto 18px", maxWidth: 420 }}>Extract a video and it is saved here automatically, ready to copy, download or refine later.</p>
+            <Link href="/extractor" className="xf-btn xf-btn-primary">Extract your first video</Link>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-            {extractions.map((ex) => {
-              const isExpanded = expandedId === ex.id;
-              const date = new Date(ex.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-              
-              return (
-                <div key={ex.id} className="card-glass" style={{ borderRadius: "20px", overflow: "hidden", transition: "all 0.3s" }}>
-                  
-                  {/* Card Header (Clickable) */}
-                  <div 
-                    style={{ padding: "24px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", background: isExpanded ? "rgba(255,255,255,0.02)" : "transparent" }}
-                    onClick={() => setExpandedId(isExpanded ? null : ex.id)}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-                      <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: "rgba(79, 70, 229, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", border: "1px solid rgba(79, 70, 229, 0.2)" }}>
-                        {ex.kind === "breakdown" ? "🔍" : "🎥"}
-                      </div>
-                      <div>
-                        <h3 style={{ margin: "0 0 4px 0", fontSize: "1.2rem", display: "flex", alignItems: "center", gap: "12px" }}>
-                          {ex.video_name}
-                          <span className="badge" style={{ fontSize: "0.75rem", background: "rgba(255,255,255,0.05)", border: "none" }}>{date}</span>
-                          {ex.kind === "breakdown" && (
-                            <span className="badge" style={{ fontSize: "0.75rem", background: "rgba(255, 92, 0, 0.12)", border: "none", color: "var(--primary)" }}>Why it works</span>
+          <>
+            <div className="xf-dash-bar">
+              <div className="xf-seg" role="group" aria-label="Show">
+                {KINDS.map(([v, l]) => (
+                  <button key={v} type="button" aria-pressed={kind === v} onClick={() => setKind(v)}>
+                    {l} <span className="xf-tab-n">{counts[v]}</span>
+                  </button>
+                ))}
+              </div>
+              <label className="xf-search">
+                <Icon name="search" />
+                <input className="xf-input" type="search" placeholder="Search by name or concept" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search your extractions" />
+              </label>
+            </div>
+
+            {shown.length === 0 ? (
+              <div className="xf-empty">Nothing matches “{query}”.</div>
+            ) : (
+              <ul className="xf-rows">
+                {shown.map((ex) => {
+                  const open = expandedId === ex.id;
+                  const isBreakdown = kindOf(ex) === "breakdown";
+                  const date = new Date(ex.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+                  const thumb = ex.details?.cover_url || ex.breakdown?.cover_url || ex.shots?.find((s) => s.thumbnail_url)?.thumbnail_url;
+                  const shots = ex.shots?.length || 0;
+
+                  return (
+                    <li key={ex.id} className={`xf-row${open ? " is-open" : ""}`}>
+                      <div className="xf-row-main">
+                        <button
+                          type="button"
+                          className="xf-row-toggle"
+                          onClick={() => setExpandedId(open ? null : ex.id)}
+                          aria-expanded={open}
+                        >
+                          {thumb ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img className="xf-row-thumb" src={thumb} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />
+                          ) : (
+                            <span className="xf-row-thumb"><Icon name={isBreakdown ? "layers" : "film"} size={20} /></span>
                           )}
-                        </h3>
-                        <p className="text-secondary" style={{ margin: 0, fontSize: "0.9rem", maxWidth: "500px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {ex.video_concept || "No concept description."}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                      <button 
-                        onClick={(e) => handleDelete(ex, e)}
-                        style={{ background: "transparent", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: "8px", fontSize: "1.2rem", transition: "color 0.2s" }}
-                        onMouseEnter={(e) => e.target.style.color = "#ef4444"}
-                        onMouseLeave={(e) => e.target.style.color = "var(--text-secondary)"}
-                        title="Delete"
-                      >
-                        🗑️
-                      </button>
-                      <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "center", transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.3s" }}>
-                        ▼
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Expanded Content */}
-                  {isExpanded && (
-                    <div style={{ padding: "32px", borderTop: "1px solid rgba(255,255,255,0.05)", background: "rgba(0,0,0,0.3)" }}>
-
-                      {/* A breakdown has no prompts; it is its own view. */}
-                      {ex.kind === "breakdown" && <BreakdownView breakdown={ex.breakdown} />}
-
-                      {ex.shots?.length > 0 && ex.kind !== "breakdown" && (
-                        <div style={{ marginBottom: "24px" }}>
+                          <span className="xf-row-text">
+                            <span className="xf-row-title">
+                              <span>{ex.video_name}</span>
+                              {isBreakdown && <span className="xf-tag xf-tag-accent">Why it works</span>}
+                              {ex.is_public && <span className="xf-tag"><Icon name="globe" size={11} /> Public</span>}
+                            </span>
+                            <span className="xf-row-sub">
+                              <span>{date}</span>
+                              {!isBreakdown && shots > 0 && <span>{shots} shot{shots === 1 ? "" : "s"}</span>}
+                              {ex.character_sheets?.length > 0 && <span>{ex.character_sheets.length} character{ex.character_sheets.length === 1 ? "" : "s"}</span>}
+                            </span>
+                            {ex.video_concept && <span className="xf-row-concept" style={{ display: "block" }}>{ex.video_concept}</span>}
+                          </span>
+                          <Icon name="chevron" className="xf-row-caret" />
+                        </button>
+                        <span className="xf-row-actions">
+                          {!isBreakdown && shots > 0 && (
+                            <button type="button" className="xf-btn xf-btn-sm" onClick={() => openInWorkspace(ex)}>
+                              <Icon name="sparkles" /> Open &amp; refine
+                            </button>
+                          )}
                           <button
-                            className="btn btn-primary"
-                            style={{ padding: "10px 20px", fontSize: "0.9rem", borderRadius: "100px" }}
-                            onClick={() => {
-                              // The extractor page picks this up and opens it ready to edit.
-                              try { sessionStorage.setItem(OPEN_KEY, JSON.stringify(ex)); } catch (e) { return; }
-                              router.push("/extractor?open=1");
-                            }}
+                            type="button"
+                            className="xf-btn xf-btn-ghost xf-btn-sm xf-btn-icon xf-btn-danger"
+                            onClick={() => handleDelete(ex)}
+                            aria-label={`Delete ${ex.video_name}`}
+                            title="Delete"
                           >
-                            ✨ Open &amp; refine with AI
+                            <Icon name="trash" />
                           </button>
-                        </div>
-                      )}
+                        </span>
+                      </div>
 
-                      {ex.shots?.length > 0 && (
-                        <div style={{ marginBottom: "32px" }}>
-                          <h4 style={{ fontSize: "0.9rem", textTransform: "uppercase", color: "var(--text-secondary)", letterSpacing: "1px", marginBottom: "12px" }}>Download</h4>
-                          <DownloadButtons
-                            result={{ ...ex, source_fps: ex.details?.source_fps }}
-                            sourceName={ex.video_name}
-                            buttonClassName="btn btn-secondary"
-                            buttonStyle={{ padding: "8px 16px", fontSize: "0.85rem" }}
-                          />
+                      {open && (
+                        <div className="xf-row-body">
+                          {isBreakdown ? <BreakdownView breakdown={ex.breakdown} /> : <ExtractionBody ex={ex} />}
                         </div>
                       )}
-
-                      {ex.master_prompt && (
-                        <div style={{ marginBottom: "32px" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", gap: "12px" }}>
-                            <h4 style={{ fontSize: "0.9rem", textTransform: "uppercase", color: "var(--text-secondary)", letterSpacing: "1px", margin: 0 }}>Master Prompt</h4>
-                            <div style={{ display: "flex", gap: "8px" }}>
-                              <button
-                                className="btn btn-secondary"
-                                style={{ padding: "6px 14px", fontSize: "0.8rem" }}
-                                onClick={(e) => {
-                                  navigator.clipboard.writeText(ex.master_prompt);
-                                  e.target.innerText = "✓ Copied";
-                                  setTimeout(() => e.target.innerText = "Copy", 2000);
-                                }}
-                              >
-                                Copy
-                              </button>
-                              {ex.master_prompt_json && (
-                                <button
-                                  className="btn btn-secondary"
-                                  style={{ padding: "6px 14px", fontSize: "0.8rem" }}
-                                  onClick={(e) => {
-                                    navigator.clipboard.writeText(JSON.stringify(ex.master_prompt_json, null, 2));
-                                    e.target.innerText = "✓ Copied";
-                                    setTimeout(() => e.target.innerText = "Copy JSON", 2000);
-                                  }}
-                                >
-                                  Copy JSON
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          <div style={{ padding: "20px", background: "rgba(0,0,0,0.5)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.05)", color: "var(--text-primary)", lineHeight: 1.6 }}>
-                            {ex.master_prompt}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {ex.voiceover_text && (
-                        <div style={{ marginBottom: "32px" }}>
-                          <h4 style={{ fontSize: "0.9rem", textTransform: "uppercase", color: "var(--text-secondary)", letterSpacing: "1px", marginBottom: "12px" }}>Voiceover Script</h4>
-                          <div style={{ padding: "20px", background: "rgba(0,0,0,0.5)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.05)", fontFamily: "monospace", color: "var(--text-primary)" }}>
-                            {ex.voiceover_text}
-                          </div>
-                        </div>
-                      )}
-
-                      {ex.shots && ex.shots.length > 0 && (
-                        <div>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                            <h4 style={{ fontSize: "0.9rem", textTransform: "uppercase", color: "var(--text-secondary)", letterSpacing: "1px", margin: 0 }}>Timeline ({ex.shots.length} shots)</h4>
-                            
-                            <div style={{ display: "flex", gap: "12px" }}>
-                              <button 
-                                className="btn btn-secondary" 
-                                style={{ padding: "8px 16px", fontSize: "0.85rem" }}
-                                onClick={(e) => {
-                                  const prompts = ex.shots.map(s => s.image_prompt).filter(Boolean).join("\n\n");
-                                  navigator.clipboard.writeText(prompts);
-                                  e.target.innerText = "✓ Copied Images";
-                                  setTimeout(() => e.target.innerText = "Copy Image Prompts", 2000);
-                                }}
-                              >
-                                Copy Image Prompts
-                              </button>
-                              <button 
-                                className="btn btn-secondary" 
-                                style={{ padding: "8px 16px", fontSize: "0.85rem", background: "rgba(22, 163, 74, 0.1)", color: "#4ade80", borderColor: "rgba(22, 163, 74, 0.3)" }}
-                                onClick={(e) => {
-                                  const prompts = ex.shots.map(s => s.video_prompt).filter(Boolean).join("\n\n");
-                                  navigator.clipboard.writeText(prompts);
-                                  e.target.innerText = "✓ Copied Videos";
-                                  setTimeout(() => e.target.innerText = "Copy Video Prompts", 2000);
-                                }}
-                              >
-                                Copy Video Prompts
-                              </button>
-                            </div>
-                          </div>
-
-                          <div style={{ display: "grid", gap: "16px" }}>
-                            {ex.shots.map((shot, i) => (
-                              <div key={i} style={{ display: "flex", gap: "16px", padding: "16px", background: "rgba(255,255,255,0.02)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                                <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: "rgba(0,0,0,0.5)", border: "1px solid var(--primary-light)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.9rem", fontWeight: "bold", flexShrink: 0 }}>
-                                  {shot.shot_id}
-                                </div>
-                                {shot.thumbnail_url && (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={shot.thumbnail_url}
-                                    alt=""
-                                    loading="lazy"
-                                    style={{ maxWidth: "96px", maxHeight: "96px", width: "auto", height: "auto", borderRadius: "8px", flexShrink: 0 }}
-                                    onError={(e) => { e.currentTarget.style.display = "none"; }}
-                                  />
-                                )}
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontSize: "0.85rem", color: "var(--accent)", marginBottom: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                    <strong>Image:</strong> {shot.image_prompt}
-                                  </div>
-                                  {shot.video_prompt && (
-                                    <div style={{ fontSize: "0.85rem", color: "var(--primary-light)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                      <strong>Motion:</strong> {shot.video_prompt}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
         )}
       </div>
     </div>

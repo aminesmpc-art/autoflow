@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { clock } from "../extractor/timeFields";
 
 /* Cuts per ten seconds, as columns over the video's time.
@@ -25,13 +25,26 @@ function niceMax(n) {
 export default function PacingChart({ pacing }) {
   const [active, setActive] = useState(null);
   const [asTable, setAsTable] = useState(false);
+  /* Drawn at the width it is shown at, so a short video's few bars are not
+     blown up — labels and all — to fill the panel. */
+  const box = useRef(null);
+  const [boxW, setBoxW] = useState(0);
+  useLayoutEffect(() => {
+    const measure = () => { if (box.current) setBoxW(Math.floor(box.current.clientWidth)); };
+    measure();
+    if (!box.current || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(box.current);
+    return () => ro.disconnect();
+  }, []);
   const buckets = pacing?.buckets || [];
   if (!buckets.length) return null;
 
   const size = pacing.bucket_sec || 10;
   const top = niceMax(Math.max(...buckets.map((b) => b.cuts)));
   const ticks = [0, top / 2, top].filter((t, i, a) => Number.isInteger(t) && a.indexOf(t) === i);
-  const width = Math.max(320, buckets.length * (MAX_BAR + 8) + PAD.left + PAD.right);
+  // A long video's bars are more than fit: they are squeezed to the panel.
+  const width = Math.max(boxW || 640, buckets.length * (MAX_BAR + 8) + PAD.left + PAD.right);
   const plotW = width - PAD.left - PAD.right;
   const plotH = HEIGHT - PAD.top - PAD.bottom;
   const slot = plotW / buckets.length;
@@ -43,7 +56,7 @@ export default function PacingChart({ pacing }) {
 
   return (
     <div>
-      <div style={{ position: "relative", overflowX: "auto" }}>
+      <div ref={box} style={{ position: "relative", overflowX: "auto" }}>
         <svg
           viewBox={`0 0 ${width} ${HEIGHT}`}
           width="100%"
@@ -94,7 +107,7 @@ export default function PacingChart({ pacing }) {
             role="status"
             style={{
               position: "absolute", top: 0, right: 0, padding: "6px 10px", background: "#000",
-              border: "1px solid rgba(255,255,255,0.15)", fontSize: "0.8rem", pointerEvents: "none",
+              border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px", fontSize: "0.8rem", pointerEvents: "none",
             }}
           >
             <strong style={{ color: "white" }}>{tip.cuts} cut{tip.cuts === 1 ? "" : "s"}</strong>
@@ -106,7 +119,8 @@ export default function PacingChart({ pacing }) {
       <button
         type="button"
         onClick={() => setAsTable((v) => !v)}
-        style={{ marginTop: "8px", background: "none", border: "none", color: "var(--text-secondary)", textDecoration: "underline", textUnderlineOffset: "3px", cursor: "pointer", padding: 0, fontSize: "0.8rem", fontFamily: "inherit" }}
+        className="xf-link xf-link-muted"
+        style={{ marginTop: "8px", fontSize: "0.8rem" }}
         aria-expanded={asTable}
       >
         {asTable ? "Hide table" : "Show as table"}

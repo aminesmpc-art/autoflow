@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Icon } from "./ui";
 
 /* Edit an extraction by asking for the change.
 
@@ -26,7 +27,7 @@ function timeOfDay(epochSec) {
   }
 }
 
-export default function RefinePanel({ result, jobId, token, apiUrl, log, canUndo, onResult, onUndo }) {
+export default function RefinePanel({ result, jobId, token, apiUrl, log, canUndo, onResult, onUndo, onClose }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -56,61 +57,54 @@ export default function RefinePanel({ result, jobId, token, apiUrl, log, canUndo
   };
 
   return (
-    <div className="cyber-panel" style={{ marginBottom: "40px", padding: "28px 32px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "12px", flexWrap: "wrap", marginBottom: "6px" }}>
-        <h3 className="terminal-text" style={{ margin: 0, fontSize: "1.1rem", textShadow: "none" }}>✨ Refine with AI</h3>
-        {canUndo && (
-          <button
-            type="button"
-            onClick={onUndo}
-            disabled={busy}
-            className="terminal-text"
-            style={{ background: "none", border: "none", color: "var(--text-secondary)", textDecoration: "underline", textUnderlineOffset: "4px", cursor: "pointer", fontFamily: "inherit", fontSize: "0.85rem", textShadow: "none" }}
-          >
-            ↶ Undo last change
-          </button>
-        )}
+    <section className="xf-refine" aria-labelledby="xf-refine-title">
+      <div className="xf-refine-head">
+        <h3 id="xf-refine-title"><Icon name="sparkles" /> Refine with AI</h3>
+        <div style={{ display: "flex", gap: 4 }}>
+          {canUndo && (
+            <button type="button" className="xf-btn xf-btn-ghost xf-btn-sm" onClick={onUndo} disabled={busy}>
+              <Icon name="undo" /> Undo
+            </button>
+          )}
+          {onClose && (
+            <button type="button" className="xf-btn xf-btn-ghost xf-btn-sm xf-btn-icon xf-refine-close" onClick={onClose} aria-label="Close">
+              <Icon name="x" />
+            </button>
+          )}
+        </div>
       </div>
-      <p className="terminal-text" style={{ margin: "0 0 16px", fontSize: "0.85rem", color: "var(--text-secondary)", textShadow: "none" }}>
+      <p className="xf-refine-note">
         {watchable
           ? `Ask for any change. Until ${timeOfDay(result.refine_until)} the AI can look at the video again when a change needs it.`
-          : "Ask for any change. Edits now work from the prompts' text; the video is only kept for an hour after extracting."}
+          : "Ask for any change. Edits work from the prompts' text; the video is only kept for an hour after extracting."}
       </p>
 
       {log.length > 0 && (
-        <ol style={{ listStyle: "none", margin: "0 0 16px", padding: 0, display: "flex", flexDirection: "column", gap: "10px" }}>
+        <ol className="xf-refine-log">
           {log.map((entry, i) => (
-            <li key={i} style={{ fontSize: "0.9rem", lineHeight: 1.5 }}>
-              <div style={{ color: "white" }}>› {entry.instruction}</div>
-              <div style={{ color: "var(--text-secondary)", paddingLeft: "14px" }}>
+            <li key={i} className={entry.undone ? "is-undone" : undefined}>
+              <div className="xf-refine-ask">{entry.instruction}</div>
+              <div className="xf-refine-reply">
                 {entry.summary}
-                {entry.usedVideo && <span style={{ color: "var(--text-muted)" }}> · looked at the video</span>}
-                {entry.undone && <span style={{ color: "var(--text-muted)" }}> · undone</span>}
+                {entry.usedVideo && <small> · looked at the video</small>}
+                {entry.undone && <small> · undone</small>}
               </div>
             </li>
           ))}
         </ol>
       )}
 
-      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "12px" }}>
-        {SUGGESTIONS.map((s) => (
-          <button
-            key={s}
-            type="button"
-            disabled={busy}
-            onClick={() => setText(s)}
-            style={{ border: "1px solid rgba(255, 92, 0, 0.35)", background: "transparent", color: "var(--text-secondary)", padding: "4px 10px", fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit", borderRadius: "999px" }}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
+      {log.length === 0 && (
+        <div className="xf-suggest">
+          {SUGGESTIONS.map((s) => (
+            <button key={s} type="button" disabled={busy} onClick={() => setText(s)}>{s}</button>
+          ))}
+        </div>
+      )}
 
-      <form
-        onSubmit={(e) => { e.preventDefault(); send(); }}
-        style={{ display: "flex", gap: "10px", alignItems: "stretch", flexWrap: "wrap" }}
-      >
+      <form className="xf-refine-form" onSubmit={(e) => { e.preventDefault(); send(); }}>
         <textarea
+          className="xf-textarea"
           value={text}
           maxLength={MAX_CHARS}
           rows={2}
@@ -119,23 +113,16 @@ export default function RefinePanel({ result, jobId, token, apiUrl, log, canUndo
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
           aria-label="Change to make"
-          style={{ flex: "1 1 280px", minWidth: 0, background: "#000", color: "white", border: "1px solid rgba(255, 92, 0, 0.4)", padding: "10px 12px", fontFamily: "inherit", fontSize: "0.95rem", resize: "vertical", lineHeight: 1.5 }}
         />
-        <button
-          type="submit"
-          className="cyber-btn"
-          disabled={busy || !text.trim()}
-          style={{ padding: "10px 22px", opacity: busy || !text.trim() ? 0.6 : 1 }}
-        >
-          {busy ? "Working..." : "Apply"}
-        </button>
+        <div className="xf-refine-row">
+          <span className="xf-help">{busy ? "Working — a change that needs the video can take a minute." : "Enter to apply · Shift+Enter for a new line"}</span>
+          <button type="submit" className="xf-btn xf-btn-primary xf-btn-sm" disabled={busy || !text.trim()}>
+            {busy ? <span className="xf-spinner" aria-hidden="true" /> : <Icon name="sparkles" />}
+            {busy ? "Working" : "Apply"}
+          </button>
+        </div>
       </form>
-      {busy && (
-        <p role="status" className="terminal-text" style={{ margin: "10px 0 0", fontSize: "0.8rem", color: "var(--text-muted)", textShadow: "none" }}>
-          Most changes take a few seconds; one that needs another look at the video can take a minute or two.
-        </p>
-      )}
-      {error && <p role="alert" style={{ margin: "10px 0 0", color: "var(--accent)", fontSize: "0.9rem" }}>{error}</p>}
-    </div>
+      {error && <p role="alert" className="xf-error" style={{ margin: 0 }}>{error}</p>}
+    </section>
   );
 }
