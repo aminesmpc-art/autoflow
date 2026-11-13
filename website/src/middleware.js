@@ -36,7 +36,9 @@ const unlocalizedPaths = [
   '/pricing',
   '/privacy',
   '/terms',
-  '/changelog'
+  '/changelog',
+  '/about',
+  '/contact'
 ];
 
 export function middleware(request) {

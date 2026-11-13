@@ -9,6 +9,16 @@ export async function generateStaticParams() {
   return locales.map(locale => ({ locale }));
 }
 
+/* English is served from here too (/extractor is rewritten to /en/extractor)
+   and stays indexed. The other languages are only partly translated, and a
+   half-English copy of every page reads as filler to Google — AdSense refused
+   the site for "low-value content" in November 2026. They stay open to
+   visitors and come back to the index once each is translated in full. */
+export async function generateMetadata({ params }) {
+  const { locale } = await params;
+  return locale === 'en' ? {} : { robots: { index: false, follow: true } };
+}
+
 export default async function LocaleLayout({ children, params }) {
   const { locale } = await params;
   const t = getDictionary(locale);
@@ -77,7 +87,8 @@ export default async function LocaleLayout({ children, params }) {
             <h4>{t.footer.support}</h4>
             <ul>
               <li><a href={`/${locale}/faq`}>{t.nav.faq}</a></li>
-              <li><a href="mailto:support@auto-flow.studio">{t.footer.contact}</a></li>
+              <li><a href="/contact">{t.footer.contact}</a></li>
+              <li><a href="/about">About</a></li>
             </ul>
           </div>
           <div className="footer-col">

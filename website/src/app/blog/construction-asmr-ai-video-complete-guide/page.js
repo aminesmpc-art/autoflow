@@ -116,6 +116,10 @@ export default function BlogPost() {
           </nav>
 
           <div className="blog-article-content">
+            <p className="blog-img-caption" style={{ textAlign: "left", marginBottom: "24px" }}>
+              <strong>Updated November 13, 2026:</strong> Flow&apos;s ImageFX is now Flow&apos;s Image mode, Nano Banana 2 was replaced by 2.1, and Veo 3.1 - Fast leaves on December 5; the steps below use today&apos;s names, while the screenshots show the older screens. See{" "}
+              <Link href="/blog/google-flow-omni-1-2-model-changes-december-2026">Flow&apos;s current models</Link>.
+            </p>
             <p>
               Construction ASMR is one of the fastest-growing content niches
               right now — satisfying time-lapse videos showing buildings rise
@@ -397,8 +401,8 @@ Wait silently until the user types: "start".`}
             <p>
               Copy each of the 6 image prompts from ChatGPT and paste them into{" "}
               <a href="https://labs.google.com/fx/tools/image-fx" target="_blank" rel="noopener noreferrer">
-                Google Flow ImageFX
-              </a>. Set the model to <strong>Nano Banana 2</strong> (best for photorealism)
+                Google Flow
+              </a> in Image mode (this used to be ImageFX). Set the model to <strong>Nano Banana 2.1</strong> or <strong>Nano Banana Pro</strong> (best for photorealism)
               and generate x4 variations for each stage.
             </p>
 
@@ -540,7 +544,7 @@ Wait silently until the user types: "start".`}
             <h2 id="step-4">Step 4: Run & Monitor</h2>
             <p>
               Switch to the <strong>Queues</strong> tab. You&apos;ll see your queue with all
-              5 frame-to-video prompts ready. Check the settings (Veo 3.1 Fast, landscape,
+              5 frame-to-video prompts ready. Check the settings (Veo 3.1 - Lite, landscape,
               720p) and hit <strong>Run</strong>:
             </p>
 
@@ -678,7 +682,7 @@ Wait silently until the user types: "start".`}
               </details>
               <details>
                 <summary>Can I use different AI models?</summary>
-                <p>Yes! Use Nano Banana 2 for images (best photorealism) and Veo 3.1 Fast for videos (most reliable). You can also try Veo 3 for higher quality.</p>
+                <p>Yes! Use Nano Banana 2.1 or Pro for images (best photorealism) and Veo 3.1 - Lite for videos. Omni 1.2 Flash lets you choose a longer clip, at about twice the credits.</p>
               </details>
               <details>
                 <summary>What buildings work best?</summary>

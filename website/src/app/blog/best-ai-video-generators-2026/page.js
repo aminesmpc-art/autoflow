@@ -84,7 +84,7 @@ export default function BlogPost() {
             <h4>📖 In This Article</h4>
             <ol>
               <li><a href="#how-we-ranked">How We Ranked These Tools</a></li>
-              <li><a href="#google-flow">1. Google Flow (Veo 3)</a></li>
+              <li><a href="#google-flow">1. Google Flow (Veo 3.1 &amp; Omni)</a></li>
               <li><a href="#runway">2. Runway Gen-3</a></li>
               <li><a href="#kling">3. Kling AI</a></li>
               <li><a href="#pika">4. Pika Labs</a></li>
@@ -98,6 +98,10 @@ export default function BlogPost() {
           </nav>
 
           <div className="blog-article-content">
+            <p className="blog-img-caption" style={{ textAlign: "left", marginBottom: "24px" }}>
+              <strong>Updated November 13, 2026:</strong> Flow&apos;s model line-up changed: Omni 1.2 Flash arrived and three older models leave on December 5. The Google Flow entry is updated. See{" "}
+              <Link href="/blog/google-flow-omni-1-2-model-changes-december-2026">Flow&apos;s current models</Link>.
+            </p>
             <p>
               AI video generation has exploded in 2026. We tested every major tool — generating
               hundreds of clips across different styles, resolutions, and prompts — to bring
@@ -115,10 +119,10 @@ export default function BlogPost() {
               <li><strong>Automation</strong> — batch processing, API, workflow integration</li>
             </ul>
 
-            <h2 id="google-flow">1. Google Flow (Veo 3) — Best Overall</h2>
+            <h2 id="google-flow">1. Google Flow (Veo 3.1 &amp; Omni) — Best Overall</h2>
             <p>
               Google&apos;s video generator is the <strong>clear leader in 2026</strong>. Powered
-              by Veo 3 and Veo 3.1, it delivers the most photorealistic output with built-in
+              by Veo 3.1 and, since November, Omni 1.2 Flash with clips of up to 15 seconds, it delivers the most photorealistic output with built-in
               voice acting, precise camera control, and text-to-video quality that rivals
               professional footage.
             </p>

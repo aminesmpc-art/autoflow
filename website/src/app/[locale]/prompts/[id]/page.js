@@ -25,7 +25,7 @@ export async function generateMetadata({ params }) {
   const baseUrl = 'https://www.auto-flow.studio';
   
   if (!extraction) {
-    return { title: "Prompt Not Found | AutoFlow" };
+    return { title: "Prompt Not Found | AutoFlow", robots: { index: false, follow: true } };
   }
 
   const cleanName = extraction.video_name.replace(/\.[^/.]+$/, "");
@@ -36,6 +36,8 @@ export async function generateMetadata({ params }) {
 
   return {
     title: `${cleanName} — AI Video Prompts (Image + Motion) | AutoFlow`,
+    // Generated output a user published: kept out of the index (see ../layout.js).
+    robots: { index: false, follow: true },
     description: `Get the exact image prompts, motion prompts, and character designs used to create "${cleanName}". Reverse-engineered by AutoFlow's AI Video Prompt Extractor. Free to copy and use.`,
     alternates: {
       canonical: locale === defaultLocale

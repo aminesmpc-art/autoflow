@@ -13,12 +13,51 @@
 
 export const posts = [
   {
+    slug: "google-flow-omni-1-2-model-changes-december-2026",
+    title: "Google Flow's New Models: Omni 1.2, 15-Second Clips, and What Leaves on December 5",
+    description:
+      "Omni 1.2 Flash brings clips from 3 to 15 seconds at about twice the credits, while Omni 1.1 and Veo 3.1 Fast and Quality leave Flow on December 5. What changed, what it costs, and how to move your workflows.",
+    date: "2026-11-13",
+    updated: "2026-11-13",
+    category: "News",
+    tags: ["google-flow", "omni", "veo", "model-update", "credits"],
+    image: "/screenshots/settings.webp",
+    readTime: "6 min read",
+    featured: true,
+  },
+  {
+    slug: "consistent-characters-google-flow",
+    title: "How to Keep the Same Character in Every Google Flow Shot (Face and Voice)",
+    description:
+      "Flow's Characters keep a face and a voice across every clip. How to create one from a description or an image, give it a voice, add it to prompts, and borrow it from another project.",
+    date: "2026-11-13",
+    updated: "2026-11-13",
+    category: "Tutorial",
+    tags: ["google-flow", "characters", "consistency", "voice", "tutorial"],
+    image: "/screenshots/image-mapping.webp",
+    readTime: "8 min read",
+    featured: true,
+  },
+  {
+    slug: "reverse-engineer-ai-video-shot-by-shot",
+    title: "Reverse-Engineering a Viral AI Video, Shot by Shot: A Real Walkthrough",
+    description:
+      "We ran a 42-second AI skit through the Video Prompt Extractor: 28 shots, two character sheets, a master prompt and a script in under a minute. What came out, what to check, and how to remake it.",
+    date: "2026-11-13",
+    updated: "2026-11-13",
+    category: "Tutorial",
+    tags: ["extractor", "reverse-engineer", "prompts", "ai-video", "tutorial"],
+    image: "/screenshots/blog/extractor-tutorial/03.png",
+    readTime: "9 min read",
+    featured: true,
+  },
+  {
     slug: "how-to-download-google-flow-veo-videos-4k",
     title: "How to Download Google Flow (Veo) Videos in 4K & Automate Runs",
     description:
       "Learn how to automate Google Flow video generation, batch-run prompts, and easily download your final Veo generations in high-quality 4K.",
     date: "2026-06-20",
-    updated: "2026-06-20",
+    updated: "2026-11-13",
     category: "Tutorial",
     tags: ["google-flow", "veo-4k", "download-videos", "automation"],
     image: "/screenshots/library-results.webp",
@@ -31,7 +70,7 @@ export const posts = [
     description:
       "Learn how to extract prompts from any AI video and seamlessly batch-generate the entire scene timeline using the AutoFlow Chrome Extension.",
     date: "2026-05-10",
-    updated: "2026-05-10",
+    updated: "2026-11-13",
     category: "Tutorial",
     tags: ["google-flow", "extractor", "tutorial", "automation"],
     image: "/screenshots/blog/extractor-tutorial/01.png",
@@ -44,7 +83,7 @@ export const posts = [
     description:
       "Stop generating videos one by one. Learn how to batch process 50+ prompts in Google Flow using AutoFlow — with step-by-step instructions.",
     date: "2026-03-16",
-    updated: "2026-03-16",
+    updated: "2026-11-13",
     category: "Tutorial",
     tags: ["google-flow", "batch-processing", "tutorial", "automation"],
     image: "/screenshots/create-prompts.png",
@@ -57,7 +96,7 @@ export const posts = [
     description:
       "Curated list of the most effective prompts for creating stunning AI videos with Google Flow. From cinematic shots to product demos.",
     date: "2026-03-16",
-    updated: "2026-03-16",
+    updated: "2026-11-13",
     category: "Prompts",
     tags: ["prompts", "ai-video", "google-flow", "creative"],
     image: "/screenshots/create-prompts.png",
@@ -70,7 +109,7 @@ export const posts = [
     description:
       "Generation failures are frustrating. Here are 5 proven tips to reduce failures and get better results from Google Flow every time.",
     date: "2026-03-16",
-    updated: "2026-03-16",
+    updated: "2026-11-13",
     category: "Tips",
     tags: ["google-flow", "tips", "troubleshooting"],
     image: "/screenshots/run-monitor.png",
@@ -83,7 +122,7 @@ export const posts = [
     description:
       "Learn how to create viral construction ASMR videos using ChatGPT for prompts, Google Flow for image generation, and AutoFlow for automated frame-to-video animation. Full step-by-step tutorial.",
     date: "2026-03-16",
-    updated: "2026-03-16",
+    updated: "2026-11-13",
     category: "Tutorial",
     tags: ["construction-asmr", "frame-to-video", "tutorial", "google-flow", "chatgpt"],
     image: "/screenshots/blog/08-library-images-scan.png",
@@ -96,7 +135,7 @@ export const posts = [
     description:
       "Learn how to create viral TikTok content using AI video generators. Batch generate dozens of clips, optimize for the algorithm, and post consistently — no camera needed.",
     date: "2026-05-26",
-    updated: "2026-05-26",
+    updated: "2026-11-13",
     category: "Tutorial",
     tags: ["tiktok", "ai-video", "google-flow", "social-media", "automation"],
     image: "/screenshots/create-prompts.png",
@@ -109,7 +148,7 @@ export const posts = [
     description:
       "Build a monetizable YouTube Shorts channel with AI-generated videos. From prompt writing to batch generation to upload — full pipeline guide for 2026.",
     date: "2026-05-26",
-    updated: "2026-05-26",
+    updated: "2026-11-13",
     category: "Tutorial",
     tags: ["youtube-shorts", "ai-video", "monetization", "google-flow", "automation"],
     image: "/screenshots/create-prompts.png",
@@ -122,7 +161,7 @@ export const posts = [
     description:
       "We tested every major AI video generator — Google Flow, Runway, Kling, Pika, Sora, MiniMax, and Luma. Here's our definitive ranking for 2026.",
     date: "2026-05-26",
-    updated: "2026-05-26",
+    updated: "2026-11-13",
     category: "Comparison",
     tags: ["ai-video", "comparison", "google-flow", "runway", "sora", "tools"],
     image: "/screenshots/create-prompts.png",
@@ -135,7 +174,7 @@ export const posts = [
     description:
       "Learn 5 real ways to earn $500-$5,000/month with AI-generated videos. YouTube Shorts, TikTok, stock footage, freelancing, and faceless channels — with real numbers.",
     date: "2026-05-26",
-    updated: "2026-05-26",
+    updated: "2026-11-13",
     category: "Guide",
     tags: ["make-money", "ai-video", "youtube", "tiktok", "passive-income", "side-hustle"],
     image: "/screenshots/create-prompts.png",

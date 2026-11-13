@@ -87,6 +87,10 @@ export default function BlogPost() {
           </nav>
 
           <div className="blog-article-content">
+            <p className="blog-img-caption" style={{ textAlign: "left", marginBottom: "24px" }}>
+              <strong>Updated November 13, 2026:</strong> Veo 3 is no longer in Flow&apos;s menu, and Veo 3.1 - Fast and Quality leave on December 5, so model advice here now points at Veo 3.1 - Lite and Omni 1.2 Flash. See{" "}
+              <Link href="/blog/google-flow-omni-1-2-model-changes-december-2026">Flow&apos;s current models</Link>.
+            </p>
             <p>
               If you&apos;ve used Google Flow for any amount of time, you&apos;ve seen the
               dreaded &quot;Generation failed&quot; message. It&apos;s frustrating — especially
@@ -141,14 +145,14 @@ upward, dramatic and awe-inspiring, 4K`}</pre>
               Not all models handle all prompts equally. Here&apos;s when to use each:
             </p>
             <ul>
-              <li><strong>Veo 3.1 Fast</strong> — Best for simple scenes, text-to-video, quick iterations. Lowest failure rate.</li>
-              <li><strong>Veo 3</strong> — Best for complex scenes with multiple subjects, detailed environments. Higher quality but slightly more failures.</li>
+              <li><strong>Veo 3.1 - Lite</strong> — Best for simple scenes and quick iterations: a fixed 8-second, 720p clip at the lowest cost.</li>
+              <li><strong>Omni 1.2 Flash</strong> — Best when you need to choose the length (3–15 seconds) or keep long dialogue in one clip. About twice the credits of Omni 1.1.</li>
               <li><strong>Image-to-video</strong> — Use when you have a reference image. More reliable because the AI has a visual anchor.</li>
             </ul>
             <p>
-              <strong>Pro tip:</strong> If a batch keeps failing on Veo 3,
-              try switching to Veo 3.1 Fast. You can always re-run failed
-              prompts on the higher-quality model later.
+              <strong>Pro tip:</strong> If a batch keeps failing on Omni 1.2,
+              try it on Veo 3.1 - Lite. You can always re-run failed
+              prompts on the other model later.
             </p>
 
             <h2 id="tip-4">Tip 4: Leverage Auto-Retry</h2>
@@ -194,7 +198,7 @@ upward, dramatic and awe-inspiring, 4K`}</pre>
               <tbody>
                 <tr><td>Clean prompts</td><td>Be specific, structured, quality-tagged</td><td>🟢 High</td></tr>
                 <tr><td>Avoid restricted</td><td>No real names, brands, sensitive content</td><td>🟢 High</td></tr>
-                <tr><td>Right model</td><td>Use Fast for simple, Veo 3 for complex</td><td>🟡 Medium</td></tr>
+                <tr><td>Right model</td><td>Lite for simple shots, Omni 1.2 for length or dialogue</td><td>🟡 Medium</td></tr>
                 <tr><td>Auto-retry</td><td>Enable in AutoFlow (default: 2 retries)</td><td>🟡 Medium</td></tr>
                 <tr><td>Timing</td><td>Run batches during off-peak hours</td><td>🟡 Medium</td></tr>
               </tbody>
