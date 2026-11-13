@@ -117,28 +117,37 @@ class ExtractionQuotaTests(APITestCase):
             "shots": [],
         }
 
-    def test_free_user_blocked_after_four_in_a_month(self):
-        for _ in range(4):
-            make_extraction(self.free)
+    def test_free_user_gets_one_video_a_day(self):
+        make_extraction(self.free)
         self.client.force_authenticate(self.free)
 
         res = self.client.post(reverse("extractions-list"), self.payload, format="json")
 
         self.assertEqual(res.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
-        self.assertEqual(res.data["limit"], 4)
-        self.assertEqual(res.data["period"], "month")
+        self.assertEqual(res.data["limit"], 1)
+        self.assertEqual(res.data["period"], "day")
+        self.assertIn("today's free video", res.data["detail"])
         # And nothing was written.
-        self.assertEqual(SavedExtraction.objects.filter(user=self.free).count(), 4)
+        self.assertEqual(SavedExtraction.objects.filter(user=self.free).count(), 1)
 
-    def test_free_user_allowed_under_the_limit(self):
-        for _ in range(3):
-            make_extraction(self.free)
+    def test_free_user_allowed_their_first_video_of_the_day(self):
         self.client.force_authenticate(self.free)
 
         res = self.client.post(reverse("extractions-list"), self.payload, format="json")
 
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(SavedExtraction.objects.filter(user=self.free).count(), 4)
+
+    def test_yesterdays_video_does_not_count_today(self):
+        from datetime import timedelta
+        from django.utils import timezone
+
+        old = make_extraction(self.free)
+        SavedExtraction.objects.filter(pk=old.pk).update(created_at=timezone.now() - timedelta(days=1, hours=1))
+        self.client.force_authenticate(self.free)
+
+        res = self.client.post(reverse("extractions-list"), self.payload, format="json")
+
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
 
     def test_pro_user_gets_the_daily_allowance(self):
         for _ in range(4):
@@ -160,8 +169,7 @@ class ExtractionQuotaTests(APITestCase):
         self.assertEqual(res.data["period"], "day")
 
     def test_check_limit_and_create_agree(self):
-        for _ in range(4):
-            make_extraction(self.free)
+        make_extraction(self.free)
         self.client.force_authenticate(self.free)
 
         check = self.client.get(reverse("extractions-check-limit"))
@@ -179,8 +187,7 @@ class ExtractionQuotaTests(APITestCase):
         self.assertFalse(SavedExtraction.objects.get(pk=res.data["id"]).is_public)
 
     def test_quota_is_per_user(self):
-        for _ in range(4):
-            make_extraction(self.free)
+        make_extraction(self.free)
         other = make_user("fresh@example.com")
         self.client.force_authenticate(other)
 
@@ -377,15 +384,34 @@ class WeightedAllowanceTests(APITestCase):
         self.assertEqual(self.used(self.pro), 3)
 
     def test_a_video_too_long_for_what_is_left_is_refused_and_explained(self):
-        self.assertEqual(self.reserve(self.free, "a", 25 * 60).status_code, 201)   # 3 of 4
-        res = self.reserve(self.free, "b", 25 * 60)                                # needs 3, 1 left
+        for i in range(18):
+            self.assertEqual(self.reserve(self.pro, f"clip-{i}", 30).status_code, 201)   # 18 of 20
+        res = self.reserve(self.pro, "long", 25 * 60)                                    # needs 3, 2 left
 
         self.assertEqual(res.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
         self.assertIn("counts as 3 extractions", res.data["detail"])
-        self.assertIn("1 extraction left", res.data["detail"])
-        self.assertEqual(self.reserve(self.free, "c", 30).status_code, 201)        # a clip still fits
-        self.assertEqual(self.reserve(self.free, "d", 30).status_code, 429)
-        self.assertEqual(self.used(self.free), 4)
+        self.assertIn("2 extractions left today", res.data["detail"])
+        self.assertEqual(self.reserve(self.pro, "c", 30).status_code, 201)               # a clip still fits
+        self.assertEqual(self.used(self.pro), 19)
+
+    def test_the_free_video_is_up_to_ten_minutes(self):
+        res = self.reserve(self.free, "long", 25 * 60)
+
+        # Longer than the whole free day: the answer is a shorter part, not tomorrow.
+        self.assertEqual(res.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        self.assertIn("up to 10 minutes of video a day", res.data["detail"])
+        self.assertIn("Part option", res.data["detail"])
+        self.assertNotIn("tomorrow", res.data["detail"])
+        self.assertEqual(self.used(self.free), 0)
+
+        self.assertEqual(self.reserve(self.free, "part", 10 * 60).status_code, 201)     # ten minutes fits
+        second = self.reserve(self.free, "again", 30)
+        self.assertEqual(second.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        self.assertIn("today's free video", second.data["detail"])
+
+    def test_a_breakdown_spends_the_same_free_video(self):
+        self.assertEqual(self.reserve(self.free, "why", 30, kind="breakdown").status_code, 201)
+        self.assertEqual(self.reserve(self.free, "prompts", 30).status_code, 429)
 
     def test_a_failed_job_is_refunded(self):
         self.reserve(self.pro, "job-f", 25 * 60)
@@ -410,15 +436,13 @@ class WeightedAllowanceTests(APITestCase):
         self.assertEqual(self.used(self.pro), 2)
 
     def test_saving_a_paid_result_is_never_refused_even_at_the_limit(self):
-        for i in range(4):
-            self.reserve(self.free, f"job-{i}", 30)
+        self.reserve(self.free, "job-0", 30)
         self.client.force_authenticate(self.free)
         payload = {"video_name": "v", "video_concept": "c", "voiceover_text": "", "character_sheets": [], "shots": []}
 
-        # The fourth reservation used the last extraction; its result still saves.
-        for i in range(4):
-            res = self.client.post(reverse("extractions-list"), {**payload, "job_id": f"job-{i}"}, format="json")
-            self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        # The reservation used the day's only extraction; its result still saves.
+        res = self.client.post(reverse("extractions-list"), {**payload, "job_id": "job-0"}, format="json")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         # A save with no job behind it — every charge is claimed — is refused.
         unpaid = self.client.post(reverse("extractions-list"), payload, format="json")
         self.assertEqual(unpaid.status_code, status.HTTP_429_TOO_MANY_REQUESTS)

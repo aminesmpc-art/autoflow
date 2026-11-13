@@ -1053,18 +1053,37 @@ class PublicExtractionDetailView(APIView):
         return Response(serializer.data)
 
 
+# Extractions a day, by plan. One is ten analysed minutes (SECONDS_PER_UNIT),
+# so the free one is a single video of up to ten minutes — a longer video is
+# taken a part at a time. A breakdown spends the same allowance.
+PRO_EXTRACTIONS_PER_DAY = 20
+FREE_EXTRACTIONS_PER_DAY = 1
+
+
 def extraction_period(user):
     """The allowance and the moment its period began, for a user's plan."""
     from django.utils import timezone
 
     profile = getattr(user, "profile", None)
     is_pro = profile.is_pro if profile else False
-    now = timezone.now()
+    today = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    limit = PRO_EXTRACTIONS_PER_DAY if is_pro else FREE_EXTRACTIONS_PER_DAY
+    return is_pro, limit, "day", today
+
+
+def _when(period: str) -> str:
+    return "today" if period == "day" else "this month"
+
+
+def _out_of_extractions(limit: int, period: str, is_pro: bool) -> str:
+    """Said when the allowance is used up, rather than too small for a video."""
     if is_pro:
-        # PRO: 20 per day
-        return is_pro, 20, "day", now.replace(hour=0, minute=0, second=0, microsecond=0)
-    # FREE: 4 per month
-    return is_pro, 4, "month", now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        return f"You have used your {limit} extractions for {_when(period)}. They come back tomorrow."
+    if limit == 1:
+        return (f"You have used {_when(period)}'s free video. Come back tomorrow, "
+                f"or upgrade to Pro for {PRO_EXTRACTIONS_PER_DAY} extractions a day.")
+    return (f"You have used your {limit} free extractions for {_when(period)}. "
+            f"Upgrade to Pro for {PRO_EXTRACTIONS_PER_DAY} extractions a day.")
 
 
 def extraction_limit_state(user) -> dict:
@@ -1099,7 +1118,7 @@ class ReserveExtractionView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        from apps.extractions.services import reserve, units_for
+        from apps.extractions.services import SECONDS_PER_UNIT, reserve, units_for
 
         key = request.data.get("idempotency_key")
         if not isinstance(key, str) or not key.strip() or len(key) > 128:
@@ -1115,19 +1134,28 @@ class ReserveExtractionView(APIView):
         state.update(period=period, is_pro=is_pro)
         if not state["allowed"]:
             units = units_for(seconds)
-            minutes = round(seconds / 60)
-            weight = (
-                f"This video is about {minutes} minutes, which counts as {units} extractions "
-                f"(one per 10 minutes analysed). "
-                if units > 1 else ""
-            )
+            minutes = max(1, round(seconds / 60))
             left = state["remaining"]
-            state["detail"] = (
-                f"{weight}You have {left} extraction{'' if left == 1 else 's'} left this {period}. "
-                + ("Analyse a shorter section, or come back " + ("tomorrow." if period == "day" else "next month.")
-                   if units > 1 and left > 0 else
-                   ("Upgrade to Pro for 20 extractions a day." if not is_pro else "Please try again tomorrow."))
-            )
+            per_unit = SECONDS_PER_UNIT // 60
+            if units > limit:
+                # Longer than the whole allowance: waiting a day will not help,
+                # only a shorter part of the video will.
+                most = limit * per_unit
+                state["detail"] = (
+                    f"Your plan reads up to {most} minutes of video a {period}, and this video is "
+                    f"about {minutes} minutes. Choose a part of it up to {most} minutes long with "
+                    f"the Part option"
+                    + (f", or upgrade to Pro for {PRO_EXTRACTIONS_PER_DAY} extractions a day." if not is_pro else ".")
+                )
+            elif units > 1 and left > 0:
+                state["detail"] = (
+                    f"This video is about {minutes} minutes, which counts as {units} extractions "
+                    f"(one per {per_unit} minutes analysed). You have {left} "
+                    f"extraction{'' if left == 1 else 's'} left {_when(period)}. Analyse a shorter "
+                    f"part, or come back " + ("tomorrow." if period == "day" else "next month.")
+                )
+            else:
+                state["detail"] = _out_of_extractions(limit, period, is_pro)
             return Response(state, status=status.HTTP_429_TOO_MANY_REQUESTS)
         return Response(state, status=status.HTTP_201_CREATED if state["charged"] else status.HTTP_200_OK)
 
@@ -1192,10 +1220,7 @@ class SavedExtractionsView(APIView):
         if not paid and not state["allowed"]:
             return Response(
                 {
-                    "detail": (
-                        f"You have reached your limit of {state['limit']} extractions "
-                        f"per {state['period']}."
-                    ),
+                    "detail": _out_of_extractions(state["limit"], state["period"], state["is_pro"]),
                     **state,
                 },
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
