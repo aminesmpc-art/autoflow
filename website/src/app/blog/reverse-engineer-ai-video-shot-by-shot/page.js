@@ -137,8 +137,8 @@ export default function BlogPost() {
             <p>
               In one of our early runs the model gave the two boys&apos; names the wrong way round: the line &quot;Yo Benny, this stuff
               hitting&quot; was given to Benny himself. Names drive everything downstream — the character sheets and which reference
-              goes into which shot — so one swap mislabels the whole video. The extractor now checks for a character addressing
-              themselves by name and adds a note when it happens, but read the cast against the frames before you generate.
+              goes into which shot — so one swap mislabels the whole video. A quick test: nobody calls themselves by their own
+              name, so a line addressed to its own speaker means the names are swapped. Read the cast against the frames before you generate.
             </p>
             <h3>2. The notes</h3>
             <p>
