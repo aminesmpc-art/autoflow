@@ -329,7 +329,8 @@ function Footer() {
           <ul>
             <li><a href="/blog">Blog &amp; Guides</a></li>
             <li><a href="/faq">FAQ</a></li>
-            <li><a href="mailto:support@auto-flow.studio">Contact Support</a></li>
+            <li><a href="/contact">Contact</a></li>
+            <li><a href="/about">About AutoFlow</a></li>
           </ul>
         </div>
         <div className="footer-col">
