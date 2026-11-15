@@ -13,6 +13,32 @@
 
 export const posts = [
   {
+    slug: "ai-agent-controls-autoflow-claude-code-codex",
+    title: "Let an AI Agent Run AutoFlow: Claude Code, Codex and Antigravity Make Your Videos",
+    description:
+      "Connect Claude Code, Codex, Antigravity or Cursor to AutoFlow and ask for a video in plain words: the agent writes the prompts, queues them on Google Flow, asks before spending credits, and fixes refused prompts.",
+    date: "2026-11-15",
+    updated: "2026-11-15",
+    category: "Tutorial",
+    tags: ["ai-agent", "claude-code", "codex", "mcp", "google-flow", "automation"],
+    image: "/screenshots/full-workflow.webp",
+    readTime: "8 min read",
+    featured: true,
+  },
+  {
+    slug: "autoflow-characters-same-face-voice",
+    title: "AutoFlow Characters: The Same Face and Voice in Every Clip",
+    description:
+      "Make a character once in AutoFlow's Characters tab, from a photo or a description, give it a voice, and every queue uses it when a prompt says its name. How we made Ruby, our presenter.",
+    date: "2026-11-15",
+    updated: "2026-11-15",
+    category: "Tutorial",
+    tags: ["characters", "google-flow", "voice", "consistency", "autoflow"],
+    image: "/screenshots/image-mapping.webp",
+    readTime: "7 min read",
+    featured: true,
+  },
+  {
     slug: "google-flow-omni-1-2-model-changes-december-2026",
     title: "Google Flow's New Models: Omni 1.2, 15-Second Clips, and What Leaves on December 5",
     description:
