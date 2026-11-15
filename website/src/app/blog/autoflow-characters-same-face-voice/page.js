@@ -168,7 +168,7 @@ export default function BlogPost() {
 
             <h2 id="agent">Let the agent cast your video</h2>
             <p>
-              With the <Link href="/blog/ai-agent-controls-autoflow-claude-code-codex">AutoFlow agent</Link> connected, your AI
+              With the <Link href="/blog/automate-google-flow-ai-agent">AutoFlow agent</Link> connected, your AI
               assistant can do all of this from a sentence: &quot;make a presenter called Ruby, red wavy hair, green hoodie, voice
               Leda, bright and fast&quot;, then &quot;queue my script with Ruby presenting&quot;. It lists the characters and voices,
               makes the character (telling you first that the portrait costs one image), and writes her name into every prompt.
@@ -176,7 +176,7 @@ export default function BlogPost() {
 
             <h2>Related guides</h2>
             <ul>
-              <li><Link href="/blog/ai-agent-controls-autoflow-claude-code-codex">Let an AI agent run AutoFlow</Link></li>
+              <li><Link href="/blog/automate-google-flow-ai-agent">Let an AI agent run AutoFlow</Link></li>
               <li><Link href="/blog/consistent-characters-google-flow">Keep the same character in every Flow shot, by hand</Link></li>
             </ul>
           </div>

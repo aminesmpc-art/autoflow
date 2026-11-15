@@ -13,16 +13,16 @@
 
 export const posts = [
   {
-    slug: "ai-agent-controls-autoflow-claude-code-codex",
-    title: "Let an AI Agent Run AutoFlow: Claude Code, Codex and Antigravity Make Your Videos",
+    slug: "automate-google-flow-ai-agent",
+    title: "How to Automate Google Flow with an AI Agent (Antigravity, Claude Code, Codex)",
     description:
-      "Connect Claude Code, Codex, Antigravity or Cursor to AutoFlow and ask for a video in plain words: the agent writes the prompts, queues them on Google Flow, asks before spending credits, and fixes refused prompts.",
+      "Automate Google Flow with an AI agent: connect Antigravity, Claude Code, Codex or Cursor to AutoFlow, ask for a video in plain words, and the agent writes the prompts, runs every clip with the same character and downloads them. Step by step, with a real 5-clip run.",
     date: "2026-11-15",
     updated: "2026-11-15",
     category: "Tutorial",
-    tags: ["ai-agent", "claude-code", "codex", "mcp", "google-flow", "automation"],
-    image: "/screenshots/full-workflow.webp",
-    readTime: "8 min read",
+    tags: ["automate-google-flow", "google-flow-ai-agent", "antigravity", "claude-code", "codex", "mcp", "consistent-character", "ai-video-automation"],
+    image: "/screenshots/agent/done.webp",
+    readTime: "9 min read",
     featured: true,
   },
   {
