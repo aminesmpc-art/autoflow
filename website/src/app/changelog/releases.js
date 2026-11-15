@@ -36,6 +36,196 @@ export const PRODUCTS = {
 export const RELEASES = {
   queue: [
     {
+      version: "11.1",
+      date: "2026-11-10",
+      title: "Lower Priority Works Again",
+      highlights: [
+        "Veo 3.1 - Lite [Lower Priority] stays selected. The Queue Manager used to switch it to the regular Veo 3.1 - Lite the next time it opened, which costs credits, so on some accounts Flow would not submit the prompts",
+        "The run modes are called Full, Flow and Lite again, in the settings and on the Account page",
+        "Find characters in Flow tries Flow's + menu a second time when it does not open, and when it still cannot read the list it says which step failed, instead of always asking you to open your project",
+      ],
+    },
+    {
+      version: "11.0",
+      date: "2026-11-08",
+      title: "Omni 1.2 Flash",
+      highlights: [
+        "Omni 1.2 Flash, Google Flow's newest video model, is in the model list. Omni 1.1 Flash is still there",
+        "Each model offers its own clip lengths: Omni 1.1 keeps 4, 6, 8 and 10 seconds, and Omni 1.2 offers every length from 3 to 15 seconds. The Queue Manager sets Flow's new Length slider and checks that Flow took it",
+        "Models marked \"Leaving Dec 5\" in Flow are selected and refreshed by their plain name again",
+        "Once Flow removes a model, your runs switch to its replacement and say so in the log: Omni 1.1 to Omni 1.2, Veo 3.1 Fast and Quality to Veo 3.1 Lite",
+      ],
+    },
+    {
+      version: "10.9",
+      date: "2026-11-05",
+      title: "Flow in English, Every Time",
+      highlights: [
+        "Google Flow now opens in English for the Queue Manager, whatever language your Google account uses. On an Arabic Flow every prompt stopped with \"Could not switch Flow to Video mode\"",
+        "A Flow tab that is not in English reloads once with ?hl=en as it opens; a tab already in English is never reloaded",
+        "Pressing Run on a Flow tab that was open before the extension updated switches that tab to English first, then starts the run. The switch used to happen after Run and cut the run off"
+      ],
+    },
+    {
+      version: "10.8",
+      date: "2026-11-01",
+      title: "Re-prompt Before the Scan",
+      highlights: [
+        "Before the library scan, every prompt without a video is re-prompted, one by one, up to three times",
+        "That includes prompts Flow refused during the run and prompts whose video never appeared",
+        "Each prompt keeps its own retry count, so a refusal no longer counts as retries already used",
+      ],
+    },
+    {
+      version: "10.7",
+      date: "2026-11-01",
+      title: "Old Errors Cleaned Up",
+      highlights: [
+        "When a retried prompt succeeds, its old failed try is moved to Flow's Bin (you can restore it from there)",
+        "Scan page matches failed tiles to prompts by their words, so a prompt that succeeded on a retry is no longer listed as failed",
+        "A prompt finished later with Flow's own Retry is found by Scan page and marked done",
+        "Scan page works after the run ends, even after the page reloads",
+      ],
+    },
+    {
+      version: "10.6",
+      date: "2026-11-01",
+      title: "Failed Prompts, Retried and Replaced",
+      highlights: [
+        "Failed prompts are re-prompted automatically, up to three times each, in Full and Flow mode, before the library scan",
+        "Safety-blocked prompts get their three tries too; Flow refunds a refused generation",
+        "New Replace button: give failed prompts new words and they are made as the same prompt numbers, so the Library stays in order",
+        "Paste several replacements at once, with a blank line between, and they fill the failed prompts in order",
+        "Retry now works after the run ends, even after the page reloads for the library scan",
+      ],
+    },
+    {
+      version: "10.5",
+      date: "2026-11-01",
+      title: "Your Flow Characters, by Name",
+      highlights: [
+        "Find characters in Flow reads the characters you saved in your Flow project",
+        "A prompt that says a character's name gets that character, with its own face and voice",
+        "Each prompt shows which characters it will get; nothing is created or changed in Flow",
+      ],
+    },
+    {
+      version: "10.4",
+      date: "2026-11-01",
+      title: "Characters, Reliably",
+      highlights: [
+        "New characters get their name in Flow every time; AutoFlow checks it took and tries again",
+        "After setting up characters AutoFlow always returns to your project, so the run carries on",
+        "If a character cannot be set up, its prompts still run with the character's image",
+      ],
+    },
+    {
+      version: "10.3",
+      date: "2026-11-01",
+      title: "Images Before Prompts",
+      highlights: [
+        "The image tools stay open when you add images before writing prompts; they used to vanish",
+      ],
+    },
+    {
+      version: "10.2",
+      date: "2026-11-01",
+      title: "Characters With Voices",
+      highlights: [
+        "Give a character image a voice, and AutoFlow makes it a Flow Character with that face, name and voice",
+        "Every prompt that names the character gets it, and speaks in its voice",
+        "Characters already in your Flow project are reused by name, with the voice you chose",
+        "Prompts that name no character get no voice",
+      ],
+    },
+    {
+      version: "10.1",
+      date: "2026-11-01",
+      title: "Simpler Image Tools",
+      highlights: [
+        "Each way to add images is one plain card: what it does in one sentence, and its own button",
+        "Settings stays in view while the image tools are open; each one scrolls on its own",
+      ],
+    },
+    {
+      version: "10.0",
+      date: "2026-11-01",
+      title: "Prompts From a Text File",
+      highlights: [
+        "Load .txt adds the prompts in a text file after the ones already in the box",
+        "Prompts can be separated by a blank line, or one per line; AutoFlow tells which from the file",
+        "Drop a .txt file on the prompt box to do the same",
+      ],
+    },
+    {
+      version: "9.9",
+      date: "2026-11-01",
+      title: "Matches Flow's New Settings",
+      highlights: [
+        "New Resolution setting for Omni 1.1 Flash: 720p or 360p, set on Flow before the run starts",
+        "Duration shows only for Omni; with Veo the panel says it makes 8-second 720p clips",
+        "Model lists match Flow's menus, and models Flow dropped switch to the closest one it still has",
+        "Before each prompt, checks Flow's ratio, length and resolution and fixes any that changed",
+        "Refresh models works with Flow's settings closed and lists clean model names",
+        "Failed generations clears when a new run starts and names the queue its failures came from",
+      ],
+    },
+    {
+      version: "9.8",
+      date: "2026-11-01",
+      title: "Failed Videos, Retried",
+      highlights: [
+        "A failed video is seen through Flow's API the moment it fails, even with Flow in the background",
+        "Full mode regenerates failed prompts, up to three times; Flow mode presses Flow's own Retry instead",
+        "A safety-blocked prompt is tried once more, then listed as one that cannot be generated, with Flow's reason",
+      ],
+    },
+    {
+      version: "9.7",
+      date: "2026-11-01",
+      title: "See the API at Work",
+      highlights: [
+        "Pressing Stop, or a run finishing, no longer freezes the side panel",
+        "When a run ends, the run view folds back into the bar at the bottom; tap it to see the summary",
+        "Each row shows whether Flow's API caught its video: API, then ⚡ API when the API confirms it finished, or Page when only the page could",
+        "The counts show how many videos the API caught, like API 3/3",
+        "Every prompt is linked to its video the moment Flow's API names it, so the last prompt of a background run no longer waits until you look at Flow",
+      ],
+    },
+    {
+      version: "9.6",
+      date: "2026-11-01",
+      title: "Flow's API Answers Again",
+      highlights: [
+        "Videos are confirmed by Flow's own API the moment they finish, instead of by scanning the page round after round",
+        "Works with Flow hidden in the background: Queue asks Flow about exactly its own videos, every five seconds at most",
+        "The API badge shows API again during video runs instead of Passive",
+        "The page is now only the last resort, used when the API has no answer",
+      ],
+    },
+    {
+      version: "9.5",
+      date: "2026-10-31",
+      title: "Full-Panel Runs & Steadier Checks",
+      highlights: [
+        "A run fills the side panel: progress, Pause and Stop, every prompt with its state in a word, and a summary with Retry, New run and Close when it ends",
+        "A Done button folds the prompt box away and keeps your prompt list on screen, in every mode",
+        "Images for many prompts moved to the bottom bar, with a small picture of how each option works",
+        "The final check of an image run scrolls Flow's whole list, so finished images no longer sit at Generating",
+        "Waits for every reference image to finish uploading before pressing Generate",
+        "Steadier with Flow in the background: waits no longer stall in a hidden tab, and Queue no longer pulls Flow to the front every 18 seconds",
+      ],
+    },
+    {
+      version: "9.4",
+      date: "2026-10-30",
+      title: "Know What Changed",
+      highlights: [
+        "After an update, Queue opens its website changelog in a normal, active browser tab",
+        "Every extension reload opens a fresh changelog tab, even when the version is unchanged",
+      ],
+    },
+    {
       version: "9.3",
       date: "2026-10-30",
       title: "Maintenance Release",
@@ -373,6 +563,85 @@ export const RELEASES = {
 
   studio: [
     {
+      version: "1.7.7",
+      date: "2026-11-11",
+      title: "Finished Images and Videos Arrive Again",
+      highlights: [
+        "Fixed: an image or video Flow had finished could still show \"Generation failed\" in Studio. Studio could not download the finished file, so the node had no picture or clip to show or pass on",
+        "Studio now opens from a Studio item in Flow's left bar, just above Trash, instead of the orange button over Flow's header",
+        "Post to community fits the window again. Opened from the canvas, it hung off the top of the screen with its title and name fields out of reach",
+      ],
+    },
+    {
+      version: "1.7.6",
+      date: "2026-11-08",
+      title: "Omni 1.2 Flash",
+      highlights: [
+        "Omni 1.2 Flash, Google Flow's newest video model, is in the Generate node's model list. Omni 1.1 Flash is still there",
+        "Each model offers its own clip lengths: Omni 1.1 keeps 4, 6, 8 and 10 seconds, and Omni 1.2 offers every length from 3 to 15 seconds in a dropdown. Studio sets Flow's new Length slider and checks that Flow took it",
+        "Models marked \"Leaving Dec 5\" in Flow are selected by their plain name again",
+        "Once Flow removes a model, your workflows switch to its replacement and say so in the log: Omni 1.1 to Omni 1.2, Veo 3.1 Fast and Quality to Veo 3.1 Lite",
+      ],
+    },
+    {
+      version: "1.7.5",
+      date: "2026-11-05",
+      title: "Flow in English, Every Time",
+      highlights: [
+        "Google Flow now opens in English for Studio, whatever language your Google account uses. On an Arabic Flow every prompt stopped with \"Could not switch Flow to Video mode\"",
+        "A Flow tab that is not in English reloads once with ?hl=en as it opens; a tab already in English is never reloaded",
+        "Pressing Run on a Flow tab that was open before the extension updated switches that tab to English first, then starts the run. The switch used to happen after Run and cut the run off"
+      ],
+    },
+    {
+      version: "1.7.4",
+      date: "2026-11-02",
+      title: "A Cleaner Studio",
+      highlights: [
+        "Switching from Simple to Canvas now fits the whole workflow on screen; the right side used to be cut off",
+        "Simple view puts your photos first, keeps long prompts to a readable height, and shows results as tidy cards",
+        "The settings panel is only as tall as its settings, and the mini map moved to the bottom-left so it never covers your nodes",
+        "Community posts show readable step maps, the platforms they use by name, and \"Community member\" instead of \"Someone\"",
+      ],
+      improvements: [
+        "The node library is simpler: Agent, Clipping and Motion Control were removed (Motion and clipping have their own tools). Workflows that already use them still open",
+        "Node names are larger and easier to read on the canvas",
+        "On smaller windows the node library starts folded, so the canvas has room",
+        "The home page lines up in one centred column, and long template descriptions no longer stretch the cards",
+        "Signed out, the share bar explains how to sign in instead of offering a Post button that does nothing",
+        "Search stays on My Workflows and finds your saved workflows by name",
+      ],
+    },
+    {
+      version: "1.7.3",
+      date: "2026-11-01",
+      title: "Flow, Read Correctly",
+      highlights: [
+        "Flow's whole output list is scanned again: Studio now scrolls the container Flow actually scrolls",
+        "Reads Flow's current status replies, so finished and failed videos are known from Flow itself",
+        "Asks Flow for a video's status directly when Flow stops checking in a background tab",
+        "Runs beside AutoFlow Queue without either extension silencing the other's status checks",
+      ],
+    },
+    {
+      version: "1.7.2",
+      date: "2026-10-30",
+      title: "Fewer Browser Permissions",
+      highlights: [
+        "Removed unused offscreen access and redundant active-tab access from Studio",
+        "Removed an unused background media scaffold; current clipping and frame extraction continue through the existing media pipeline",
+      ],
+    },
+    {
+      version: "1.7.1",
+      date: "2026-10-30",
+      title: "Know What Changed",
+      highlights: [
+        "After an update, Studio opens its existing website changelog in a normal, active browser tab",
+        "Every extension reload opens a fresh changelog tab, even when the version is unchanged",
+      ],
+    },
+    {
       version: "1.7.0",
       date: "2026-10-30",
       title: "Simple View & a Clearer Canvas",
@@ -465,6 +734,75 @@ export const RELEASES = {
   ],
 
   motion: [
+    {
+      version: "0.1.36",
+      date: "2026-11-11",
+      title: "Finished Clips Arrive Again",
+      highlights: [
+        "Fixed: a piece Flow had finished could fail to load in Motion, because Motion could not download the finished file. It now arrives with its preview and last frame",
+      ],
+    },
+    {
+      version: "0.1.35",
+      date: "2026-11-08",
+      title: "Choose Omni 1.2",
+      highlights: [
+        "A new Model choice in the setup: Omni 1.1, with pieces up to 10 seconds, or Omni 1.2, with pieces up to 15 seconds",
+        "With Omni 1.2, a long video is split into fewer pieces, and the trim shortcuts fit whole 15-second pieces. Omni 1.2 uses about twice the credits per second",
+        "Your existing projects stay on Omni 1.1 with everything they already prepared",
+        "Once Flow removes Omni 1.1 on December 5, Motion uses Omni 1.2 for those projects",
+      ],
+    },
+    {
+      version: "0.1.34",
+      date: "2026-11-05",
+      title: "Flow in English, Every Time",
+      highlights: [
+        "Google Flow now opens in English for Motion, whatever language your Google account uses. On an Arabic Flow every prompt stopped with \"Could not switch Flow to Video mode\"",
+        "A Flow tab that is not in English reloads once with ?hl=en as it opens; a tab already in English is never reloaded",
+        "Pressing Run on a Flow tab that was open before the extension updated switches that tab to English first, then starts the run. The switch used to happen after Run and cut the run off"
+      ],
+    },
+    {
+      version: "0.1.33",
+      date: "2026-11-01",
+      title: "Flow Status in the Background",
+      highlights: [
+        "Reads Flow's current status replies, so a finished or failed video is known from Flow itself",
+        "Asks Flow for a video's status directly when Flow stops checking in a background tab",
+        "Finds every clip in Flow's output list, including ones scrolled out of view",
+      ],
+    },
+    {
+      version: "0.1.32",
+      date: "2026-11-01",
+      title: "Faster Completion and Working Playback",
+      highlights: [
+        "A finished video is no longer held at Generating by an API response that only says its media URL is missing",
+        "Reuses the downloaded video for playback and ending frames instead of downloading it twice",
+        "Reload preview retrieves the saved video through the extension instead of reopening the same inaccessible link",
+        "Shows when Flow has finished and Motion is loading the video; stalled media reads now have a time limit",
+      ],
+    },
+    {
+      version: "0.1.31",
+      date: "2026-11-01",
+      title: "Keep Finished Clips",
+      highlights: [
+        "A video completed in Flow stays ready even when its preview or ending frame cannot be captured",
+        "Keeps the finished video's download link instead of asking you to generate it again",
+        "Reads the video link again when Flow mounts its player after the first check",
+      ],
+    },
+    {
+      version: "0.1.30",
+      date: "2026-10-30",
+      title: "Know What Changed",
+      highlights: [
+        "After an update, Motion opens its existing website changelog in a normal, active browser tab",
+        "Every extension reload opens a fresh changelog tab, even when the version is unchanged",
+      ],
+    },
     {
       version: "0.1.29",
       date: "2026-10-30",

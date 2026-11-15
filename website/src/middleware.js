@@ -40,7 +40,9 @@ const unlocalizedPaths = [
   '/terms',
   '/changelog',
   '/motion',
-  '/queue'
+  '/queue',
+  '/about',
+  '/contact'
 ];
 
 /* The pages above that have no [locale] twin at all, so every language gets
@@ -48,7 +50,7 @@ const unlocalizedPaths = [
    for any browser not set to English, and every one of those was a 404 in
    production (checked 2026-10-02 with Accept-Language fr, de and ar). The
    sitemap marks the same pages `englishOnly`. */
-const englishOnlyPaths = ['/studio', '/clipping', '/changelog', '/motion', '/queue'];
+const englishOnlyPaths = ['/studio', '/clipping', '/changelog', '/motion', '/queue', '/about', '/contact'];
 const isEnglishOnly = (path) =>
   englishOnlyPaths.some(p => path === p || path.startsWith(`${p}/`));
 

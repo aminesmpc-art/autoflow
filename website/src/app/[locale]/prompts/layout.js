@@ -11,6 +11,11 @@ export async function generateMetadata({ params }) {
 
   return {
     title: "AI Video Prompts Gallery — Best Midjourney, Runway & Sora Prompts | AutoFlow",
+    /* The gallery and every /prompts/{id} under it: pages of model output
+       that users chose to publish. Useful to visitors, but to a search engine
+       fifty near-identical generated pages are thin content, and they were
+       most of what the site asked Google to index. Links are still followed. */
+    robots: { index: false, follow: true },
     description: "Browse the community library of reverse-engineered AI video prompts. Discover exact image and motion prompts for Runway Gen-3, OpenAI Sora, Kling AI, Midjourney, Luma Dream Machine, and Google Veo. Free to copy and use.",
     keywords: [
       "AI video prompts",
