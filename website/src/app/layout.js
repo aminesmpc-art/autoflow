@@ -186,13 +186,10 @@ export default function RootLayout({ children }) {
           `}
         </Script>
 
-        {/* ── Google AdSense ── A plain script, as Google gives it: the AdSense
-            site check looks for it in <head>, where next/script would not put it. */}
-        <script
-          async
-          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8099080279263284"
-          crossOrigin="anonymous"
-        />
+        {/* ── Google AdSense ── Ownership only. The ad script loads on the two
+            pages that carry ads (components/AdSenseScript.js); in <head> on
+            every page, Auto ads could place ads on login and checkout. */}
+        <meta name="google-adsense-account" content="ca-pub-8099080279263284" />
 
         {/* ── Subscribe with Google (SwG) ── */}
         <Script

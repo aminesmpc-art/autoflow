@@ -1,6 +1,5 @@
 import { Fragment } from "react";
 import Link from "next/link";
-import AdUnit from "../../components/AdUnit";
 import { PRODUCTS, RELEASES } from "./releases";
 import "./changelog.css";
 
@@ -68,7 +67,6 @@ export default function Changelog({ product }) {
         <div className="container changelog-list">
           {releases.map((release, i) => (
             <Fragment key={release.version}>
-              {i === 1 && <AdUnit kind="display" />}
               <article className="changelog-release" id={`v${release.version}`}>
                 <div className="changelog-meta">
                   <a href={`#v${release.version}`} className={`changelog-version${i === 0 ? " is-latest" : ""}`}>

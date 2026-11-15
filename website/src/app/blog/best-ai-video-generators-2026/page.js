@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { getPostBySlug, getRelatedPosts, SITE_URL } from "../content";
-import AdUnit from "../../../components/AdUnit";
+import { getPostBySlug, getRelatedPosts, SITE_URL, AUTHOR } from "../content";
 
 export const dynamic = 'force-static';
 
@@ -34,7 +33,7 @@ export default function BlogPost() {
             "@type": "Article",
             headline: post.title,
             description: post.description,
-            author: { "@type": "Organization", name: "AutoFlow" },
+            author: { "@type": "Person", name: AUTHOR.name, url: AUTHOR.url },
             publisher: {
               "@type": "Organization",
               name: "AutoFlow",
@@ -73,6 +72,8 @@ export default function BlogPost() {
               <span>{new Date(post.date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</span>
               <span>·</span>
               <span>{post.readTime}</span>
+              <span>·</span>
+              <span>By <Link href="/about">{AUTHOR.name}</Link></span>
             </div>
             <div className="blog-card-tags" style={{ justifyContent: "center", marginTop: "12px" }}>
               {post.tags.map((tag) => (
@@ -181,7 +182,6 @@ export default function BlogPost() {
               <li>❌ Short clips (3-4 seconds)</li>
             </ul>
 
-            <AdUnit kind="inArticle" />
 
             <h2 id="sora">5. OpenAI Sora — Most Anticipated</h2>
             <p>
@@ -344,7 +344,6 @@ export default function BlogPost() {
               </a>
             </p>
 
-            <AdUnit kind="display" />
 
             {related.length > 0 && (
               <div className="blog-related">

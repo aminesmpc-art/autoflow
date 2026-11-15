@@ -10,6 +10,8 @@ import ProgressView from "./ProgressView";
 import Workspace from "./Workspace";
 import { Icon, displayName, outOfExtractions } from "./ui";
 import "./extractor.css";
+import AdUnit from "../../../components/AdUnit";
+import AdSenseScript from "../../../components/AdSenseScript";
 
 /* Extraction options. Mirrors ExtractionOptions in
    extractor-backend/app/extraction.py — the engine validates and falls back on
@@ -531,6 +533,7 @@ export default function ExtractorPage() {
 
   return (
     <div className="xf" style={{ minHeight: "100vh", position: "relative", paddingBottom: "40px" }}>
+      <AdSenseScript />
       {/* No z-index here: it would trap the dialogs and the refine sheet
           beneath the site header. */}
       <div className="container">
@@ -691,6 +694,8 @@ export default function ExtractorPage() {
                 </ul>
               </div>
             </div>
+
+            <AdUnit kind="display" />
 
             {/* --- FAQ Section --- */}
             <div style={{ maxWidth: "800px", margin: "0 auto" }}>

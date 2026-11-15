@@ -9,6 +9,7 @@ import UploadBox, { ToggleChip } from "../extractor/UploadBox";
 import ProgressView from "../extractor/ProgressView";
 import { Icon, displayName, outOfExtractions } from "../extractor/ui";
 import BreakdownView, { BreakdownHeader } from "./BreakdownView";
+import BreakdownGuide from "./BreakdownGuide";
 import "../extractor/extractor.css";
 
 /* "Why it works" — its own page, with no prompts on it.
@@ -52,7 +53,8 @@ export default function BreakdownPage() {
   const busy = status === "starting" || status === "processing";
 
   const start = async () => {
-    if (!ready) return;
+    // Until the session is known, a press would send a signed-in person to log in.
+    if (!ready || loading) return;
     // Signing in comes back here, to the same page, rather than to the extractor.
     if (!user || !token) {
       router.push("/login?next=/breakdown");
@@ -160,10 +162,6 @@ export default function BreakdownPage() {
     window.scrollTo({ top: 0 });
   };
 
-  if (loading) {
-    return <div className="container" style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center" }}>Loading...</div>;
-  }
-
   return (
     <div className="xf" style={{ minHeight: "100vh", paddingBottom: "80px" }}>
       <div className="container" style={{ maxWidth: status === "done" ? "1040px" : undefined }}>
@@ -218,7 +216,7 @@ export default function BreakdownPage() {
                   onStart={start}
                   ready={ready}
                   busy={busy}
-                  goLabel={user ? "Break it down" : "Sign in to start"}
+                  goLabel={user || loading ? "Break it down" : "Sign in to start"}
                 >
                   <div className="xf-opts">
                     <ToggleChip
@@ -257,6 +255,7 @@ export default function BreakdownPage() {
                 </UploadBox>
               </>
             )}
+            {(status === "idle" || status === "error") && <BreakdownGuide />}
           </>
         )}
       </div>

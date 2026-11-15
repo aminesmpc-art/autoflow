@@ -232,3 +232,11 @@ export function getCategories() {
 
 /** Base URL */
 export const SITE_URL = "https://www.auto-flow.studio";
+
+/* Who writes the guides. A named author, linked to the About page, is what
+   readers and search engines look for to judge a guide written from real use;
+   the same name the privacy policy gives as the operator. */
+export const AUTHOR = {
+  name: "amine.smpc",
+  url: `${SITE_URL}/about`,
+};

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import AdUnit from "../../components/AdUnit";
 import { ChangelogNav } from "./Changelog";
 import { PRODUCTS, RELEASES } from "./releases";
 import "./changelog.css";
@@ -84,7 +83,6 @@ export default function ChangelogPage() {
             })}
           </div>
 
-          <AdUnit kind="display" />
         </div>
       </section>
     </>

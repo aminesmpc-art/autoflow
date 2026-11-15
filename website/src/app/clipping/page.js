@@ -5,6 +5,9 @@ import "../studio/studio.css";
 import "./clipDemo.css";
 import "./clipPage.css";
 
+import AdUnit from "../../components/AdUnit";
+import AdSenseScript from "../../components/AdSenseScript";
+
 export const metadata = {
   /* `absolute` because the root layout appends "| AutoFlow — AI Video
      Automation" to every title, and this page was shipping 97 characters with
@@ -160,6 +163,7 @@ const FACTS = [
 export default function ClippingPage() {
   return (
     <>
+      <AdSenseScript />
       {/* One graph rather than four tags. HowTo is kept because it still
           describes the page honestly to anything that reads it, but Google
           stopped rendering HowTo results in 2023, so it is no longer carrying
@@ -396,6 +400,8 @@ export default function ClippingPage() {
           </div>
         </div>
       </section>
+
+      <div className="container"><AdUnit kind="display" /></div>
 
       {/* ── THE EDIT SHEET ── */}
       <section className="section">

@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import AdUnit from "../../../components/AdUnit";
 
 export default function PromptsPage() {
   const [prompts, setPrompts] = useState([]);
@@ -224,7 +223,6 @@ export default function PromptsPage() {
           </div>
         )}
 
-        {!loading && displayedPrompts.length > 0 && <AdUnit kind="display" />}
 
         {/* SEO Content Section */}
         {!loading && (

@@ -6,9 +6,10 @@ import { useEffect, useRef } from "react";
    The slot ids come from AdSense → Ads → By ad unit; a unit with no id
    renders nothing, so a page can carry <AdUnit /> before the id exists.
 
-   Ads run only on content pages: blog, prompts, FAQ, changelog (decided
-   2026-10-30). Keep them off the home, product, pricing, checkout, login
-   and dashboard pages — and exclude those pages from Auto ads in AdSense. */
+   Ads run only on the Extractor and Clipping pages (decided 2026-11-15;
+   before that, the blog, prompts, FAQ and changelog). A page with ads also
+   renders <AdSenseScript />, which loads the AdSense script there and only
+   there — keep both off every other page. */
 export const AD_CLIENT = "ca-pub-8099080279263284";
 export const AD_SLOTS = {
   display: "",

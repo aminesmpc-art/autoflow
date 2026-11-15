@@ -1,6 +1,5 @@
 import Link from "next/link";
 import CopyButton from "./CopyButton";
-import AdUnit from "../../../../components/AdUnit";
 import { locales, defaultLocale } from '../../../dictionaries';
 
 const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.auto-flow.studio/api";
@@ -233,7 +232,6 @@ export default async function PromptDetailPage({ params }) {
               </div>
             </div>
           )}
-          <AdUnit kind="display" />
 
           {/* Export for AutoFlow */}
           {extraction.shots && extraction.shots.length > 0 && (
