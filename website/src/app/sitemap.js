@@ -24,7 +24,7 @@ export default async function sitemap() {
     { path: '/clipping', lastmod: '2026-09-03' },
     { path: '/pricing', lastmod: '2026-11-13' },
     { path: '/faq', lastmod: '2026-06-19' },
-    { path: '/blog', lastmod: '2026-11-15' },
+    { path: '/blog', lastmod: '2026-11-16' },
     { path: '/about', lastmod: '2026-11-13' },
     { path: '/contact', lastmod: '2026-11-13' },
     { path: '/changelog', lastmod: '2026-06-16' },
@@ -49,6 +49,7 @@ export default async function sitemap() {
   }));
 
   const blogPosts = [
+    { slug: '/blog/viral-ai-avatar-videos-google-flow', lastmod: '2026-11-16' },
     { slug: '/blog/automate-google-flow-ai-agent', lastmod: '2026-11-15' },
     { slug: '/blog/autoflow-characters-same-face-voice', lastmod: '2026-11-15' },
     { slug: '/blog/how-to-batch-generate-ai-videos-google-flow', lastmod: '2026-11-13' },

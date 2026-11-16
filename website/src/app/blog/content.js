@@ -13,6 +13,19 @@
 
 export const posts = [
   {
+    slug: "viral-ai-avatar-videos-google-flow",
+    title: "How to Make Viral AI Avatar Videos in Google Flow (an AI Agent Does It All)",
+    description:
+      "Make a talking AI avatar in Google Flow without the clicking: an AI agent creates the character with a custom voice, writes the scenes, keeps the same face and voice in every clip, fixes refused prompts and downloads the video. The full process, step by step.",
+    date: "2026-11-16",
+    updated: "2026-11-16",
+    category: "Tutorial",
+    tags: ["ai-avatar", "google-flow-avatar", "talking-ai-avatar", "consistent-character", "ai-agent", "antigravity", "ai-health-video"],
+    image: "/screenshots/avatar/hero.webp",
+    readTime: "9 min read",
+    featured: true,
+  },
+  {
     slug: "automate-google-flow-ai-agent",
     title: "How to Automate Google Flow with an AI Agent (Antigravity, Claude Code, Codex)",
     description:

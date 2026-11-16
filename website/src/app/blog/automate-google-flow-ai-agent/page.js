@@ -344,6 +344,7 @@ export default function BlogPost() {
 
             <h2>Related guides</h2>
             <ul>
+              <li><Link href="/blog/viral-ai-avatar-videos-google-flow">How to make viral AI avatar videos in Google Flow with an agent</Link></li>
               <li><Link href="/blog/autoflow-characters-same-face-voice">AutoFlow characters: the same face and voice in every clip</Link></li>
               <li><Link href="/blog/consistent-characters-google-flow">How Flow&apos;s Characters work</Link></li>
               <li><Link href="/blog/how-to-batch-generate-ai-videos-google-flow">How to batch generate AI videos in Google Flow</Link></li>
