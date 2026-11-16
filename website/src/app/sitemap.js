@@ -50,6 +50,10 @@ export default async function sitemap() {
 
   const blogPosts = [
     { slug: '/blog/viral-ai-avatar-videos-google-flow', lastmod: '2026-11-16' },
+    { slug: '/blog/ai-claymation-google-flow', lastmod: '2026-11-16' },
+    { slug: '/blog/remake-viral-video-ai-character', lastmod: '2026-11-16' },
+    { slug: '/blog/free-ai-motion-transfer-google-flow', lastmod: '2026-11-16' },
+    { slug: '/blog/ai-videos-tiktok-shop', lastmod: '2026-11-16' },
     { slug: '/blog/automate-google-flow-ai-agent', lastmod: '2026-11-15' },
     { slug: '/blog/autoflow-characters-same-face-voice', lastmod: '2026-11-15' },
     { slug: '/blog/how-to-batch-generate-ai-videos-google-flow', lastmod: '2026-11-13' },
