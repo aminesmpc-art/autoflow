@@ -17,6 +17,8 @@ const publicPaths = [
   '/sitemap.xml',
   '/llms.txt',
   '/llms-full.txt',
+  // IndexNow (Bing, Yandex) reads its key at the bare path.
+  '/8201d29ccc75329c8396557f602b5e3c.txt',
   // Apple Pay domain verification reads
   // /.well-known/apple-developer-merchantid-domain-association at the bare
   // path. Locale-prefixing it would 404 and verification would fail.
