@@ -49,6 +49,7 @@ export default async function sitemap() {
   }));
 
   const blogPosts = [
+    { slug: '/blog/claude-code-google-flow-ai-clay-video', lastmod: '2026-11-16' },
     { slug: '/blog/viral-ai-avatar-videos-google-flow', lastmod: '2026-11-16' },
     { slug: '/blog/ai-claymation-google-flow', lastmod: '2026-11-16' },
     { slug: '/blog/remake-viral-video-ai-character', lastmod: '2026-11-16' },

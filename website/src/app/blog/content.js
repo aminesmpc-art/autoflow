@@ -13,6 +13,19 @@
 
 export const posts = [
   {
+    slug: "claude-code-google-flow-ai-clay-video",
+    title: "Claude Code + Google Flow: How an AI Agent Made a Full AI Clay Video (and the One Word Flow Refused)",
+    description:
+      "Claude Code made a whole AI clay video in Google Flow through AutoFlow: fact-checked script, three clay characters, twelve clips in Agent mode, seven miniature sets and the edit. Plus the French word that kept triggering Flow's safety filter, and how it was fixed.",
+    date: "2026-11-16",
+    updated: "2026-11-16",
+    category: "Case Study",
+    tags: ["claude-code", "google-flow", "ai-claymation", "ai-agent", "agent-mode", "google-flow-error", "youtube-automation"],
+    image: "/screenshots/black-friday/cast.webp",
+    readTime: "8 min read",
+    featured: true,
+  },
+  {
     slug: "viral-ai-avatar-videos-google-flow",
     title: "How to Make Viral AI Avatar Videos in Google Flow (an AI Agent Does It All)",
     description:
