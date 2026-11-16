@@ -36,6 +36,74 @@ export const PRODUCTS = {
 export const RELEASES = {
   queue: [
     {
+      version: "11.6",
+      date: "2026-11-15",
+      title: "Files You Can Trust, and Agent Mode",
+      highlights: [
+        "Every queue saves into its own folder, Downloads/AutoFlow/<queue>/, never a shared date folder",
+        "Each file is named for the prompt that made it, 001_<its words>.mp4, matched by the clip itself and never by its place on the page, so names no longer shift or get mixed up",
+        "A manifest.json beside the files lists each prompt, its words, whether it finished and which file it made",
+        "Downloading the same files again replaces them instead of adding (1) copies",
+        "Agent mode, for AI agents: runs like Full, always downloads, holds a prompt Flow refuses twice until the agent gives it new words, and has its own daily runs",
+        "See what an AI agent is doing: its actions in the run view's \"What happened\", an Agent tab in the panel, its prompts in Create, and image runs that show done as soon as Flow finishes",
+        "AI agents connect on newer Chrome too: switching agent control on asks Chrome for the connection it was quietly holding",
+        "Running a queue again saves only the prompts still without a file, and an upscaled size always gets the upscaled file",
+        "Images download at your Image resolution (2K when the plan has no 4K), no longer always at 1K",
+        "\"Files saved\" counts only files that really reached the folder, and \"What happened\" shows where each one went",
+      ],
+    },
+    {
+      version: "11.5",
+      date: "2026-11-15",
+      title: "See Every Clip as It Happens",
+      highlights: [
+        "The run view has a \"What happened\" list: each prompt sent, done, failed or sent again, newest first, with the time",
+        "A failed prompt shows the reason Flow gave and what to do about it: new words for a policy refusal, a wait when Flow is limiting the account",
+        "AI agents hear of each clip the moment it finishes or fails, instead of waiting for the whole queue, and can follow every run live",
+        "Each clip's result is counted as it happens, even with the panel closed. Only the result is sent: never your prompt's words",
+      ],
+    },
+    {
+      version: "11.4",
+      date: "2026-11-14",
+      title: "Several Accounts, Your Queues' Projects and a Cleaner Panel",
+      highlights: [
+        "Each queue keeps its Flow project: open it, or Scan & download its videos numbered by its prompts, from the queue card or the Library",
+        "The Library lists your queues' projects, and the Queues and Create tabs are clearer: finished queues show their progress, and Run now says which characters and chained clips the run holds",
+        "Characters made after a queue was added still get into it when it runs, and a characters project whose name did not save is found anyway",
+        "New projects get their name saved, even when the Flow tab is not in front",
+        "Works when Google Flow is in Arabic or another language",
+        "AI agents can tell your browsers apart: name each one in Settings, AI agents, and run each account on its own",
+      ],
+    },
+    {
+      version: "11.3",
+      date: "2026-11-14",
+      title: "Characters, Chains and Prompts That Fix Themselves",
+      highlights: [
+        "The Characters tab makes Flow characters for you: describe one (or let the AI writer do it), or upload a photo, which costs no credits. Pick a voice or describe how it should sound. Each character is made once, in your AutoFlow Characters project, and every queue borrows its face and voice",
+        "Write a character's name in a prompt and the run adds that character to it",
+        "Every queue gets its own Flow project, named after the queue, and its retries go back to it",
+        "Put prompts between [ and ] on their own lines and each one starts from the last frame of the clip before it, so the story continues shot to shot",
+        "A prompt Flow refuses for its policy is reworded before it is sent again, when you have a Gemini key in Settings → AI Assist. The reason Flow gave is kept with the prompt",
+        "Characters made from the side panel keep their name in Flow, so prompts find them",
+        "The download report says how many files failed instead of \"All downloaded\", and waits for Chrome to finish each file",
+        "Stop no longer leaves prompts marked as running, and the log no longer loses lines",
+        "AI agents can make characters, chain clips and give refused prompts new words, and the new Agent page shows everything an agent did",
+      ],
+    },
+    {
+      version: "11.2",
+      date: "2026-11-12",
+      title: "Let an AI Agent Run Your Queues",
+      highlights: [
+        "New in Settings: Let AI agents control AutoFlow. With it on, Claude Code, Codex, Antigravity or another AI agent on your computer can add queues, change settings and start runs for you, through the AutoFlow agent server (npx autoflow-agent). See auto-flow.studio/agents",
+        "An agent's runs use the same checks as the Run button: your daily prompts, the Full, Flow and Lite allowances, and the same counting. You see them in the panel as they happen",
+        "It is off until you switch it on, and it only accepts the agent server on your own computer",
+        "The orange Open Studio button is gone from Google Flow's page",
+      ],
+    },
+    {
       version: "11.1",
       date: "2026-11-10",
       title: "Lower Priority Works Again",
@@ -562,6 +630,16 @@ export const RELEASES = {
   ],
 
   studio: [
+    {
+      version: "1.7.8",
+      date: "2026-11-12",
+      title: "Let an AI Agent Build and Run Workflows",
+      highlights: [
+        "New in the side panel: Let AI agents control AutoFlow. With it on, Claude Code, Codex, Antigravity or another AI agent on your computer can build workflows, open templates, edit nodes, run, retry and read the results, through the AutoFlow agent server (npx autoflow-agent). See auto-flow.studio/agents",
+        "An agent builds from a plan that Studio checks with the same rules as its own builder, and its Run counts like yours. Agent connected shows in the top bar while one is",
+        "It is off until you switch it on, and it only accepts the agent server on your own computer",
+      ],
+    },
     {
       version: "1.7.7",
       date: "2026-11-11",
