@@ -36,6 +36,23 @@ export const PRODUCTS = {
 export const RELEASES = {
   queue: [
     {
+      version: "11.7",
+      date: "2026-11-19",
+      title: "Retry One Clip, Faster Runs, Agents That Hear Everything",
+      highlights: [
+        "A ↻ button on each prompt makes that one clip again and keeps the others. If later clips continue from it, you choose whether they are made again too",
+        "An image Flow did not accept (a blank chip in the prompt) is fixed in place with Flow's own @ picker, instead of being uploaded again",
+        "Characters and images already in the prompt are used as they are, not searched for again, so each prompt goes out sooner",
+        "Shorter waits between steps: the same queue finishes faster",
+        "Images with the same name are told apart, so the right one is attached each time",
+        "New in Characters: Full body. A character can get its whole body and outfit made, not only its face",
+        "When Flow refuses to make a character, the Queue Manager stops at once and says why, instead of waiting",
+        "Clips that finish after you press Stop or close the tab are still counted: the next time Google Flow opens, they are marked done or failed",
+        "AI agents hear each event the moment it happens: a clip done or failed, a character ready or refused, and problems like an account Flow is limiting or no credits left",
+        "The Agent page says when it is waiting for your AI agent, with a Connect now button",
+      ],
+    },
+    {
       version: "11.6",
       date: "2026-11-15",
       title: "Files You Can Trust, and Agent Mode",
