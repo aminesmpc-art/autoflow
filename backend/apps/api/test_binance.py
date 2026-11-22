@@ -125,6 +125,34 @@ class BinanceEndpointTests(TestCase):
         self.assertEqual(res.status_code, 401)
 
 
+class RelayTests(TestCase):
+    @override_settings(BINANCE_PAY_ID="1", BINANCE_API_KEY="", BINANCE_API_SECRET="",
+                       BINANCE_RELAY_URL="https://relay.example/api/binance-history", BINANCE_RELAY_TOKEN="t0k")
+    def test_the_relay_alone_opens_it_and_carries_the_token(self):
+        from unittest import mock
+        import io, json as _json
+        self.assertTrue(binance.enabled())
+        seen = {}
+
+        def fake(req, timeout=0):
+            seen["url"], seen["auth"], seen["body"] = req.full_url, req.headers.get("Authorization"), _json.loads(req.data)
+            return io.BytesIO(_json.dumps({"code": "000000", "success": True, "data": [record()]}).encode())
+        with mock.patch("urllib.request.urlopen", fake):
+            rows = binance.fetch_history(1, 2)
+        self.assertEqual(seen["url"], "https://relay.example/api/binance-history")
+        self.assertEqual(seen["auth"], "Bearer t0k")
+        self.assertEqual(seen["body"], {"startTime": 1, "endTime": 2})
+        self.assertEqual(rows[0]["transactionId"], "4410000000000001")
+
+    @override_settings(BINANCE_PAY_ID="1", BINANCE_RELAY_URL="https://r", BINANCE_RELAY_TOKEN="t")
+    def test_a_binance_refusal_through_the_relay_is_an_error(self):
+        from unittest import mock
+        import io, json as _json
+        with mock.patch("urllib.request.urlopen", lambda req, timeout=0: io.BytesIO(_json.dumps({"code": "-2015", "message": "Invalid API-key"}).encode())):
+            with self.assertRaises(RuntimeError):
+                binance.fetch_history(1, 2)
+
+
 class WhopEndingKeepsBinanceMonths(TestCase):
     def test_paid_months_survive_a_whop_cancellation(self):
         from apps.webhooks.services import _paid_in_binance
