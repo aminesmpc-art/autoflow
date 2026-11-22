@@ -37,6 +37,14 @@ class Profile(models.Model):
     whop_user_id = models.CharField(max_length=128, null=True, blank=True)
     whop_membership_id = models.CharField(max_length=128, null=True, blank=True)
 
+    # Suspended for running queues that skipped the free plan's checks
+    # (apps/plans/bypass.py). Every API call and sign-in refuses it.
+    suspended_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Set: the account is suspended (API and sign-in refused). Clear it to lift.",
+    )
+    suspended_reason = models.CharField(max_length=255, blank=True, default="")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

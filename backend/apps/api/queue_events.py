@@ -26,6 +26,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.api.throttles import SubmissionRateThrottle
 from apps.usage.models import UsageEvent
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,7 @@ class QueueEventsView(APIView):
     a reason to refuse the rest."""
 
     permission_classes = [IsAuthenticated]
+    throttle_classes = [SubmissionRateThrottle]
 
     def post(self, request):
         events = request.data.get("events") if isinstance(request.data, dict) else None

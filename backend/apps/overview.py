@@ -45,6 +45,7 @@ FILTERS = {
     "motion": "Use Motion",
     "over": "Over the free limit",
     "uncovered": "Uncharged prompts",
+    "suspended": "Suspended",
     "new": "Joined in this window",
 }
 
@@ -132,7 +133,7 @@ def user_rows(since, plan="all", filt="all", q="", limit=600):
 
     users = {u["id"]: u for u in CustomUser.objects.filter(id__in=list(rows)).values("id", "email", "created_at", "is_staff")}
     profiles = {p["user_id"]: p for p in Profile.objects.filter(user_id__in=list(rows)).values(
-        "user_id", "plan_type", "is_pro_active", "pro_expires_at", "last_seen_at")}
+        "user_id", "plan_type", "is_pro_active", "pro_expires_at", "last_seen_at", "suspended_at", "suspended_reason")}
 
     out = []
     for uid, row in rows.items():
@@ -150,6 +151,8 @@ def user_rows(since, plan="all", filt="all", q="", limit=600):
             "pro": pro,
             "agents": sorted(agent_names.get(uid, ())),
             "chars_now": latest_chars.get(uid),
+            "suspended": bool(prof.get("suspended_at")),
+            "suspended_reason": prof.get("suspended_reason") or "",
         })
         item["uses_agent"] = bool(item.get("agent_runs") or item.get("agent_connects") or item["agents"])
         item["over"] = (not pro) and item.get("max_day", 0) > FREE_TEXT_DAILY_LIMIT
@@ -167,6 +170,7 @@ def user_rows(since, plan="all", filt="all", q="", limit=600):
         "motion": lambda r: r.get("motion"),
         "over": lambda r: r["over"],
         "uncovered": lambda r: r.get("uncovered"),
+        "suspended": lambda r: r.get("suspended"),
         "new": lambda r: r.get("joined_in_window"),
     }.get(filt)
     if pick:
@@ -232,6 +236,7 @@ def summary(since, rows_all):
         "over_users": sum(1 for r in rows_all if r["over"]),
         "uncovered": sum(r.get("uncovered", 0) for r in rows_all),
         "uncovered_users": sum(1 for r in rows_all if r.get("uncovered")),
+        "suspended_users": sum(1 for r in rows_all if r.get("suspended")),
         "revenue": round(revenue, 2),
         "payments": payments,
     }

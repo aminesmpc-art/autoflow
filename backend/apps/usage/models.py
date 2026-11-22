@@ -166,6 +166,10 @@ class UsageEvent(models.Model):
         CHARACTER_MADE = "character_made", "Character Made"
         CHARACTER_DELETED = "character_deleted", "Character Deleted"
         AGENT_CONNECTED = "agent_connected", "AI Agent Connected"
+        # Suspended for skipping the free plan's checks, and lifted
+        # (apps/plans/bypass.py, 2026-11-22).
+        ACCOUNT_SUSPENDED = "account_suspended", "Account Suspended"
+        ACCOUNT_RESTORED = "account_restored", "Suspension Lifted"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(

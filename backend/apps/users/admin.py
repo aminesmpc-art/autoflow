@@ -21,6 +21,7 @@ class ProfileInline(StackedInline):
         ("Plan", {"fields": ("plan_type", "is_pro_active", "display_name")}),
         ("Behavior", {"fields": ("fair_use_flag", "timezone", "last_seen_at")}),
         ("Whop", {"fields": ("whop_user_id", "whop_membership_id")}),
+        ("Suspension", {"fields": ("suspended_at", "suspended_reason")}),
         ("Dates", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
 
@@ -111,7 +112,7 @@ class CustomUserAdmin(BaseUserAdmin, ModelAdmin):
     list_per_page = 25
     list_display_links = ("email_display",)
     inlines = [ProfileInline, UsageEventInline]
-    actions = ["activate_users", "deactivate_users", "grant_pro", "revoke_pro"]
+    actions = ["activate_users", "deactivate_users", "grant_pro", "revoke_pro", "suspend_users", "lift_suspension"]
 
     fieldsets = (
         (None, {
@@ -157,6 +158,12 @@ class CustomUserAdmin(BaseUserAdmin, ModelAdmin):
     def plan_badge(self, obj):
         try:
             profile = obj.profile
+            if profile.suspended_at:
+                return format_html(
+                    '<span title="{}" style="background:#7f1d1d;color:#fecaca;padding:4px 10px;'
+                    'border-radius:6px;font-size:11px;font-weight:700;">🚫 Suspended</span>',
+                    profile.suspended_reason or "Suspended",
+                )
             if profile.is_pro_active:
                 return format_html(
                     '<span style="background:linear-gradient(135deg,#065f46,#047857);'
@@ -250,6 +257,19 @@ class CustomUserAdmin(BaseUserAdmin, ModelAdmin):
             Profile.objects.filter(user=user).update(plan_type="free", is_pro_active=False)
             count += 1
         self.message_user(request, f"Pro revoked from {count} user(s).")
+
+    @admin.action(description="🚫 Suspend (skipped the free plan's checks)")
+    def suspend_users(self, request, queryset):
+        from apps.plans.bypass import suspend
+        count = sum(1 for user in queryset
+                    if suspend(user, f"Suspended by {request.user.email}", by=request.user.email))
+        self.message_user(request, f"{count} user(s) suspended. Their sign-in and API calls are refused.")
+
+    @admin.action(description="♻️ Lift suspension")
+    def lift_suspension(self, request, queryset):
+        from apps.plans.bypass import lift
+        count = sum(1 for user in queryset if lift(user, by=request.user.email))
+        self.message_user(request, f"Suspension lifted for {count} user(s).")
 
 
 @admin.register(EmailVerificationToken)

@@ -111,6 +111,8 @@ html.dark .ov { --bg:#0b0d12; --card:#12151c; --line:#232836; --ink:#e6e9f0; --m
           <span>Free accounts over {{ free_limit }} prompts in a day</span><strong>{{ s.over_users }}</strong></a>
         <a class="ov-alert {% if s.uncovered %}warn{% else %}ok{% endif %}" href="?window={{ window }}&plan={{ plan }}&filter=uncovered#who-uses-what">
           <span>Prompts Flow accepted that no queue paid for{% if s.uncovered_users %} ({{ s.uncovered_users }} account{{ s.uncovered_users|pluralize }}){% endif %}</span><strong>{{ s.uncovered }}</strong></a>
+        <a class="ov-alert {% if s.suspended_users %}bad{% else %}ok{% endif %}" href="?window={{ window }}&plan={{ plan }}&filter=suspended#who-uses-what">
+          <span>Suspended for skipping the free plan's checks</span><strong>{{ s.suspended_users }}</strong></a>
         <a class="ov-alert ok" href="?window={{ window }}&plan={{ plan }}&filter=new#who-uses-what"><span>New accounts</span><strong>{{ s.new_users }}</strong></a>
       </div>
       <div class="ov-h" style="margin-top:1.1rem">Last 14 days
@@ -146,7 +148,7 @@ html.dark .ov { --bg:#0b0d12; --card:#12151c; --line:#232836; --ink:#e6e9f0; --m
       {% for r in rows %}
         <tr>
           <td class="ov-email"><a href="{% url 'admin-overview-user' r.id %}">{{ r.email }}</a><small>joined {{ r.joined|date:"M j, Y" }}</small></td>
-          <td>{% if r.pro %}<span class="ov-tag pro">Pro</span>{% else %}<span class="ov-tag free">Free</span>{% endif %}</td>
+          <td>{% if r.pro %}<span class="ov-tag pro">Pro</span>{% else %}<span class="ov-tag free">Free</span>{% endif %}{% if r.suspended %} <span class="ov-tag bad" title="{{ r.suspended_reason }}">Suspended</span>{% endif %}</td>
           <td class="ov-dim">{% if r.last_seen %}{{ r.last_seen|naturaltime }}{% else %}—{% endif %}</td>
           <td class="num"><b>{{ r.sent|default:0 }}</b>{% if r.done %} <span class="ov-dim">/ {{ r.done }} done</span>{% endif %}</td>
           <td class="num">{% if r.over %}<span class="ov-tag bad">{{ r.max_day }}</span>{% else %}{{ r.max_day|default:"—" }}{% endif %}</td>

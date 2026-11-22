@@ -264,7 +264,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ── Django REST Framework ──
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # simplejwt's, refusing suspended accounts (apps/plans/bypass.py).
+        "apps.api.authentication.AutoFlowJWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
@@ -279,6 +280,10 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "anon": "60/minute",
         "user": "120/minute",
+        # Flow's receipts and the clip results. A busy run sends several a
+        # second; at the shared 120/minute, 333 receipts were refused on
+        # 2026-11-22 and those prompts were never counted.
+        "submissions": "600/minute",
     },
     "EXCEPTION_HANDLER": "apps.api.exceptions.custom_exception_handler",
 }

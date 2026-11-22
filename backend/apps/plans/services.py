@@ -286,11 +286,18 @@ def cover_submission(user, prompt_type: str = "text") -> dict:
                 usage.text_prompts_used += gap
             usage.save()
             charged = True
+        # Past the day on prompts nothing paid for: was it a client that
+        # never asks the server? (apps/plans/bypass.py)
+        suspended = False
+        if charged and sent > FREE_TEXT_DAILY_LIMIT:
+            from apps.plans.bypass import check_bypass
+            suspended = check_bypass(user, sent)
         return {
             "charged": charged,
             "limit_reached": sent > FREE_TEXT_DAILY_LIMIT,
             "sent_today": sent,
             "remaining": max(0, FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used),
+            "suspended": suspended,
         }
 
 

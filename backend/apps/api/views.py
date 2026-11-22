@@ -8,6 +8,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.api.throttles import SubmissionRateThrottle
+
 from apps.plans.services import (
     METER_ON_SUBMISSION,
     commit_reserved_prompt,
@@ -187,6 +189,9 @@ class LoginView(APIView):
             )
 
         cache.delete(cache_key)  # clear attempts on success
+        refused = _suspended_answer(user)
+        if refused:
+            return refused
         mark_last_seen(user)
         refresh = RefreshToken.for_user(user)
         return Response({
@@ -207,6 +212,11 @@ class RefreshTokenView(APIView):
             )
         try:
             refresh = RefreshToken(refresh_token)
+            from apps.plans.bypass import SUSPENDED_CODE, SUSPENDED_MESSAGE
+            from apps.plans.models import Profile
+            if Profile.objects.filter(user_id=refresh.get("user_id"), suspended_at__isnull=False).exists():
+                return Response({"message": SUSPENDED_MESSAGE, "code": SUSPENDED_CODE},
+                                status=status.HTTP_403_FORBIDDEN)
             return Response({
                 "access": str(refresh.access_token),
                 "refresh": str(refresh),
@@ -284,6 +294,9 @@ class GoogleLoginView(APIView):
                     except Exception as exc:
                         logger.warning("Failed to auto-link webhooks for Google user %s on activation: %s", email, exc)
 
+            refused = _suspended_answer(user)
+            if refused:
+                return refused
             # Mark user as last seen and issue SimpleJWT tokens
             mark_last_seen(user)
             refresh = RefreshToken.for_user(user)
@@ -553,6 +566,15 @@ class ConsumePromptView(APIView):
         })
 
 
+def _suspended_answer(user):
+    """A refused sign-in for a suspended account (apps/plans/bypass.py), or None."""
+    from apps.plans.bypass import SUSPENDED_CODE, SUSPENDED_MESSAGE, is_suspended
+    if user is not None and is_suspended(user):
+        return Response({"message": SUSPENDED_MESSAGE, "code": SUSPENDED_CODE},
+                        status=status.HTTP_403_FORBIDDEN)
+    return None
+
+
 class PromptSubmittedView(APIView):
     """Record that ONE prompt reached Flow and Flow accepted it.
 
@@ -585,6 +607,7 @@ class PromptSubmittedView(APIView):
     the caller which happened, so a retry is cheap and honest.
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [SubmissionRateThrottle]
 
     def post(self, request):
         media_id = str(request.data.get("media_id") or "").strip()
