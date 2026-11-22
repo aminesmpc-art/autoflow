@@ -1,0 +1,86 @@
+{% extends 'admin/base.html' %}
+{% load i18n unfold humanize %}
+
+{% block title %}{{ u.email }} | AutoFlow Admin{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block content %}
+<style>
+.ovu { --bg:#f8fafc; --card:#ffffff; --line:#e5e7eb; --ink:#0f172a; --muted:#64748b; --soft:#f1f5f9; --accent:#6d28d9; --accent-soft:#ede9fe; --bad:#b91c1c; --bad-soft:#fee2e2; --good:#047857; --good-soft:#d1fae5;
+       font-family: Inter, ui-sans-serif, system-ui, sans-serif; color:var(--ink); background:var(--bg); margin:-1.5rem -1rem; padding:1.75rem 2rem 3rem; min-height:100vh; }
+html.dark .ovu { --bg:#0b0d12; --card:#12151c; --line:#232836; --ink:#e6e9f0; --muted:#8b93a7; --soft:#181c25; --accent:#a78bfa; --accent-soft:#2a2342; --bad:#f87171; --bad-soft:#3a1616; --good:#34d399; --good-soft:#0f2e25; }
+.ovu * { box-sizing:border-box; }
+.ovu a { color:var(--accent); text-decoration:none; }
+.ovu h1 { font-size:1.4rem; font-weight:800; margin:.25rem 0; }
+.ovu .sub { color:var(--muted); font-size:.85rem; }
+.ovu .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap:.75rem; margin:1.25rem 0; }
+.ovu .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:.85rem 1rem; }
+.ovu .k { font-size:.7rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.ovu .v { font-size:1.4rem; font-weight:800; margin-top:.2rem; font-variant-numeric:tabular-nums; }
+.ovu .two { display:grid; grid-template-columns: 1fr 1.3fr; gap:1rem; }
+@media (max-width: 1100px) { .ovu .two { grid-template-columns: 1fr; } }
+.ovu table { width:100%; border-collapse:collapse; font-size:.8rem; }
+.ovu th { text-align:left; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:.5rem .6rem; border-bottom:1px solid var(--line); background:var(--soft); }
+.ovu td { padding:.45rem .6rem; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.ovu .tag { display:inline-block; padding:.1rem .45rem; border-radius:99px; font-size:.7rem; font-weight:700; }
+.ovu .bad { background:var(--bad-soft); color:var(--bad); }
+.ovu .good { background:var(--good-soft); color:var(--good); }
+.ovu .pro { background:var(--accent-soft); color:var(--accent); }
+.ovu .muted { color:var(--muted); }
+</style>
+<div class="ovu">
+  <a href="/admin/#who-uses-what">← Dashboard</a>
+  <h1>{{ u.email }}</h1>
+  <div class="sub">
+    {% if profile and profile.is_pro %}<span class="tag pro">Pro</span>{% else %}<span class="tag">Free</span>{% endif %}
+    · joined {{ u.created_at|date:"M j, Y" }}
+    {% if profile and profile.last_seen_at %} · last seen {{ profile.last_seen_at|naturaltime }}{% endif %}
+    · <a href="/admin/users/customuser/{{ u.pk }}/change/">Edit user</a>
+    {% if profile %} · <a href="/admin/plans/profile/{{ profile.pk }}/change/">Edit plan</a>{% endif %}
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="k">Accepted (30 d)</div><div class="v">{{ row.sent|default:0 }}</div></div>
+    <div class="card"><div class="k">Finished</div><div class="v">{{ row.done|default:0 }}</div></div>
+    <div class="card"><div class="k">Queue runs</div><div class="v">{{ row.runs|default:0 }}</div></div>
+    <div class="card"><div class="k">AI agent runs</div><div class="v">{{ row.agent_runs|default:0 }}</div><div class="sub">{{ row.agents|join:", "|default:"no agent seen" }}</div></div>
+    <div class="card"><div class="k">Characters</div><div class="v">{% if row.chars_now is not None %}{{ row.chars_now }}{% else %}{{ row.chars_made|default:0 }}{% endif %}</div><div class="sub">{{ row.chars_made|default:0 }} made · {{ row.chars_deleted|default:0 }} deleted</div></div>
+    <div class="card"><div class="k">Studio runs</div><div class="v">{{ row.studio|default:0 }}</div></div>
+    <div class="card"><div class="k">Motion</div><div class="v">{{ row.motion|default:0 }}</div></div>
+    <div class="card"><div class="k">Uncharged</div><div class="v">{% if row.uncovered %}<span class="tag bad">{{ row.uncovered }}</span>{% else %}0{% endif %}</div></div>
+  </div>
+
+  <div class="two">
+    <div class="card">
+      <div class="k" style="margin-bottom:.5rem">Day by day</div>
+      <table>
+        <thead><tr><th>Day</th><th>Charged</th><th>Accepted</th><th>Runs L/F/Fu/A</th><th>Downloads</th></tr></thead>
+        <tbody>
+        {% for d in days %}
+          <tr><td>{{ d.date|date:"D M j" }}</td><td>{{ d.free_prompts_used }}</td>
+              <td>{% if d.over %}<span class="tag bad">{{ d.sent }}</span>{% else %}{{ d.sent }}{% endif %}</td>
+              <td class="muted">{{ d.lite_runs_today }} / {{ d.flow_runs_today }} / {{ d.full_runs_today }} / {{ d.agent_runs_today }}</td>
+              <td>{{ d.downloads_used }}</td></tr>
+        {% empty %}<tr><td colspan="5" class="muted">No days in the last 30.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="k" style="margin-bottom:.5rem">Latest events</div>
+      <table>
+        <thead><tr><th>When</th><th>Event</th><th>Count</th><th>Queue</th><th>Detail</th></tr></thead>
+        <tbody>
+        {% for e in events %}
+          <tr><td class="muted">{{ e.created_at|date:"M j H:i" }}</td><td>{{ e.get_event_type_display }}</td><td>{{ e.prompt_count }}</td>
+              <td class="muted">{{ e.queue_id|truncatechars:12 }}</td>
+              <td class="muted">{% if e.metadata.by_agent %}<span class="tag good">agent</span> {% endif %}{% if e.metadata.uncovered %}<span class="tag bad">uncharged</span> {% endif %}{{ e.metadata.mode|default:"" }} {{ e.metadata.agent|default:"" }} {{ e.metadata.source|default:"" }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

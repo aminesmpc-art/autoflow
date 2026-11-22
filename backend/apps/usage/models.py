@@ -27,6 +27,9 @@ class DailyUsage(models.Model):
     lite_runs_today = models.PositiveIntegerField(default=0, help_text="Lite queue runs today")
     flow_runs_today = models.PositiveIntegerField(default=0, help_text="Flow queue runs today")
     full_runs_today = models.PositiveIntegerField(default=0, help_text="Full queue runs today")
+    # Agent mode (2026-11-15): runs an AI agent starts, counted apart so an
+    # agent never uses up the Full runs a person makes.
+    agent_runs_today = models.PositiveIntegerField(default=0, help_text="Agent queue runs today")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -147,11 +150,22 @@ class UsageEvent(models.Model):
         QUEUE_RUN_LITE = "queue_run_lite", "Queue Run (Lite)"
         QUEUE_RUN_FLOW = "queue_run_flow", "Queue Run (Flow)"
         QUEUE_RUN_FULL = "queue_run_full", "Queue Run (Full)"
+        QUEUE_RUN_AGENT = "queue_run_agent", "Queue Run (Agent)"
         CLIPPING_JOB_STARTED = "clipping_job_started", "Clipping Job Started"
         # Server-observed proof that one prompt reached Flow AND Flow accepted
         # it: the interceptor read a media id out of Flow's own response. This
         # is the event the dashboard's billable number should come from.
         PROMPT_SUBMITTED = "prompt_submitted", "Prompt Submitted to Flow"
+        # Each clip's result as the Queue Manager saw it happen (2026-11-15,
+        # apps/api/queue_events.py). Failed and started/finished reuse the
+        # types above; these two are new.
+        PROMPT_DONE = "prompt_done", "Prompt Done"
+        PROMPT_RETRIED = "prompt_retried", "Prompt Sent Again"
+        # For the dashboard's "who uses characters and AI agents" (2026-11-22).
+        # Sent through usage/queue-events like the clip results; no names.
+        CHARACTER_MADE = "character_made", "Character Made"
+        CHARACTER_DELETED = "character_deleted", "Character Deleted"
+        AGENT_CONNECTED = "agent_connected", "AI Agent Connected"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(

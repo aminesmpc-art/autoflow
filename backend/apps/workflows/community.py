@@ -18,16 +18,87 @@ Three things this design refuses to do:
    document before it is ever stored — the same argument as the bundle's
    validator, for a much less trusted source.
 
-2. Publish on submit. Everything lands as PENDING. Anything reaching every
-   user within seconds of a stranger pressing a button is not a feature.
+2. Publish on submit. Everything landed as PENDING — until the owner chose,
+   on 2026-10-25, a feed "like Facebook": a post goes live at once, and the
+   people reading it police it. Three reports from three different accounts
+   take it down automatically (HIDDEN) until an admin looks; a person who
+   should not post can be stopped (CommunityMember.can_post). PENDING stays
+   for rows from before that choice.
 
 3. Count a like twice. The join table carries a unique constraint rather than
    a bare integer, so a double press is a no-op at the database rather than a
    race in the view.
 """
 
+import re
+
 from django.conf import settings
 from django.db import models
+
+# Reports from this many different people hide a post until an admin decides.
+AUTO_HIDE_REPORTS = 3
+
+
+def _coord(value) -> int:
+    try:
+        return max(-100_000, min(100_000, int(round(float(value)))))
+    except (TypeError, ValueError):
+        return 0
+
+
+def outline_of(payload) -> dict:
+    """The few fields a feed card's mini map draws, taken once at save.
+
+    The list endpoint does not send payloads — forty graphs for forty cards is
+    the cost that rule exists to avoid — so the card needs its own small
+    picture of the workflow: each node's kind, label, platform and place on the
+    canvas, and which node feeds which. Nothing here is executable or needed to
+    run the workflow; the graph itself still comes with the detail request.
+    """
+    nodes = payload.get("nodes") if isinstance(payload, dict) else None
+    if not isinstance(nodes, list):
+        return {"nodes": [], "edges": []}
+    index: dict = {}
+    out = []
+    for node in nodes[:60]:
+        if not isinstance(node, dict):
+            continue
+        data = node.get("data") if isinstance(node.get("data"), dict) else {}
+        pos = node.get("position") if isinstance(node.get("position"), dict) else {}
+        index[str(node.get("id", ""))] = len(out)
+        out.append({
+            "type": str(node.get("type") or data.get("type") or "node")[:24],
+            "label": str(data.get("label") or "")[:40],
+            "platform": str(data.get("platform") or "")[:16],
+            "media": str(data.get("mediaType") or "")[:8],
+            "x": _coord(pos.get("x")),
+            "y": _coord(pos.get("y")),
+        })
+    edges = []
+    for edge in payload.get("edges") or []:
+        if not isinstance(edge, dict):
+            continue
+        source, target = index.get(str(edge.get("source"))), index.get(str(edge.get("target")))
+        if source is not None and target is not None and source != target and [source, target] not in edges:
+            edges.append([source, target])
+    return {"nodes": out, "edges": edges[:200]}
+
+
+def clean_display_name(raw) -> tuple:
+    """(name, problem). The name every post shows, chosen by its author.
+
+    Posts used to show the part of the email address before the @, which is
+    not something a public feed should print. A display name with an @ in it
+    would bring that back, and one with a link turns every post into an ad.
+    """
+    name = " ".join(str(raw or "").split())[:40]
+    if len(name) < 2:
+        return "", "Choose a display name of at least 2 characters."
+    if "@" in name:
+        return "", "A display name cannot contain @."
+    if re.search(r"https?://|www\.|\.(com|net|org|io|gg|ly)\b", name, re.I):
+        return "", "A display name cannot be a link."
+    return name, ""
 
 
 def validate_template_shape(payload) -> str:
@@ -64,7 +135,8 @@ class CommunityTemplate(models.Model):
     class Status(models.TextChoices):
         PENDING = "pending", "Pending review"
         PUBLISHED = "published", "Published"
-        REJECTED = "rejected", "Rejected"
+        HIDDEN = "hidden", "Hidden — reported, waiting for review"
+        REJECTED = "rejected", "Removed"
 
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -76,20 +148,25 @@ class CommunityTemplate(models.Model):
     author_name = models.CharField(max_length=120, blank=True)
 
     name = models.CharField(max_length=120)
-    description = models.CharField(max_length=300, blank=True)
+    # The post's caption. 300 was a card subtitle; a post says more.
+    description = models.CharField(max_length=1000, blank=True)
     category = models.CharField(max_length=60, default="Community")
     thumbnail = models.CharField(max_length=16, default="🧩")
     node_count = models.PositiveIntegerField(default=0)
 
     payload = models.JSONField(help_text="The template document the extension loads.")
+    outline = models.JSONField(default=dict, blank=True, help_text="What the feed's mini map draws (outline_of).")
 
     status = models.CharField(
-        max_length=16, choices=Status.choices, default=Status.PENDING, db_index=True
+        max_length=16, choices=Status.choices, default=Status.PUBLISHED, db_index=True
     )
     review_note = models.CharField(max_length=300, blank=True)
 
     install_count = models.PositiveIntegerField(default=0, db_index=True)
     like_count = models.PositiveIntegerField(default=0, db_index=True)
+    # Open reports — dismissed ones are not counted, so a post an admin has
+    # restored needs three NEW reports to come down again.
+    report_count = models.PositiveIntegerField(default=0, db_index=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -106,9 +183,10 @@ class CommunityTemplate(models.Model):
             nodes = self.payload.get("nodes")
             if isinstance(nodes, list):
                 self.node_count = len(nodes)
+            self.outline = outline_of(self.payload)
         super().save(*args, **kwargs)
 
-    def as_card(self, liked_by_viewer: bool = False) -> dict:
+    def as_card(self, liked_by_viewer: bool = False, mine: bool = False) -> dict:
         """What the extension's gallery needs, and nothing else.
 
         The payload is left out on purpose: a list of forty templates should
@@ -127,6 +205,9 @@ class CommunityTemplate(models.Model):
             "installs": self.install_count,
             "liked": liked_by_viewer,
             "community": True,
+            "outline": self.outline or {"nodes": [], "edges": []},
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "mine": mine,
         }
 
 
@@ -151,3 +232,62 @@ class TemplateLike(models.Model):
             models.UniqueConstraint(fields=["template", "user"], name="one_like_per_user")
         ]
         verbose_name = "Template like"
+
+
+class CommunityMember(models.Model):
+    """A person as the feed knows them: the name their posts show, and whether
+    they may post at all. Kept here rather than on the user model, because it
+    is the feed's business and nothing else reads it."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="community_member"
+    )
+    display_name = models.CharField(max_length=40, blank=True)
+    can_post = models.BooleanField(
+        default=True, help_text="Untick to stop this person posting. Their existing posts stay as they are."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Community member"
+
+    def __str__(self) -> str:
+        return self.display_name or str(self.user_id)
+
+
+class CommunityReport(models.Model):
+    """One person reporting one post, once.
+
+    Unique per (post, person) at the database, for the same reason likes are:
+    three reports have to mean three people, or one angry account could take
+    anything down by pressing the button three times.
+    """
+
+    class Reason(models.TextChoices):
+        SEXUAL = "sexual", "Sexual content"
+        VIOLENCE = "violence", "Violence or hate"
+        SPAM = "spam", "Spam or scam"
+        STOLEN = "stolen", "Stolen work"
+        OTHER = "other", "Something else"
+
+    template = models.ForeignKey(CommunityTemplate, on_delete=models.CASCADE, related_name="reports")
+    reporter = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="template_reports"
+    )
+    reason = models.CharField(max_length=16, choices=Reason.choices, default=Reason.OTHER)
+    note = models.CharField(max_length=300, blank=True)
+    # Set when an admin restores the post, so these stop counting toward the
+    # next automatic hide.
+    dismissed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["template", "reporter"], name="one_report_per_user")
+        ]
+        verbose_name = "Community report"
+
+    def __str__(self) -> str:
+        return f"{self.get_reason_display()} — {self.template_id}"

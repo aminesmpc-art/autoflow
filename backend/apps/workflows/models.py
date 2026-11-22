@@ -92,4 +92,4 @@ class TemplateBundle(models.Model):
 # Community templates live in their own module — a row per submission, with an
 # author and counts, rather than one blob replaced on every publish. Imported
 # here so Django's app registry finds them.
-from .community import CommunityTemplate, TemplateLike  # noqa: E402,F401
+from .community import CommunityMember, CommunityReport, CommunityTemplate, TemplateLike  # noqa: E402,F401

@@ -6,6 +6,7 @@ from django.utils import timezone
 from apps.plans.services import sync_profile_plan
 from apps.users.models import CustomUser
 from apps.webhooks.models import WebhookEvent
+from apps.motion.billing import studio_event_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,10 @@ def process_whop_webhook(event: WebhookEvent):
     payload = event.raw_payload
     event_type = event.event_type
 
+    if not studio_event_allowed(payload):
+        logger.warning("Non-Studio or ambiguous Whop event held: %s", event.id)
+        return
+
     try:
         extracted = _extract_whop_payload(payload)
         user_email = extracted["email"]
@@ -197,6 +202,8 @@ def link_pending_webhooks_for_user(user: CustomUser):
 
     linked_count = 0
     for event in unprocessed:
+        if not studio_event_allowed(event.raw_payload):
+            continue
         extracted = _extract_whop_payload(event.raw_payload)
         if extracted["email"] and extracted["email"] == user.email.lower().strip():
             event.linked_user = user

@@ -157,31 +157,90 @@ def _shape_problem(payload) -> str:
 
 
 # ── Community templates ──
-# A moderation queue, not an editor. The payload is a node graph authored in
-# the extension; the only decisions worth making here are publish, reject, and
-# what the gallery calls it.
-from .community import CommunityTemplate, TemplateLike  # noqa: E402
+# A moderation queue, not an editor. Posts are live the moment they are made
+# (2026-10-25), so the job here is the reported ones: restore, remove, or stop
+# the person posting. The payload is a node graph authored in the extension
+# and is never edited here.
+from unfold.admin import TabularInline  # noqa: E402
+
+from .community import (  # noqa: E402
+    CommunityMember,
+    CommunityReport,
+    CommunityTemplate,
+    TemplateLike,
+)
+
+
+class ReportedFilter(admin.SimpleListFilter):
+    title = "reports"
+    parameter_name = "reported"
+
+    def lookups(self, request, model_admin):
+        return (("open", "Has open reports"), ("hidden", "Hidden by reports"))
+
+    def queryset(self, request, queryset):
+        if self.value() == "open":
+            return queryset.filter(report_count__gt=0)
+        if self.value() == "hidden":
+            return queryset.filter(status=CommunityTemplate.Status.HIDDEN)
+        return queryset
+
+
+class ReportInline(TabularInline):
+    model = CommunityReport
+    extra = 0
+    can_delete = False
+    fields = ("reason", "note", "reporter", "dismissed", "created_at")
+    readonly_fields = fields
 
 
 @admin.register(CommunityTemplate)
 class CommunityTemplateAdmin(ModelAdmin):
-    list_display = ("name", "author_name", "status", "node_count", "like_count", "install_count", "created_at")
-    list_filter = ("status", "category")
+    list_display = ("name", "author_name", "status", "report_count", "node_count", "like_count",
+                    "install_count", "created_at")
+    list_filter = (ReportedFilter, "status", "category")
     search_fields = ("name", "description", "author_name")
-    readonly_fields = ("node_count", "like_count", "install_count", "created_at", "updated_at", "payload")
-    actions = ("approve", "reject")
-    # Newest pending first: the queue is the job, the leaderboard is not.
-    ordering = ("status", "-created_at")
+    readonly_fields = ("node_count", "like_count", "install_count", "report_count", "created_at",
+                       "updated_at", "outline", "payload")
+    inlines = (ReportInline,)
+    actions = ("restore", "remove", "stop_posting")
+    # "hidden" sorts first: the reported posts are the queue.
+    ordering = ("status", "-report_count", "-created_at")
 
-    @admin.action(description="Publish — visible to every user")
-    def approve(self, request, queryset):
-        n = queryset.update(status=CommunityTemplate.Status.PUBLISHED)
-        messages.success(request, f"Published {n} template(s). They appear in the gallery on the next refresh.")
+    @admin.action(description="Restore — show in the feed, dismiss its reports")
+    def restore(self, request, queryset):
+        ids = list(queryset.values_list("pk", flat=True))
+        CommunityReport.objects.filter(template_id__in=ids, dismissed=False).update(dismissed=True)
+        n = queryset.update(status=CommunityTemplate.Status.PUBLISHED, report_count=0)
+        messages.success(request, f"Restored {n} post(s). Its reports are dismissed; three new ones would hide it again.")
 
-    @admin.action(description="Reject — hide from the gallery")
-    def reject(self, request, queryset):
+    @admin.action(description="Remove — take out of the feed for good")
+    def remove(self, request, queryset):
         n = queryset.update(status=CommunityTemplate.Status.REJECTED)
-        messages.info(request, f"Rejected {n} template(s).")
+        messages.info(request, f"Removed {n} post(s).")
+
+    @admin.action(description="Stop these authors posting")
+    def stop_posting(self, request, queryset):
+        authors = set(queryset.values_list("author_id", flat=True))
+        for author_id in authors:
+            CommunityMember.objects.update_or_create(user_id=author_id, defaults={"can_post": False})
+        messages.warning(request, f"{len(authors)} author(s) can no longer post. Their other posts are unchanged.")
+
+
+@admin.register(CommunityReport)
+class CommunityReportAdmin(ModelAdmin):
+    list_display = ("template", "reason", "reporter", "dismissed", "created_at")
+    list_filter = ("reason", "dismissed")
+    search_fields = ("template__name", "note")
+    readonly_fields = ("template", "reporter", "reason", "note", "created_at")
+
+
+@admin.register(CommunityMember)
+class CommunityMemberAdmin(ModelAdmin):
+    list_display = ("display_name", "user", "can_post", "created_at")
+    list_filter = ("can_post",)
+    search_fields = ("display_name", "user__email")
+    readonly_fields = ("user", "created_at", "updated_at")
 
 
 @admin.register(TemplateLike)

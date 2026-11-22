@@ -1,0 +1,170 @@
+{% load humanize %}
+{% comment %}Who uses what: every user and what each one uses (apps/overview.py), on the admin home itself (the owner asked for the existing dashboard improved, 2026-11-22). Data from overview_context, added by dashboard_callback.{% endcomment %}
+<style>
+.ov { --bg:#f8fafc; --card:#ffffff; --line:#e5e7eb; --ink:#0f172a; --muted:#64748b; --soft:#f1f5f9;
+      --accent:#6d28d9; --accent-soft:#ede9fe; --good:#047857; --good-soft:#d1fae5; --warn:#b45309; --warn-soft:#fef3c7;
+      --bad:#b91c1c; --bad-soft:#fee2e2; --blue:#1d4ed8; --blue-soft:#dbeafe;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; color: var(--ink);
+      margin: 0 0 2rem; }
+html.dark .ov { --bg:#0b0d12; --card:#12151c; --line:#232836; --ink:#e6e9f0; --muted:#8b93a7; --soft:#181c25;
+      --accent:#a78bfa; --accent-soft:#2a2342; --good:#34d399; --good-soft:#0f2e25; --warn:#fbbf24; --warn-soft:#33270b;
+      --bad:#f87171; --bad-soft:#3a1616; --blue:#93c5fd; --blue-soft:#172338; }
+.ov * { box-sizing: border-box; }
+.ov a { color: inherit; text-decoration: none; }
+.ov-top { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:1rem; margin-bottom:1.25rem; }
+.ov-top h1 { font-size:1.6rem; font-weight:800; letter-spacing:-.02em; margin:0; }
+.ov-top p { color:var(--muted); font-size:.85rem; margin:.25rem 0 0; }
+.ov-seg { display:inline-flex; background:var(--soft); border:1px solid var(--line); border-radius:10px; padding:3px; }
+.ov-seg a { padding:.4rem .8rem; border-radius:8px; font-size:.8rem; font-weight:600; color:var(--muted); }
+.ov-seg a.on { background:var(--card); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+.ov-grid { display:grid; gap:.9rem; margin-bottom:1rem; }
+.ov-g6 { grid-template-columns: repeat(6, minmax(0,1fr)); }
+.ov-g3 { grid-template-columns: 2fr 1fr; }
+@media (max-width: 1300px) { .ov-g6 { grid-template-columns: repeat(3, minmax(0,1fr)); } .ov-g3 { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .ov-g6 { grid-template-columns: repeat(2, minmax(0,1fr)); } .ov { padding: 1rem; } }
+.ov-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:1rem 1.1rem; }
+.ov-k { font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+.ov-v { font-size:1.75rem; font-weight:800; letter-spacing:-.02em; margin-top:.3rem; font-variant-numeric: tabular-nums; }
+.ov-sub { font-size:.78rem; color:var(--muted); margin-top:.15rem; }
+.ov-h { font-size:.95rem; font-weight:800; margin:0 0 .8rem; display:flex; align-items:center; justify-content:space-between; }
+.ov-h small { font-weight:500; color:var(--muted); font-size:.78rem; }
+.ov-adopt { display:grid; gap:.65rem; }
+.ov-arow { display:grid; grid-template-columns: 9rem 1fr 6.5rem; align-items:center; gap:.75rem; font-size:.84rem; }
+.ov-arow b { font-variant-numeric: tabular-nums; text-align:right; }
+.ov-bar { height:10px; background:var(--soft); border-radius:99px; overflow:hidden; }
+.ov-bar i { display:block; height:100%; background:var(--accent); border-radius:99px; }
+.ov-alerts { display:grid; gap:.6rem; }
+.ov-alert { display:flex; align-items:center; justify-content:space-between; gap:.75rem; border-radius:12px; padding:.8rem .9rem; font-size:.84rem; border:1px solid transparent; }
+.ov-alert.bad { background:var(--bad-soft); color:var(--bad); }
+.ov-alert.warn { background:var(--warn-soft); color:var(--warn); }
+.ov-alert.ok { background:var(--good-soft); color:var(--good); }
+.ov-alert strong { font-size:1.15rem; }
+.ov-chart { display:grid; grid-template-columns: repeat(14, 1fr); gap:6px; align-items:end; height:120px; margin-top:.5rem; }
+.ov-col { display:flex; flex-direction:column; justify-content:flex-end; height:100%; position:relative; }
+.ov-col span { display:block; background:var(--accent); border-radius:5px 5px 2px 2px; min-height:2px; }
+.ov-col .ag { background:var(--good); margin-top:2px; }
+.ov-days { display:grid; grid-template-columns: repeat(14, 1fr); gap:6px; font-size:.65rem; color:var(--muted); text-align:center; margin-top:.35rem; }
+.ov-legend { display:flex; gap:1rem; font-size:.75rem; color:var(--muted); }
+.ov-legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:.35rem; vertical-align:-1px; }
+.ov-tools { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; margin:1.25rem 0 .75rem; }
+.ov-chip { padding:.38rem .75rem; border-radius:99px; border:1px solid var(--line); background:var(--card); font-size:.78rem; font-weight:600; color:var(--muted); }
+.ov-chip.on { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+.ov-search { margin-left:auto; display:flex; gap:.5rem; }
+.ov-search input, .ov-search select { background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:9px; padding:.42rem .7rem; font-size:.82rem; }
+.ov-search button { background:var(--accent); color:#fff; border:0; border-radius:9px; padding:.42rem .9rem; font-weight:700; font-size:.8rem; cursor:pointer; }
+.ov-tablewrap { background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:auto; }
+.ov-table { width:100%; border-collapse:collapse; font-size:.82rem; min-width: 1100px; }
+.ov-table th { position:sticky; top:0; background:var(--soft); text-align:left; font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:.6rem .7rem; border-bottom:1px solid var(--line); white-space:nowrap; }
+.ov-table td { padding:.6rem .7rem; border-bottom:1px solid var(--line); vertical-align:middle; white-space:nowrap; font-variant-numeric: tabular-nums; }
+.ov-table tr:hover td { background:var(--soft); }
+.ov-table .num { text-align:right; }
+.ov-email { font-weight:700; }
+.ov-email small { display:block; font-weight:400; color:var(--muted); font-size:.72rem; }
+.ov-tag { display:inline-block; padding:.12rem .5rem; border-radius:99px; font-size:.7rem; font-weight:700; }
+.ov-tag.pro { background:var(--accent-soft); color:var(--accent); }
+.ov-tag.free { background:var(--soft); color:var(--muted); }
+.ov-tag.bad { background:var(--bad-soft); color:var(--bad); }
+.ov-tag.good { background:var(--good-soft); color:var(--good); }
+.ov-tag.blue { background:var(--blue-soft); color:var(--blue); }
+.ov-dim { color:var(--muted); }
+.ov-modes { font-size:.72rem; color:var(--muted); }
+</style>
+<div class="ov" id="who-uses-what">
+  <div class="ov-top">
+    <div>
+      <div class="af-section-title" style="margin-bottom:.35rem"><span class="material-symbols-outlined" style="font-size: 18px;">groups</span> Users &amp; what they use</div>
+      <p>Since {{ since|date:"M j, H:i" }} UTC. Free: {{ free_limit }} prompts and {{ agent_limit }} AI-agent runs a day, 3 characters.</p>
+    </div>
+    <div class="ov-seg">
+      {% for key, label in windows %}<a href="?window={{ key }}&plan={{ plan }}&filter={{ filter }}&q={{ q|urlencode }}#who-uses-what" class="{% if window == key %}on{% endif %}">{{ label }}</a>{% endfor %}
+    </div>
+  </div>
+
+  <div class="ov-grid ov-g6">
+    <div class="ov-card"><div class="ov-k">New accounts</div><div class="ov-v">{{ s.new_users|intcomma }}</div><div class="ov-sub">{{ s.pro_users }} Pro of {{ s.total_users|intcomma }} users</div></div>
+    <div class="ov-card"><div class="ov-k">Active</div><div class="ov-v">{{ s.active|intcomma }}</div><div class="ov-sub">used AutoFlow in this period</div></div>
+    <div class="ov-card"><div class="ov-k">Prompts accepted</div><div class="ov-v">{{ s.sent|intcomma }}</div><div class="ov-sub">{{ s.done|intcomma }} finished · {{ s.runs|intcomma }} queue runs</div></div>
+    <div class="ov-card"><div class="ov-k">AI agents</div><div class="ov-v">{{ s.agent_users }}</div><div class="ov-sub">users · {{ s.agent_runs }} agent runs</div></div>
+    <div class="ov-card"><div class="ov-k">Characters</div><div class="ov-v">{{ s.char_users }}</div><div class="ov-sub">users · {{ s.chars_made }} made</div></div>
+    <div class="ov-card"><div class="ov-k">Payments</div><div class="ov-v">${{ s.revenue|floatformat:2|intcomma }}</div><div class="ov-sub">{{ s.payments }} payment{{ s.payments|pluralize }}</div></div>
+  </div>
+
+  <div class="ov-grid ov-g3">
+    <div class="ov-card">
+      <div class="ov-h">Who uses what <small>of {{ s.active }} active users</small></div>
+      <div class="ov-adopt">
+        {% with total=s.active|default:1 %}
+        <a class="ov-arow" href="?window={{ window }}&plan={{ plan }}&filter=agents#who-uses-what"><span>AI agents</span><span class="ov-bar"><i style="width: {% widthratio s.agent_users total 100 %}%"></i></span><b>{{ s.agent_users }}</b></a>
+        <a class="ov-arow" href="?window={{ window }}&plan={{ plan }}&filter=no_agents#who-uses-what"><span>No agent</span><span class="ov-bar"><i style="width: {% widthratio s.no_agent_users total 100 %}%; background: var(--muted)"></i></span><b>{{ s.no_agent_users }}</b></a>
+        <a class="ov-arow" href="?window={{ window }}&plan={{ plan }}&filter=characters#who-uses-what"><span>Characters</span><span class="ov-bar"><i style="width: {% widthratio s.char_users total 100 %}%"></i></span><b>{{ s.char_users }}</b></a>
+        <a class="ov-arow" href="?window={{ window }}&plan={{ plan }}&filter=studio#who-uses-what"><span>Studio</span><span class="ov-bar"><i style="width: {% widthratio s.studio_users total 100 %}%"></i></span><b>{{ s.studio_users }}</b></a>
+        <a class="ov-arow" href="?window={{ window }}&plan={{ plan }}&filter=motion#who-uses-what"><span>Motion</span><span class="ov-bar"><i style="width: {% widthratio s.motion_users total 100 %}%"></i></span><b>{{ s.motion_users }}</b></a>
+        <div class="ov-arow"><span>Extractor</span><span class="ov-bar"><i style="width: {% widthratio s.extract_users total 100 %}%"></i></span><b>{{ s.extract_users }}</b></div>
+        <div class="ov-arow"><span>Clipping</span><span class="ov-bar"><i style="width: {% widthratio s.clip_users total 100 %}%"></i></span><b>{{ s.clip_users }}</b></div>
+        {% endwith %}
+      </div>
+    </div>
+    <div class="ov-card">
+      <div class="ov-h">Needs a look</div>
+      <div class="ov-alerts">
+        <a class="ov-alert {% if s.over_users %}bad{% else %}ok{% endif %}" href="?window={{ window }}&plan={{ plan }}&filter=over#who-uses-what">
+          <span>Free accounts over {{ free_limit }} prompts in a day</span><strong>{{ s.over_users }}</strong></a>
+        <a class="ov-alert {% if s.uncovered %}warn{% else %}ok{% endif %}" href="?window={{ window }}&plan={{ plan }}&filter=uncovered#who-uses-what">
+          <span>Prompts Flow accepted that no queue paid for{% if s.uncovered_users %} ({{ s.uncovered_users }} account{{ s.uncovered_users|pluralize }}){% endif %}</span><strong>{{ s.uncovered }}</strong></a>
+        <a class="ov-alert ok" href="?window={{ window }}&plan={{ plan }}&filter=new#who-uses-what"><span>New accounts</span><strong>{{ s.new_users }}</strong></a>
+      </div>
+      <div class="ov-h" style="margin-top:1.1rem">Last 14 days
+        <span class="ov-legend"><span><i style="background:var(--accent)"></i>accepted</span><span><i style="background:var(--good)"></i>agent runs</span></span></div>
+      <div class="ov-chart">
+        {% for d in series %}<div class="ov-col" title="{{ d.day|date:'M j' }}: {{ d.sent }} accepted, {{ d.active }} active, {{ d.agent }} agent runs, {{ d.new }} new">
+          <span style="height: {{ d.sent_pct }}%"></span><span class="ag" style="height: {{ d.agent_pct }}%"></span></div>{% endfor %}
+      </div>
+      <div class="ov-days">{% for d in series %}<span>{{ d.day|date:"j" }}</span>{% endfor %}</div>
+    </div>
+  </div>
+
+  <form class="ov-tools" method="get" action="#who-uses-what">
+    <input type="hidden" name="window" value="{{ window }}">
+    {% for key, label in filters %}<a class="ov-chip {% if filter == key %}on{% endif %}" href="?window={{ window }}&plan={{ plan }}&filter={{ key }}&q={{ q|urlencode }}#who-uses-what">{{ label }}</a>{% endfor %}
+    <span class="ov-search">
+      <input type="hidden" name="filter" value="{{ filter }}">
+      <select name="plan"><option value="all" {% if plan == 'all' %}selected{% endif %}>All plans</option><option value="free" {% if plan == 'free' %}selected{% endif %}>Free</option><option value="pro" {% if plan == 'pro' %}selected{% endif %}>Pro</option></select>
+      <input type="search" name="q" value="{{ q }}" placeholder="Search email">
+      <button type="submit">Show</button>
+    </span>
+  </form>
+
+  <div class="ov-tablewrap">
+    <table class="ov-table">
+      <thead><tr>
+        <th>User</th><th>Plan</th><th>Last seen</th>
+        <th class="num">Accepted</th><th class="num">Busiest day</th><th class="num">Queue runs</th>
+        <th>AI agent</th><th class="num">Characters</th><th class="num">Studio</th><th class="num">Motion</th>
+        <th class="num">Extract</th><th class="num">Clips</th><th class="num">Downloads</th><th class="num">Uncharged</th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="ov-email"><a href="{% url 'admin-overview-user' r.id %}">{{ r.email }}</a><small>joined {{ r.joined|date:"M j, Y" }}</small></td>
+          <td>{% if r.pro %}<span class="ov-tag pro">Pro</span>{% else %}<span class="ov-tag free">Free</span>{% endif %}</td>
+          <td class="ov-dim">{% if r.last_seen %}{{ r.last_seen|naturaltime }}{% else %}—{% endif %}</td>
+          <td class="num"><b>{{ r.sent|default:0 }}</b>{% if r.done %} <span class="ov-dim">/ {{ r.done }} done</span>{% endif %}</td>
+          <td class="num">{% if r.over %}<span class="ov-tag bad">{{ r.max_day }}</span>{% else %}{{ r.max_day|default:"—" }}{% endif %}</td>
+          <td class="num">{{ r.runs|default:"—" }}{% if r.runs %}<div class="ov-modes">L{{ r.runs_lite|default:0 }} · F{{ r.runs_flow|default:0 }} · Fu{{ r.runs_full|default:0 }} · A{{ r.runs_agent|default:0 }}</div>{% endif %}</td>
+          <td>{% if r.uses_agent %}<span class="ov-tag good">{% if r.agent_runs %}{{ r.agent_runs }} run{{ r.agent_runs|pluralize }}{% else %}connected{% endif %}</span>{% for a in r.agents %} <span class="ov-tag blue">{{ a }}</span>{% endfor %}{% else %}<span class="ov-dim">No</span>{% endif %}</td>
+          <td class="num">{% if r.chars_now is not None %}{{ r.chars_now }}{% elif r.chars_made %}{{ r.chars_made }} made{% else %}—{% endif %}</td>
+          <td class="num">{{ r.studio|default:"—" }}</td>
+          <td class="num">{{ r.motion|default:"—" }}</td>
+          <td class="num">{{ r.extractions|default:"—" }}</td>
+          <td class="num">{{ r.clipping|default:"—" }}</td>
+          <td class="num">{{ r.downloads|default:"—" }}</td>
+          <td class="num">{% if r.uncovered %}<span class="ov-tag bad">{{ r.uncovered }}</span>{% else %}—{% endif %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="14" class="ov-dim" style="padding:2rem; text-align:center">Nobody matches.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="ov-sub" style="margin-top:.6rem">{{ matched }} account{{ matched|pluralize }} match{% if matched > rows|length %}, showing the top {{ rows|length }} · <a href="?window={{ window }}&plan={{ plan }}&filter={{ filter }}&q={{ q|urlencode }}&rows=all#who-uses-what" style="color:var(--accent);font-weight:700">Show all {{ matched }}</a>{% endif %}. Sorted by prompts accepted. "Characters" is the count the extension last reported.</p>
+</div>

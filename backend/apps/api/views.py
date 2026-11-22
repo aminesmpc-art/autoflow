@@ -634,11 +634,22 @@ class PromptSubmittedView(APIView):
         # not charge a second time — which is the whole reason the identity
         # lives in a unique index rather than in application code.
         charged = False
+        cover = None
         if created and METER_ON_SUBMISSION:
             charged = commit_reserved_prompt(
                 request.user, queue_id=queue_id, prompt_type=prompt_type)
             event.metadata["charged"] = True
             event.save(update_fields=["metadata"])
+        elif created:
+            # Hold the day's count at least at what Flow accepted (see
+            # cover_submission). A prompt no queue charge paid for is charged
+            # here and marked, so the dashboard can name the accounts.
+            from apps.plans.services import cover_submission
+            cover = cover_submission(request.user, prompt_type=prompt_type)
+            if cover["charged"]:
+                charged = True
+                event.metadata["uncovered"] = True
+                event.save(update_fields=["metadata"])
 
         # The outcome rides on the SAME row rather than a second event.
         #
@@ -658,9 +669,13 @@ class PromptSubmittedView(APIView):
             "queue_id": event.queue_id,
             "prompt_index": event.prompt_index,
             "outcome": event.metadata.get("outcome"),
-            # Whether THIS call moved the meter. False while the switch is
-            # off, which is how it ships — see METER_ON_SUBMISSION.
+            # Whether THIS call moved the meter: the reservation commit under
+            # METER_ON_SUBMISSION, or a prompt nothing had paid for.
             "charged": charged,
+            # Past a free account's daily prompts: the extension stops the
+            # queue (Queue 11.9 and later; older ones ignore it).
+            "limit_reached": bool(cover and cover["limit_reached"]),
+            "remaining": cover["remaining"] if cover else None,
         })
 
 
@@ -723,9 +738,9 @@ class ConsumeQueueRunView(APIView):
 
     def post(self, request):
         mode = request.data.get("mode", "lite")
-        if mode not in ("lite", "flow", "full"):
+        if mode not in ("lite", "flow", "full", "agent"):
             return Response(
-                {"detail": f"Invalid mode: {mode}. Must be lite, flow, or full."},
+                {"detail": f"Invalid mode: {mode}. Must be lite, flow, full or agent."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         prompt_count = int(request.data.get("prompt_count", 1))
@@ -745,10 +760,13 @@ class ConsumeQueueRunView(APIView):
         # be taken twice if the start is retried. Optional: an extension older
         # than this simply gets a generated one, which expires on its own.
         queue_id = str(request.data.get("queue_id") or "").strip()[:128]
+        # Started by an AI agent (autoflow-agent): counts against the free
+        # agent allowance whatever the mode. Older extensions never send it.
+        by_agent = request.data.get("agent") in (True, "true", "1", 1)
         result = consume_queue_run(
             request.user, mode=mode, prompt_count=prompt_count,
             prompt_type=prompt_type, text_count=text_count, full_count=full_count,
-            queue_id=queue_id,
+            queue_id=queue_id, by_agent=by_agent,
         )
         http_status = status.HTTP_200_OK if result["allowed"] else status.HTTP_403_FORBIDDEN
         return Response(result, status=http_status)
@@ -770,7 +788,8 @@ class ConsumeStudioRunView(APIView):
             )
         from apps.plans.services import consume_studio_run
         result = consume_studio_run(
-            request.user, node_count=node_count, generate_count=generate_count
+            request.user, node_count=node_count, generate_count=generate_count,
+            by_agent=request.data.get("agent") in (True, "true", "1", 1),
         )
         http_status = status.HTTP_200_OK if result["allowed"] else status.HTTP_403_FORBIDDEN
         return Response(result, status=http_status)
@@ -1031,7 +1050,8 @@ class PublicExtractionsView(APIView):
         # sitemap, so an unfiltered queryset published — and had Google index —
         # every saved extraction, including private uploads.
         extractions = (
-            SavedExtraction.objects.filter(is_public=True)
+            # Only prompt extractions: the gallery is a prompt library.
+            SavedExtraction.objects.filter(is_public=True, kind="prompts")
             .order_by("-created_at")[:50]
         )
         serializer = SavedExtractionSerializer(extractions, many=True)
@@ -1047,36 +1067,36 @@ class PublicExtractionDetailView(APIView):
         from django.shortcuts import get_object_or_404
         
         # Unfiltered, this served any extraction by id to anyone who guessed one.
-        extraction = get_object_or_404(SavedExtraction, pk=pk, is_public=True)
+        extraction = get_object_or_404(SavedExtraction, pk=pk, is_public=True, kind="prompts")
         serializer = SavedExtractionSerializer(extraction)
         return Response(serializer.data)
 
 
-def extraction_limit_state(user) -> dict:
-    """Current extraction quota for a user.
-
-    Shared by the pre-flight check and the create endpoint so the two can never
-    disagree — the browser check is advisory, and before this was shared the
-    create path enforced nothing at all.
-    """
-    from apps.extractions.models import SavedExtraction
+def extraction_period(user):
+    """The allowance and the moment its period began, for a user's plan."""
     from django.utils import timezone
 
     profile = getattr(user, "profile", None)
     is_pro = profile.is_pro if profile else False
     now = timezone.now()
+    if is_pro:
+        # PRO: 20 per day
+        return is_pro, 20, "day", now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # FREE: 4 per month
+    return is_pro, 4, "month", now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    # FREE: 1 per day (was 4 per month). PRO: 20 per day. The day is UTC.
-    # Only a new analysis creates a SavedExtraction, so reopening one already
-    # saved costs nothing.
-    limit, period = (20 if is_pro else 1), "day"
-    count = SavedExtraction.objects.filter(
-        user=user,
-        created_at__year=now.year,
-        created_at__month=now.month,
-        created_at__day=now.day,
-    ).count()
 
+def extraction_limit_state(user) -> dict:
+    """Current extraction quota for a user.
+
+    Shared by the pre-flight check, the create endpoint and the reservation, so
+    none of them can disagree. Counted in extractions weighted by length —
+    every ten analysed minutes is one; see apps/extractions/services.py.
+    """
+    from apps.extractions.services import SECONDS_PER_UNIT, units_used
+
+    is_pro, limit, period, since = extraction_period(user)
+    count = units_used(user, since)
     return {
         "allowed": count < limit,
         "used": count,
@@ -1084,7 +1104,66 @@ def extraction_limit_state(user) -> dict:
         "remaining": max(0, limit - count),
         "period": period,
         "is_pro": is_pro,
+        "minutes_per_extraction": SECONDS_PER_UNIT // 60,
     }
+
+
+class ReserveExtractionView(APIView):
+    """Charge a job before the extractor does any model work.
+
+    Called by the extractor, never by the browser, with the user's own token.
+    Idempotent on the job id, like the clipping reservation next to it.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from apps.extractions.services import reserve, units_for
+
+        key = request.data.get("idempotency_key")
+        if not isinstance(key, str) or not key.strip() or len(key) > 128:
+            return Response({"detail": "idempotency_key is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            seconds = float(request.data.get("seconds") or 0)
+        except (TypeError, ValueError):
+            return Response({"detail": "seconds must be a number."}, status=status.HTTP_400_BAD_REQUEST)
+        kind = request.data.get("kind") if request.data.get("kind") in {"prompts", "breakdown"} else "prompts"
+
+        is_pro, limit, period, since = extraction_period(request.user)
+        state = reserve(request.user, key=key.strip(), seconds=seconds, kind=kind, limit=limit, since=since)
+        state.update(period=period, is_pro=is_pro)
+        if not state["allowed"]:
+            units = units_for(seconds)
+            minutes = round(seconds / 60)
+            weight = (
+                f"This video is about {minutes} minutes, which counts as {units} extractions "
+                f"(one per 10 minutes analysed). "
+                if units > 1 else ""
+            )
+            left = state["remaining"]
+            state["detail"] = (
+                f"{weight}You have {left} extraction{'' if left == 1 else 's'} left this {period}. "
+                + ("Analyse a shorter section, or come back " + ("tomorrow." if period == "day" else "next month.")
+                   if units > 1 and left > 0 else
+                   ("Upgrade to Pro for 20 extractions a day." if not is_pro else "Please try again tomorrow."))
+            )
+            return Response(state, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        return Response(state, status=status.HTTP_201_CREATED if state["charged"] else status.HTTP_200_OK)
+
+
+class ReleaseExtractionView(APIView):
+    """Give a failed job's extractions back."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from apps.extractions.services import release
+
+        key = request.data.get("idempotency_key")
+        if not isinstance(key, str) or not key.strip():
+            return Response({"detail": "idempotency_key is required."}, status=status.HTTP_400_BAD_REQUEST)
+        released = release(request.user, key=key.strip())
+        return Response({"released": released, **extraction_limit_state(request.user)})
 
 
 class SavedExtractionCheckLimitView(APIView):
@@ -1110,13 +1189,31 @@ class SavedExtractionsView(APIView):
 
         # The browser calls check-limit before analysing, but that is advisory —
         # anything speaking to this endpoint directly could save without bound.
+        # A result whose job was charged by a reservation is already paid for,
+        # and saving it must never be refused — even when it used the last
+        # extraction of the day.
+        from apps.extractions.models import ExtractionCharge
+
+        from apps.extractions.services import unclaimed_charge
+
+        job_id = str(request.data.get("job_id") or "")
+        if not job_id:
+            # A website that predates reservations saves without the job id.
+            # Its job was still charged, by the extractor; claiming that
+            # charge here is what stops the result being counted twice while
+            # the website's deploy catches up with the extractor's.
+            charge = unclaimed_charge(request.user)
+            job_id = charge.idempotency_key if charge else ""
+        paid = bool(job_id) and ExtractionCharge.objects.filter(
+            user=request.user, idempotency_key=job_id, refunded=False
+        ).exists()
         state = extraction_limit_state(request.user)
-        if not state["allowed"]:
+        if not paid and not state["allowed"]:
             return Response(
                 {
                     "detail": (
-                        f"You have reached your limit of {state['limit']} "
-                        f"extraction{'' if state['limit'] == 1 else 's'} per {state['period']}."
+                        f"You have reached your limit of {state['limit']} extractions "
+                        f"per {state['period']}."
                     ),
                     **state,
                 },
@@ -1127,7 +1224,7 @@ class SavedExtractionsView(APIView):
         serializer.is_valid(raise_exception=True)
 
         # Save to database
-        serializer.save(user=request.user)
+        serializer.save(user=request.user, job_id=job_id)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -1145,11 +1242,19 @@ class SavedExtractionDetailView(APIView):
         except SavedExtraction.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
+    # What an owner may change after saving. Publishing, and the content an
+    # edit-by-chat rewrites. Never the user, the kind or the dates — and never
+    # a new row, so an edit does not count toward the daily allowance.
+    EDITABLE = (
+        "is_public", "video_concept", "voiceover_text", "character_sheets", "shots",
+        "master_prompt", "master_prompt_json", "details",
+    )
+
     def patch(self, request, pk):
-        """Publish or unpublish one's own extraction.
+        """Publish, unpublish, or save an edited version of one's own extraction.
 
         Scoped to request.user, so this can only ever change the caller's own
-        rows — publishing someone else's work is not addressable.
+        rows — publishing or editing someone else's work is not addressable.
         """
         from apps.extractions.models import SavedExtraction
         from .serializers import SavedExtractionSerializer
@@ -1159,12 +1264,17 @@ class SavedExtractionDetailView(APIView):
         except SavedExtraction.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        if "is_public" not in request.data:
+        changes = {k: request.data[k] for k in self.EDITABLE if k in request.data}
+        if not changes:
             return Response(
-                {"detail": "Nothing to update. Send is_public."},
+                {"detail": f"Nothing to update. Send one of: {', '.join(self.EDITABLE)}."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if "is_public" in changes:
+            changes["is_public"] = bool(changes["is_public"])
 
-        extraction.is_public = bool(request.data["is_public"])
-        extraction.save(update_fields=["is_public", "updated_at"])
+        serializer = SavedExtractionSerializer(extraction, data=changes, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        extraction.refresh_from_db()
         return Response(SavedExtractionSerializer(extraction).data)

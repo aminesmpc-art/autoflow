@@ -5,6 +5,7 @@ All consumption, entitlement checks, and reward credit operations live here.
 Views call these functions; no business logic in serializers or views.
 """
 import logging
+import os
 from datetime import date as date_type
 from datetime import datetime, time, timedelta
 
@@ -27,6 +28,36 @@ FREE_DOWNLOAD_DAILY_LIMIT = getattr(settings, "FREE_DOWNLOAD_DAILY_LIMIT", 20)
 FREE_LITE_DAILY_LIMIT = getattr(settings, "FREE_LITE_DAILY_LIMIT", 3)
 FREE_FLOW_DAILY_LIMIT = getattr(settings, "FREE_FLOW_DAILY_LIMIT", 5)
 FREE_FULL_DAILY_LIMIT_RUNS = getattr(settings, "FREE_FULL_DAILY_LIMIT_RUNS", 1)
+# Agent mode: its own runs a day for a free account. Set FREE_AGENT_DAILY_LIMIT
+# in the environment to change it without a deploy of code.
+FREE_AGENT_DAILY_LIMIT = int(os.environ.get("FREE_AGENT_DAILY_LIMIT") or getattr(settings, "FREE_AGENT_DAILY_LIMIT", 3))
+QUEUE_MODES = ("lite", "flow", "full", "agent")
+
+
+def agent_refusal(usage) -> dict | None:
+    """A free account's AI-agent allowance, for every run an agent starts.
+
+    The owner, 2026-11-22: "the agent needs to work only 3 times on free mode".
+    It was already 3 a day for Agent mode, but an agent could start a queue in
+    Lite or Flow mode, or run a Studio workflow, and none of those counted. Now
+    a run started by an AI agent (the extension says so with `agent: true`)
+    counts against agent_runs_today whatever its mode, Queue and Studio
+    together. Answer the refusal to return, or None when there is room.
+    """
+    if usage.agent_runs_today < FREE_AGENT_DAILY_LIMIT:
+        return None
+    return {
+        "allowed": False,
+        "used": usage.agent_runs_today,
+        "limit": FREE_AGENT_DAILY_LIMIT,
+        "remaining": 0,
+        "period": "day",
+        "agent_limit_reached": True,
+        "message": (
+            f"Free accounts can let an AI agent run {FREE_AGENT_DAILY_LIMIT} times a day, and today's are used "
+            "(reset 00:00 UTC). Upgrade to Pro for unlimited agent runs."
+        ),
+    }
 
 # ── Charging on submission ────────────────────────────────────────────────
 #
@@ -190,6 +221,7 @@ def get_or_create_daily_usage(user, target_date: date_type = None) -> DailyUsage
                 "lite_runs_today": 0,
                 "flow_runs_today": 0,
                 "full_runs_today": 0,
+                "agent_runs_today": 0,
             },
         )
         return usage
@@ -210,6 +242,56 @@ def get_or_create_monthly_usage(user, year: int = None, month: int = None) -> Mo
         return usage
     except IntegrityError:
         return MonthlyUsage.objects.get(user=user, year=year, month=month)
+
+
+def cover_submission(user, prompt_type: str = "text") -> dict:
+    """Count what Flow accepted against a free account's day, whatever paid for it.
+
+    The owner, 2026-11-22: "some users get above 50 prompts a day". Production
+    showed how: on 2026-11-21 one free account started 12 queues and Flow
+    accepted 339 of its prompts, and not one queue had asked the server to
+    charge it (no queue-run call at all, from a modified or broken extension).
+    The charge at queue start can only bill what the extension asks it to.
+
+    This endpoint is the one place every accepted prompt reaches: the media id
+    in Flow's own reply. So the day's counter is held at least at the number of
+    prompts Flow accepted today, minus those Flow then failed (a retry after a
+    failure stays free, as it always was). A run that paid up front is already
+    covered and moves nothing. Past the free allowance the answer says so, and
+    the extension stops the queue.
+
+    Answers {"charged": bool, "limit_reached": bool, "sent_today": int, "remaining": int}.
+    """
+    today = timezone.now().date()
+    get_or_create_daily_usage(user, today)
+    with transaction.atomic():
+        profile = Profile.objects.get(user=user)
+        if profile.is_pro:
+            return {"charged": False, "limit_reached": False, "sent_today": 0, "remaining": 999}
+        usage = DailyUsage.objects.select_for_update().get(user=user, date=today)
+        # All accepted minus those failed. Not .exclude(outcome="failed"): a
+        # row with no outcome yet has no key, and in SQL a missing value is
+        # neither equal nor unequal, so exclude() dropped every pending one.
+        accepted = UsageEvent.objects.filter(
+            user=user, event_type=UsageEvent.EventType.PROMPT_SUBMITTED, created_at__date=today)
+        sent = accepted.count() - accepted.filter(metadata__outcome="failed").count()
+        charged = False
+        gap = sent - usage.free_prompts_used
+        if gap > 0:
+            usage.free_prompts_used += gap
+            usage.total_prompts_used += gap
+            if prompt_type == "full":
+                usage.full_prompts_used += gap
+            else:
+                usage.text_prompts_used += gap
+            usage.save()
+            charged = True
+        return {
+            "charged": charged,
+            "limit_reached": sent > FREE_TEXT_DAILY_LIMIT,
+            "sent_today": sent,
+            "remaining": max(0, FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used),
+        }
 
 
 def get_free_remaining(user, target_date: date_type = None) -> int:
@@ -317,6 +399,7 @@ def get_entitlement_snapshot(user) -> dict:
     lite_remaining = 999  # Lite is unlimited for all users
     flow_remaining = max(0, FREE_FLOW_DAILY_LIMIT - usage.flow_runs_today)
     full_daily_remaining = max(0, FREE_FULL_DAILY_LIMIT_RUNS - usage.full_runs_today)
+    agent_remaining = max(0, FREE_AGENT_DAILY_LIMIT - usage.agent_runs_today)
 
     return {
         "plan_type": profile.plan_type,
@@ -351,6 +434,9 @@ def get_entitlement_snapshot(user) -> dict:
         "full_runs_today": usage.full_runs_today,
         "full_runs_daily_limit": FREE_FULL_DAILY_LIMIT_RUNS,
         "full_remaining_today_runs": full_daily_remaining if not profile.is_pro else 999,
+        "agent_runs_today": usage.agent_runs_today,
+        "agent_daily_limit": FREE_AGENT_DAILY_LIMIT,
+        "agent_remaining_today": agent_remaining if not profile.is_pro else 999,
         # Legacy monthly fields (keep for backward compat)
         "full_runs_this_month": monthly.full_runs_used,
         "full_monthly_limit": FREE_FULL_DAILY_LIMIT_RUNS,
@@ -577,6 +663,7 @@ _MODE_EVENT_MAP = {
     "lite": UsageEvent.EventType.QUEUE_RUN_LITE,
     "flow": UsageEvent.EventType.QUEUE_RUN_FLOW,
     "full": UsageEvent.EventType.QUEUE_RUN_FULL,
+    "agent": UsageEvent.EventType.QUEUE_RUN_AGENT,
 }
 
 
@@ -616,6 +703,11 @@ def can_start_queue(user, mode: str) -> dict:
         limit = FREE_FULL_DAILY_LIMIT_RUNS
         remaining = max(0, limit - used)
         period = "day"
+    elif mode == "agent":
+        used = usage.agent_runs_today
+        limit = FREE_AGENT_DAILY_LIMIT
+        remaining = max(0, limit - used)
+        period = "day"
     else:
         return {
             "allowed": False,
@@ -648,7 +740,7 @@ def can_start_queue(user, mode: str) -> dict:
 
 def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str = "text",
                       text_count: int = None, full_count: int = None,
-                      queue_id: str = "") -> dict:
+                      queue_id: str = "", by_agent: bool = False) -> dict:
     """Atomically record a queue run AND pre-consume prompts for the given mode.
 
     Supports mixed queues: if text_count and full_count are provided, each type
@@ -698,7 +790,19 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
                     "period": "day",
                     "message": f"Full mode limit reached ({FREE_FULL_DAILY_LIMIT_RUNS}/day). Upgrade to Pro for unlimited.",
                 }
-            elif mode not in ("lite", "flow", "full"):
+            elif mode == "agent" and usage.agent_runs_today >= FREE_AGENT_DAILY_LIMIT:
+                return {
+                    "allowed": False,
+                    "used": usage.agent_runs_today,
+                    "limit": FREE_AGENT_DAILY_LIMIT,
+                    "remaining": 0,
+                    "period": "day",
+                    "message": (
+                        f"Agent mode's runs are used up for today ({FREE_AGENT_DAILY_LIMIT}/day, reset 00:00 UTC). "
+                        "Lite would run without checking or downloading. Upgrade to Pro for unlimited."
+                    ),
+                }
+            elif mode not in QUEUE_MODES:
                 return {
                     "allowed": False,
                     "used": 0,
@@ -707,6 +811,11 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
                     "period": "day",
                     "message": f"Unknown mode: {mode}",
                 }
+            # An AI agent's run in any other mode spends the same allowance.
+            if by_agent and mode != "agent":
+                refused = agent_refusal(usage)
+                if refused:
+                    return refused
 
         # Increment queue run counters (for both Pro and Free — Pro for monitoring)
         if mode == "lite":
@@ -718,6 +827,10 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
             if monthly:
                 monthly.full_runs_used += 1
                 monthly.save()
+        elif mode == "agent":
+            usage.agent_runs_today += 1
+        if by_agent and mode != "agent":
+            usage.agent_runs_today += 1
 
         # ── Enforce prompt limits server-side ──
         #
@@ -729,27 +842,25 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
         if not profile.is_pro:
             free_remaining = FREE_TEXT_DAILY_LIMIT - usage.free_prompts_used - held
             if prompt_count > free_remaining:
-                # Cap to whatever is remaining (don't let API callers bypass)
-                prompt_count = max(0, free_remaining)
-                if text_count is not None and full_count is not None:
-                    # Scale down proportionally
-                    total_requested = text_count + full_count
-                    if total_requested > 0 and prompt_count > 0:
-                        ratio = prompt_count / total_requested
-                        text_count = round(text_count * ratio)
-                        full_count = prompt_count - text_count
-                    else:
-                        text_count = 0
-                        full_count = 0
-                if prompt_count <= 0:
-                    return {
-                        "allowed": False,
-                        "used": usage.free_prompts_used,
-                        "limit": FREE_TEXT_DAILY_LIMIT,
-                        "remaining": 0,
-                        "period": "day",
-                        "message": "Daily prompt limit reached. Upgrade to Pro for unlimited.",
-                    }
+                # Refused, not capped (2026-11-22). This used to charge only
+                # what was left and answer allowed: true, and the extension
+                # then ran the WHOLE queue: a free account ran 71 prompts on a
+                # 50 allowance, and one ran 615 in a single queue. Nothing here
+                # can stop the extension after "allowed", so the answer has to
+                # be no. The panel already refuses the same case itself.
+                return {
+                    "allowed": False,
+                    "used": usage.free_prompts_used,
+                    "limit": FREE_TEXT_DAILY_LIMIT,
+                    "remaining": max(0, free_remaining),
+                    "period": "day",
+                    "message": (
+                        "Daily prompt limit reached. Upgrade to Pro for unlimited."
+                        if free_remaining <= 0 else
+                        f"Only {max(0, free_remaining)} prompts left today and this queue has {prompt_count}. "
+                        "Run fewer, or upgrade to Pro for unlimited."
+                    ),
+                }
 
             # Enforce full-feature limit
             if full_count is not None and full_count > 0:
@@ -857,11 +968,16 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
         if text_count is not None and full_count is not None:
             event_meta["text_count"] = text_count
             event_meta["full_count"] = full_count
+        if by_agent:
+            event_meta["by_agent"] = True
         UsageEvent.objects.create(
             user=user,
             event_type=event_type,
             prompt_count=prompt_count,
             metadata=event_meta,
+            # The run's id, so a queue's later events can be matched to the
+            # charge that paid for it (the dashboard's "never charged" check).
+            queue_id=(queue_id or "")[:128],
         )
 
         # Compute remaining
@@ -872,6 +988,10 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
         elif mode == "flow":
             used = usage.flow_runs_today
             limit = FREE_FLOW_DAILY_LIMIT
+            period = "day"
+        elif mode == "agent":
+            used = usage.agent_runs_today
+            limit = FREE_AGENT_DAILY_LIMIT
             period = "day"
         else:  # full
             used = usage.full_runs_today
@@ -890,7 +1010,7 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
         }
 
 
-def consume_studio_run(user, node_count: int = 1, generate_count: int = None) -> dict:
+def consume_studio_run(user, node_count: int = 1, generate_count: int = None, by_agent: bool = False) -> dict:
     """Check + consume a Studio workflow run (monthly allowance).
 
     Enforces THREE free-tier caps server-side: runs per month, nodes per
@@ -924,6 +1044,11 @@ def consume_studio_run(user, node_count: int = 1, generate_count: int = None) ->
             user=user, year=now.year, month=now.month
         )
         usage = DailyUsage.objects.select_for_update().get(user=user, date=today)
+
+        if not profile.is_pro and by_agent:
+            refused = agent_refusal(usage)
+            if refused:
+                return refused
 
         if not profile.is_pro:
             # 1. Monthly workflow run allowance (10 runs / month)
@@ -1019,6 +1144,9 @@ def consume_studio_run(user, node_count: int = 1, generate_count: int = None) ->
         # Count runs for Pro too — monitoring, not enforcement
         monthly.studio_runs_used += 1
         monthly.save()
+        if by_agent:
+            usage.agent_runs_today += 1
+            usage.save(update_fields=["agent_runs_today", "updated_at"])
 
         UsageEvent.objects.create(
             user=user,
@@ -1028,6 +1156,7 @@ def consume_studio_run(user, node_count: int = 1, generate_count: int = None) ->
                 "source": "studio",
                 "node_count": node_count,
                 "generate_count": generate_count,
+                **({"by_agent": True} if by_agent else {}),
             },
         )
 
