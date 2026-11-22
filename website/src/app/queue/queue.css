@@ -151,3 +151,51 @@
     text-align: center;
   }
 }
+
+/* The feature cards' pictures (2026-11-22): the real panel, whole, on the
+   site's own look. They used to be the v5.13 panel at 150% width, cut off by
+   the card. Split cards stack on phones. */
+.qf-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 48px;
+  align-items: center;
+}
+.qf-split--flip {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+}
+.qf-shot {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+.qf-shot--card {
+  margin-top: auto;
+}
+@media (max-width: 860px) {
+  .qf-split,
+  .qf-split--flip {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+  }
+  .qf-split--flip > .qf-shot {
+    order: 2;
+  }
+}
+
+/* The three steps on a phone: text above its picture. The cards set
+   display:flex inline, so page.css's grid rule for phones never applied and
+   the text ran one word per line beside a postage-stamp picture. */
+@media (max-width: 860px) {
+  #how-it-works .step-card-rich {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 20px !important;
+  }
+  #how-it-works .step-card-rich > div:not(:first-child) {
+    width: 100%;
+  }
+}

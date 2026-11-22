@@ -142,7 +142,7 @@ export default function QueuePage() {
           <div className="bento-grid">
 
             {/* Bento Card 1 (Full Width) - Batch Prompts */}
-            <div className="bento-card bento-col-12" style={{ minHeight: "450px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "48px", alignItems: "center" }}>
+            <div className="bento-card bento-col-12 qf-split">
               <div style={{ zIndex: 1 }}>
                 <div className="badge" style={{ marginBottom: "16px", background: "rgba(79, 70, 229, 0.1)", color: "var(--primary-light)", borderColor: "rgba(79, 70, 229, 0.2)" }}>01. Create</div>
                 <h3 style={{ fontSize: "2rem", marginBottom: "20px" }}>Google Flow Batch Generator</h3>
@@ -150,52 +150,49 @@ export default function QueuePage() {
                   Stop copy-pasting prompts one by one. Paste your entire script — 5, 50, or 500 prompts — into our bulk editor to automate Veo video generation. AutoFlow instantly parses each block into a separate task.
                 </p>
                 <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "12px", color: "var(--text-secondary)" }}>
-                  <li style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ color: "var(--success)" }}>✓</span> Auto-detects scene numbers</li>
-                  <li style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ color: "var(--success)" }}>✓</span> Supports Text, Image & Ingredients mode</li>
+                  <li style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ color: "var(--success)" }}>✓</span> Keeps your scene numbers</li>
+                  <li style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ color: "var(--success)" }}>✓</span> Image, Video, Frames and References modes</li>
+                  <li style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ color: "var(--success)" }}>✓</span> Load a .txt script in one click</li>
                 </ul>
               </div>
-              <div style={{ position: "relative", height: "100%", minHeight: "300px", borderRadius: "var(--radius-lg)", overflow: "hidden", border: "1px solid rgba(255,255,255,0.05)", boxShadow: "0 20px 40px rgba(0,0,0,0.5)", transform: "perspective(1000px) rotateY(-5deg)" }}>
-                <img src="/screenshots/create-prompts.webp" alt="Batch Prompting" style={{ position: "absolute", width: "150%", top: "10%", left: "10%", objectFit: "cover", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.1)" }} />
-              </div>
+              <img className="qf-shot" src="/screenshots/queue/queue-create.webp" width={1600} height={1200} loading="lazy"
+                alt="The Queue Manager's Create tab: a six-scene script split into six prompts, ready to run" />
             </div>
 
             {/* Bento Card 2 (Half) - Image Mapping */}
             <div className="bento-card bento-col-6" style={{ minHeight: "450px" }}>
-              <div className="badge" style={{ marginBottom: "16px", background: "rgba(6, 182, 212, 0.1)", color: "var(--accent-light)", borderColor: "rgba(6, 182, 212, 0.2)" }}>02. Images</div>
-              <h3 style={{ fontSize: "1.8rem", marginBottom: "16px" }}>Reference Mapping</h3>
-              <p className="text-secondary" style={{ marginBottom: "40px", flex: 1 }}>
-                Attach reference images globally, or let AutoFlow automatically map character faces to specific scenes.
+              <div className="badge" style={{ marginBottom: "16px", background: "rgba(6, 182, 212, 0.1)", color: "var(--accent-light)", borderColor: "rgba(6, 182, 212, 0.2)" }}>02. Characters</div>
+              <h3 style={{ fontSize: "1.8rem", marginBottom: "16px" }}>Characters &amp; Reference Mapping</h3>
+              <p className="text-secondary" style={{ marginBottom: "32px", flex: 1 }}>
+                Make a character once, with a face and a voice, and every queue borrows it: the same person in every scene. Or attach reference images to any prompt.
               </p>
-              <div style={{ position: "relative", marginTop: "auto", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.05)", overflow: "hidden", transform: "translateY(20px)" }}>
-                <img src="/screenshots/image-mapping.webp" alt="Image Mapping" style={{ width: "100%", display: "block", borderTopLeftRadius: "12px", borderTopRightRadius: "12px" }} />
-              </div>
+              <img className="qf-shot qf-shot--card" src="/screenshots/queue/queue-characters.webp" width={1600} height={1200} loading="lazy"
+                alt="The Characters tab: four clay characters, each with a face and a Flow voice, ready for any queue" />
             </div>
 
             {/* Bento Card 3 (Half) - Smart Queue */}
             <div className="bento-card bento-col-6" style={{ minHeight: "450px", background: "linear-gradient(145deg, rgba(79, 70, 229, 0.1) 0%, rgba(10, 10, 10, 1) 100%)" }}>
               <div className="badge" style={{ marginBottom: "16px", background: "rgba(16, 185, 129, 0.1)", color: "var(--success)", borderColor: "rgba(16, 185, 129, 0.2)" }}>03. Queues</div>
               <h3 style={{ fontSize: "1.8rem", marginBottom: "16px" }}>Smart Queues</h3>
-              <p className="text-secondary" style={{ marginBottom: "40px", flex: 1 }}>
-                Create multiple queues with different configs (Veo 3, 1080p, 4K). Reorder them and run sequentially.
+              <p className="text-secondary" style={{ marginBottom: "32px", flex: 1 }}>
+                One queue per project, each with its own model and format (Veo 3.1, Omni 1.2, 9:16 or 16:9). A paused queue picks up where it stopped; a finished one runs again or downloads in one click.
               </p>
-              <div style={{ position: "relative", marginTop: "auto", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.1)", overflow: "hidden", transform: "scale(1.05) translateY(20px)", boxShadow: "0 20px 40px rgba(0,0,0,0.6)" }}>
-                <img src="/screenshots/queue-card.webp" alt="Smart Queues" style={{ width: "100%", display: "block" }} />
-              </div>
+              <img className="qf-shot qf-shot--card" src="/screenshots/queue/queue-queues.webp" width={1600} height={1200} loading="lazy"
+                alt="The Queues tab: a queue ready to run, one paused at 3 of 6, and a finished one with Scan & download" />
             </div>
 
             {/* Bento Card 4 (Full Width) - Library & Run Monitor */}
-            <div className="bento-card bento-col-12" style={{ minHeight: "450px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "48px", alignItems: "center" }}>
-              <div style={{ position: "relative", height: "100%", minHeight: "300px", borderRadius: "var(--radius-lg)", overflow: "hidden", border: "1px solid rgba(255,255,255,0.05)", boxShadow: "0 20px 40px rgba(0,0,0,0.5)", transform: "perspective(1000px) rotateY(5deg)" }}>
-                <img src="/screenshots/library-results.webp" alt="Library Scanner" style={{ position: "absolute", width: "150%", top: "10%", right: "10%", objectFit: "cover", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.1)" }} />
-              </div>
+            <div className="bento-card bento-col-12 qf-split qf-split--flip">
+              <img className="qf-shot" src="/screenshots/queue/queue-run.webp" width={1600} height={1200} loading="lazy"
+                alt="A queue running: live progress, each prompt's state, and every finished clip downloaded on its own" />
               <div style={{ zIndex: 1 }}>
                 <div className="badge" style={{ marginBottom: "16px", background: "rgba(245, 158, 11, 0.1)", color: "var(--warning)", borderColor: "rgba(245, 158, 11, 0.2)" }}>04. Harvest</div>
                 <h3 style={{ fontSize: "2rem", marginBottom: "20px" }}>How to Download Veo Videos in 4K</h3>
                 <p className="text-secondary" style={{ fontSize: "1.1rem", marginBottom: "24px" }}>
-                  Wondering how to download Veo videos in 4K easily? After generation, scan your project to see all videos grouped by prompt. Select your favorites and batch download everything in 4K with a single click.
+                  Watch the run live, prompt by prompt: each clip downloads itself as Flow finishes it, and a refused prompt is rewritten and sent again. Missed one? Scan the project and batch download everything in 4K with a single click.
                 </p>
                 <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "12px", color: "var(--text-secondary)" }}>
-                  <li style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ color: "var(--warning)" }}>✓</span> Grouped by prompt automatically</li>
+                  <li style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ color: "var(--warning)" }}>✓</span> Files named and grouped by prompt</li>
                   <li style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ color: "var(--warning)" }}>✓</span> Bulk upscaling and downloading</li>
                 </ul>
               </div>
@@ -228,7 +225,7 @@ export default function QueuePage() {
                 </p>
               </div>
               <div style={{ flex: 1, borderRadius: "16px", overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 15px 35px rgba(0,0,0,0.6)" }}>
-                <img src="/screenshots/prompt-list.webp" alt="Parsed prompts" style={{ width: "100%", display: "block" }} />
+                <img src="/screenshots/queue/queue-step-paste.webp" width={1600} height={1200} loading="lazy" alt="Prompts pasted into the Create tab" style={{ width: "100%", height: "auto", display: "block" }} />
               </div>
             </div>
 
@@ -241,7 +238,7 @@ export default function QueuePage() {
                 </p>
               </div>
               <div style={{ flex: 1, borderRadius: "16px", overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 15px 35px rgba(0,0,0,0.6)" }}>
-                <img src="/screenshots/queue-card.webp" alt="Queue card" style={{ width: "100%", display: "block" }} />
+                <img src="/screenshots/queue/queue-step-run.webp" width={1600} height={1200} loading="lazy" alt="Queues ready to run" style={{ width: "100%", height: "auto", display: "block" }} />
               </div>
             </div>
 
@@ -254,7 +251,7 @@ export default function QueuePage() {
                 </p>
               </div>
               <div style={{ flex: 1, borderRadius: "16px", overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 15px 35px rgba(0,0,0,0.6)" }}>
-                <img src="/screenshots/library-results.webp" alt="Library results" style={{ width: "100%", display: "block" }} />
+                <img src="/screenshots/queue/queue-step-collect.webp" width={1600} height={1200} loading="lazy" alt="Each queue's Flow project, ready to scan and download" style={{ width: "100%", height: "auto", display: "block" }} />
               </div>
             </div>
 
