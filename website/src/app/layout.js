@@ -172,6 +172,19 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={inter.variable}>
       <head>
+        {/* ── Ezoic ── Privacy (consent) scripts first, then the header script, at the very top of <head>, as
+            docs.ezoic.com/docs/ezoicads/integration asks. They place no ads by themselves: ads appear only where
+            an Ezoic placement is added. data-cfasync must come before src. */}
+        <script data-cfasync="false" src="https://cmp.gatekeeperconsent.com/min.js"></script>
+        <script data-cfasync="false" src="https://the.gatekeeperconsent.com/cmp.min.js"></script>
+        <script async src="//www.ezojs.com/ezoic/sa.min.js"></script>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "window.ezstandalone = window.ezstandalone || {}; ezstandalone.cmd = ezstandalone.cmd || [];",
+          }}
+        />
+        <script src="//ezoicanalytics.com/analytics.js"></script>
+
         {/* ── Google Analytics (GA4) ── */}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-ZJ953YL6EK"
