@@ -32,7 +32,7 @@ const COMPARISON_ROWS = [
 export default function PricingCalculator() {
   const [billingCycle, setBillingCycle] = useState("monthly"); // 'monthly' | 'annual'
 
-  const proPrice = billingCycle === "monthly" ? "$9.99" : "$7.99";
+  const proPrice = billingCycle === "monthly" ? "$4.99" : "$3.99";
   const proPeriod = billingCycle === "monthly" ? "/ month" : "/ month (billed annually)";
 
   return (
@@ -173,7 +173,7 @@ export default function PricingCalculator() {
               <tr style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.1)", background: "rgba(255,255,255,0.02)" }}>
                 <th style={{ padding: "18px 24px", color: "var(--text-secondary)", fontWeight: "600", width: "45%" }}>Feature</th>
                 <th style={{ padding: "18px 24px", color: "var(--text-secondary)", fontWeight: "600", width: "27.5%" }}>Free</th>
-                <th style={{ padding: "18px 24px", color: "var(--primary-light)", fontWeight: "700", width: "27.5%" }}>Pro ($9.99)</th>
+                <th style={{ padding: "18px 24px", color: "var(--primary-light)", fontWeight: "700", width: "27.5%" }}>Pro ($4.99)</th>
               </tr>
             </thead>
             <tbody>

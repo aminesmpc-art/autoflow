@@ -55,7 +55,7 @@ export default async function LocaleHomePage({ params }) {
             inLanguage: locale,
             offers: [
               { "@type": "Offer", price: "0", priceCurrency: "USD", name: "Free" },
-              { "@type": "Offer", price: "9.99", priceCurrency: "USD", name: "Pro" },
+              { "@type": "Offer", price: "4.99", priceCurrency: "USD", name: "Pro" },
             ],
             description: t.meta.description,
             url: `https://www.auto-flow.studio${locale === 'en' ? '' : `/${locale}`}`,

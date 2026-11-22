@@ -74,7 +74,7 @@ const HOME_FAQ = [
   },
   {
     q: "Is AutoFlow free?",
-    a: "Every tool can be used for free: the Queue Manager gives you 50 prompts a day, Studio 10 workflow runs a month and Motion 3 jobs a day, and the Extractor and Clipping are free web apps. AutoFlow Pro ($9.99 a month) makes the Queue Manager, Studio and Motion unlimited and gives you 20 extractions a day.",
+    a: "Every tool can be used for free: the Queue Manager gives you 50 prompts a day, Studio 10 workflow runs a month and Motion 3 jobs a day, and the Extractor and Clipping are free web apps. AutoFlow Pro ($4.99 a month) makes the Queue Manager, Studio and Motion unlimited and gives you 20 extractions a day.",
   },
   {
     q: "How are the Queue Manager, Studio and Motion different?",
@@ -459,7 +459,7 @@ export default function HomePage() {
             </div>
             <div className="home-plan home-plan--pro">
               <div className="home-plan-name">AutoFlow Pro</div>
-              <div className="home-plan-price">$9.99 <span>/ month</span></div>
+              <div className="home-plan-price">$4.99 <span>/ month</span></div>
               <ul>
                 <li>Unlimited Queue Manager prompts</li>
                 <li>Unlimited Studio runs</li>

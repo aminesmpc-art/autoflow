@@ -52,7 +52,7 @@ export default function QueuePage() {
               },
               {
                 "@type": "Offer",
-                price: "9.99",
+                price: "4.99",
                 priceCurrency: "USD",
                 name: "Pro",
                 description: "Full access: image-to-video, ingredients, unlimited queues",
@@ -301,7 +301,7 @@ export default function QueuePage() {
               <p>50 prompts a day and 20 image-to-video prompts a day.</p>
             </div>
             <div>
-              <div className="queue-plan-name queue-plan-name--pro">AutoFlow Pro · $9.99 / month</div>
+              <div className="queue-plan-name queue-plan-name--pro">AutoFlow Pro · $4.99 / month</div>
               <p>Unlimited prompts, plus everything else in Pro: unlimited Studio runs and Motion jobs.</p>
             </div>
             <a href="/pricing" className="btn btn-secondary">Compare plans →</a>

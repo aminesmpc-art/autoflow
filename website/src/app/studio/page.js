@@ -62,7 +62,7 @@ export default function StudioPage() {
               },
               {
                 "@type": "Offer",
-                price: "9.99",
+                price: "4.99",
                 priceCurrency: "USD",
                 name: "Pro Tier",
                 description: "Unlimited Studio workflow runs & Google Flow automation",
@@ -590,7 +590,7 @@ export default function StudioPage() {
                 <ChromeIcon /> Install AutoFlow Studio — Free
               </StoreLink>
               <a href="/pricing" className="btn btn-secondary btn-lg">
-                View Pricing ($9.99/mo Pro)
+                View Pricing ($4.99/mo Pro)
               </a>
             </div>
           </div>

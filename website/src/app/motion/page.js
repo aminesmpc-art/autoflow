@@ -155,7 +155,7 @@ export default function MotionPage() {
               },
               {
                 "@type": "Offer",
-                price: "9.99",
+                price: "4.99",
                 priceCurrency: "USD",
                 name: "AutoFlow Pro",
                 description: "Unlimited Motion jobs",
@@ -368,7 +368,7 @@ export default function MotionPage() {
             <div className="motion-plan motion-plan--pro">
               <div className="motion-plan-name">AutoFlow Pro</div>
               <div className="motion-plan-price">
-                $9.99 <span>/ month</span>
+                $4.99 <span>/ month</span>
               </div>
               <div className="motion-plan-headline">Unlimited Motion jobs</div>
               <ul>

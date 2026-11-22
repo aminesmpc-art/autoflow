@@ -340,7 +340,7 @@ function Footer() {
             {PRODUCTS.map((product) => (
               <li key={product.key}><a href={product.href}>{product.fullName}</a></li>
             ))}
-            <li><a href="/pricing">Pricing (Pro $9.99)</a></li>
+            <li><a href="/pricing">Pricing (Pro $4.99)</a></li>
             <li><a href="/changelog">Changelog</a></li>
           </ul>
         </div>

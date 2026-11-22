@@ -5,7 +5,7 @@ import Script from "next/script";
 import Link from "next/link";
 import { useAuth } from "../../context/AuthContext";
 
-const PLAN_ID = "plan_fxMVMOmbFPcp4";
+const PLAN_ID = "plan_C5eboY2bFqzUn";
 const HOSTED_FALLBACK = `https://whop.com/checkout/${PLAN_ID}`;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
