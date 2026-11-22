@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Script from "next/script";
 import Link from "next/link";
 import { useAuth } from "../../context/AuthContext";
 
@@ -104,12 +103,10 @@ export default function CheckoutClient() {
     );
   }
 
-  // `email.disabled=1` is what the embed itself appends to its iframe URL, and
-  // Whop's hosted page honours it too — so even the escape hatch below arrives
-  // with the field locked rather than merely prefilled. Undocumented, hence a
-  // fallback rather than the primary path: if Whop drops it the field silently
-  // becomes editable again, with nothing to alert us.
-  const hostedFallbackUrl =
+  // `email.disabled=1` locks the field on Whop's hosted page (checked live
+  // 2026-11-22 for a buyer not signed in to Whop). Undocumented: if Whop drops
+  // it the field silently becomes editable again.
+  const hostedUrl =
     `${HOSTED_FALLBACK}?email=${encodeURIComponent(email)}&email.disabled=1`;
 
   return (
@@ -130,34 +127,31 @@ export default function CheckoutClient() {
         </div>
 
         {/*
-          disable-email is the whole point of hosting the embed ourselves:
-          Whop's hosted checkout page prefills the address but leaves it
-          editable, and any address other than the AutoFlow one leaves the
-          payment orphaned, since webhooks match to accounts by email.
-        */}
-        <div
-          id="whop-checkout"
-          data-whop-checkout-plan-id={PLAN_ID}
-          data-whop-checkout-prefill-email={email}
-          data-whop-checkout-disable-email="true"
-          data-whop-checkout-theme="dark"
-          data-whop-checkout-skip-redirect="true"
-          data-whop-checkout-on-complete="afCheckoutComplete"
-        />
+          Whop's embedded checkout stopped opening (2026-11-22): its iframe,
+          /embedded/checkout/<plan>, answered "This checkout is no longer
+          available" for both the $4.99 and the $10 plan, while the hosted page
+          sold the same plan. Every Upgrade button in the extensions lands here,
+          so buyers met a dead box and left. They now go to the hosted page,
+          which keeps our email filled in and locked (email.disabled=1).
 
-        {/*
-          Mounted only once the container above exists, so the loader finds it
-          on its first scan.
+          One gap, measured on the live page: a buyer already signed in to Whop
+          sees their Whop email instead of ours, with a "Use a different email"
+          link. Webhooks match accounts by email, so the note below asks them to
+          check it. A later fix is Whop's newer Checkout element.
         */}
-        <Script src="https://js.whop.com/static/checkout/loader.js" strategy="afterInteractive" />
-
-        {/* Never leave a paying customer with no way to pay if the embed fails. */}
-        <p className="text-secondary" style={{ fontSize: "0.8rem", textAlign: "center", marginTop: "1.5rem" }}>
-          Checkout not loading?{" "}
-          <a href={hostedFallbackUrl} target="_blank" rel="noopener noreferrer nofollow">
-            Pay on Whop instead
-          </a>{" "}
-          — keep the email as {email}.
+        <a
+          href={hostedUrl}
+          className="btn btn-primary"
+          style={{ display: "block", textAlign: "center", fontSize: "1.05rem", padding: "0.95rem 1.25rem" }}
+          onClick={() => window.gtag?.("event", "pro_checkout_start", { plan_id: PLAN_ID })}
+        >
+          Continue to secure checkout · $4.99/month
+        </a>
+        <p className="text-secondary" style={{ fontSize: "0.85rem", textAlign: "center", marginTop: "1rem" }}>
+          Payment is handled by Whop. Make sure the email there is{" "}
+          <strong style={{ color: "var(--text-primary)" }}>{email}</strong>. If Whop shows a
+          different one, press <em>Use a different email</em> and enter this one, or Pro
+          won&apos;t reach your AutoFlow account.
         </p>
       </div>
     </section>
