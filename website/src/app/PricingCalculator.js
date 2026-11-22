@@ -150,6 +150,9 @@ export default function PricingCalculator() {
           >
             Upgrade to Pro Now →
           </a>
+          <a href="/checkout?method=binance" style={{ display: "block", textAlign: "center", marginTop: "10px", fontSize: "0.88rem", color: "#f0b90b", fontWeight: 600 }}>
+            or pay $4.99 in USDT with Binance Pay
+          </a>
         </div>
       </div>
 

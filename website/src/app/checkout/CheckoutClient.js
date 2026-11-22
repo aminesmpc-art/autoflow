@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "../../context/AuthContext";
+import BinancePay from "./BinancePay";
 
 const PLAN_ID = "plan_C5eboY2bFqzUn";
 const HOSTED_FALLBACK = `https://whop.com/checkout/${PLAN_ID}`;
@@ -28,15 +29,20 @@ function readHashEmail() {
 }
 
 export default function CheckoutClient() {
-  const { user, loading } = useAuth();
+  const { user, token, loading } = useAuth();
   const [hashEmail, setHashEmail] = useState(null);
   const [hashRead, setHashRead] = useState(false);
+  /* Card through Whop, or USDT through Binance Pay (2026-11-22). ?method=binance opens the second. */
+  const [method, setMethod] = useState("card");
   const [done, setDone] = useState(false);
 
   // location.hash is client-only, so it cannot be read during render.
   useEffect(() => {
     setHashEmail(readHashEmail());
     setHashRead(true);
+    try {
+      if (new URLSearchParams(window.location.search).get("method") === "binance") setMethod("binance");
+    } catch { /* */ }
   }, []);
 
   useEffect(() => {
@@ -139,20 +145,37 @@ export default function CheckoutClient() {
           link. Webhooks match accounts by email, so the note below asks them to
           check it. A later fix is Whop's newer Checkout element.
         */}
-        <a
-          href={hostedUrl}
-          className="btn btn-primary"
-          style={{ display: "block", textAlign: "center", fontSize: "1.05rem", padding: "0.95rem 1.25rem" }}
-          onClick={() => window.gtag?.("event", "pro_checkout_start", { plan_id: PLAN_ID })}
-        >
-          Continue to secure checkout · $4.99/month
-        </a>
-        <p className="text-secondary" style={{ fontSize: "0.85rem", textAlign: "center", marginTop: "1rem" }}>
-          Payment is handled by Whop. Make sure the email there is{" "}
-          <strong style={{ color: "var(--text-primary)" }}>{email}</strong>. If Whop shows a
-          different one, press <em>Use a different email</em> and enter this one, or Pro
-          won&apos;t reach your AutoFlow account.
-        </p>
+        <div role="tablist" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, padding: 4, borderRadius: 14, border: "1px solid rgba(255,255,255,.1)", marginBottom: "1.25rem" }}>
+          {[["card", "Card · PayPal", "Monthly, renews"], ["binance", "Binance Pay · USDT", "One month, prepaid"]].map(([key, label, sub]) => (
+            <button key={key} type="button" role="tab" aria-selected={method === key} onClick={() => setMethod(key)}
+              style={{ padding: "0.7rem 0.5rem", borderRadius: 10, border: 0, cursor: "pointer", color: "inherit",
+                background: method === key ? (key === "binance" ? "rgba(240,185,11,.16)" : "rgba(255,92,0,.18)") : "transparent" }}>
+              <strong style={{ display: "block", fontSize: "0.92rem" }}>{label}</strong>
+              <span className="text-secondary" style={{ fontSize: "0.75rem" }}>{sub}</span>
+            </button>
+          ))}
+        </div>
+
+        {method === "binance" ? (
+          <BinancePay user={user} token={token} extensionEmail={hashEmail} />
+        ) : (
+          <>
+            <a
+              href={hostedUrl}
+              className="btn btn-primary"
+              style={{ display: "block", textAlign: "center", fontSize: "1.05rem", padding: "0.95rem 1.25rem" }}
+              onClick={() => window.gtag?.("event", "pro_checkout_start", { plan_id: PLAN_ID })}
+            >
+              Continue to secure checkout · $4.99/month
+            </a>
+            <p className="text-secondary" style={{ fontSize: "0.85rem", textAlign: "center", marginTop: "1rem" }}>
+              Payment is handled by Whop. Make sure the email there is{" "}
+              <strong style={{ color: "var(--text-primary)" }}>{email}</strong>. If Whop shows a
+              different one, press <em>Use a different email</em> and enter this one, or Pro
+              won&apos;t reach your AutoFlow account.
+            </p>
+          </>
+        )}
       </div>
     </section>
   );
