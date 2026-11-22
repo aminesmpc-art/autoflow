@@ -157,6 +157,13 @@ UNFOLD = {
                         "link": "/admin/webhooks/webhookevent/",
                         "badge": "apps.dashboard.badge_callback_pending_webhooks",
                     },
+                    {
+                        # Months of Pro paid in USDT (apps/plans/binance.py).
+                        "title": "Binance Payments",
+                        "icon": "currency_bitcoin",
+                        "link": "/admin/plans/binancepayment/",
+                        "badge": "apps.dashboard.badge_callback_binance_week",
+                    },
                 ],
             },
             {

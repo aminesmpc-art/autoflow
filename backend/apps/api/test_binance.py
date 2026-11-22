@@ -162,3 +162,43 @@ class WhopEndingKeepsBinanceMonths(TestCase):
         BinancePayment.objects.create(user=user, order_id="X1", amount="4.99", paid_at=timezone.now(),
                                       pro_until=timezone.now() + timedelta(days=10))
         self.assertTrue(_paid_in_binance(user))
+
+
+class BinanceManagerTests(TestCase):
+    """The admin's Binance Payments manager (sidebar: Payments & Rewards)."""
+
+    def setUp(self):
+        self.admin = CustomUser.objects.create_superuser("boss@example.com", "pass12345")
+        self.user = CustomUser.objects.create_user("paid@example.com", "x", is_active=True)
+        Profile.objects.create(user=self.user, plan_type=PlanType.FREE)
+        self.client.force_login(self.admin)
+
+    def test_list_and_sidebar(self):
+        BinancePayment.objects.create(user=self.user, order_id="L1", amount="4.99", paid_at=timezone.now(),
+                                      pro_until=timezone.now() + timedelta(days=30))
+        res = self.client.get("/admin/plans/binancepayment/")
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "paid@example.com")
+        self.assertContains(res, "active")
+        self.assertContains(self.client.get("/admin/"), "/admin/plans/binancepayment/")
+
+    def test_adding_one_by_hand_gives_pro(self):
+        until = timezone.now() + timedelta(days=30)
+        res = self.client.post("/admin/plans/binancepayment/add/", {
+            "user": str(self.user.pk), "payer_binance_id": "", "order_id": "HAND1", "amount": "4.99", "currency": "USDT",
+            "order_type": "C2C", "paid_at_0": timezone.now().strftime("%Y-%m-%d"), "paid_at_1": "10:00:00",
+            "pro_until_0": until.strftime("%Y-%m-%d"), "pro_until_1": until.strftime("%H:%M:%S"),
+        })
+        self.assertEqual(res.status_code, 302, res.content[:500])
+        self.assertTrue(Profile.objects.get(user=self.user).is_pro)
+
+    def test_extend_and_end(self):
+        p = BinancePayment.objects.create(user=self.user, order_id="E1", amount="4.99", paid_at=timezone.now(),
+                                          pro_until=timezone.now() + timedelta(days=5))
+        Profile.objects.filter(user=self.user).update(plan_type=PlanType.PRO, is_pro_active=True, pro_expires_at=p.pro_until)
+        self.client.post("/admin/plans/binancepayment/", {"action": "extend_month", "_selected_action": [str(p.pk)]})
+        p.refresh_from_db()
+        self.assertAlmostEqual((p.pro_until - timezone.now()).days, 34, delta=1)
+        self.assertEqual(Profile.objects.get(user=self.user).pro_expires_at, p.pro_until)
+        self.client.post("/admin/plans/binancepayment/", {"action": "end_now", "_selected_action": [str(p.pk)]})
+        self.assertFalse(Profile.objects.get(user=self.user).is_pro)

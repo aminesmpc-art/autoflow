@@ -1017,6 +1017,14 @@ def badge_callback_today_usage(request):
     return DailyUsage.objects.filter(date=timezone.localdate()).count()
 
 
+def badge_callback_binance_week(request):
+    """Sidebar badge: Binance Pay months bought in the last 7 days (only if any)."""
+    from datetime import timedelta
+    from apps.plans.models import BinancePayment
+    count = BinancePayment.objects.filter(created_at__gte=timezone.now() - timedelta(days=7)).count()
+    return count if count > 0 else None
+
+
 def badge_callback_pending_webhooks(request):
     """Sidebar badge: unprocessed webhooks (only shown if > 0)."""
     from apps.webhooks.models import WebhookEvent

@@ -8,10 +8,106 @@ from .models import BinancePayment, Profile, PlanType
 
 @admin.register(BinancePayment)
 class BinancePaymentAdmin(ModelAdmin):
-    list_display = ("user", "amount", "currency", "order_id", "paid_at", "pro_until", "created_at")
+    """The Binance Pay manager (the owner, 2026-11-22: "add here the manager of it").
+
+    Every month of Pro paid in USDT (apps/plans/binance.py): who, how much, the
+    receipt's Order ID, and until when. Actions extend or end a month; "Add"
+    records a payment by hand (a buyer whose claim failed writes to support
+    with the Order ID) and gives its Pro.
+    """
+    list_display = ("buyer", "amount_display", "order_id", "paid_display", "until_badge", "created_display")
+    list_filter = ("currency", "created_at")
     search_fields = ("user__email", "order_id", "payer_binance_id")
-    readonly_fields = ("user", "order_id", "amount", "currency", "paid_at", "order_type", "payer_binance_id", "pro_until", "created_at")
+    date_hierarchy = "created_at"
     list_per_page = 50
+    autocomplete_fields = ("user",)
+    actions = ["extend_month", "end_now"]
+    fieldsets = (
+        ("Buyer", {"fields": ("user", "payer_binance_id")}),
+        ("Payment", {"fields": ("order_id", "amount", "currency", "order_type", "paid_at")}),
+        ("Pro", {"fields": ("pro_until", "created_at")}),
+    )
+
+    def get_readonly_fields(self, request, obj=None):
+        # A recorded payment is a receipt: only "Pro until" may change.
+        if obj:
+            return ("user", "order_id", "amount", "currency", "order_type", "paid_at", "payer_binance_id", "created_at")
+        return ("created_at",)
+
+    def get_changeform_initial_data(self, request):
+        from datetime import timedelta
+        from django.utils import timezone as tz
+        from apps.plans import binance
+        now = tz.now()
+        return {"amount": binance.price(), "currency": "USDT", "order_type": "C2C", "paid_at": now,
+                "pro_until": now + timedelta(days=binance.days())}
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        self._give_pro(obj)
+
+    @staticmethod
+    def _give_pro(payment):
+        """The account is Pro until the latest month it paid for."""
+        latest = BinancePayment.objects.filter(user=payment.user).order_by("-pro_until").first()
+        if not latest:
+            return
+        Profile.objects.filter(user=payment.user).update(
+            plan_type=PlanType.PRO, is_pro_active=True, pro_expires_at=latest.pro_until)
+
+    @admin.display(description="Buyer", ordering="user__email")
+    def buyer(self, obj):
+        return format_html('<a href="/admin/overview/user/{}/" style="font-weight:600">{}</a>', obj.user_id, obj.user.email)
+
+    @admin.display(description="Amount", ordering="amount")
+    def amount_display(self, obj):
+        return f"{obj.amount.normalize()} {obj.currency}"
+
+    @admin.display(description="Paid", ordering="paid_at")
+    def paid_display(self, obj):
+        return obj.paid_at.strftime("%b %d, %H:%M")
+
+    @admin.display(description="Pro until", ordering="pro_until")
+    def until_badge(self, obj):
+        from django.utils import timezone as tz
+        active = obj.pro_until > tz.now()
+        colour = ("#065f46", "#d1fae5") if active else ("#6b7280", "#f3f4f6")
+        label = obj.pro_until.strftime("%b %d, %Y") + (" · active" if active else " · ended")
+        return format_html('<span style="padding:2px 8px;border-radius:99px;font-size:12px;font-weight:600;color:{};background:{}">{}</span>',
+                           colour[0], colour[1], label)
+
+    @admin.display(description="Recorded", ordering="created_at")
+    def created_display(self, obj):
+        return obj.created_at.strftime("%b %d, %H:%M")
+
+    @admin.action(description="➕ Extend by 30 days")
+    def extend_month(self, request, queryset):
+        from datetime import timedelta
+        from django.utils import timezone as tz
+        for p in queryset:
+            p.pro_until = max(p.pro_until, tz.now()) + timedelta(days=30)
+            p.save(update_fields=["pro_until"])
+            self._give_pro(p)
+        self.message_user(request, f"{queryset.count()} payment(s) extended by 30 days.")
+
+    @admin.action(description="⛔ End now (refunded or disputed)")
+    def end_now(self, request, queryset):
+        from django.utils import timezone as tz
+        now = tz.now()
+        users = set()
+        for p in queryset:
+            p.pro_until = now
+            p.save(update_fields=["pro_until"])
+            users.add(p.user_id)
+        for uid in users:
+            still = BinancePayment.objects.filter(user_id=uid, pro_until__gt=now).order_by("-pro_until").first()
+            prof = Profile.objects.filter(user_id=uid)
+            if still:
+                prof.update(pro_expires_at=still.pro_until)
+            else:
+                # Only a Binance month made them Pro (it had an end date): back to Free.
+                prof.filter(pro_expires_at__isnull=False).update(plan_type=PlanType.FREE, is_pro_active=False, pro_expires_at=now)
+        self.message_user(request, f"{queryset.count()} payment(s) ended.")
 
 
 @admin.register(Profile)
