@@ -26,9 +26,16 @@ is used, so support can sort it out.
 
 Settings (Railway environment, never in code or chat):
   BINANCE_PAY_ID       the Pay ID buyers send to (shown on the checkout)
-  BINANCE_API_KEY      read-only API key of that account
-  BINANCE_API_SECRET   its secret
+  BINANCE_RELAY_URL    https://www.auto-flow.studio/api/binance-history
+  BINANCE_RELAY_TOKEN  the password the relay expects
   BINANCE_PRO_PRICE    4.99   BINANCE_PRO_DAYS  30
+
+Why a relay: Binance answers Railway's servers (US, and its Dutch and
+Singapore regions alike) "Service unavailable from a restricted location"
+(HTTP 451, measured 2026-11-22). The website's /api/binance-history runs on
+Vercel in Frankfurt, where Binance answers, holds the read-only key and does
+only this one read. Direct calls (BINANCE_API_KEY / BINANCE_API_SECRET here)
+are kept for a server Binance does not block.
 """
 import hashlib
 import hmac
@@ -62,9 +69,13 @@ def days() -> int:
     return int(getattr(settings, "BINANCE_PRO_DAYS", 30) or 30)
 
 
+def _relay() -> bool:
+    return bool(getattr(settings, "BINANCE_RELAY_URL", "") and getattr(settings, "BINANCE_RELAY_TOKEN", ""))
+
+
 def enabled() -> bool:
-    return bool(getattr(settings, "BINANCE_PAY_ID", "") and getattr(settings, "BINANCE_API_KEY", "")
-                and getattr(settings, "BINANCE_API_SECRET", ""))
+    direct = getattr(settings, "BINANCE_API_KEY", "") and getattr(settings, "BINANCE_API_SECRET", "")
+    return bool(getattr(settings, "BINANCE_PAY_ID", "") and (_relay() or direct))
 
 
 def checkout_info() -> dict:
@@ -79,8 +90,22 @@ def checkout_info() -> dict:
     }
 
 
+def _answer(body: dict) -> list:
+    if str(body.get("code")) not in ("000000", "0") and body.get("success") is not True:
+        raise RuntimeError(f"Binance answered {body.get('code')}: {body.get('message') or body.get('msg')}")
+    return body.get("data") or []
+
+
 def fetch_history(start_ms: int, end_ms: int) -> list:
-    """Our account's Binance Pay records between two times (signed request)."""
+    """Our account's Binance Pay records between two times: through the relay when set."""
+    if _relay():
+        req = urllib.request.Request(
+            settings.BINANCE_RELAY_URL, method="POST",
+            data=json.dumps({"startTime": start_ms, "endTime": end_ms}).encode(),
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {settings.BINANCE_RELAY_TOKEN}"},
+        )
+        with urllib.request.urlopen(req, timeout=20) as res:
+            return _answer(json.loads(res.read().decode()))
     params = {"startTime": start_ms, "endTime": end_ms, "limit": 100, "recvWindow": 10000,
               "timestamp": int(time.time() * 1000)}
     query = urllib.parse.urlencode(params)
@@ -88,10 +113,7 @@ def fetch_history(start_ms: int, end_ms: int) -> list:
     req = urllib.request.Request(f"{API_URL}?{query}&signature={signature}",
                                  headers={"X-MBX-APIKEY": settings.BINANCE_API_KEY})
     with urllib.request.urlopen(req, timeout=15) as res:
-        body = json.loads(res.read().decode())
-    if str(body.get("code")) not in ("000000", "0") and body.get("success") is not True:
-        raise RuntimeError(f"Binance answered {body.get('code')}: {body.get('message')}")
-    return body.get("data") or []
+        return _answer(json.loads(res.read().decode()))
 
 
 def _amount(value) -> Decimal:
