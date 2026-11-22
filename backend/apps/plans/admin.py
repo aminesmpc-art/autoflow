@@ -3,7 +3,15 @@ from django.contrib import admin
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin
 
-from .models import Profile, PlanType
+from .models import BinancePayment, Profile, PlanType
+
+
+@admin.register(BinancePayment)
+class BinancePaymentAdmin(ModelAdmin):
+    list_display = ("user", "amount", "currency", "order_id", "paid_at", "pro_until", "created_at")
+    search_fields = ("user__email", "order_id", "payer_binance_id")
+    readonly_fields = ("user", "order_id", "amount", "currency", "paid_at", "order_type", "payer_binance_id", "pro_until", "created_at")
+    list_per_page = 50
 
 
 @admin.register(Profile)

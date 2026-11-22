@@ -347,6 +347,14 @@ WHOP_WEBHOOK_SECRET = config("WHOP_WEBHOOK_SECRET", default="")
 WHOP_MOTION_WEBHOOK_SECRET = config("WHOP_MOTION_WEBHOOK_SECRET", default="")
 WHOP_MOTION_PRODUCT_ID = config("WHOP_MOTION_PRODUCT_ID", default="")
 WHOP_MOTION_PLAN_ID = config("WHOP_MOTION_PLAN_ID", default="")
+
+# Binance Pay: a month of Pro for USDT to this Pay ID, checked with a READ-ONLY
+# API key of the same account (apps/plans/binance.py). Off until all three are set.
+BINANCE_PAY_ID = config("BINANCE_PAY_ID", default="")
+BINANCE_API_KEY = config("BINANCE_API_KEY", default="")
+BINANCE_API_SECRET = config("BINANCE_API_SECRET", default="")
+BINANCE_PRO_PRICE = config("BINANCE_PRO_PRICE", default="4.99")
+BINANCE_PRO_DAYS = config("BINANCE_PRO_DAYS", default=30, cast=int)
 WHOP_STUDIO_PRODUCT_IDS = config("WHOP_STUDIO_PRODUCT_IDS", default="", cast=Csv())
 # Feature rollout switch for Pro-included Motion job admission, not a separate plan.
 MOTION_BILLING_ENABLED = config("MOTION_BILLING_ENABLED", default=False, cast=bool)

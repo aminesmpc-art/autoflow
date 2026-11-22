@@ -59,3 +59,31 @@ class Profile(models.Model):
             self.save(update_fields=["plan_type", "is_pro_active", "updated_at"])
             return False
         return True
+
+
+class BinancePayment(models.Model):
+    """A month of Pro paid in USDT through Binance Pay (apps/plans/binance.py).
+
+    order_id is the Order ID on the buyer's Binance receipt (the Pay history's
+    transactionId). Unique: one receipt, one month, whoever sends it.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="binance_payments")
+    order_id = models.CharField(max_length=64, unique=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=8)
+    currency = models.CharField(max_length=12, default="USDT")
+    paid_at = models.DateTimeField()
+    order_type = models.CharField(max_length=16, blank=True, default="")
+    payer_binance_id = models.CharField(max_length=32, blank=True, default="")
+    pro_until = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Binance payment"
+        verbose_name_plural = "Binance payments"
+
+    def __str__(self):
+        return f"{self.user.email} — {self.amount} {self.currency} ({self.order_id})"
+

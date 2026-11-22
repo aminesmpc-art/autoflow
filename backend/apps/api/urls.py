@@ -5,6 +5,7 @@ from . import views
 from apps.motion import views as motion_views
 from apps.workflows import community_views, views as workflow_views
 from .queue_events import QueueEventsView
+from apps.plans.binance_views import BinanceClaimView, BinanceInfoView
 
 urlpatterns = [
     # Auth
@@ -37,6 +38,10 @@ urlpatterns = [
     path("templates/community/<int:pk>", community_views.CommunityDetailView.as_view(), name="community-detail"),
     path("templates/community/<int:pk>/like", community_views.CommunityLikeView.as_view(), name="community-like"),
     path("templates/community/<int:pk>/report", community_views.CommunityReportView.as_view(), name="community-report"),
+
+    # Pro paid in USDT with Binance Pay (apps/plans/binance.py)
+    path("billing/binance", BinanceInfoView.as_view(), name="billing-binance"),
+    path("billing/binance/claim", BinanceClaimView.as_view(), name="billing-binance-claim"),
 
     # Usage
     path("usage/consume", views.ConsumePromptView.as_view(), name="usage-consume"),

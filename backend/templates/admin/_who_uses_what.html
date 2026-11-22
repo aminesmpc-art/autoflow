@@ -86,7 +86,7 @@ html.dark .ov { --bg:#0b0d12; --card:#12151c; --line:#232836; --ink:#e6e9f0; --m
     <div class="ov-card"><div class="ov-k">Prompts accepted</div><div class="ov-v">{{ s.sent|intcomma }}</div><div class="ov-sub">{{ s.done|intcomma }} finished · {{ s.runs|intcomma }} queue runs</div></div>
     <div class="ov-card"><div class="ov-k">AI agents</div><div class="ov-v">{{ s.agent_users }}</div><div class="ov-sub">users · {{ s.agent_runs }} agent runs</div></div>
     <div class="ov-card"><div class="ov-k">Characters</div><div class="ov-v">{{ s.char_users }}</div><div class="ov-sub">users · {{ s.chars_made }} made</div></div>
-    <div class="ov-card"><div class="ov-k">Payments</div><div class="ov-v">${{ s.revenue|floatformat:2|intcomma }}</div><div class="ov-sub">{{ s.payments }} payment{{ s.payments|pluralize }}</div></div>
+    <div class="ov-card"><div class="ov-k">Payments</div><div class="ov-v">${{ s.revenue|floatformat:2|intcomma }}</div><div class="ov-sub">{{ s.payments }} payment{{ s.payments|pluralize }}{% if s.binance_payments %} · {{ s.binance_payments }} Binance{% endif %}</div></div>
   </div>
 
   <div class="ov-grid ov-g3">

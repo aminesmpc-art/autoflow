@@ -200,7 +200,18 @@ def summary(since, rows_all):
             except (TypeError, ValueError):
                 pass
 
+    # Months of Pro paid in USDT with Binance Pay (apps/plans/binance.py).
+    BinancePayment = _optional("apps.plans.models.BinancePayment")
+    binance_total, binance_count = 0.0, 0
+    if BinancePayment is not None:
+        agg = BinancePayment.objects.filter(created_at__gte=since).aggregate(n=Count("id"), total=Sum("amount"))
+        binance_count = agg["n"] or 0
+        binance_total = float(agg["total"] or 0)
+    revenue += binance_total
+    payments += binance_count
+
     return {
+        "binance_payments": binance_count,
         "total_users": total_users,
         "pro_users": pro_users,
         "free_users": max(0, total_users - pro_users),
@@ -254,20 +265,21 @@ def daily_series(days=14):
 
 def overview_context(request):
     """What the admin home's "Users & what they use" block shows."""
-    window = request.GET.get("window", "7")
+    params = getattr(request, "GET", None) or {}
+    window = params.get("window", "7")
     if window not in WINDOWS:
         window = "7"
-    plan = request.GET.get("plan", "all")
-    filt = request.GET.get("filter", "all")
+    plan = params.get("plan", "all")
+    filt = params.get("filter", "all")
     if filt not in FILTERS:
         filt = "all"
-    q = (request.GET.get("q") or "").strip()[:80]
+    q = (params.get("q") or "").strip()[:80]
     since = _since(window)
 
     everyone, _ = user_rows(since, limit=100_000)
     # The home shows the top 50 so the rest of the dashboard stays in reach;
     # "Show all" (rows=all) lists everyone who matches.
-    show_all = request.GET.get("rows") == "all"
+    show_all = params.get("rows") == "all"
     rows, matched = user_rows(since, plan=plan, filt=filt, q=q, limit=600 if show_all else 50)
     series, peak = daily_series(14)
     return {
