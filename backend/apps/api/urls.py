@@ -4,6 +4,8 @@ from django.urls import path
 from . import views
 from apps.motion import views as motion_views
 from apps.workflows import community_views, views as workflow_views
+from .queue_events import QueueEventsView
+from apps.plans.binance_views import BinanceClaimView, BinanceInfoView
 
 urlpatterns = [
     # Auth
@@ -37,6 +39,10 @@ urlpatterns = [
     path("templates/community/<int:pk>/like", community_views.CommunityLikeView.as_view(), name="community-like"),
     path("templates/community/<int:pk>/report", community_views.CommunityReportView.as_view(), name="community-report"),
 
+    # Pro paid in USDT with Binance Pay (apps/plans/binance.py)
+    path("billing/binance", BinanceInfoView.as_view(), name="billing-binance"),
+    path("billing/binance/claim", BinanceClaimView.as_view(), name="billing-binance-claim"),
+
     # Usage
     path("usage/consume", views.ConsumePromptView.as_view(), name="usage-consume"),
     # One prompt reached Flow and Flow accepted it. Does not charge until
@@ -45,6 +51,8 @@ urlpatterns = [
     path("usage/submitted", views.PromptSubmittedView.as_view(), name="usage-submitted"),
     # A finished run hands back what it never sent. Idempotent.
     path("usage/release", views.ReleaseReservationView.as_view(), name="usage-release"),
+    # Each clip's result as it happens (queue_events.py). Counts nothing.
+    path("usage/queue-events", QueueEventsView.as_view(), name="usage-queue-events"),
     path("usage/download", views.ConsumeDownloadView.as_view(), name="usage-download"),
     path("usage/queue-run", views.ConsumeQueueRunView.as_view(), name="usage-queue-run"),
     path("usage/studio-run", views.ConsumeStudioRunView.as_view(), name="usage-studio-run"),

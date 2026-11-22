@@ -128,8 +128,14 @@ class PromptSubmittedTests(TestCase):
     def test_it_does_not_charge(self):
         """The whole point of the dual-write period.  If this ever starts
         moving counters while consume_queue_run still charges up front, every
-        user is billed twice."""
+        user is billed twice.
+
+        Since 2026-11-22 a prompt that NO queue charge paid for is charged here
+        (cover_submission, test_limits_nov22.py): one free account had 339
+        accepted prompts and no charge at all. What must still hold is this
+        test's point: a queue that paid up front is never billed again."""
         today = timezone.now().date()
+        self.client.post(reverse("usage-queue-run"), {"mode": "flow", "prompt_count": 3}, format="json")
         before = get_or_create_daily_usage(self.user, today)
         used_before = (before.total_prompts_used, before.free_prompts_used,
                        before.text_prompts_used, before.full_prompts_used)
@@ -147,6 +153,7 @@ class PromptSubmittedTests(TestCase):
 
     def test_it_says_so_in_the_response(self):
         """So nobody reads this as the billing path before the switch."""
+        self.client.post(reverse("usage-queue-run"), {"mode": "flow", "prompt_count": 1}, format="json")
         self.assertFalse(self._post().json()["charged"])
 
     def test_it_does_not_touch_the_old_pending_events(self):

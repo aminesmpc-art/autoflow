@@ -91,6 +91,12 @@ def _provision_paid_customer(email: str):
         return None
 
 
+def _paid_in_binance(user) -> bool:
+    """Pro paid with Binance Pay that has not run out (apps/plans/binance.py)."""
+    from apps.plans.models import BinancePayment
+    return BinancePayment.objects.filter(user=user, pro_until__gt=timezone.now()).exists()
+
+
 def process_whop_webhook(event: WebhookEvent):
     """Process a Whop webhook event.
 
@@ -158,6 +164,11 @@ def process_whop_webhook(event: WebhookEvent):
                 whop_user_id=whop_user_id,
             )
             logger.info("Pro activated for %s via Whop (membership: %s)", user_email, membership_id)
+
+        elif event_type in DEACTIVATION_EVENTS and _paid_in_binance(user):
+            # Months paid with Binance Pay are still running: keep Pro until
+            # they end (Profile.is_pro expires it then).
+            logger.info("Whop ended for %s but Binance Pro runs on; plan kept", user_email)
 
         elif event_type in DEACTIVATION_EVENTS:
             sync_profile_plan(

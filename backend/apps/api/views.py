@@ -634,11 +634,22 @@ class PromptSubmittedView(APIView):
         # not charge a second time — which is the whole reason the identity
         # lives in a unique index rather than in application code.
         charged = False
+        cover = None
         if created and METER_ON_SUBMISSION:
             charged = commit_reserved_prompt(
                 request.user, queue_id=queue_id, prompt_type=prompt_type)
             event.metadata["charged"] = True
             event.save(update_fields=["metadata"])
+        elif created:
+            # Hold the day's count at least at what Flow accepted (see
+            # cover_submission). A prompt no queue charge paid for is charged
+            # here and marked, so the dashboard can name the accounts.
+            from apps.plans.services import cover_submission
+            cover = cover_submission(request.user, prompt_type=prompt_type)
+            if cover["charged"]:
+                charged = True
+                event.metadata["uncovered"] = True
+                event.save(update_fields=["metadata"])
 
         # The outcome rides on the SAME row rather than a second event.
         #
@@ -658,9 +669,13 @@ class PromptSubmittedView(APIView):
             "queue_id": event.queue_id,
             "prompt_index": event.prompt_index,
             "outcome": event.metadata.get("outcome"),
-            # Whether THIS call moved the meter. False while the switch is
-            # off, which is how it ships — see METER_ON_SUBMISSION.
+            # Whether THIS call moved the meter: the reservation commit under
+            # METER_ON_SUBMISSION, or a prompt nothing had paid for.
             "charged": charged,
+            # Past a free account's daily prompts: the extension stops the
+            # queue (Queue 11.9 and later; older ones ignore it).
+            "limit_reached": bool(cover and cover["limit_reached"]),
+            "remaining": cover["remaining"] if cover else None,
         })
 
 
@@ -723,9 +738,9 @@ class ConsumeQueueRunView(APIView):
 
     def post(self, request):
         mode = request.data.get("mode", "lite")
-        if mode not in ("lite", "flow", "full"):
+        if mode not in ("lite", "flow", "full", "agent"):
             return Response(
-                {"detail": f"Invalid mode: {mode}. Must be lite, flow, or full."},
+                {"detail": f"Invalid mode: {mode}. Must be lite, flow, full or agent."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         prompt_count = int(request.data.get("prompt_count", 1))
@@ -745,10 +760,13 @@ class ConsumeQueueRunView(APIView):
         # be taken twice if the start is retried. Optional: an extension older
         # than this simply gets a generated one, which expires on its own.
         queue_id = str(request.data.get("queue_id") or "").strip()[:128]
+        # Started by an AI agent (autoflow-agent): counts against the free
+        # agent allowance whatever the mode. Older extensions never send it.
+        by_agent = request.data.get("agent") in (True, "true", "1", 1)
         result = consume_queue_run(
             request.user, mode=mode, prompt_count=prompt_count,
             prompt_type=prompt_type, text_count=text_count, full_count=full_count,
-            queue_id=queue_id,
+            queue_id=queue_id, by_agent=by_agent,
         )
         http_status = status.HTTP_200_OK if result["allowed"] else status.HTTP_403_FORBIDDEN
         return Response(result, status=http_status)
@@ -770,7 +788,8 @@ class ConsumeStudioRunView(APIView):
             )
         from apps.plans.services import consume_studio_run
         result = consume_studio_run(
-            request.user, node_count=node_count, generate_count=generate_count
+            request.user, node_count=node_count, generate_count=generate_count,
+            by_agent=request.data.get("agent") in (True, "true", "1", 1),
         )
         http_status = status.HTTP_200_OK if result["allowed"] else status.HTTP_403_FORBIDDEN
         return Response(result, status=http_status)

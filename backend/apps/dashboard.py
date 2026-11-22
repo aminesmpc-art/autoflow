@@ -233,6 +233,13 @@ def _clipping_counts(today):
 
 def dashboard_callback(request, context):
     """Provide chart data, KPI metrics, funnels, and analytics for the dashboard."""
+    # Users and what each one uses (apps/overview.py), at the top of the page.
+    try:
+        from apps.overview import overview_context
+        context.update(overview_context(request))
+    except Exception:  # never take the dashboard down with it
+        import logging
+        logging.getLogger(__name__).exception("overview block failed")
     from apps.plans.models import Profile
     from apps.usage.models import DailyUsage, UsageEvent, MonthlyUsage
     from apps.users.models import CustomUser
