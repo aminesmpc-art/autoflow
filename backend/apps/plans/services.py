@@ -28,9 +28,10 @@ FREE_DOWNLOAD_DAILY_LIMIT = getattr(settings, "FREE_DOWNLOAD_DAILY_LIMIT", 20)
 FREE_LITE_DAILY_LIMIT = getattr(settings, "FREE_LITE_DAILY_LIMIT", 3)
 FREE_FLOW_DAILY_LIMIT = getattr(settings, "FREE_FLOW_DAILY_LIMIT", 5)
 FREE_FULL_DAILY_LIMIT_RUNS = getattr(settings, "FREE_FULL_DAILY_LIMIT_RUNS", 1)
-# Agent mode: its own runs a day for a free account. Set FREE_AGENT_DAILY_LIMIT
-# in the environment to change it without a deploy of code.
-FREE_AGENT_DAILY_LIMIT = int(os.environ.get("FREE_AGENT_DAILY_LIMIT") or getattr(settings, "FREE_AGENT_DAILY_LIMIT", 3))
+# AI-agent runs a day for a free account, Queue and Studio together (the
+# owner, 2026-11-23: 5 a day; it was 3). Set FREE_AGENT_DAILY_LIMIT in the
+# environment to change it without a deploy of code.
+FREE_AGENT_DAILY_LIMIT = int(os.environ.get("FREE_AGENT_DAILY_LIMIT") or getattr(settings, "FREE_AGENT_DAILY_LIMIT", 5))
 QUEUE_MODES = ("lite", "flow", "full", "agent")
 
 
@@ -758,6 +759,26 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
     now = timezone.now()
     today = now.date()
 
+    # An AI agent runs queues in Agent mode only (the owner, 2026-11-23: "I
+    # want the agent only work on agent mode"). Agent mode checks every clip,
+    # retries, downloads everything with a manifest, and holds refused prompts
+    # for the agent; Lite, Flow and Full were built for a person watching. The
+    # extension (11.12+) always asks for Agent mode; this refuses an older or
+    # modified one, for every plan, before anything is counted.
+    if by_agent and mode != "agent":
+        return {
+            "allowed": False,
+            "used": 0,
+            "limit": 0,
+            "remaining": 0,
+            "period": "day",
+            "agent_mode_only": True,
+            "message": (
+                f"AI agents run queues in Agent mode only, not {mode.capitalize()}. "
+                "Update the AutoFlow Queue Manager, and add the queue with \"automationMode\": \"agent\"."
+            ),
+        }
+
     # Ensure rows exist outside the lock
     get_or_create_daily_usage(user, today)
     if mode == "full":
@@ -800,6 +821,7 @@ def consume_queue_run(user, mode: str, prompt_count: int = 1, prompt_type: str =
             elif mode == "agent" and usage.agent_runs_today >= FREE_AGENT_DAILY_LIMIT:
                 return {
                     "allowed": False,
+                    "agent_limit_reached": True,
                     "used": usage.agent_runs_today,
                     "limit": FREE_AGENT_DAILY_LIMIT,
                     "remaining": 0,

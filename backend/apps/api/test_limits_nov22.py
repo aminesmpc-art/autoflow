@@ -58,15 +58,32 @@ class AgentRunsAreCountedInEveryMode(TestCase):
     def setUp(self):
         self.user, self.client = make_user("agent@example.com")
 
-    def test_an_agents_lite_and_studio_runs_spend_the_agent_allowance(self):
+    def test_five_a_day(self):
+        """The owner, 2026-11-23: 5 a day on Free (it was 3)."""
+        self.assertEqual(FREE_AGENT_DAILY_LIMIT, 5)
+
+    def test_an_agent_runs_queues_in_agent_mode_only(self):
+        """The owner, 2026-11-23: "I want the agent only work on agent mode".
+        Refused for every plan, and nothing is counted or charged."""
+        _, pro = make_user("pro-agent@example.com", pro=True)
+        for client in (self.client, pro):
+            for mode in ("lite", "flow", "full"):
+                res = client.post(reverse("usage-queue-run"), {"mode": mode, "prompt_count": 1, "agent": True}, format="json")
+                self.assertEqual(res.status_code, 403, mode)
+                self.assertTrue(res.json()["agent_mode_only"])
+        usage = get_or_create_daily_usage(self.user)
+        self.assertEqual((usage.agent_runs_today, usage.free_prompts_used), (0, 0))
+        self.assertFalse(UsageEvent.objects.filter(user=self.user).exists())
+
+    def test_an_agents_queue_and_studio_runs_spend_the_agent_allowance(self):
         for _ in range(FREE_AGENT_DAILY_LIMIT - 1):
-            res = self.client.post(reverse("usage-queue-run"), {"mode": "lite", "prompt_count": 1, "agent": True}, format="json")
+            res = self.client.post(reverse("usage-queue-run"), {"mode": "agent", "prompt_count": 1, "agent": True}, format="json")
             self.assertEqual(res.status_code, 200)
         res = self.client.post(reverse("usage-studio-run"), {"node_count": 1, "generate_count": 1, "agent": True}, format="json")
         self.assertEqual(res.status_code, 200, res.json())
         self.assertEqual(get_or_create_daily_usage(self.user).agent_runs_today, FREE_AGENT_DAILY_LIMIT)
 
-        refused = self.client.post(reverse("usage-queue-run"), {"mode": "flow", "prompt_count": 1, "agent": True}, format="json")
+        refused = self.client.post(reverse("usage-queue-run"), {"mode": "agent", "prompt_count": 1, "agent": True}, format="json")
         self.assertEqual(refused.status_code, 403)
         self.assertTrue(refused.json()["agent_limit_reached"])
         studio = self.client.post(reverse("usage-studio-run"), {"node_count": 1, "generate_count": 1, "agent": True}, format="json")
@@ -84,7 +101,7 @@ class AgentRunsAreCountedInEveryMode(TestCase):
     def test_pro_agents_are_unlimited(self):
         _, client = make_user("pro@example.com", pro=True)
         for _ in range(FREE_AGENT_DAILY_LIMIT + 2):
-            res = client.post(reverse("usage-queue-run"), {"mode": "lite", "prompt_count": 1, "agent": True}, format="json")
+            res = client.post(reverse("usage-queue-run"), {"mode": "agent", "prompt_count": 1, "agent": True}, format="json")
             self.assertEqual(res.status_code, 200)
 
 
