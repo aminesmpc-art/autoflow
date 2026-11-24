@@ -21,7 +21,9 @@ export default function ContactPage() {
         <div className="container">
           <h1>Contact</h1>
           <p className="text-secondary">
-            Email <a href="mailto:support@auto-flow.studio">support@auto-flow.studio</a> — a person reads every message.
+            The fastest way: ask on Telegram at{" "}
+            <a href="https://t.me/autoflowsupport" target="_blank" rel="noopener noreferrer">t.me/autoflowsupport</a>.
+            Or email <a href="mailto:support@auto-flow.studio">support@auto-flow.studio</a> — a person reads every message.
           </p>
         </div>
       </section>
@@ -37,7 +39,9 @@ export default function ContactPage() {
 
           <h2>Help with a tool</h2>
           <p>
-            Write to <a href="mailto:support@auto-flow.studio?subject=Help%20with%20AutoFlow">support@auto-flow.studio</a>.
+            Post in the{" "}
+            <a href="https://t.me/autoflowsupport" target="_blank" rel="noopener noreferrer">AutoFlow Support group on Telegram</a>,
+            or write to <a href="mailto:support@auto-flow.studio?subject=Help%20with%20AutoFlow">support@auto-flow.studio</a>.
             It helps us answer in one reply if you include:
           </p>
           <ul>
