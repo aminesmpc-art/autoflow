@@ -224,7 +224,7 @@ export default function BlogPost() {
             </p>
             <pre className="blog-code"><code>{`{
   "mcpServers": {
-    "autoflow": { "command": "npx", "args": ["-y", "autoflow-agent"] }
+    "autoflow": { "command": "npx", "args": ["-y", "autoflow-agent@latest"] }
   }
 }`}</code></pre>
             <p>

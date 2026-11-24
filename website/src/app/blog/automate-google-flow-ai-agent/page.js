@@ -211,22 +211,22 @@ export default function BlogPost() {
               (in Antigravity: Agent panel → ⋯ → MCP Servers → Manage MCP Servers → View raw config):</p>
             <Code>{`{
   "mcpServers": {
-    "autoflow": { "command": "npx", "args": ["-y", "autoflow-agent"] }
+    "autoflow": { "command": "npx", "args": ["-y", "autoflow-agent@latest"] }
   }
 }`}</Code>
             <p>
               On Windows, if the app cannot start <code>npx</code>, use <code>&quot;command&quot;: &quot;cmd&quot;</code> with{" "}
-              <code>&quot;args&quot;: [&quot;/c&quot;, &quot;npx&quot;, &quot;-y&quot;, &quot;autoflow-agent&quot;]</code>.
+              <code>&quot;args&quot;: [&quot;/c&quot;, &quot;npx&quot;, &quot;-y&quot;, &quot;autoflow-agent@latest&quot;]</code>.
             </p>
             <p><strong>Claude Code</strong></p>
-            <Code>claude mcp add autoflow -s user -- npx -y autoflow-agent</Code>
+            <Code>claude mcp add autoflow -s user -- npx -y autoflow-agent@latest</Code>
             <p><strong>Codex</strong></p>
-            <Code>codex mcp add autoflow -- npx -y autoflow-agent</Code>
+            <Code>codex mcp add autoflow -- npx -y autoflow-agent@latest</Code>
             <p>
               Optionally, install the AutoFlow skill so Claude Code, Codex and Antigravity load the full guide whenever AutoFlow
               comes up: what costs credits, how characters and chained clips work, and what to do with a refused prompt.
             </p>
-            <Code>npx -y autoflow-agent install-skill</Code>
+            <Code>npx -y autoflow-agent@latest install-skill</Code>
             <p>
               The server only listens on your own computer (<code>127.0.0.1</code>) and only accepts AutoFlow&apos;s extensions, so no
               website can use it. If you run AutoFlow in Multilogin or another proxied profile, add <code>127.0.0.1</code> to the
