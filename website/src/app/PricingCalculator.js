@@ -12,7 +12,7 @@ const COMPARISON_ROWS = [
   { feature: "Pro Template Workflows", free: "Standard", pro: "All Pro & Cinematic Presets" },
   
   { feature: "AI Video Prompt Extractor", category: "Video Extractor" },
-  { feature: "Daily Extraction Runs", free: "3 runs / day", pro: "20 runs / day" },
+  { feature: "Daily Extraction Runs", free: "1 video / day (up to 10 min)", pro: "20 runs / day" },
   { feature: "Multi-Shot Vision Breakdown", free: "✓ Included", pro: "✓ Included" },
   { feature: "Character Sheet Generation", free: "✓ Included", pro: "✓ Included" },
   { feature: "1-Click ComfyUI Graph Export", free: "✓ Included", pro: "✓ Included" },
@@ -92,7 +92,7 @@ export default function PricingCalculator() {
 
           <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "12px", marginBottom: "36px", flex: 1, color: "var(--text-secondary)", fontSize: "0.92rem" }}>
             <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "var(--primary)" }}>✓</span> 10 Studio workflow runs / month</li>
-            <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "var(--primary)" }}>✓</span> 3 Video Prompt Extractions / day</li>
+            <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "var(--primary)" }}>✓</span> 1 Video Prompt Extraction / day (up to 10 min)</li>
             <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "var(--primary)" }}>✓</span> 50 Google Flow prompts / day</li>
             <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "var(--primary)" }}>✓</span> Unlimited nodes per canvas graph</li>
             <li style={{ display: "flex", gap: "10px" }}><span style={{ color: "var(--primary)" }}>✓</span> 1 Character face continuity lock</li>
