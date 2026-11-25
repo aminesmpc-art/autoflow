@@ -13,6 +13,19 @@
 
 export const posts = [
   {
+    slug: "claude-code-stickman-animation-google-flow",
+    title: "Claude Code + Google Flow: AI Stickman History Videos on Autopilot (One Command, Every Step)",
+    description:
+      "Claude Code made a full stickman history animation in Google Flow from one command: a fact-checked story, one narrator voice, the same stickman in all seven scenes, Agent-mode clips checked with Whisper, and the final edit. The command, the steps and the cost.",
+    date: "2026-11-25",
+    updated: "2026-11-25",
+    category: "Case Study",
+    tags: ["claude-code", "google-flow", "stickman-animation", "ai-history-video", "ai-agent", "agent-mode", "youtube-automation"],
+    image: "/screenshots/stickman/hero.webp",
+    readTime: "6 min read",
+    featured: true,
+  },
+  {
     slug: "claude-code-google-flow-ai-clay-video",
     title: "Claude Code + Google Flow: How an AI Agent Made a Full AI Clay Video (and the One Word Flow Refused)",
     description:
