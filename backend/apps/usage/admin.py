@@ -82,6 +82,54 @@ class QueueModeFilter(admin.SimpleListFilter):
         return queryset
 
 
+class NeedsLookFilter(admin.SimpleListFilter):
+    """The rows that need the owner's eyes (2026-11-25)."""
+    title = "Needs a look"
+    parameter_name = "look"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("over", "Over the free limit"),
+            ("unpaid", "Prompts no run paid for"),
+            ("suspended", "Suspended accounts"),
+            ("heavy", "Heavy (100+ in the day)"),
+        ]
+
+    def queryset(self, request, queryset):
+        from apps.plans.services import FREE_TEXT_DAILY_LIMIT
+        if self.value() == "over":
+            return queryset.exclude(user__profile__is_pro_active=True).filter(free_prompts_used__gt=FREE_TEXT_DAILY_LIMIT)
+        if self.value() == "unpaid":
+            from django.db.models import Exists, OuterRef
+            from django.db.models.functions import TruncDate
+            unpaid = UsageEvent.objects.filter(
+                user_id=OuterRef("user_id"), event_type=UsageEvent.EventType.PROMPT_SUBMITTED,
+                metadata__uncovered=True,
+            ).annotate(d=TruncDate("created_at")).filter(d=OuterRef("date"))
+            return queryset.filter(Exists(unpaid))
+        if self.value() == "suspended":
+            return queryset.filter(user__profile__suspended_at__isnull=False)
+        if self.value() == "heavy":
+            return queryset.filter(free_prompts_used__gte=100)
+        return queryset
+
+
+class AgentUseFilter(admin.SimpleListFilter):
+    """Who let an AI agent run AutoFlow that day."""
+    title = "AI agent"
+    parameter_name = "agent"
+
+    def lookups(self, request, model_admin):
+        return [("yes", "Used an AI agent"), ("no", "No AI agent")]
+
+    def queryset(self, request, queryset):
+        if self.value() == "yes":
+            return queryset.filter(agent_runs_today__gt=0)
+        if self.value() == "no":
+            return queryset.filter(agent_runs_today=0)
+        return queryset
+
+
 class PlanFilter(admin.SimpleListFilter):
     """Filter by user plan type."""
     title = "Plan"
@@ -187,13 +235,16 @@ def _sent_to_flow(user, date):
 
 @admin.register(DailyUsage)
 class DailyUsageAdmin(ModelAdmin):
+    # Seven plain columns (2026-11-25). The page had ten, with the same
+    # figure under four names ("Sent to Flow", "Submitted", "Confirmed",
+    # "charged"/"billed"/"unsent") and runs that left out Agent and Studio
+    # ("No runs" beside a queue that ran). The old column methods below stay:
+    # their counting is tested, and the new cells read the same helpers.
     list_display = (
-        "user_display", "plan_badge", "date_display",
-        "prompt_usage_bar", "submitted_count", "queue_breakdown",
-        "download_badge", "completion_rate",
-        "total_badge", "created_display",
+        "user_cell", "date_display", "used_today", "on_flow",
+        "runs_cell", "download_badge", "needs_look",
     )
-    list_filter = (PlanFilter, UsageLevelFilter, QueueModeFilter, "date")
+    list_filter = (PlanFilter, NeedsLookFilter, AgentUseFilter, "date")
     search_fields = ("user__email",)
     readonly_fields = ("created_at", "updated_at")
     date_hierarchy = "date"
@@ -637,6 +688,133 @@ class DailyUsageAdmin(ModelAdmin):
             '</div>',
             bg, border, confirmed, label,
         )
+
+    # ── The seven columns (2026-11-25) ──────────────────────────────────
+
+    @staticmethod
+    def _profile(obj):
+        try:
+            return obj.user.profile
+        except Exception:
+            return None
+
+    @admin.display(description="User", ordering="user__email")
+    def user_cell(self, obj):
+        p = self._profile(obj)
+        pro = bool(p and p.is_pro_active and p.plan_type == "pro")
+        tags = [
+            '<span style="padding:1px 7px;border-radius:9px;font-size:10px;font-weight:800;'
+            + ('background:rgba(139,92,246,.18);color:#c4b5fd;">PRO' if pro else 'background:rgba(148,163,184,.15);color:#94a3b8;">FREE')
+            + '</span>'
+        ]
+        if p and getattr(p, "suspended_at", None):
+            tags.append('<span title="{}" style="padding:1px 7px;border-radius:9px;font-size:10px;font-weight:800;'
+                        'background:rgba(239,68,68,.18);color:#fca5a5;">SUSPENDED</span>'.format(
+                            (p.suspended_reason or "Suspended").replace('"', "'")))
+        return format_html(
+            '<div style="display:flex;flex-direction:column;gap:3px;">'
+            '<span style="color:#93c5fd;font-weight:600;font-size:13px;">{}</span>'
+            '<span style="display:flex;gap:4px;">{}</span></div>',
+            obj.user.email, format_html("".join(tags)),
+        )
+
+    @admin.display(description="Used today", ordering="free_prompts_used")
+    def used_today(self, obj):
+        """The number that counts against the day: the account's own counter."""
+        from apps.plans.services import FREE_TEXT_DAILY_LIMIT
+        used = obj.free_prompts_used or 0
+        p = self._profile(obj)
+        if p and p.is_pro_active:
+            return format_html(
+                '<div><span style="font-size:16px;font-weight:800;color:#e5e7eb;">{}</span>'
+                '<div style="font-size:10px;color:#94a3b8;">prompts · Pro, no limit</div></div>', used)
+        limit = FREE_TEXT_DAILY_LIMIT
+        pct = min(100, round(used / limit * 100)) if limit else 0
+        color = "#f87171" if used > limit else "#fbbf24" if used >= limit * 0.7 else "#34d399"
+        note = f"over by {used - limit}" if used > limit else ("limit reached" if used == limit else f"{limit - used} left")
+        return format_html(
+            '<div style="min-width:120px;">'
+            '<span style="font-size:16px;font-weight:800;color:{};">{}</span>'
+            '<span style="color:#94a3b8;font-size:12px;"> / {}</span>'
+            '<div style="height:5px;border-radius:9px;background:rgba(148,163,184,.18);margin:4px 0 2px;overflow:hidden;">'
+            '<div style="height:100%;width:{}%;background:{};"></div></div>'
+            '<div style="font-size:10px;color:{};">{}</div></div>',
+            color, used, limit, pct, color, color, note,
+        )
+
+    @admin.display(description="On Flow")
+    def on_flow(self, obj):
+        """What Flow received and what came of it: sent · done · failed."""
+        stats = _sent_to_flow(obj.user, obj.date)
+        sent = stats["sent"]
+        if stats["by_receipt"]:
+            got = UsageEvent.objects.filter(
+                user=obj.user, event_type=UsageEvent.EventType.PROMPT_SUBMITTED, created_at__date=obj.date)
+            done = got.filter(metadata__outcome="done").count()
+            failed = got.filter(metadata__outcome="failed").count()
+        else:
+            ev = UsageEvent.objects.filter(user=obj.user, event_type="consume_prompt", created_at__date=obj.date)
+            done = ev.filter(metadata__status="done").aggregate(s=Sum("prompt_count"))["s"] or 0
+            failed = ev.filter(metadata__status="failed").aggregate(s=Sum("prompt_count"))["s"] or 0
+        if not (sent or done or failed):
+            return format_html('<span style="color:#64748b;font-size:12px;">Nothing sent</span>')
+        guess = "" if stats["by_receipt"] else (
+            ' <span title="An older extension that does not report each prompt: these are its own counts"'
+            ' style="color:#64748b;font-size:10px;">(old version)</span>')
+        return format_html(
+            '<div style="font-size:12px;white-space:nowrap;">'
+            '<b style="color:#e5e7eb;font-size:14px;">{}</b> <span style="color:#94a3b8;">sent</span>'
+            ' · <b style="color:#34d399;">{}</b> <span style="color:#94a3b8;">done</span>'
+            ' · <b style="color:{};">{}</b> <span style="color:#94a3b8;">failed</span>{}</div>',
+            sent, done, "#f87171" if failed else "#64748b", failed, format_html(guess),
+        )
+
+    @admin.display(description="Runs")
+    def runs_cell(self, obj):
+        """Every run of the day, Agent and Studio included."""
+        studio = UsageEvent.objects.filter(
+            user=obj.user, event_type=UsageEvent.EventType.QUEUE_STARTED,
+            metadata__source="studio", created_at__date=obj.date).count()
+        parts = [("Lite", obj.lite_runs_today, "#facc15"), ("Flow", obj.flow_runs_today, "#34d399"),
+                 ("Full", obj.full_runs_today, "#818cf8"), ("Agent", obj.agent_runs_today, "#38bdf8"),
+                 ("Studio", studio, "#f472b6")]
+        total = sum(n for _, n, _ in parts)
+        if not total:
+            return format_html('<span style="color:#64748b;font-size:12px;">No runs</span>')
+        chips = "".join(
+            f'<span style="padding:1px 6px;border-radius:5px;font-size:10px;font-weight:700;'
+            f'background:rgba(148,163,184,.12);color:{c};">{label} {n}</span>'
+            for label, n, c in parts if n)
+        return format_html(
+            '<div><b style="color:#e5e7eb;font-size:14px;">{}</b>'
+            '<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px;">{}</div></div>',
+            total, format_html(chips))
+
+    @admin.display(description="Needs a look")
+    def needs_look(self, obj):
+        from apps.plans.services import FREE_TEXT_DAILY_LIMIT
+        p = self._profile(obj)
+        pro = bool(p and p.is_pro_active)
+        used = obj.free_prompts_used or 0
+        flags = []
+        if p and getattr(p, "suspended_at", None):
+            flags.append(("Suspended", "#fca5a5", "rgba(239,68,68,.18)", p.suspended_reason or ""))
+        unpaid = UsageEvent.objects.filter(
+            user=obj.user, event_type=UsageEvent.EventType.PROMPT_SUBMITTED,
+            created_at__date=obj.date, metadata__uncovered=True).count()
+        if unpaid:
+            flags.append((f"{unpaid} not paid for", "#fca5a5", "rgba(239,68,68,.18)",
+                          "Prompts Flow accepted that no queue run paid for: a modified extension, or one that skips the checks."))
+        if not pro and used > FREE_TEXT_DAILY_LIMIT:
+            flags.append(("Over limit", "#fdba74", "rgba(249,115,22,.18)", f"{used} on a {FREE_TEXT_DAILY_LIMIT}-prompt free day"))
+        if used >= 100:
+            flags.append(("Heavy", "#fcd34d", "rgba(234,179,8,.15)", f"{used} prompts in the day"))
+        if not flags:
+            return format_html('<span style="color:#34d399;font-size:12px;">OK</span>')
+        return format_html('<div style="display:flex;gap:4px;flex-wrap:wrap;">{}</div>', format_html("".join(
+            '<span title="{}" style="padding:2px 7px;border-radius:9px;font-size:10px;font-weight:800;'
+            'background:{};color:{};">{}</span>'.format(t.replace('"', "'"), bg, c, label)
+            for label, c, bg, t in flags)))
 
     @admin.display(description="Created", ordering="created_at")
     def created_display(self, obj):
